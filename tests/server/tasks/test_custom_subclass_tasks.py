@@ -122,10 +122,10 @@ async def test_custom_tool_registers_with_docket():
 
     tool.register_with_docket(mock_docket)
 
-    # Should register self.run with docket
+    # Should register self.run with docket using prefixed key
     mock_docket.register.assert_called_once()
     call_args = mock_docket.register.call_args
-    assert call_args[1]["names"] == ["test"]
+    assert call_args[1]["names"] == ["tool:test"]
 
 
 async def test_custom_tool_forbidden_does_not_register():

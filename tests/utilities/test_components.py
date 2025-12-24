@@ -1,8 +1,14 @@
 """Tests for fastmcp.utilities.components module."""
 
+import warnings
+
 import pytest
 from pydantic import ValidationError
 
+from fastmcp.prompts.prompt import Prompt
+from fastmcp.resources.resource import Resource
+from fastmcp.resources.template import ResourceTemplate
+from fastmcp.tools.tool import Tool
 from fastmcp.utilities.components import (
     FastMCPComponent,
     FastMCPMeta,
@@ -185,6 +191,70 @@ class TestFastMCPComponent:
         with pytest.raises(ValidationError) as exc_info:
             FastMCPComponent(name="test", unknown_field="value")  # type: ignore[call-arg]  # Intentionally passing invalid field for test
         assert "Extra inputs are not permitted" in str(exc_info.value)
+
+
+class TestKeyPrefix:
+    """Tests for KEY_PREFIX and make_key functionality."""
+
+    def test_base_class_has_empty_prefix(self):
+        """Test that FastMCPComponent has empty KEY_PREFIX."""
+        assert FastMCPComponent.KEY_PREFIX == ""
+
+    def test_make_key_without_prefix(self):
+        """Test make_key returns just identifier when KEY_PREFIX is empty."""
+        assert FastMCPComponent.make_key("my_name") == "my_name"
+
+    def test_tool_has_tool_prefix(self):
+        """Test that Tool has 'tool' KEY_PREFIX."""
+        assert Tool.KEY_PREFIX == "tool"
+        assert Tool.make_key("my_tool") == "tool:my_tool"
+
+    def test_resource_has_resource_prefix(self):
+        """Test that Resource has 'resource' KEY_PREFIX."""
+        assert Resource.KEY_PREFIX == "resource"
+        assert Resource.make_key("file://test.txt") == "resource:file://test.txt"
+
+    def test_template_has_template_prefix(self):
+        """Test that ResourceTemplate has 'template' KEY_PREFIX."""
+        assert ResourceTemplate.KEY_PREFIX == "template"
+        assert ResourceTemplate.make_key("data://{id}") == "template:data://{id}"
+
+    def test_prompt_has_prompt_prefix(self):
+        """Test that Prompt has 'prompt' KEY_PREFIX."""
+        assert Prompt.KEY_PREFIX == "prompt"
+        assert Prompt.make_key("my_prompt") == "prompt:my_prompt"
+
+    def test_tool_key_property(self):
+        """Test that Tool.key returns prefixed key."""
+        tool = Tool(name="greet", description="A greeting tool", parameters={})
+        assert tool.key == "tool:greet"
+
+    def test_prompt_key_property(self):
+        """Test that Prompt.key returns prefixed key."""
+        prompt = Prompt(name="analyze", description="An analysis prompt")
+        assert prompt.key == "prompt:analyze"
+
+    def test_warning_for_missing_key_prefix(self):
+        """Test that subclassing without KEY_PREFIX emits a warning."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            class NoPrefix(FastMCPComponent):
+                pass
+
+            assert len(w) == 1
+            assert "NoPrefix does not define KEY_PREFIX" in str(w[0].message)
+
+    def test_no_warning_when_key_prefix_defined(self):
+        """Test that subclassing with KEY_PREFIX does not emit a warning."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            class WithPrefix(FastMCPComponent):
+                KEY_PREFIX = "custom"
+
+            assert len(w) == 0
+            assert WithPrefix.make_key("test") == "custom:test"
 
 
 class TestMirroredComponent:

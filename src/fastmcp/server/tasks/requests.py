@@ -276,10 +276,17 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
                 },
             )
 
-        # Parse task key to get type and component info
+        # Parse task key to get component key
         key_parts = parse_task_key(task_key)
-        task_type = key_parts["task_type"]
-        component_id = key_parts["component_identifier"]
+        component_key = key_parts["component_identifier"]
+
+        # Look up component by its prefixed key
+        from fastmcp.prompts.prompt import Prompt
+        from fastmcp.resources.resource import Resource
+        from fastmcp.resources.template import ResourceTemplate
+        from fastmcp.tools.tool import Tool
+
+        component = await server.get_component(component_key)
 
         # Build related-task metadata
         related_task_meta = {
@@ -288,10 +295,9 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
             }
         }
 
-        # Convert based on task type
-        if task_type == "tool":
-            tool = await server.get_tool(component_id)
-            fastmcp_result = tool.convert_result(raw_value)
+        # Convert based on component type
+        if isinstance(component, Tool):
+            fastmcp_result = component.convert_result(raw_value)
             mcp_result = fastmcp_result.to_mcp_result()
             # Ensure we have a CallToolResult and add metadata
             if isinstance(mcp_result, mcp.types.CallToolResult):
@@ -310,26 +316,25 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
                 )
             return mcp_result
 
-        elif task_type == "prompt":
-            prompt = await server.get_prompt(component_id)
-            fastmcp_result = prompt.convert_result(raw_value)
+        elif isinstance(component, Prompt):
+            fastmcp_result = component.convert_result(raw_value)
             mcp_result = fastmcp_result.to_mcp_prompt_result()
             mcp_result._meta = related_task_meta  # type: ignore[attr-defined]
             return mcp_result
 
-        elif task_type == "resource":
-            resource = await server.get_resource(component_id)
-            resource_content = resource.convert_result(raw_value)
-            mcp_content = resource_content.to_mcp_resource_contents(component_id)
+        elif isinstance(component, ResourceTemplate):
+            resource_content = component.convert_result(raw_value)
+            mcp_content = resource_content.to_mcp_resource_contents(
+                component.uri_template
+            )
             return mcp.types.ReadResourceResult(
                 contents=[mcp_content],
                 _meta=related_task_meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
 
-        elif task_type == "template":
-            template = await server.get_resource_template(component_id)
-            resource_content = template.convert_result(raw_value)
-            mcp_content = resource_content.to_mcp_resource_contents(component_id)
+        elif isinstance(component, Resource):
+            resource_content = component.convert_result(raw_value)
+            mcp_content = resource_content.to_mcp_resource_contents(str(component.uri))
             return mcp.types.ReadResourceResult(
                 contents=[mcp_content],
                 _meta=related_task_meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
@@ -339,7 +344,7 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
             raise McpError(
                 ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Internal error: Unknown task type: {task_type}",
+                    message=f"Internal error: Unknown component type: {type(component).__name__}",
                 )
             )
 

@@ -21,8 +21,9 @@ from mcp.types import AnyUrl
 from fastmcp.prompts.prompt import Prompt, PromptResult
 from fastmcp.resources.resource import Resource, ResourceContent
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.providers.base import Provider, TaskComponents
+from fastmcp.server.providers.base import Provider
 from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.utilities.components import FastMCPComponent
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -353,7 +354,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         existing_key = _docket_fn_key.get()
         key_token = None
         if not existing_key or "{" not in existing_key:
-            key_token = _docket_fn_key.set(self.uri_template)
+            key_token = _docket_fn_key.set(self.key)
         try:
             try:
                 from fastmcp.server.dependencies import get_context
@@ -556,7 +557,7 @@ class FastMCPProvider(Provider):
     # Task registration
     # -------------------------------------------------------------------------
 
-    async def get_tasks(self) -> TaskComponents:
+    async def get_tasks(self) -> Sequence[FastMCPComponent]:
         """Return task-eligible components from the mounted server.
 
         Returns the child's ACTUAL components (not wrapped) so their actual
@@ -566,22 +567,10 @@ class FastMCPProvider(Provider):
         Iterates through all providers in the wrapped server (including its
         LocalProvider) to collect task-eligible components.
         """
-        tools: list[Tool] = []
-        resources: list[Resource] = []
-        templates: list[ResourceTemplate] = []
-        prompts: list[Prompt] = []
-
-        # Get tasks from all providers in the wrapped server
+        components: list[FastMCPComponent] = []
         for provider in self.server._providers:
-            nested = await provider.get_tasks()
-            tools.extend(nested.tools)
-            resources.extend(nested.resources)
-            templates.extend(nested.templates)
-            prompts.extend(nested.prompts)
-
-        return TaskComponents(
-            tools=tools, resources=resources, templates=templates, prompts=prompts
-        )
+            components.extend(await provider.get_tasks())
+        return components
 
     # -------------------------------------------------------------------------
     # Lifecycle methods

@@ -58,84 +58,82 @@ class ComponentService:
     def __init__(self, server: FastMCP):
         self._server = server
 
-    async def _enable_tool(self, key: str) -> Tool:
+    async def _enable_tool(self, name: str) -> Tool:
         """Handle 'enableTool' requests.
 
         Args:
-            key: The key of the tool to enable
+            name: The name of the tool to enable
 
         Returns:
             The tool that was enabled
         """
-        logger.debug("Enabling tool: %s", key)
+        logger.debug("Enabling tool: %s", name)
 
         # 1. Check local tools first. The server will have already applied its filter.
-        if key in self._server._local_provider._tools:
-            tool: Tool = await self._server.get_tool(key)
+        if Tool.make_key(name) in self._server._local_provider._components:
+            tool: Tool = await self._server.get_tool(name)
             tool.enable()
             return tool
 
         # 2. Check mounted servers via FastMCPProvider/TransformingProvider
         for provider in self._server._providers:
-            result = _get_mounted_server_and_key(provider, key, "tool")
+            result = _get_mounted_server_and_key(provider, name, "tool")
             if result is not None:
                 server, unprefixed = result
                 mounted_service = ComponentService(server)
                 tool = await mounted_service._enable_tool(unprefixed)
                 return tool
-        raise NotFoundError(f"Unknown tool: {key}")
+        raise NotFoundError(f"Unknown tool: {name}")
 
-    async def _disable_tool(self, key: str) -> Tool:
+    async def _disable_tool(self, name: str) -> Tool:
         """Handle 'disableTool' requests.
 
         Args:
-            key: The key of the tool to disable
+            name: The name of the tool to disable
 
         Returns:
             The tool that was disabled
         """
-        logger.debug("Disable tool: %s", key)
+        logger.debug("Disable tool: %s", name)
 
         # 1. Check local tools first. The server will have already applied its filter.
-        if key in self._server._local_provider._tools:
-            tool: Tool = await self._server.get_tool(key)
+        if Tool.make_key(name) in self._server._local_provider._components:
+            tool: Tool = await self._server.get_tool(name)
             tool.disable()
             return tool
 
         # 2. Check mounted servers via FastMCPProvider/TransformingProvider
         for provider in self._server._providers:
-            result = _get_mounted_server_and_key(provider, key, "tool")
+            result = _get_mounted_server_and_key(provider, name, "tool")
             if result is not None:
                 server, unprefixed = result
                 mounted_service = ComponentService(server)
                 tool = await mounted_service._disable_tool(unprefixed)
                 return tool
-        raise NotFoundError(f"Unknown tool: {key}")
+        raise NotFoundError(f"Unknown tool: {name}")
 
-    async def _enable_resource(self, key: str) -> Resource | ResourceTemplate:
+    async def _enable_resource(self, uri: str) -> Resource | ResourceTemplate:
         """Handle 'enableResource' requests.
 
         Args:
-            key: The key of the resource to enable
+            uri: The URI of the resource to enable
 
         Returns:
             The resource that was enabled
         """
-        logger.debug("Enabling resource: %s", key)
+        logger.debug("Enabling resource: %s", uri)
 
-        # 1. Check local resources first. The server will have already applied its filter.
-        if key in self._server._local_provider._resources:
-            resource: Resource = await self._server.get_resource(key)
-            resource.enable()
-            return resource
-        if key in self._server._local_provider._templates:
-            template: ResourceTemplate = await self._server.get_resource_template(key)
-            template.enable()
-            return template
+        # 1. Check local components first (try resource, then template)
+        component = self._server._local_provider._get_component(
+            Resource.make_key(uri)
+        ) or self._server._local_provider._get_component(ResourceTemplate.make_key(uri))
+        if component is not None:
+            component.enable()
+            return component  # type: ignore[return-value]
 
         # 2. Check mounted servers via FastMCPProvider/TransformingProvider
         for provider in self._server._providers:
-            result = _get_mounted_server_and_key(provider, key, "resource")
+            result = _get_mounted_server_and_key(provider, uri, "resource")
             if result is not None:
                 server, unprefixed = result
                 mounted_service = ComponentService(server)
@@ -143,32 +141,30 @@ class ComponentService:
                     Resource | ResourceTemplate
                 ) = await mounted_service._enable_resource(unprefixed)
                 return mounted_resource
-        raise NotFoundError(f"Unknown resource: {key}")
+        raise NotFoundError(f"Unknown resource: {uri}")
 
-    async def _disable_resource(self, key: str) -> Resource | ResourceTemplate:
+    async def _disable_resource(self, uri: str) -> Resource | ResourceTemplate:
         """Handle 'disableResource' requests.
 
         Args:
-            key: The key of the resource to disable
+            uri: The URI of the resource to disable
 
         Returns:
             The resource that was disabled
         """
-        logger.debug("Disable resource: %s", key)
+        logger.debug("Disable resource: %s", uri)
 
-        # 1. Check local resources first. The server will have already applied its filter.
-        if key in self._server._local_provider._resources:
-            resource: Resource = await self._server.get_resource(key)
-            resource.disable()
-            return resource
-        if key in self._server._local_provider._templates:
-            template: ResourceTemplate = await self._server.get_resource_template(key)
-            template.disable()
-            return template
+        # 1. Check local components first (try resource, then template)
+        component = self._server._local_provider._get_component(
+            Resource.make_key(uri)
+        ) or self._server._local_provider._get_component(ResourceTemplate.make_key(uri))
+        if component is not None:
+            component.disable()
+            return component  # type: ignore[return-value]
 
         # 2. Check mounted servers via FastMCPProvider/TransformingProvider
         for provider in self._server._providers:
-            result = _get_mounted_server_and_key(provider, key, "resource")
+            result = _get_mounted_server_and_key(provider, uri, "resource")
             if result is not None:
                 server, unprefixed = result
                 mounted_service = ComponentService(server)
@@ -176,7 +172,7 @@ class ComponentService:
                     Resource | ResourceTemplate
                 ) = await mounted_service._disable_resource(unprefixed)
                 return mounted_resource
-        raise NotFoundError(f"Unknown resource: {key}")
+        raise NotFoundError(f"Unknown resource: {uri}")
 
     async def _enable_prompt(self, key: str) -> Prompt:
         """Handle 'enablePrompt' requests.
@@ -190,7 +186,7 @@ class ComponentService:
         logger.debug("Enabling prompt: %s", key)
 
         # 1. Check local prompts first. The server will have already applied its filter.
-        if key in self._server._local_provider._prompts:
+        if Prompt.make_key(key) in self._server._local_provider._components:
             prompt: Prompt = await self._server.get_prompt(key)
             prompt.enable()
             return prompt
@@ -216,7 +212,7 @@ class ComponentService:
         """
 
         # 1. Check local prompts first. The server will have already applied its filter.
-        if key in self._server._local_provider._prompts:
+        if Prompt.make_key(key) in self._server._local_provider._components:
             prompt: Prompt = await self._server.get_prompt(key)
             prompt.disable()
             return prompt

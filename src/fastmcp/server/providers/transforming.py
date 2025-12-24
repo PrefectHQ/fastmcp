@@ -14,14 +14,12 @@ from typing import TYPE_CHECKING
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.providers.base import Provider, TaskComponents
+from fastmcp.server.providers.base import Provider
 from fastmcp.tools.tool import Tool
+from fastmcp.utilities.components import FastMCPComponent
 
 if TYPE_CHECKING:
-    from fastmcp.prompts.prompt import FunctionPrompt
-    from fastmcp.resources.resource import FunctionResource
-    from fastmcp.resources.template import FunctionResourceTemplate
-    from fastmcp.tools.tool import FunctionTool
+    pass
 
 
 # Pattern for matching URIs: protocol://path
@@ -262,49 +260,41 @@ class TransformingProvider(Provider):
     # Task registration
     # -------------------------------------------------------------------------
 
-    async def get_tasks(self) -> TaskComponents:
+    async def get_tasks(self) -> Sequence[FastMCPComponent]:
         """Get tasks with transformations applied to all components."""
+        transformed: list[FastMCPComponent] = []
 
-        tasks = await self._wrapped.get_tasks()
+        for component in await self._wrapped.get_tasks():
+            if isinstance(component, Tool):
+                transformed.append(
+                    component.model_copy(
+                        update={"name": self._transform_tool_name(component.name)}
+                    )
+                )
+            elif isinstance(component, ResourceTemplate):
+                transformed.append(
+                    component.model_copy(
+                        update={
+                            "uri_template": self._transform_resource_uri(
+                                component.uri_template
+                            )
+                        }
+                    )
+                )
+            elif isinstance(component, Resource):
+                transformed.append(
+                    component.model_copy(
+                        update={"uri": self._transform_resource_uri(str(component.uri))}
+                    )
+                )
+            elif isinstance(component, Prompt):
+                transformed.append(
+                    component.model_copy(
+                        update={"name": self._transform_prompt_name(component.name)}
+                    )
+                )
 
-        # Apply transforms to tools
-        transformed_tools: list[FunctionTool] = []
-        for t in tasks.tools:
-            transformed_tools.append(
-                t.model_copy(update={"name": self._transform_tool_name(t.name)})  # type: ignore[arg-type]
-            )
-
-        # Apply transforms to resources
-        transformed_resources: list[FunctionResource] = []
-        for r in tasks.resources:
-            transformed_resources.append(
-                r.model_copy(update={"uri": self._transform_resource_uri(str(r.uri))})  # type: ignore[arg-type]
-            )
-
-        # Apply transforms to templates
-        transformed_templates: list[FunctionResourceTemplate] = []
-        for t in tasks.templates:
-            transformed_templates.append(
-                t.model_copy(
-                    update={
-                        "uri_template": self._transform_resource_uri(t.uri_template)
-                    }
-                )  # type: ignore[arg-type]
-            )
-
-        # Apply transforms to prompts
-        transformed_prompts: list[FunctionPrompt] = []
-        for p in tasks.prompts:
-            transformed_prompts.append(
-                p.model_copy(update={"name": self._transform_prompt_name(p.name)})  # type: ignore[arg-type]
-            )
-
-        return TaskComponents(
-            tools=transformed_tools,
-            resources=transformed_resources,
-            templates=transformed_templates,
-            prompts=transformed_prompts,
-        )
+        return transformed
 
     # -------------------------------------------------------------------------
     # Lifecycle

@@ -461,15 +461,8 @@ class FastMCP(Generic[LifespanResultT]):
                 # Register task-enabled components from all providers (LocalProvider first)
                 for provider in self._providers:
                     try:
-                        tasks = await provider.get_tasks()
-                        for tool in tasks.tools:
-                            tool.register_with_docket(docket)
-                        for resource in tasks.resources:
-                            resource.register_with_docket(docket)
-                        for template in tasks.templates:
-                            template.register_with_docket(docket)
-                        for prompt in tasks.prompts:
-                            prompt.register_with_docket(docket)
+                        for component in await provider.get_tasks():
+                            component.register_with_docket(docket)
                     except Exception as e:
                         provider_name = getattr(
                             provider, "server", provider
@@ -707,18 +700,18 @@ class FastMCP(Generic[LifespanResultT]):
         self._providers.append(provider)
 
     async def get_tools(self) -> dict[str, Tool]:
-        """Get all tools (unfiltered), including from providers, indexed by key.
+        """Get all tools (unfiltered), including from providers, indexed by name.
 
         Iterates through all providers (LocalProvider first) and collects tools.
-        First provider wins for duplicate keys.
+        First provider wins for duplicate names.
         """
         all_tools: dict[str, Tool] = {}
         for provider in self._providers:
             try:
                 provider_tools = await provider.list_tools()
                 for tool in provider_tools:
-                    if tool.key not in all_tools:
-                        all_tools[tool.key] = tool
+                    if tool.name not in all_tools:
+                        all_tools[tool.name] = tool
             except Exception as e:
                 provider_name = getattr(provider, "server", provider).__class__.__name__
                 logger.warning(
@@ -729,21 +722,21 @@ class FastMCP(Generic[LifespanResultT]):
                 continue
         return all_tools
 
-    async def get_tool(self, key: str) -> Tool:
-        """Get a tool by key.
+    async def get_tool(self, name: str) -> Tool:
+        """Get a tool by name.
 
         Iterates through all providers (LocalProvider first) to find the tool.
         First provider wins.
         """
         for provider in self._providers:
             try:
-                tool = await provider.get_tool(key)
+                tool = await provider.get_tool(name)
                 if tool is not None:
                     return tool
             except NotFoundError:
                 continue
 
-        raise NotFoundError(f"Unknown tool: {key}")
+        raise NotFoundError(f"Unknown tool: {name}")
 
     async def _get_resource_or_template_or_none(
         self, uri: str
@@ -777,18 +770,19 @@ class FastMCP(Generic[LifespanResultT]):
         return None
 
     async def get_resources(self) -> dict[str, Resource]:
-        """Get all resources (unfiltered), including from providers, indexed by key.
+        """Get all resources (unfiltered), including from providers, indexed by URI.
 
         Iterates through all providers (LocalProvider first) and collects resources.
-        First provider wins for duplicate keys.
+        First provider wins for duplicate URIs.
         """
         all_resources: dict[str, Resource] = {}
         for provider in self._providers:
             try:
                 provider_resources = await provider.list_resources()
                 for resource in provider_resources:
-                    if resource.key not in all_resources:
-                        all_resources[resource.key] = resource
+                    uri = str(resource.uri)
+                    if uri not in all_resources:
+                        all_resources[uri] = resource
             except Exception as e:
                 provider_name = getattr(provider, "server", provider).__class__.__name__
                 logger.warning(
@@ -799,35 +793,35 @@ class FastMCP(Generic[LifespanResultT]):
                 continue
         return all_resources
 
-    async def get_resource(self, key: str) -> Resource:
-        """Get a resource by key.
+    async def get_resource(self, uri: str) -> Resource:
+        """Get a resource by URI.
 
         Iterates through all providers (LocalProvider first) to find the resource.
         First provider wins.
         """
         for provider in self._providers:
             try:
-                resource = await provider.get_resource(key)
+                resource = await provider.get_resource(uri)
                 if resource is not None:
                     return resource
             except NotFoundError:
                 continue
 
-        raise NotFoundError(f"Unknown resource: {key}")
+        raise NotFoundError(f"Unknown resource: {uri}")
 
     async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
-        """Get all resource templates (unfiltered), including from providers, indexed by key.
+        """Get all resource templates (unfiltered), including from providers, indexed by uri_template.
 
         Iterates through all providers (LocalProvider first) and collects templates.
-        First provider wins for duplicate keys.
+        First provider wins for duplicate uri_templates.
         """
         all_templates: dict[str, ResourceTemplate] = {}
         for provider in self._providers:
             try:
                 provider_templates = await provider.list_resource_templates()
                 for template in provider_templates:
-                    if template.key not in all_templates:
-                        all_templates[template.key] = template
+                    if template.uri_template not in all_templates:
+                        all_templates[template.uri_template] = template
             except Exception as e:
                 provider_name = getattr(provider, "server", provider).__class__.__name__
                 logger.warning(
@@ -838,35 +832,35 @@ class FastMCP(Generic[LifespanResultT]):
                 continue
         return all_templates
 
-    async def get_resource_template(self, key: str) -> ResourceTemplate:
-        """Get a registered resource template by key.
+    async def get_resource_template(self, uri: str) -> ResourceTemplate:
+        """Get a resource template that matches the given URI.
 
         Iterates through all providers (LocalProvider first) to find the template.
         First provider wins.
         """
         for provider in self._providers:
             try:
-                template = await provider.get_resource_template(key)
+                template = await provider.get_resource_template(uri)
                 if template is not None:
                     return template
             except NotFoundError:
                 continue
 
-        raise NotFoundError(f"Unknown resource template: {key}")
+        raise NotFoundError(f"Unknown resource template: {uri}")
 
     async def get_prompts(self) -> dict[str, Prompt]:
-        """Get all prompts (unfiltered), including from providers, indexed by key.
+        """Get all prompts (unfiltered), including from providers, indexed by name.
 
         Iterates through all providers (LocalProvider first) and collects prompts.
-        First provider wins for duplicate keys.
+        First provider wins for duplicate names.
         """
         all_prompts: dict[str, Prompt] = {}
         for provider in self._providers:
             try:
                 provider_prompts = await provider.list_prompts()
                 for prompt in provider_prompts:
-                    if prompt.key not in all_prompts:
-                        all_prompts[prompt.key] = prompt
+                    if prompt.name not in all_prompts:
+                        all_prompts[prompt.name] = prompt
             except Exception as e:
                 provider_name = getattr(provider, "server", provider).__class__.__name__
                 logger.warning(
@@ -877,21 +871,48 @@ class FastMCP(Generic[LifespanResultT]):
                 continue
         return all_prompts
 
-    async def get_prompt(self, key: str) -> Prompt:
-        """Get a prompt by key.
+    async def get_prompt(self, name: str) -> Prompt:
+        """Get a prompt by name.
 
         Iterates through all providers (LocalProvider first) to find the prompt.
         First provider wins.
         """
         for provider in self._providers:
             try:
-                prompt = await provider.get_prompt(key)
+                prompt = await provider.get_prompt(name)
                 if prompt is not None:
                     return prompt
             except NotFoundError:
                 continue
 
-        raise NotFoundError(f"Unknown prompt: {key}")
+        raise NotFoundError(f"Unknown prompt: {name}")
+
+    async def get_component(
+        self, key: str
+    ) -> Tool | Resource | ResourceTemplate | Prompt:
+        """Get a component by its prefixed key.
+
+        Iterates through all providers (LocalProvider first) to find the component.
+        First provider wins.
+
+        Args:
+            key: The prefixed key (e.g., "tool:name", "resource:uri", "template:uri").
+
+        Returns:
+            The component if found.
+
+        Raises:
+            NotFoundError: If no component is found with the given key.
+        """
+        for provider in self._providers:
+            try:
+                component = await provider.get_component(key)
+                if component is not None:
+                    return component
+            except NotFoundError:
+                continue
+
+        raise NotFoundError(f"Unknown component: {key}")
 
     def custom_route(
         self,
@@ -965,7 +986,7 @@ class FastMCP(Generic[LifespanResultT]):
             tools = await self._list_tools_middleware()
             return [
                 tool.to_mcp_tool(
-                    name=tool.key,
+                    name=tool.name,
                     include_fastmcp_meta=self.include_fastmcp_meta,
                 )
                 for tool in tools
@@ -1030,7 +1051,7 @@ class FastMCP(Generic[LifespanResultT]):
             resources = await self._list_resources_middleware()
             return [
                 resource.to_mcp_resource(
-                    uri=resource.key,
+                    uri=str(resource.uri),
                     include_fastmcp_meta=self.include_fastmcp_meta,
                 )
                 for resource in resources
@@ -1095,7 +1116,7 @@ class FastMCP(Generic[LifespanResultT]):
             templates = await self._list_resource_templates_middleware()
             return [
                 template.to_mcp_template(
-                    uriTemplate=template.key,
+                    uriTemplate=template.uri_template,
                     include_fastmcp_meta=self.include_fastmcp_meta,
                 )
                 for template in templates
@@ -1161,7 +1182,7 @@ class FastMCP(Generic[LifespanResultT]):
             prompts = await self._list_prompts_middleware()
             return [
                 prompt.to_mcp_prompt(
-                    name=prompt.key,
+                    name=prompt.name,
                     include_fastmcp_meta=self.include_fastmcp_meta,
                 )
                 for prompt in prompts
@@ -1257,7 +1278,7 @@ class FastMCP(Generic[LifespanResultT]):
 
                 # Set contextvars so tool._run() can access them
                 task_token = _task_metadata.set(task_meta_dict)
-                key_token = _docket_fn_key.set(key)
+                key_token = _docket_fn_key.set(Tool.make_key(key))
                 try:
                     # Middleware always runs - tool._run() handles backgrounding
                     result = await self._call_tool_middleware(key, arguments)
@@ -1301,7 +1322,7 @@ class FastMCP(Generic[LifespanResultT]):
             try:
                 # Set contextvars so Resource._read() can access them
                 task_token = _task_metadata.set(task_meta_dict)
-                key_token = _docket_fn_key.set(str(uri))
+                key_token = _docket_fn_key.set(Resource.make_key(str(uri)))
                 try:
                     # Middleware always runs - Resource._read() handles backgrounding
                     result = await self._read_resource_middleware(uri)
@@ -1353,7 +1374,7 @@ class FastMCP(Generic[LifespanResultT]):
             try:
                 # Set contextvars so Prompt._render() can access them
                 task_token = _task_metadata.set(task_meta_dict)
-                key_token = _docket_fn_key.set(name)
+                key_token = _docket_fn_key.set(Prompt.make_key(name))
                 try:
                     # Middleware always runs - Prompt._render() handles backgrounding
                     result = await self._get_prompt_content_middleware(name, arguments)

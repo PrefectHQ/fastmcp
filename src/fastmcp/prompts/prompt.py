@@ -6,7 +6,7 @@ import inspect
 import json
 import warnings
 from collections.abc import Awaitable, Callable, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import pydantic_core
 
@@ -117,6 +117,8 @@ class PromptResult(FastMCPBaseModel):
 
 class Prompt(FastMCPComponent):
     """A prompt template that can be rendered with parameters."""
+
+    KEY_PREFIX: ClassVar[str] = "prompt"
 
     arguments: list[PromptArgument] | None = Field(
         default=None, description="Arguments that can be passed to the prompt"

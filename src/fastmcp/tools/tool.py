@@ -8,6 +8,7 @@ from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
+    ClassVar,
     Generic,
     TypeAlias,
     get_type_hints,
@@ -125,6 +126,8 @@ class ToolResult:
 
 class Tool(FastMCPComponent):
     """Internal tool registration info."""
+
+    KEY_PREFIX: ClassVar[str] = "tool"
 
     parameters: Annotated[
         dict[str, Any], Field(description="JSON schema for tool parameters")

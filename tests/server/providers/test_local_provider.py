@@ -35,8 +35,8 @@ class TestLocalProviderStorage:
         )
         provider.add_tool(tool)
 
-        assert "test_tool" in provider._tools
-        assert provider._tools["test_tool"] is tool
+        assert "tool:test_tool" in provider._components
+        assert provider._components["tool:test_tool"] is tool
 
     def test_add_multiple_tools(self):
         """Test adding multiple tools."""
@@ -55,8 +55,8 @@ class TestLocalProviderStorage:
         provider.add_tool(tool1)
         provider.add_tool(tool2)
 
-        assert "tool1" in provider._tools
-        assert "tool2" in provider._tools
+        assert "tool:tool1" in provider._components
+        assert "tool:tool2" in provider._components
 
     def test_remove_tool(self):
         """Test removing a tool from LocalProvider."""
@@ -70,7 +70,7 @@ class TestLocalProviderStorage:
         provider.add_tool(tool)
         provider.remove_tool("test_tool")
 
-        assert "test_tool" not in provider._tools
+        assert "tool:test_tool" not in provider._components
 
     def test_remove_nonexistent_tool_raises(self):
         """Test that removing a nonexistent tool raises KeyError."""
@@ -87,7 +87,7 @@ class TestLocalProviderStorage:
         def test_resource() -> str:
             return "content"
 
-        assert "resource://test" in provider._resources
+        assert "resource:resource://test" in provider._components
 
     def test_remove_resource(self):
         """Test removing a resource from LocalProvider."""
@@ -99,7 +99,7 @@ class TestLocalProviderStorage:
 
         provider.remove_resource("resource://test")
 
-        assert "resource://test" not in provider._resources
+        assert "resource:resource://test" not in provider._components
 
     def test_add_template(self):
         """Test adding a resource template to LocalProvider."""
@@ -109,7 +109,7 @@ class TestLocalProviderStorage:
         def template_fn(id: str) -> str:
             return f"Resource {id}"
 
-        assert "resource://{id}" in provider._templates
+        assert "template:resource://{id}" in provider._components
 
     def test_remove_template(self):
         """Test removing a resource template from LocalProvider."""
@@ -121,7 +121,7 @@ class TestLocalProviderStorage:
 
         provider.remove_template("resource://{id}")
 
-        assert "resource://{id}" not in provider._templates
+        assert "template:resource://{id}" not in provider._components
 
     def test_add_prompt(self):
         """Test adding a prompt to LocalProvider."""
@@ -133,7 +133,7 @@ class TestLocalProviderStorage:
         )
         provider.add_prompt(prompt)
 
-        assert "test_prompt" in provider._prompts
+        assert "prompt:test_prompt" in provider._components
 
     def test_remove_prompt(self):
         """Test removing a prompt from LocalProvider."""
@@ -146,7 +146,7 @@ class TestLocalProviderStorage:
         provider.add_prompt(prompt)
         provider.remove_prompt("test_prompt")
 
-        assert "test_prompt" not in provider._prompts
+        assert "prompt:test_prompt" not in provider._components
 
 
 class TestLocalProviderInterface:
@@ -304,8 +304,8 @@ class TestLocalProviderDecorators:
         def my_tool(x: int) -> int:
             return x * 2
 
-        assert "my_tool" in provider._tools
-        assert provider._tools["my_tool"].name == "my_tool"
+        assert "tool:my_tool" in provider._components
+        assert provider._components["tool:my_tool"].name == "my_tool"
 
     def test_tool_decorator_with_parens(self):
         """Test @provider.tool() with empty parentheses."""
@@ -315,7 +315,7 @@ class TestLocalProviderDecorators:
         def my_tool(x: int) -> int:
             return x * 2
 
-        assert "my_tool" in provider._tools
+        assert "tool:my_tool" in provider._components
 
     def test_tool_decorator_with_name_kwarg(self):
         """Test @provider.tool(name='custom')."""
@@ -325,8 +325,8 @@ class TestLocalProviderDecorators:
         def my_tool(x: int) -> int:
             return x * 2
 
-        assert "custom_name" in provider._tools
-        assert "my_tool" not in provider._tools
+        assert "tool:custom_name" in provider._components
+        assert "tool:my_tool" not in provider._components
 
     def test_tool_decorator_with_description(self):
         """Test @provider.tool(description='...')."""
@@ -336,7 +336,7 @@ class TestLocalProviderDecorators:
         def my_tool(x: int) -> int:
             return x * 2
 
-        assert provider._tools["my_tool"].description == "Custom description"
+        assert provider._components["tool:my_tool"].description == "Custom description"
 
     def test_tool_direct_call(self):
         """Test provider.tool(fn, name='...')."""
@@ -347,7 +347,7 @@ class TestLocalProviderDecorators:
 
         provider.tool(my_tool, name="direct_tool")
 
-        assert "direct_tool" in provider._tools
+        assert "tool:direct_tool" in provider._components
 
     async def test_tool_decorator_execution(self):
         """Test that decorated tools execute correctly."""
@@ -371,7 +371,7 @@ class TestLocalProviderDecorators:
         def my_resource() -> str:
             return "test content"
 
-        assert "resource://test" in provider._resources
+        assert "resource:resource://test" in provider._components
 
     def test_resource_decorator_with_name(self):
         """Test @provider.resource with custom name."""
@@ -381,7 +381,7 @@ class TestLocalProviderDecorators:
         def my_resource() -> str:
             return "test content"
 
-        assert provider._resources["resource://test"].name == "custom_name"
+        assert provider._components["resource:resource://test"].name == "custom_name"
 
     async def test_resource_decorator_execution(self):
         """Test that decorated resources execute correctly."""
@@ -405,7 +405,7 @@ class TestLocalProviderDecorators:
         def my_prompt() -> str:
             return "A prompt"
 
-        assert "my_prompt" in provider._prompts
+        assert "prompt:my_prompt" in provider._components
 
     def test_prompt_decorator_with_parens(self):
         """Test @provider.prompt() with empty parentheses."""
@@ -415,7 +415,7 @@ class TestLocalProviderDecorators:
         def my_prompt() -> str:
             return "A prompt"
 
-        assert "my_prompt" in provider._prompts
+        assert "prompt:my_prompt" in provider._components
 
     def test_prompt_decorator_with_name(self):
         """Test @provider.prompt(name='custom')."""
@@ -425,8 +425,8 @@ class TestLocalProviderDecorators:
         def my_prompt() -> str:
             return "A prompt"
 
-        assert "custom_prompt" in provider._prompts
-        assert "my_prompt" not in provider._prompts
+        assert "prompt:custom_prompt" in provider._components
+        assert "prompt:my_prompt" not in provider._components
 
 
 class TestLocalProviderToolTransformations:
@@ -510,8 +510,8 @@ class TestLocalProviderTaskRegistration:
             return x
 
         tasks = await provider.get_tasks()
-        assert len(tasks.tools) == 1
-        assert tasks.tools[0].name == "background_tool"
+        assert len(tasks) == 1
+        assert tasks[0].name == "background_tool"
 
     async def test_get_tasks_filters_forbidden_tools(self):
         """Test that get_tasks excludes tools with forbidden task mode."""
@@ -522,7 +522,7 @@ class TestLocalProviderTaskRegistration:
             return x
 
         tasks = await provider.get_tasks()
-        assert len(tasks.tools) == 0
+        assert len(tasks) == 0
 
     async def test_get_tasks_includes_custom_tool_subclasses(self):
         """Test that custom Tool subclasses are included in get_tasks."""
@@ -538,8 +538,8 @@ class TestLocalProviderTaskRegistration:
         provider.add_tool(CustomTool(name="custom", description="Custom tool"))
 
         tasks = await provider.get_tasks()
-        assert len(tasks.tools) == 1
-        assert tasks.tools[0].name == "custom"
+        assert len(tasks) == 1
+        assert tasks[0].name == "custom"
 
 
 class TestLocalProviderStandaloneUsage:

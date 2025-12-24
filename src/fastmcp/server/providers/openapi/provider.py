@@ -11,7 +11,7 @@ from jsonschema_path import SchemaPath
 
 from fastmcp.prompts import Prompt
 from fastmcp.resources import Resource, ResourceTemplate
-from fastmcp.server.providers.base import Provider, TaskComponents
+from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.openapi.components import (
     OpenAPIResource,
     OpenAPIResourceTemplate,
@@ -27,6 +27,7 @@ from fastmcp.server.providers.openapi.routing import (
     _determine_route_type,
 )
 from fastmcp.tools.tool import Tool
+from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import (
     HTTPRoute,
@@ -378,6 +379,6 @@ class OpenAPIProvider(Provider):
         """Return empty list - OpenAPI doesn't create prompts."""
         return []
 
-    async def get_tasks(self) -> TaskComponents:
-        """Return empty TaskComponents - OpenAPI components don't support tasks."""
-        return TaskComponents()
+    async def get_tasks(self) -> Sequence[FastMCPComponent]:
+        """Return empty list - OpenAPI components don't support tasks."""
+        return []

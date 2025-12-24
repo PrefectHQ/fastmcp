@@ -30,27 +30,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from typing import Literal
 
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.tools.tool import Tool
-
-
-@dataclass
-class TaskComponents:
-    """Collection of components eligible for background task execution.
-
-    Used by get_tasks() to return components for Docket registration.
-    Components must implement register_with_docket() and add_to_docket().
-    """
-
-    tools: Sequence[Tool] = ()
-    resources: Sequence[Resource] = ()
-    templates: Sequence[ResourceTemplate] = ()
-    prompts: Sequence[Prompt] = ()
+from fastmcp.utilities.components import FastMCPComponent
 
 
 class Provider:
@@ -239,11 +225,37 @@ class Provider:
         prompts = await self.list_prompts()
         return next((p for p in prompts if p.name == name), None)
 
+    async def get_component(
+        self, key: str
+    ) -> Tool | Resource | ResourceTemplate | Prompt | None:
+        """Get a component by its prefixed key.
+
+        Args:
+            key: The prefixed key (e.g., "tool:name", "resource:uri", "template:uri").
+
+        Returns:
+            The component if found, or None to continue searching other providers.
+        """
+        # Default implementation: iterate through all components and match by key
+        for tool in await self.list_tools():
+            if tool.key == key:
+                return tool
+        for resource in await self.list_resources():
+            if resource.key == key:
+                return resource
+        for template in await self.list_resource_templates():
+            if template.key == key:
+                return template
+        for prompt in await self.list_prompts():
+            if prompt.key == key:
+                return prompt
+        return None
+
     # -------------------------------------------------------------------------
     # Task registration
     # -------------------------------------------------------------------------
 
-    async def get_tasks(self) -> TaskComponents:
+    async def get_tasks(self) -> Sequence[FastMCPComponent]:
         """Return components that should be registered as background tasks.
 
         Override to customize which components are task-eligible.
@@ -257,34 +269,28 @@ class Provider:
         from fastmcp.resources.template import FunctionResourceTemplate
         from fastmcp.tools.tool import FunctionTool
 
-        all_tools = await self.list_tools()
-        all_resources = await self.list_resources()
-        all_templates = await self.list_resource_templates()
-        all_prompts = await self.list_prompts()
+        components: list[FastMCPComponent] = []
 
-        return TaskComponents(
-            tools=[
-                t
-                for t in all_tools
-                if isinstance(t, FunctionTool) and t.task_config.supports_tasks()
-            ],
-            resources=[
-                r
-                for r in all_resources
-                if isinstance(r, FunctionResource) and r.task_config.supports_tasks()
-            ],
-            templates=[
-                t
-                for t in all_templates
-                if isinstance(t, FunctionResourceTemplate)
+        for t in await self.list_tools():
+            if isinstance(t, FunctionTool) and t.task_config.supports_tasks():
+                components.append(t)
+
+        for r in await self.list_resources():
+            if isinstance(r, FunctionResource) and r.task_config.supports_tasks():
+                components.append(r)
+
+        for t in await self.list_resource_templates():
+            if (
+                isinstance(t, FunctionResourceTemplate)
                 and t.task_config.supports_tasks()
-            ],
-            prompts=[
-                p
-                for p in all_prompts
-                if isinstance(p, FunctionPrompt) and p.task_config.supports_tasks()
-            ],
-        )
+            ):
+                components.append(t)
+
+        for p in await self.list_prompts():
+            if isinstance(p, FunctionPrompt) and p.task_config.supports_tasks():
+                components.append(p)
+
+        return components
 
     # -------------------------------------------------------------------------
     # Lifecycle methods

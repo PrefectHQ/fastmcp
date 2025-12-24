@@ -8,6 +8,29 @@ tag: NEW
 
 This guide provides migration instructions for breaking changes and major updates when upgrading between FastMCP versions.
 
+## v3.0.0
+
+### Component Lookup Method Parameter Names
+
+The server lookup methods now use semantic parameter names instead of generic `key`:
+
+- `FastMCP.get_tool(name=...)` (was `key`)
+- `FastMCP.get_resource(uri=...)` (was `key`)
+- `FastMCP.get_resource_template(uri=...)` (was `key`)
+- `FastMCP.get_prompt(name=...)` (was `key`)
+
+If you were passing arguments positionally, no change is needed. If you were using keyword arguments:
+
+<CodeGroup>
+```python Before
+tool = await mcp.get_tool(key="my_tool")
+```
+
+```python After
+tool = await mcp.get_tool(name="my_tool")
+```
+</CodeGroup>
+
 ## v2.14.0
 
 ### OpenAPI Parser Promotion

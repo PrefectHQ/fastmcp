@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import re
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import parse_qs, unquote
 
 import mcp.types
@@ -96,6 +96,8 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
 
 class ResourceTemplate(FastMCPComponent):
     """A template for dynamically creating resources."""
+
+    KEY_PREFIX: ClassVar[str] = "template"
 
     uri_template: str = Field(
         description="URI template with parameters (e.g. weather://{city}/current)"
@@ -265,8 +267,8 @@ class ResourceTemplate(FastMCPComponent):
 
     @property
     def key(self) -> str:
-        """The lookup key for this template. Returns uri_template."""
-        return self.uri_template
+        """The globally unique lookup key for this template."""
+        return self.make_key(self.uri_template)
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this template with docket for background execution."""

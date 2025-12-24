@@ -39,7 +39,7 @@ from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.resources.resource import ResourceContent
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_context
-from fastmcp.server.providers.base import Provider, TaskComponents
+from fastmcp.server.providers.base import Provider
 from fastmcp.server.server import FastMCP
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.tool import Tool, ToolResult
@@ -47,7 +47,7 @@ from fastmcp.tools.tool_transform import (
     ToolTransformConfig,
     apply_transformations_to_tools,
 )
-from fastmcp.utilities.components import MirroredComponent
+from fastmcp.utilities.components import FastMCPComponent, MirroredComponent
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -541,14 +541,14 @@ class ProxyProvider(Provider):
     # Task methods
     # -------------------------------------------------------------------------
 
-    async def get_tasks(self) -> TaskComponents:
-        """Return empty TaskComponents since proxy components don't support tasks.
+    async def get_tasks(self) -> Sequence[FastMCPComponent]:
+        """Return empty list since proxy components don't support tasks.
 
         Override the base implementation to avoid calling list_tools() during
         server lifespan initialization, which would open the client before any
         context is set. All Proxy* components have task_config.mode="forbidden".
         """
-        return TaskComponents()
+        return []
 
     # lifespan() uses default implementation (empty context manager)
     # because client cleanup is handled per-request

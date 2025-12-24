@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Annotated, Any, TypedDict
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, TypedDict
 
 from mcp.types import Icon
 from pydantic import BeforeValidator, Field, PrivateAttr
@@ -34,6 +34,22 @@ def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
 class FastMCPComponent(FastMCPBaseModel):
     """Base class for FastMCP tools, prompts, resources, and resource templates."""
 
+    KEY_PREFIX: ClassVar[str] = ""
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        # Warn if a subclass doesn't define KEY_PREFIX (inherited or its own)
+        # MirroredComponent is a mixin that will be removed; skip it
+        if not cls.KEY_PREFIX and cls.__name__ != "MirroredComponent":
+            import warnings
+
+            warnings.warn(
+                f"{cls.__name__} does not define KEY_PREFIX. "
+                f"Component keys will not be type-prefixed, which may cause collisions.",
+                UserWarning,
+                stacklevel=2,
+            )
+
     name: str = Field(
         description="The name of the component.",
     )
@@ -65,16 +81,30 @@ class FastMCPComponent(FastMCPBaseModel):
         Field(description="Background task execution configuration (SEP-1686)."),
     ] = Field(default_factory=lambda: TaskConfig(mode="forbidden"))
 
+    @classmethod
+    def make_key(cls, identifier: str) -> str:
+        """Construct the lookup key for this component type.
+
+        Args:
+            identifier: The raw identifier (name for tools/prompts, uri for resources)
+
+        Returns:
+            A prefixed key like "tool:name" or "resource:uri"
+        """
+        if cls.KEY_PREFIX:
+            return f"{cls.KEY_PREFIX}:{identifier}"
+        return identifier
+
     @property
     def key(self) -> str:
-        """The lookup key for this component. Returns name by default.
+        """The globally unique lookup key for this component.
 
-        Subclasses override this to return different identifiers:
-        - Tools/Prompts: name
-        - Resources: str(uri)
-        - Templates: uri_template
+        Format: "{key_prefix}:{identifier}" e.g. "tool:my_tool", "resource:file://x.txt"
+
+        Subclasses should override this to use their specific identifier.
+        Base implementation uses name.
         """
-        return self.name
+        return self.make_key(self.name)
 
     def get_meta(
         self, include_fastmcp_meta: bool | None = None

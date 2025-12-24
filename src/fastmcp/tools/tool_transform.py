@@ -927,17 +927,20 @@ def apply_transformations_to_tools(
 ) -> dict[str, Tool]:
     """Apply a list of transformations to a list of tools. Tools that do not have any transformations
     are left unchanged.
+
+    Note: tools dict is keyed by prefixed key (e.g., "tool:my_tool"),
+    but transformations are keyed by tool name (e.g., "my_tool").
     """
 
     transformed_tools: dict[str, Tool] = {}
 
-    for tool_name, tool in tools.items():
-        if transformation := transformations.get(tool_name):
-            transformed_tools[transformation.name or tool_name] = transformation.apply(
-                tool
-            )
+    for tool_key, tool in tools.items():
+        # Look up transformation by tool name, not prefixed key
+        if transformation := transformations.get(tool.name):
+            transformed = transformation.apply(tool)
+            transformed_tools[transformed.key] = transformed
             continue
 
-        transformed_tools[tool_name] = tool
+        transformed_tools[tool_key] = tool
 
     return transformed_tools

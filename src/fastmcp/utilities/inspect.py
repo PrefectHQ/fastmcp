@@ -119,7 +119,7 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
     # Extract detailed tool information
     tool_infos = []
     for tool in tools_list:
-        mcp_tool = tool.to_mcp_tool(name=tool.key)
+        mcp_tool = tool.to_mcp_tool(name=tool.name)
         tool_infos.append(
             ToolInfo(
                 key=tool.key,
@@ -165,7 +165,7 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
         resource_infos.append(
             ResourceInfo(
                 key=resource.key,
-                uri=resource.key,
+                uri=str(resource.uri),
                 name=resource.name,
                 description=resource.description,
                 mime_type=resource.mime_type,
@@ -188,7 +188,7 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
         template_infos.append(
             TemplateInfo(
                 key=template.key,
-                uri_template=template.key,
+                uri_template=template.uri_template,
                 name=template.name,
                 description=template.description,
                 mime_type=template.mime_type,

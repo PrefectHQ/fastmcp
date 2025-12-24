@@ -6,7 +6,7 @@ import base64
 import inspect
 import warnings
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar
 
 import mcp.types
 
@@ -136,6 +136,8 @@ class ResourceContent(pydantic.BaseModel):
 
 class Resource(FastMCPComponent):
     """Base class for all resources."""
+
+    KEY_PREFIX: ClassVar[str] = "resource"
 
     model_config = ConfigDict(validate_default=True)
 
@@ -300,8 +302,8 @@ class Resource(FastMCPComponent):
 
     @property
     def key(self) -> str:
-        """The lookup key for this resource. Returns str(uri)."""
-        return str(self.uri)
+        """The globally unique lookup key for this resource."""
+        return self.make_key(str(self.uri))
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this resource with docket for background execution."""
