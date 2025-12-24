@@ -119,13 +119,15 @@ async def nested_sse_server():
         ws="websockets-sansio",
     )
 
-    server_task = asyncio.create_task(uvicorn.Server(config).serve())
+    uvicorn_server = uvicorn.Server(config)
+    server_task = asyncio.create_task(uvicorn_server.serve())
     await asyncio.sleep(0.1)
 
     try:
         yield f"http://127.0.0.1:{port}/nest-outer/nest-inner/mcp/sse/"
     finally:
-        server_task.cancel()
+        # Graceful shutdown - required for uvicorn 0.39+ due to context isolation
+        uvicorn_server.should_exit = True
         try:
             await server_task
         except asyncio.CancelledError:

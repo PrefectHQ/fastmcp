@@ -11,7 +11,7 @@ import mcp.types
 from pydantic import AnyUrl
 
 from fastmcp import settings
-from fastmcp.exceptions import NotFoundError, ResourceError
+from fastmcp.exceptions import FastMCPError, NotFoundError, ResourceError
 from fastmcp.resources.resource import Resource, ResourceContent
 from fastmcp.resources.template import (
     ResourceTemplate,
@@ -269,8 +269,8 @@ class ResourceManager:
                         uri_str,
                         params=params,
                     )
-                # Pass through ResourceErrors as-is
-                except ResourceError as e:
+                # Pass through FastMCPErrors as-is
+                except FastMCPError as e:
                     logger.error(f"Error creating resource from template: {e}")
                     raise e
                 # Handle other exceptions
@@ -307,7 +307,7 @@ class ResourceManager:
             resource = await self.get_resource(uri_str)
             try:
                 return await resource._read()
-            except ResourceError:
+            except FastMCPError:
                 raise
             except Exception as e:
                 if self.mask_error_details:
@@ -320,7 +320,7 @@ class ResourceManager:
                 try:
                     resource = await template.create_resource(uri_str, params=params)
                     return await resource._read()
-                except ResourceError:
+                except FastMCPError:
                     raise
                 except Exception as e:
                     if self.mask_error_details:

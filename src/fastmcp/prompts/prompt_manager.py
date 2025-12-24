@@ -7,7 +7,7 @@ from typing import Any
 import mcp.types
 
 from fastmcp import settings
-from fastmcp.exceptions import NotFoundError, PromptError
+from fastmcp.exceptions import FastMCPError, NotFoundError, PromptError
 from fastmcp.prompts.prompt import (
     FunctionPrompt,
     Prompt,
@@ -121,7 +121,7 @@ class PromptManager:
         prompt = await self.get_prompt(name)
         try:
             return await prompt._render(arguments)
-        except PromptError:
+        except FastMCPError:
             raise
         except Exception as e:
             if self.mask_error_details:
