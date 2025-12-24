@@ -7,7 +7,7 @@ dependencies = [
     "python-dotenv>=1.1.0",
     "exceptiongroup>=1.2.2",
     "httpx>=0.28.1",
-    "mcp>=1.24.0",
+    "mcp>=1.24.0,<2.0",
     "openapi-pydantic>=0.5.1",
     "platformdirs>=4.0.0",
     "pydocket>=0.16.3",
@@ -187,4 +187,3 @@ reportConstantRedefinition = false
 
 [tool.codespell]
 ignore-words-list = "asend,shttp,te"
-

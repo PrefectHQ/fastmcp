@@ -142,7 +142,9 @@ class TrackingCalculator:
         return self.crazy_calls
 
     async def update_tool_list(self, context: Context):
-        await context.send_tool_list_changed()
+        import mcp.types
+
+        await context.send_notification(mcp.types.ToolListChangedNotification())
 
     def add_tools(self, fastmcp: FastMCP, prefix: str = ""):
         _ = fastmcp.add_tool(tool=Tool.from_function(fn=self.add, name=f"{prefix}add"))

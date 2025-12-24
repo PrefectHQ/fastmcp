@@ -5,13 +5,14 @@ import json
 import logging
 import weakref
 from collections.abc import Callable, Generator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import AsyncExitStack, contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from logging import Logger
 from typing import Any, Literal, cast, overload
 
 import anyio
+import mcp.types
 from mcp import LoggingLevel, ServerSession
 from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext
@@ -75,9 +76,6 @@ ResultT = TypeVar("ResultT", default=str)
 ToolChoiceOption = Literal["auto", "required", "none"]
 
 _current_context: ContextVar[Context | None] = ContextVar("context", default=None)  # type: ignore[assignment]
-
-
-_flush_lock = anyio.Lock()
 
 
 @dataclass
@@ -162,8 +160,10 @@ class Context:
     def __init__(self, fastmcp: FastMCP):
         self._fastmcp: weakref.ref[FastMCP] = weakref.ref(fastmcp)
         self._tokens: list[Token] = []
-        self._notification_queue: set[str] = set()  # Dedupe notifications
+        self._notification_queue: list[mcp.types.ServerNotificationType] = []
         self._state: dict[str, Any] = {}
+        self._exit_stack: AsyncExitStack | None = None
+        self._cancel_scope: anyio.CancelScope | None = None
 
     @property
     def fastmcp(self) -> FastMCP:
@@ -189,12 +189,23 @@ class Context:
 
         self._server_token = _current_server.set(weakref.ref(self.fastmcp))
 
+        # Start background notification flusher
+        self._exit_stack = AsyncExitStack()
+        await self._exit_stack.__aenter__()
+        tg = await self._exit_stack.enter_async_context(anyio.create_task_group())
+        self._cancel_scope = anyio.CancelScope()
+        tg.start_soon(self._periodic_flush)
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit the context manager and reset the most recent token."""
-        # Flush any remaining notifications before exiting
+        # Stop background flusher and do final flush
+        if self._cancel_scope is not None:
+            self._cancel_scope.cancel()
         await self._flush_notifications()
+        if self._exit_stack is not None:
+            await self._exit_stack.aclose()
 
         # Reset server token
         if hasattr(self, "_server_token"):
@@ -491,17 +502,32 @@ class Context:
         result = await self.session.list_roots()
         return result.roots
 
-    async def send_tool_list_changed(self) -> None:
-        """Send a tool list changed notification to the client."""
-        await self.session.send_tool_list_changed()
+    async def send_notification(
+        self, notification: mcp.types.ServerNotificationType
+    ) -> None:
+        """Send a notification to the client immediately.
 
-    async def send_resource_list_changed(self) -> None:
-        """Send a resource list changed notification to the client."""
-        await self.session.send_resource_list_changed()
+        Use this in async code when you want the notification sent right away.
+        For sync code, use send_notification_sync() which queues the notification
+        for the background flusher.
 
-    async def send_prompt_list_changed(self) -> None:
-        """Send a prompt list changed notification to the client."""
-        await self.session.send_prompt_list_changed()
+        Args:
+            notification: An MCP notification instance (e.g., ToolListChangedNotification())
+        """
+        await self.session.send_notification(mcp.types.ServerNotification(notification))
+
+    def send_notification_sync(
+        self, notification: mcp.types.ServerNotificationType
+    ) -> None:
+        """Queue a notification to be sent by the background flusher.
+
+        Use this in sync code when you can't await. The notification will be
+        sent within ~1 second by the background flusher.
+
+        Args:
+            notification: An MCP notification instance (e.g., ToolListChangedNotification())
+        """
+        self._notification_queue.append(notification)
 
     async def close_sse_stream(self) -> None:
         """Close the current response stream to trigger client reconnection.
@@ -1012,35 +1038,27 @@ class Context:
         """Get a value from the context state. Returns None if the key is not found."""
         return self._state.get(key)
 
-    def _queue_tool_list_changed(self) -> None:
-        """Queue a tool list changed notification."""
-        self._notification_queue.add("notifications/tools/list_changed")
-
-    def _queue_resource_list_changed(self) -> None:
-        """Queue a resource list changed notification."""
-        self._notification_queue.add("notifications/resources/list_changed")
-
-    def _queue_prompt_list_changed(self) -> None:
-        """Queue a prompt list changed notification."""
-        self._notification_queue.add("notifications/prompts/list_changed")
+    async def _periodic_flush(self) -> None:
+        """Background task that flushes the notification queue every second."""
+        with self._cancel_scope:  # type: ignore[union-attr]
+            while True:
+                await anyio.sleep(1)
+                await self._flush_notifications()
 
     async def _flush_notifications(self) -> None:
         """Send all queued notifications."""
-        async with _flush_lock:
-            if not self._notification_queue:
-                return
+        if not self._notification_queue:
+            return
 
+        for notification in self._notification_queue:
             try:
-                if "notifications/tools/list_changed" in self._notification_queue:
-                    await self.session.send_tool_list_changed()
-                if "notifications/resources/list_changed" in self._notification_queue:
-                    await self.session.send_resource_list_changed()
-                if "notifications/prompts/list_changed" in self._notification_queue:
-                    await self.session.send_prompt_list_changed()
-                self._notification_queue.clear()
+                await self.send_notification(notification)
             except Exception:
                 # Don't let notification failures break the request
-                pass
+                logger.debug(
+                    f"Failed to send notification: {notification}", exc_info=True
+                )
+        self._notification_queue.clear()
 
 
 async def _log_to_server_and_client(

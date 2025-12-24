@@ -1,5 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
+import anyio
 import mcp.types
 import pytest
 
@@ -15,6 +17,7 @@ class NotificationRecording:
 
     method: str
     notification: mcp.types.ServerNotification
+    timestamp: datetime = field(default_factory=datetime.now)
 
 
 class RecordingMessageHandler(MessageHandler):
@@ -26,7 +29,7 @@ class RecordingMessageHandler(MessageHandler):
         self.name = name
 
     async def on_notification(self, message: mcp.types.ServerNotification) -> None:
-        """Record all notifications."""
+        """Record all notifications with timestamp."""
         self.notifications.append(
             NotificationRecording(method=message.root.method, notification=message)
         )
@@ -443,4 +446,111 @@ class TestMessageHandlerGeneral:
             assert (
                 notification.notification.root.method
                 == "notifications/tools/list_changed"
+            )
+
+
+class TestNotificationAPI:
+    """Test the new unified notification API."""
+
+    async def test_send_notification_async(
+        self,
+        recording_message_handler: RecordingMessageHandler,
+    ):
+        """Test that send_notification sends immediately in async context."""
+        server = FastMCP(name="NotificationAPITestServer")
+
+        @server.tool
+        async def trigger_notification(ctx: Context) -> str:
+            """Send a notification using the async API."""
+            await ctx.send_notification(mcp.types.ToolListChangedNotification())
+            return "Notification sent"
+
+        async with Client(server, message_handler=recording_message_handler) as client:
+            recording_message_handler.reset()
+            await client.call_tool("trigger_notification", {})
+
+            recording_message_handler.assert_notification_sent(
+                "notifications/tools/list_changed", times=1
+            )
+
+    async def test_send_notification_sync(
+        self,
+        recording_message_handler: RecordingMessageHandler,
+    ):
+        """Test that send_notification_sync queues for background sending."""
+        server = FastMCP(name="NotificationAPITestServer")
+
+        @server.tool
+        def trigger_notification_sync(ctx: Context) -> str:
+            """Send a notification using the sync API."""
+            ctx.send_notification_sync(mcp.types.ToolListChangedNotification())
+            return "Notification queued"
+
+        async with Client(server, message_handler=recording_message_handler) as client:
+            recording_message_handler.reset()
+            await client.call_tool("trigger_notification_sync", {})
+
+            # Notification should have been sent by the background flusher or final flush
+            recording_message_handler.assert_notification_sent(
+                "notifications/tools/list_changed", times=1
+            )
+
+    async def test_send_notification_sync_background_flusher(
+        self,
+        recording_message_handler: RecordingMessageHandler,
+    ):
+        """Test that background flusher sends notifications within ~1 second."""
+        server = FastMCP(name="NotificationAPITestServer")
+
+        @server.tool
+        async def trigger_and_wait(ctx: Context) -> str:
+            """Queue a notification and wait, then return timestamp."""
+            ctx.send_notification_sync(mcp.types.ToolListChangedNotification())
+
+            # Wait 3 seconds - background flusher runs every 1 second
+            await anyio.sleep(3)
+
+            return datetime.now().isoformat()
+
+        async with Client(server, message_handler=recording_message_handler) as client:
+            recording_message_handler.reset()
+            result = await client.call_tool("trigger_and_wait", {})
+            tool_finished = datetime.fromisoformat(result.data)  # type: ignore[arg-type]
+
+            # Notification should have been received at least 1.5s before tool finished
+            # (proves background flusher sent it, not final flush)
+            notifications = recording_message_handler.get_notifications(
+                "notifications/tools/list_changed"
+            )
+            assert len(notifications) == 1
+            gap = tool_finished - notifications[0].timestamp
+            assert gap >= timedelta(seconds=1.5)
+
+    async def test_send_multiple_notifications(
+        self,
+        recording_message_handler: RecordingMessageHandler,
+    ):
+        """Test sending multiple different notification types."""
+        server = FastMCP(name="NotificationAPITestServer")
+
+        @server.tool
+        async def trigger_all_notifications(ctx: Context) -> str:
+            """Send all notification types."""
+            await ctx.send_notification(mcp.types.ToolListChangedNotification())
+            await ctx.send_notification(mcp.types.ResourceListChangedNotification())
+            await ctx.send_notification(mcp.types.PromptListChangedNotification())
+            return "All notifications sent"
+
+        async with Client(server, message_handler=recording_message_handler) as client:
+            recording_message_handler.reset()
+            await client.call_tool("trigger_all_notifications", {})
+
+            recording_message_handler.assert_notification_sent(
+                "notifications/tools/list_changed", times=1
+            )
+            recording_message_handler.assert_notification_sent(
+                "notifications/resources/list_changed", times=1
+            )
+            recording_message_handler.assert_notification_sent(
+                "notifications/prompts/list_changed", times=1
             )

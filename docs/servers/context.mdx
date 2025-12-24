@@ -261,19 +261,29 @@ This makes state management predictable and prevents unexpected side effects bet
 
 ### Change Notifications
 
-<VersionBadge version="2.9.1" />
+<VersionBadge version="3.0.0" />
 
-FastMCP automatically sends list change notifications when components (such as tools, resources, or prompts) are added, removed, enabled, or disabled. In rare cases where you need to manually trigger these notifications, you can use the context methods:
+FastMCP automatically sends list change notifications when components (such as tools, resources, or prompts) are added, removed, enabled, or disabled. In rare cases where you need to manually trigger these notifications, you can use the context's notification methods:
 
 ```python
+import mcp.types
+
 @mcp.tool
 async def custom_tool_management(ctx: Context) -> str:
     """Example of manual notification after custom tool changes."""
-    # After making custom changes to tools
-    await ctx.send_tool_list_changed()
-    await ctx.send_resource_list_changed()
-    await ctx.send_prompt_list_changed()
+    # In async code, send immediately
+    await ctx.send_notification(mcp.types.ToolListChangedNotification())
+    await ctx.send_notification(mcp.types.ResourceListChangedNotification())
+    await ctx.send_notification(mcp.types.PromptListChangedNotification())
     return "Notifications sent"
+
+
+@mcp.tool
+def sync_tool(ctx: Context) -> str:
+    """Example of notification from sync code."""
+    # In sync code, queue for background sending (~1 second delay)
+    ctx.send_notification_sync(mcp.types.ToolListChangedNotification())
+    return "Notification queued"
 ```
 
 These methods are primarily used internally by FastMCP's automatic notification system and most users will not need to invoke them directly.

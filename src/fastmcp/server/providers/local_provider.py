@@ -110,6 +110,21 @@ class LocalProvider(Provider):
         self._components: dict[str, FastMCPComponent] = {}
         self._tool_transformations: dict[str, ToolTransformConfig] = {}
 
+    def _send_list_changed_notification(self, component: FastMCPComponent) -> None:
+        """Send a list changed notification for the component type."""
+        from fastmcp.server.context import _current_context
+
+        context = _current_context.get()
+        if context is None:
+            return
+
+        if isinstance(component, Tool):
+            context.send_notification_sync(mcp.types.ToolListChangedNotification())
+        elif isinstance(component, (Resource, ResourceTemplate)):
+            context.send_notification_sync(mcp.types.ResourceListChangedNotification())
+        elif isinstance(component, Prompt):
+            context.send_notification_sync(mcp.types.PromptListChangedNotification())
+
     # =========================================================================
     # Storage methods
     # =========================================================================
@@ -134,15 +149,7 @@ class LocalProvider(Provider):
             # "replace" and "warn" fall through to add
 
         self._components[component.key] = component
-
-        # Notify based on component type
-        if isinstance(component, Tool):
-            self._visibility._send_notification("tools")
-        elif isinstance(component, (Resource, ResourceTemplate)):
-            self._visibility._send_notification("resources")
-        elif isinstance(component, Prompt):
-            self._visibility._send_notification("prompts")
-
+        self._send_list_changed_notification(component)
         return component
 
     def _remove_component(self, key: str) -> None:
@@ -159,14 +166,7 @@ class LocalProvider(Provider):
             raise KeyError(f"Component {key!r} not found")
 
         del self._components[key]
-
-        # Notify based on component type
-        if isinstance(component, Tool):
-            self._visibility._send_notification("tools")
-        elif isinstance(component, (Resource, ResourceTemplate)):
-            self._visibility._send_notification("resources")
-        elif isinstance(component, Prompt):
-            self._visibility._send_notification("prompts")
+        self._send_list_changed_notification(component)
 
     def _get_component(self, key: str) -> FastMCPComponent | None:
         """Get a component by its prefixed key.

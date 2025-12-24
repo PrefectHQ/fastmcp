@@ -8,10 +8,19 @@ and server levels.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
+
+import mcp.types
 
 if TYPE_CHECKING:
     from fastmcp.utilities.components import FastMCPComponent
+
+_KEY_PREFIX_TO_NOTIFICATION: dict[str, type[mcp.types.ServerNotificationType]] = {
+    "tool:": mcp.types.ToolListChangedNotification,
+    "prompt:": mcp.types.PromptListChangedNotification,
+    "resource:": mcp.types.ResourceListChangedNotification,
+    "template:": mcp.types.ResourceListChangedNotification,
+}
 
 
 class VisibilityFilter:
@@ -40,45 +49,30 @@ class VisibilityFilter:
         self._enabled_tags: set[str] = set()  # allowlist
         self._default_enabled: bool = True
 
-    def _send_notification(
-        self, notification_type: Literal["tools", "resources", "prompts"]
+    def _notify(
+        self, notifications: set[type[mcp.types.ServerNotificationType]]
     ) -> None:
-        """Send a list changed notification if we're in a request context.
-
-        This is a no-op if called outside a request context (e.g., during setup).
-        """
+        """Send notifications. No-op if called outside a request context."""
         from fastmcp.server.context import _current_context
 
         context = _current_context.get()
         if context is None:
-            return  # No context available
+            return
 
-        if notification_type == "tools":
-            context._queue_tool_list_changed()
-        elif notification_type == "resources":
-            context._queue_resource_list_changed()
-        elif notification_type == "prompts":
-            context._queue_prompt_list_changed()
+        for notification_cls in notifications:
+            context.send_notification_sync(notification_cls())
 
-    def _notify(self, component_types: set[str]) -> None:
-        """Send notifications for the given component types."""
-        for component_type in component_types:
-            self._send_notification(component_type)  # type: ignore[arg-type]
-
-    def _get_component_types_for_keys(self, keys: Sequence[str]) -> set[str]:
-        """Determine which component types are affected by the given keys."""
-        types: set[str] = set()
+    def _get_notifications_for_keys(
+        self, keys: Sequence[str]
+    ) -> set[type[mcp.types.ServerNotificationType]]:
+        """Get notification classes for the given component keys."""
+        notifications: set[type[mcp.types.ServerNotificationType]] = set()
         for key in keys:
-            if key.startswith("tool:"):
-                types.add("tools")
-            elif key.startswith("prompt:"):
-                types.add("prompts")
-            elif key.startswith(("resource:", "template:")):
-                types.add("resources")
-            else:
-                # Unknown prefix - assume all types could be affected
-                types.update({"tools", "prompts", "resources"})
-        return types
+            for prefix, notification_cls in _KEY_PREFIX_TO_NOTIFICATION.items():
+                if key.startswith(prefix):
+                    notifications.add(notification_cls)
+                    break
+        return notifications
 
     def disable(
         self,
@@ -92,22 +86,21 @@ class VisibilityFilter:
             keys: Component keys to hide (e.g., "tool:my_tool", "resource:file://x")
             tags: Tags to hide - any component with these tags will be hidden
         """
-        changed_types: set[str] = set()
+        notifications: set[type[mcp.types.ServerNotificationType]] = set()
 
         if keys:
             new_keys = set(keys) - self._disabled_keys
             if new_keys:
                 self._disabled_keys.update(new_keys)
-                changed_types.update(self._get_component_types_for_keys(list(new_keys)))
+                notifications.update(self._get_notifications_for_keys(list(new_keys)))
 
         if tags:
             new_tags = tags - self._disabled_tags
             if new_tags:
                 self._disabled_tags.update(new_tags)
-                # Tags can affect any component type
-                changed_types.update({"tools", "prompts", "resources"})
+                notifications.update(_KEY_PREFIX_TO_NOTIFICATION.values())
 
-        self._notify(changed_types)
+        self._notify(notifications)
 
     def enable(
         self,
@@ -125,7 +118,7 @@ class VisibilityFilter:
                 This sets default visibility to False, clears existing allowlists,
                 and adds the specified keys/tags to the allowlist.
         """
-        changed_types: set[str] = set()
+        notifications: set[type[mcp.types.ServerNotificationType]] = set()
 
         if only:
             # Allowlist mode: flip default, clear existing, add new
@@ -138,30 +131,30 @@ class VisibilityFilter:
 
             if keys:
                 self._enabled_keys.update(keys)
-                changed_types.update(self._get_component_types_for_keys(list(keys)))
+                notifications.update(self._get_notifications_for_keys(list(keys)))
             if tags:
                 self._enabled_tags.update(tags)
-                changed_types.update({"tools", "prompts", "resources"})
+                notifications.update(_KEY_PREFIX_TO_NOTIFICATION.values())
 
             # If we changed default or had previous allowlist, notify all
             if was_default_enabled or had_enabled:
-                changed_types.update({"tools", "prompts", "resources"})
+                notifications.update(_KEY_PREFIX_TO_NOTIFICATION.values())
         else:
             # Remove from blocklist
             if keys:
                 removed_keys = set(keys) & self._disabled_keys
                 if removed_keys:
                     self._disabled_keys -= removed_keys
-                    changed_types.update(
-                        self._get_component_types_for_keys(list(removed_keys))
+                    notifications.update(
+                        self._get_notifications_for_keys(list(removed_keys))
                     )
             if tags:
                 removed_tags = tags & self._disabled_tags
                 if removed_tags:
                     self._disabled_tags -= removed_tags
-                    changed_types.update({"tools", "prompts", "resources"})
+                    notifications.update(_KEY_PREFIX_TO_NOTIFICATION.values())
 
-        self._notify(changed_types)
+        self._notify(notifications)
 
     def reset(self) -> None:
         """Reset to default state (everything enabled, no filters)."""
@@ -180,7 +173,7 @@ class VisibilityFilter:
         self._default_enabled = True
 
         if had_filters:
-            self._notify({"tools", "prompts", "resources"})
+            self._notify(set(_KEY_PREFIX_TO_NOTIFICATION.values()))
 
     def is_enabled(self, component: FastMCPComponent) -> bool:
         """Check if component is enabled. Blocklist wins over allowlist."""
