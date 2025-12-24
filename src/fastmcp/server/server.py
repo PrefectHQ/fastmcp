@@ -574,7 +574,7 @@ class FastMCP(Generic[LifespanResultT]):
         """Run the FastMCP server. Note this is a synchronous function.
 
         Args:
-            transport: Transport protocol to use ("stdio", "sse", or "streamable-http")
+            transport: Transport protocol to use ("http", "stdio", "sse", or "streamable-http")
         """
 
         anyio.run(
