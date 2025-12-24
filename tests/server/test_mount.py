@@ -1515,15 +1515,20 @@ class TestComponentServicePrefixLess:
         # Initially the tool is enabled
         tools = await main_app.get_tools()
         assert "my_tool" in tools
-        assert tools["my_tool"].enabled
 
         # Disable and re-enable via ComponentService
         service = ComponentService(main_app)
         tool = await service._disable_tool("my_tool")
-        assert not tool.enabled
+        assert tool is not None
+        # Verify tool is now disabled
+        tools = await main_app.get_tools()
+        assert "my_tool" not in tools
 
         tool = await service._enable_tool("my_tool")
-        assert tool.enabled
+        assert tool is not None
+        # Verify tool is now enabled
+        tools = await main_app.get_tools()
+        assert "my_tool" in tools
 
     async def test_enable_resource_prefixless_mount(self):
         """Test enabling a resource on a prefix-less mounted server."""
@@ -1542,10 +1547,16 @@ class TestComponentServicePrefixLess:
         # Disable and re-enable via ComponentService
         service = ComponentService(main_app)
         resource = await service._disable_resource("data://test")
-        assert not resource.enabled
+        assert resource is not None
+        # Verify resource is now disabled
+        resources = await main_app.get_resources()
+        assert "data://test" not in resources
 
         resource = await service._enable_resource("data://test")
-        assert resource.enabled
+        assert resource is not None
+        # Verify resource is now enabled
+        resources = await main_app.get_resources()
+        assert "data://test" in resources
 
     async def test_enable_prompt_prefixless_mount(self):
         """Test enabling a prompt on a prefix-less mounted server."""
@@ -1564,7 +1575,13 @@ class TestComponentServicePrefixLess:
         # Disable and re-enable via ComponentService
         service = ComponentService(main_app)
         prompt = await service._disable_prompt("my_prompt")
-        assert not prompt.enabled
+        assert prompt is not None
+        # Verify prompt is now disabled
+        prompts = await main_app.get_prompts()
+        assert "my_prompt" not in prompts
 
         prompt = await service._enable_prompt("my_prompt")
-        assert prompt.enabled
+        assert prompt is not None
+        # Verify prompt is now enabled
+        prompts = await main_app.get_prompts()
+        assert "my_prompt" in prompts

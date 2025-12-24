@@ -250,7 +250,7 @@ class TestToolInjectionMiddleware:
             tools=[multiply_tool]
         )
         base_server.add_middleware(middleware)
-        base_server.exclude_tags = {"math"}
+        base_server.disable(tags={"math"})
 
         async with Client[FastMCPTransport](base_server) as client:
             tools: list[SDKTool] = await client.list_tools()

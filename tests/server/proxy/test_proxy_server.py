@@ -518,110 +518,53 @@ async def test_proxy_handles_multiple_concurrent_tasks_correctly(
     )
 
 
-class TestMirroredComponents:
-    """Test mirrored component functionality - components retrieved from proxy servers."""
+class TestProxyComponentEnableDisable:
+    """Test that enable/disable on proxy components guides users to server-level methods."""
 
-    async def test_mirrored_tool_cannot_be_enabled(self, proxy_server):
-        """Test that mirrored tools cannot be enabled directly."""
+    async def test_proxy_tool_enable_raises_not_implemented(self, proxy_server):
+        """Test that enable() on proxy tools raises NotImplementedError."""
         tools = await proxy_server.get_tools()
-        mirrored_tool = tools["greet"]
+        tool = tools["greet"]
 
-        # Verify it's mirrored
-        assert mirrored_tool._mirrored is True
+        with pytest.raises(NotImplementedError, match="server.enable"):
+            tool.enable()
 
-        # Should raise error when trying to enable
-        with pytest.raises(RuntimeError, match="Cannot enable mirrored component"):
-            mirrored_tool.enable()
-
-    async def test_mirrored_tool_cannot_be_disabled(self, proxy_server):
-        """Test that mirrored tools cannot be disabled directly."""
+    async def test_proxy_tool_disable_raises_not_implemented(self, proxy_server):
+        """Test that disable() on proxy tools raises NotImplementedError."""
         tools = await proxy_server.get_tools()
-        mirrored_tool = tools["greet"]
+        tool = tools["greet"]
 
-        # Verify it's mirrored
-        assert mirrored_tool._mirrored is True
+        with pytest.raises(NotImplementedError, match="server.disable"):
+            tool.disable()
 
-        # Should raise error when trying to disable
-        with pytest.raises(RuntimeError, match="Cannot disable mirrored component"):
-            mirrored_tool.disable()
-
-    async def test_mirrored_resource_cannot_be_enabled(self, proxy_server):
-        """Test that mirrored resources cannot be enabled directly."""
+    async def test_proxy_resource_enable_raises_not_implemented(self, proxy_server):
+        """Test that enable() on proxy resources raises NotImplementedError."""
         resources = await proxy_server.get_resources()
-        mirrored_resource = resources["resource://wave"]
+        resource = resources["resource://wave"]
 
-        # Verify it's mirrored
-        assert mirrored_resource._mirrored is True
+        with pytest.raises(NotImplementedError, match="server.enable"):
+            resource.enable()
 
-        # Should raise error when trying to enable
-        with pytest.raises(RuntimeError, match="Cannot enable mirrored component"):
-            mirrored_resource.enable()
-
-    async def test_mirrored_resource_cannot_be_disabled(self, proxy_server):
-        """Test that mirrored resources cannot be disabled directly."""
+    async def test_proxy_resource_disable_raises_not_implemented(self, proxy_server):
+        """Test that disable() on proxy resources raises NotImplementedError."""
         resources = await proxy_server.get_resources()
-        mirrored_resource = resources["resource://wave"]
+        resource = resources["resource://wave"]
 
-        # Verify it's mirrored
-        assert mirrored_resource._mirrored is True
+        with pytest.raises(NotImplementedError, match="server.disable"):
+            resource.disable()
 
-        # Should raise error when trying to disable
-        with pytest.raises(RuntimeError, match="Cannot disable mirrored component"):
-            mirrored_resource.disable()
-
-    async def test_mirrored_prompt_cannot_be_enabled(self, proxy_server):
-        """Test that mirrored prompts cannot be enabled directly."""
+    async def test_proxy_prompt_enable_raises_not_implemented(self, proxy_server):
+        """Test that enable() on proxy prompts raises NotImplementedError."""
         prompts = await proxy_server.get_prompts()
-        mirrored_prompt = prompts["welcome"]
+        prompt = prompts["welcome"]
 
-        # Verify it's mirrored
-        assert mirrored_prompt._mirrored is True
+        with pytest.raises(NotImplementedError, match="server.enable"):
+            prompt.enable()
 
-        # Should raise error when trying to enable
-        with pytest.raises(RuntimeError, match="Cannot enable mirrored component"):
-            mirrored_prompt.enable()
-
-    async def test_mirrored_prompt_cannot_be_disabled(self, proxy_server):
-        """Test that mirrored prompts cannot be disabled directly."""
+    async def test_proxy_prompt_disable_raises_not_implemented(self, proxy_server):
+        """Test that disable() on proxy prompts raises NotImplementedError."""
         prompts = await proxy_server.get_prompts()
-        mirrored_prompt = prompts["welcome"]
+        prompt = prompts["welcome"]
 
-        # Verify it's mirrored
-        assert mirrored_prompt._mirrored is True
-
-        # Should raise error when trying to disable
-        with pytest.raises(RuntimeError, match="Cannot disable mirrored component"):
-            mirrored_prompt.disable()
-
-    async def test_copy_creates_non_mirrored_component(self, proxy_server):
-        """Test that copy() creates a non-mirrored component that can be modified."""
-        tools = await proxy_server.get_tools()
-        mirrored_tool = tools["greet"]
-
-        # Create a copy
-        local_tool = mirrored_tool.copy()
-
-        # Copy should not be mirrored
-        assert local_tool._mirrored is False
-
-        # Should be able to enable/disable the copy
-        local_tool.enable()
-        assert local_tool.enabled is True
-
-        local_tool.disable()
-        assert local_tool.enabled is False
-
-    async def test_error_messages_mention_copy_method(self, proxy_server):
-        """Test that error messages guide users to use copy() method."""
-        tools = await proxy_server.get_tools()
-        mirrored_tool = tools["greet"]
-
-        # Check enable error message
-        with pytest.raises(RuntimeError) as exc_info:
-            mirrored_tool.enable()
-        assert "copy()" in str(exc_info.value)
-
-        # Check disable error message
-        with pytest.raises(RuntimeError) as exc_info:
-            mirrored_tool.disable()
-        assert "copy()" in str(exc_info.value)
+        with pytest.raises(NotImplementedError, match="server.disable"):
+            prompt.disable()

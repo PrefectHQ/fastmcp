@@ -10,6 +10,47 @@ This guide provides migration instructions for breaking changes and major update
 
 ## v3.0.0
 
+### Component Enable/Disable
+
+The `enabled` field and `enable()`/`disable()` methods have been removed from component objects. Use server or provider methods instead:
+
+<CodeGroup>
+```python Before
+tool = await server.get_tool("my_tool")
+tool.disable()
+tool.enable()
+```
+
+```python After
+server.disable(keys=["tool:my_tool"])
+server.enable(keys=["tool:my_tool"])
+```
+</CodeGroup>
+
+Components describe capabilities; servers and providers control availability. This ensures mutations work correctly even when components pass through transforming providers.
+
+**Allowlist mode:**
+
+Use `only=True` to restrict visibility to specific components:
+
+```python
+# Show ONLY tools with "public" tag
+server.enable(tags={"public"}, only=True)
+```
+
+**`FastMCP(include_tags=..., exclude_tags=...)` deprecated:**
+
+These init parameters emit deprecation warnings. Use the new methods instead:
+
+```python
+# Before
+mcp = FastMCP("server", exclude_tags={"internal"})
+
+# After
+mcp = FastMCP("server")
+mcp.disable(tags={"internal"})
+```
+
 ### Component Lookup Method Parameter Names
 
 The server lookup methods now use semantic parameter names instead of generic `key`:

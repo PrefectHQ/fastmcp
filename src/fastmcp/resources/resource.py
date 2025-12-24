@@ -28,7 +28,7 @@ from pydantic import (
 from typing_extensions import Self
 
 from fastmcp import settings
-from fastmcp.server.dependencies import get_context, without_injected_parameters
+from fastmcp.server.dependencies import without_injected_parameters
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import (
@@ -154,22 +154,6 @@ class Resource(FastMCPComponent):
         Field(description="Optional annotations about the resource's behavior"),
     ] = None
 
-    def enable(self) -> None:
-        super().enable()
-        try:
-            context = get_context()
-            context._queue_resource_list_changed()  # type: ignore[private-use]
-        except RuntimeError:
-            pass  # No context available
-
-    def disable(self) -> None:
-        super().disable()
-        try:
-            context = get_context()
-            context._queue_resource_list_changed()  # type: ignore[private-use]
-        except RuntimeError:
-            pass  # No context available
-
     @staticmethod
     def from_function(
         fn: Callable[..., Any],
@@ -180,7 +164,6 @@ class Resource(FastMCPComponent):
         icons: list[Icon] | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
-        enabled: bool | None = None,
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
@@ -194,7 +177,6 @@ class Resource(FastMCPComponent):
             icons=icons,
             mime_type=mime_type,
             tags=tags,
-            enabled=enabled,
             annotations=annotations,
             meta=meta,
             task=task,
@@ -359,7 +341,6 @@ class FunctionResource(Resource):
         icons: list[Icon] | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
-        enabled: bool | None = None,
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
@@ -391,7 +372,6 @@ class FunctionResource(Resource):
             icons=icons,
             mime_type=mime_type or "text/plain",
             tags=tags or set(),
-            enabled=enabled if enabled is not None else True,
             annotations=annotations,
             meta=meta,
             task_config=task_config,

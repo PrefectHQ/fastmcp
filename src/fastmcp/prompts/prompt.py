@@ -22,7 +22,7 @@ from pydantic import Field, TypeAdapter
 
 from fastmcp import settings
 from fastmcp.exceptions import PromptError
-from fastmcp.server.dependencies import get_context, without_injected_parameters
+from fastmcp.server.dependencies import without_injected_parameters
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
@@ -124,22 +124,6 @@ class Prompt(FastMCPComponent):
         default=None, description="Arguments that can be passed to the prompt"
     )
 
-    def enable(self) -> None:
-        super().enable()
-        try:
-            context = get_context()
-            context._queue_prompt_list_changed()  # type: ignore[private-use]
-        except RuntimeError:
-            pass  # No context available
-
-    def disable(self) -> None:
-        super().disable()
-        try:
-            context = get_context()
-            context._queue_prompt_list_changed()  # type: ignore[private-use]
-        except RuntimeError:
-            pass  # No context available
-
     def to_mcp_prompt(
         self,
         *,
@@ -175,7 +159,6 @@ class Prompt(FastMCPComponent):
         description: str | None = None,
         icons: list[Icon] | None = None,
         tags: set[str] | None = None,
-        enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
     ) -> FunctionPrompt:
@@ -194,7 +177,6 @@ class Prompt(FastMCPComponent):
             description=description,
             icons=icons,
             tags=tags,
-            enabled=enabled,
             meta=meta,
             task=task,
         )
@@ -338,7 +320,6 @@ class FunctionPrompt(Prompt):
         description: str | None = None,
         icons: list[Icon] | None = None,
         tags: set[str] | None = None,
-        enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
     ) -> FunctionPrompt:
@@ -434,7 +415,6 @@ class FunctionPrompt(Prompt):
             icons=icons,
             arguments=arguments,
             tags=tags or set(),
-            enabled=enabled if enabled is not None else True,
             fn=wrapped_fn,
             meta=meta,
             task_config=task_config,

@@ -26,7 +26,6 @@ class ToolInfo:
     output_schema: dict[str, Any] | None = None
     annotations: dict[str, Any] | None = None
     tags: list[str] | None = None
-    enabled: bool | None = None
     title: str | None = None
     icons: list[dict[str, Any]] | None = None
     meta: dict[str, Any] | None = None
@@ -41,7 +40,6 @@ class PromptInfo:
     description: str | None
     arguments: list[dict[str, Any]] | None = None
     tags: list[str] | None = None
-    enabled: bool | None = None
     title: str | None = None
     icons: list[dict[str, Any]] | None = None
     meta: dict[str, Any] | None = None
@@ -58,7 +56,6 @@ class ResourceInfo:
     mime_type: str | None = None
     annotations: dict[str, Any] | None = None
     tags: list[str] | None = None
-    enabled: bool | None = None
     title: str | None = None
     icons: list[dict[str, Any]] | None = None
     meta: dict[str, Any] | None = None
@@ -76,7 +73,6 @@ class TemplateInfo:
     parameters: dict[str, Any] | None = None
     annotations: dict[str, Any] | None = None
     tags: list[str] | None = None
-    enabled: bool | None = None
     title: str | None = None
     icons: list[dict[str, Any]] | None = None
     meta: dict[str, Any] | None = None
@@ -129,7 +125,6 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 output_schema=tool.output_schema,
                 annotations=tool.annotations.model_dump() if tool.annotations else None,
                 tags=list(tool.tags) if tool.tags else None,
-                enabled=tool.enabled,
                 title=tool.title,
                 icons=[icon.model_dump() for icon in tool.icons]
                 if tool.icons
@@ -150,7 +145,6 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 if prompt.arguments
                 else None,
                 tags=list(prompt.tags) if prompt.tags else None,
-                enabled=prompt.enabled,
                 title=prompt.title,
                 icons=[icon.model_dump() for icon in prompt.icons]
                 if prompt.icons
@@ -173,7 +167,6 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 if resource.annotations
                 else None,
                 tags=list(resource.tags) if resource.tags else None,
-                enabled=resource.enabled,
                 title=resource.title,
                 icons=[icon.model_dump() for icon in resource.icons]
                 if resource.icons
@@ -197,7 +190,6 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 if template.annotations
                 else None,
                 tags=list(template.tags) if template.tags else None,
-                enabled=template.enabled,
                 title=template.title,
                 icons=[icon.model_dump() for icon in template.icons]
                 if template.icons
@@ -275,7 +267,6 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     output_schema=None,  # v1 doesn't have output_schema
                     annotations=None,  # v1 doesn't have annotations
                     tags=None,  # v1 doesn't have tags
-                    enabled=None,  # v1 doesn't have enabled field
                     title=None,  # v1 doesn't have title
                     icons=[icon.model_dump() for icon in mcp_tool.icons]
                     if hasattr(mcp_tool, "icons") and mcp_tool.icons
@@ -299,7 +290,6 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     description=mcp_prompt.description,
                     arguments=arguments,
                     tags=None,  # v1 doesn't have tags
-                    enabled=None,  # v1 doesn't have enabled field
                     title=None,  # v1 doesn't have title
                     icons=[icon.model_dump() for icon in mcp_prompt.icons]
                     if hasattr(mcp_prompt, "icons") and mcp_prompt.icons
@@ -320,7 +310,6 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     mime_type=mcp_resource.mimeType,
                     annotations=None,  # v1 doesn't have annotations
                     tags=None,  # v1 doesn't have tags
-                    enabled=None,  # v1 doesn't have enabled field
                     title=None,  # v1 doesn't have title
                     icons=[icon.model_dump() for icon in mcp_resource.icons]
                     if hasattr(mcp_resource, "icons") and mcp_resource.icons
@@ -342,7 +331,6 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     parameters=None,  # v1 doesn't expose template parameters
                     annotations=None,  # v1 doesn't have annotations
                     tags=None,  # v1 doesn't have tags
-                    enabled=None,  # v1 doesn't have enabled field
                     title=None,  # v1 doesn't have title
                     icons=[icon.model_dump() for icon in mcp_template.icons]
                     if hasattr(mcp_template, "icons") and mcp_template.icons

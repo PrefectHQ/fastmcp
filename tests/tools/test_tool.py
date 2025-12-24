@@ -39,7 +39,6 @@ class TestToolFromFunction:
                 "name": "add",
                 "description": "Add two numbers.",
                 "tags": set(),
-                "enabled": True,
                 "parameters": {
                     "properties": {
                         "a": {"type": "integer"},
@@ -93,7 +92,6 @@ class TestToolFromFunction:
                 "name": "fetch_data",
                 "description": "Fetch data from URL.",
                 "tags": set(),
-                "enabled": True,
                 "parameters": {
                     "properties": {"url": {"type": "string"}},
                     "required": ["url"],
@@ -128,7 +126,6 @@ class TestToolFromFunction:
                 "name": "Adder",
                 "description": "Adds two numbers.",
                 "tags": set(),
-                "enabled": True,
                 "parameters": {
                     "properties": {
                         "x": {"type": "integer"},
@@ -165,7 +162,6 @@ class TestToolFromFunction:
                 "name": "Adder",
                 "description": "Adds two numbers.",
                 "tags": set(),
-                "enabled": True,
                 "parameters": {
                     "properties": {
                         "x": {"type": "integer"},
@@ -205,7 +201,6 @@ class TestToolFromFunction:
                 "name": "create_user",
                 "description": "Create a new user.",
                 "tags": set(),
-                "enabled": True,
                 "parameters": {
                     "$defs": {
                         "UserInput": {
@@ -285,7 +280,6 @@ class TestToolFromFunction:
             {
                 "name": "my_tool",
                 "tags": set(),
-                "enabled": True,
                 "parameters": {
                     "properties": {"x": {"title": "X"}},
                     "required": ["x"],
@@ -318,7 +312,6 @@ class TestToolFromFunction:
                 "name": "add",
                 "description": "Add two numbers.",
                 "tags": set(),
-                "enabled": True,
                 "parameters": {
                     "properties": {
                         "_a": {"type": "integer"},
@@ -370,7 +363,6 @@ class TestToolFromFunction:
                 "name": "add",
                 "description": "Add two numbers.",
                 "tags": set(),
-                "enabled": True,
                 "parameters": {
                     "properties": {
                         "x": {"type": "integer"},

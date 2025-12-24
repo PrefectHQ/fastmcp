@@ -170,7 +170,6 @@ class MCPMixin:
                 serializer=registration_info.get("serializer"),
                 output_schema=registration_info.get("output_schema"),
                 meta=registration_info.get("meta"),
-                enabled=registration_info.get("enabled"),
             )
 
             mcp_server.add_tool(tool)
@@ -210,7 +209,6 @@ class MCPMixin:
                 description=registration_info.get("description"),
                 mime_type=registration_info.get("mime_type"),
                 tags=registration_info.get("tags"),
-                enabled=registration_info.get("enabled"),
                 annotations=registration_info.get("annotations"),
                 meta=registration_info.get("meta"),
             )
@@ -245,7 +243,6 @@ class MCPMixin:
                 title=registration_info.get("title"),
                 description=registration_info.get("description"),
                 tags=registration_info.get("tags"),
-                enabled=registration_info.get("enabled"),
                 meta=registration_info.get("meta"),
             )
             mcp_server.add_prompt(prompt)

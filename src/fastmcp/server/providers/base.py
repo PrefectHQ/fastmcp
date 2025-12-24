@@ -30,13 +30,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from typing import Literal
 
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.components import FastMCPComponent
+from fastmcp.utilities.visibility import VisibilityFilter
 
 
 class Provider:
@@ -57,25 +57,8 @@ class Provider:
           This allows other providers to still contribute their components.
     """
 
-    def _notify(
-        self, notification_type: Literal["tools", "resources", "prompts"]
-    ) -> None:
-        """Send a list changed notification if we're in a request context.
-
-        This is a no-op if called outside a request context (e.g., during setup).
-        """
-        try:
-            from fastmcp.server.dependencies import get_context
-
-            context = get_context()
-            if notification_type == "tools":
-                context._queue_tool_list_changed()
-            elif notification_type == "resources":
-                context._queue_resource_list_changed()
-            elif notification_type == "prompts":
-                context._queue_prompt_list_changed()
-        except RuntimeError:
-            pass  # No context available
+    def __init__(self) -> None:
+        self._visibility = VisibilityFilter()
 
     def with_transforms(
         self,
@@ -321,3 +304,50 @@ class Provider:
             ```
         """
         yield
+
+    # -------------------------------------------------------------------------
+    # Enable/Disable
+    # -------------------------------------------------------------------------
+
+    def enable(
+        self,
+        *,
+        keys: Sequence[str] | None = None,
+        tags: set[str] | None = None,
+        only: bool = False,
+    ) -> None:
+        """Enable components by removing from blocklist, or set allowlist with only=True.
+
+        Args:
+            keys: Keys to enable (e.g., "tool:my_tool").
+            tags: Tags to enable - components with these tags will be enabled.
+            only: If True, switches to allowlist mode - ONLY show these keys/tags.
+        """
+        self._visibility.enable(keys=keys, tags=tags, only=only)
+
+    def disable(
+        self,
+        *,
+        keys: Sequence[str] | None = None,
+        tags: set[str] | None = None,
+    ) -> None:
+        """Disable components by adding to the blocklist.
+
+        Args:
+            keys: Keys to disable (e.g., "tool:my_tool").
+            tags: Tags to disable - components with these tags will be disabled.
+        """
+        self._visibility.disable(keys=keys, tags=tags)
+
+    def _is_component_enabled(self, component: FastMCPComponent) -> bool:
+        """Check if a component is enabled.
+
+        Delegates to the visibility filter which handles blocklist and allowlist logic.
+
+        Args:
+            component: The component to check.
+
+        Returns:
+            True if the component should be served, False otherwise.
+        """
+        return self._visibility.is_enabled(component)

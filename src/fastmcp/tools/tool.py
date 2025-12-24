@@ -30,7 +30,7 @@ from pydantic import Field, PydanticSchemaGenerationError, model_validator
 from typing_extensions import TypeVar
 
 import fastmcp
-from fastmcp.server.dependencies import get_context, without_injected_parameters
+from fastmcp.server.dependencies import without_injected_parameters
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
@@ -154,22 +154,6 @@ class Tool(FastMCPComponent):
         validate_and_warn_tool_name(self.name)
         return self
 
-    def enable(self) -> None:
-        super().enable()
-        try:
-            context = get_context()
-            context._queue_tool_list_changed()  # type: ignore[private-use]
-        except RuntimeError:
-            pass  # No context available
-
-    def disable(self) -> None:
-        super().disable()
-        try:
-            context = get_context()
-            context._queue_tool_list_changed()  # type: ignore[private-use]
-        except RuntimeError:
-            pass  # No context available
-
     def to_mcp_tool(
         self,
         *,
@@ -211,7 +195,6 @@ class Tool(FastMCPComponent):
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None = None,
-        enabled: bool | None = None,
         task: bool | TaskConfig | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
@@ -227,7 +210,6 @@ class Tool(FastMCPComponent):
             output_schema=output_schema,
             serializer=serializer,
             meta=meta,
-            enabled=enabled,
             task=task,
         )
 
@@ -351,7 +333,6 @@ class Tool(FastMCPComponent):
         serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | NotSetT | None = NotSet,
         transform_args: dict[str, ArgTransform] | None = None,
-        enabled: bool | None = None,
         transform_fn: Callable[..., Any] | None = None,
     ) -> TransformedTool:
         from fastmcp.tools.tool_transform import TransformedTool
@@ -368,7 +349,6 @@ class Tool(FastMCPComponent):
             output_schema=output_schema,
             serializer=serializer,
             meta=meta,
-            enabled=enabled,
         )
 
 
@@ -411,7 +391,6 @@ class FunctionTool(Tool):
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None = None,
-        enabled: bool | None = None,
         task: bool | TaskConfig | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
@@ -466,7 +445,6 @@ class FunctionTool(Tool):
             tags=tags or set(),
             serializer=serializer,
             meta=meta,
-            enabled=enabled if enabled is not None else True,
             task_config=task_config,
         )
 

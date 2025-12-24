@@ -89,6 +89,7 @@ from fastmcp.utilities.cli import log_server_banner
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger, temporary_log_level
 from fastmcp.utilities.types import NotSet, NotSetT
+from fastmcp.utilities.visibility import VisibilityFilter
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
@@ -306,12 +307,26 @@ class FastMCP(Generic[LifespanResultT]):
                     tool = Tool.from_function(tool, serializer=self._tool_serializer)
                 self.add_tool(tool)
 
-        self.include_tags: set[str] | None = (
-            set(include_tags) if include_tags is not None else None
-        )
-        self.exclude_tags: set[str] | None = (
-            set(exclude_tags) if exclude_tags is not None else None
-        )
+        # Server-level visibility filter for runtime enable/disable
+        self._visibility = VisibilityFilter()
+
+        # Emit deprecation warnings for include_tags and exclude_tags
+        if include_tags is not None:
+            warnings.warn(
+                "include_tags is deprecated. Use server.enable(tags=..., only=True) instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # For backwards compatibility, initialize allowlist from include_tags
+            self._visibility.enable(tags=set(include_tags), only=True)
+        if exclude_tags is not None:
+            warnings.warn(
+                "exclude_tags is deprecated. Use server.disable(tags=...) instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # For backwards compatibility, initialize blocklist from exclude_tags
+            self._visibility.disable(tags=set(exclude_tags))
 
         self.strict_input_validation: bool = (
             strict_input_validation
@@ -699,18 +714,90 @@ class FastMCP(Generic[LifespanResultT]):
         """
         self._providers.append(provider)
 
+    # -------------------------------------------------------------------------
+    # Enable/Disable
+    # -------------------------------------------------------------------------
+
+    def enable(
+        self,
+        *,
+        keys: Sequence[str] | None = None,
+        tags: set[str] | None = None,
+        only: bool = False,
+    ) -> None:
+        """Enable components by removing from blocklist, or set allowlist with only=True.
+
+        Args:
+            keys: Keys to enable (e.g., ``"tool:my_tool"``).
+            tags: Tags to enable - components with these tags will be enabled.
+            only: If True, switches to allowlist mode - ONLY show these keys/tags.
+                This clears existing allowlists and sets default visibility to False.
+
+        Note:
+            Component keys must match how they appear on this server. If a tool
+            passes through a transforming provider (e.g., mounted with a namespace),
+            its key changes. Always retrieve components from the same server you
+            call enable/disable on.
+
+        Example:
+            .. code-block:: python
+
+                # By key (prefixed)
+                server.enable(keys=["tool:my_tool"])
+
+                # By tag
+                server.enable(tags={"internal"})
+
+                # Allowlist mode - ONLY show tools tagged "final"
+                server.enable(tags={"final"}, only=True)
+        """
+        self._visibility.enable(keys=keys, tags=tags, only=only)
+
+    def disable(
+        self,
+        *,
+        keys: Sequence[str] | None = None,
+        tags: set[str] | None = None,
+    ) -> None:
+        """Disable components by adding to the blocklist.
+
+        Args:
+            keys: Keys to disable (e.g., ``"tool:my_tool"``).
+            tags: Tags to disable - components with these tags will be disabled.
+
+        Note:
+            Component keys must match how they appear on this server. If a tool
+            passes through a transforming provider (e.g., mounted with a namespace),
+            its key changes. Always retrieve components from the same server you
+            call enable/disable on.
+
+        Example:
+            .. code-block:: python
+
+                # By key (prefixed)
+                server.disable(keys=["tool:my_tool"])
+
+                # By tag
+                server.disable(tags={"dangerous", "internal"})
+        """
+        self._visibility.disable(keys=keys, tags=tags)
+
+    def _is_component_enabled(self, component: FastMCPComponent) -> bool:
+        """Check if a component is enabled (not in blocklist, passes allowlist)."""
+        return self._visibility.is_enabled(component)
+
     async def get_tools(self) -> dict[str, Tool]:
-        """Get all tools (unfiltered), including from providers, indexed by name.
+        """Get all enabled tools from providers, indexed by name.
 
         Iterates through all providers (LocalProvider first) and collects tools.
-        First provider wins for duplicate names.
+        First provider wins for duplicate names. Filters by server blocklist.
         """
         all_tools: dict[str, Tool] = {}
         for provider in self._providers:
             try:
                 provider_tools = await provider.list_tools()
                 for tool in provider_tools:
-                    if tool.name not in all_tools:
+                    if tool.name not in all_tools and self._is_component_enabled(tool):
                         all_tools[tool.name] = tool
             except Exception as e:
                 provider_name = getattr(provider, "server", provider).__class__.__name__
@@ -723,15 +810,15 @@ class FastMCP(Generic[LifespanResultT]):
         return all_tools
 
     async def get_tool(self, name: str) -> Tool:
-        """Get a tool by name.
+        """Get an enabled tool by name.
 
         Iterates through all providers (LocalProvider first) to find the tool.
-        First provider wins.
+        First provider wins. Returns only if enabled.
         """
         for provider in self._providers:
             try:
                 tool = await provider.get_tool(name)
-                if tool is not None:
+                if tool is not None and self._is_component_enabled(tool):
                     return tool
             except NotFoundError:
                 continue
@@ -741,7 +828,7 @@ class FastMCP(Generic[LifespanResultT]):
     async def _get_resource_or_template_or_none(
         self, uri: str
     ) -> Resource | ResourceTemplate | None:
-        """Get a resource or template by URI. Returns None if not found.
+        """Get an enabled resource or template by URI. Returns None if not found.
 
         Returns the original ResourceTemplate (not a Resource created from it)
         to preserve the registered function for task execution.
@@ -753,7 +840,7 @@ class FastMCP(Generic[LifespanResultT]):
         for provider in self._providers:
             try:
                 resource = await provider.get_resource(uri)
-                if resource is not None:
+                if resource is not None and self._is_component_enabled(resource):
                     return resource
             except NotFoundError:
                 continue
@@ -762,7 +849,7 @@ class FastMCP(Generic[LifespanResultT]):
         for provider in self._providers:
             try:
                 template = await provider.get_resource_template(uri)
-                if template is not None:
+                if template is not None and self._is_component_enabled(template):
                     return template
             except NotFoundError:
                 continue
@@ -770,10 +857,10 @@ class FastMCP(Generic[LifespanResultT]):
         return None
 
     async def get_resources(self) -> dict[str, Resource]:
-        """Get all resources (unfiltered), including from providers, indexed by URI.
+        """Get all enabled resources from providers, indexed by URI.
 
         Iterates through all providers (LocalProvider first) and collects resources.
-        First provider wins for duplicate URIs.
+        First provider wins for duplicate URIs. Filters by server blocklist.
         """
         all_resources: dict[str, Resource] = {}
         for provider in self._providers:
@@ -781,7 +868,9 @@ class FastMCP(Generic[LifespanResultT]):
                 provider_resources = await provider.list_resources()
                 for resource in provider_resources:
                     uri = str(resource.uri)
-                    if uri not in all_resources:
+                    if uri not in all_resources and self._is_component_enabled(
+                        resource
+                    ):
                         all_resources[uri] = resource
             except Exception as e:
                 provider_name = getattr(provider, "server", provider).__class__.__name__
@@ -794,15 +883,15 @@ class FastMCP(Generic[LifespanResultT]):
         return all_resources
 
     async def get_resource(self, uri: str) -> Resource:
-        """Get a resource by URI.
+        """Get an enabled resource by URI.
 
         Iterates through all providers (LocalProvider first) to find the resource.
-        First provider wins.
+        First provider wins. Returns only if enabled.
         """
         for provider in self._providers:
             try:
                 resource = await provider.get_resource(uri)
-                if resource is not None:
+                if resource is not None and self._is_component_enabled(resource):
                     return resource
             except NotFoundError:
                 continue
@@ -810,17 +899,20 @@ class FastMCP(Generic[LifespanResultT]):
         raise NotFoundError(f"Unknown resource: {uri}")
 
     async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
-        """Get all resource templates (unfiltered), including from providers, indexed by uri_template.
+        """Get all enabled resource templates from providers, indexed by uri_template.
 
         Iterates through all providers (LocalProvider first) and collects templates.
-        First provider wins for duplicate uri_templates.
+        First provider wins for duplicate uri_templates. Filters by server blocklist.
         """
         all_templates: dict[str, ResourceTemplate] = {}
         for provider in self._providers:
             try:
                 provider_templates = await provider.list_resource_templates()
                 for template in provider_templates:
-                    if template.uri_template not in all_templates:
+                    if (
+                        template.uri_template not in all_templates
+                        and self._is_component_enabled(template)
+                    ):
                         all_templates[template.uri_template] = template
             except Exception as e:
                 provider_name = getattr(provider, "server", provider).__class__.__name__
@@ -833,15 +925,15 @@ class FastMCP(Generic[LifespanResultT]):
         return all_templates
 
     async def get_resource_template(self, uri: str) -> ResourceTemplate:
-        """Get a resource template that matches the given URI.
+        """Get an enabled resource template that matches the given URI.
 
         Iterates through all providers (LocalProvider first) to find the template.
-        First provider wins.
+        First provider wins. Returns only if enabled.
         """
         for provider in self._providers:
             try:
                 template = await provider.get_resource_template(uri)
-                if template is not None:
+                if template is not None and self._is_component_enabled(template):
                     return template
             except NotFoundError:
                 continue
@@ -849,17 +941,19 @@ class FastMCP(Generic[LifespanResultT]):
         raise NotFoundError(f"Unknown resource template: {uri}")
 
     async def get_prompts(self) -> dict[str, Prompt]:
-        """Get all prompts (unfiltered), including from providers, indexed by name.
+        """Get all enabled prompts from providers, indexed by name.
 
         Iterates through all providers (LocalProvider first) and collects prompts.
-        First provider wins for duplicate names.
+        First provider wins for duplicate names. Filters by server blocklist.
         """
         all_prompts: dict[str, Prompt] = {}
         for provider in self._providers:
             try:
                 provider_prompts = await provider.list_prompts()
                 for prompt in provider_prompts:
-                    if prompt.name not in all_prompts:
+                    if prompt.name not in all_prompts and self._is_component_enabled(
+                        prompt
+                    ):
                         all_prompts[prompt.name] = prompt
             except Exception as e:
                 provider_name = getattr(provider, "server", provider).__class__.__name__
@@ -872,15 +966,15 @@ class FastMCP(Generic[LifespanResultT]):
         return all_prompts
 
     async def get_prompt(self, name: str) -> Prompt:
-        """Get a prompt by name.
+        """Get an enabled prompt by name.
 
         Iterates through all providers (LocalProvider first) to find the prompt.
-        First provider wins.
+        First provider wins. Returns only if enabled.
         """
         for provider in self._providers:
             try:
                 prompt = await provider.get_prompt(name)
-                if prompt is not None:
+                if prompt is not None and self._is_component_enabled(prompt):
                     return prompt
             except NotFoundError:
                 continue
@@ -1029,10 +1123,7 @@ class FastMCP(Generic[LifespanResultT]):
             try:
                 provider_tools = await provider.list_tools()
                 for tool in provider_tools:
-                    if (
-                        self._should_enable_component(tool)
-                        and tool.key not in all_tools
-                    ):
+                    if self._is_component_enabled(tool) and tool.key not in all_tools:
                         all_tools[tool.key] = tool
             except Exception:
                 logger.exception("Error listing tools from provider")
@@ -1095,7 +1186,7 @@ class FastMCP(Generic[LifespanResultT]):
                 provider_resources = await provider.list_resources()
                 for resource in provider_resources:
                     if (
-                        self._should_enable_component(resource)
+                        self._is_component_enabled(resource)
                         and resource.key not in all_resources
                     ):
                         all_resources[resource.key] = resource
@@ -1161,7 +1252,7 @@ class FastMCP(Generic[LifespanResultT]):
                 provider_templates = await provider.list_resource_templates()
                 for template in provider_templates:
                     if (
-                        self._should_enable_component(template)
+                        self._is_component_enabled(template)
                         and template.key not in all_templates
                     ):
                         all_templates[template.key] = template
@@ -1227,7 +1318,7 @@ class FastMCP(Generic[LifespanResultT]):
                 provider_prompts = await provider.list_prompts()
                 for prompt in provider_prompts:
                     if (
-                        self._should_enable_component(prompt)
+                        self._is_component_enabled(prompt)
                         and prompt.key not in all_prompts
                     ):
                         all_prompts[prompt.key] = prompt
@@ -1431,7 +1522,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         for provider in self._providers:
             tool = await provider.get_tool(tool_name)
-            if tool is not None and self._should_enable_component(tool):
+            if tool is not None and self._is_component_enabled(tool):
                 return await self._execute_tool(
                     tool, tool_name, context.message.arguments or {}
                 )
@@ -1534,7 +1625,7 @@ class FastMCP(Generic[LifespanResultT]):
         # First pass: try concrete resources from all providers
         for provider in self._providers:
             resource = await provider.get_resource(uri_str)
-            if resource is not None and self._should_enable_component(resource):
+            if resource is not None and self._is_component_enabled(resource):
                 result = await self._execute_resource(resource, uri_str)
                 if isinstance(result, mcp.types.CreateTaskResult):
                     return result
@@ -1545,7 +1636,7 @@ class FastMCP(Generic[LifespanResultT]):
         # Second pass: try templates from all providers
         for provider in self._providers:
             template = await provider.get_resource_template(uri_str)
-            if template is not None and self._should_enable_component(template):
+            if template is not None and self._is_component_enabled(template):
                 params = template.matches(uri_str)
                 if params is not None:
                     result = await self._execute_template(template, uri_str, params)
@@ -1677,7 +1768,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         for provider in self._providers:
             prompt = await provider.get_prompt(name)
-            if prompt is not None and self._should_enable_component(prompt):
+            if prompt is not None and self._is_component_enabled(prompt):
                 return await self._execute_prompt(
                     prompt, name, context.message.arguments
                 )
@@ -1755,7 +1846,6 @@ class FastMCP(Generic[LifespanResultT]):
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
-        enabled: bool | None = None,
         task: bool | TaskConfig | None = None,
     ) -> FunctionTool: ...
 
@@ -1773,7 +1863,6 @@ class FastMCP(Generic[LifespanResultT]):
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
-        enabled: bool | None = None,
         task: bool | TaskConfig | None = None,
     ) -> Callable[[AnyFunction], FunctionTool]: ...
 
@@ -1790,7 +1879,6 @@ class FastMCP(Generic[LifespanResultT]):
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
-        enabled: bool | None = None,
         task: bool | TaskConfig | None = None,
     ) -> (
         Callable[[AnyFunction], FunctionTool]
@@ -1820,7 +1908,6 @@ class FastMCP(Generic[LifespanResultT]):
             exclude_args: Optional list of argument names to exclude from the tool schema.
                 Deprecated: Use `Depends()` for dependency injection instead.
             meta: Optional meta information about the tool
-            enabled: Optional boolean to enable or disable the tool
 
         Examples:
             Register a tool with a custom name:
@@ -1858,7 +1945,6 @@ class FastMCP(Generic[LifespanResultT]):
             annotations=annotations,
             exclude_args=exclude_args,
             meta=meta,
-            enabled=enabled,
             task=task if task is not None else self._support_tasks_by_default,
             serializer=self._tool_serializer,
         )
@@ -1897,7 +1983,6 @@ class FastMCP(Generic[LifespanResultT]):
         icons: list[mcp.types.Icon] | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
-        enabled: bool | None = None,
         annotations: Annotations | dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
@@ -1923,7 +2008,6 @@ class FastMCP(Generic[LifespanResultT]):
             description: Optional description of the resource
             mime_type: Optional MIME type for the resource
             tags: Optional set of tags for categorizing the resource
-            enabled: Optional boolean to enable or disable the resource
             annotations: Optional annotations about the resource's behavior
             meta: Optional meta information about the resource
 
@@ -1963,7 +2047,6 @@ class FastMCP(Generic[LifespanResultT]):
             icons=icons,
             mime_type=mime_type,
             tags=tags,
-            enabled=enabled,
             annotations=annotations,
             meta=meta,
             task=task if task is not None else self._support_tasks_by_default,
@@ -1995,7 +2078,6 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
         tags: set[str] | None = None,
-        enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
     ) -> FunctionPrompt: ...
@@ -2010,7 +2092,6 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
         tags: set[str] | None = None,
-        enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
     ) -> Callable[[AnyFunction], FunctionPrompt]: ...
@@ -2024,7 +2105,6 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
         tags: set[str] | None = None,
-        enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
     ) -> (
@@ -2050,7 +2130,6 @@ class FastMCP(Generic[LifespanResultT]):
             name: Optional name for the prompt (keyword-only, alternative to name_or_fn)
             description: Optional description of what the prompt does
             tags: Optional set of tags for categorizing the prompt
-            enabled: Optional boolean to enable or disable the prompt
             meta: Optional meta information about the prompt
 
         Examples:
@@ -2109,7 +2188,6 @@ class FastMCP(Generic[LifespanResultT]):
             description=description,
             icons=icons,
             tags=tags,
-            enabled=enabled,
             meta=meta,
             task=task if task is not None else self._support_tasks_by_default,
         )
@@ -2640,38 +2718,6 @@ class FastMCP(Generic[LifespanResultT]):
             client_factory = proxy_client_factory
 
         return FastMCPProxy(client_factory=client_factory, **settings)
-
-    def _should_enable_component(
-        self,
-        component: FastMCPComponent,
-    ) -> bool:
-        """
-        Given a component, determine if it should be enabled. Returns True if it should be enabled; False if it should not.
-
-        Rules:
-            - If the component's enabled property is False, always return False.
-            - If both include_tags and exclude_tags are None, return True.
-            - If exclude_tags is provided, check each exclude tag:
-                - If the exclude tag is a string, it must be present in the input tags to exclude.
-            - If include_tags is provided, check each include tag:
-                - If the include tag is a string, it must be present in the input tags to include.
-            - If include_tags is provided and none of the include tags match, return False.
-            - If include_tags is not provided, return True.
-        """
-        if not component.enabled:
-            return False
-
-        if self.include_tags is None and self.exclude_tags is None:
-            return True
-
-        if self.exclude_tags is not None:
-            if any(etag in component.tags for etag in self.exclude_tags):
-                return False
-
-        if self.include_tags is not None:
-            return bool(any(itag in component.tags for itag in self.include_tags))
-
-        return True
 
     @classmethod
     def generate_name(cls, name: str | None = None) -> str:

@@ -47,7 +47,7 @@ from fastmcp.tools.tool_transform import (
     ToolTransformConfig,
     apply_transformations_to_tools,
 )
-from fastmcp.utilities.components import FastMCPComponent, MirroredComponent
+from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -64,7 +64,7 @@ ClientFactoryT = Callable[[], Client] | Callable[[], Awaitable[Client]]
 # -----------------------------------------------------------------------------
 
 
-class ProxyTool(Tool, MirroredComponent):
+class ProxyTool(Tool):
     """A Tool that represents and executes a tool on a remote server."""
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
@@ -106,7 +106,6 @@ class ProxyTool(Tool, MirroredComponent):
             icons=mcp_tool.icons,
             meta=mcp_tool.meta,
             tags=(mcp_tool.meta or {}).get("_fastmcp", {}).get("tags", []),
-            _mirrored=True,
         )
 
     async def run(
@@ -151,7 +150,7 @@ class ProxyTool(Tool, MirroredComponent):
         )
 
 
-class ProxyResource(Resource, MirroredComponent):
+class ProxyResource(Resource):
     """A Resource that represents and reads a resource from a remote server."""
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
@@ -204,7 +203,6 @@ class ProxyResource(Resource, MirroredComponent):
             meta=mcp_resource.meta,
             tags=(mcp_resource.meta or {}).get("_fastmcp", {}).get("tags", []),
             task_config=TaskConfig(mode="forbidden"),
-            _mirrored=True,
         )
 
     async def read(self) -> ResourceContent:
@@ -236,7 +234,7 @@ class ProxyResource(Resource, MirroredComponent):
             raise ResourceError(f"Unsupported content type: {type(result[0])}")
 
 
-class ProxyTemplate(ResourceTemplate, MirroredComponent):
+class ProxyTemplate(ResourceTemplate):
     """A ResourceTemplate that represents and creates resources from a remote server template."""
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
@@ -280,7 +278,6 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
             meta=mcp_template.meta,
             tags=(mcp_template.meta or {}).get("_fastmcp", {}).get("tags", []),
             task_config=TaskConfig(mode="forbidden"),
-            _mirrored=True,
         )
 
     async def create_resource(
@@ -334,7 +331,7 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
         )
 
 
-class ProxyPrompt(Prompt, MirroredComponent):
+class ProxyPrompt(Prompt):
     """A Prompt that represents and renders a prompt from a remote server."""
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
@@ -383,7 +380,6 @@ class ProxyPrompt(Prompt, MirroredComponent):
             meta=mcp_prompt.meta,
             tags=(mcp_prompt.meta or {}).get("_fastmcp", {}).get("tags", []),
             task_config=TaskConfig(mode="forbidden"),
-            _mirrored=True,
         )
 
     async def render(self, arguments: dict[str, Any]) -> PromptResult:  # type: ignore[override]

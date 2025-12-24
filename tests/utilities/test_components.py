@@ -12,7 +12,6 @@ from fastmcp.tools.tool import Tool
 from fastmcp.utilities.components import (
     FastMCPComponent,
     FastMCPMeta,
-    MirroredComponent,
     _convert_set_default_none,
 )
 
@@ -65,7 +64,6 @@ class TestFastMCPComponent:
         assert component.description is None
         assert component.tags == set()
         assert component.meta is None
-        assert component.enabled is True
 
     def test_initialization_with_all_params(self):
         """Test component initialization with all parameters."""
@@ -76,14 +74,12 @@ class TestFastMCPComponent:
             description="A fully configured component",
             tags={"tag1", "tag2"},
             meta=meta,
-            enabled=False,
         )
         assert component.name == "full"
         assert component.title == "Full Component"
         assert component.description == "A fully configured component"
         assert component.tags == {"tag1", "tag2"}
         assert component.meta == meta
-        assert component.enabled is False
 
     def test_key_property_without_custom_key(self, basic_component):
         """Test that key property returns name when no custom key is set."""
@@ -148,20 +144,6 @@ class TestFastMCPComponent:
         assert "name='test_component'" in repr_str
         assert "title='Test Component'" in repr_str
         assert "description='A test component'" in repr_str
-
-    def test_enable_method(self):
-        """Test enable method."""
-        component = FastMCPComponent(name="test", enabled=False)
-        assert component.enabled is False
-        component.enable()
-        assert component.enabled is True
-
-    def test_disable_method(self):
-        """Test disable method."""
-        component = FastMCPComponent(name="test", enabled=True)
-        assert component.enabled is True
-        component.disable()
-        assert component.enabled is False
 
     def test_copy_method(self, basic_component):
         """Test copy method creates an independent copy."""
@@ -257,103 +239,45 @@ class TestKeyPrefix:
             assert WithPrefix.make_key("test") == "custom:test"
 
 
-class TestMirroredComponent:
-    """Tests for the MirroredComponent class."""
+class TestComponentEnableDisable:
+    """Tests for the enable/disable methods raising NotImplementedError."""
 
-    @pytest.fixture
-    def mirrored_component(self):
-        """Create a mirrored component for testing."""
-        return MirroredComponent(
-            name="mirrored",
-            description="A mirrored component",
-            _mirrored=True,
-        )
+    def test_enable_raises_not_implemented_error(self):
+        """Test that enable() raises NotImplementedError with migration guidance."""
+        component = FastMCPComponent(name="test")
+        with pytest.raises(NotImplementedError) as exc_info:
+            component.enable()
+        assert "server.enable" in str(exc_info.value)
+        assert "test" in str(exc_info.value)
 
-    @pytest.fixture
-    def non_mirrored_component(self):
-        """Create a non-mirrored component for testing."""
-        return MirroredComponent(
-            name="local",
-            description="A local component",
-            _mirrored=False,
-        )
+    def test_disable_raises_not_implemented_error(self):
+        """Test that disable() raises NotImplementedError with migration guidance."""
+        component = FastMCPComponent(name="test")
+        with pytest.raises(NotImplementedError) as exc_info:
+            component.disable()
+        assert "server.disable" in str(exc_info.value)
+        assert "test" in str(exc_info.value)
 
-    def test_initialization_mirrored(self, mirrored_component):
-        """Test initialization of a mirrored component."""
-        assert mirrored_component.name == "mirrored"
-        assert mirrored_component._mirrored is True
+    def test_tool_enable_raises_not_implemented(self):
+        """Test that Tool.enable() raises NotImplementedError."""
+        tool = Tool(name="my_tool", description="A tool", parameters={})
+        with pytest.raises(NotImplementedError) as exc_info:
+            tool.enable()
+        assert "tool:my_tool" in str(exc_info.value)
 
-    def test_initialization_non_mirrored(self, non_mirrored_component):
-        """Test initialization of a non-mirrored component."""
-        assert non_mirrored_component.name == "local"
-        assert non_mirrored_component._mirrored is False
+    def test_tool_disable_raises_not_implemented(self):
+        """Test that Tool.disable() raises NotImplementedError."""
+        tool = Tool(name="my_tool", description="A tool", parameters={})
+        with pytest.raises(NotImplementedError) as exc_info:
+            tool.disable()
+        assert "tool:my_tool" in str(exc_info.value)
 
-    def test_enable_raises_error_when_mirrored(self, mirrored_component):
-        """Test that enable raises an error for mirrored components."""
-        with pytest.raises(RuntimeError) as exc_info:
-            mirrored_component.enable()
-        assert "Cannot enable mirrored component" in str(exc_info.value)
-        assert "mirrored" in str(exc_info.value)
-        assert ".copy()" in str(exc_info.value)
-
-    def test_disable_raises_error_when_mirrored(self, mirrored_component):
-        """Test that disable raises an error for mirrored components."""
-        with pytest.raises(RuntimeError) as exc_info:
-            mirrored_component.disable()
-        assert "Cannot disable mirrored component" in str(exc_info.value)
-        assert "mirrored" in str(exc_info.value)
-        assert ".copy()" in str(exc_info.value)
-
-    def test_enable_works_when_not_mirrored(self, non_mirrored_component):
-        """Test that enable works for non-mirrored components."""
-        non_mirrored_component.enabled = False
-        non_mirrored_component.enable()
-        assert non_mirrored_component.enabled is True
-
-    def test_disable_works_when_not_mirrored(self, non_mirrored_component):
-        """Test that disable works for non-mirrored components."""
-        non_mirrored_component.enabled = True
-        non_mirrored_component.disable()
-        assert non_mirrored_component.enabled is False
-
-    def test_copy_removes_mirrored_flag(self, mirrored_component):
-        """Test that copy creates a non-mirrored version."""
-        copy = mirrored_component.copy()
-        assert copy._mirrored is False
-        assert copy.name == mirrored_component.name
-        assert copy is not mirrored_component
-
-        # Should be able to enable/disable the copy
-        copy.enable()
-        copy.disable()
-        assert copy.enabled is False
-
-    def test_copy_preserves_non_mirrored_state(self, non_mirrored_component):
-        """Test that copy preserves non-mirrored state."""
-        copy = non_mirrored_component.copy()
-        assert copy._mirrored is False
-        assert copy == non_mirrored_component
-        assert copy is not non_mirrored_component
-
-    def test_inheritance_from_fastmcp_component(self):
-        """Test that MirroredComponent inherits from FastMCPComponent."""
-        component = MirroredComponent(name="test")
-        assert isinstance(component, FastMCPComponent)
-        assert isinstance(component, MirroredComponent)
-
-    def test_all_fastmcp_component_features_work(self, mirrored_component):
-        """Test that all FastMCPComponent features work except enable/disable."""
-        # Test key property
-        assert mirrored_component.key == "mirrored"
-
-        # Test get_meta
-        mirrored_component.tags = {"tag1"}
-        meta = mirrored_component.get_meta(include_fastmcp_meta=True)
-        assert meta["_fastmcp"]["tags"] == ["tag1"]
-
-        # Test repr
-        repr_str = repr(mirrored_component)
-        assert "MirroredComponent" in repr_str
+    def test_prompt_enable_raises_not_implemented(self):
+        """Test that Prompt.enable() raises NotImplementedError."""
+        prompt = Prompt(name="my_prompt", description="A prompt")
+        with pytest.raises(NotImplementedError) as exc_info:
+            prompt.enable()
+        assert "prompt:my_prompt" in str(exc_info.value)
 
 
 class TestFastMCPMeta:
@@ -413,7 +337,6 @@ class TestEdgeCasesAndIntegration:
             description="Description",
             tags={"tag1", "tag2"},
             meta={"key": "value"},
-            enabled=False,
         )
         new_component = component.model_copy()
 
@@ -422,25 +345,7 @@ class TestEdgeCasesAndIntegration:
         assert new_component.description == component.description
         assert new_component.tags == component.tags
         assert new_component.meta == component.meta
-        assert new_component.enabled == component.enabled
         assert new_component.key == component.key
-
-    def test_mirrored_component_copy_chain(self):
-        """Test creating copies of copies for mirrored components."""
-        original = MirroredComponent(name="original", _mirrored=True)
-        copy1 = original.copy()
-        copy2 = copy1.copy()
-
-        assert original._mirrored is True
-        assert copy1._mirrored is False
-        assert copy2._mirrored is False
-
-        # All copies should be independent
-        copy1.name = "copy1"
-        copy2.name = "copy2"
-        assert original.name == "original"
-        assert copy1.name == "copy1"
-        assert copy2.name == "copy2"
 
     def test_model_copy_with_update(self):
         """Test that model_copy works with update dict."""
@@ -449,7 +354,6 @@ class TestEdgeCasesAndIntegration:
             title="Original Title",
             description="Original Description",
             tags={"tag1"},
-            enabled=True,
         )
 
         # Test with update (including name which affects .key)
@@ -465,7 +369,6 @@ class TestEdgeCasesAndIntegration:
         assert updated_component.title == "New Title"  # Updated
         assert updated_component.description == "New Description"  # Updated
         assert updated_component.tags == {"tag1"}  # Not in update, unchanged
-        assert updated_component.enabled is True  # Not in update, unchanged
         assert updated_component.key == "new_name"  # .key is computed from name
 
         # Original should be unchanged

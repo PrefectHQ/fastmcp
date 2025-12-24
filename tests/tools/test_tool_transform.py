@@ -1037,23 +1037,19 @@ async def test_arg_transform_hide_and_required_raises_error():
 class TestEnableDisable:
     async def test_transform_disabled_tool(self):
         """
-        Tests that a transformed tool can run even if the parent tool is disabled
+        Tests that a transformed tool can run even if the parent tool is disabled via server.
         """
         mcp = FastMCP()
 
-        @mcp.tool(enabled=False)
+        @mcp.tool
         def add(x: int, y: int = 10) -> int:
             return x + y
 
         new_add = Tool.from_tool(add, name="new_add")
         mcp.add_tool(new_add)
 
-        # the new tool inherits the disabled state from the parent tool
-        assert new_add.enabled is False
-
-        new_add.enable()
-        assert new_add.enabled is True
-        assert add.enabled is False
+        # Disable original tool, but new_add should still work
+        mcp.disable(keys=["tool:add"])
 
         async with Client(mcp) as client:
             tools = await client.list_tools()
@@ -1069,12 +1065,15 @@ class TestEnableDisable:
     async def test_disable_transformed_tool(self):
         mcp = FastMCP()
 
-        @mcp.tool(enabled=False)
+        @mcp.tool
         def add(x: int, y: int = 10) -> int:
             return x + y
 
-        new_add = Tool.from_tool(add, name="new_add", enabled=False)
+        new_add = Tool.from_tool(add, name="new_add")
         mcp.add_tool(new_add)
+
+        # Disable both tools via server
+        mcp.disable(keys=["tool:add", "tool:new_add"])
 
         async with Client(mcp) as client:
             tools = await client.list_tools()

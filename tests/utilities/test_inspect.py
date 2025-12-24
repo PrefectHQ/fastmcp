@@ -968,7 +968,6 @@ class TestFormatFunctions:
         # Check tools
         assert len(data["tools"]) == 1
         assert data["tools"][0]["name"] == "test_tool"
-        assert data["tools"][0]["enabled"] is True
         assert "tags" in data["tools"][0]
 
     async def test_format_mcp_info(self):

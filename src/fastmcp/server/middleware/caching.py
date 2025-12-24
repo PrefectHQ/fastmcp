@@ -261,7 +261,6 @@ class ResponseCachingMiddleware(Middleware):
                 annotations=tool.annotations,
                 meta=tool.meta,
                 tags=tool.tags,
-                enabled=tool.enabled,
             )
             for tool in tools
         ]
@@ -300,7 +299,6 @@ class ResponseCachingMiddleware(Middleware):
                 meta=resource.meta,
                 mime_type=resource.mime_type,
                 annotations=resource.annotations,
-                enabled=resource.enabled,
                 uri=resource.uri,
             )
             for resource in resources
@@ -338,7 +336,6 @@ class ResponseCachingMiddleware(Middleware):
                 description=prompt.description,
                 tags=prompt.tags,
                 meta=prompt.meta,
-                enabled=prompt.enabled,
                 arguments=prompt.arguments,
             )
             for prompt in prompts

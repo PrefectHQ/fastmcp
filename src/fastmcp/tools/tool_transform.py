@@ -373,7 +373,6 @@ class TransformedTool(Tool):
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         serializer: Callable[[Any], str] | NotSetT | None = NotSet,
         meta: dict[str, Any] | NotSetT | None = NotSet,
-        enabled: bool | None = None,
     ) -> TransformedTool:
         """Create a transformed tool from a parent tool.
 
@@ -566,7 +565,6 @@ class TransformedTool(Tool):
         final_serializer = (
             serializer if not isinstance(serializer, NotSetT) else tool.serializer
         )
-        final_enabled = enabled if enabled is not None else tool.enabled
 
         transformed_tool = cls(
             fn=final_fn,
@@ -582,7 +580,6 @@ class TransformedTool(Tool):
             serializer=final_serializer,
             meta=final_meta,
             transform_args=transform_args,
-            enabled=final_enabled,
         )
 
         return transformed_tool
@@ -895,11 +892,6 @@ class ToolTransformConfig(FastMCPBaseModel):
     meta: dict[str, Any] | None = Field(
         default=None,
         description="The new meta information for the tool.",
-    )
-
-    enabled: bool = Field(
-        default=True,
-        description="Whether the tool is enabled.",
     )
 
     arguments: dict[str, ArgTransformConfig] = Field(
