@@ -1,19 +1,20 @@
 ---
-title: protocol
-sidebarTitle: protocol
+title: requests
+sidebarTitle: requests
 ---
 
-# `fastmcp.server.tasks.protocol`
+# `fastmcp.server.tasks.requests`
 
 
-SEP-1686 task protocol handlers.
+SEP-1686 task request handlers.
 
-Implements MCP task protocol methods: tasks/get, tasks/result, tasks/list, tasks/cancel, tasks/delete.
+Handles MCP task protocol requests: tasks/get, tasks/result, tasks/list, tasks/cancel.
+These handlers query and manage existing tasks (contrast with handlers.py which creates tasks).
 
 
 ## Functions
 
-### `tasks_get_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/protocol.py#L45" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `tasks_get_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/requests.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tasks_get_handler(server: FastMCP, params: dict[str, Any]) -> GetTaskResult
@@ -30,7 +31,7 @@ Handle MCP 'tasks/get' request (SEP-1686).
 - Task status response with spec-compliant fields
 
 
-### `tasks_result_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/protocol.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `tasks_result_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/requests.py#L191" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any
@@ -49,7 +50,7 @@ Converts raw task return values to MCP types based on task type.
 - MCP result (CallToolResult, GetPromptResult, or ReadResourceResult)
 
 
-### `tasks_list_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/protocol.py#L256" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `tasks_list_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/requests.py#L352" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tasks_list_handler(server: FastMCP, params: dict[str, Any]) -> ListTasksResult
@@ -68,7 +69,7 @@ Note: With client-side tracking, this returns minimal info.
 - Response with tasks list and pagination
 
 
-### `tasks_cancel_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/protocol.py#L274" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `tasks_cancel_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/requests.py#L370" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tasks_cancel_handler(server: FastMCP, params: dict[str, Any]) -> CancelTaskResult

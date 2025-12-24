@@ -138,3 +138,8 @@ Result when user accepts the elicitation.
 
 Configuration for an elicitation request.
 
+**Attributes:**
+- `schema`: The JSON schema to send to the client
+- `response_type`: The type to validate responses with (None for raw schemas)
+- `is_raw`: True if schema was built directly (extract "value" from response)
+

@@ -1,0 +1,116 @@
+---
+title: run
+sidebarTitle: run
+---
+
+# `fastmcp.server.sampling.run`
+
+
+Sampling types and helper functions for FastMCP servers.
+
+## Functions
+
+### `determine_handler_mode` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+determine_handler_mode(context: Context, needs_tools: bool) -> bool
+```
+
+
+Determine whether to use fallback handler or client for sampling.
+
+**Args:**
+- `context`: The MCP context.
+- `needs_tools`: Whether the sampling request requires tool support.
+
+**Returns:**
+- True if fallback handler should be used, False to use client.
+
+**Raises:**
+- `ValueError`: If client lacks required capability and no fallback configured.
+
+
+### `call_sampling_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+call_sampling_handler(context: Context, messages: list[SamplingMessage]) -> CreateMessageResult | CreateMessageResultWithTools
+```
+
+
+Make LLM call using the fallback handler.
+
+Note: This function expects the caller (sample_step) to have validated that
+sampling_handler is set via determine_handler_mode(). The checks below are
+safeguards against internal misuse.
+
+
+### `execute_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L228" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+execute_tools(tool_calls: list[ToolUseContent], tool_map: dict[str, SamplingTool], mask_error_details: bool = False) -> list[ToolResultContent]
+```
+
+
+Execute tool calls and return results.
+
+**Args:**
+- `tool_calls`: List of tool use requests from the LLM.
+- `tool_map`: Mapping from tool name to SamplingTool.
+- `mask_error_details`: If True, mask detailed error messages from tool execution.
+When masked, only generic error messages are returned to the LLM.
+Tools can explicitly raise ToolError to bypass masking when they want
+to provide specific error messages to the LLM.
+
+**Returns:**
+- List of tool result content blocks.
+
+
+## Classes
+
+### `SamplingResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Result of a sampling operation.
+
+**Attributes:**
+- `text`: The text representation of the result (raw text or JSON for structured).
+- `result`: The typed result (str for text, parsed object for structured output).
+- `history`: All messages exchanged during sampling.
+
+
+### `SampleStep` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L55" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Result of a single sampling call.
+
+Represents what the LLM returned in this step plus the message history.
+
+
+**Methods:**
+
+#### `is_tool_use` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L65" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_tool_use(self) -> bool
+```
+
+True if the LLM is requesting tool execution.
+
+
+#### `text` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L72" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+text(self) -> str | None
+```
+
+Extract text from the response, if available.
+
+
+#### `tool_calls` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tool_calls(self) -> list[ToolUseContent]
+```
+
+Get the list of tool calls from the response.
+

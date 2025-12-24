@@ -62,7 +62,7 @@ y=2)` will call the parent tool with `x=1` and `y=2`.
 - `RuntimeError`: If called outside a transformed tool context.
 
 
-### `apply_transformations_to_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L924" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `apply_transformations_to_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L916" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 apply_transformations_to_tools(tools: dict[str, Tool], transformations: dict[str, ToolTransformConfig]) -> dict[str, Tool]
@@ -71,6 +71,9 @@ apply_transformations_to_tools(tools: dict[str, Tool], transformations: dict[str
 
 Apply a list of transformations to a list of tools. Tools that do not have any transformations
 are left unchanged.
+
+Note: tools dict is keyed by prefixed key (e.g., "tool:my_tool"),
+but transformations are keyed by tool name (e.g., "my_tool").
 
 
 ## Classes
@@ -83,6 +86,16 @@ Configuration for transforming a parent tool's argument.
 This class allows fine-grained control over how individual arguments are transformed
 when creating a new tool from an existing one. You can rename arguments, change their
 descriptions, add default values, or hide them from clients while passing constants.
+
+**Attributes:**
+- `name`: New name for the argument. Use None to keep original name, or ... for no change.
+- `description`: New description for the argument. Use None to remove description, or ... for no change.
+- `default`: New default value for the argument. Use ... for no change.
+- `default_factory`: Callable that returns a default value. Cannot be used with default.
+- `type`: New type for the argument. Use ... for no change.
+- `hide`: If True, hide this argument from clients but pass a constant value to parent.
+- `required`: If True, make argument required (remove default). Use ... for no change.
+- `examples`: Examples for the argument. Use ... for no change.
 
 **Examples:**
 
@@ -168,6 +181,13 @@ or can include a custom function that uses forward() to call the parent tool
 with transformed arguments. Output schemas and structured outputs are automatically
 inherited from the parent tool but can be overridden or disabled.
 
+**Attributes:**
+- `parent_tool`: The original tool that this tool was transformed from.
+- `fn`: The function to execute when this tool is called (either the forwarding
+function for pure transformations or a custom user function).
+- `forwarding_fn`: Internal function that handles argument transformation and
+validation when forward() is called from custom functions.
+
 
 **Methods:**
 
@@ -193,7 +213,7 @@ functions.
 #### `from_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L363" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-from_tool(cls, tool: Tool, name: str | None = None, title: str | NotSetT | None = NotSet, description: str | NotSetT | None = NotSet, tags: set[str] | None = None, transform_fn: Callable[..., Any] | None = None, transform_args: dict[str, ArgTransform] | None = None, annotations: ToolAnnotations | NotSetT | None = NotSet, output_schema: dict[str, Any] | NotSetT | None = NotSet, serializer: Callable[[Any], str] | NotSetT | None = NotSet, meta: dict[str, Any] | NotSetT | None = NotSet, enabled: bool | None = None) -> TransformedTool
+from_tool(cls, tool: Tool, name: str | None = None, title: str | NotSetT | None = NotSet, description: str | NotSetT | None = NotSet, tags: set[str] | None = None, transform_fn: Callable[..., Any] | None = None, transform_args: dict[str, ArgTransform] | None = None, annotations: ToolAnnotations | NotSetT | None = NotSet, output_schema: dict[str, Any] | NotSetT | None = NotSet, serializer: Callable[[Any], str] | NotSetT | None = NotSet, meta: dict[str, Any] | NotSetT | None = NotSet) -> TransformedTool
 ```
 
 Create a transformed tool from a parent tool.
@@ -272,7 +292,7 @@ async def custom_output(**kwargs) -> ToolResult:
 ```
 
 
-### `ToolTransformConfig` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L878" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ToolTransformConfig` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L875" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Provides a way to transform a tool.
@@ -280,7 +300,7 @@ Provides a way to transform a tool.
 
 **Methods:**
 
-#### `apply` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L910" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `apply` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L902" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 apply(self, tool: Tool) -> TransformedTool

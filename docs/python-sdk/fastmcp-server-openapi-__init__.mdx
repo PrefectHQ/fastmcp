@@ -6,4 +6,22 @@ sidebarTitle: __init__
 # `fastmcp.server.openapi`
 
 
-OpenAPI server implementation for FastMCP - refactored for better maintainability.
+OpenAPI server implementation for FastMCP.
+
+.. deprecated::
+    This module is deprecated. Import from fastmcp.server.providers.openapi instead.
+
+The recommended approach is to use OpenAPIProvider with FastMCP:
+
+    from fastmcp import FastMCP
+    from fastmcp.server.providers.openapi import OpenAPIProvider
+    import httpx
+
+    client = httpx.AsyncClient(base_url="https://api.example.com")
+    provider = OpenAPIProvider(openapi_spec=spec, client=client)
+
+    mcp = FastMCP("My API Server")
+    mcp.add_provider(provider)
+
+FastMCPOpenAPI is still available but deprecated.
+

@@ -1,0 +1,76 @@
+---
+title: sampling_tool
+sidebarTitle: sampling_tool
+---
+
+# `fastmcp.server.sampling.sampling_tool`
+
+
+SamplingTool for use during LLM sampling requests.
+
+## Classes
+
+### `SamplingTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A tool that can be used during LLM sampling.
+
+SamplingTools bundle a tool's schema (name, description, parameters) with
+an executor function, enabling servers to execute agentic workflows where
+the LLM can request tool calls during sampling.
+
+In most cases, pass functions directly to ctx.sample():
+
+    def search(query: str) -> str:
+        '''Search the web.'''
+        return web_search(query)
+
+    result = await context.sample(
+        messages="Find info about Python",
+        tools=[search],  # Plain functions work directly
+    )
+
+Create a SamplingTool explicitly when you need custom name/description:
+
+    tool = SamplingTool.from_function(search, name="web_search")
+
+
+**Methods:**
+
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L45" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run(self, arguments: dict[str, Any] | None = None) -> Any
+```
+
+Execute the tool with the given arguments.
+
+**Args:**
+- `arguments`: Dictionary of arguments to pass to the tool function.
+
+**Returns:**
+- The result of executing the tool function.
+
+
+#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+from_function(cls, fn: Callable[..., Any]) -> SamplingTool
+```
+
+Create a SamplingTool from a function.
+
+The function's signature is analyzed to generate a JSON schema for
+the tool's parameters. Type hints are used to determine parameter types.
+
+**Args:**
+- `fn`: The function to create a tool from.
+- `name`: Optional name override. Defaults to the function's name.
+- `description`: Optional description override. Defaults to the function's docstring.
+
+**Returns:**
+- A SamplingTool wrapping the function.
+
+**Raises:**
+- `ValueError`: If the function is a lambda without a name override.
+

@@ -1,0 +1,117 @@
+---
+title: transforming
+sidebarTitle: transforming
+---
+
+# `fastmcp.server.providers.transforming`
+
+
+TransformingProvider for applying component transformations.
+
+This module provides the `TransformingProvider` class that wraps any Provider
+and applies transformations like namespace prefixes and tool renames.
+
+
+## Classes
+
+### `TransformingProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/transforming.py#L29" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Wraps any provider and applies component transformations.
+
+Users typically use `provider.with_transforms()` rather than instantiating
+this class directly. Multiple `.with_transforms()` calls stack - each
+creates a new wrapper that composes with the previous.
+
+
+**Methods:**
+
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/transforming.py#L169" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self) -> Sequence[Tool]
+```
+
+List tools with transformations applied.
+
+
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/transforming.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool(self, name: str) -> Tool | None
+```
+
+Get tool by transformed name.
+
+
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/transforming.py#L191" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resources(self) -> Sequence[Resource]
+```
+
+List resources with URI transformations applied.
+
+
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/transforming.py#L199" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource(self, uri: str) -> Resource | None
+```
+
+Get resource by transformed URI.
+
+
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/transforming.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resource_templates(self) -> Sequence[ResourceTemplate]
+```
+
+List resource templates with URI transformations applied.
+
+
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/transforming.py#L223" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource_template(self, uri: str) -> ResourceTemplate | None
+```
+
+Get resource template by transformed URI.
+
+
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/transforming.py#L241" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_prompts(self) -> Sequence[Prompt]
+```
+
+List prompts with transformations applied.
+
+
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/transforming.py#L249" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(self, name: str) -> Prompt | None
+```
+
+Get prompt by transformed name.
+
+
+#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/transforming.py#L263" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tasks(self) -> Sequence[FastMCPComponent]
+```
+
+Get tasks with transformations applied to all components.
+
+
+#### `lifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/transforming.py#L304" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+lifespan(self) -> AsyncIterator[None]
+```
+
+Delegate lifespan to wrapped provider.
+

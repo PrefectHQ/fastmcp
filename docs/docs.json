@@ -320,7 +320,20 @@
                   "python-sdk/fastmcp-client-oauth_callback",
                   "python-sdk/fastmcp-client-progress",
                   "python-sdk/fastmcp-client-roots",
-                  "python-sdk/fastmcp-client-sampling",
+                  {
+                    "group": "sampling",
+                    "pages": [
+                      "python-sdk/fastmcp-client-sampling-__init__",
+                      {
+                        "group": "handlers",
+                        "pages": [
+                          "python-sdk/fastmcp-client-sampling-handlers-__init__",
+                          "python-sdk/fastmcp-client-sampling-handlers-anthropic",
+                          "python-sdk/fastmcp-client-sampling-handlers-openai"
+                        ]
+                      }
+                    ]
+                  },
                   "python-sdk/fastmcp-client-tasks",
                   "python-sdk/fastmcp-client-transports"
                 ]
@@ -329,8 +342,7 @@
                 "group": "fastmcp.prompts",
                 "pages": [
                   "python-sdk/fastmcp-prompts-__init__",
-                  "python-sdk/fastmcp-prompts-prompt",
-                  "python-sdk/fastmcp-prompts-prompt_manager"
+                  "python-sdk/fastmcp-prompts-prompt"
                 ]
               },
               {
@@ -338,7 +350,6 @@
                 "pages": [
                   "python-sdk/fastmcp-resources-__init__",
                   "python-sdk/fastmcp-resources-resource",
-                  "python-sdk/fastmcp-resources-resource_manager",
                   "python-sdk/fastmcp-resources-template",
                   "python-sdk/fastmcp-resources-types"
                 ]
@@ -408,7 +419,35 @@
                       "python-sdk/fastmcp-server-openapi-server"
                     ]
                   },
+                  {
+                    "group": "providers",
+                    "pages": [
+                      "python-sdk/fastmcp-server-providers-__init__",
+                      "python-sdk/fastmcp-server-providers-base",
+                      "python-sdk/fastmcp-server-providers-fastmcp_provider",
+                      "python-sdk/fastmcp-server-providers-local_provider",
+                      {
+                        "group": "openapi",
+                        "pages": [
+                          "python-sdk/fastmcp-server-providers-openapi-__init__",
+                          "python-sdk/fastmcp-server-providers-openapi-components",
+                          "python-sdk/fastmcp-server-providers-openapi-provider",
+                          "python-sdk/fastmcp-server-providers-openapi-routing"
+                        ]
+                      },
+                      "python-sdk/fastmcp-server-providers-proxy",
+                      "python-sdk/fastmcp-server-providers-transforming"
+                    ]
+                  },
                   "python-sdk/fastmcp-server-proxy",
+                  {
+                    "group": "sampling",
+                    "pages": [
+                      "python-sdk/fastmcp-server-sampling-__init__",
+                      "python-sdk/fastmcp-server-sampling-run",
+                      "python-sdk/fastmcp-server-sampling-sampling_tool"
+                    ]
+                  },
                   "python-sdk/fastmcp-server-server",
                   {
                     "group": "tasks",
@@ -416,10 +455,10 @@
                       "python-sdk/fastmcp-server-tasks-__init__",
                       "python-sdk/fastmcp-server-tasks-capabilities",
                       "python-sdk/fastmcp-server-tasks-config",
-                      "python-sdk/fastmcp-server-tasks-converters",
                       "python-sdk/fastmcp-server-tasks-handlers",
                       "python-sdk/fastmcp-server-tasks-keys",
-                      "python-sdk/fastmcp-server-tasks-protocol",
+                      "python-sdk/fastmcp-server-tasks-requests",
+                      "python-sdk/fastmcp-server-tasks-routing",
                       "python-sdk/fastmcp-server-tasks-subscriptions"
                     ]
                   }
@@ -430,7 +469,6 @@
                 "pages": [
                   "python-sdk/fastmcp-tools-__init__",
                   "python-sdk/fastmcp-tools-tool",
-                  "python-sdk/fastmcp-tools-tool_manager",
                   "python-sdk/fastmcp-tools-tool_transform"
                 ]
               },
@@ -491,7 +529,8 @@
                   },
                   "python-sdk/fastmcp-utilities-tests",
                   "python-sdk/fastmcp-utilities-types",
-                  "python-sdk/fastmcp-utilities-ui"
+                  "python-sdk/fastmcp-utilities-ui",
+                  "python-sdk/fastmcp-utilities-visibility"
                 ]
               }
             ]

@@ -1,0 +1,86 @@
+---
+title: visibility
+sidebarTitle: visibility
+---
+
+# `fastmcp.utilities.visibility`
+
+
+Visibility filtering for FastMCP components.
+
+This module provides the VisibilityFilter class which handles blocklist and
+allowlist logic for controlling component visibility at both the provider
+and server levels.
+
+
+## Classes
+
+### `VisibilityFilter` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/visibility.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Manages component visibility with blocklist and allowlist support.
+
+Both servers and providers use this class to control which components
+are visible. Visibility is hierarchical: if a component is hidden at
+any level (provider or server), it's hidden to the client.
+
+Filtering logic (blocklist wins over allowlist):
+1. If component key is in _disabled_keys → HIDDEN
+2. If any component tag is in _disabled_tags → HIDDEN
+3. If _default_enabled is False and component not in allowlist → HIDDEN
+4. Otherwise → VISIBLE
+
+The `only=True` flag on enable() switches to allowlist mode:
+- Sets _default_enabled = False
+- Clears existing allowlists
+- Adds specified keys/tags to allowlist
+
+
+**Methods:**
+
+#### `disable` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/visibility.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+disable(self) -> None
+```
+
+Add to blocklist (hide components).
+
+**Args:**
+- `keys`: Component keys to hide (e.g., "tool\:my_tool", "resource\:file\://x")
+- `tags`: Tags to hide - any component with these tags will be hidden
+
+
+#### `enable` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/visibility.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+enable(self) -> None
+```
+
+Remove from blocklist, or set allowlist with only=True.
+
+**Args:**
+- `keys`: Component keys to show
+- `tags`: Tags to show
+- `only`: If True, switches to allowlist mode - ONLY show these keys/tags.
+This sets default visibility to False, clears existing allowlists,
+and adds the specified keys/tags to the allowlist.
+
+
+#### `reset` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/visibility.py#L159" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+reset(self) -> None
+```
+
+Reset to default state (everything enabled, no filters).
+
+
+#### `is_enabled` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/visibility.py#L178" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_enabled(self, component: FastMCPComponent) -> bool
+```
+
+Check if component is enabled. Blocklist wins over allowlist.
+

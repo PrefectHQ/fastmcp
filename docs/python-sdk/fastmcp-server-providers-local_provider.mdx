@@ -1,0 +1,372 @@
+---
+title: local_provider
+sidebarTitle: local_provider
+---
+
+# `fastmcp.server.providers.local_provider`
+
+
+LocalProvider for locally-defined MCP components.
+
+This module provides the `LocalProvider` class that manages tools, resources,
+templates, and prompts registered via decorators or direct methods.
+
+LocalProvider can be used standalone and attached to multiple servers:
+
+```python
+from fastmcp.server.providers import LocalProvider
+
+# Create a reusable provider with tools
+provider = LocalProvider()
+
+@provider.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+# Attach to any server
+from fastmcp import FastMCP
+server1 = FastMCP("Server1", providers=[provider])
+server2 = FastMCP("Server2", providers=[provider])
+```
+
+
+## Classes
+
+### `LocalProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L59" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Provider for locally-defined components.
+
+Supports decorator-based registration (`@provider.tool`, `@provider.resource`,
+`@provider.prompt`) and direct object registration methods.
+
+When used standalone, LocalProvider uses default settings. When attached
+to a FastMCP server via the server's decorators, server-level settings
+like `_tool_serializer` and `_support_tasks_by_default` are injected.
+
+
+**Methods:**
+
+#### `add_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L182" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_tool(self, tool: Tool) -> Tool
+```
+
+Add a tool to this provider's storage.
+
+
+#### `remove_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L186" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+remove_tool(self, name: str) -> None
+```
+
+Remove a tool from this provider's storage.
+
+
+#### `add_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L190" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_resource(self, resource: Resource) -> Resource
+```
+
+Add a resource to this provider's storage.
+
+
+#### `remove_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L194" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+remove_resource(self, uri: str) -> None
+```
+
+Remove a resource from this provider's storage.
+
+
+#### `add_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_template(self, template: ResourceTemplate) -> ResourceTemplate
+```
+
+Add a resource template to this provider's storage.
+
+
+#### `remove_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L202" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+remove_template(self, uri_template: str) -> None
+```
+
+Remove a resource template from this provider's storage.
+
+
+#### `add_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L206" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_prompt(self, prompt: Prompt) -> Prompt
+```
+
+Add a prompt to this provider's storage.
+
+
+#### `remove_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L210" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+remove_prompt(self, name: str) -> None
+```
+
+Remove a prompt from this provider's storage.
+
+
+#### `add_tool_transformation` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L218" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_tool_transformation(self, tool_name: str, transformation: ToolTransformConfig) -> None
+```
+
+Add a tool transformation.
+
+**Args:**
+- `tool_name`: The name of the tool to transform.
+- `transformation`: The transformation configuration.
+
+
+#### `get_tool_transformation` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L229" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool_transformation(self, tool_name: str) -> ToolTransformConfig | None
+```
+
+Get a tool transformation.
+
+**Args:**
+- `tool_name`: The name of the tool.
+
+**Returns:**
+- The transformation config, or None if not found.
+
+
+#### `remove_tool_transformation` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L240" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+remove_tool_transformation(self, tool_name: str) -> None
+```
+
+Remove a tool transformation.
+
+**Args:**
+- `tool_name`: The name of the tool.
+
+
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L253" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self) -> Sequence[Tool]
+```
+
+Return all visible tools with transformations applied.
+
+
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L262" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool(self, name: str) -> Tool | None
+```
+
+Get a tool by name, with transformations applied.
+
+
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L267" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resources(self) -> Sequence[Resource]
+```
+
+Return all visible resources.
+
+
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L275" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource(self, uri: str) -> Resource | None
+```
+
+Get a resource by URI if visible.
+
+
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L282" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resource_templates(self) -> Sequence[ResourceTemplate]
+```
+
+Return all visible resource templates.
+
+
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L290" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource_template(self, uri: str) -> ResourceTemplate | None
+```
+
+Get a resource template that matches the given URI if visible.
+
+
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L301" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_prompts(self) -> Sequence[Prompt]
+```
+
+Return all visible prompts.
+
+
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L309" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(self, name: str) -> Prompt | None
+```
+
+Get a prompt by name if visible.
+
+
+#### `get_component` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L316" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_component(self, key: str) -> Tool | Resource | ResourceTemplate | Prompt | None
+```
+
+Get a component by its prefixed key.
+
+Efficient O(1) lookup in the unified components dict.
+
+
+#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L332" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tasks(self) -> Sequence[FastMCPComponent]
+```
+
+Return components eligible for background task execution.
+
+Returns components that have task_config.mode != 'forbidden'.
+This includes both FunctionTool/Resource/Prompt instances created via
+decorators and custom Tool/Resource/Prompt subclasses.
+
+
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L346" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tool(self, name_or_fn: AnyFunction) -> FunctionTool
+```
+
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L365" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tool(self, name_or_fn: str | None = None) -> Callable[[AnyFunction], FunctionTool]
+```
+
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L383" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tool(self, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionTool] | FunctionTool | partial[Callable[[AnyFunction], FunctionTool] | FunctionTool]
+```
+
+Decorator to register a tool.
+
+This decorator supports multiple calling patterns:
+- @provider.tool (without parentheses)
+- @provider.tool() (with empty parentheses)
+- @provider.tool("custom_name") (with name as first argument)
+- @provider.tool(name="custom_name") (with name as keyword argument)
+- provider.tool(function, name="custom_name") (direct function call)
+
+**Args:**
+- `name_or_fn`: Either a function (when used as @tool), a string name, or None
+- `name`: Optional name for the tool (keyword-only, alternative to name_or_fn)
+- `title`: Optional title for the tool
+- `description`: Optional description of what the tool does
+- `icons`: Optional icons for the tool
+- `tags`: Optional set of tags for categorizing the tool
+- `output_schema`: Optional JSON schema for the tool's output
+- `annotations`: Optional annotations about the tool's behavior
+- `exclude_args`: Optional list of argument names to exclude from the tool schema
+- `meta`: Optional meta information about the tool
+- `enabled`: Whether the tool is enabled (default True). If False, adds to blocklist.
+- `task`: Optional task configuration for background execution
+- `serializer`: Optional serializer for the tool result
+
+**Returns:**
+- The registered FunctionTool or a decorator function.
+
+
+#### `resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L523" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+resource(self, uri: str) -> Callable[[AnyFunction], Resource | ResourceTemplate]
+```
+
+Decorator to register a function as a resource.
+
+If the URI contains parameters (e.g. "resource://{param}") or the function
+has parameters, it will be registered as a template resource.
+
+**Args:**
+- `uri`: URI for the resource (e.g. "resource\://my-resource" or "resource\://{param}")
+- `name`: Optional name for the resource
+- `title`: Optional title for the resource
+- `description`: Optional description of the resource
+- `icons`: Optional icons for the resource
+- `mime_type`: Optional MIME type for the resource
+- `tags`: Optional set of tags for categorizing the resource
+- `enabled`: Whether the resource is enabled (default True). If False, adds to blocklist.
+- `annotations`: Optional annotations about the resource's behavior
+- `meta`: Optional meta information about the resource
+- `task`: Optional task configuration for background execution
+
+**Returns:**
+- A decorator function.
+
+
+#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L653" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+prompt(self, name_or_fn: AnyFunction) -> FunctionPrompt
+```
+
+#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L668" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+prompt(self, name_or_fn: str | None = None) -> Callable[[AnyFunction], FunctionPrompt]
+```
+
+#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L682" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+prompt(self, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt | partial[Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt]
+```
+
+Decorator to register a prompt.
+
+This decorator supports multiple calling patterns:
+- @provider.prompt (without parentheses)
+- @provider.prompt() (with empty parentheses)
+- @provider.prompt("custom_name") (with name as first argument)
+- @provider.prompt(name="custom_name") (with name as keyword argument)
+- provider.prompt(function, name="custom_name") (direct function call)
+
+**Args:**
+- `name_or_fn`: Either a function (when used as @prompt), a string name, or None
+- `name`: Optional name for the prompt (keyword-only, alternative to name_or_fn)
+- `title`: Optional title for the prompt
+- `description`: Optional description of what the prompt does
+- `icons`: Optional icons for the prompt
+- `tags`: Optional set of tags for categorizing the prompt
+- `enabled`: Whether the prompt is enabled (default True). If False, adds to blocklist.
+- `meta`: Optional meta information about the prompt
+- `task`: Optional task configuration for background execution
+
+**Returns:**
+- The registered FunctionPrompt or a decorator function.
+
