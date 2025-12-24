@@ -625,8 +625,8 @@ class TestDynamicChanges:
         tools = await main_app.get_tools()
         assert "sub_temp_tool" in tools
 
-        # Remove the tool from sub_app
-        sub_app._tool_manager._tools.pop("temp_tool")
+        # Remove the tool from sub_app using public API
+        sub_app.remove_tool("temp_tool")
 
         # The tool should no longer be accessible
         tools = await main_app.get_tools()
@@ -864,7 +864,8 @@ class TestAsProxyKwarg:
         sub = FastMCP("Sub")
 
         mcp.mount(sub, "sub")
-        provider = mcp._providers[0]
+        # Index 1 because LocalProvider is at index 0
+        provider = mcp._providers[1]
         # With namespace, we get TransformingProvider wrapping FastMCPProvider
         assert isinstance(provider, TransformingProvider)
         assert isinstance(provider._wrapped, FastMCPProvider)
@@ -876,7 +877,8 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub, "sub", as_proxy=False)
 
-        provider = mcp._providers[0]
+        # Index 1 because LocalProvider is at index 0
+        provider = mcp._providers[1]
         # With namespace, we get TransformingProvider wrapping FastMCPProvider
         assert isinstance(provider, TransformingProvider)
         assert isinstance(provider._wrapped, FastMCPProvider)
@@ -888,7 +890,8 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub, "sub", as_proxy=True)
 
-        provider = mcp._providers[0]
+        # Index 1 because LocalProvider is at index 0
+        provider = mcp._providers[1]
         # With namespace, we get TransformingProvider wrapping FastMCPProvider
         assert isinstance(provider, TransformingProvider)
         assert isinstance(provider._wrapped, FastMCPProvider)
@@ -912,7 +915,8 @@ class TestAsProxyKwarg:
         mcp.mount(sub, "sub")
 
         # Server should be mounted directly without auto-proxying
-        provider = mcp._providers[0]
+        # Index 1 because LocalProvider is at index 0
+        provider = mcp._providers[1]
         assert isinstance(provider, TransformingProvider)
         assert isinstance(provider._wrapped, FastMCPProvider)
         assert provider._wrapped.server is sub
@@ -924,7 +928,8 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub_proxy, "sub")
 
-        provider = mcp._providers[0]
+        # Index 1 because LocalProvider is at index 0
+        provider = mcp._providers[1]
         assert isinstance(provider, TransformingProvider)
         assert isinstance(provider._wrapped, FastMCPProvider)
         assert provider._wrapped.server is sub_proxy
@@ -936,7 +941,8 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub_proxy, "sub", as_proxy=False)
 
-        provider = mcp._providers[0]
+        # Index 1 because LocalProvider is at index 0
+        provider = mcp._providers[1]
         assert isinstance(provider, TransformingProvider)
         assert isinstance(provider._wrapped, FastMCPProvider)
         assert provider._wrapped.server is sub_proxy
@@ -948,7 +954,8 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub_proxy, "sub", as_proxy=True)
 
-        provider = mcp._providers[0]
+        # Index 1 because LocalProvider is at index 0
+        provider = mcp._providers[1]
         assert isinstance(provider, TransformingProvider)
         assert isinstance(provider._wrapped, FastMCPProvider)
         assert provider._wrapped.server is sub_proxy
@@ -1166,17 +1173,21 @@ class TestCustomRouteForwarding:
 
     async def test_mounted_servers_tracking(self):
         """Test that _providers list tracks mounted servers correctly."""
+        from fastmcp.server.providers.local_provider import LocalProvider
+
         main_server = FastMCP("MainServer")
         sub_server1 = FastMCP("SubServer1")
         sub_server2 = FastMCP("SubServer2")
 
-        # Initially no providers
-        assert len(main_server._providers) == 0
+        # Initially only LocalProvider
+        assert len(main_server._providers) == 1
+        assert isinstance(main_server._providers[0], LocalProvider)
 
         # Mount first server
         main_server.mount(sub_server1, "sub1")
-        assert len(main_server._providers) == 1
-        provider1 = main_server._providers[0]
+        assert len(main_server._providers) == 2
+        # LocalProvider is at index 0, mounted provider at index 1
+        provider1 = main_server._providers[1]
         assert isinstance(provider1, TransformingProvider)
         assert isinstance(provider1._wrapped, FastMCPProvider)
         assert provider1._wrapped.server == sub_server1
@@ -1184,8 +1195,8 @@ class TestCustomRouteForwarding:
 
         # Mount second server
         main_server.mount(sub_server2, "sub2")
-        assert len(main_server._providers) == 2
-        provider2 = main_server._providers[1]
+        assert len(main_server._providers) == 3
+        provider2 = main_server._providers[2]
         assert isinstance(provider2, TransformingProvider)
         assert isinstance(provider2._wrapped, FastMCPProvider)
         assert provider2._wrapped.server == sub_server2

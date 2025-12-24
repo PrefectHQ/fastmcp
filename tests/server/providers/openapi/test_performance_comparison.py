@@ -222,7 +222,7 @@ class TestPerformance:
             f"Server should initialize in under 100ms, got {avg_time:.4f}s"
         )
 
-    def test_functionality_after_optimization(self, comprehensive_spec):
+    async def test_functionality_after_optimization(self, comprehensive_spec):
         """Verify that performance optimization doesn't break functionality."""
         client = httpx.AsyncClient(base_url="https://api.example.com")
 
@@ -232,14 +232,8 @@ class TestPerformance:
             name="Test Server",
         )
 
-        # Get tools from the provider
-        def get_provider_tools(server):
-            for provider in server._providers:
-                if hasattr(provider, "_tools"):
-                    return provider._tools
-            return {}
-
-        tools = get_provider_tools(server)
+        # Get tools from the server via public API
+        tools = await server.get_tools()
 
         # Should have 6 operations in the spec
         assert len(tools) == 6
@@ -258,12 +252,13 @@ class TestPerformance:
     def test_memory_efficiency(self, comprehensive_spec):
         """Test that implementation doesn't significantly increase memory usage."""
 
-        # Helper to get tools from provider
-        def get_provider_tools(server):
+        # Helper to count total tools across all providers
+        def count_provider_tools(server):
+            total = 0
             for provider in server._providers:
                 if hasattr(provider, "_tools"):
-                    return provider._tools
-            return {}
+                    total += len(provider._tools)
+            return total
 
         gc.collect()  # Clean up before baseline
         baseline_refs = len(gc.get_objects())
@@ -280,7 +275,7 @@ class TestPerformance:
 
         # Servers should all be functional
         assert len(servers) == 10
-        assert all(len(get_provider_tools(s)) == 6 for s in servers)
+        assert all(count_provider_tools(s) == 6 for s in servers)
 
         # Memory usage shouldn't explode
         gc.collect()

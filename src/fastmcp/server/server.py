@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import re
 import secrets
 import warnings
@@ -58,6 +57,7 @@ import fastmcp
 import fastmcp.server
 from fastmcp.exceptions import (
     DisabledError,
+    FastMCPError,
     NotFoundError,
     PromptError,
     ResourceError,
@@ -67,9 +67,7 @@ from fastmcp.exceptions import (
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import FunctionPrompt, PromptResult
-from fastmcp.prompts.prompt_manager import PromptManager
 from fastmcp.resources.resource import Resource, ResourceContent
-from fastmcp.resources.resource_manager import ResourceManager
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.event_store import EventStore
@@ -80,12 +78,12 @@ from fastmcp.server.http import (
 )
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
-from fastmcp.server.providers import Provider
+from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.tasks.capabilities import get_task_capabilities
 from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.settings import Settings
 from fastmcp.tools.tool import FunctionTool, Tool, ToolResult
-from fastmcp.tools.tool_manager import ToolManager
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.cli import log_server_banner
 from fastmcp.utilities.components import FastMCPComponent
@@ -107,6 +105,43 @@ logger = get_logger(__name__)
 
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
+
+
+def _resolve_on_duplicate(
+    on_duplicate: DuplicateBehavior | None,
+    on_duplicate_tools: DuplicateBehavior | None,
+    on_duplicate_resources: DuplicateBehavior | None,
+    on_duplicate_prompts: DuplicateBehavior | None,
+) -> DuplicateBehavior:
+    """Resolve on_duplicate from deprecated per-type params.
+
+    Takes the most strict value if multiple are provided.
+    Delete this function when removing deprecated params.
+    """
+    strictness_order: list[DuplicateBehavior] = ["error", "warn", "replace", "ignore"]
+    deprecated_values: list[DuplicateBehavior] = []
+
+    deprecated_params: list[tuple[str, DuplicateBehavior | None]] = [
+        ("on_duplicate_tools", on_duplicate_tools),
+        ("on_duplicate_resources", on_duplicate_resources),
+        ("on_duplicate_prompts", on_duplicate_prompts),
+    ]
+    for name, value in deprecated_params:
+        if value is not None:
+            if fastmcp.settings.deprecation_warnings:
+                warnings.warn(
+                    f"{name} is deprecated, use on_duplicate instead",
+                    DeprecationWarning,
+                    stacklevel=4,
+                )
+            deprecated_values.append(value)
+
+    if on_duplicate is None and deprecated_values:
+        return min(deprecated_values, key=lambda x: strictness_order.index(x))
+
+    return on_duplicate or "warn"
+
+
 Transport = Literal["stdio", "http", "sse", "streamable-http"]
 
 # Compiled URI parsing regex to split a URI into protocol and path components
@@ -174,16 +209,15 @@ class FastMCP(Generic[LifespanResultT]):
         include_tags: Collection[str] | None = None,
         exclude_tags: Collection[str] | None = None,
         include_fastmcp_meta: bool | None = None,
-        on_duplicate_tools: DuplicateBehavior | None = None,
-        on_duplicate_resources: DuplicateBehavior | None = None,
-        on_duplicate_prompts: DuplicateBehavior | None = None,
+        on_duplicate: DuplicateBehavior | None = None,
         strict_input_validation: bool | None = None,
         tasks: bool | None = None,
         # ---
+        # --- DEPRECATED parameters ---
         # ---
-        # --- The following arguments are DEPRECATED ---
-        # ---
-        # ---
+        on_duplicate_tools: DuplicateBehavior | None = None,
+        on_duplicate_resources: DuplicateBehavior | None = None,
+        on_duplicate_prompts: DuplicateBehavior | None = None,
         log_level: str | None = None,
         debug: bool | None = None,
         host: str | None = None,
@@ -196,6 +230,14 @@ class FastMCP(Generic[LifespanResultT]):
         sampling_handler: SamplingHandler | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
     ):
+        # Resolve on_duplicate from deprecated params (delete when removing deprecation)
+        self._on_duplicate: DuplicateBehaviorSetting = _resolve_on_duplicate(
+            on_duplicate,
+            on_duplicate_tools,
+            on_duplicate_resources,
+            on_duplicate_prompts,
+        )
+
         # Resolve server default for background task support
         self._support_tasks_by_default: bool = tasks if tasks is not None else False
 
@@ -203,20 +245,23 @@ class FastMCP(Generic[LifespanResultT]):
         self._docket = None
 
         self._additional_http_routes: list[BaseRoute] = []
-        self._providers: list[Provider] = list(providers or [])
-        self._tool_manager: ToolManager = ToolManager(
-            duplicate_behavior=on_duplicate_tools,
-            mask_error_details=mask_error_details,
-            transformations=tool_transformations,
+
+        # Create LocalProvider for local components
+        self._local_provider: LocalProvider = LocalProvider(
+            on_duplicate=self._on_duplicate
         )
-        self._resource_manager: ResourceManager = ResourceManager(
-            duplicate_behavior=on_duplicate_resources,
-            mask_error_details=mask_error_details,
-        )
-        self._prompt_manager: PromptManager = PromptManager(
-            duplicate_behavior=on_duplicate_prompts,
-            mask_error_details=mask_error_details,
-        )
+
+        # Apply tool transformations to LocalProvider
+        if tool_transformations:
+            for tool_name, transformation in tool_transformations.items():
+                self._local_provider.add_tool_transformation(tool_name, transformation)
+
+        # LocalProvider is always first in the provider list
+        self._providers: list[Provider] = [
+            self._local_provider,
+            *(providers or []),
+        ]
+
         # Store mask_error_details for execution error handling
         self._mask_error_details: bool = (
             mask_error_details
@@ -413,21 +458,7 @@ class FastMCP(Generic[LifespanResultT]):
                 # Store on server instance for cross-task access (FastMCPTransport)
                 self._docket = docket
 
-                # Register local task-enabled components with Docket
-                # Each component checks task_config internally and no-ops if forbidden
-                for tool in self._tool_manager._tools.values():
-                    tool.register_with_docket(docket)
-
-                for prompt in self._prompt_manager._prompts.values():
-                    prompt.register_with_docket(docket)
-
-                for resource in self._resource_manager._resources.values():
-                    resource.register_with_docket(docket)
-
-                for template in self._resource_manager._templates.values():
-                    template.register_with_docket(docket)
-
-                # Register provider components
+                # Register task-enabled components from all providers (LocalProvider first)
                 for provider in self._providers:
                     try:
                         tasks = await provider.get_tasks()
@@ -676,15 +707,18 @@ class FastMCP(Generic[LifespanResultT]):
         self._providers.append(provider)
 
     async def get_tools(self) -> dict[str, Tool]:
-        """Get all tools (unfiltered), including from providers, indexed by key."""
-        all_tools = dict(await self._tool_manager.get_tools())
+        """Get all tools (unfiltered), including from providers, indexed by key.
 
-        # Get tools from providers (including FastMCPProvider)
+        Iterates through all providers (LocalProvider first) and collects tools.
+        First provider wins for duplicate keys.
+        """
+        all_tools: dict[str, Tool] = {}
         for provider in self._providers:
             try:
                 provider_tools = await provider.list_tools()
                 for tool in provider_tools:
-                    all_tools[tool.key] = tool
+                    if tool.key not in all_tools:
+                        all_tools[tool.key] = tool
             except Exception as e:
                 provider_name = getattr(provider, "server", provider).__class__.__name__
                 logger.warning(
@@ -693,18 +727,14 @@ class FastMCP(Generic[LifespanResultT]):
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
                 continue
-
         return all_tools
 
     async def get_tool(self, key: str) -> Tool:
-        """Get a tool by key, checking local tools first then providers."""
-        # Check local tools first
-        try:
-            return await self._tool_manager.get_tool(key)
-        except NotFoundError:
-            pass
+        """Get a tool by key.
 
-        # Try providers
+        Iterates through all providers (LocalProvider first) to find the tool.
+        First provider wins.
+        """
         for provider in self._providers:
             try:
                 tool = await provider.get_tool(key)
@@ -722,19 +752,11 @@ class FastMCP(Generic[LifespanResultT]):
 
         Returns the original ResourceTemplate (not a Resource created from it)
         to preserve the registered function for task execution.
+
+        Iterates through all providers (LocalProvider first).
+        First provider wins. Checks concrete resources first, then templates.
         """
-        # Check local concrete resources first
-        local_resources = await self._resource_manager.get_resources()
-        if uri in local_resources:
-            return local_resources[uri]
-
-        # Check local templates - return the template itself, not a created resource
-        local_templates = await self._resource_manager.get_resource_templates()
-        for template in local_templates.values():
-            if template.matches(uri):
-                return template
-
-        # Check providers
+        # First pass: check concrete resources from all providers
         for provider in self._providers:
             try:
                 resource = await provider.get_resource(uri)
@@ -743,7 +765,7 @@ class FastMCP(Generic[LifespanResultT]):
             except NotFoundError:
                 continue
 
-        # Check provider templates
+        # Second pass: check templates from all providers
         for provider in self._providers:
             try:
                 template = await provider.get_resource_template(uri)
@@ -755,15 +777,18 @@ class FastMCP(Generic[LifespanResultT]):
         return None
 
     async def get_resources(self) -> dict[str, Resource]:
-        """Get all resources (unfiltered), including from providers, indexed by key."""
-        all_resources = dict(await self._resource_manager.get_resources())
+        """Get all resources (unfiltered), including from providers, indexed by key.
 
-        # Get resources from providers (including FastMCPProvider)
+        Iterates through all providers (LocalProvider first) and collects resources.
+        First provider wins for duplicate keys.
+        """
+        all_resources: dict[str, Resource] = {}
         for provider in self._providers:
             try:
                 provider_resources = await provider.list_resources()
                 for resource in provider_resources:
-                    all_resources[resource.key] = resource
+                    if resource.key not in all_resources:
+                        all_resources[resource.key] = resource
             except Exception as e:
                 provider_name = getattr(provider, "server", provider).__class__.__name__
                 logger.warning(
@@ -772,18 +797,14 @@ class FastMCP(Generic[LifespanResultT]):
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
                 continue
-
         return all_resources
 
     async def get_resource(self, key: str) -> Resource:
-        """Get a resource by key, checking local resources first then providers."""
-        # Check local resources first
-        try:
-            return await self._resource_manager.get_resource(key)
-        except NotFoundError:
-            pass
+        """Get a resource by key.
 
-        # Try providers
+        Iterates through all providers (LocalProvider first) to find the resource.
+        First provider wins.
+        """
         for provider in self._providers:
             try:
                 resource = await provider.get_resource(key)
@@ -795,15 +816,18 @@ class FastMCP(Generic[LifespanResultT]):
         raise NotFoundError(f"Unknown resource: {key}")
 
     async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
-        """Get all resource templates (unfiltered), including from providers, indexed by key."""
-        all_templates = dict(await self._resource_manager.get_resource_templates())
+        """Get all resource templates (unfiltered), including from providers, indexed by key.
 
-        # Get templates from providers (including FastMCPProvider)
+        Iterates through all providers (LocalProvider first) and collects templates.
+        First provider wins for duplicate keys.
+        """
+        all_templates: dict[str, ResourceTemplate] = {}
         for provider in self._providers:
             try:
                 provider_templates = await provider.list_resource_templates()
                 for template in provider_templates:
-                    all_templates[template.key] = template
+                    if template.key not in all_templates:
+                        all_templates[template.key] = template
             except Exception as e:
                 provider_name = getattr(provider, "server", provider).__class__.__name__
                 logger.warning(
@@ -812,20 +836,16 @@ class FastMCP(Generic[LifespanResultT]):
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
                 continue
-
         return all_templates
 
     async def get_resource_template(self, key: str) -> ResourceTemplate:
-        """Get a registered resource template by key."""
-        # Check local templates first
-        local_templates = await self._resource_manager.get_resource_templates()
-        if key in local_templates:
-            return local_templates[key]
+        """Get a registered resource template by key.
 
-        # Try providers
+        Iterates through all providers (LocalProvider first) to find the template.
+        First provider wins.
+        """
         for provider in self._providers:
             try:
-                # For templates, we use get_resource_template which matches by URI
                 template = await provider.get_resource_template(key)
                 if template is not None:
                     return template
@@ -835,15 +855,18 @@ class FastMCP(Generic[LifespanResultT]):
         raise NotFoundError(f"Unknown resource template: {key}")
 
     async def get_prompts(self) -> dict[str, Prompt]:
-        """Get all prompts (unfiltered), including from providers, indexed by key."""
-        all_prompts = dict(await self._prompt_manager.get_prompts())
+        """Get all prompts (unfiltered), including from providers, indexed by key.
 
-        # Get prompts from providers (including FastMCPProvider)
+        Iterates through all providers (LocalProvider first) and collects prompts.
+        First provider wins for duplicate keys.
+        """
+        all_prompts: dict[str, Prompt] = {}
         for provider in self._providers:
             try:
                 provider_prompts = await provider.list_prompts()
                 for prompt in provider_prompts:
-                    all_prompts[prompt.key] = prompt
+                    if prompt.key not in all_prompts:
+                        all_prompts[prompt.key] = prompt
             except Exception as e:
                 provider_name = getattr(provider, "server", provider).__class__.__name__
                 logger.warning(
@@ -852,18 +875,14 @@ class FastMCP(Generic[LifespanResultT]):
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
                 continue
-
         return all_prompts
 
     async def get_prompt(self, key: str) -> Prompt:
-        """Get a prompt by key, checking local prompts first then providers."""
-        # Check local prompts first
-        try:
-            return await self._prompt_manager.get_prompt(key)
-        except NotFoundError:
-            pass
+        """Get a prompt by key.
 
-        # Try providers
+        Iterates through all providers (LocalProvider first) to find the prompt.
+        First provider wins.
+        """
         for provider in self._providers:
             try:
                 prompt = await provider.get_prompt(key)
@@ -980,36 +999,25 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> list[Tool]:
         """
         List all available tools.
-        """
-        # 1. Get local tools and filter them
-        local_tools = await self._tool_manager.get_tools()
-        local_tools_dict: dict[str, Tool] = {
-            tool.key: tool
-            for tool in local_tools.values()
-            if self._should_enable_component(tool)
-        }
 
-        # 2. Get tools from providers (later providers win for deduplication)
-        provider_tools_dict: dict[str, Tool] = {}
+        Iterates through all providers (LocalProvider first) and collects tools.
+        First provider wins for duplicate keys.
+        """
+        all_tools: dict[str, Tool] = {}
         for provider in self._providers:
             try:
                 provider_tools = await provider.list_tools()
                 for tool in provider_tools:
-                    if self._should_enable_component(tool):
-                        # Later providers override earlier ones
-                        provider_tools_dict[tool.key] = tool
+                    if (
+                        self._should_enable_component(tool)
+                        and tool.key not in all_tools
+                    ):
+                        all_tools[tool.key] = tool
             except Exception:
                 logger.exception("Error listing tools from provider")
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
-
-        # Remove provider tools that conflict with local tools (local wins)
-        for key in local_tools_dict:
-            provider_tools_dict.pop(key, None)
-
-        # Provider tools come first in the list (for visibility),
-        # but local tools take precedence for execution
-        return list(provider_tools_dict.values()) + list(local_tools_dict.values())
+        return list(all_tools.values())
 
     async def _list_resources_mcp(self) -> list[SDKResource]:
         """
@@ -1056,38 +1064,25 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> list[Resource]:
         """
         List all available resources.
-        """
-        # 1. Filter local resources
-        local_resources = await self._resource_manager.get_resources()
-        local_resources_dict: dict[str, Resource] = {
-            resource.key: resource
-            for resource in local_resources.values()
-            if self._should_enable_component(resource)
-        }
 
-        # 2. Get resources from providers (later providers win for deduplication)
-        provider_resources_dict: dict[str, Resource] = {}
+        Iterates through all providers (LocalProvider first) and collects resources.
+        First provider wins for duplicate keys.
+        """
+        all_resources: dict[str, Resource] = {}
         for provider in self._providers:
             try:
                 provider_resources = await provider.list_resources()
                 for resource in provider_resources:
-                    if self._should_enable_component(resource):
-                        # Later providers override earlier ones
-                        provider_resources_dict[resource.key] = resource
+                    if (
+                        self._should_enable_component(resource)
+                        and resource.key not in all_resources
+                    ):
+                        all_resources[resource.key] = resource
             except Exception:
                 logger.exception("Error listing resources from provider")
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
-
-        # Remove provider resources that conflict with local resources (local wins)
-        for key in local_resources_dict:
-            provider_resources_dict.pop(key, None)
-
-        # Provider resources come first in the list (for visibility),
-        # but local resources take precedence for read operations
-        return list(provider_resources_dict.values()) + list(
-            local_resources_dict.values()
-        )
+        return list(all_resources.values())
 
     async def _list_resource_templates_mcp(self) -> list[SDKResourceTemplate]:
         """
@@ -1135,36 +1130,25 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> list[ResourceTemplate]:
         """
         List all available resource templates.
-        """
-        # 1. Filter local templates
-        local_templates = await self._resource_manager.get_resource_templates()
-        local_templates_dict: dict[str, ResourceTemplate] = {
-            template.key: template
-            for template in local_templates.values()
-            if self._should_enable_component(template)
-        }
 
-        # 2. Get resource templates from providers (later providers win for deduplication)
-        provider_templates_dict: dict[str, ResourceTemplate] = {}
+        Iterates through all providers (LocalProvider first) and collects templates.
+        First provider wins for duplicate keys.
+        """
+        all_templates: dict[str, ResourceTemplate] = {}
         for provider in self._providers:
             try:
                 provider_templates = await provider.list_resource_templates()
                 for template in provider_templates:
-                    if self._should_enable_component(template):
-                        # Later providers override earlier ones
-                        provider_templates_dict[template.key] = template
+                    if (
+                        self._should_enable_component(template)
+                        and template.key not in all_templates
+                    ):
+                        all_templates[template.key] = template
             except Exception:
                 logger.exception("Error listing resource templates from provider")
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
-
-        # Remove provider templates that conflict with local templates (local wins)
-        for key in local_templates_dict:
-            provider_templates_dict.pop(key, None)
-
-        return list(provider_templates_dict.values()) + list(
-            local_templates_dict.values()
-        )
+        return list(all_templates.values())
 
     async def _list_prompts_mcp(self) -> list[SDKPrompt]:
         """
@@ -1212,36 +1196,25 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> list[Prompt]:
         """
         List all available prompts.
-        """
-        # 1. Filter local prompts
-        local_prompts = await self._prompt_manager.get_prompts()
-        local_prompts_dict: dict[str, Prompt] = {
-            prompt.key: prompt
-            for prompt in local_prompts.values()
-            if self._should_enable_component(prompt)
-        }
 
-        # 2. Get prompts from providers (later providers win for deduplication)
-        provider_prompts_dict: dict[str, Prompt] = {}
+        Iterates through all providers (LocalProvider first) and collects prompts.
+        First provider wins for duplicate keys.
+        """
+        all_prompts: dict[str, Prompt] = {}
         for provider in self._providers:
             try:
                 provider_prompts = await provider.list_prompts()
                 for prompt in provider_prompts:
-                    if self._should_enable_component(prompt):
-                        # Later providers override earlier ones
-                        provider_prompts_dict[prompt.key] = prompt
+                    if (
+                        self._should_enable_component(prompt)
+                        and prompt.key not in all_prompts
+                    ):
+                        all_prompts[prompt.key] = prompt
             except Exception:
                 logger.exception("Error listing prompts from provider")
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
-
-        # Remove provider prompts that conflict with local prompts (local wins)
-        for key in local_prompts_dict:
-            provider_prompts_dict.pop(key, None)
-
-        # Provider prompts come first in the list (for visibility),
-        # but local prompts take precedence for render operations
-        return list(provider_prompts_dict.values()) + list(local_prompts_dict.values())
+        return list(all_prompts.values())
 
     async def _call_tool_mcp(
         self, key: str, arguments: dict[str, Any]
@@ -1428,21 +1401,13 @@ class FastMCP(Generic[LifespanResultT]):
         context: MiddlewareContext[mcp.types.CallToolRequestParams],
     ) -> ToolResult | mcp.types.CreateTaskResult:
         """
-        Call a tool
+        Call a tool.
+
+        Iterates through all providers (LocalProvider first) to find the tool.
+        First provider wins.
         """
         tool_name = context.message.name
 
-        # Try local tools first (static tools take precedence)
-        try:
-            tool = await self._tool_manager.get_tool(tool_name)
-            if self._should_enable_component(tool):
-                return await self._execute_tool(
-                    tool, tool_name, context.message.arguments or {}
-                )
-        except NotFoundError:
-            pass
-
-        # Try component providers (first registered wins)
         for provider in self._providers:
             tool = await provider.get_tool(tool_name)
             if tool is not None and self._should_enable_component(tool):
@@ -1462,12 +1427,12 @@ class FastMCP(Generic[LifespanResultT]):
         """
         try:
             return await tool._run(arguments)
+        except FastMCPError:
+            logger.exception(f"Error calling tool {tool_name!r}")
+            raise
         except (ValidationError, PydanticValidationError):
             # Validation errors are never masked - they indicate client input issues
             logger.exception(f"Error validating tool {tool_name!r}")
-            raise
-        except ToolError:
-            logger.exception(f"Error calling tool {tool_name!r}")
             raise
         except Exception as e:
             logger.exception(f"Error calling tool {tool_name!r}")
@@ -1537,41 +1502,15 @@ class FastMCP(Generic[LifespanResultT]):
         """
         Read a resource.
 
+        Iterates through all providers (LocalProvider first) to find the resource.
+        First provider wins. Checks concrete resources first, then templates.
+
         Returns list[ResourceContent] for synchronous execution, or CreateTaskResult
         if the resource was submitted to Docket for background execution.
         """
-
         uri_str = str(context.message.uri)
 
-        # Try local concrete resources first (static resources take precedence)
-        # Note: Don't use get_resource() here because it creates resources from templates,
-        # which would bypass our template execution flow that handles task routing properly.
-        local_resources = await self._resource_manager.get_resources()
-        if uri_str in local_resources:
-            resource = local_resources[uri_str]
-            if self._should_enable_component(resource):
-                result = await self._execute_resource(resource, uri_str)
-                if isinstance(result, mcp.types.CreateTaskResult):
-                    return result
-                # Use mime_type from ResourceContent if set, otherwise from resource
-                if result.mime_type is None:
-                    result.mime_type = resource.mime_type
-                return [result]
-
-        # Try local templates
-        templates = await self._resource_manager.get_resource_templates()
-        for template in templates.values():
-            params = template.matches(uri_str)
-            if params is not None:
-                if self._should_enable_component(template):
-                    # Templates need special task routing - call _execute_template
-                    # which handles passing params to Docket
-                    result = await self._execute_template(template, uri_str, params)
-                    if isinstance(result, mcp.types.CreateTaskResult):
-                        return result
-                    return [result]
-
-        # Try component providers (first registered wins) - concrete resources
+        # First pass: try concrete resources from all providers
         for provider in self._providers:
             resource = await provider.get_resource(uri_str)
             if resource is not None and self._should_enable_component(resource):
@@ -1582,14 +1521,12 @@ class FastMCP(Generic[LifespanResultT]):
                     result.mime_type = resource.mime_type
                 return [result]
 
-        # Try component providers (first registered wins) - templates
+        # Second pass: try templates from all providers
         for provider in self._providers:
             template = await provider.get_resource_template(uri_str)
             if template is not None and self._should_enable_component(template):
                 params = template.matches(uri_str)
                 if params is not None:
-                    # Templates need special task routing - call _execute_template
-                    # which handles passing params to Docket
                     result = await self._execute_template(template, uri_str, params)
                     if isinstance(result, mcp.types.CreateTaskResult):
                         return result
@@ -1607,7 +1544,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         try:
             return await resource._read()
-        except (ResourceError, McpError):
+        except (FastMCPError, McpError):
             logger.exception(f"Error reading resource {uri_str!r}")
             raise
         except Exception as e:
@@ -1629,7 +1566,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         try:
             return await template._read(uri_str, params)
-        except (ResourceError, McpError):
+        except (FastMCPError, McpError):
             logger.exception(f"Error reading resource {uri_str!r}")
             raise
         except Exception as e:
@@ -1709,22 +1646,14 @@ class FastMCP(Generic[LifespanResultT]):
         """
         Get a prompt.
 
+        Iterates through all providers (LocalProvider first) to find the prompt.
+        First provider wins.
+
         Returns PromptResult for synchronous execution, or CreateTaskResult
         if the prompt was submitted to Docket for background execution.
         """
         name = context.message.name
 
-        # Try local prompts first (static prompts take precedence)
-        try:
-            prompt = await self._prompt_manager.get_prompt(name)
-            if self._should_enable_component(prompt):
-                return await self._execute_prompt(
-                    prompt, name, context.message.arguments
-                )
-        except NotFoundError:
-            pass
-
-        # Try component providers (first registered wins)
         for provider in self._providers:
             prompt = await provider.get_prompt(name)
             if prompt is not None and self._should_enable_component(prompt):
@@ -1744,7 +1673,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         try:
             return await prompt._render(arguments)
-        except (PromptError, McpError):
+        except (FastMCPError, McpError):
             logger.exception(f"Error rendering prompt {name!r}")
             raise
         except Exception as e:
@@ -1765,18 +1694,7 @@ class FastMCP(Generic[LifespanResultT]):
         Returns:
             The tool instance that was added to the server.
         """
-        self._tool_manager.add_tool(tool)
-
-        # Send notification if we're in a request context
-        try:
-            from fastmcp.server.dependencies import get_context
-
-            context = get_context()
-            context._queue_tool_list_changed()  # type: ignore[private-use]
-        except RuntimeError:
-            pass  # No context available
-
-        return tool
+        return self._local_provider.add_tool(tool)
 
     def remove_tool(self, name: str) -> None:
         """Remove a tool from the server.
@@ -1787,26 +1705,20 @@ class FastMCP(Generic[LifespanResultT]):
         Raises:
             NotFoundError: If the tool is not found
         """
-        self._tool_manager.remove_tool(name)
-
-        # Send notification if we're in a request context
         try:
-            from fastmcp.server.dependencies import get_context
-
-            context = get_context()
-            context._queue_tool_list_changed()  # type: ignore[private-use]
-        except RuntimeError:
-            pass  # No context available
+            self._local_provider.remove_tool(name)
+        except KeyError:
+            raise NotFoundError(f"Tool {name!r} not found") from None
 
     def add_tool_transformation(
         self, tool_name: str, transformation: ToolTransformConfig
     ) -> None:
         """Add a tool transformation."""
-        self._tool_manager.add_tool_transformation(tool_name, transformation)
+        self._local_provider.add_tool_transformation(tool_name, transformation)
 
     def remove_tool_transformation(self, tool_name: str) -> None:
         """Remove a tool transformation."""
-        self._tool_manager.remove_tool_transformation(tool_name)
+        self._local_provider.remove_tool_transformation(tool_name)
 
     @overload
     def tool(
@@ -1913,73 +1825,10 @@ class FastMCP(Generic[LifespanResultT]):
             server.tool(my_function, name="custom_name")
             ```
         """
-        if isinstance(annotations, dict):
-            annotations = ToolAnnotations(**annotations)
-
-        if isinstance(name_or_fn, classmethod):
-            raise ValueError(
-                inspect.cleandoc(
-                    """
-                    To decorate a classmethod, first define the method and then call
-                    tool() directly on the method instead of using it as a
-                    decorator. See https://gofastmcp.com/patterns/decorating-methods
-                    for examples and more information.
-                    """
-                )
-            )
-
-        # Determine the actual name and function based on the calling pattern
-        if inspect.isroutine(name_or_fn):
-            # Case 1: @tool (without parens) - function passed directly
-            # Case 2: direct call like tool(fn, name="something")
-            fn = name_or_fn
-            tool_name = name  # Use keyword name if provided, otherwise None
-
-            # Resolve task parameter
-            supports_task: bool | TaskConfig = (
-                task if task is not None else self._support_tasks_by_default
-            )
-
-            # Register the tool immediately and return the tool object
-            # Note: Deprecation warning for exclude_args is handled in Tool.from_function
-            tool = Tool.from_function(
-                fn,
-                name=tool_name,
-                title=title,
-                description=description,
-                icons=icons,
-                tags=tags,
-                output_schema=output_schema,
-                annotations=annotations,
-                exclude_args=exclude_args,
-                meta=meta,
-                serializer=self._tool_serializer,
-                enabled=enabled,
-                task=supports_task,
-            )
-            self.add_tool(tool)
-            return tool
-
-        elif isinstance(name_or_fn, str):
-            # Case 3: @tool("custom_name") - name passed as first argument
-            if name is not None:
-                raise TypeError(
-                    "Cannot specify both a name as first argument and as keyword argument. "
-                    f"Use either @tool('{name_or_fn}') or @tool(name='{name}'), not both."
-                )
-            tool_name = name_or_fn
-        elif name_or_fn is None:
-            # Case 4: @tool or @tool(name="something") - use keyword name
-            tool_name = name
-        else:
-            raise TypeError(
-                f"First argument to @tool must be a function, string, or None, got {type(name_or_fn)}"
-            )
-
-        # Return partial for cases where we need to wait for the function
-        return partial(
-            self.tool,
-            name=tool_name,
+        # Delegate to LocalProvider with server-level defaults
+        result = self._local_provider.tool(
+            name_or_fn,
+            name=name,
             title=title,
             description=description,
             icons=icons,
@@ -1989,8 +1838,11 @@ class FastMCP(Generic[LifespanResultT]):
             exclude_args=exclude_args,
             meta=meta,
             enabled=enabled,
-            task=task,
+            task=task if task is not None else self._support_tasks_by_default,
+            serializer=self._tool_serializer,
         )
+
+        return result
 
     def add_resource(self, resource: Resource) -> Resource:
         """Add a resource to the server.
@@ -2001,18 +1853,7 @@ class FastMCP(Generic[LifespanResultT]):
         Returns:
             The resource instance that was added to the server.
         """
-        self._resource_manager.add_resource(resource)
-
-        # Send notification if we're in a request context
-        try:
-            from fastmcp.server.dependencies import get_context
-
-            context = get_context()
-            context._queue_resource_list_changed()  # type: ignore[private-use]
-        except RuntimeError:
-            pass  # No context available
-
-        return resource
+        return self._local_provider.add_resource(resource)
 
     def add_template(self, template: ResourceTemplate) -> ResourceTemplate:
         """Add a resource template to the server.
@@ -2023,18 +1864,7 @@ class FastMCP(Generic[LifespanResultT]):
         Returns:
             The template instance that was added to the server.
         """
-        self._resource_manager.add_template(template)
-
-        # Send notification if we're in a request context
-        try:
-            from fastmcp.server.dependencies import get_context
-
-            context = get_context()
-            context._queue_resource_list_changed()  # type: ignore[private-use]
-        except RuntimeError:
-            pass  # No context available
-
-        return template
+        return self._local_provider.add_template(template)
 
     def resource(
         self,
@@ -2103,81 +1933,23 @@ class FastMCP(Generic[LifespanResultT]):
                 return f"Weather for {city}: {data}"
             ```
         """
-        if isinstance(annotations, dict):
-            annotations = Annotations(**annotations)
-
-        # Check if user passed function directly instead of calling decorator
-        if inspect.isroutine(uri):
-            raise TypeError(
-                "The @resource decorator was used incorrectly. "
-                "Did you forget to call it? Use @resource('uri') instead of @resource"
-            )
+        # Delegate to LocalProvider with server-level defaults
+        inner_decorator = self._local_provider.resource(
+            uri,
+            name=name,
+            title=title,
+            description=description,
+            icons=icons,
+            mime_type=mime_type,
+            tags=tags,
+            enabled=enabled,
+            annotations=annotations,
+            meta=meta,
+            task=task if task is not None else self._support_tasks_by_default,
+        )
 
         def decorator(fn: AnyFunction) -> Resource | ResourceTemplate:
-            if isinstance(fn, classmethod):  # type: ignore[reportUnnecessaryIsInstance]
-                raise ValueError(
-                    inspect.cleandoc(
-                        """
-                        To decorate a classmethod, first define the method and then call
-                        resource() directly on the method instead of using it as a
-                        decorator. See https://gofastmcp.com/patterns/decorating-methods
-                        for examples and more information.
-                        """
-                    )
-                )
-
-            # Resolve task parameter
-            supports_task: bool | TaskConfig = (
-                task if task is not None else self._support_tasks_by_default
-            )
-
-            # Check if this should be a template
-            has_uri_params = "{" in uri and "}" in uri
-            # Use wrapper to check for user-facing parameters
-            from fastmcp.server.dependencies import without_injected_parameters
-
-            wrapper_fn = without_injected_parameters(fn)
-            has_func_params = bool(inspect.signature(wrapper_fn).parameters)
-
-            if has_uri_params or has_func_params:
-                template = ResourceTemplate.from_function(
-                    fn=fn,
-                    uri_template=uri,
-                    name=name,
-                    title=title,
-                    description=description,
-                    icons=icons,
-                    mime_type=mime_type,
-                    tags=tags,
-                    enabled=enabled,
-                    annotations=annotations,
-                    meta=meta,
-                    task=supports_task,
-                )
-                self.add_template(template)
-                return template
-            elif not has_uri_params and not has_func_params:
-                resource = Resource.from_function(
-                    fn=fn,
-                    uri=uri,
-                    name=name,
-                    title=title,
-                    description=description,
-                    icons=icons,
-                    mime_type=mime_type,
-                    tags=tags,
-                    enabled=enabled,
-                    annotations=annotations,
-                    meta=meta,
-                    task=supports_task,
-                )
-                self.add_resource(resource)
-                return resource
-            else:
-                raise ValueError(
-                    "Invalid resource or template definition due to a "
-                    "mismatch between URI parameters and function parameters."
-                )
+            return inner_decorator(fn)
 
         return decorator
 
@@ -2190,18 +1962,7 @@ class FastMCP(Generic[LifespanResultT]):
         Returns:
             The prompt instance that was added to the server.
         """
-        self._prompt_manager.add_prompt(prompt)
-
-        # Send notification if we're in a request context
-        try:
-            from fastmcp.server.dependencies import get_context
-
-            context = get_context()
-            context._queue_prompt_list_changed()  # type: ignore[private-use]
-        except RuntimeError:
-            pass  # No context available
-
-        return prompt
+        return self._local_provider.add_prompt(prompt)
 
     @overload
     def prompt(
@@ -2319,74 +2080,17 @@ class FastMCP(Generic[LifespanResultT]):
             server.prompt(my_function, name="custom_name")
             ```
         """
-
-        if isinstance(name_or_fn, classmethod):
-            raise ValueError(
-                inspect.cleandoc(
-                    """
-                    To decorate a classmethod, first define the method and then call
-                    prompt() directly on the method instead of using it as a
-                    decorator. See https://gofastmcp.com/patterns/decorating-methods
-                    for examples and more information.
-                    """
-                )
-            )
-
-        # Determine the actual name and function based on the calling pattern
-        if inspect.isroutine(name_or_fn):
-            # Case 1: @prompt (without parens) - function passed directly as decorator
-            # Case 2: direct call like prompt(fn, name="something")
-            fn = name_or_fn
-            prompt_name = name  # Use keyword name if provided, otherwise None
-
-            # Resolve task parameter
-            supports_task: bool | TaskConfig = (
-                task if task is not None else self._support_tasks_by_default
-            )
-
-            # Register the prompt immediately
-            prompt = Prompt.from_function(
-                fn=fn,
-                name=prompt_name,
-                title=title,
-                description=description,
-                icons=icons,
-                tags=tags,
-                enabled=enabled,
-                meta=meta,
-                task=supports_task,
-            )
-            self.add_prompt(prompt)
-
-            return prompt
-
-        elif isinstance(name_or_fn, str):
-            # Case 3: @prompt("custom_name") - name passed as first argument
-            if name is not None:
-                raise TypeError(
-                    "Cannot specify both a name as first argument and as keyword argument. "
-                    f"Use either @prompt('{name_or_fn}') or @prompt(name='{name}'), not both."
-                )
-            prompt_name = name_or_fn
-        elif name_or_fn is None:
-            # Case 4: @prompt() or @prompt(name="something") - use keyword name
-            prompt_name = name
-        else:
-            raise TypeError(
-                f"First argument to @prompt must be a function, string, or None, got {type(name_or_fn)}"
-            )
-
-        # Return partial for cases where we need to wait for the function
-        return partial(
-            self.prompt,
-            name=prompt_name,
+        # Delegate to LocalProvider with server-level defaults
+        return self._local_provider.prompt(
+            name_or_fn,
+            name=name,
             title=title,
             description=description,
             icons=icons,
             tags=tags,
             enabled=enabled,
             meta=meta,
-            task=task,
+            task=task if task is not None else self._support_tasks_by_default,
         )
 
     async def run_stdio_async(
@@ -2713,14 +2417,14 @@ class FastMCP(Generic[LifespanResultT]):
         for tool in (await server.get_tools()).values():
             if prefix:
                 tool = tool.model_copy(update={"name": f"{prefix}_{tool.name}"})
-            self._tool_manager.add_tool(tool)
+            self.add_tool(tool)
 
         # Import resources and templates from the server
         for resource in (await server.get_resources()).values():
             if prefix:
                 new_uri = add_resource_prefix(str(resource.uri), prefix)
                 resource = resource.model_copy(update={"uri": new_uri})
-            self._resource_manager.add_resource(resource)
+            self.add_resource(resource)
 
         for template in (await server.get_resource_templates()).values():
             if prefix:
@@ -2728,13 +2432,13 @@ class FastMCP(Generic[LifespanResultT]):
                 template = template.model_copy(
                     update={"uri_template": new_uri_template}
                 )
-            self._resource_manager.add_template(template)
+            self.add_template(template)
 
         # Import prompts from the server
         for prompt in (await server.get_prompts()).values():
             if prefix:
                 prompt = prompt.model_copy(update={"name": f"{prefix}_{prompt.name}"})
-            self._prompt_manager.add_prompt(prompt)
+            self.add_prompt(prompt)
 
         if server._lifespan != default_lifespan:
             from warnings import warn

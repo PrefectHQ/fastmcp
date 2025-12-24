@@ -244,10 +244,10 @@ class TestProvider:
         # Default get_tool should have called list_tools
         assert provider.list_tools_call_count >= 1
 
-    async def test_dynamic_tools_come_first(
+    async def test_local_tools_come_first(
         self, base_server: FastMCP, dynamic_tools: list[Tool]
     ):
-        """Test that dynamic tools appear before static tools in list."""
+        """Test that local tools (from LocalProvider) appear before other provider tools."""
         provider = SimpleToolProvider(tools=dynamic_tools)
         base_server.add_provider(provider)
 
@@ -255,8 +255,8 @@ class TestProvider:
             tools: list[MCPTool] = await client.list_tools()
 
         tool_names = [tool.name for tool in tools]
-        # Dynamic tools should come first
-        assert tool_names[:2] == ["dynamic_multiply", "dynamic_add"]
+        # Local tools should come first (LocalProvider is first in _providers)
+        assert tool_names[:2] == ["static_add", "static_subtract"]
 
     async def test_empty_provider(self, base_server: FastMCP):
         """Test that empty provider doesn't affect behavior."""

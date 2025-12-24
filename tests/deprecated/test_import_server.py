@@ -24,11 +24,13 @@ async def test_import_basic_functionality():
     await main_app.import_server(sub_app, "sub")
 
     # Verify the tool was imported with the prefix
-    assert "sub_sub_tool" in main_app._tool_manager._tools
-    assert "sub_tool" in sub_app._tool_manager._tools
+    main_tools = await main_app.get_tools()
+    sub_tools = await sub_app.get_tools()
+    assert "sub_sub_tool" in main_tools
+    assert "sub_tool" in sub_tools
 
     # Verify the original tool still exists in the sub-app
-    tool = await main_app._tool_manager.get_tool("sub_sub_tool")
+    tool = await main_app.get_tool("sub_sub_tool")
     assert tool is not None
     # import_server creates copies with prefixed names (unlike mount which proxies)
     assert tool.name == "sub_sub_tool"
@@ -57,8 +59,9 @@ async def test_import_multiple_apps():
     await main_app.import_server(news_app, "news")
 
     # Verify tools were imported with the correct prefixes
-    assert "weather_get_forecast" in main_app._tool_manager._tools
-    assert "news_get_headlines" in main_app._tool_manager._tools
+    tools = await main_app.get_tools()
+    assert "weather_get_forecast" in tools
+    assert "news_get_headlines" in tools
 
 
 async def test_import_combines_tools():
@@ -79,16 +82,18 @@ async def test_import_combines_tools():
 
     # Import first app
     await main_app.import_server(first_app, "api")
-    assert "api_first_tool" in main_app._tool_manager._tools
+    tools = await main_app.get_tools()
+    assert "api_first_tool" in tools
 
     # Import second app to same prefix
     await main_app.import_server(second_app, "api")
 
     # Verify second tool is there
-    assert "api_second_tool" in main_app._tool_manager._tools
+    tools = await main_app.get_tools()
+    assert "api_second_tool" in tools
 
     # Tools from both imports are combined
-    assert "api_first_tool" in main_app._tool_manager._tools
+    assert "api_first_tool" in tools
 
 
 async def test_import_with_resources():
@@ -106,7 +111,8 @@ async def test_import_with_resources():
     await main_app.import_server(data_app, "data")
 
     # Verify the resource was imported with the prefix
-    assert "data://data/users" in main_app._resource_manager._resources
+    resources = await main_app.get_resources()
+    assert "data://data/users" in resources
 
 
 async def test_import_with_resource_templates():
@@ -124,7 +130,8 @@ async def test_import_with_resource_templates():
     await main_app.import_server(user_app, "api")
 
     # Verify the template was imported with the prefix
-    assert "users://api/{user_id}/profile" in main_app._resource_manager._templates
+    templates = await main_app.get_resource_templates()
+    assert "users://api/{user_id}/profile" in templates
 
 
 async def test_import_with_prompts():
@@ -142,7 +149,8 @@ async def test_import_with_prompts():
     await main_app.import_server(assistant_app, "assistant")
 
     # Verify the prompt was imported with the prefix
-    assert "assistant_greeting" in main_app._prompt_manager._prompts
+    prompts = await main_app.get_prompts()
+    assert "assistant_greeting" in prompts
 
 
 async def test_import_multiple_resource_templates():
@@ -166,8 +174,9 @@ async def test_import_multiple_resource_templates():
     await main_app.import_server(news_app, "content")
 
     # Verify templates were imported with correct prefixes
-    assert "weather://data/{city}" in main_app._resource_manager._templates
-    assert "news://content/{category}" in main_app._resource_manager._templates
+    templates = await main_app.get_resource_templates()
+    assert "weather://data/{city}" in templates
+    assert "news://content/{category}" in templates
 
 
 async def test_import_multiple_prompts():
@@ -191,8 +200,9 @@ async def test_import_multiple_prompts():
     await main_app.import_server(sql_app, "sql")
 
     # Verify prompts were imported with correct prefixes
-    assert "python_review_python" in main_app._prompt_manager._prompts
-    assert "sql_explain_sql" in main_app._prompt_manager._prompts
+    prompts = await main_app.get_prompts()
+    assert "python_review_python" in prompts
+    assert "sql_explain_sql" in prompts
 
 
 async def test_tool_custom_name_preserved_when_imported():
@@ -207,7 +217,7 @@ async def test_tool_custom_name_preserved_when_imported():
     await main_app.import_server(api_app, "api")
 
     # Check that the tool is accessible by its prefixed name
-    tool = await main_app._tool_manager.get_tool("api_get_data")
+    tool = await main_app.get_tool("api_get_data")
     assert tool is not None
 
     # Check that the function name is preserved
@@ -243,7 +253,7 @@ async def test_first_level_importing_with_custom_name():
     await service_app.import_server(provider_app, "provider")
 
     # Tool is accessible in the service app with the first prefix
-    tool = await service_app._tool_manager.get_tool("provider_compute")
+    tool = await service_app.get_tool("provider_compute")
     assert tool is not None
     assert isinstance(tool, FunctionTool)
     assert get_fn_name(tool.fn) == "calculate_value"
@@ -263,7 +273,7 @@ async def test_nested_importing_preserves_prefixes():
     await main_app.import_server(service_app, "service")
 
     # Tool is accessible in the main app with both prefixes
-    tool = await main_app._tool_manager.get_tool("service_provider_compute")
+    tool = await main_app.get_tool("service_provider_compute")
     assert tool is not None
 
 
@@ -422,10 +432,14 @@ async def test_import_with_no_prefix():
     await main_app.import_server(sub_app)
 
     # Verify all component types are accessible with original names
-    assert "sub_tool" in main_app._tool_manager._tools
-    assert "data://config" in main_app._resource_manager._resources
-    assert "users://{user_id}/info" in main_app._resource_manager._templates
-    assert "sub_prompt" in main_app._prompt_manager._prompts
+    tools = await main_app.get_tools()
+    resources = await main_app.get_resources()
+    templates = await main_app.get_resource_templates()
+    prompts = await main_app.get_prompts()
+    assert "sub_tool" in tools
+    assert "data://config" in resources
+    assert "users://{user_id}/info" in templates
+    assert "sub_prompt" in prompts
 
     # Test actual functionality through Client
     async with Client(main_app) as client:

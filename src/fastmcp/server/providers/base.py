@@ -31,6 +31,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Literal
 
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
@@ -69,6 +70,26 @@ class Provider:
         - `list_*` methods: Errors are logged and the provider returns empty (graceful degradation).
           This allows other providers to still contribute their components.
     """
+
+    def _notify(
+        self, notification_type: Literal["tools", "resources", "prompts"]
+    ) -> None:
+        """Send a list changed notification if we're in a request context.
+
+        This is a no-op if called outside a request context (e.g., during setup).
+        """
+        try:
+            from fastmcp.server.dependencies import get_context
+
+            context = get_context()
+            if notification_type == "tools":
+                context._queue_tool_list_changed()
+            elif notification_type == "resources":
+                context._queue_resource_list_changed()
+            elif notification_type == "prompts":
+                context._queue_prompt_list_changed()
+        except RuntimeError:
+            pass  # No context available
 
     def with_transforms(
         self,

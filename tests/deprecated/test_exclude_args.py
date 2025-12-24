@@ -7,8 +7,8 @@ from fastmcp import Client, FastMCP
 from fastmcp.tools.tool import Tool
 
 
-async def test_tool_exclude_args_in_tool_manager():
-    """Test that tool args are excluded in the tool manager."""
+async def test_tool_exclude_args():
+    """Test that tool args are excluded."""
     mcp = FastMCP("Test Server")
 
     @mcp.tool(exclude_args=["state"])
@@ -19,7 +19,7 @@ async def test_tool_exclude_args_in_tool_manager():
             pass
         return message
 
-    tools_dict = await mcp._tool_manager.get_tools()
+    tools_dict = await mcp.get_tools()
     tools = list(tools_dict.values())
     assert len(tools) == 1
     assert "state" not in tools[0].parameters["properties"]
@@ -60,8 +60,8 @@ async def test_add_tool_method_exclude_args():
     )
     mcp.add_tool(tool)
 
-    # Check internal tool objects directly
-    tools_dict = await mcp._tool_manager.get_tools()
+    # Check tool via public API
+    tools_dict = await mcp.get_tools()
     tools = list(tools_dict.values())
     assert len(tools) == 1
     assert "state" not in tools[0].parameters["properties"]

@@ -1,7 +1,6 @@
 """Example of mounting FastMCP apps together.
 
-This example demonstrates how to mount FastMCP apps together using
-the ToolManager's import_tools functionality. It shows how to:
+This example demonstrates how to mount FastMCP apps together. It shows how to:
 
 1. Create sub-applications for different domains
 2. Mount those sub-applications to a main application
@@ -102,10 +101,6 @@ async def get_server_details():
     print(f"  - Native app resources: {native_resources}")
     print(f"  - Imported from weather app: {weather_resources}")
     print(f"  - Imported from news app: {news_resources}")
-
-    # Let's try to access resources using the prefixed URI
-    weather_data = await app._read_resource_mcp(uri="weather://weather/forecast")
-    print(f"\nWeather data from prefixed URI: {weather_data}")
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
+from fastmcp.server.providers.local_provider import LocalProvider
 from fastmcp.server.providers.transforming import TransformingProvider
 
 if TYPE_CHECKING:
@@ -37,6 +38,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "FastMCPProvider",
+    "LocalProvider",
     "OpenAPIProvider",
     "Provider",
     "ProxyProvider",

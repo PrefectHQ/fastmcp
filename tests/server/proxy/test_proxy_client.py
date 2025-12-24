@@ -416,8 +416,8 @@ class TestProxyClient:
         assert proxy_via_factory is not None
 
         # Verify they have the expected client factory behavior
-        assert hasattr(proxy_via_as_proxy, "_tool_manager")
-        assert hasattr(proxy_via_factory, "_tool_manager")
+        assert hasattr(proxy_via_as_proxy, "_local_provider")
+        assert hasattr(proxy_via_factory, "_local_provider")
 
     async def test_connected_client_reuses_sessions(self, fastmcp_server: FastMCP):
         """Test that connected clients passed to as_proxy reuse sessions (preserves #959 behavior)."""
@@ -427,4 +427,4 @@ class TestProxyClient:
 
             # Verify the proxy is created successfully and uses session reuse
             assert proxy is not None
-            assert hasattr(proxy, "_tool_manager")
+            assert hasattr(proxy, "_local_provider")

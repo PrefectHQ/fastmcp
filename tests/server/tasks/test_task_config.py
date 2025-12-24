@@ -30,7 +30,7 @@ class TestTaskConfigNormalization:
         async def my_tool() -> str:
             return "ok"
 
-        tool = await mcp._tool_manager.get_tool("my_tool")
+        tool = await mcp.get_tool("my_tool")
         assert isinstance(tool, Tool)
         assert tool.task_config.mode == "optional"
 
@@ -42,7 +42,7 @@ class TestTaskConfigNormalization:
         async def my_tool() -> str:
             return "ok"
 
-        tool = await mcp._tool_manager.get_tool("my_tool")
+        tool = await mcp.get_tool("my_tool")
         assert isinstance(tool, Tool)
         assert tool.task_config.mode == "forbidden"
 
@@ -54,7 +54,7 @@ class TestTaskConfigNormalization:
         async def my_tool() -> str:
             return "ok"
 
-        tool = await mcp._tool_manager.get_tool("my_tool")
+        tool = await mcp.get_tool("my_tool")
         assert isinstance(tool, Tool)
         assert tool.task_config.mode == "required"
 
@@ -67,7 +67,7 @@ class TestTaskConfigNormalization:
         def my_tool_sync() -> str:
             return "ok"
 
-        tool = await mcp_no_tasks._tool_manager.get_tool("my_tool_sync")
+        tool = await mcp_no_tasks.get_tool("my_tool_sync")
         assert isinstance(tool, Tool)
         assert tool.task_config.mode == "forbidden"
 
@@ -78,7 +78,7 @@ class TestTaskConfigNormalization:
         async def my_tool_async() -> str:
             return "ok"
 
-        tool2 = await mcp_tasks._tool_manager.get_tool("my_tool_async")
+        tool2 = await mcp_tasks.get_tool("my_tool_async")
         assert isinstance(tool2, Tool)
         assert tool2.task_config.mode == "optional"
 
@@ -350,7 +350,7 @@ class TestSyncFunctionValidation:
         def sync_tool() -> str:
             return "ok"
 
-        tool = await mcp._tool_manager.get_tool("sync_tool")
+        tool = await mcp.get_tool("sync_tool")
         assert isinstance(tool, Tool)
         assert tool.task_config.mode == "forbidden"
 
@@ -376,7 +376,7 @@ class TestPollIntervalConfiguration:
         async def my_tool() -> str:
             return "ok"
 
-        tool = await mcp._tool_manager.get_tool("my_tool")
+        tool = await mcp.get_tool("my_tool")
         assert isinstance(tool, Tool)
         assert tool.task_config.poll_interval == timedelta(seconds=2)
 
@@ -388,6 +388,6 @@ class TestPollIntervalConfiguration:
         async def my_tool() -> str:
             return "ok"
 
-        tool = await mcp._tool_manager.get_tool("my_tool")
+        tool = await mcp.get_tool("my_tool")
         assert isinstance(tool, Tool)
         assert tool.task_config.poll_interval == timedelta(seconds=5)

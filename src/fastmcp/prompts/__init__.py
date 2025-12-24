@@ -1,10 +1,8 @@
-from .prompt import Message, Prompt, PromptResult, PromptMessage
-from .prompt_manager import PromptManager
+from .prompt import Message, Prompt, PromptMessage, PromptResult
 
 __all__ = [
     "Message",
     "Prompt",
-    "PromptManager",
     "PromptMessage",
     "PromptResult",
 ]

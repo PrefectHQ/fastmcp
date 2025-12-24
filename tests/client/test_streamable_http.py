@@ -135,7 +135,7 @@ async def nested_server():
 
     yield f"http://127.0.0.1:{port}/nest-outer/nest-inner/final/mcp"
 
-    # Cleanup: signal uvicorn to shutdown, then cancel the task
+    # Graceful shutdown - required for uvicorn 0.39+ due to context isolation
     uvicorn_server.should_exit = True
     with suppress(asyncio.CancelledError, asyncio.TimeoutError):
         await asyncio.wait_for(server_task, timeout=2.0)

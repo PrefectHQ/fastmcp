@@ -396,8 +396,8 @@ class TestRateLimitingMiddlewareIntegration:
 
         rate_limit_server.add_middleware(
             RateLimitingMiddleware(
-                max_requests_per_second=6.0,  # Accounting for initialization and list_tools calls
-                burst_capacity=4,
+                max_requests_per_second=1.0,  # Very slow refill to ensure rate limiting triggers
+                burst_capacity=4,  # init + list_tools + call + list_tools = 4, so 2nd call fails
                 get_client_id=get_client_id,
             )
         )
@@ -407,10 +407,11 @@ class TestRateLimitingMiddlewareIntegration:
             await client.call_tool("quick_action", {"message": "first"})
 
             # Second should be rate limited for this specific client
-            with pytest.raises(
-                ToolError, match="Rate limit exceeded for client: test_client_123"
-            ):
+            with pytest.raises(ToolError) as exc_info:
                 await client.call_tool("quick_action", {"message": "second"})
+            assert "Rate limit exceeded for client: test_client_123" in str(
+                exc_info.value
+            )
 
     async def test_global_rate_limiting(self, rate_limit_server):
         """Test global rate limiting across all clients."""

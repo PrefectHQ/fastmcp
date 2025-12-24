@@ -13,7 +13,7 @@ async def test_tool_transformation_in_tool_manager():
 
     mcp.add_tool_transformation("echo", ToolTransformConfig(name="echo_transformed"))
 
-    tools_dict = await mcp._tool_manager.get_tools()
+    tools_dict = await mcp.get_tools()
     tools = list(tools_dict.values())
     assert len(tools) == 1
     assert "echo_transformed" in tools_dict

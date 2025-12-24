@@ -563,32 +563,15 @@ class FastMCPProvider(Provider):
         functions get registered with Docket. TransformingProvider.get_tasks()
         handles namespace transformation of keys.
 
-        Accesses managers directly to avoid triggering middleware during startup.
+        Iterates through all providers in the wrapped server (including its
+        LocalProvider) to collect task-eligible components.
         """
-        # Return child's actual components - their .fn gets registered with Docket
-        # TransformingProvider.get_tasks() transforms keys to include namespace
-        tools: list[Tool] = [
-            t
-            for t in self.server._tool_manager._tools.values()
-            if t.task_config.supports_tasks()
-        ]
-        resources: list[Resource] = [
-            r
-            for r in self.server._resource_manager._resources.values()
-            if r.task_config.supports_tasks()
-        ]
-        templates: list[ResourceTemplate] = [
-            t
-            for t in self.server._resource_manager._templates.values()
-            if t.task_config.supports_tasks()
-        ]
-        prompts: list[Prompt] = [
-            p
-            for p in self.server._prompt_manager._prompts.values()
-            if p.task_config.supports_tasks()
-        ]
+        tools: list[Tool] = []
+        resources: list[Resource] = []
+        templates: list[ResourceTemplate] = []
+        prompts: list[Prompt] = []
 
-        # Recursively get tasks from nested providers
+        # Get tasks from all providers in the wrapped server
         for provider in self.server._providers:
             nested = await provider.get_tasks()
             tools.extend(nested.tools)

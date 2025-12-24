@@ -173,9 +173,7 @@ class TestDeprecatedServerInitKwargs:
             server = FastMCP(
                 name="TestServer",
                 instructions="Test instructions",
-                on_duplicate_tools="warn",
-                on_duplicate_resources="error",
-                on_duplicate_prompts="replace",
+                on_duplicate="warn",  # New unified parameter
                 mask_error_details=True,
             )
 
@@ -188,6 +186,29 @@ class TestDeprecatedServerInitKwargs:
         # Verify server was created successfully
         assert server.name == "TestServer"
         assert server.instructions == "Test instructions"
+
+    def test_deprecated_duplicate_kwargs_raise_warnings(self):
+        """Test that deprecated on_duplicate_* kwargs raise warnings."""
+        with warnings.catch_warnings(record=True) as recorded_warnings:
+            warnings.simplefilter("always")
+            FastMCP(
+                name="TestServer",
+                on_duplicate_tools="warn",
+                on_duplicate_resources="error",
+                on_duplicate_prompts="replace",
+            )
+
+        # Should have 3 deprecation warnings (one for each deprecated param)
+        deprecation_warnings = [
+            w for w in recorded_warnings if issubclass(w.category, DeprecationWarning)
+        ]
+        assert len(deprecation_warnings) == 3
+
+        # Check warning messages
+        warning_messages = [str(w.message) for w in deprecation_warnings]
+        assert any("on_duplicate_tools" in msg for msg in warning_messages)
+        assert any("on_duplicate_resources" in msg for msg in warning_messages)
+        assert any("on_duplicate_prompts" in msg for msg in warning_messages)
 
     def test_none_values_no_warnings(self):
         """Test that None values for deprecated kwargs don't raise warnings."""
