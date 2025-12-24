@@ -243,6 +243,10 @@ async def test_multi_client(tmp_path: Path):
         assert result_2.data == 3
 
 
+@pytest.mark.skipif(
+    sys.platform.startswith("win32"),
+    reason="Windows has process lifecycle issues with parallel stdio subprocess calls",
+)
 async def test_multi_client_parallel_calls(tmp_path: Path):
     server_script = inspect.cleandoc("""
         from fastmcp import FastMCP
