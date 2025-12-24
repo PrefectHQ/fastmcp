@@ -33,6 +33,13 @@ from fastmcp.mcp_config import (
 )
 from fastmcp.tools.tool import Tool as FastMCPTool
 
+# Skip all tests in this file on Windows - they spawn subprocess servers via stdio
+# which has process lifecycle issues on Windows
+pytestmark = pytest.mark.skipif(
+    sys.platform.startswith("win32"),
+    reason="Windows has process lifecycle issues with stdio subprocesses",
+)
+
 
 def running_under_debugger():
     return os.environ.get("DEBUGPY_RUNNING") == "true"
@@ -243,10 +250,6 @@ async def test_multi_client(tmp_path: Path):
         assert result_2.data == 3
 
 
-@pytest.mark.skipif(
-    sys.platform.startswith("win32"),
-    reason="Windows has process lifecycle issues with parallel stdio subprocess calls",
-)
 async def test_multi_client_parallel_calls(tmp_path: Path):
     server_script = inspect.cleandoc("""
         from fastmcp import FastMCP
@@ -292,8 +295,8 @@ async def test_multi_client_parallel_calls(tmp_path: Path):
 
 
 @pytest.mark.skipif(
-    running_under_debugger() or sys.platform.startswith("win32"),
-    reason="Debugger holds a reference to the transport; Windows has process lifecycle issues",
+    running_under_debugger(),
+    reason="Debugger holds a reference to the transport",
 )
 @pytest.mark.timeout(5)
 async def test_multi_client_lifespan(tmp_path: Path):
@@ -357,10 +360,6 @@ async def test_multi_client_lifespan(tmp_path: Path):
             await asyncio.sleep(0.01)
 
 
-@pytest.mark.skipif(
-    sys.platform.startswith("win32"),
-    reason="Windows has process lifecycle issues",
-)
 async def test_multi_client_force_close(tmp_path: Path):
     server_script = inspect.cleandoc("""
         from fastmcp import FastMCP
