@@ -790,12 +790,34 @@ class FastMCP(Generic[LifespanResultT]):
         """Check if a component is enabled (not in blocklist, passes allowlist)."""
         return self._visibility.is_enabled(component)
 
-    async def get_tools(self) -> dict[str, Tool]:
-        """Get all enabled tools from providers, indexed by name.
+    async def get_tools(self, *, apply_middleware: bool = False) -> list[Tool]:
+        """Get all enabled tools from providers.
 
         Queries all providers in parallel and collects tools.
-        First provider wins for duplicate names. Filters by server blocklist.
+        First provider wins for duplicate keys. Filters by server blocklist.
+
+        Args:
+            apply_middleware: If True, apply the middleware chain before
+                returning results. Used by MCP handlers and mounted servers.
         """
+        if apply_middleware:
+            async with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+                mw_context = MiddlewareContext(
+                    message=mcp.types.ListToolsRequest(method="tools/list"),
+                    source="client",
+                    type="request",
+                    method="tools/list",
+                    fastmcp_context=fastmcp_ctx,
+                )
+                return list(
+                    await self._apply_middleware(
+                        context=mw_context,
+                        call_next=lambda context: self.get_tools(
+                            apply_middleware=False
+                        ),
+                    )
+                )
+
         results = await gather(
             *[p.list_tools() for p in self._providers],
             return_exceptions=True,
@@ -805,14 +827,14 @@ class FastMCP(Generic[LifespanResultT]):
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 provider = self._providers[i]
-                logger.warning(f"Failed to get tools from {provider}: {result}")
+                logger.exception(f"Error listing tools from provider {provider}")
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise result
                 continue
             for tool in result:
-                if tool.name not in all_tools and self._is_component_enabled(tool):
-                    all_tools[tool.name] = tool
-        return all_tools
+                if self._is_component_enabled(tool) and tool.key not in all_tools:
+                    all_tools[tool.key] = tool
+        return list(all_tools.values())
 
     async def get_tool(self, name: str) -> Tool:
         """Get an enabled tool by name.
@@ -867,12 +889,34 @@ class FastMCP(Generic[LifespanResultT]):
 
         return None
 
-    async def get_resources(self) -> dict[str, Resource]:
-        """Get all enabled resources from providers, indexed by URI.
+    async def get_resources(self, *, apply_middleware: bool = False) -> list[Resource]:
+        """Get all enabled resources from providers.
 
         Queries all providers in parallel and collects resources.
-        First provider wins for duplicate URIs. Filters by server blocklist.
+        First provider wins for duplicate keys. Filters by server blocklist.
+
+        Args:
+            apply_middleware: If True, apply the middleware chain before
+                returning results. Used by MCP handlers and mounted servers.
         """
+        if apply_middleware:
+            async with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+                mw_context = MiddlewareContext(
+                    message={},  # List resources doesn't have parameters
+                    source="client",
+                    type="request",
+                    method="resources/list",
+                    fastmcp_context=fastmcp_ctx,
+                )
+                return list(
+                    await self._apply_middleware(
+                        context=mw_context,
+                        call_next=lambda context: self.get_resources(
+                            apply_middleware=False
+                        ),
+                    )
+                )
+
         results = await gather(
             *[p.list_resources() for p in self._providers],
             return_exceptions=True,
@@ -882,15 +926,17 @@ class FastMCP(Generic[LifespanResultT]):
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 provider = self._providers[i]
-                logger.warning(f"Failed to get resources from {provider}: {result}")
+                logger.exception(f"Error listing resources from provider {provider}")
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise result
                 continue
             for resource in result:
-                uri = str(resource.uri)
-                if uri not in all_resources and self._is_component_enabled(resource):
-                    all_resources[uri] = resource
-        return all_resources
+                if (
+                    self._is_component_enabled(resource)
+                    and resource.key not in all_resources
+                ):
+                    all_resources[resource.key] = resource
+        return list(all_resources.values())
 
     async def get_resource(self, uri: str) -> Resource:
         """Get an enabled resource by URI.
@@ -915,12 +961,36 @@ class FastMCP(Generic[LifespanResultT]):
 
         raise NotFoundError(f"Unknown resource: {uri}")
 
-    async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
-        """Get all enabled resource templates from providers, indexed by uri_template.
+    async def get_resource_templates(
+        self, *, apply_middleware: bool = False
+    ) -> list[ResourceTemplate]:
+        """Get all enabled resource templates from providers.
 
         Queries all providers in parallel and collects templates.
-        First provider wins for duplicate uri_templates. Filters by server blocklist.
+        First provider wins for duplicate keys. Filters by server blocklist.
+
+        Args:
+            apply_middleware: If True, apply the middleware chain before
+                returning results. Used by MCP handlers and mounted servers.
         """
+        if apply_middleware:
+            async with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+                mw_context = MiddlewareContext(
+                    message={},  # List resource templates doesn't have parameters
+                    source="client",
+                    type="request",
+                    method="resources/templates/list",
+                    fastmcp_context=fastmcp_ctx,
+                )
+                return list(
+                    await self._apply_middleware(
+                        context=mw_context,
+                        call_next=lambda context: self.get_resource_templates(
+                            apply_middleware=False
+                        ),
+                    )
+                )
+
         results = await gather(
             *[p.list_resource_templates() for p in self._providers],
             return_exceptions=True,
@@ -930,19 +1000,19 @@ class FastMCP(Generic[LifespanResultT]):
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 provider = self._providers[i]
-                logger.warning(
-                    f"Failed to get resource templates from {provider}: {result}"
+                logger.exception(
+                    f"Error listing resource templates from provider {provider}"
                 )
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise result
                 continue
             for template in result:
                 if (
-                    template.uri_template not in all_templates
-                    and self._is_component_enabled(template)
+                    self._is_component_enabled(template)
+                    and template.key not in all_templates
                 ):
-                    all_templates[template.uri_template] = template
-        return all_templates
+                    all_templates[template.key] = template
+        return list(all_templates.values())
 
     async def get_resource_template(self, uri: str) -> ResourceTemplate:
         """Get an enabled resource template that matches the given URI.
@@ -969,12 +1039,34 @@ class FastMCP(Generic[LifespanResultT]):
 
         raise NotFoundError(f"Unknown resource template: {uri}")
 
-    async def get_prompts(self) -> dict[str, Prompt]:
-        """Get all enabled prompts from providers, indexed by name.
+    async def get_prompts(self, *, apply_middleware: bool = False) -> list[Prompt]:
+        """Get all enabled prompts from providers.
 
         Queries all providers in parallel and collects prompts.
-        First provider wins for duplicate names. Filters by server blocklist.
+        First provider wins for duplicate keys. Filters by server blocklist.
+
+        Args:
+            apply_middleware: If True, apply the middleware chain before
+                returning results. Used by MCP handlers and mounted servers.
         """
+        if apply_middleware:
+            async with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+                mw_context = MiddlewareContext(
+                    message=mcp.types.ListPromptsRequest(method="prompts/list"),
+                    source="client",
+                    type="request",
+                    method="prompts/list",
+                    fastmcp_context=fastmcp_ctx,
+                )
+                return list(
+                    await self._apply_middleware(
+                        context=mw_context,
+                        call_next=lambda context: self.get_prompts(
+                            apply_middleware=False
+                        ),
+                    )
+                )
+
         results = await gather(
             *[p.list_prompts() for p in self._providers],
             return_exceptions=True,
@@ -984,16 +1076,14 @@ class FastMCP(Generic[LifespanResultT]):
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 provider = self._providers[i]
-                logger.warning(f"Failed to get prompts from {provider}: {result}")
+                logger.exception(f"Error listing prompts from provider {provider}")
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise result
                 continue
             for prompt in result:
-                if prompt.name not in all_prompts and self._is_component_enabled(
-                    prompt
-                ):
-                    all_prompts[prompt.name] = prompt
-        return all_prompts
+                if self._is_component_enabled(prompt) and prompt.key not in all_prompts:
+                    all_prompts[prompt.key] = prompt
+        return list(all_prompts.values())
 
     async def get_prompt(self, name: str) -> Prompt:
         """Get an enabled prompt by name.
@@ -1121,7 +1211,7 @@ class FastMCP(Generic[LifespanResultT]):
         logger.debug(f"[{self.name}] Handler called: list_tools")
 
         async with fastmcp.server.context.Context(fastmcp=self):
-            tools = await self._list_tools_middleware()
+            tools = await self.get_tools(apply_middleware=True)
             return [
                 tool.to_mcp_tool(
                     name=tool.name,
@@ -1129,55 +1219,6 @@ class FastMCP(Generic[LifespanResultT]):
                 )
                 for tool in tools
             ]
-
-    async def _list_tools_middleware(self) -> list[Tool]:
-        """
-        List all available tools, applying MCP middleware.
-        """
-
-        async with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
-            # Create the middleware context.
-            mw_context = MiddlewareContext(
-                message=mcp.types.ListToolsRequest(method="tools/list"),
-                source="client",
-                type="request",
-                method="tools/list",
-                fastmcp_context=fastmcp_ctx,
-            )
-
-            # Apply the middleware chain.
-            return list(
-                await self._apply_middleware(
-                    context=mw_context, call_next=self._list_tools
-                )
-            )
-
-    async def _list_tools(
-        self,
-        context: MiddlewareContext[mcp.types.ListToolsRequest],
-    ) -> list[Tool]:
-        """
-        List all available tools.
-
-        Queries all providers in parallel and collects tools.
-        First provider wins for duplicate keys.
-        """
-        results = await gather(
-            *[p.list_tools() for p in self._providers],
-            return_exceptions=True,
-        )
-
-        all_tools: dict[str, Tool] = {}
-        for result in results:
-            if isinstance(result, BaseException):
-                logger.exception("Error listing tools from provider", exc_info=result)
-                if fastmcp.settings.mounted_components_raise_on_load_error:
-                    raise result
-                continue
-            for tool in result:
-                if self._is_component_enabled(tool) and tool.key not in all_tools:
-                    all_tools[tool.key] = tool
-        return list(all_tools.values())
 
     async def _list_resources_mcp(self) -> list[SDKResource]:
         """
@@ -1187,7 +1228,7 @@ class FastMCP(Generic[LifespanResultT]):
         logger.debug(f"[{self.name}] Handler called: list_resources")
 
         async with fastmcp.server.context.Context(fastmcp=self):
-            resources = await self._list_resources_middleware()
+            resources = await self.get_resources(apply_middleware=True)
             return [
                 resource.to_mcp_resource(
                     uri=str(resource.uri),
@@ -1195,60 +1236,6 @@ class FastMCP(Generic[LifespanResultT]):
                 )
                 for resource in resources
             ]
-
-    async def _list_resources_middleware(self) -> list[Resource]:
-        """
-        List all available resources, applying MCP middleware.
-        """
-
-        async with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
-            # Create the middleware context.
-            mw_context = MiddlewareContext(
-                message={},  # List resources doesn't have parameters
-                source="client",
-                type="request",
-                method="resources/list",
-                fastmcp_context=fastmcp_ctx,
-            )
-
-            # Apply the middleware chain.
-            return list(
-                await self._apply_middleware(
-                    context=mw_context, call_next=self._list_resources
-                )
-            )
-
-    async def _list_resources(
-        self,
-        context: MiddlewareContext[dict[str, Any]],
-    ) -> list[Resource]:
-        """
-        List all available resources.
-
-        Queries all providers in parallel and collects resources.
-        First provider wins for duplicate keys.
-        """
-        results = await gather(
-            *[p.list_resources() for p in self._providers],
-            return_exceptions=True,
-        )
-
-        all_resources: dict[str, Resource] = {}
-        for result in results:
-            if isinstance(result, BaseException):
-                logger.exception(
-                    "Error listing resources from provider", exc_info=result
-                )
-                if fastmcp.settings.mounted_components_raise_on_load_error:
-                    raise result
-                continue
-            for resource in result:
-                if (
-                    self._is_component_enabled(resource)
-                    and resource.key not in all_resources
-                ):
-                    all_resources[resource.key] = resource
-        return list(all_resources.values())
 
     async def _list_resource_templates_mcp(self) -> list[SDKResourceTemplate]:
         """
@@ -1258,7 +1245,7 @@ class FastMCP(Generic[LifespanResultT]):
         logger.debug(f"[{self.name}] Handler called: list_resource_templates")
 
         async with fastmcp.server.context.Context(fastmcp=self):
-            templates = await self._list_resource_templates_middleware()
+            templates = await self.get_resource_templates(apply_middleware=True)
             return [
                 template.to_mcp_template(
                     uriTemplate=template.uri_template,
@@ -1266,61 +1253,6 @@ class FastMCP(Generic[LifespanResultT]):
                 )
                 for template in templates
             ]
-
-    async def _list_resource_templates_middleware(self) -> list[ResourceTemplate]:
-        """
-        List all available resource templates, applying MCP middleware.
-
-        """
-
-        async with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
-            # Create the middleware context.
-            mw_context = MiddlewareContext(
-                message={},  # List resource templates doesn't have parameters
-                source="client",
-                type="request",
-                method="resources/templates/list",
-                fastmcp_context=fastmcp_ctx,
-            )
-
-            # Apply the middleware chain.
-            return list(
-                await self._apply_middleware(
-                    context=mw_context, call_next=self._list_resource_templates
-                )
-            )
-
-    async def _list_resource_templates(
-        self,
-        context: MiddlewareContext[dict[str, Any]],
-    ) -> list[ResourceTemplate]:
-        """
-        List all available resource templates.
-
-        Queries all providers in parallel and collects templates.
-        First provider wins for duplicate keys.
-        """
-        results = await gather(
-            *[p.list_resource_templates() for p in self._providers],
-            return_exceptions=True,
-        )
-
-        all_templates: dict[str, ResourceTemplate] = {}
-        for result in results:
-            if isinstance(result, BaseException):
-                logger.exception(
-                    "Error listing resource templates from provider", exc_info=result
-                )
-                if fastmcp.settings.mounted_components_raise_on_load_error:
-                    raise result
-                continue
-            for template in result:
-                if (
-                    self._is_component_enabled(template)
-                    and template.key not in all_templates
-                ):
-                    all_templates[template.key] = template
-        return list(all_templates.values())
 
     async def _list_prompts_mcp(self) -> list[SDKPrompt]:
         """
@@ -1330,7 +1262,7 @@ class FastMCP(Generic[LifespanResultT]):
         logger.debug(f"[{self.name}] Handler called: list_prompts")
 
         async with fastmcp.server.context.Context(fastmcp=self):
-            prompts = await self._list_prompts_middleware()
+            prompts = await self.get_prompts(apply_middleware=True)
             return [
                 prompt.to_mcp_prompt(
                     name=prompt.name,
@@ -1338,56 +1270,6 @@ class FastMCP(Generic[LifespanResultT]):
                 )
                 for prompt in prompts
             ]
-
-    async def _list_prompts_middleware(self) -> list[Prompt]:
-        """
-        List all available prompts, applying MCP middleware.
-
-        """
-
-        async with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
-            # Create the middleware context.
-            mw_context = MiddlewareContext(
-                message=mcp.types.ListPromptsRequest(method="prompts/list"),
-                source="client",
-                type="request",
-                method="prompts/list",
-                fastmcp_context=fastmcp_ctx,
-            )
-
-            # Apply the middleware chain.
-            return list(
-                await self._apply_middleware(
-                    context=mw_context, call_next=self._list_prompts
-                )
-            )
-
-    async def _list_prompts(
-        self,
-        context: MiddlewareContext[mcp.types.ListPromptsRequest],
-    ) -> list[Prompt]:
-        """
-        List all available prompts.
-
-        Queries all providers in parallel and collects prompts.
-        First provider wins for duplicate keys.
-        """
-        results = await gather(
-            *[p.list_prompts() for p in self._providers],
-            return_exceptions=True,
-        )
-
-        all_prompts: dict[str, Prompt] = {}
-        for result in results:
-            if isinstance(result, BaseException):
-                logger.exception("Error listing prompts from provider", exc_info=result)
-                if fastmcp.settings.mounted_components_raise_on_load_error:
-                    raise result
-                continue
-            for prompt in result:
-                if self._is_component_enabled(prompt) and prompt.key not in all_prompts:
-                    all_prompts[prompt.key] = prompt
-        return list(all_prompts.values())
 
     async def _call_tool_mcp(
         self, key: str, arguments: dict[str, Any]
@@ -2574,19 +2456,19 @@ class FastMCP(Generic[LifespanResultT]):
             return uri
 
         # Import tools from the server
-        for tool in (await server.get_tools()).values():
+        for tool in await server.get_tools():
             if prefix:
                 tool = tool.model_copy(update={"name": f"{prefix}_{tool.name}"})
             self.add_tool(tool)
 
         # Import resources and templates from the server
-        for resource in (await server.get_resources()).values():
+        for resource in await server.get_resources():
             if prefix:
                 new_uri = add_resource_prefix(str(resource.uri), prefix)
                 resource = resource.model_copy(update={"uri": new_uri})
             self.add_resource(resource)
 
-        for template in (await server.get_resource_templates()).values():
+        for template in await server.get_resource_templates():
             if prefix:
                 new_uri_template = add_resource_prefix(template.uri_template, prefix)
                 template = template.model_copy(
@@ -2595,7 +2477,7 @@ class FastMCP(Generic[LifespanResultT]):
             self.add_template(template)
 
         # Import prompts from the server
-        for prompt in (await server.get_prompts()).values():
+        for prompt in await server.get_prompts():
             if prefix:
                 prompt = prompt.model_copy(update={"name": f"{prefix}_{prompt.name}"})
             self.add_prompt(prompt)

@@ -85,11 +85,11 @@ class TestTools:
             return a + b
 
         mcp_tools = await mcp.get_tools()
-        assert "adder" in mcp_tools
+        assert any(t.name == "adder" for t in mcp_tools)
 
         mcp.remove_tool("adder")
         mcp_tools = await mcp.get_tools()
-        assert "adder" not in mcp_tools
+        assert not any(t.name == "adder" for t in mcp_tools)
 
         with pytest.raises(NotFoundError, match="Unknown tool: adder"):
             await mcp._call_tool_mcp("adder", {"a": 1, "b": 2})
@@ -108,9 +108,11 @@ class TestTools:
 
         tools = await mcp.get_tools()
         assert len(tools) == 2
-        assert tools["f"].name == "f"
-        assert tools["g-tool"].name == "g-tool"
-        assert tools["g-tool"].description == "add two to a number"
+        f_tool = next(t for t in tools if t.name == "f")
+        g_tool = next(t for t in tools if t.name == "g-tool")
+        assert f_tool.name == "f"
+        assert g_tool.name == "g-tool"
+        assert g_tool.description == "add two to a number"
 
 
 class TestServerDelegation:
@@ -177,7 +179,7 @@ class TestServerDelegation:
             return "local"
 
         tools = await mcp.get_tools()
-        assert "local_tool" in tools
+        assert any(t.name == "local_tool" for t in tools)
 
 
 class TestResourcePrefixMounting:
@@ -208,9 +210,11 @@ class TestResourcePrefixMounting:
         resources = await main_server.get_resources()
         templates = await main_server.get_resource_templates()
 
-        assert "resource://prefix/test-resource" in resources
-        assert "resource://prefix//absolute/path" in resources
-        assert "resource://prefix/{param}/template" in templates
+        assert any(str(r.uri) == "resource://prefix/test-resource" for r in resources)
+        assert any(str(r.uri) == "resource://prefix//absolute/path" for r in resources)
+        assert any(
+            t.uri_template == "resource://prefix/{param}/template" for t in templates
+        )
 
         # Test that prefixed resources can be accessed
         async with Client(main_server) as client:

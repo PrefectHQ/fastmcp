@@ -50,7 +50,7 @@ def get_config() -> dict:
 
         # Test the tool works and can access the parsed args
         tools = await server.get_tools()
-        assert "get_config" in tools
+        assert any(t.name == "get_config" for t in tools)
 
     async def test_server_with_no_args(self, tmp_path):
         """Test a server that uses argparse with no arguments (defaults)."""
@@ -131,5 +131,5 @@ mcp = FastMCP(name)
 
         # Verify tools are available
         tools = await server.get_tools()
-        assert "get_status" in tools
-        assert "echo_message" in tools
+        assert any(t.name == "get_status" for t in tools)
+        assert any(t.name == "echo_message" for t in tools)

@@ -153,14 +153,14 @@ async def test_proxy_with_async_client_factory():
 class TestTools:
     async def test_get_tools(self, proxy_server):
         tools = await proxy_server.get_tools()
-        assert "greet" in tools
-        assert "add" in tools
-        assert "error_tool" in tools
-        assert "tool_without_description" in tools
+        assert any(t.name == "greet" for t in tools)
+        assert any(t.name == "add" for t in tools)
+        assert any(t.name == "error_tool" for t in tools)
+        assert any(t.name == "tool_without_description" for t in tools)
 
     async def test_get_tools_meta(self, proxy_server):
         tools = await proxy_server.get_tools()
-        greet_tool = tools["greet"]
+        greet_tool = next(t for t in tools if t.name == "greet")
         assert greet_tool.title == "Greet"
         assert greet_tool.meta == {"_fastmcp": {"tags": ["greet"]}}
         assert greet_tool.icons == [Icon(src="https://example.com/greet-icon.png")]
@@ -174,8 +174,8 @@ class TestTools:
             "add", ToolTransformConfig(name="add_transformed")
         )
         tools = await proxy_server.get_tools()
-        assert "add_transformed" in tools
-        assert "add" not in tools
+        assert any(t.name == "add_transformed" for t in tools)
+        assert not any(t.name == "add" for t in tools)
 
     async def test_call_transformed_tools(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
@@ -191,7 +191,8 @@ class TestTools:
 
     async def test_tool_without_description(self, proxy_server):
         tools = await proxy_server.get_tools()
-        assert tools["tool_without_description"].description is None
+        tool = next(t for t in tools if t.name == "tool_without_description")
+        assert tool.description is None
 
     async def test_list_tools_same_as_original(self, fastmcp_server, proxy_server):
         assert (
@@ -266,15 +267,15 @@ class TestTools:
 class TestResources:
     async def test_get_resources(self, proxy_server):
         resources = await proxy_server.get_resources()
-        assert [r.uri for r in resources.values()] == Contains(
+        assert [r.uri for r in resources] == Contains(
             AnyUrl("data://users"),
             AnyUrl("resource://wave"),
         )
-        assert [r.name for r in resources.values()] == Contains("get_users", "wave")
+        assert [r.name for r in resources] == Contains("get_users", "wave")
 
     async def test_get_resources_meta(self, proxy_server):
         resources = await proxy_server.get_resources()
-        wave_resource = resources["resource://wave"]
+        wave_resource = next(r for r in resources if str(r.uri) == "resource://wave")
         assert wave_resource.title == "Wave"
         assert wave_resource.meta == {"_fastmcp": {"tags": ["wave"]}}
         assert wave_resource.icons == [Icon(src="https://example.com/wave-icon.png")]
@@ -345,11 +346,13 @@ class TestResources:
 class TestResourceTemplates:
     async def test_get_resource_templates(self, proxy_server):
         templates = await proxy_server.get_resource_templates()
-        assert [t.name for t in templates.values()] == Contains("get_user")
+        assert [t.name for t in templates] == Contains("get_user")
 
     async def test_get_resource_templates_meta(self, proxy_server):
         templates = await proxy_server.get_resource_templates()
-        get_user_template = templates["data://user/{user_id}"]
+        get_user_template = next(
+            t for t in templates if t.uri_template == "data://user/{user_id}"
+        )
         assert get_user_template.title == "User Template"
         assert get_user_template.meta == {"_fastmcp": {"tags": ["users"]}}
         assert get_user_template.icons == [
@@ -420,11 +423,11 @@ class TestResourceTemplates:
 class TestPrompts:
     async def test_get_prompts_server_method(self, proxy_server: FastMCPProxy):
         prompts = await proxy_server.get_prompts()
-        assert [p.name for p in prompts.values()] == Contains("welcome")
+        assert [p.name for p in prompts] == Contains("welcome")
 
     async def test_get_prompts_meta(self, proxy_server):
         prompts = await proxy_server.get_prompts()
-        welcome_prompt = prompts["welcome"]
+        welcome_prompt = next(p for p in prompts if p.name == "welcome")
         assert welcome_prompt.title == "Welcome"
         assert welcome_prompt.meta == {"_fastmcp": {"tags": ["welcome"]}}
         assert welcome_prompt.icons == [
@@ -505,15 +508,13 @@ async def test_proxy_handles_multiple_concurrent_tasks_correctly(
         tg.start_soon(get_and_store, "tools", proxy_server.get_tools)
 
     assert list(results) == Contains("resources", "prompts", "tools")
-    assert list(results["prompts"]) == Contains("welcome")
-    assert [r.uri for r in results["resources"].values()] == Contains(
+    assert [p.name for p in results["prompts"]] == Contains("welcome")
+    assert [r.uri for r in results["resources"]] == Contains(
         AnyUrl("data://users"),
         AnyUrl("resource://wave"),
     )
-    assert [r.name for r in results["resources"].values()] == Contains(
-        "get_users", "wave"
-    )
-    assert list(results["tools"]) == Contains(
+    assert [r.name for r in results["resources"]] == Contains("get_users", "wave")
+    assert [t.name for t in results["tools"]] == Contains(
         "greet", "add", "error_tool", "tool_without_description"
     )
 
@@ -524,7 +525,7 @@ class TestProxyComponentEnableDisable:
     async def test_proxy_tool_enable_raises_not_implemented(self, proxy_server):
         """Test that enable() on proxy tools raises NotImplementedError."""
         tools = await proxy_server.get_tools()
-        tool = tools["greet"]
+        tool = next(t for t in tools if t.name == "greet")
 
         with pytest.raises(NotImplementedError, match="server.enable"):
             tool.enable()
@@ -532,7 +533,7 @@ class TestProxyComponentEnableDisable:
     async def test_proxy_tool_disable_raises_not_implemented(self, proxy_server):
         """Test that disable() on proxy tools raises NotImplementedError."""
         tools = await proxy_server.get_tools()
-        tool = tools["greet"]
+        tool = next(t for t in tools if t.name == "greet")
 
         with pytest.raises(NotImplementedError, match="server.disable"):
             tool.disable()
@@ -540,7 +541,7 @@ class TestProxyComponentEnableDisable:
     async def test_proxy_resource_enable_raises_not_implemented(self, proxy_server):
         """Test that enable() on proxy resources raises NotImplementedError."""
         resources = await proxy_server.get_resources()
-        resource = resources["resource://wave"]
+        resource = next(r for r in resources if str(r.uri) == "resource://wave")
 
         with pytest.raises(NotImplementedError, match="server.enable"):
             resource.enable()
@@ -548,7 +549,7 @@ class TestProxyComponentEnableDisable:
     async def test_proxy_resource_disable_raises_not_implemented(self, proxy_server):
         """Test that disable() on proxy resources raises NotImplementedError."""
         resources = await proxy_server.get_resources()
-        resource = resources["resource://wave"]
+        resource = next(r for r in resources if str(r.uri) == "resource://wave")
 
         with pytest.raises(NotImplementedError, match="server.disable"):
             resource.disable()
@@ -556,7 +557,7 @@ class TestProxyComponentEnableDisable:
     async def test_proxy_prompt_enable_raises_not_implemented(self, proxy_server):
         """Test that enable() on proxy prompts raises NotImplementedError."""
         prompts = await proxy_server.get_prompts()
-        prompt = prompts["welcome"]
+        prompt = next(p for p in prompts if p.name == "welcome")
 
         with pytest.raises(NotImplementedError, match="server.enable"):
             prompt.enable()
@@ -564,7 +565,7 @@ class TestProxyComponentEnableDisable:
     async def test_proxy_prompt_disable_raises_not_implemented(self, proxy_server):
         """Test that disable() on proxy prompts raises NotImplementedError."""
         prompts = await proxy_server.get_prompts()
-        prompt = prompts["welcome"]
+        prompt = next(p for p in prompts if p.name == "welcome")
 
         with pytest.raises(NotImplementedError, match="server.disable"):
             prompt.disable()

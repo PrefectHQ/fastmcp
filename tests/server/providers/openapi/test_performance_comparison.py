@@ -247,7 +247,7 @@ class TestPerformance:
             "delete_user",
             "search_users",
         }
-        assert set(tools.keys()) == expected_operations
+        assert {t.name for t in tools} == expected_operations
 
     def test_memory_efficiency(self, comprehensive_spec):
         """Test that implementation doesn't significantly increase memory usage."""

@@ -589,7 +589,7 @@ class TestLocalProviderStandaloneUsage:
         server = FastMCP("Test", providers=[provider])
 
         tools = await server.get_tools()
-        assert "provider_tool" in tools
+        assert any(t.name == "provider_tool" for t in tools)
 
     async def test_server_decorator_and_provider_tools_coexist(self):
         """Test that server decorators and provider tools coexist."""
@@ -606,8 +606,8 @@ class TestLocalProviderStandaloneUsage:
             return "from server"
 
         tools = await server.get_tools()
-        assert "provider_tool" in tools
-        assert "server_tool" in tools
+        assert any(t.name == "provider_tool" for t in tools)
+        assert any(t.name == "server_tool" for t in tools)
 
     async def test_local_provider_first_wins_duplicates(self):
         """Test that LocalProvider tools take precedence over added providers."""
@@ -625,7 +625,7 @@ class TestLocalProviderStandaloneUsage:
 
         # Server's LocalProvider is first, so its tool wins
         tools = await server.get_tools()
-        assert "duplicate_tool" in tools
+        assert any(t.name == "duplicate_tool" for t in tools)
 
         async with Client(server) as client:
             result = await client.call_tool("duplicate_tool", {})

@@ -40,8 +40,8 @@ class TestBasicMount:
 
         # Get tools from main app, should include sub_app's tools
         tools = await main_app.get_tools()
-        assert "sub_tool" in tools
-        assert "sub_transformed_tool" in tools
+        assert any(t.name == "sub_tool" for t in tools)
+        assert any(t.name == "sub_transformed_tool" for t in tools)
 
         async with Client(main_app) as client:
             result = await client.call_tool("sub_tool", {})
@@ -61,7 +61,7 @@ class TestBasicMount:
 
         # Tool should be accessible with the default separator
         tools = await main_app.get_tools()
-        assert "sub_greet" in tools
+        assert any(t.name == "sub_greet" for t in tools)
 
         # Call the tool
         async with Client(main_app) as client:
@@ -82,7 +82,7 @@ class TestBasicMount:
 
         tools = await main_app.get_tools()
         # With empty prefix, the tool should keep its original name
-        assert "sub_tool" in tools
+        assert any(t.name == "sub_tool" for t in tools)
 
     async def test_mount_with_no_prefix_provided(self):
         """Test mounting without providing a prefix at all."""
@@ -98,7 +98,7 @@ class TestBasicMount:
 
         tools = await main_app.get_tools()
         # Without prefix, the tool should keep its original name
-        assert "sub_tool" in tools
+        assert any(t.name == "sub_tool" for t in tools)
 
         # Call the tool to verify it works
         async with Client(main_app) as client:
@@ -119,7 +119,7 @@ class TestBasicMount:
 
         # Verify tool is accessible with original name
         tools = await main_app.get_tools()
-        assert "sub_tool" in tools
+        assert any(t.name == "sub_tool" for t in tools)
 
         # Test actual functionality
         async with Client(main_app) as client:
@@ -140,7 +140,7 @@ class TestBasicMount:
 
         # Verify resource is accessible with original URI
         resources = await main_app.get_resources()
-        assert "data://config" in resources
+        assert any(str(r.uri) == "data://config" for r in resources)
 
         # Test actual functionality
         async with Client(main_app) as client:
@@ -162,7 +162,7 @@ class TestBasicMount:
 
         # Verify template is accessible with original URI template
         templates = await main_app.get_resource_templates()
-        assert "users://{user_id}/info" in templates
+        assert any(t.uri_template == "users://{user_id}/info" for t in templates)
 
         # Test actual functionality
         async with Client(main_app) as client:
@@ -184,7 +184,7 @@ class TestBasicMount:
 
         # Verify prompt is accessible with original name
         prompts = await main_app.get_prompts()
-        assert "sub_prompt" in prompts
+        assert any(p.name == "sub_prompt" for p in prompts)
 
         # Test actual functionality
         async with Client(main_app) as client:
@@ -215,8 +215,8 @@ class TestMultipleServerMount:
 
         # Check both are accessible
         tools = await main_app.get_tools()
-        assert "weather_get_forecast" in tools
-        assert "news_get_headlines" in tools
+        assert any(t.name == "weather_get_forecast" for t in tools)
+        assert any(t.name == "news_get_headlines" for t in tools)
 
         # Call tools from both mounted servers
         async with Client(main_app) as client:
@@ -242,15 +242,15 @@ class TestMultipleServerMount:
         # Mount first app
         main_app.mount(first_app, "api")
         tools = await main_app.get_tools()
-        assert "api_first_tool" in tools
+        assert any(t.name == "api_first_tool" for t in tools)
 
         # Mount second app with same prefix
         main_app.mount(second_app, "api")
         tools = await main_app.get_tools()
 
         # Both apps' tools should be accessible (new behavior)
-        assert "api_first_tool" in tools
-        assert "api_second_tool" in tools
+        assert any(t.name == "api_first_tool" for t in tools)
+        assert any(t.name == "api_second_tool" for t in tools)
 
     @pytest.mark.skipif(
         sys.platform == "win32", reason="Windows asyncio networking timeouts."
@@ -593,7 +593,7 @@ class TestDynamicChanges:
 
         # Initially, there should be no tools from sub_app
         tools = await main_app.get_tools()
-        assert not any(key.startswith("sub_") for key in tools)
+        assert not any(t.name.startswith("sub_") for t in tools)
 
         # Add a tool to the sub-app after mounting
         @sub_app.tool
@@ -602,7 +602,7 @@ class TestDynamicChanges:
 
         # The tool should be accessible through the main app
         tools = await main_app.get_tools()
-        assert "sub_dynamic_tool" in tools
+        assert any(t.name == "sub_dynamic_tool" for t in tools)
 
         # Call the dynamically added tool
         async with Client(main_app) as client:
@@ -623,14 +623,14 @@ class TestDynamicChanges:
 
         # Initially, the tool should be accessible
         tools = await main_app.get_tools()
-        assert "sub_temp_tool" in tools
+        assert any(t.name == "sub_temp_tool" for t in tools)
 
         # Remove the tool from sub_app using public API
         sub_app.remove_tool("temp_tool")
 
         # The tool should no longer be accessible
         tools = await main_app.get_tools()
-        assert "sub_temp_tool" not in tools
+        assert not any(t.name == "sub_temp_tool" for t in tools)
 
 
 class TestResourcesAndTemplates:
@@ -650,7 +650,7 @@ class TestResourcesAndTemplates:
 
         # Resource should be accessible through main app
         resources = await main_app.get_resources()
-        assert "data://data/users" in resources
+        assert any(str(r.uri) == "data://data/users" for r in resources)
 
         # Check that resource can be accessed
         async with Client(main_app) as client:
@@ -672,7 +672,7 @@ class TestResourcesAndTemplates:
 
         # Template should be accessible through main app
         templates = await main_app.get_resource_templates()
-        assert "users://api/{user_id}/profile" in templates
+        assert any(t.uri_template == "users://api/{user_id}/profile" for t in templates)
 
         # Check template instantiation
         async with Client(main_app) as client:
@@ -697,7 +697,7 @@ class TestResourcesAndTemplates:
 
         # Resource should be accessible through main app
         resources = await main_app.get_resources()
-        assert "data://data/config" in resources
+        assert any(str(r.uri) == "data://data/config" for r in resources)
 
         # Check access to the resource
         async with Client(main_app) as client:
@@ -724,7 +724,7 @@ class TestPrompts:
 
         # Prompt should be accessible through main app
         prompts = await main_app.get_prompts()
-        assert "assistant_greeting" in prompts
+        assert any(p.name == "assistant_greeting" for p in prompts)
 
         # Render the prompt
         async with Client(main_app) as client:
@@ -747,7 +747,7 @@ class TestPrompts:
 
         # Prompt should be accessible through main app
         prompts = await main_app.get_prompts()
-        assert "assistant_farewell" in prompts
+        assert any(p.name == "assistant_farewell" for p in prompts)
 
         # Render the prompt
         async with Client(main_app) as client:
@@ -777,7 +777,7 @@ class TestProxyServer:
 
         # Tool should be accessible through main app
         tools = await main_app.get_tools()
-        assert "proxy_get_data" in tools
+        assert any(t.name == "proxy_get_data" for t in tools)
 
         # Call the tool
         async with Client(main_app) as client:
@@ -803,7 +803,7 @@ class TestProxyServer:
 
         # Tool should be accessible through main app via proxy
         tools = await main_app.get_tools()
-        assert "proxy_dynamic_data" in tools
+        assert any(t.name == "proxy_dynamic_data" for t in tools)
 
         # Call the tool
         async with Client(main_app) as client:
@@ -1021,10 +1021,12 @@ class TestResourceUriPrefixing:
         resources = await main_app.get_resources()
 
         # Should have prefixed key (using path format: resource://prefix/resource_name)
-        assert "resource://prefix/my_resource" in resources
+        assert any(str(r.uri) == "resource://prefix/my_resource" for r in resources)
 
         # The resource name should NOT be prefixed (only URI is prefixed)
-        resource = resources["resource://prefix/my_resource"]
+        resource = next(
+            r for r in resources if str(r.uri) == "resource://prefix/my_resource"
+        )
         assert resource.name == "my_resource"
 
     async def test_resource_template_uri_prefixing(self):
@@ -1045,10 +1047,14 @@ class TestResourceUriPrefixing:
         templates = await main_app.get_resource_templates()
 
         # Should have prefixed key (using path format: resource://prefix/template_uri)
-        assert "resource://prefix/user/{user_id}" in templates
+        assert any(
+            t.uri_template == "resource://prefix/user/{user_id}" for t in templates
+        )
 
         # The template name should NOT be prefixed (only URI template is prefixed)
-        template = templates["resource://prefix/user/{user_id}"]
+        template = next(
+            t for t in templates if t.uri_template == "resource://prefix/user/{user_id}"
+        )
         assert template.name == "user_template"
 
 
@@ -1393,9 +1399,9 @@ class TestToolNameOverrides:
 
         # Server introspection shows transformed names
         tools = await main.get_tools()
-        assert "custom_name" in tools
-        assert "original_tool" not in tools
-        assert "prefix_original_tool" not in tools
+        assert any(t.name == "custom_name" for t in tools)
+        assert not any(t.name == "original_tool" for t in tools)
+        assert not any(t.name == "prefix_original_tool" for t in tools)
 
         # Client-facing API shows the same transformed names
         async with Client(main) as client:
@@ -1514,7 +1520,7 @@ class TestComponentServicePrefixLess:
 
         # Initially the tool is enabled
         tools = await main_app.get_tools()
-        assert "my_tool" in tools
+        assert any(t.name == "my_tool" for t in tools)
 
         # Disable and re-enable via ComponentService
         service = ComponentService(main_app)
@@ -1522,13 +1528,13 @@ class TestComponentServicePrefixLess:
         assert tool is not None
         # Verify tool is now disabled
         tools = await main_app.get_tools()
-        assert "my_tool" not in tools
+        assert not any(t.name == "my_tool" for t in tools)
 
         tool = await service._enable_tool("my_tool")
         assert tool is not None
         # Verify tool is now enabled
         tools = await main_app.get_tools()
-        assert "my_tool" in tools
+        assert any(t.name == "my_tool" for t in tools)
 
     async def test_enable_resource_prefixless_mount(self):
         """Test enabling a resource on a prefix-less mounted server."""
@@ -1550,13 +1556,13 @@ class TestComponentServicePrefixLess:
         assert resource is not None
         # Verify resource is now disabled
         resources = await main_app.get_resources()
-        assert "data://test" not in resources
+        assert not any(str(r.uri) == "data://test" for r in resources)
 
         resource = await service._enable_resource("data://test")
         assert resource is not None
         # Verify resource is now enabled
         resources = await main_app.get_resources()
-        assert "data://test" in resources
+        assert any(str(r.uri) == "data://test" for r in resources)
 
     async def test_enable_prompt_prefixless_mount(self):
         """Test enabling a prompt on a prefix-less mounted server."""
@@ -1578,10 +1584,10 @@ class TestComponentServicePrefixLess:
         assert prompt is not None
         # Verify prompt is now disabled
         prompts = await main_app.get_prompts()
-        assert "my_prompt" not in prompts
+        assert not any(p.name == "my_prompt" for p in prompts)
 
         prompt = await service._enable_prompt("my_prompt")
         assert prompt is not None
         # Verify prompt is now enabled
         prompts = await main_app.get_prompts()
-        assert "my_prompt" in prompts
+        assert any(p.name == "my_prompt" for p in prompts)

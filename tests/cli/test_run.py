@@ -164,7 +164,7 @@ def greet(name: str) -> str:
         server = await source.load_server()
         assert server.name == "TestServer"
         tools = await server.get_tools()
-        assert "greet" in tools
+        assert any(t.name == "greet" for t in tools)
 
     async def test_import_server_with_main_block(self, tmp_path):
         """Test importing server with if __name__ == '__main__' block."""
@@ -186,7 +186,7 @@ if __name__ == "__main__":
         server = await source.load_server()
         assert server.name == "MainServer"
         tools = await server.get_tools()
-        assert "calculate" in tools
+        assert any(t.name == "calculate" for t in tools)
 
     async def test_import_server_standard_names(self, tmp_path):
         """Test automatic detection of standard names (mcp, server, app)."""
@@ -240,7 +240,7 @@ def custom_tool() -> str:
         server = await source.load_server()
         assert server.name == "CustomServer"
         tools = await server.get_tools()
-        assert "custom_tool" in tools
+        assert any(t.name == "custom_tool" for t in tools)
 
     async def test_import_server_no_standard_names_fails(self, tmp_path):
         """Test importing server when no standard names exist fails."""

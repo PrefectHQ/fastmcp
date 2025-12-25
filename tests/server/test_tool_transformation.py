@@ -13,11 +13,11 @@ async def test_tool_transformation_in_tool_manager():
 
     mcp.add_tool_transformation("echo", ToolTransformConfig(name="echo_transformed"))
 
-    tools_dict = await mcp.get_tools()
-    tools = list(tools_dict.values())
+    tools = await mcp.get_tools()
     assert len(tools) == 1
-    assert "echo_transformed" in tools_dict
-    assert tools_dict["echo_transformed"].name == "echo_transformed"
+    assert any(t.name == "echo_transformed" for t in tools)
+    tool = next(t for t in tools if t.name == "echo_transformed")
+    assert tool.name == "echo_transformed"
 
 
 async def test_transformed_tool_filtering():
@@ -29,14 +29,14 @@ async def test_transformed_tool_filtering():
         """Echo back the message provided."""
         return message
 
-    tools = list(await mcp._list_tools_middleware())
+    tools = await mcp.get_tools(apply_middleware=True)
     assert len(tools) == 0
 
     mcp.add_tool_transformation(
         "echo", ToolTransformConfig(name="echo_transformed", tags={"enabled_tools"})
     )
 
-    tools = list(await mcp._list_tools_middleware())
+    tools = await mcp.get_tools(apply_middleware=True)
     assert len(tools) == 1
 
 

@@ -277,19 +277,19 @@ class TestToolEnabled:
 
         # Tool is enabled by default
         tools = await mcp.get_tools()
-        assert "sample_tool" in tools
+        assert any(t.name == "sample_tool" for t in tools)
 
         # Disable via server
         mcp.disable(keys=["tool:sample_tool"])
 
         # Tool should not be in list when disabled
         tools = await mcp.get_tools()
-        assert "sample_tool" not in tools
+        assert not any(t.name == "sample_tool" for t in tools)
 
         # Re-enable via server
         mcp.enable(keys=["tool:sample_tool"])
         tools = await mcp.get_tools()
-        assert "sample_tool" in tools
+        assert any(t.name == "sample_tool" for t in tools)
 
     async def test_tool_disabled_via_server(self):
         mcp = FastMCP()
@@ -550,17 +550,17 @@ class TestResourceEnabled:
             return "Hello, world!"
 
         resources = await mcp.get_resources()
-        assert "resource://data" in resources
+        assert any(str(r.uri) == "resource://data" for r in resources)
 
         mcp.disable(keys=["resource:resource://data"])
 
         resources = await mcp.get_resources()
-        assert "resource://data" not in resources
+        assert not any(str(r.uri) == "resource://data" for r in resources)
 
         mcp.enable(keys=["resource:resource://data"])
 
         resources = await mcp.get_resources()
-        assert "resource://data" in resources
+        assert any(str(r.uri) == "resource://data" for r in resources)
 
     async def test_resource_disabled(self):
         mcp = FastMCP()
@@ -588,7 +588,7 @@ class TestResourceEnabled:
         mcp.disable(keys=["resource:resource://data"])
 
         resources = await mcp.get_resources()
-        assert "resource://data" not in resources
+        assert not any(str(r.uri) == "resource://data" for r in resources)
 
         mcp.enable(keys=["resource:resource://data"])
 
@@ -729,17 +729,17 @@ class TestResourceTemplateEnabled:
             return f"Template: {param}"
 
         templates = await mcp.get_resource_templates()
-        assert "resource://{param}" in templates
+        assert any(t.uri_template == "resource://{param}" for t in templates)
 
         mcp.disable(keys=["template:resource://{param}"])
 
         templates = await mcp.get_resource_templates()
-        assert "resource://{param}" not in templates
+        assert not any(t.uri_template == "resource://{param}" for t in templates)
 
         mcp.enable(keys=["template:resource://{param}"])
 
         templates = await mcp.get_resource_templates()
-        assert "resource://{param}" in templates
+        assert any(t.uri_template == "resource://{param}" for t in templates)
 
     async def test_template_disabled(self):
         mcp = FastMCP()
@@ -767,7 +767,7 @@ class TestResourceTemplateEnabled:
         mcp.disable(keys=["template:resource://{param}"])
 
         templates = await mcp.get_resource_templates()
-        assert "resource://{param}" not in templates
+        assert not any(t.uri_template == "resource://{param}" for t in templates)
 
         mcp.enable(keys=["template:resource://{param}"])
 
@@ -835,9 +835,9 @@ class TestPrompts:
         def fn() -> str:
             return "Hello, world!"
 
-        prompts_dict = await mcp.get_prompts()
-        assert len(prompts_dict) == 1
-        prompt = prompts_dict["fn"]
+        prompts = await mcp.get_prompts()
+        assert len(prompts) == 1
+        prompt = next(p for p in prompts if p.name == "fn")
         assert prompt.name == "fn"
         # Don't compare functions directly since validate_call wraps them
         content = await prompt.render()
@@ -854,9 +854,9 @@ class TestPrompts:
         def fn() -> str:
             return "Hello, world!"
 
-        prompts_dict = await mcp.get_prompts()
-        assert len(prompts_dict) == 1
-        prompt = prompts_dict["custom_name"]
+        prompts = await mcp.get_prompts()
+        assert len(prompts) == 1
+        prompt = next(p for p in prompts if p.name == "custom_name")
         assert prompt.name == "custom_name"
         content = await prompt.render()
         if not isinstance(content, PromptResult):
@@ -872,9 +872,9 @@ class TestPrompts:
         def fn() -> str:
             return "Hello, world!"
 
-        prompts_dict = await mcp.get_prompts()
-        assert len(prompts_dict) == 1
-        prompt = prompts_dict["fn"]
+        prompts = await mcp.get_prompts()
+        assert len(prompts) == 1
+        prompt = next(p for p in prompts if p.name == "fn")
         assert prompt.description == "A custom description"
         content = await prompt.render()
         if not isinstance(content, PromptResult):
@@ -889,9 +889,9 @@ class TestPrompts:
         def fn() -> str:
             return "Hello, world!"
 
-        prompts_dict = await mcp.get_prompts()
-        assert len(prompts_dict) == 1
-        prompt = prompts_dict["fn"]
+        prompts = await mcp.get_prompts()
+        assert len(prompts) == 1
+        prompt = next(p for p in prompts if p.name == "fn")
         assert prompt.name == "fn"
 
     async def test_list_prompts(self):
@@ -1044,8 +1044,7 @@ class TestPrompts:
         def get_data() -> str:
             return "Hello, world!"
 
-        resources_dict = await mcp.get_resources()
-        resources = list(resources_dict.values())
+        resources = await mcp.get_resources()
         assert len(resources) == 1
         assert resources[0].tags == {"example", "test-tag"}
 
@@ -1057,8 +1056,8 @@ class TestPrompts:
         def template_resource(param: str) -> str:
             return f"Template resource: {param}"
 
-        templates_dict = await mcp.get_resource_templates()
-        template = templates_dict["resource://{param}"]
+        templates = await mcp.get_resource_templates()
+        template = next(t for t in templates if t.uri_template == "resource://{param}")
         assert template.tags == {"template", "test-tag"}
 
     async def test_prompt_decorator_with_tags(self):
@@ -1069,9 +1068,9 @@ class TestPrompts:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        prompts_dict = await mcp.get_prompts()
-        assert len(prompts_dict) == 1
-        prompt = prompts_dict["sample_prompt"]
+        prompts = await mcp.get_prompts()
+        assert len(prompts) == 1
+        prompt = next(p for p in prompts if p.name == "sample_prompt")
         assert prompt.tags == {"example", "test-tag"}
 
 
@@ -1084,17 +1083,17 @@ class TestPromptEnabled:
             return "Hello, world!"
 
         prompts = await mcp.get_prompts()
-        assert "sample_prompt" in prompts
+        assert any(p.name == "sample_prompt" for p in prompts)
 
         mcp.disable(keys=["prompt:sample_prompt"])
 
         prompts = await mcp.get_prompts()
-        assert "sample_prompt" not in prompts
+        assert not any(p.name == "sample_prompt" for p in prompts)
 
         mcp.enable(keys=["prompt:sample_prompt"])
 
         prompts = await mcp.get_prompts()
-        assert "sample_prompt" in prompts
+        assert any(p.name == "sample_prompt" for p in prompts)
 
     async def test_prompt_disabled(self):
         mcp = FastMCP()
@@ -1122,7 +1121,7 @@ class TestPromptEnabled:
         mcp.disable(keys=["prompt:sample_prompt"])
 
         prompts = await mcp.get_prompts()
-        assert "sample_prompt" not in prompts
+        assert not any(p.name == "sample_prompt" for p in prompts)
 
         mcp.enable(keys=["prompt:sample_prompt"])
 

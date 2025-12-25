@@ -72,6 +72,25 @@ tool = await mcp.get_tool(name="my_tool")
 ```
 </CodeGroup>
 
+### Component Listing Methods Return Lists
+
+The `get_tools()`, `get_resources()`, `get_prompts()`, and `get_resource_templates()` methods now return lists instead of dicts:
+
+<CodeGroup>
+```python Before
+tools = await server.get_tools()
+if "my_tool" in tools:
+    tool = tools["my_tool"]
+```
+
+```python After
+tools = await server.get_tools()
+tool = next((t for t in tools if t.name == "my_tool"), None)
+```
+</CodeGroup>
+
+The dict key was redundant since components already have `.name` or `.uri` attributes. Use list comprehensions or `next()` for lookups.
+
 ## v2.14.0
 
 ### OpenAPI Parser Promotion

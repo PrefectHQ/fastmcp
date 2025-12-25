@@ -53,9 +53,9 @@ class TestPromptDecorator:
         def fn() -> str:
             return "Hello, world!"
 
-        prompts_dict = await mcp.get_prompts()
-        assert len(prompts_dict) == 1
-        prompt = prompts_dict["fn"]
+        prompts = await mcp.get_prompts()
+        assert len(prompts) == 1
+        prompt = next(p for p in prompts if p.name == "fn")
         assert prompt.name == "fn"
         content = await prompt.render()
         if not isinstance(content, PromptResult):
@@ -71,7 +71,7 @@ class TestPromptDecorator:
             return "Hello, world!"
 
         prompts = await mcp.get_prompts()
-        assert "fn" in prompts
+        assert any(p.name == "fn" for p in prompts)
 
         async with Client(mcp) as client:
             result = await client.get_prompt("fn")
@@ -86,9 +86,9 @@ class TestPromptDecorator:
         def fn() -> str:
             return "Hello, world!"
 
-        prompts_dict = await mcp.get_prompts()
-        assert len(prompts_dict) == 1
-        prompt = prompts_dict["custom_name"]
+        prompts_list = await mcp.get_prompts()
+        assert len(prompts_list) == 1
+        prompt = next(p for p in prompts_list if p.name == "custom_name")
         assert prompt.name == "custom_name"
         content = await prompt.render()
         if not isinstance(content, PromptResult):
@@ -103,9 +103,9 @@ class TestPromptDecorator:
         def fn() -> str:
             return "Hello, world!"
 
-        prompts_dict = await mcp.get_prompts()
-        assert len(prompts_dict) == 1
-        prompt = prompts_dict["fn"]
+        prompts_list = await mcp.get_prompts()
+        assert len(prompts_list) == 1
+        prompt = next(p for p in prompts_list if p.name == "fn")
         assert prompt.description == "A custom description"
         content = await prompt.render()
         if not isinstance(content, PromptResult):
@@ -120,9 +120,9 @@ class TestPromptDecorator:
         def test_prompt(name: str, greeting: str = "Hello") -> str:
             return f"{greeting}, {name}!"
 
-        prompts_dict = await mcp.get_prompts()
-        assert len(prompts_dict) == 1
-        prompt = prompts_dict["test_prompt"]
+        prompts = await mcp.get_prompts()
+        assert len(prompts) == 1
+        prompt = next(p for p in prompts if p.name == "test_prompt")
         assert prompt.arguments is not None
         assert len(prompt.arguments) == 2
         assert prompt.arguments[0].name == "name"
@@ -233,9 +233,9 @@ class TestPromptDecorator:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        prompts_dict = await mcp.get_prompts()
-        assert len(prompts_dict) == 1
-        prompt = prompts_dict["sample_prompt"]
+        prompts = await mcp.get_prompts()
+        assert len(prompts) == 1
+        prompt = next(p for p in prompts if p.name == "sample_prompt")
         assert prompt.tags == {"example", "test-tag"}
 
     async def test_prompt_decorator_with_string_name(self):
@@ -248,8 +248,8 @@ class TestPromptDecorator:
             return "Hello from string named prompt!"
 
         prompts = await mcp.get_prompts()
-        assert "string_named_prompt" in prompts
-        assert "my_function" not in prompts
+        assert any(p.name == "string_named_prompt" for p in prompts)
+        assert not any(p.name == "my_function" for p in prompts)
 
         async with Client(mcp) as client:
             result = await client.get_prompt("string_named_prompt")
@@ -270,7 +270,8 @@ class TestPromptDecorator:
         assert isinstance(result_fn, FunctionPrompt)
 
         prompts = await mcp.get_prompts()
-        assert prompts["direct_call_prompt"] is result_fn
+        prompt = next(p for p in prompts if p.name == "direct_call_prompt")
+        assert prompt is result_fn
 
         async with Client(mcp) as client:
             result = await client.get_prompt("direct_call_prompt")
@@ -318,7 +319,7 @@ class TestPromptDecorator:
         def test_prompt(message: str) -> str:
             return f"Response: {message}"
 
-        prompts_dict = await mcp.get_prompts()
-        prompt = prompts_dict["test_prompt"]
+        prompts = await mcp.get_prompts()
+        prompt = next(p for p in prompts if p.name == "test_prompt")
 
         assert prompt.meta == meta_data

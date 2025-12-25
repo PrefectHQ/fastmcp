@@ -19,8 +19,7 @@ async def test_tool_exclude_args():
             pass
         return message
 
-    tools_dict = await mcp.get_tools()
-    tools = list(tools_dict.values())
+    tools = await mcp.get_tools()
     assert len(tools) == 1
     assert "state" not in tools[0].parameters["properties"]
 
@@ -61,8 +60,7 @@ async def test_add_tool_method_exclude_args():
     mcp.add_tool(tool)
 
     # Check tool via public API
-    tools_dict = await mcp.get_tools()
-    tools = list(tools_dict.values())
+    tools = await mcp.get_tools()
     assert len(tools) == 1
     assert "state" not in tools[0].parameters["properties"]
 

@@ -143,8 +143,7 @@ class TestResourceTemplates:
         def add(x: int, y: int = 10) -> int:
             return x + y
 
-        templates_dict = await mcp.get_resource_templates()
-        templates = list(templates_dict.values())
+        templates = await mcp.get_resource_templates()
         assert len(templates) == 1
         assert templates[0].uri_template == "math://add/{x}"
 
@@ -165,8 +164,7 @@ class TestResourceTemplates:
         def get_data(name: str) -> str:
             return f"Data for {name}"
 
-        templates_dict = await mcp.get_resource_templates()
-        templates = list(templates_dict.values())
+        templates = await mcp.get_resource_templates()
         assert len(templates) == 1
         assert templates[0].uri_template == "resource://{name}/data"
 
@@ -182,8 +180,8 @@ class TestResourceTemplates:
         def template_resource(param: str) -> str:
             return f"Template resource: {param}"
 
-        templates_dict = await mcp.get_resource_templates()
-        template = templates_dict["resource://{param}"]
+        templates = await mcp.get_resource_templates()
+        template = next(t for t in templates if t.uri_template == "resource://{param}")
         assert template.tags == {"template", "test-tag"}
 
     async def test_template_decorator_wildcard_param(self):
@@ -358,8 +356,7 @@ class TestResourceDecorator:
         def get_data() -> str:
             return "Hello, world!"
 
-        resources_dict = await mcp.get_resources()
-        resources = list(resources_dict.values())
+        resources = await mcp.get_resources()
         assert len(resources) == 1
         assert resources[0].name == "custom-data"
 
@@ -375,8 +372,7 @@ class TestResourceDecorator:
         def get_data() -> str:
             return "Hello, world!"
 
-        resources_dict = await mcp.get_resources()
-        resources = list(resources_dict.values())
+        resources = await mcp.get_resources()
         assert len(resources) == 1
         assert resources[0].description == "Data resource"
 
@@ -388,8 +384,7 @@ class TestResourceDecorator:
         def get_data() -> str:
             return "Hello, world!"
 
-        resources_dict = await mcp.get_resources()
-        resources = list(resources_dict.values())
+        resources = await mcp.get_resources()
         assert len(resources) == 1
         assert resources[0].tags == {"example", "test-tag"}
 
@@ -499,8 +494,8 @@ class TestResourceDecorator:
         def get_data() -> str:
             return "Hello, world!"
 
-        resources_dict = await mcp.get_resources()
-        resource = resources_dict["resource://data"]
+        resources = await mcp.get_resources()
+        resource = next(r for r in resources if str(r.uri) == "resource://data")
 
         assert resource.meta == meta_data
 
@@ -568,8 +563,7 @@ class TestTemplateDecorator:
         def get_data(name: str) -> str:
             return f"Data for {name}"
 
-        templates_dict = await mcp.get_resource_templates()
-        templates = list(templates_dict.values())
+        templates = await mcp.get_resource_templates()
         assert len(templates) == 1
         assert templates[0].name == "get_data"
         assert templates[0].uri_template == "resource://{name}/data"
@@ -597,8 +591,7 @@ class TestTemplateDecorator:
         def get_data(name: str) -> str:
             return f"Data for {name}"
 
-        templates_dict = await mcp.get_resource_templates()
-        templates = list(templates_dict.values())
+        templates = await mcp.get_resource_templates()
         assert len(templates) == 1
         assert templates[0].name == "custom-template"
 
@@ -614,8 +607,7 @@ class TestTemplateDecorator:
         def get_data(name: str) -> str:
             return f"Data for {name}"
 
-        templates_dict = await mcp.get_resource_templates()
-        templates = list(templates_dict.values())
+        templates = await mcp.get_resource_templates()
         assert len(templates) == 1
         assert templates[0].description == "Template description"
 
@@ -698,8 +690,8 @@ class TestTemplateDecorator:
         def template_resource(param: str) -> str:
             return f"Template resource: {param}"
 
-        templates_dict = await mcp.get_resource_templates()
-        template = templates_dict["resource://{param}"]
+        templates = await mcp.get_resource_templates()
+        template = next(t for t in templates if t.uri_template == "resource://{param}")
         assert template.tags == {"template", "test-tag"}
 
     async def test_template_decorator_wildcard_param(self):
@@ -709,8 +701,8 @@ class TestTemplateDecorator:
         def template_resource(param: str) -> str:
             return f"Template resource: {param}"
 
-        templates_dict = await mcp.get_resource_templates()
-        template = templates_dict["resource://{param*}"]
+        templates = await mcp.get_resource_templates()
+        template = next(t for t in templates if t.uri_template == "resource://{param*}")
         assert template.uri_template == "resource://{param*}"
         assert template.name == "template_resource"
 
@@ -724,7 +716,9 @@ class TestTemplateDecorator:
         def get_template_data(param: str) -> str:
             return f"Data for {param}"
 
-        templates_dict = await mcp.get_resource_templates()
-        template = templates_dict["resource://{param}/data"]
+        templates = await mcp.get_resource_templates()
+        template = next(
+            t for t in templates if t.uri_template == "resource://{param}/data"
+        )
 
         assert template.meta == meta_data
