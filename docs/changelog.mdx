@@ -4,6 +4,172 @@ icon: "list-check"
 rss: true
 ---
 
+<Update label="v2.14.1" description="2025-12-15">
+
+**[v2.14.1: 'Tis a Gift to Be Sample](https://github.com/jlowin/fastmcp/releases/tag/v2.14.1)**
+
+FastMCP 2.14.1 introduces sampling with tools (SEP-1577), enabling servers to pass tools to `ctx.sample()` for agentic workflows where the LLM can automatically execute tool calls in a loop. The new `ctx.sample_step()` method provides single LLM calls that return `SampleStep` objects for custom control flow, while `result_type` enables structured outputs via validated Pydantic models.
+
+🤖 **AnthropicSamplingHandler** joins the existing OpenAI handler, providing multi-provider sampling support out of the box.
+
+⚡ **OpenAISamplingHandler promoted** from experimental status—sampling handlers are now production-ready with a unified API.
+
+## What's Changed
+### New Features 🎉
+* Sampling with tools by [@jlowin](https://github.com/jlowin) in [#2538](https://github.com/jlowin/fastmcp/pull/2538)
+* Add AnthropicSamplingHandler by [@jlowin](https://github.com/jlowin) in [#2677](https://github.com/jlowin/fastmcp/pull/2677)
+### Enhancements 🔧
+* Add Python 3.13 to ubuntu CI by [@jlowin](https://github.com/jlowin) in [#2648](https://github.com/jlowin/fastmcp/pull/2648)
+* Remove legacy task initialization workaround by [@jlowin](https://github.com/jlowin) in [#2649](https://github.com/jlowin/fastmcp/pull/2649)
+* Consolidate session state reset logic by [@jlowin](https://github.com/jlowin) in [#2651](https://github.com/jlowin/fastmcp/pull/2651)
+* Unify SamplingHandler; promote OpenAI from experimental by [@jlowin](https://github.com/jlowin) in [#2656](https://github.com/jlowin/fastmcp/pull/2656)
+* Add `tool_names` parameter to mount() for name customization by [@jlowin](https://github.com/jlowin) in [#2660](https://github.com/jlowin/fastmcp/pull/2660)
+* Use streamable HTTP client API from MCP SDK by [@jlowin](https://github.com/jlowin) in [#2678](https://github.com/jlowin/fastmcp/pull/2678)
+* Deprecate `exclude_args` in favor of Depends() by [@jlowin](https://github.com/jlowin) in [#2693](https://github.com/jlowin/fastmcp/pull/2693)
+### Fixes 🐞
+* Fix prompt tasks to return mcp.types.PromptMessage by [@jlowin](https://github.com/jlowin) in [#2650](https://github.com/jlowin/fastmcp/pull/2650)
+* Fix Windows test warnings by [@jlowin](https://github.com/jlowin) in [#2653](https://github.com/jlowin/fastmcp/pull/2653)
+* Cleanup cancelled connection startup by [@jlowin](https://github.com/jlowin) in [#2679](https://github.com/jlowin/fastmcp/pull/2679)
+* Fix tool choice bug in sampling examples by [@shawnthapa](https://github.com/shawnthapa) in [#2686](https://github.com/jlowin/fastmcp/pull/2686)
+### Docs 📚
+* Simplify Docket tip wording by [@chrisguidry](https://github.com/chrisguidry) in [#2662](https://github.com/jlowin/fastmcp/pull/2662)
+### Other Changes 🦾
+* Bump pydocket to ≥0.15.5 by [@jlowin](https://github.com/jlowin) in [#2694](https://github.com/jlowin/fastmcp/pull/2694)
+
+## New Contributors
+* [@shawnthapa](https://github.com/shawnthapa) made their first contribution in [#2686](https://github.com/jlowin/fastmcp/pull/2686)
+
+**Full Changelog**: [v2.14.0...v2.14.1](https://github.com/jlowin/fastmcp/compare/v2.14.0...v2.14.1)
+
+</Update>
+
+<Update label="v2.14.0" description="2025-12-11">
+
+**[v2.14.0: Task and You Shall Receive](https://github.com/jlowin/fastmcp/releases/tag/v2.14.0)**
+
+FastMCP 2.14 begins adopting the MCP 2025-11-25 specification, introducing protocol-native background tasks (SEP-1686) that enable long-running operations to report progress without blocking clients. The experimental OpenAPI parser graduates to standard, the `OpenAISamplingHandler` is promoted from experimental, and deprecated APIs accumulated across the 2.x series are removed.
+
+⏳ **Background Tasks** let you add `task=True` to any async tool decorator to run operations in the background with progress tracking. Powered by [Docket](https://github.com/chrisguidry/docket), an enterprise task scheduler handling millions of concurrent tasks daily—in-memory backends work out-of-the-box, and Redis URLs enable persistence and horizontal scaling.
+
+🔧 **OpenAPI Parser Promoted** from experimental to standard with improved performance through single-pass schema processing and cleaner abstractions.
+
+📋 **MCP 2025-11-25 Specification Support** including SSE polling and event resumability (SEP-1699), multi-select enum elicitation schemas (SEP-1330), default values for elicitation (SEP-1034), and tool name validation at registration time (SEP-986).
+
+## Breaking Changes
+- Docket is always enabled; task execution is forbidden through proxies
+- Task protocol enabled by default
+- Removed deprecated settings, imports, and methods accumulated across 2.x series
+
+## What's Changed
+### New Features 🎉
+* OpenAPI parser is now the default by [@jlowin](https://github.com/jlowin) in [#2583](https://github.com/jlowin/fastmcp/pull/2583)
+* Implement SEP-1686: Background Tasks by [@jlowin](https://github.com/jlowin) in [#2550](https://github.com/jlowin/fastmcp/pull/2550)
+### Enhancements 🔧
+* Expose InitializeResult in middleware by [@jlowin](https://github.com/jlowin) in [#2562](https://github.com/jlowin/fastmcp/pull/2562)
+* Update MCP SDK auth compatibility by [@jlowin](https://github.com/jlowin) in [#2574](https://github.com/jlowin/fastmcp/pull/2574)
+* Validate tool names at registration (SEP-986) by [@jlowin](https://github.com/jlowin) in [#2588](https://github.com/jlowin/fastmcp/pull/2588)
+* Support SEP-1034 and SEP-1330 for elicitation by [@jlowin](https://github.com/jlowin) in [#2595](https://github.com/jlowin/fastmcp/pull/2595)
+* Implement SSE polling (SEP-1699) by [@jlowin](https://github.com/jlowin) in [#2612](https://github.com/jlowin/fastmcp/pull/2612)
+* Expose session ID callback by [@jlowin](https://github.com/jlowin) in [#2628](https://github.com/jlowin/fastmcp/pull/2628)
+### Fixes 🐞
+* Fix OAuth metadata discovery by [@jlowin](https://github.com/jlowin) in [#2565](https://github.com/jlowin/fastmcp/pull/2565)
+* Fix fastapi.cli package structure by [@jlowin](https://github.com/jlowin) in [#2570](https://github.com/jlowin/fastmcp/pull/2570)
+* Correct OAuth error codes by [@jlowin](https://github.com/jlowin) in [#2578](https://github.com/jlowin/fastmcp/pull/2578)
+* Prevent function signature modification by [@jlowin](https://github.com/jlowin) in [#2590](https://github.com/jlowin/fastmcp/pull/2590)
+* Fix proxy client kwargs by [@jlowin](https://github.com/jlowin) in [#2605](https://github.com/jlowin/fastmcp/pull/2605)
+* Fix nested server routing by [@jlowin](https://github.com/jlowin) in [#2618](https://github.com/jlowin/fastmcp/pull/2618)
+* Use access token expiry fallback by [@jlowin](https://github.com/jlowin) in [#2635](https://github.com/jlowin/fastmcp/pull/2635)
+* Handle transport cleanup exceptions by [@jlowin](https://github.com/jlowin) in [#2642](https://github.com/jlowin/fastmcp/pull/2642)
+### Docs 📚
+* Add OCI and Supabase integration docs by [@jlowin](https://github.com/jlowin) in [#2580](https://github.com/jlowin/fastmcp/pull/2580)
+* Add v2.14.0 upgrade guide by [@jlowin](https://github.com/jlowin) in [#2598](https://github.com/jlowin/fastmcp/pull/2598)
+* Rewrite background tasks documentation by [@jlowin](https://github.com/jlowin) in [#2620](https://github.com/jlowin/fastmcp/pull/2620)
+* Document read-only tool patterns by [@jlowin](https://github.com/jlowin) in [#2632](https://github.com/jlowin/fastmcp/pull/2632)
+
+## New Contributors
+11 total contributors including 7 first-time participants.
+
+**Full Changelog**: [v2.13.3...v2.14.0](https://github.com/jlowin/fastmcp/compare/v2.13.3...v2.14.0)
+
+</Update>
+
+<Update label="v2.13.3" description="2025-12-03">
+
+**[v2.13.3: Pin-ish Line](https://github.com/jlowin/fastmcp/releases/tag/v2.13.3)**
+
+FastMCP 2.13.3 pins `mcp<1.23` as a precautionary measure. MCP SDK 1.23 introduced changes related to the November 25, 2025 MCP protocol update that break certain FastMCP patches and workarounds, particularly around OAuth implementation details. FastMCP 2.14 introduces proper support for the updated protocol and requires `mcp>=1.23`.
+
+## What's Changed
+### Fixes 🐞
+* Pin MCP SDK below 1.23 by [@jlowin](https://github.com/jlowin) in [#2545](https://github.com/jlowin/fastmcp/pull/2545)
+
+**Full Changelog**: [v2.13.2...v2.13.3](https://github.com/jlowin/fastmcp/compare/v2.13.2...v2.13.3)
+
+</Update>
+
+<Update label="v2.13.2" description="2025-12-01">
+
+**[v2.13.2: Refreshing Changes](https://github.com/jlowin/fastmcp/releases/tag/v2.13.2)**
+
+FastMCP 2.13.2 polishes the authentication stack with improvements to token refresh, scope handling, and multi-instance deployments. Discord was added as a built-in OAuth provider, Azure and Google token handling became more reliable, and proxy classes now properly forward icons and titles.
+
+## What's Changed
+### New Features 🎉
+* Add Discord OAuth provider by [@jlowin](https://github.com/jlowin) in [#2480](https://github.com/jlowin/fastmcp/pull/2480)
+### Enhancements 🔧
+* Descope Provider updates for new well-known URLs by [@anvibanga](https://github.com/anvibanga) in [#2465](https://github.com/jlowin/fastmcp/pull/2465)
+* Scalekit provider improvements by [@jlowin](https://github.com/jlowin) in [#2472](https://github.com/jlowin/fastmcp/pull/2472)
+* Add CSP customization for consent screens by [@jlowin](https://github.com/jlowin) in [#2488](https://github.com/jlowin/fastmcp/pull/2488)
+* Add icon support to proxy classes by [@jlowin](https://github.com/jlowin) in [#2495](https://github.com/jlowin/fastmcp/pull/2495)
+### Fixes 🐞
+* Google Provider now defaults to refresh token support by [@jlowin](https://github.com/jlowin) in [#2468](https://github.com/jlowin/fastmcp/pull/2468)
+* Fix Azure OAuth token refresh with unprefixed scopes by [@jlowin](https://github.com/jlowin) in [#2475](https://github.com/jlowin/fastmcp/pull/2475)
+* Prevent `$defs` mutation during tool transforms by [@jlowin](https://github.com/jlowin) in [#2482](https://github.com/jlowin/fastmcp/pull/2482)
+* Fix OAuth proxy refresh token storage for multi-instance deployments by [@jlowin](https://github.com/jlowin) in [#2490](https://github.com/jlowin/fastmcp/pull/2490)
+* Fix stale token issue after OAuth refresh by [@jlowin](https://github.com/jlowin) in [#2498](https://github.com/jlowin/fastmcp/pull/2498)
+* Fix Azure provider OIDC scope handling by [@jlowin](https://github.com/jlowin) in [#2505](https://github.com/jlowin/fastmcp/pull/2505)
+
+## New Contributors
+7 new contributors made their first FastMCP contributions in this release.
+
+**Full Changelog**: [v2.13.1...v2.13.2](https://github.com/jlowin/fastmcp/compare/v2.13.1...v2.13.2)
+
+</Update>
+
+<Update label="v2.13.1" description="2025-11-15">
+
+**[v2.13.1: Heavy Meta](https://github.com/jlowin/fastmcp/releases/tag/v2.13.1)**
+
+FastMCP 2.13.1 introduces meta parameter support for `ToolResult`, enabling tools to return supplementary metadata alongside results. This supports emerging use cases like OpenAI's Apps SDK. The release also brings improved OAuth functionality with custom token verifiers including a new DebugTokenVerifier, and adds OCI and Supabase authentication providers.
+
+🏷️ **Meta parameters for ToolResult** enable tools to return supplementary metadata alongside results, supporting patterns like OpenAI's Apps SDK integration.
+
+🔐 **Custom token verifiers** with DebugTokenVerifier for development, plus Azure Government support through a `base_authority` parameter and Supabase authentication algorithm configuration.
+
+🔒 **Security fixes** address CVE-2025-61920 through authlib updates and validate Cursor deeplink URLs using safer Windows APIs.
+
+## What's Changed
+### New Features 🎉
+* Add meta parameter support for ToolResult by [@jlowin](https://github.com/jlowin) in [#2350](https://github.com/jlowin/fastmcp/pull/2350)
+* Add OCI authentication provider by [@jlowin](https://github.com/jlowin) in [#2365](https://github.com/jlowin/fastmcp/pull/2365)
+* Add Supabase authentication provider by [@jlowin](https://github.com/jlowin) in [#2378](https://github.com/jlowin/fastmcp/pull/2378)
+### Enhancements 🔧
+* Add custom token verifier support to OIDCProxy by [@jlowin](https://github.com/jlowin) in [#2355](https://github.com/jlowin/fastmcp/pull/2355)
+* Add DebugTokenVerifier for development by [@jlowin](https://github.com/jlowin) in [#2362](https://github.com/jlowin/fastmcp/pull/2362)
+* Add Azure Government support via base_authority parameter by [@jlowin](https://github.com/jlowin) in [#2385](https://github.com/jlowin/fastmcp/pull/2385)
+* Add Supabase authentication algorithm configuration by [@jlowin](https://github.com/jlowin) in [#2392](https://github.com/jlowin/fastmcp/pull/2392)
+### Fixes 🐞
+* Security: Update authlib for CVE-2025-61920 by [@jlowin](https://github.com/jlowin) in [#2398](https://github.com/jlowin/fastmcp/pull/2398)
+* Validate Cursor deeplink URLs using safer Windows APIs by [@jlowin](https://github.com/jlowin) in [#2405](https://github.com/jlowin/fastmcp/pull/2405)
+* Exclude MCP SDK 1.21.1 due to integration test failures by [@jlowin](https://github.com/jlowin) in [#2422](https://github.com/jlowin/fastmcp/pull/2422)
+
+## New Contributors
+18 new contributors joined in this release across 70+ pull requests.
+
+**Full Changelog**: [v2.13.0...v2.13.1](https://github.com/jlowin/fastmcp/compare/v2.13.0...v2.13.1)
+
+</Update>
+
 <Update label="v2.13.0" description="2025-10-25">
 
 **[v2.13.0: Cache Me If You Can](https://github.com/jlowin/fastmcp/releases/tag/v2.13.0)**

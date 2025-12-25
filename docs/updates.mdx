@@ -5,6 +5,78 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 2.14.1" description="December 15, 2025" tags={["Releases"]}>
+<Card
+title="FastMCP 2.14.1: 'Tis a Gift to Be Sample"
+href="https://github.com/jlowin/fastmcp/releases/tag/v2.14.1"
+cta="Read the release notes"
+>
+FastMCP 2.14.1 introduces sampling with tools (SEP-1577), enabling servers to pass tools to `ctx.sample()` for agentic workflows where the LLM can automatically execute tool calls in a loop.
+
+🤖 **Sampling with tools** lets servers leverage client LLM capabilities for multi-step agentic workflows. The new `ctx.sample_step()` method provides single LLM calls with tool inspection, while `result_type` enables structured outputs via validated Pydantic models.
+
+🔧 **AnthropicSamplingHandler** joins the existing OpenAI handler, and both are now promoted from experimental to production-ready status with a unified API.
+</Card>
+</Update>
+
+<Update label="FastMCP 2.14.0" description="December 11, 2025" tags={["Releases"]}>
+<Card
+title="FastMCP 2.14.0: Task and You Shall Receive"
+href="https://github.com/jlowin/fastmcp/releases/tag/v2.14.0"
+cta="Read the release notes"
+>
+FastMCP 2.14 begins adopting the MCP 2025-11-25 specification, introducing protocol-native background tasks that enable long-running operations to report progress without blocking clients.
+
+⏳ **Background Tasks (SEP-1686)** let you add `task=True` to any async tool decorator. Powered by [Docket](https://github.com/chrisguidry/docket) for enterprise task scheduling—in-memory backends work out-of-the-box, Redis enables persistence and horizontal scaling.
+
+🔧 **OpenAPI Parser Promoted** from experimental to standard with improved performance through single-pass schema processing.
+
+📋 **MCP Spec Updates** including SSE polling (SEP-1699), multi-select elicitation (SEP-1330), and tool name validation (SEP-986). Also removes deprecated APIs accumulated across 2.x.
+</Card>
+</Update>
+
+<Update label="FastMCP 2.13.3" description="December 3, 2025" tags={["Releases"]}>
+<Card
+title="FastMCP 2.13.3: Pin-ish Line"
+href="https://github.com/jlowin/fastmcp/releases/tag/v2.13.3"
+cta="Read the release notes"
+>
+Pins `mcp<1.23` as a precaution due to MCP SDK changes related to the 11/25/25 protocol update that break certain FastMCP patches and workarounds. FastMCP 2.14 introduces proper support for the updated protocol.
+</Card>
+</Update>
+
+<Update label="FastMCP 2.13.2" description="December 1, 2025" tags={["Releases"]}>
+<Card
+title="FastMCP 2.13.2: Refreshing Changes"
+href="https://github.com/jlowin/fastmcp/releases/tag/v2.13.2"
+cta="Read the release notes"
+>
+Polishes the authentication stack with improvements to token refresh, scope handling, and multi-instance deployments.
+
+🎮 **Discord OAuth provider** added as a built-in authentication option.
+
+🔄 **Token refresh fixes** for Azure and Google providers, plus OAuth proxy improvements for multi-instance deployments.
+
+🎨 **Icon support** added to proxy classes for richer UX.
+</Card>
+</Update>
+
+<Update label="FastMCP 2.13.1" description="November 15, 2025" tags={["Releases"]}>
+<Card
+title="FastMCP 2.13.1: Heavy Meta"
+href="https://github.com/jlowin/fastmcp/releases/tag/v2.13.1"
+cta="Read the release notes"
+>
+Introduces meta parameter support for `ToolResult`, enabling tools to return supplementary metadata alongside results for patterns like OpenAI's Apps SDK.
+
+🏷️ **Meta parameters** let tools return supplementary metadata alongside results.
+
+🔐 **New auth providers** for OCI and Supabase, plus custom token verifiers with DebugTokenVerifier for development.
+
+🔒 **Security fixes** for CVE-2025-61920 and safer Cursor deeplink URL validation on Windows.
+</Card>
+</Update>
+
 <Update label="FastMCP 2.13.0" description="October 25, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.13.0: Cache Me If You Can"
