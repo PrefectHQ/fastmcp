@@ -306,37 +306,37 @@ class TestComponentManagementRoutes:
         """Test enabling a non-existent tool returns 404."""
         response = client.post("/tools/nonexistent_tool/enable")
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.text == "Unknown tool: nonexistent_tool"
+        assert response.text == "Unknown tool: 'nonexistent_tool'"
 
     def test_disable_nonexistent_tool(self, client):
         """Test disabling a non-existent tool returns 404."""
         response = client.post("/tools/nonexistent_tool/disable")
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.text == "Unknown tool: nonexistent_tool"
+        assert response.text == "Unknown tool: 'nonexistent_tool'"
 
     def test_enable_nonexistent_resource(self, client):
         """Test enabling a non-existent resource returns 404."""
         response = client.post("/resources/nonexistent://resource/enable")
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.text == "Unknown resource: nonexistent://resource"
+        assert response.text == "Unknown resource: 'nonexistent://resource'"
 
     def test_disable_nonexistent_resource(self, client):
         """Test disabling a non-existent resource returns 404."""
         response = client.post("/resources/nonexistent://resource/disable")
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.text == "Unknown resource: nonexistent://resource"
+        assert response.text == "Unknown resource: 'nonexistent://resource'"
 
     def test_enable_nonexistent_prompt(self, client):
         """Test enabling a non-existent prompt returns 404."""
         response = client.post("/prompts/nonexistent_prompt/enable")
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.text == "Unknown prompt: nonexistent_prompt"
+        assert response.text == "Unknown prompt: 'nonexistent_prompt'"
 
     def test_disable_nonexistent_prompt(self, client):
         """Test disabling a non-existent prompt returns 404."""
         response = client.post("/prompts/nonexistent_prompt/disable")
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.text == "Unknown prompt: nonexistent_prompt"
+        assert response.text == "Unknown prompt: 'nonexistent_prompt'"
 
 
 class TestAuthComponentManagementRoutes:

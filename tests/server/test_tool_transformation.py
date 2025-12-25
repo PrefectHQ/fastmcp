@@ -29,14 +29,14 @@ async def test_transformed_tool_filtering():
         """Echo back the message provided."""
         return message
 
-    tools = await mcp.get_tools(apply_middleware=True)
+    tools = await mcp.get_tools(run_middleware=True)
     assert len(tools) == 0
 
     mcp.add_tool_transformation(
         "echo", ToolTransformConfig(name="echo_transformed", tags={"enabled_tools"})
     )
 
-    tools = await mcp.get_tools(apply_middleware=True)
+    tools = await mcp.get_tools(run_middleware=True)
     assert len(tools) == 1
 
 

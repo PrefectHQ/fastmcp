@@ -97,20 +97,19 @@ class FastMCPProviderTool(Tool):
     async def run(
         self, arguments: dict[str, Any]
     ) -> ToolResult | mcp.types.CreateTaskResult:  # type: ignore[override]
-        """Delegate to child server's middleware chain.
+        """Delegate to child server's call_tool().
 
         This runs BEFORE any backgrounding decision - the actual underlying
         tool will check contextvars and submit to Docket if appropriate.
         """
-        return await self._server._call_tool_middleware(self._original_name, arguments)
+        return await self._server.call_tool(self._original_name, arguments)
 
 
 class FastMCPProviderResource(Resource):
-    """Resource that delegates reading to a wrapped server's middleware.
+    """Resource that delegates reading to a wrapped server's read_resource().
 
     When `read()` is called, this resource invokes the wrapped server's
-    `_read_resource_middleware()` method, ensuring the server's middleware
-    chain is executed.
+    `read_resource()` method, ensuring the server's middleware chain is executed.
     """
 
     _server: Any = None  # FastMCP, but Any to avoid circular import
@@ -150,10 +149,7 @@ class FastMCPProviderResource(Resource):
         return await self.read()
 
     async def read(self) -> ResourceContent | mcp.types.CreateTaskResult:  # type: ignore[override]
-        """Delegate to child server's middleware.
-
-        When called from a Docket worker (background task), there's no FastMCP
-        context set up, so we create one for the child server.
+        """Delegate to child server's read_resource().
 
         Note: The _docket_fn_key contextvar is intentionally NOT updated here.
         The parent set it to the full namespaced key (e.g., data://c/gc/value)
@@ -161,33 +157,17 @@ class FastMCPProviderResource(Resource):
         layers pass this through unchanged so the eventual resource._read()
         uses the correct Docket lookup key.
         """
-        import fastmcp.server.context
-
-        try:
-            from fastmcp.server.dependencies import get_context
-
-            get_context()  # Will raise if no context
-            result = await self._server._read_resource_middleware(self._original_uri)
-            if isinstance(result, mcp.types.CreateTaskResult):
-                return result
-            return result[0]
-        except RuntimeError:
-            # No context (e.g., Docket worker) - create one for the child server
-            async with fastmcp.server.context.Context(fastmcp=self._server):
-                result = await self._server._read_resource_middleware(
-                    self._original_uri
-                )
-                if isinstance(result, mcp.types.CreateTaskResult):
-                    return result
-                return result[0]
+        result = await self._server.read_resource(self._original_uri)
+        if isinstance(result, mcp.types.CreateTaskResult):
+            return result
+        return result[0]
 
 
 class FastMCPProviderPrompt(Prompt):
-    """Prompt that delegates rendering to a wrapped server's middleware.
+    """Prompt that delegates rendering to a wrapped server's render_prompt().
 
     When `render()` is called, this prompt invokes the wrapped server's
-    `_get_prompt_content_middleware()` method, ensuring the server's middleware
-    chain is executed.
+    `render_prompt()` method, ensuring the server's middleware chain is executed.
     """
 
     _server: Any = None  # FastMCP, but Any to avoid circular import
@@ -229,10 +209,7 @@ class FastMCPProviderPrompt(Prompt):
     async def render(
         self, arguments: dict[str, Any] | None = None
     ) -> PromptResult | mcp.types.CreateTaskResult:  # type: ignore[override]
-        """Delegate to child server's middleware.
-
-        When called from a Docket worker (background task), there's no FastMCP
-        context set up, so we create one for the child server.
+        """Delegate to child server's render_prompt().
 
         Note: The _docket_fn_key contextvar is intentionally NOT updated here.
         The parent set it to the full namespaced name (e.g., c_gc_greet) which
@@ -240,27 +217,7 @@ class FastMCPProviderPrompt(Prompt):
         pass this through unchanged so the eventual prompt._render() uses the
         correct Docket lookup key.
         """
-        import fastmcp.server.context
-
-        try:
-            from fastmcp.server.dependencies import get_context
-
-            get_context()  # Will raise if no context
-            result = await self._server._get_prompt_content_middleware(
-                self._original_name, arguments
-            )
-            if isinstance(result, mcp.types.CreateTaskResult):
-                return result
-            return result
-        except RuntimeError:
-            # No context (e.g., Docket worker) - create one for the child server
-            async with fastmcp.server.context.Context(fastmcp=self._server):
-                result = await self._server._get_prompt_content_middleware(
-                    self._original_name, arguments
-                )
-                if isinstance(result, mcp.types.CreateTaskResult):
-                    return result
-                return result
+        return await self._server.render_prompt(self._original_name, arguments)
 
 
 class FastMCPProviderResourceTemplate(ResourceTemplate):
@@ -323,7 +280,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
     async def _read(
         self, uri: str, params: dict[str, Any]
     ) -> ResourceContent | mcp.types.CreateTaskResult:
-        """Delegate to child server's middleware.
+        """Delegate to child server's read_resource().
 
         Skips task routing at this layer - the child's template._read() will
         check _task_metadata contextvar and submit to Docket if appropriate.
@@ -335,7 +292,6 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         Only sets _docket_fn_key if not already set - in nested mounts, the
         outermost wrapper sets the key and inner wrappers preserve it.
         """
-        import fastmcp.server.context
         from fastmcp.server.dependencies import _docket_fn_key
 
         # Expand the original template with params to get internal URI
@@ -352,21 +308,10 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         if not existing_key or "{" not in existing_key:
             key_token = _docket_fn_key.set(self.key)
         try:
-            try:
-                from fastmcp.server.dependencies import get_context
-
-                get_context()  # Will raise if no context
-                result = await self._server._read_resource_middleware(original_uri)
-                if isinstance(result, mcp.types.CreateTaskResult):
-                    return result
-                return result[0]
-            except RuntimeError:
-                # No context (e.g., Docket worker) - create one for the child server
-                async with fastmcp.server.context.Context(fastmcp=self._server):
-                    result = await self._server._read_resource_middleware(original_uri)
-                    if isinstance(result, mcp.types.CreateTaskResult):
-                        return result
-                    return result[0]
+            result = await self._server.read_resource(original_uri)
+            if isinstance(result, mcp.types.CreateTaskResult):
+                return result
+            return result[0]
         finally:
             if key_token is not None:
                 _docket_fn_key.reset(key_token)
@@ -481,7 +426,7 @@ class FastMCPProvider(Provider):
         each tool as a FastMCPProviderTool that delegates execution to the
         nested server's middleware.
         """
-        raw_tools = await self.server.get_tools(apply_middleware=True)
+        raw_tools = await self.server.get_tools(run_middleware=True)
         return [FastMCPProviderTool.wrap(self.server, t) for t in raw_tools]
 
     async def get_tool(self, name: str) -> Tool | None:
@@ -500,7 +445,7 @@ class FastMCPProvider(Provider):
         each resource as a FastMCPProviderResource that delegates reading to the
         nested server's middleware.
         """
-        raw_resources = await self.server.get_resources(apply_middleware=True)
+        raw_resources = await self.server.get_resources(run_middleware=True)
         return [FastMCPProviderResource.wrap(self.server, r) for r in raw_resources]
 
     async def get_resource(self, uri: str) -> Resource | None:
@@ -518,7 +463,7 @@ class FastMCPProvider(Provider):
         Returns FastMCPProviderResourceTemplate instances that create
         FastMCPProviderResources when materialized.
         """
-        raw_templates = await self.server.get_resource_templates(apply_middleware=True)
+        raw_templates = await self.server.get_resource_templates(run_middleware=True)
         return [
             FastMCPProviderResourceTemplate.wrap(self.server, t) for t in raw_templates
         ]
@@ -541,7 +486,7 @@ class FastMCPProvider(Provider):
         Returns FastMCPProviderPrompt instances that delegate rendering to the
         wrapped server's middleware.
         """
-        raw_prompts = await self.server.get_prompts(apply_middleware=True)
+        raw_prompts = await self.server.get_prompts(run_middleware=True)
         return [FastMCPProviderPrompt.wrap(self.server, p) for p in raw_prompts]
 
     async def get_prompt(self, name: str) -> Prompt | None:

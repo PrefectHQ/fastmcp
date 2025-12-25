@@ -106,7 +106,7 @@ class MiddlewareServerSession(ServerSession):
                 )
 
                 try:
-                    return await self.fastmcp._apply_middleware(
+                    return await self.fastmcp._run_middleware(
                         mw_context, call_original_handler
                     )
                 except McpError as e:

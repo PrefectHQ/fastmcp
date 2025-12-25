@@ -464,6 +464,160 @@ class TestMiddlewareHooks:
         assert result.structured_content["result"] == 108
 
 
+class TestApplyMiddlewareParameter:
+    """Tests for run_middleware parameter on execution methods."""
+
+    async def test_call_tool_with_run_middleware_true(self):
+        """Middleware is applied when run_middleware=True (default)."""
+        recording = RecordingMiddleware()
+        server = FastMCP()
+
+        @server.tool
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        server.add_middleware(recording)
+
+        result = await server.call_tool("add", {"a": 1, "b": 2})
+
+        assert result.structured_content["result"] == 3  # type: ignore[union-attr,index]
+        assert recording.assert_called(hook="on_call_tool", times=1)
+
+    async def test_call_tool_with_run_middleware_false(self):
+        """Middleware is NOT applied when run_middleware=False."""
+        recording = RecordingMiddleware()
+        server = FastMCP()
+
+        @server.tool
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        server.add_middleware(recording)
+
+        result = await server.call_tool("add", {"a": 1, "b": 2}, run_middleware=False)
+
+        assert result.structured_content["result"] == 3  # type: ignore[union-attr,index]
+        # Middleware should not have been called
+        assert len(recording.calls) == 0
+
+    async def test_read_resource_with_run_middleware_true(self):
+        """Middleware is applied when run_middleware=True (default)."""
+        recording = RecordingMiddleware()
+        server = FastMCP()
+
+        @server.resource("resource://test")
+        def test_resource() -> str:
+            return "test content"
+
+        server.add_middleware(recording)
+
+        result = await server.read_resource("resource://test")
+
+        assert len(result) == 1  # type: ignore[arg-type]
+        assert result[0].content == "test content"  # type: ignore[union-attr,index]
+        assert recording.assert_called(hook="on_read_resource", times=1)
+
+    async def test_read_resource_with_run_middleware_false(self):
+        """Middleware is NOT applied when run_middleware=False."""
+        recording = RecordingMiddleware()
+        server = FastMCP()
+
+        @server.resource("resource://test")
+        def test_resource() -> str:
+            return "test content"
+
+        server.add_middleware(recording)
+
+        result = await server.read_resource("resource://test", run_middleware=False)
+
+        assert len(result) == 1  # type: ignore[arg-type]
+        assert result[0].content == "test content"  # type: ignore[union-attr,index]
+        # Middleware should not have been called
+        assert len(recording.calls) == 0
+
+    async def test_read_resource_template_with_run_middleware_false(self):
+        """Templates also skip middleware when run_middleware=False."""
+        recording = RecordingMiddleware()
+        server = FastMCP()
+
+        @server.resource("resource://items/{item_id}")
+        def get_item(item_id: int) -> str:
+            return f"item {item_id}"
+
+        server.add_middleware(recording)
+
+        result = await server.read_resource("resource://items/42", run_middleware=False)
+
+        assert len(result) == 1  # type: ignore[arg-type]
+        assert result[0].content == "item 42"  # type: ignore[union-attr,index]
+        assert len(recording.calls) == 0
+
+    async def test_render_prompt_with_run_middleware_true(self):
+        """Middleware is applied when run_middleware=True (default)."""
+        recording = RecordingMiddleware()
+        server = FastMCP()
+
+        @server.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        server.add_middleware(recording)
+
+        result = await server.render_prompt("greet", {"name": "World"})
+
+        assert len(result.messages) == 1  # type: ignore[union-attr]
+        assert result.messages[0].content.text == "Hello, World!"  # type: ignore[union-attr]
+        assert recording.assert_called(hook="on_get_prompt", times=1)
+
+    async def test_render_prompt_with_run_middleware_false(self):
+        """Middleware is NOT applied when run_middleware=False."""
+        recording = RecordingMiddleware()
+        server = FastMCP()
+
+        @server.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        server.add_middleware(recording)
+
+        result = await server.render_prompt(
+            "greet", {"name": "World"}, run_middleware=False
+        )
+
+        assert len(result.messages) == 1  # type: ignore[union-attr]
+        assert result.messages[0].content.text == "Hello, World!"  # type: ignore[union-attr]
+        # Middleware should not have been called
+        assert len(recording.calls) == 0
+
+    async def test_middleware_modification_skipped_when_run_middleware_false(self):
+        """Middleware that modifies args/results is skipped."""
+
+        class ModifyingMiddleware(Middleware):
+            async def on_call_tool(self, context: MiddlewareContext, call_next):
+                # Double the 'a' argument
+                assert context.message.arguments is not None
+                context.message.arguments["a"] *= 2
+                return await call_next(context)
+
+        server = FastMCP()
+
+        @server.tool
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        server.add_middleware(ModifyingMiddleware())
+
+        # With middleware: a=5 becomes a=10, result = 10 + 3 = 13
+        result_with = await server.call_tool("add", {"a": 5, "b": 3})
+        assert result_with.structured_content["result"] == 13  # type: ignore[union-attr,index]
+
+        # Without middleware: a=5 stays a=5, result = 5 + 3 = 8
+        result_without = await server.call_tool(
+            "add", {"a": 5, "b": 3}, run_middleware=False
+        )
+        assert result_without.structured_content["result"] == 8  # type: ignore[union-attr,index]
+
+
 class TestNestedMiddlewareHooks:
     @pytest.fixture
     @staticmethod

@@ -1165,7 +1165,7 @@ class TestToolDecorator:
 
         from fastmcp.exceptions import NotFoundError
 
-        with pytest.raises(NotFoundError, match="Unknown tool: add"):
+        with pytest.raises(NotFoundError, match="Unknown tool: 'add'"):
             await mcp._call_tool_mcp("add", {"x": 1, "y": 2})
 
     async def test_tool_decorator(self):

@@ -100,7 +100,7 @@ def make_endpoint(action, component, config):
         except NotFoundError as e:
             raise StarletteHTTPException(
                 status_code=404,
-                detail=f"Unknown {component}: {name}",
+                detail=f"Unknown {component}: {name!r}",
             ) from e
 
     return endpoint

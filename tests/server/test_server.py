@@ -91,7 +91,7 @@ class TestTools:
         mcp_tools = await mcp.get_tools()
         assert not any(t.name == "adder" for t in mcp_tools)
 
-        with pytest.raises(NotFoundError, match="Unknown tool: adder"):
+        with pytest.raises(NotFoundError, match="Unknown tool: 'adder'"):
             await mcp._call_tool_mcp("adder", {"a": 1, "b": 2})
 
     async def test_add_tool_at_init(self):

@@ -74,7 +74,7 @@ class ComponentService:
             self._server.enable(keys=[Tool.make_key(name)])
             tool = await self._server.get_tool(name)
             if tool is None:
-                raise NotFoundError(f"Unknown tool: {name}")
+                raise NotFoundError(f"Unknown tool: {name!r}")
             return tool
 
         # 2. Check mounted servers via FastMCPProvider/TransformingProvider
@@ -85,7 +85,7 @@ class ComponentService:
                 mounted_service = ComponentService(server)
                 tool = await mounted_service._enable_tool(unprefixed)
                 return tool
-        raise NotFoundError(f"Unknown tool: {name}")
+        raise NotFoundError(f"Unknown tool: {name!r}")
 
     async def _disable_tool(self, name: str) -> Tool:
         """Handle 'disableTool' requests.
@@ -103,7 +103,7 @@ class ComponentService:
         if key in self._server._local_provider._components:
             tool = self._server._local_provider._components[key]
             if not isinstance(tool, Tool):
-                raise NotFoundError(f"Unknown tool: {name}")
+                raise NotFoundError(f"Unknown tool: {name!r}")
             self._server.disable(keys=[key])
             return tool
 
@@ -115,7 +115,7 @@ class ComponentService:
                 mounted_service = ComponentService(server)
                 tool = await mounted_service._disable_tool(unprefixed)
                 return tool
-        raise NotFoundError(f"Unknown tool: {name}")
+        raise NotFoundError(f"Unknown tool: {name!r}")
 
     async def _enable_resource(self, uri: str) -> Resource | ResourceTemplate:
         """Handle 'enableResource' requests.
