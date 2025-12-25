@@ -18,6 +18,11 @@ uv run pytest -n auto                # Run full test suite
 
 **Tests must pass and lint/typing must be clean before committing.**
 
+**Before creating a PR**, evaluate whether documentation needs updating:
+- New features or APIs require corresponding docs
+- Changed behavior should be reflected in existing docs
+- Check `docs/` for affected pages
+
 ## Repository Structure
 
 | Path               | Purpose                                                                             |
