@@ -250,30 +250,19 @@ class Provider:
 
         Used by the server during startup to register functions with Docket.
         """
-        from fastmcp.prompts.prompt import Prompt
-        from fastmcp.resources.resource import Resource
-        from fastmcp.resources.template import ResourceTemplate
-        from fastmcp.tools.tool import Tool
+        # Fetch all component types in parallel
+        tools, resources, templates, prompts = await gather(
+            self.list_tools(),
+            self.list_resources(),
+            self.list_resource_templates(),
+            self.list_prompts(),
+        )
 
-        components: list[FastMCPComponent] = []
-
-        for t in await self.list_tools():
-            if isinstance(t, Tool) and t.task_config.supports_tasks():
-                components.append(t)
-
-        for r in await self.list_resources():
-            if isinstance(r, Resource) and r.task_config.supports_tasks():
-                components.append(r)
-
-        for t in await self.list_resource_templates():
-            if isinstance(t, ResourceTemplate) and t.task_config.supports_tasks():
-                components.append(t)
-
-        for p in await self.list_prompts():
-            if isinstance(p, Prompt) and p.task_config.supports_tasks():
-                components.append(p)
-
-        return components
+        return [
+            c
+            for c in [*tools, *resources, *templates, *prompts]
+            if c.task_config.supports_tasks()
+        ]
 
     # -------------------------------------------------------------------------
     # Lifecycle methods
