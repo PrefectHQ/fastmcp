@@ -245,35 +245,32 @@ class Provider:
         """Return components that should be registered as background tasks.
 
         Override to customize which components are task-eligible.
-        Default calls list_* methods and filters for function-based components
+        Default calls list_* methods and filters for components
         with task_config.mode != 'forbidden'.
 
         Used by the server during startup to register functions with Docket.
         """
-        from fastmcp.prompts.prompt import FunctionPrompt
-        from fastmcp.resources.resource import FunctionResource
-        from fastmcp.resources.template import FunctionResourceTemplate
-        from fastmcp.tools.tool import FunctionTool
+        from fastmcp.prompts.prompt import Prompt
+        from fastmcp.resources.resource import Resource
+        from fastmcp.resources.template import ResourceTemplate
+        from fastmcp.tools.tool import Tool
 
         components: list[FastMCPComponent] = []
 
         for t in await self.list_tools():
-            if isinstance(t, FunctionTool) and t.task_config.supports_tasks():
+            if isinstance(t, Tool) and t.task_config.supports_tasks():
                 components.append(t)
 
         for r in await self.list_resources():
-            if isinstance(r, FunctionResource) and r.task_config.supports_tasks():
+            if isinstance(r, Resource) and r.task_config.supports_tasks():
                 components.append(r)
 
         for t in await self.list_resource_templates():
-            if (
-                isinstance(t, FunctionResourceTemplate)
-                and t.task_config.supports_tasks()
-            ):
+            if isinstance(t, ResourceTemplate) and t.task_config.supports_tasks():
                 components.append(t)
 
         for p in await self.list_prompts():
-            if isinstance(p, FunctionPrompt) and p.task_config.supports_tasks():
+            if isinstance(p, Prompt) and p.task_config.supports_tasks():
                 components.append(p)
 
         return components
