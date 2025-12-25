@@ -1319,6 +1319,69 @@ class TestAutomaticStructuredContent:
             "stuff": [{"value": 456, "stuff": []}],
         }
 
+    async def test_self_referencing_pydantic_model_has_type_object_at_root(self):
+        """Test that self-referencing Pydantic models have type: object at root.
+
+        MCP spec requires outputSchema to have "type": "object" at the root level.
+        Pydantic generates schemas with $ref at root for self-referential models,
+        which violates this requirement. FastMCP should resolve the $ref.
+
+        Regression test for issue #2455.
+        """
+
+        class Issue(BaseModel):
+            id: str
+            title: str
+            dependencies: list["Issue"] = []
+            dependents: list["Issue"] = []
+
+        def get_issue(issue_id: str) -> Issue:
+            return Issue(id=issue_id, title="Test")
+
+        tool = Tool.from_function(get_issue)
+
+        # The output schema should have "type": "object" at root, not $ref
+        assert tool.output_schema is not None
+        assert tool.output_schema.get("type") == "object"
+        assert "properties" in tool.output_schema
+        # Should still have $defs for nested references
+        assert "$defs" in tool.output_schema
+        # Should NOT have $ref at root level
+        assert "$ref" not in tool.output_schema
+
+    async def test_self_referencing_model_outputschema_mcp_compliant(self):
+        """Test that self-referencing model schemas are MCP spec compliant.
+
+        The MCP spec requires:
+        - type: "object" at root level
+        - properties field
+        - required field (optional)
+
+        This ensures clients can properly validate the schema.
+
+        Regression test for issue #2455.
+        """
+
+        class Node(BaseModel):
+            id: str
+            children: list["Node"] = []
+
+        def get_node() -> Node:
+            return Node(id="1")
+
+        tool = Tool.from_function(get_node)
+
+        # Schema should be MCP-compliant
+        assert tool.output_schema is not None
+        assert tool.output_schema.get("type") == "object", (
+            "MCP spec requires 'type': 'object' at root"
+        )
+        assert "properties" in tool.output_schema
+        assert "id" in tool.output_schema["properties"]
+        assert "children" in tool.output_schema["properties"]
+        # Required should include 'id'
+        assert "id" in tool.output_schema.get("required", [])
+
     async def test_int_return_no_structured_content_without_schema(self):
         """Test that int returns don't create structured content without output schema."""
 
@@ -1581,28 +1644,18 @@ class TestSerializationAlias:
         # not the first validation alias 'id'
         assert tool.output_schema is not None
 
-        # For object types, the schema may use $ref at root (self-referencing types)
-        # or have properties directly. Check both cases.
-        if "$ref" in tool.output_schema:
-            # Schema uses $ref - resolve to get the actual definition
-            assert "$defs" in tool.output_schema
-            ref_path = tool.output_schema["$ref"].replace("#/$defs/", "")
-            component_def = tool.output_schema["$defs"][ref_path]
-        else:
-            # Schema has properties directly (wrapped case)
-            assert "properties" in tool.output_schema
-            assert "result" in tool.output_schema["properties"]
-            assert "$defs" in tool.output_schema
-            # Find the Component definition
-            component_def = list(tool.output_schema["$defs"].values())[0]
+        # Object schemas have properties directly at root (MCP spec compliance)
+        # Root-level $refs are resolved to ensure type: object at root
+        assert "properties" in tool.output_schema
+        assert tool.output_schema.get("type") == "object"
 
         # Should have 'componentId' not 'id' in properties
-        assert "componentId" in component_def["properties"]
-        assert "id" not in component_def["properties"]
+        assert "componentId" in tool.output_schema["properties"]
+        assert "id" not in tool.output_schema["properties"]
 
         # Should require 'componentId' not 'id'
-        assert "componentId" in component_def["required"]
-        assert "id" not in component_def.get("required", [])
+        assert "componentId" in tool.output_schema.get("required", [])
+        assert "id" not in tool.output_schema.get("required", [])
 
     async def test_tool_execution_with_serialization_alias(self):
         """Test that tool execution works correctly with serialization aliases."""

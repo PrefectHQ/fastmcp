@@ -1,6 +1,7 @@
 from fastmcp.utilities.json_schema import (
     _prune_param,
     compress_schema,
+    resolve_root_ref,
 )
 
 # Wrapper for backward compatibility with tests
@@ -505,3 +506,152 @@ class TestCompressSchema:
             "title" not in compressed["properties"]["title"]["properties"]["subtitle"]
         )
         assert "title" not in compressed["properties"]["normal_field"]
+
+
+class TestResolveRootRef:
+    """Tests for the resolve_root_ref function.
+
+    This function resolves $ref at root level to meet MCP spec requirements.
+    MCP specification requires outputSchema to have "type": "object" at root.
+    """
+
+    def test_resolves_simple_root_ref(self):
+        """Test that simple $ref at root is resolved."""
+        schema = {
+            "$defs": {
+                "Node": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "name": {"type": "string"},
+                    },
+                    "required": ["id"],
+                }
+            },
+            "$ref": "#/$defs/Node",
+        }
+        result = resolve_root_ref(schema)
+
+        # Should have type: object at root now
+        assert result.get("type") == "object"
+        assert "properties" in result
+        assert "id" in result["properties"]
+        assert "name" in result["properties"]
+        # Should still have $defs for nested references
+        assert "$defs" in result
+        # Should NOT have $ref at root
+        assert "$ref" not in result
+
+    def test_resolves_self_referential_model(self):
+        """Test resolving schema for self-referential models like Issue."""
+        # This is the exact schema Pydantic generates for self-referential models
+        schema = {
+            "$defs": {
+                "Issue": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "dependencies": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Issue"},
+                        },
+                        "dependents": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Issue"},
+                        },
+                    },
+                    "required": ["id", "title"],
+                }
+            },
+            "$ref": "#/$defs/Issue",
+        }
+        result = resolve_root_ref(schema)
+
+        # Should have type: object at root
+        assert result.get("type") == "object"
+        assert "properties" in result
+        assert "id" in result["properties"]
+        assert "dependencies" in result["properties"]
+        # Nested $refs should still point to $defs
+        assert result["properties"]["dependencies"]["items"]["$ref"] == "#/$defs/Issue"
+        # Should have $defs preserved for nested references
+        assert "$defs" in result
+        assert "Issue" in result["$defs"]
+
+    def test_does_not_modify_schema_with_type_at_root(self):
+        """Test that schemas already having type at root are not modified."""
+        schema = {
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "$defs": {"SomeType": {"type": "string"}},
+            "$ref": "#/$defs/SomeType",  # This would be unusual but possible
+        }
+        result = resolve_root_ref(schema)
+
+        # Schema should be unchanged (returned as-is)
+        assert result is schema
+
+    def test_does_not_modify_schema_without_ref(self):
+        """Test that schemas without $ref are not modified."""
+        schema = {
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+        }
+        result = resolve_root_ref(schema)
+
+        assert result is schema
+
+    def test_does_not_modify_schema_without_defs(self):
+        """Test that schemas with $ref but without $defs are not modified."""
+        schema = {
+            "$ref": "#/$defs/Missing",
+        }
+        result = resolve_root_ref(schema)
+
+        assert result is schema
+
+    def test_does_not_modify_external_ref(self):
+        """Test that external $refs (not pointing to $defs) are not resolved."""
+        schema = {
+            "$defs": {"Node": {"type": "object"}},
+            "$ref": "https://example.com/schema.json#/definitions/Node",
+        }
+        result = resolve_root_ref(schema)
+
+        assert result is schema
+
+    def test_preserves_all_defs_for_nested_references(self):
+        """Test that $defs are preserved even if multiple definitions exist."""
+        schema = {
+            "$defs": {
+                "Node": {
+                    "type": "object",
+                    "properties": {
+                        "child": {"$ref": "#/$defs/ChildNode"},
+                    },
+                },
+                "ChildNode": {
+                    "type": "object",
+                    "properties": {"value": {"type": "string"}},
+                },
+            },
+            "$ref": "#/$defs/Node",
+        }
+        result = resolve_root_ref(schema)
+
+        # Both defs should be preserved
+        assert "$defs" in result
+        assert "Node" in result["$defs"]
+        assert "ChildNode" in result["$defs"]
+
+    def test_handles_missing_def_gracefully(self):
+        """Test that missing definition in $defs doesn't cause error."""
+        schema = {
+            "$defs": {"OtherType": {"type": "string"}},
+            "$ref": "#/$defs/Missing",
+        }
+        result = resolve_root_ref(schema)
+
+        # Should return original schema unchanged
+        assert result is schema

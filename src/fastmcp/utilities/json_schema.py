@@ -1,6 +1,46 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import Any
+
+
+def resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]:
+    """Resolve $ref at root level to meet MCP spec requirements.
+
+    MCP specification requires outputSchema to have "type": "object" at the root level.
+    When Pydantic generates schemas for self-referential models, it uses $ref at the
+    root level pointing to $defs. This function resolves such references by inlining
+    the referenced definition while preserving $defs for nested references.
+
+    Args:
+        schema: JSON schema dict that may have $ref at root level
+
+    Returns:
+        A new schema dict with root-level $ref resolved, or the original schema
+        if no resolution is needed
+
+    Example:
+        >>> schema = {
+        ...     "$defs": {"Node": {"type": "object", "properties": {...}}},
+        ...     "$ref": "#/$defs/Node"
+        ... }
+        >>> resolved = resolve_root_ref(schema)
+        >>> # Result: {"type": "object", "properties": {...}, "$defs": {...}}
+    """
+    # Only resolve if we have $ref at root level with $defs but no explicit type
+    if "$ref" in schema and "$defs" in schema and "type" not in schema:
+        ref = schema["$ref"]
+        # Only handle local $defs references
+        if isinstance(ref, str) and ref.startswith("#/$defs/"):
+            def_name = ref.split("/")[-1]
+            defs = schema["$defs"]
+            if def_name in defs:
+                # Create a new schema by copying the referenced definition
+                resolved = dict(defs[def_name])
+                # Preserve $defs for nested references (other fields may still use them)
+                resolved["$defs"] = defs
+                return resolved
+    return schema
 
 
 def _prune_param(schema: dict, param: str) -> dict:
