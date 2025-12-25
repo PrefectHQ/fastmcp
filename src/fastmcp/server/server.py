@@ -38,7 +38,6 @@ from mcp.types import (
     AnyFunction,
     CallToolRequestParams,
     ContentBlock,
-    GetPromptResult,
     ToolAnnotations,
 )
 from mcp.types import Prompt as SDKPrompt
@@ -608,34 +607,21 @@ class FastMCP(Generic[LifespanResultT]):
     def _setup_handlers(self) -> None:
         """Set up core MCP protocol handlers.
 
-        We override the SDK's default handlers for tools/call, resources/read,
-        and prompts/get to add task-augmented execution support (SEP-1686).
-
-        The SDK's decorators have different capabilities:
-        - call_tool: Supports CreateTaskResult returns AND validate_input
-        - read_resource: Does NOT support CreateTaskResult
-        - get_prompt: Does NOT support CreateTaskResult
-
-        So we use the SDK decorator for tools (to get input validation), but
-        register custom handlers for resources and prompts.
+        All handlers use decorator-based registration for consistency.
+        The call_tool decorator is from the SDK (supports CreateTaskResult + validate_input).
+        The read_resource and get_prompt decorators are from LowLevelServer to add
+        CreateTaskResult support until the SDK provides it natively.
         """
         self._mcp_server.list_tools()(self._list_tools_mcp)
         self._mcp_server.list_resources()(self._list_resources_mcp)
         self._mcp_server.list_resource_templates()(self._list_resource_templates_mcp)
         self._mcp_server.list_prompts()(self._list_prompts_mcp)
 
-        # Tools: SDK decorator provides validate_input + CreateTaskResult support
         self._mcp_server.call_tool(validate_input=self.strict_input_validation)(
             self._call_tool_mcp
         )
-
-        # Resources/Prompts: Custom handlers (SDK decorators don't support CreateTaskResult)
-        self._mcp_server.request_handlers[mcp.types.ReadResourceRequest] = (
-            self._read_resource_handler
-        )
-        self._mcp_server.request_handlers[mcp.types.GetPromptRequest] = (
-            self._get_prompt_handler
-        )
+        self._mcp_server.read_resource()(self._read_resource_mcp)
+        self._mcp_server.get_prompt()(self._get_prompt_mcp)
 
         # Register SEP-1686 task protocol handlers
         self._setup_task_protocol_handlers()
@@ -1552,142 +1538,41 @@ class FastMCP(Generic[LifespanResultT]):
         except NotFoundError as e:
             raise NotFoundError(f"Unknown tool: {key!r}") from e
 
-    async def _read_resource_handler(
-        self, req: mcp.types.ReadResourceRequest
-    ) -> mcp.types.ServerResult:
-        """Handle resources/read requests with task-augmented execution support.
+    async def _read_resource_mcp(
+        self, uri: AnyUrl | str
+    ) -> list[ResourceContent] | mcp.types.CreateTaskResult:
+        """Handle MCP 'readResource' requests.
 
-        This is a custom handler because the SDK's read_resource decorator
-        does not support returning CreateTaskResult for background tasks.
-        """
-        from fastmcp.server.dependencies import _docket_fn_key, _task_metadata
-
-        uri = req.params.uri
-
-        # Check for task metadata via SDK's request context
-        task_meta_dict: dict[str, Any] | None = None
-        try:
-            ctx = self._mcp_server.request_context
-            if ctx.experimental.is_task:
-                task_meta = ctx.experimental.task_metadata
-                task_meta_dict = task_meta.model_dump(exclude_none=True)
-        except (AttributeError, LookupError):
-            pass
-
-        try:
-            # Set contextvars so Resource._read() can access them
-            task_token = _task_metadata.set(task_meta_dict)
-            key_token = _docket_fn_key.set(Resource.make_key(str(uri)))
-            try:
-                result = await self.read_resource(str(uri))
-
-                if isinstance(result, mcp.types.CreateTaskResult):
-                    return mcp.types.ServerResult(result)
-
-                # Normal synchronous result
-                mcp_contents = [item.to_mcp_resource_contents(uri) for item in result]
-                return mcp.types.ServerResult(
-                    mcp.types.ReadResourceResult(contents=mcp_contents)
-                )
-            finally:
-                _task_metadata.reset(task_token)
-                _docket_fn_key.reset(key_token)
-
-        except DisabledError as e:
-            raise NotFoundError(f"Unknown resource: {str(uri)!r}") from e
-        except NotFoundError as e:
-            raise NotFoundError(f"Unknown resource: {str(uri)!r}") from e
-
-    async def _get_prompt_handler(
-        self, req: mcp.types.GetPromptRequest
-    ) -> mcp.types.ServerResult:
-        """Handle prompts/get requests with task-augmented execution support.
-
-        This is a custom handler because the SDK's get_prompt decorator
-        does not support returning CreateTaskResult for background tasks.
-        """
-        from fastmcp.server.dependencies import _docket_fn_key, _task_metadata
-
-        name = req.params.name
-        arguments = req.params.arguments
-
-        # Check for task metadata via SDK's request context
-        task_meta_dict: dict[str, Any] | None = None
-        try:
-            ctx = self._mcp_server.request_context
-            if ctx.experimental.is_task:
-                task_meta = ctx.experimental.task_metadata
-                task_meta_dict = task_meta.model_dump(exclude_none=True)
-        except (AttributeError, LookupError):
-            pass
-
-        try:
-            # Set contextvars so Prompt._render() can access them
-            task_token = _task_metadata.set(task_meta_dict)
-            key_token = _docket_fn_key.set(Prompt.make_key(name))
-            try:
-                result = await self.render_prompt(name, arguments)
-
-                if isinstance(result, mcp.types.CreateTaskResult):
-                    return mcp.types.ServerResult(result)
-
-                # Normal synchronous result
-                return mcp.types.ServerResult(result.to_mcp_prompt_result())
-            finally:
-                _task_metadata.reset(task_token)
-                _docket_fn_key.reset(key_token)
-
-        except DisabledError as e:
-            raise NotFoundError(f"Unknown prompt: {name!r}") from e
-        except NotFoundError as e:
-            raise NotFoundError(f"Unknown prompt: {name!r}") from e
-
-    async def _read_resource_mcp(self, uri: AnyUrl | str) -> list[ResourceContent]:
-        """
-        Handle MCP 'readResource' requests (used by Context.read_resource()).
-
-        Delegates to read_resource() without task metadata, so CreateTaskResult
-        should never be returned.
+        The LowLevelServer.read_resource() decorator handles task metadata,
+        contextvars, and MCP conversion.
         """
         logger.debug(f"[{self.name}] Handler called: read_resource %s", uri)
 
         try:
-            result = await self.read_resource(str(uri))
-            if isinstance(result, mcp.types.CreateTaskResult):
-                # Should never happen without task metadata, but handle for type safety
-                raise RuntimeError("Unexpected CreateTaskResult in _read_resource_mcp")
-            return result
+            return await self.read_resource(str(uri))
         except DisabledError as e:
-            # convert to NotFoundError to avoid leaking resource presence
             raise NotFoundError(f"Unknown resource: {str(uri)!r}") from e
-        except NotFoundError as e:
-            # standardize NotFound message
-            raise NotFoundError(f"Unknown resource: {str(uri)!r}") from e
+        except NotFoundError:
+            raise
 
     async def _get_prompt_mcp(
-        self, name: str, arguments: dict[str, Any] | None = None
-    ) -> GetPromptResult:
-        """
-        Handle MCP 'getPrompt' requests (used by Context.get_prompt()).
+        self, name: str, arguments: dict[str, Any] | None
+    ) -> PromptResult | mcp.types.CreateTaskResult:
+        """Handle MCP 'getPrompt' requests.
 
-        Delegates to render_prompt() and converts to MCP SDK type.
+        The LowLevelServer.get_prompt() decorator handles task metadata,
+        contextvars, and MCP conversion.
         """
         logger.debug(
             f"[{self.name}] Handler called: get_prompt %s with %s", name, arguments
         )
 
         try:
-            result = await self.render_prompt(name, arguments)
-            if isinstance(result, mcp.types.CreateTaskResult):
-                # Should never happen without task metadata
-                raise RuntimeError("Unexpected CreateTaskResult in _get_prompt_mcp")
-            return result.to_mcp_prompt_result()
+            return await self.render_prompt(name, arguments)
         except DisabledError as e:
-            # convert to NotFoundError to avoid leaking prompt presence
-            raise NotFoundError(f"Unknown prompt: {name}") from e
-        except NotFoundError as e:
-            # standardize NotFound message
-            raise NotFoundError(f"Unknown prompt: {name}") from e
+            raise NotFoundError(f"Unknown prompt: {name!r}") from e
+        except NotFoundError:
+            raise
 
     def add_tool(self, tool: Tool) -> Tool:
         """Add a tool to the server.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import weakref
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any
 
@@ -21,7 +22,13 @@ from mcp.server.session import ServerSession
 from mcp.server.stdio import stdio_server as stdio_server
 from mcp.shared.message import SessionMessage
 from mcp.shared.session import RequestResponder
+from pydantic import AnyUrl
 
+from fastmcp.prompts import Prompt
+from fastmcp.prompts.prompt import PromptResult
+from fastmcp.resources import Resource
+from fastmcp.resources.types import ResourceContent
+from fastmcp.server.dependencies import _docket_fn_key, _task_metadata
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -198,3 +205,143 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
                         lifespan_context,
                         raise_exceptions,
                     )
+
+    def read_resource(
+        self,
+    ) -> Callable[
+        [
+            Callable[
+                [AnyUrl],
+                Awaitable[list[ResourceContent] | mcp.types.CreateTaskResult],
+            ]
+        ],
+        Callable[
+            [AnyUrl],
+            Awaitable[list[ResourceContent] | mcp.types.CreateTaskResult],
+        ],
+    ]:
+        """
+        Decorator for registering a read_resource handler with CreateTaskResult support.
+
+        The MCP SDK's read_resource decorator does not support returning CreateTaskResult
+        for background task execution. This decorator provides that support by wrapping the
+        handler with task metadata extraction, contextvar management, and MCP format conversion.
+
+        This decorator can be removed once the MCP SDK adds native CreateTaskResult support
+        for resources.
+        """
+
+        def decorator(
+            func: Callable[
+                [AnyUrl],
+                Awaitable[list[ResourceContent] | mcp.types.CreateTaskResult],
+            ],
+        ) -> Callable[
+            [AnyUrl],
+            Awaitable[list[ResourceContent] | mcp.types.CreateTaskResult],
+        ]:
+            async def handler(
+                req: mcp.types.ReadResourceRequest,
+            ) -> mcp.types.ServerResult:
+                uri = req.params.uri
+
+                # Extract task metadata from request context
+                task_meta_dict: dict[str, Any] | None = None
+                try:
+                    ctx = self.request_context
+                    if ctx.experimental.is_task:
+                        task_meta = ctx.experimental.task_metadata
+                        task_meta_dict = task_meta.model_dump(exclude_none=True)
+                except (AttributeError, LookupError):
+                    pass
+
+                # Set contextvars
+                task_token = _task_metadata.set(task_meta_dict)
+                key_token = _docket_fn_key.set(Resource.make_key(str(uri)))
+                try:
+                    result = await func(uri)
+
+                    if isinstance(result, mcp.types.CreateTaskResult):
+                        return mcp.types.ServerResult(result)
+
+                    contents = [item.to_mcp_resource_contents(uri) for item in result]
+                    return mcp.types.ServerResult(
+                        mcp.types.ReadResourceResult(contents=contents)
+                    )
+                finally:
+                    _task_metadata.reset(task_token)
+                    _docket_fn_key.reset(key_token)
+
+            self.request_handlers[mcp.types.ReadResourceRequest] = handler
+            return func
+
+        return decorator
+
+    def get_prompt(
+        self,
+    ) -> Callable[
+        [
+            Callable[
+                [str, dict[str, Any] | None],
+                Awaitable[PromptResult | mcp.types.CreateTaskResult],
+            ]
+        ],
+        Callable[
+            [str, dict[str, Any] | None],
+            Awaitable[PromptResult | mcp.types.CreateTaskResult],
+        ],
+    ]:
+        """
+        Decorator for registering a get_prompt handler with CreateTaskResult support.
+
+        The MCP SDK's get_prompt decorator does not support returning CreateTaskResult
+        for background task execution. This decorator provides that support by wrapping the
+        handler with task metadata extraction, contextvar management, and MCP format conversion.
+
+        This decorator can be removed once the MCP SDK adds native CreateTaskResult support
+        for prompts.
+        """
+
+        def decorator(
+            func: Callable[
+                [str, dict[str, Any] | None],
+                Awaitable[PromptResult | mcp.types.CreateTaskResult],
+            ],
+        ) -> Callable[
+            [str, dict[str, Any] | None],
+            Awaitable[PromptResult | mcp.types.CreateTaskResult],
+        ]:
+            async def handler(
+                req: mcp.types.GetPromptRequest,
+            ) -> mcp.types.ServerResult:
+                name = req.params.name
+                arguments = req.params.arguments
+
+                # Extract task metadata from request context
+                task_meta_dict: dict[str, Any] | None = None
+                try:
+                    ctx = self.request_context
+                    if ctx.experimental.is_task:
+                        task_meta = ctx.experimental.task_metadata
+                        task_meta_dict = task_meta.model_dump(exclude_none=True)
+                except (AttributeError, LookupError):
+                    pass
+
+                # Set contextvars
+                task_token = _task_metadata.set(task_meta_dict)
+                key_token = _docket_fn_key.set(Prompt.make_key(name))
+                try:
+                    result = await func(name, arguments)
+
+                    if isinstance(result, mcp.types.CreateTaskResult):
+                        return mcp.types.ServerResult(result)
+
+                    return mcp.types.ServerResult(result.to_mcp_prompt_result())
+                finally:
+                    _task_metadata.reset(task_token)
+                    _docket_fn_key.reset(key_token)
+
+            self.request_handlers[mcp.types.GetPromptRequest] = handler
+            return func
+
+        return decorator

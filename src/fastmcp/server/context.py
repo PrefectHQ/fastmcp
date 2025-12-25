@@ -303,7 +303,12 @@ class Context:
         Returns:
             The prompt result
         """
-        return await self.fastmcp._get_prompt_mcp(name, arguments)
+        result = await self.fastmcp.render_prompt(name, arguments)
+        if isinstance(result, mcp.types.CreateTaskResult):
+            raise RuntimeError(
+                "Unexpected CreateTaskResult: Context calls should not have task metadata"
+            )
+        return result.to_mcp_prompt_result()
 
     async def read_resource(self, uri: str | AnyUrl) -> list[ResourceContent]:
         """Read a resource by URI.
@@ -314,8 +319,12 @@ class Context:
         Returns:
             List of ResourceContent objects
         """
-        # Context calls don't have task metadata, so always returns list
-        return await self.fastmcp._read_resource_mcp(uri)
+        result = await self.fastmcp.read_resource(str(uri))
+        if isinstance(result, mcp.types.CreateTaskResult):
+            raise RuntimeError(
+                "Unexpected CreateTaskResult: Context calls should not have task metadata"
+            )
+        return result
 
     async def log(
         self,
