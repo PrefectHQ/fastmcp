@@ -103,7 +103,8 @@ def get_application_status() -> dict:
 </ParamField>
 
 <ParamField body="enabled" type="bool" default="True">
-  A boolean to enable or disable the resource. See [Disabling Resources](#disabling-resources) for more information
+  <Warning>Deprecated in v3.0.0. Use `mcp.enable()` / `mcp.disable()` at the server level instead.</Warning>
+  A boolean to enable or disable the resource. See [Visibility Control](#visibility-control) for the recommended approach.
 </ParamField>
 
 <ParamField body="icons" type="list[Icon] | None">
@@ -191,31 +192,34 @@ The `meta` field in `ResourceContent` is for runtime metadata specific to this r
 
 You can still return plain `str` or `bytes` from your resource functions—`ResourceContent` is opt-in for when you need to include metadata.
 
-### Disabling Resources
+### Visibility Control
 
-<VersionBadge version="2.8.0" />
+<VersionBadge version="3.0.0" />
 
-You can control the visibility and availability of resources and templates by enabling or disabling them. Disabled resources will not appear in the list of available resources or templates, and attempting to read a disabled resource will result in an "Unknown resource" error.
-
-By default, all resources are enabled. You can disable a resource upon creation using the `enabled` parameter in the decorator:
+You can control which resources are visible to clients using server-level visibility control. Disabled resources don't appear in `list_resources` and can't be read.
 
 ```python
-@mcp.resource("data://secret", enabled=False)
-def get_secret_data():
-    """This resource is currently disabled."""
-    return "Secret data"
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
+@mcp.resource("data://public", tags={"public"})
+def get_public(): return "public"
+
+@mcp.resource("data://secret", tags={"internal"})
+def get_secret(): return "secret"
+
+# Disable specific resources by key
+mcp.disable(keys=["resource:data://secret"])
+
+# Disable resources by tag
+mcp.disable(tags={"internal"})
+
+# Or use allowlist mode - only show resources with specific tags
+mcp.enable(tags={"public"}, only=True)
 ```
 
-You can also toggle a resource's state programmatically after it has been created:
-
-```python
-@mcp.resource("data://config")
-def get_config(): return {"version": 1}
-
-# Disable and re-enable the resource
-get_config.disable()
-get_config.enable()
-```
+See [Local Provider](/servers/providers/local#visibility-control) for the complete visibility control API including key formats and tag-based filtering.
 
 
 ### Accessing MCP Context
@@ -367,9 +371,9 @@ def example_resource() -> str:
     return "Hello!"
 
 # These operations trigger notifications:
-mcp.add_resource(example_resource)  # Sends resources/list_changed notification
-example_resource.disable()          # Sends resources/list_changed notification  
-example_resource.enable()           # Sends resources/list_changed notification
+mcp.add_resource(example_resource)                   # Sends resources/list_changed notification
+mcp.disable(keys=["resource:data://example"])        # Sends resources/list_changed notification
+mcp.enable(keys=["resource:data://example"])         # Sends resources/list_changed notification
 ```
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.

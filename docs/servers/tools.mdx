@@ -78,7 +78,8 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 </ParamField>
 
 <ParamField body="enabled" type="bool" default="True">
-  A boolean to enable or disable the tool. See [Disabling Tools](#disabling-tools) for more information
+  <Warning>Deprecated in v3.0.0. Use `mcp.enable()` / `mcp.disable()` at the server level instead.</Warning>
+  A boolean to enable or disable the tool. See [Visibility Control](#visibility-control) for the recommended approach.
 </ParamField>
 
 <ParamField body="icons" type="list[Icon] | None">
@@ -750,32 +751,39 @@ def divide(a: float, b: float) -> float:
 
 When `mask_error_details=True`, only error messages from `ToolError` will include details, other exceptions will be converted to a generic message.
 
-## Disabling Tools
+## Visibility Control
 
-<VersionBadge version="2.8.0" />
+<VersionBadge version="3.0.0" />
 
-You can control the visibility and availability of tools by enabling or disabling them. This is useful for feature flagging, maintenance, or dynamically changing the toolset available to a client. Disabled tools will not appear in the list of available tools returned by `list_tools`, and attempting to call a disabled tool will result in an "Unknown tool" error, just as if the tool did not exist.
-
-By default, all tools are enabled. You can disable a tool upon creation using the `enabled` parameter in the decorator:
+You can control which tools are visible to clients using server-level visibility control. Disabled tools don't appear in `list_tools` and can't be called.
 
 ```python
-@mcp.tool(enabled=False)
-def maintenance_tool():
-    """This tool is currently under maintenance."""
-    return "This tool is disabled."
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
+@mcp.tool(tags={"admin"})
+def admin_action() -> str:
+    """Admin-only action."""
+    return "Done"
+
+@mcp.tool(tags={"public"})
+def public_action() -> str:
+    """Public action."""
+    return "Done"
+
+# Disable specific tools by key
+mcp.disable(keys=["tool:admin_action"])
+
+# Disable tools by tag
+mcp.disable(tags={"admin"})
+
+# Or use allowlist mode - only show tools with specific tags
+mcp.enable(tags={"public"}, only=True)
 ```
 
-You can also toggle a tool's state programmatically after it has been created:
+See [Local Provider](/servers/providers/local#visibility-control) for the complete visibility control API including key formats and tag-based filtering.
 
-```python
-@mcp.tool
-def dynamic_tool():
-    return "I am a dynamic tool."
-
-# Disable and re-enable the tool
-dynamic_tool.disable()
-dynamic_tool.enable()
-```
 ## MCP Annotations
 
 <VersionBadge version="2.2.7" />
@@ -878,10 +886,10 @@ def example_tool() -> str:
     return "Hello!"
 
 # These operations trigger notifications:
-mcp.add_tool(example_tool)     # Sends tools/list_changed notification
-example_tool.disable()         # Sends tools/list_changed notification  
-example_tool.enable()          # Sends tools/list_changed notification
-mcp.remove_tool("example_tool") # Sends tools/list_changed notification
+mcp.add_tool(example_tool)              # Sends tools/list_changed notification
+mcp.disable(keys=["tool:example_tool"]) # Sends tools/list_changed notification
+mcp.enable(keys=["tool:example_tool"])  # Sends tools/list_changed notification
+mcp.remove_tool("example_tool")         # Sends tools/list_changed notification
 ```
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.

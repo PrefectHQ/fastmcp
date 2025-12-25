@@ -11,6 +11,10 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 FastMCP can automatically generate an MCP server from any OpenAPI specification, allowing AI models to interact with existing APIs through the MCP protocol. Instead of manually creating tools and resources, you provide an OpenAPI spec and FastMCP intelligently converts API endpoints into the appropriate MCP components.
 
+<Note>
+Under the hood, OpenAPI integration uses OpenAPIProvider (v3.0.0+) to source tools from the specification. See [Providers](/servers/providers/overview) to understand how FastMCP sources components.
+</Note>
+
 <Tip>
 Generating MCP servers from OpenAPI is a great way to get started with FastMCP, but in practice LLMs achieve **significantly better performance** with well-designed and curated MCP servers than with auto-converted OpenAPI servers. This is especially true for complex APIs with many endpoints and parameters.
 

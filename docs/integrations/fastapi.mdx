@@ -12,6 +12,10 @@ FastMCP provides two powerful ways to integrate with FastAPI applications:
 1. **[Generate an MCP server FROM your FastAPI app](#generating-an-mcp-server)** - Convert existing API endpoints into MCP tools
 2. **[Mount an MCP server INTO your FastAPI app](#mounting-an-mcp-server)** - Add MCP functionality to your web application
 
+<Note>
+When generating an MCP server from FastAPI, FastMCP uses OpenAPIProvider (v3.0.0+) under the hood to source tools from your FastAPI app's OpenAPI spec. See [Providers](/servers/providers/overview) to understand how FastMCP sources components.
+</Note>
+
 
 <Tip>
 Generating MCP servers from OpenAPI is a great way to get started with FastMCP, but in practice LLMs achieve **significantly better performance** with well-designed and curated MCP servers than with auto-converted OpenAPI servers. This is especially true for complex APIs with many endpoints and parameters.

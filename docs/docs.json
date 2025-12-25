@@ -20,10 +20,7 @@
     "primary": "#2d00f7"
   },
   "contextual": {
-    "options": [
-      "copy",
-      "view"
-    ]
+    "options": ["copy", "view"]
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
   "errors": {
@@ -95,7 +92,7 @@
             "pages": [
               "servers/server",
               {
-                "group": "Core Components",
+                "group": "Components",
                 "icon": "toolbox",
                 "pages": [
                   "servers/tools",
@@ -104,20 +101,30 @@
                 ]
               },
               {
-                "group": "Advanced Features",
+                "group": "Providers",
+                "icon": "layer-group",
+                "pages": [
+                  "servers/providers/overview",
+                  "servers/providers/local",
+                  "servers/providers/mounting",
+                  "servers/providers/namespacing",
+                  "servers/providers/proxy",
+                  "servers/providers/custom"
+                ]
+              },
+              {
+                "group": "Features",
                 "icon": "stars",
                 "pages": [
-                  "servers/composition",
+                  "servers/tasks",
                   "servers/context",
                   "servers/elicitation",
                   "servers/icons",
                   "servers/logging",
                   "servers/middleware",
                   "servers/progress",
-                  "servers/proxy",
                   "servers/sampling",
-                  "servers/storage-backends",
-                  "servers/tasks"
+                  "servers/storage-backends"
                 ]
               },
               {
@@ -150,10 +157,7 @@
               {
                 "group": "Essentials",
                 "icon": "cube",
-                "pages": [
-                  "clients/client",
-                  "clients/transports"
-                ]
+                "pages": ["clients/client", "clients/transports"]
               },
               {
                 "group": "Core Operations",
@@ -180,16 +184,18 @@
               {
                 "group": "Authentication",
                 "icon": "user-shield",
-                "pages": [
-                  "clients/auth/oauth",
-                  "clients/auth/bearer"
-                ]
+                "pages": ["clients/auth/oauth", "clients/auth/bearer"]
               }
             ]
           },
           {
             "group": "Integrations",
             "pages": [
+              {
+                "group": "Providers",
+                "icon": "globe",
+                "pages": ["integrations/fastapi", "integrations/openapi"]
+              },
               {
                 "group": "Authentication",
                 "icon": "key",
@@ -235,14 +241,6 @@
                   "integrations/anthropic",
                   "integrations/gemini",
                   "integrations/openai"
-                ]
-              },
-              {
-                "group": "API Integration",
-                "icon": "globe",
-                "pages": [
-                  "integrations/fastapi",
-                  "integrations/openapi"
                 ]
               }
             ]
@@ -476,6 +474,7 @@
                 "group": "fastmcp.utilities",
                 "pages": [
                   "python-sdk/fastmcp-utilities-__init__",
+                  "python-sdk/fastmcp-utilities-async_utils",
                   "python-sdk/fastmcp-utilities-auth",
                   "python-sdk/fastmcp-utilities-cli",
                   "python-sdk/fastmcp-utilities-components",
@@ -543,12 +542,20 @@
   },
   "redirects": [
     {
-      "destination": "/servers/proxy",
+      "destination": "/servers/providers/proxy",
       "source": "/patterns/proxy"
     },
     {
-      "destination": "/servers/composition",
+      "destination": "/servers/providers/mounting",
       "source": "/patterns/composition"
+    },
+    {
+      "destination": "/servers/providers/proxy",
+      "source": "/servers/proxy"
+    },
+    {
+      "destination": "/servers/providers/mounting",
+      "source": "/servers/composition"
     }
   ],
   "search": {

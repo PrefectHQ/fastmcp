@@ -10,6 +10,31 @@ This guide provides migration instructions for breaking changes and major update
 
 ## v3.0.0
 
+### Provider Architecture
+
+FastMCP v3 introduces a unified provider architecture for sourcing components. All tools, resources, and prompts now flow through providers:
+
+- **LocalProvider** stores decorator-registered components (`@mcp.tool`, etc.)
+- **FastMCPProvider** wraps another FastMCP server for composition
+- **ProxyProvider** connects to remote MCP servers
+- **TransformingProvider** adds namespacing and renaming
+
+See [Providers](/servers/providers/overview) for the complete documentation.
+
+### Mount Namespace Parameter
+
+The `prefix` parameter for `mount()` has been renamed to `namespace`:
+
+<CodeGroup>
+```python Before
+main.mount(subserver, prefix="api")
+```
+
+```python After
+main.mount(subserver, namespace="api")
+```
+</CodeGroup>
+
 ### Component Enable/Disable
 
 The `enabled` field and `enable()`/`disable()` methods have been removed from component objects. Use server or provider methods instead:

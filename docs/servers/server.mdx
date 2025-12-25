@@ -266,7 +266,7 @@ For more complex web applications, consider [mounting your MCP server into a Fas
 
 FastMCP supports composing multiple servers together using `import_server` (static copy) and `mount` (live link). This allows you to organize large applications into modular components or reuse existing servers.
 
-See the [Server Composition](/servers/composition) guide for full details, best practices, and examples.
+See the [Mounting Servers](/servers/providers/mounting) guide for full details, best practices, and examples.
 
 ```python
 # Example: Importing a subserver
@@ -277,11 +277,11 @@ main = FastMCP(name="Main")
 sub = FastMCP(name="Sub")
 
 @sub.tool
-def hello(): 
+def hello():
     return "hi"
 
 # Mount directly
-main.mount(sub, prefix="sub")
+main.mount(sub, namespace="sub")
 ```
 
 ## Proxying Servers
@@ -292,7 +292,7 @@ FastMCP can act as a proxy for any MCP server (local or remote) using `FastMCP.a
 
 Proxies automatically handle concurrent operations safely by creating fresh sessions for each request when using disconnected clients.
 
-See the [Proxying Servers](/servers/proxy) guide for details and advanced usage.
+See the [Remote Proxies](/servers/providers/proxy) guide for details and advanced usage.
 
 ```python
 from fastmcp import FastMCP, Client

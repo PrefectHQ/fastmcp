@@ -1,0 +1,159 @@
+---
+title: Namespacing
+sidebarTitle: Namespacing
+description: Namespace and rename components with TransformingProvider
+icon: wand-magic-sparkles
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.0.0" />
+
+`TransformingProvider` wraps another provider and modifies its components, enabling namespacing and renaming. When you use `mount(namespace="...")`, `TransformingProvider` is used under the hood.
+
+## Why Transform
+
+When composing servers, you may encounter naming conflicts:
+
+```python
+weather = FastMCP("Weather")
+calendar = FastMCP("Calendar")
+
+@weather.tool
+def get_data() -> str:
+    return "Weather"
+
+@calendar.tool
+def get_data() -> str:  # Same name!
+    return "Calendar"
+
+main = FastMCP("Main")
+main.mount(weather)
+main.mount(calendar)  # Conflict: which get_data?
+```
+
+Transformations solve this by prefixing or renaming components.
+
+## Namespacing
+
+The most common transformation is namespacing, which prefixes all component names:
+
+```python
+main = FastMCP("Main")
+main.mount(weather, namespace="weather")
+main.mount(calendar, namespace="calendar")
+
+# Tools are now:
+# - weather_get_data
+# - calendar_get_data
+```
+
+### Namespace Rules
+
+| Component Type | Original | With `namespace="api"` |
+|----------------|----------|------------------------|
+| Tool | `my_tool` | `api_my_tool` |
+| Prompt | `my_prompt` | `api_my_prompt` |
+| Resource | `data://info` | `data://api/info` |
+| Template | `data://{id}` | `data://api/{id}` |
+
+Tools and prompts get an underscore prefix. Resources get a path-style prefix.
+
+## Tool Renaming
+
+For more control, rename specific tools explicitly:
+
+```python
+from fastmcp.server.providers import FastMCPProvider
+
+provider = FastMCPProvider(weather_server).with_transforms(
+    namespace="weather",
+    tool_renames={"verbose_tool_name": "short"}
+)
+
+# "verbose_tool_name" → "short" (explicit rename, bypasses namespace)
+# "other_tool" → "weather_other_tool" (namespace applied)
+```
+
+Explicit renames take precedence over namespacing.
+
+## Direct Provider Usage
+
+You can use `TransformingProvider` directly via `with_transforms()`:
+
+```python
+from fastmcp.server.providers import LocalProvider
+
+provider = LocalProvider()
+
+@provider.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+# Apply transformations
+namespaced = provider.with_transforms(namespace="api")
+
+# Or use shorthand
+namespaced = provider.with_namespace("api")
+
+# Register with server
+mcp = FastMCP("Server", providers=[namespaced])
+# Tool is now: api_greet
+```
+
+## Stacking Transformations
+
+Transformations can be stacked - each `with_transforms()` creates a new wrapper:
+
+```python
+provider = (
+    LocalProvider()
+    .with_transforms(namespace="inner")
+    .with_transforms(namespace="outer")
+)
+
+# Tool "foo" becomes:
+# 1. inner_foo (first transform)
+# 2. outer_inner_foo (second transform)
+```
+
+You can also combine namespacing with renaming at different levels:
+
+```python
+provider = (
+    LocalProvider()
+    .with_transforms(namespace="api")
+    .with_transforms(tool_renames={"api_verbose": "short"})
+)
+
+# "verbose" → "api_verbose" (namespace) → "short" (rename)
+```
+
+## Use Cases
+
+### Avoiding Conflicts
+
+```python
+# Two servers with same tool names
+main.mount(server_a, namespace="a")
+main.mount(server_b, namespace="b")
+```
+
+### API Versioning
+
+```python
+# Mount different versions
+main.mount(v1_server, namespace="v1")
+main.mount(v2_server, namespace="v2")
+```
+
+### Aliasing Long Names
+
+```python
+provider = FastMCPProvider(server).with_transforms(
+    tool_renames={
+        "get_user_authentication_status": "auth_status",
+        "retrieve_configuration_settings": "get_config"
+    }
+)
+```

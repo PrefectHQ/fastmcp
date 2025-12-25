@@ -94,7 +94,8 @@ def data_analysis_prompt(
 </ParamField>
 
 <ParamField body="enabled" type="bool" default="True">
-  A boolean to enable or disable the prompt. See [Disabling Prompts](#disabling-prompts) for more information
+  <Warning>Deprecated in v3.0.0. Use `mcp.enable()` / `mcp.disable()` at the server level instead.</Warning>
+  A boolean to enable or disable the prompt. See [Visibility Control](#visibility-control) for the recommended approach.
 </ParamField>
 
 <ParamField body="icons" type="list[Icon] | None">
@@ -268,31 +269,36 @@ def data_analysis_prompt(
 
 In this example, the client *must* provide `data_uri`. If `analysis_type` or `include_charts` are omitted, their default values will be used.
 
-### Disabling Prompts
+### Visibility Control
 
-<VersionBadge version="2.8.0" />
+<VersionBadge version="3.0.0" />
 
-You can control the visibility and availability of prompts by enabling or disabling them. Disabled prompts will not appear in the list of available prompts, and attempting to call a disabled prompt will result in an "Unknown prompt" error.
-
-By default, all prompts are enabled. You can disable a prompt upon creation using the `enabled` parameter in the decorator:
+You can control which prompts are visible to clients using server-level visibility control. Disabled prompts don't appear in `list_prompts` and can't be called.
 
 ```python
-@mcp.prompt(enabled=False)
-def experimental_prompt():
-    """This prompt is not ready for use."""
-    return "This is an experimental prompt."
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
+@mcp.prompt(tags={"public"})
+def public_prompt(topic: str) -> str:
+    return f"Discuss: {topic}"
+
+@mcp.prompt(tags={"internal"})
+def internal_prompt() -> str:
+    return "Internal system prompt"
+
+# Disable specific prompts by key
+mcp.disable(keys=["prompt:internal_prompt"])
+
+# Disable prompts by tag
+mcp.disable(tags={"internal"})
+
+# Or use allowlist mode - only show prompts with specific tags
+mcp.enable(tags={"public"}, only=True)
 ```
 
-You can also toggle a prompt's state programmatically after it has been created:
-
-```python
-@mcp.prompt
-def seasonal_prompt(): return "Happy Holidays!"
-
-# Disable and re-enable the prompt
-seasonal_prompt.disable()
-seasonal_prompt.enable()
-```
+See [Local Provider](/servers/providers/local#visibility-control) for the complete visibility control API including key formats and tag-based filtering.
 
 ### Async Prompts
 
@@ -349,9 +355,9 @@ def example_prompt() -> str:
     return "Hello!"
 
 # These operations trigger notifications:
-mcp.add_prompt(example_prompt)  # Sends prompts/list_changed notification
-example_prompt.disable()        # Sends prompts/list_changed notification  
-example_prompt.enable()         # Sends prompts/list_changed notification
+mcp.add_prompt(example_prompt)               # Sends prompts/list_changed notification
+mcp.disable(keys=["prompt:example_prompt"])  # Sends prompts/list_changed notification
+mcp.enable(keys=["prompt:example_prompt"])   # Sends prompts/list_changed notification
 ```
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
