@@ -7,7 +7,7 @@ import pytest
 from mcp.types import AnyUrl, TextContent
 
 from fastmcp import FastMCP
-from fastmcp.prompts.prompt import FunctionPrompt, Prompt, PromptResult
+from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 from fastmcp.resources.resource import FunctionResource, Resource
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.server.providers import Provider
@@ -432,7 +432,6 @@ class TestProviderExecutionMethods:
 
         result = await mcp.render_prompt("greeting", {"name": "World"})
 
-        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         assert isinstance(result.messages[0].content, TextContent)
         assert result.messages[0].content.text == "Hello, World!"

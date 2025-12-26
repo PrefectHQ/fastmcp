@@ -5,7 +5,7 @@ from __future__ import annotations as _annotations
 import inspect
 import json
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 
 import pydantic
 import pydantic_core
@@ -27,7 +27,7 @@ from pydantic import Field
 
 from fastmcp.exceptions import PromptError
 from fastmcp.server.dependencies import without_injected_parameters
-from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -302,9 +302,24 @@ class Prompt(FastMCPComponent):
             f"got {type(raw_value).__name__}"
         )
 
+    @overload
     async def _render(
         self,
         arguments: dict[str, Any] | None = None,
+        task_meta: None = None,
+    ) -> PromptResult: ...
+
+    @overload
+    async def _render(
+        self,
+        arguments: dict[str, Any] | None,
+        task_meta: TaskMeta,
+    ) -> mcp.types.CreateTaskResult: ...
+
+    async def _render(
+        self,
+        arguments: dict[str, Any] | None = None,
+        task_meta: TaskMeta | None = None,
     ) -> PromptResult | mcp.types.CreateTaskResult:
         """Server entry point that handles task routing.
 
@@ -312,16 +327,27 @@ class Prompt(FastMCPComponent):
         task_config.mode to "supported" or "required". The server calls this
         method instead of render() directly.
 
+        Args:
+            arguments: Prompt arguments
+            task_meta: If provided, execute as background task and return
+                CreateTaskResult. If None (default), execute synchronously and
+                return PromptResult.
+
+        Returns:
+            PromptResult when task_meta is None.
+            CreateTaskResult when task_meta is provided.
+
         Subclasses can override this to customize task routing behavior.
         For example, FastMCPProviderPrompt overrides to delegate to child
         middleware without submitting to Docket.
         """
-        from fastmcp.server.dependencies import _docket_fn_key
         from fastmcp.server.tasks.routing import check_background_task
 
-        key = _docket_fn_key.get() or self.key
         task_result = await check_background_task(
-            component=self, task_type="prompt", key=key, arguments=arguments
+            component=self,
+            task_type="prompt",
+            arguments=arguments,
+            task_meta=task_meta,
         )
         if task_result:
             return task_result

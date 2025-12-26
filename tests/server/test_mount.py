@@ -9,7 +9,6 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, SSETransport
 from fastmcp.exceptions import NotFoundError
-from fastmcp.prompts import PromptResult
 from fastmcp.server.providers import FastMCPProvider, TransformingProvider
 from fastmcp.server.providers.proxy import FastMCPProxy
 from fastmcp.tools.tool import Tool
@@ -182,7 +181,6 @@ class TestBasicMount:
 
         # Test actual functionality
         prompt_result = await main_app.render_prompt("sub_prompt")
-        assert isinstance(prompt_result, PromptResult)
         assert prompt_result.messages is not None
 
 
@@ -522,7 +520,6 @@ class TestPrefixConflictResolution:
 
         # Test that getting the prompt uses the first server's implementation
         result = await main_app.render_prompt("shared_prompt")
-        assert isinstance(result, PromptResult)
         assert result.messages is not None
         assert isinstance(result.messages[0].content, TextContent)
         assert result.messages[0].content.text == "First app prompt"
@@ -553,7 +550,6 @@ class TestPrefixConflictResolution:
 
         # Test that getting the prompt uses the first server's implementation
         result = await main_app.render_prompt("api_shared_prompt")
-        assert isinstance(result, PromptResult)
         assert result.messages is not None
         assert isinstance(result.messages[0].content, TextContent)
         assert result.messages[0].content.text == "First app prompt"
@@ -705,7 +701,6 @@ class TestPrompts:
 
         # Render the prompt
         result = await main_app.render_prompt("assistant_greeting", {"name": "World"})
-        assert isinstance(result, PromptResult)
         assert result.messages is not None
         # The message should contain our greeting text
 
@@ -728,7 +723,6 @@ class TestPrompts:
 
         # Render the prompt
         result = await main_app.render_prompt("assistant_farewell", {"name": "World"})
-        assert isinstance(result, PromptResult)
         assert result.messages is not None
         # The message should contain our farewell text
 
@@ -825,7 +819,6 @@ class TestProxyServer:
 
         # Prompt should be accessible through main app
         result = await main_app.render_prompt("proxy_welcome", {"name": "World"})
-        assert isinstance(result, PromptResult)
         assert result.messages is not None
         # The message should contain our welcome text
 
@@ -1303,13 +1296,11 @@ class TestDeeplyNestedMount:
 
         # Prompt at level 2 should work
         result = await root.render_prompt("middle_middle_prompt", {"name": "World"})
-        assert isinstance(result, PromptResult)
         assert isinstance(result.messages[0].content, TextContent)
         assert "Hello from middle: World" in result.messages[0].content.text
 
         # Prompt at level 3 should also work
         result = await root.render_prompt("middle_leaf_leaf_prompt", {"name": "Test"})
-        assert isinstance(result, PromptResult)
         assert isinstance(result.messages[0].content, TextContent)
         assert "Hello from leaf: Test" in result.messages[0].content.text
 

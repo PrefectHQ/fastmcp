@@ -10,7 +10,7 @@ from mcp.types import TextContent
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.exceptions import NotFoundError
-from fastmcp.prompts.prompt import FunctionPrompt, Prompt, PromptResult
+from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 
 
 class TestPromptContext:
@@ -73,7 +73,6 @@ class TestPromptDecorator:
         assert any(p.name == "fn" for p in prompts)
 
         result = await mcp.render_prompt("fn")
-        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         assert isinstance(result.messages[0].content, TextContent)
         assert result.messages[0].content.text == "Hello, world!"
@@ -126,7 +125,6 @@ class TestPromptDecorator:
         assert prompt.arguments[1].required is False
 
         result = await mcp.render_prompt("test_prompt", {"name": "World"})
-        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         message = result.messages[0]
         assert isinstance(message.content, TextContent)
@@ -135,7 +133,6 @@ class TestPromptDecorator:
         result = await mcp.render_prompt(
             "test_prompt", {"name": "World", "greeting": "Hi"}
         )
-        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         message = result.messages[0]
         assert isinstance(message.content, TextContent)
@@ -155,7 +152,6 @@ class TestPromptDecorator:
         mcp.add_prompt(Prompt.from_function(obj.test_prompt, name="test_prompt"))
 
         result = await mcp.render_prompt("test_prompt")
-        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         message = result.messages[0]
         assert isinstance(message.content, TextContent)
@@ -174,7 +170,6 @@ class TestPromptDecorator:
         mcp.add_prompt(Prompt.from_function(MyClass.test_prompt, name="test_prompt"))
 
         result = await mcp.render_prompt("test_prompt")
-        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         message = result.messages[0]
         assert isinstance(message.content, TextContent)
@@ -201,7 +196,6 @@ class TestPromptDecorator:
                 return "Static Hello, world!"
 
         result = await mcp.render_prompt("test_prompt")
-        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         message = result.messages[0]
         assert isinstance(message.content, TextContent)
@@ -215,7 +209,6 @@ class TestPromptDecorator:
             return "Async Hello, world!"
 
         result = await mcp.render_prompt("test_prompt")
-        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         message = result.messages[0]
         assert isinstance(message.content, TextContent)
@@ -248,7 +241,6 @@ class TestPromptDecorator:
         assert not any(p.name == "my_function" for p in prompts)
 
         result = await mcp.render_prompt("string_named_prompt")
-        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         assert isinstance(result.messages[0].content, TextContent)
         assert result.messages[0].content.text == "Hello from string named prompt!"
@@ -270,7 +262,6 @@ class TestPromptDecorator:
         assert prompt is result_fn
 
         result = await mcp.render_prompt("direct_call_prompt")
-        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         assert isinstance(result.messages[0].content, TextContent)
         assert result.messages[0].content.text == "Hello from direct call!"
@@ -299,7 +290,6 @@ class TestPromptDecorator:
                 return "Static Hello, world!"
 
         result = await mcp.render_prompt("test_prompt")
-        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         message = result.messages[0]
         assert isinstance(message.content, TextContent)

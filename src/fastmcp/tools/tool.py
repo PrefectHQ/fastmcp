@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import warnings
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -318,10 +318,6 @@ class Tool(FastMCPComponent):
         middleware without submitting to Docket.
         """
         from fastmcp.server.tasks.routing import check_background_task
-
-        # Enrich task_meta with fn_key if not already set (fallback for programmatic API)
-        if task_meta is not None and task_meta.fn_key is None:
-            task_meta = replace(task_meta, fn_key=self.key)
 
         task_result = await check_background_task(
             component=self,

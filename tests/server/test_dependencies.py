@@ -8,7 +8,6 @@ from mcp.types import TextContent, TextResourceContents
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.dependencies import CurrentContext, Depends
-from fastmcp.prompts import PromptResult
 from fastmcp.server.context import Context
 
 HUZZAH = "huzzah!"
@@ -299,7 +298,6 @@ async def test_prompt_with_dependency(mcp: FastMCP):
         return f"Write about {topic} in a {tone} tone"
 
     result = await mcp.render_prompt("custom_prompt", {"topic": "Python"})
-    assert isinstance(result, PromptResult)
     assert len(result.messages) == 1
     message = result.messages[0]
     content = message.content
@@ -427,7 +425,6 @@ async def test_async_prompt_context_manager_stays_open(mcp: FastMCP):
         return f"open={connection.is_open},topic={topic}"
 
     result = await mcp.render_prompt("research_prompt", {"topic": "AI"})
-    assert isinstance(result, PromptResult)
     message = result.messages[0]
     content = message.content
     assert isinstance(content, TextContent)
@@ -571,7 +568,6 @@ async def test_sync_prompt_context_manager_stays_open(mcp: FastMCP):
         return f"open={connection.is_open},topic={topic}"
 
     result = await mcp.render_prompt("sync_prompt", {"topic": "test"})
-    assert isinstance(result, PromptResult)
     message = result.messages[0]
     content = message.content
     assert isinstance(content, TextContent)
@@ -624,7 +620,6 @@ async def test_prompt_dependency_cannot_be_overridden_externally(mcp: FastMCP):
 
     # Normal call - should use dependency
     result = await mcp.render_prompt("secure_prompt", {"topic": "test"})
-    assert isinstance(result, PromptResult)
     message = result.messages[0]
     content = message.content
     assert isinstance(content, TextContent)
@@ -635,7 +630,6 @@ async def test_prompt_dependency_cannot_be_overridden_externally(mcp: FastMCP):
         "secure_prompt",
         {"topic": "test", "secret": "HACKED"},  # Attempt override
     )
-    assert isinstance(result, PromptResult)
     message = result.messages[0]
     content = message.content
     assert isinstance(content, TextContent)

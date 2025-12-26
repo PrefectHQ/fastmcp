@@ -21,6 +21,7 @@ from contextlib import (
     asynccontextmanager,
     suppress,
 )
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Literal, cast, overload
@@ -1176,8 +1177,9 @@ class FastMCP(Generic[LifespanResultT]):
             ToolError: If tool execution fails
             ValidationError: If arguments fail validation
         """
-        # Note: fn_key enrichment happens in Tool._run(), not here,
-        # so that provider wrappers can enrich with their namespaced key.
+        # Note: fn_key enrichment happens here after finding the tool.
+        # For mounted servers, the parent's provider sets fn_key to the
+        # namespaced key before delegating, ensuring correct Docket routing.
 
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
@@ -1204,6 +1206,9 @@ class FastMCP(Generic[LifespanResultT]):
             for provider in self._providers:
                 tool = await provider.get_tool(name)
                 if tool is not None and self._is_component_enabled(tool):
+                    # Set fn_key for background task routing
+                    if task_meta is not None and task_meta.fn_key is None:
+                        task_meta = replace(task_meta, fn_key=tool.key)
                     try:
                         return await tool._run(arguments or {}, task_meta=task_meta)
                     except FastMCPError:
@@ -1266,10 +1271,12 @@ class FastMCP(Generic[LifespanResultT]):
             NotFoundError: If resource not found or disabled
             ResourceError: If resource read fails
         """
-        # Note: fn_key enrichment happens in each component's _read() method,
-        # not here, because resources and templates use different key formats:
-        # - Resources use Resource.make_key(uri) for the concrete URI
-        # - Templates use self.key which is the template pattern
+        # Note: fn_key enrichment happens here after finding the resource/template.
+        # Resources and templates use different key formats:
+        # - Resources use resource.key (derived from the concrete URI)
+        # - Templates use template.key (the template pattern)
+        # For mounted servers, the parent's provider sets fn_key to the
+        # namespaced key before delegating, ensuring correct Docket routing.
 
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
@@ -1295,6 +1302,9 @@ class FastMCP(Generic[LifespanResultT]):
             for provider in self._providers:
                 resource = await provider.get_resource(uri)
                 if resource is not None and self._is_component_enabled(resource):
+                    # Set fn_key for background task routing
+                    if task_meta is not None and task_meta.fn_key is None:
+                        task_meta = replace(task_meta, fn_key=resource.key)
                     try:
                         return await resource._read(task_meta=task_meta)
                     except (FastMCPError, McpError):
@@ -1316,6 +1326,9 @@ class FastMCP(Generic[LifespanResultT]):
                 if template is not None and self._is_component_enabled(template):
                     params = template.matches(uri)
                     if params is not None:
+                        # Set fn_key for background task routing
+                        if task_meta is not None and task_meta.fn_key is None:
+                            task_meta = replace(task_meta, fn_key=template.key)
                         try:
                             return await template._read(
                                 uri, params, task_meta=task_meta
@@ -1335,12 +1348,33 @@ class FastMCP(Generic[LifespanResultT]):
 
             raise NotFoundError(f"Unknown resource: {uri!r}")
 
+    @overload
     async def render_prompt(
         self,
         name: str,
         arguments: dict[str, Any] | None = None,
         *,
         run_middleware: bool = True,
+        task_meta: None = None,
+    ) -> PromptResult: ...
+
+    @overload
+    async def render_prompt(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        *,
+        run_middleware: bool = True,
+        task_meta: TaskMeta,
+    ) -> mcp.types.CreateTaskResult: ...
+
+    async def render_prompt(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        *,
+        run_middleware: bool = True,
+        task_meta: TaskMeta | None = None,
     ) -> PromptResult | mcp.types.CreateTaskResult:
         """Render a prompt by name.
 
@@ -1352,10 +1386,13 @@ class FastMCP(Generic[LifespanResultT]):
             arguments: Prompt arguments (optional)
             run_middleware: If True (default), apply the middleware chain.
                 Set to False when called from middleware to avoid re-applying.
+            task_meta: If provided, execute as a background task and return
+                CreateTaskResult. If None (default), execute synchronously and
+                return PromptResult.
 
         Returns:
-            PromptResult with messages and optional description.
-            May return CreateTaskResult if called in MCP context with task metadata.
+            PromptResult when task_meta is None.
+            CreateTaskResult when task_meta is provided.
 
         Raises:
             NotFoundError: If prompt not found or disabled
@@ -1378,6 +1415,7 @@ class FastMCP(Generic[LifespanResultT]):
                         context.message.name,
                         context.message.arguments,
                         run_middleware=False,
+                        task_meta=task_meta,
                     ),
                 )
 
@@ -1385,8 +1423,11 @@ class FastMCP(Generic[LifespanResultT]):
             for provider in self._providers:
                 prompt = await provider.get_prompt(name)
                 if prompt is not None and self._is_component_enabled(prompt):
+                    # Set fn_key for background task routing
+                    if task_meta is not None and task_meta.fn_key is None:
+                        task_meta = replace(task_meta, fn_key=prompt.key)
                     try:
-                        return await prompt._render(arguments)
+                        return await prompt._render(arguments, task_meta=task_meta)
                     except (FastMCPError, McpError):
                         logger.exception(f"Error rendering prompt {name!r}")
                         raise
@@ -1557,10 +1598,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         try:
             # Extract SEP-1686 task metadata from request context.
-            # NOTE: fn_key is NOT set here. The component (or provider wrapper) will
-            # enrich fn_key with self.key. For mounted servers, the provider wrapper
-            # sets fn_key to the parent's namespaced key, ensuring Docket finds the
-            # correctly registered function.
+            # fn_key is set by call_tool() after finding the tool.
             task_meta: TaskMeta | None = None
             try:
                 ctx = self._mcp_server.request_context
@@ -1601,12 +1639,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         try:
             # Extract SEP-1686 task metadata from request context.
-            # NOTE: fn_key is NOT set here for resources because we don't know yet
-            # if the URI will be handled by a direct resource or a template. Templates
-            # need their pattern-based key for Docket lookup, not the concrete URI.
-            # The component (or provider wrapper) will enrich fn_key with self.key.
-            # For mounted servers, the provider wrapper sets fn_key to the parent's
-            # namespaced key, ensuring Docket finds the correctly registered function.
+            # fn_key is set by read_resource() after finding the resource/template.
             task_meta: TaskMeta | None = None
             try:
                 ctx = self._mcp_server.request_context
@@ -1632,8 +1665,9 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> mcp.types.GetPromptResult | mcp.types.CreateTaskResult:
         """Handle MCP 'getPrompt' requests.
 
-        Sets task metadata contextvar and calls render_prompt(). The prompt's
-        _render() method handles the backgrounding decision.
+        Extracts task metadata from MCP request context and passes it explicitly
+        to render_prompt(). The prompt's _render() method handles the backgrounding
+        decision, ensuring middleware runs before Docket.
 
         Args:
             name: The prompt name
@@ -1642,35 +1676,28 @@ class FastMCP(Generic[LifespanResultT]):
         Returns:
             GetPromptResult or CreateTaskResult for background execution
         """
-        from fastmcp.server.dependencies import _docket_fn_key, _task_metadata
-
         logger.debug(
             f"[{self.name}] Handler called: get_prompt %s with %s", name, arguments
         )
 
         try:
-            # Extract SEP-1686 task metadata from request context
-            task_meta_dict: dict[str, Any] | None = None
+            # Extract SEP-1686 task metadata from request context.
+            # fn_key is set by render_prompt() after finding the prompt.
+            task_meta: TaskMeta | None = None
             try:
                 ctx = self._mcp_server.request_context
                 if ctx.experimental.is_task:
-                    task_meta = ctx.experimental.task_metadata
-                    task_meta_dict = task_meta.model_dump(exclude_none=True)
+                    mcp_task_meta = ctx.experimental.task_metadata
+                    task_meta_dict = mcp_task_meta.model_dump(exclude_none=True)
+                    task_meta = TaskMeta(ttl=task_meta_dict.get("ttl"))
             except (AttributeError, LookupError):
                 pass
 
-            # Set contextvars so prompt._render() can access them
-            task_token = _task_metadata.set(task_meta_dict)
-            key_token = _docket_fn_key.set(Prompt.make_key(name))
-            try:
-                result = await self.render_prompt(name, arguments)
+            result = await self.render_prompt(name, arguments, task_meta=task_meta)
 
-                if isinstance(result, mcp.types.CreateTaskResult):
-                    return result
-                return result.to_mcp_prompt_result()
-            finally:
-                _task_metadata.reset(task_token)
-                _docket_fn_key.reset(key_token)
+            if isinstance(result, mcp.types.CreateTaskResult):
+                return result
+            return result.to_mcp_prompt_result()
         except DisabledError as e:
             raise NotFoundError(f"Unknown prompt: {name!r}") from e
         except NotFoundError:

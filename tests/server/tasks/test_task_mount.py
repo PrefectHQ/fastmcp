@@ -805,7 +805,6 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.call_tool(
                 "child_add", {"a": 2, "b": 3}, task_meta=TaskMeta(ttl=300)
             )
-            assert isinstance(result, mt.CreateTaskResult)
             return f"task:{result.task.taskId}"
 
         async with Client(parent) as client:
@@ -830,7 +829,6 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.read_resource(
                 "data://child/info", task_meta=TaskMeta(ttl=300)
             )
-            assert isinstance(result, mt.CreateTaskResult)
             return f"task:{result.task.taskId}"
 
         async with Client(parent) as client:
@@ -855,7 +853,6 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.read_resource(
                 "item://child/42", task_meta=TaskMeta(ttl=300)
             )
-            assert isinstance(result, mt.CreateTaskResult)
             return f"task:{result.task.taskId}"
 
         async with Client(parent) as client:
@@ -883,7 +880,6 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.call_tool(
                 "c_gc_compute", {"n": 7}, task_meta=TaskMeta(ttl=300)
             )
-            assert isinstance(result, mt.CreateTaskResult)
             return f"task:{result.task.taskId}"
 
         async with Client(parent) as client:
@@ -911,7 +907,57 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.read_resource(
                 "doc://c/gc/readme", task_meta=TaskMeta(ttl=300)
             )
-            assert isinstance(result, mt.CreateTaskResult)
+            return f"task:{result.task.taskId}"
+
+        async with Client(parent) as client:
+            result = await client.call_tool("outer", {})
+            assert "task:" in str(result)
+
+    async def test_mounted_prompt_with_task_meta_creates_task(self):
+        """Mounted prompt called with task_meta returns CreateTaskResult."""
+        from fastmcp.server.tasks.config import TaskMeta
+
+        child = FastMCP("Child")
+
+        @child.prompt(task=True)
+        async def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="child")
+
+        @parent.tool
+        async def outer() -> str:
+            result = await parent.render_prompt(
+                "child_greet", {"name": "World"}, task_meta=TaskMeta(ttl=300)
+            )
+            return f"task:{result.task.taskId}"
+
+        async with Client(parent) as client:
+            result = await client.call_tool("outer", {})
+            assert "task:" in str(result)
+
+    async def test_deeply_nested_prompt_with_task_meta(self):
+        """Three-level nested prompt works with task_meta."""
+        from fastmcp.server.tasks.config import TaskMeta
+
+        grandchild = FastMCP("Grandchild")
+
+        @grandchild.prompt(task=True)
+        async def describe(topic: str) -> str:
+            return f"Information about {topic}"
+
+        child = FastMCP("Child")
+        child.mount(grandchild, namespace="gc")
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="c")
+
+        @parent.tool
+        async def outer() -> str:
+            result = await parent.render_prompt(
+                "c_gc_describe", {"topic": "FastMCP"}, task_meta=TaskMeta(ttl=300)
+            )
             return f"task:{result.task.taskId}"
 
         async with Client(parent) as client:

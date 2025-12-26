@@ -13,7 +13,6 @@ from __future__ import annotations
 import re
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import replace
 from typing import TYPE_CHECKING, Any, overload
 
 import mcp.types
@@ -108,16 +107,9 @@ class FastMCPProviderTool(Tool):
         """Delegate to child server's call_tool() with task_meta.
 
         Passes task_meta through to the child server so it can handle
-        backgrounding appropriately.
-
-        Enriches fn_key with self.key (the parent's namespaced tool name) so that
-        when the child tool delegates to Docket, it uses the correct lookup key
-        that was registered via get_tasks().
+        backgrounding appropriately. fn_key is already set by the parent
+        server before calling this method.
         """
-        # Enrich fn_key with parent's key before delegating to child
-        if task_meta is not None and task_meta.fn_key is None:
-            task_meta = replace(task_meta, fn_key=self.key)
-
         return await self._server.call_tool(
             self._original_name, arguments, task_meta=task_meta
         )
@@ -183,16 +175,9 @@ class FastMCPProviderResource(Resource):
         """Delegate to child server's read_resource() with task_meta.
 
         Passes task_meta through to the child server so it can handle
-        backgrounding appropriately.
-
-        Enriches fn_key with self.key (the parent's namespaced URI) so that
-        when the child resource delegates to Docket, it uses the correct
-        lookup key that was registered via get_tasks().
+        backgrounding appropriately. fn_key is already set by the parent
+        server before calling this method.
         """
-        # Enrich fn_key with parent's URI before delegating to child
-        if task_meta is not None and task_meta.fn_key is None:
-            task_meta = TaskMeta(ttl=task_meta.ttl, fn_key=self.key)
-
         return await self._server.read_resource(self._original_uri, task_meta=task_meta)
 
 
@@ -229,28 +214,47 @@ class FastMCPProviderPrompt(Prompt):
             task_config=prompt.task_config,
         )
 
+    @overload
     async def _render(
-        self, arguments: dict[str, Any] | None = None
-    ) -> PromptResult | mcp.types.CreateTaskResult:
-        """Skip task routing - delegate to render() which calls child middleware.
+        self,
+        arguments: dict[str, Any] | None = None,
+        task_meta: None = None,
+    ) -> PromptResult: ...
 
-        The actual underlying prompt will check _task_metadata contextvar and
-        submit to Docket if appropriate. This wrapper just passes through.
+    @overload
+    async def _render(
+        self,
+        arguments: dict[str, Any] | None,
+        task_meta: TaskMeta,
+    ) -> mcp.types.CreateTaskResult: ...
+
+    async def _render(
+        self,
+        arguments: dict[str, Any] | None = None,
+        task_meta: TaskMeta | None = None,
+    ) -> PromptResult | mcp.types.CreateTaskResult:
+        """Delegate to child server's render_prompt() with task_meta.
+
+        Passes task_meta through to the child server so it can handle
+        backgrounding appropriately. fn_key is already set by the parent
+        server before calling this method.
         """
-        return await self.render(arguments)
+        return await self._server.render_prompt(
+            self._original_name, arguments, task_meta=task_meta
+        )
 
     async def render(
         self, arguments: dict[str, Any] | None = None
     ) -> PromptResult | mcp.types.CreateTaskResult:  # type: ignore[override]
-        """Delegate to child server's render_prompt().
+        """Not implemented - use _render() which delegates to child server.
 
-        Note: The _docket_fn_key contextvar is intentionally NOT updated here.
-        The parent set it to the full namespaced name (e.g., c_gc_greet) which
-        is what the function is registered under in Docket. All provider layers
-        pass this through unchanged so the eventual prompt._render() uses the
-        correct Docket lookup key.
+        FastMCPProviderPrompt._render() handles all execution by delegating
+        to the child server's render_prompt() with task_meta.
         """
-        return await self._server.render_prompt(self._original_name, arguments)
+        raise NotImplementedError(
+            "FastMCPProviderPrompt.render() should not be called directly. "
+            "Use _render() which delegates to the child server's render_prompt()."
+        )
 
 
 class FastMCPProviderResourceTemplate(ResourceTemplate):
@@ -326,18 +330,11 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         """Delegate to child server's read_resource() with task_meta.
 
         Passes task_meta through to the child server so it can handle
-        backgrounding appropriately.
-
-        Enriches fn_key with self.key (the parent's namespaced template pattern)
-        so that when the child template delegates to Docket, it uses the correct
-        lookup key that was registered via get_tasks().
+        backgrounding appropriately. fn_key is already set by the parent
+        server before calling this method.
         """
         # Expand the original template with params to get internal URI
         original_uri = _expand_uri_template(self._original_uri_template or "", params)
-
-        # Enrich fn_key with parent's namespaced template pattern before delegating
-        if task_meta is not None and task_meta.fn_key is None:
-            task_meta = replace(task_meta, fn_key=self.key)
 
         return await self._server.read_resource(original_uri, task_meta=task_meta)
 

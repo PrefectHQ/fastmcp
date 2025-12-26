@@ -10,7 +10,7 @@ from mcp.shared.exceptions import McpError
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.resources.resource import Resource, ResourceResult
+from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.tasks.config import TaskMeta
 
@@ -28,7 +28,6 @@ class TestResourceTaskMetaParameter:
 
         result = await server.read_resource("data://test")
 
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "hello world"
 
     async def test_task_meta_none_on_task_enabled_resource_still_returns_result(self):
@@ -42,7 +41,6 @@ class TestResourceTaskMetaParameter:
         # Without task_meta, should execute synchronously
         result = await server.read_resource("data://test")
 
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "hello world"
 
     async def test_task_meta_on_forbidden_resource_raises_error(self):
@@ -86,7 +84,6 @@ class TestResourceTemplateTaslMeta:
 
         result = await server.read_resource("item://42")
 
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Item 42"
 
     async def test_template_task_meta_on_task_enabled_template_returns_result(self):
@@ -100,7 +97,6 @@ class TestResourceTemplateTaslMeta:
         # Without task_meta, should execute synchronously
         result = await server.read_resource("item://42")
 
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Item 42"
 
     async def test_template_task_meta_on_forbidden_template_raises_error(self):
