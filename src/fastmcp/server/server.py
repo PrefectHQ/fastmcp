@@ -1584,18 +1584,48 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def _get_prompt_mcp(
         self, name: str, arguments: dict[str, Any] | None
-    ) -> PromptResult | mcp.types.CreateTaskResult:
+    ) -> mcp.types.GetPromptResult | mcp.types.CreateTaskResult:
         """Handle MCP 'getPrompt' requests.
 
-        The LowLevelServer.get_prompt() decorator handles task metadata,
-        contextvars, and MCP conversion.
+        Sets task metadata contextvar and calls render_prompt(). The prompt's
+        _render() method handles the backgrounding decision.
+
+        Args:
+            name: The prompt name
+            arguments: Prompt arguments
+
+        Returns:
+            GetPromptResult or CreateTaskResult for background execution
         """
+        from fastmcp.server.dependencies import _docket_fn_key, _task_metadata
+
         logger.debug(
             f"[{self.name}] Handler called: get_prompt %s with %s", name, arguments
         )
 
         try:
-            return await self.render_prompt(name, arguments)
+            # Extract SEP-1686 task metadata from request context
+            task_meta_dict: dict[str, Any] | None = None
+            try:
+                ctx = self._mcp_server.request_context
+                if ctx.experimental.is_task:
+                    task_meta = ctx.experimental.task_metadata
+                    task_meta_dict = task_meta.model_dump(exclude_none=True)
+            except (AttributeError, LookupError):
+                pass
+
+            # Set contextvars so prompt._render() can access them
+            task_token = _task_metadata.set(task_meta_dict)
+            key_token = _docket_fn_key.set(Prompt.make_key(name))
+            try:
+                result = await self.render_prompt(name, arguments)
+
+                if isinstance(result, mcp.types.CreateTaskResult):
+                    return result
+                return result.to_mcp_prompt_result()
+            finally:
+                _task_metadata.reset(task_token)
+                _docket_fn_key.reset(key_token)
         except DisabledError as e:
             raise NotFoundError(f"Unknown prompt: {name!r}") from e
         except NotFoundError:

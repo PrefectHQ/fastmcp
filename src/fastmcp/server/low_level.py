@@ -24,9 +24,6 @@ from mcp.shared.message import SessionMessage
 from mcp.shared.session import RequestResponder
 from pydantic import AnyUrl
 
-from fastmcp.prompts import Prompt
-from fastmcp.prompts.prompt import PromptResult
-from fastmcp.server.dependencies import _docket_fn_key, _task_metadata
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -254,20 +251,19 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         [
             Callable[
                 [str, dict[str, Any] | None],
-                Awaitable[PromptResult | mcp.types.CreateTaskResult],
+                Awaitable[mcp.types.GetPromptResult | mcp.types.CreateTaskResult],
             ]
         ],
         Callable[
             [str, dict[str, Any] | None],
-            Awaitable[PromptResult | mcp.types.CreateTaskResult],
+            Awaitable[mcp.types.GetPromptResult | mcp.types.CreateTaskResult],
         ],
     ]:
         """
         Decorator for registering a get_prompt handler with CreateTaskResult support.
 
         The MCP SDK's get_prompt decorator does not support returning CreateTaskResult
-        for background task execution. This decorator provides that support by wrapping the
-        handler with task metadata extraction, contextvar management, and MCP format conversion.
+        for background task execution. This decorator wraps the result in ServerResult.
 
         This decorator can be removed once the MCP SDK adds native CreateTaskResult support
         for prompts.
@@ -276,41 +272,17 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         def decorator(
             func: Callable[
                 [str, dict[str, Any] | None],
-                Awaitable[PromptResult | mcp.types.CreateTaskResult],
+                Awaitable[mcp.types.GetPromptResult | mcp.types.CreateTaskResult],
             ],
         ) -> Callable[
             [str, dict[str, Any] | None],
-            Awaitable[PromptResult | mcp.types.CreateTaskResult],
+            Awaitable[mcp.types.GetPromptResult | mcp.types.CreateTaskResult],
         ]:
             async def handler(
                 req: mcp.types.GetPromptRequest,
             ) -> mcp.types.ServerResult:
-                name = req.params.name
-                arguments = req.params.arguments
-
-                # Extract task metadata from request context
-                task_meta_dict: dict[str, Any] | None = None
-                try:
-                    ctx = self.request_context
-                    if ctx.experimental.is_task:
-                        task_meta = ctx.experimental.task_metadata
-                        task_meta_dict = task_meta.model_dump(exclude_none=True)
-                except (AttributeError, LookupError):
-                    pass
-
-                # Set contextvars
-                task_token = _task_metadata.set(task_meta_dict)
-                key_token = _docket_fn_key.set(Prompt.make_key(name))
-                try:
-                    result = await func(name, arguments)
-
-                    if isinstance(result, mcp.types.CreateTaskResult):
-                        return mcp.types.ServerResult(result)
-
-                    return mcp.types.ServerResult(result.to_mcp_prompt_result())
-                finally:
-                    _task_metadata.reset(task_token)
-                    _docket_fn_key.reset(key_token)
+                result = await func(req.params.name, req.params.arguments)
+                return mcp.types.ServerResult(result)
 
             self.request_handlers[mcp.types.GetPromptRequest] = handler
             return func
