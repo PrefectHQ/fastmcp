@@ -5,12 +5,10 @@ from typing import Any
 
 import pytest
 from mcp.types import AnyUrl, TextContent
-from mcp.types import Tool as MCPTool
 
 from fastmcp import FastMCP
-from fastmcp.client import Client
-from fastmcp.client.client import CallToolResult
-from fastmcp.prompts.prompt import FunctionPrompt, Prompt
+from fastmcp.prompts.prompt import FunctionPrompt, Prompt, PromptResult
+from fastmcp.resources import ResourceResult
 from fastmcp.resources.resource import FunctionResource, Resource
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.server.providers import Provider
@@ -128,8 +126,7 @@ class TestProvider:
         provider = SimpleToolProvider(tools=dynamic_tools)
         base_server.add_provider(provider)
 
-        async with Client(base_server) as client:
-            tools: list[MCPTool] = await client.list_tools()
+        tools = await base_server.get_tools()
 
         # Should have all tools: 2 static + 2 dynamic
         assert len(tools) == 4
@@ -146,15 +143,13 @@ class TestProvider:
         provider = SimpleToolProvider(tools=dynamic_tools)
         base_server.add_provider(provider)
 
-        async with Client(base_server) as client:
-            # Call list_tools multiple times
-            await client.list_tools()
-            await client.list_tools()
-            await client.list_tools()
+        # Call get_tools multiple times
+        await base_server.get_tools()
+        await base_server.get_tools()
+        await base_server.get_tools()
 
-        # Provider should have been called 4 times
-        # (1 from get_tasks() during docket registration + 3 from client)
-        assert provider.list_tools_call_count == 4
+        # Provider should have been called 3 times (once per get_tools call)
+        assert provider.list_tools_call_count == 3
 
     async def test_call_dynamic_tool(
         self, base_server: FastMCP, dynamic_tools: list[Tool]
@@ -163,11 +158,11 @@ class TestProvider:
         provider = SimpleToolProvider(tools=dynamic_tools)
         base_server.add_provider(provider)
 
-        async with Client(base_server) as client:
-            result: CallToolResult = await client.call_tool(
-                name="dynamic_multiply", arguments={"a": 7, "b": 6}
-            )
+        result = await base_server.call_tool(
+            name="dynamic_multiply", arguments={"a": 7, "b": 6}
+        )
 
+        assert isinstance(result, ToolResult)
         assert result.structured_content is not None
         assert isinstance(result.structured_content, dict)
         assert result.structured_content["result"] == 42
@@ -180,11 +175,11 @@ class TestProvider:
         provider = SimpleToolProvider(tools=dynamic_tools)
         base_server.add_provider(provider)
 
-        async with Client(base_server) as client:
-            result: CallToolResult = await client.call_tool(
-                name="dynamic_add", arguments={"a": 5, "b": 3}
-            )
+        result = await base_server.call_tool(
+            name="dynamic_add", arguments={"a": 5, "b": 3}
+        )
 
+        assert isinstance(result, ToolResult)
         assert result.structured_content is not None
         # 5 + 3 + 100 (value offset) = 108
         assert isinstance(result.structured_content, dict)
@@ -197,11 +192,11 @@ class TestProvider:
         provider = SimpleToolProvider(tools=dynamic_tools)
         base_server.add_provider(provider)
 
-        async with Client(base_server) as client:
-            result: CallToolResult = await client.call_tool(
-                name="static_add", arguments={"a": 10, "b": 5}
-            )
+        result = await base_server.call_tool(
+            name="static_add", arguments={"a": 10, "b": 5}
+        )
 
+        assert isinstance(result, ToolResult)
         assert result.structured_content is not None
         assert isinstance(result.structured_content, dict)
         assert result.structured_content["result"] == 15
@@ -213,12 +208,10 @@ class TestProvider:
         provider = SimpleToolProvider(tools=dynamic_tools)
         base_server.add_provider(provider)
 
-        async with Client(base_server) as client:
-            await client.call_tool(name="dynamic_multiply", arguments={"a": 2, "b": 3})
+        await base_server.call_tool(name="dynamic_multiply", arguments={"a": 2, "b": 3})
 
         # get_tool is called once for efficient lookup:
-        # _call_tool() calls provider.get_tool() to get the tool and execute it
-        # (task config is checked inside the tool's _run() method, not via a separate lookup)
+        # call_tool() calls provider.get_tool() to get the tool and execute it
         # Key point: list_tools is NOT called during tool execution (efficient lookup)
         assert provider.get_tool_call_count == 1
 
@@ -235,11 +228,11 @@ class TestProvider:
         provider = ListOnlyProvider(tools=tools)
         base_server.add_provider(provider)
 
-        async with Client(base_server) as client:
-            result = await client.call_tool(
-                name="test_tool", arguments={"a": 1, "b": 2}
-            )
+        result = await base_server.call_tool(
+            name="test_tool", arguments={"a": 1, "b": 2}
+        )
 
+        assert isinstance(result, ToolResult)
         assert result.structured_content is not None
         # Default get_tool should have called list_tools
         assert provider.list_tools_call_count >= 1
@@ -251,8 +244,7 @@ class TestProvider:
         provider = SimpleToolProvider(tools=dynamic_tools)
         base_server.add_provider(provider)
 
-        async with Client(base_server) as client:
-            tools: list[MCPTool] = await client.list_tools()
+        tools = await base_server.get_tools()
 
         tool_names = [tool.name for tool in tools]
         # Local tools should come first (LocalProvider is first in _providers)
@@ -263,8 +255,7 @@ class TestProvider:
         provider = SimpleToolProvider(tools=[])
         base_server.add_provider(provider)
 
-        async with Client(base_server) as client:
-            tools: list[MCPTool] = await client.list_tools()
+        tools = await base_server.get_tools()
 
         # Should only have static tools
         assert len(tools) == 2
@@ -276,12 +267,12 @@ class TestProvider:
         provider = SimpleToolProvider(tools=dynamic_tools)
         base_server.add_provider(provider)
 
-        async with Client(base_server) as client:
-            # This tool is static, not in the dynamic provider
-            result: CallToolResult = await client.call_tool(
-                name="static_subtract", arguments={"a": 10, "b": 3}
-            )
+        # This tool is static, not in the dynamic provider
+        result = await base_server.call_tool(
+            name="static_subtract", arguments={"a": 10, "b": 3}
+        )
 
+        assert isinstance(result, ToolResult)
         assert result.structured_content is not None
         assert isinstance(result.structured_content, dict)
         assert result.structured_content["result"] == 7
@@ -334,34 +325,33 @@ class TestDynamicToolUpdates:
         provider = SimpleToolProvider(tools=initial_tools)
         mcp.add_provider(provider)
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            assert len(tools) == 1
-            assert tools[0].name == "tool_v1"
+        tools = await mcp.get_tools()
+        assert len(tools) == 1
+        assert tools[0].name == "tool_v1"
 
-            # Update the provider's tools (simulating DB update)
-            provider._tools = [
-                SimpleTool(
-                    name="tool_v2",
-                    description="Version 2",
-                    parameters={"type": "object", "properties": {}},
-                    operation="multiply",
-                ),
-                SimpleTool(
-                    name="tool_v3",
-                    description="Version 3",
-                    parameters={"type": "object", "properties": {}},
-                    operation="add",
-                ),
-            ]
+        # Update the provider's tools (simulating DB update)
+        provider._tools = [
+            SimpleTool(
+                name="tool_v2",
+                description="Version 2",
+                parameters={"type": "object", "properties": {}},
+                operation="multiply",
+            ),
+            SimpleTool(
+                name="tool_v3",
+                description="Version 3",
+                parameters={"type": "object", "properties": {}},
+                operation="add",
+            ),
+        ]
 
-            # List tools again - should see new tools
-            tools = await client.list_tools()
-            assert len(tools) == 2
-            tool_names = [t.name for t in tools]
-            assert "tool_v1" not in tool_names
-            assert "tool_v2" in tool_names
-            assert "tool_v3" in tool_names
+        # List tools again - should see new tools
+        tools = await mcp.get_tools()
+        assert len(tools) == 2
+        tool_names = [t.name for t in tools]
+        assert "tool_v1" not in tool_names
+        assert "tool_v2" in tool_names
+        assert "tool_v3" in tool_names
 
 
 class TestProviderExecutionMethods:
@@ -379,9 +369,9 @@ class TestProviderExecutionMethods:
         mcp = FastMCP("TestServer")
         mcp.add_provider(provider)
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("test_tool", {"a": 1, "b": 2})
+        result = await mcp.call_tool("test_tool", {"a": 1, "b": 2})
 
+        assert isinstance(result, ToolResult)
         assert result.structured_content is not None
         assert isinstance(result.structured_content, dict)
         assert result.structured_content["result"] == 3
@@ -403,11 +393,11 @@ class TestProviderExecutionMethods:
         mcp = FastMCP("TestServer")
         mcp.add_provider(provider)
 
-        async with Client(mcp) as client:
-            result = await client.read_resource("test://data")
+        result = await mcp.read_resource("test://data")
 
-        assert len(result) == 1
-        assert result[0].text == "hello world"
+        assert isinstance(result, ResourceResult)
+        assert len(result.contents) == 1
+        assert result.contents[0].content == "hello world"
 
     async def test_read_resource_template_default(self):
         """Test that read_resource_template handles template-based resources."""
@@ -426,11 +416,11 @@ class TestProviderExecutionMethods:
         mcp = FastMCP("TestServer")
         mcp.add_provider(provider)
 
-        async with Client(mcp) as client:
-            result = await client.read_resource("data://files/test.txt")
+        result = await mcp.read_resource("data://files/test.txt")
 
-        assert len(result) == 1
-        assert result[0].text == "content of test.txt"
+        assert isinstance(result, ResourceResult)
+        assert len(result.contents) == 1
+        assert result.contents[0].content == "content of test.txt"
 
     async def test_render_prompt_default_implementation(self):
         """Test that default render_prompt uses get_prompt and renders it."""
@@ -449,9 +439,9 @@ class TestProviderExecutionMethods:
         mcp = FastMCP("TestServer")
         mcp.add_provider(provider)
 
-        async with Client(mcp) as client:
-            result = await client.get_prompt("greeting", {"name": "World"})
+        result = await mcp.render_prompt("greeting", {"name": "World"})
 
+        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         assert isinstance(result.messages[0].content, TextContent)
         assert result.messages[0].content.text == "Hello, World!"

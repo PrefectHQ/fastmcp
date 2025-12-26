@@ -3,14 +3,17 @@ import sys
 from contextlib import asynccontextmanager
 
 import pytest
-from mcp.types import TextContent, TextResourceContents
+from mcp.types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, SSETransport
+from fastmcp.exceptions import NotFoundError
+from fastmcp.prompts import PromptResult
+from fastmcp.resources import ResourceResult
 from fastmcp.server.providers import FastMCPProvider, TransformingProvider
 from fastmcp.server.providers.proxy import FastMCPProxy
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.tests import caplog_for_fastmcp
 
@@ -43,9 +46,9 @@ class TestBasicMount:
         assert any(t.name == "sub_tool" for t in tools)
         assert any(t.name == "sub_transformed_tool" for t in tools)
 
-        async with Client(main_app) as client:
-            result = await client.call_tool("sub_tool", {})
-            assert result.data == "This is from the sub app"
+        result = await main_app.call_tool("sub_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "This is from the sub app"}
 
     async def test_mount_with_custom_separator(self):
         """Test mounting with a custom tool separator (deprecated but still supported)."""
@@ -64,9 +67,9 @@ class TestBasicMount:
         assert any(t.name == "sub_greet" for t in tools)
 
         # Call the tool
-        async with Client(main_app) as client:
-            result = await client.call_tool("sub_greet", {"name": "World"})
-            assert result.data == "Hello, World!"
+        result = await main_app.call_tool("sub_greet", {"name": "World"})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "Hello, World!"}
 
     @pytest.mark.parametrize("prefix", ["", None])
     async def test_mount_with_no_prefix(self, prefix):
@@ -101,9 +104,9 @@ class TestBasicMount:
         assert any(t.name == "sub_tool" for t in tools)
 
         # Call the tool to verify it works
-        async with Client(main_app) as client:
-            result = await client.call_tool("sub_tool", {})
-            assert result.data == "This is from the sub app"
+        result = await main_app.call_tool("sub_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "This is from the sub app"}
 
     async def test_mount_tools_no_prefix(self):
         """Test mounting a server with tools without prefix."""
@@ -122,9 +125,9 @@ class TestBasicMount:
         assert any(t.name == "sub_tool" for t in tools)
 
         # Test actual functionality
-        async with Client(main_app) as client:
-            tool_result = await client.call_tool("sub_tool", {})
-            assert tool_result.data == "Sub tool result"
+        tool_result = await main_app.call_tool("sub_tool", {})
+        assert isinstance(tool_result, ToolResult)
+        assert tool_result.structured_content == {"result": "Sub tool result"}
 
     async def test_mount_resources_no_prefix(self):
         """Test mounting a server with resources without prefix."""
@@ -143,10 +146,9 @@ class TestBasicMount:
         assert any(str(r.uri) == "data://config" for r in resources)
 
         # Test actual functionality
-        async with Client(main_app) as client:
-            resource_result = await client.read_resource("data://config")
-            assert isinstance(resource_result[0], TextResourceContents)
-            assert resource_result[0].text == "Sub resource data"
+        resource_result = await main_app.read_resource("data://config")
+        assert isinstance(resource_result, ResourceResult)
+        assert resource_result.contents[0].content == "Sub resource data"
 
     async def test_mount_resource_templates_no_prefix(self):
         """Test mounting a server with resource templates without prefix."""
@@ -165,10 +167,9 @@ class TestBasicMount:
         assert any(t.uri_template == "users://{user_id}/info" for t in templates)
 
         # Test actual functionality
-        async with Client(main_app) as client:
-            template_result = await client.read_resource("users://123/info")
-            assert isinstance(template_result[0], TextResourceContents)
-            assert template_result[0].text == "Sub template for user 123"
+        template_result = await main_app.read_resource("users://123/info")
+        assert isinstance(template_result, ResourceResult)
+        assert template_result.contents[0].content == "Sub template for user 123"
 
     async def test_mount_prompts_no_prefix(self):
         """Test mounting a server with prompts without prefix."""
@@ -187,9 +188,9 @@ class TestBasicMount:
         assert any(p.name == "sub_prompt" for p in prompts)
 
         # Test actual functionality
-        async with Client(main_app) as client:
-            prompt_result = await client.get_prompt("sub_prompt", {})
-            assert prompt_result.messages is not None
+        prompt_result = await main_app.render_prompt("sub_prompt")
+        assert isinstance(prompt_result, PromptResult)
+        assert prompt_result.messages is not None
 
 
 class TestMultipleServerMount:
@@ -219,11 +220,12 @@ class TestMultipleServerMount:
         assert any(t.name == "news_get_headlines" for t in tools)
 
         # Call tools from both mounted servers
-        async with Client(main_app) as client:
-            result1 = await client.call_tool("weather_get_forecast", {})
-            assert result1.data == "Weather forecast"
-            result2 = await client.call_tool("news_get_headlines", {})
-            assert result2.data == "News headlines"
+        result1 = await main_app.call_tool("weather_get_forecast", {})
+        assert isinstance(result1, ToolResult)
+        assert result1.structured_content == {"result": "Weather forecast"}
+        result2 = await main_app.call_tool("news_get_headlines", {})
+        assert isinstance(result2, ToolResult)
+        assert result2.structured_content == {"result": "News headlines"}
 
     async def test_mount_same_prefix(self):
         """Test that mounting with the same prefix replaces the previous mount."""
@@ -349,16 +351,16 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app)
         main_app.mount(second_app)
 
-        async with Client(main_app) as client:
-            # Test that list_tools shows the tool
-            tools = await client.list_tools()
-            tool_names = [t.name for t in tools]
-            assert "shared_tool" in tool_names
-            assert tool_names.count("shared_tool") == 1  # Should only appear once
+        # Test that get_tools shows the tool
+        tools = await main_app.get_tools()
+        tool_names = [t.name for t in tools]
+        assert "shared_tool" in tool_names
+        assert tool_names.count("shared_tool") == 1  # Should only appear once
 
-            # Test that calling the tool uses the first server's implementation
-            result = await client.call_tool("shared_tool", {})
-            assert result.data == "First app tool"
+        # Test that calling the tool uses the first server's implementation
+        result = await main_app.call_tool("shared_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "First app tool"}
 
     async def test_first_server_wins_tools_same_prefix(self):
         """Test that first mounted server wins for tools when same prefix is used."""
@@ -378,16 +380,16 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app, "api")
         main_app.mount(second_app, "api")
 
-        async with Client(main_app) as client:
-            # Test that list_tools shows the tool
-            tools = await client.list_tools()
-            tool_names = [t.name for t in tools]
-            assert "api_shared_tool" in tool_names
-            assert tool_names.count("api_shared_tool") == 1  # Should only appear once
+        # Test that get_tools shows the tool
+        tools = await main_app.get_tools()
+        tool_names = [t.name for t in tools]
+        assert "api_shared_tool" in tool_names
+        assert tool_names.count("api_shared_tool") == 1  # Should only appear once
 
-            # Test that calling the tool uses the first server's implementation
-            result = await client.call_tool("api_shared_tool", {})
-            assert result.data == "First app tool"
+        # Test that calling the tool uses the first server's implementation
+        result = await main_app.call_tool("api_shared_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "First app tool"}
 
     async def test_first_server_wins_resources_no_prefix(self):
         """Test that first mounted server wins for resources when no prefix is used."""
@@ -407,17 +409,16 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app)
         main_app.mount(second_app)
 
-        async with Client(main_app) as client:
-            # Test that list_resources shows the resource
-            resources = await client.list_resources()
-            resource_uris = [str(r.uri) for r in resources]
-            assert "shared://data" in resource_uris
-            assert resource_uris.count("shared://data") == 1  # Should only appear once
+        # Test that get_resources shows the resource
+        resources = await main_app.get_resources()
+        resource_uris = [str(r.uri) for r in resources]
+        assert "shared://data" in resource_uris
+        assert resource_uris.count("shared://data") == 1  # Should only appear once
 
-            # Test that reading the resource uses the first server's implementation
-            result = await client.read_resource("shared://data")
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "First app data"
+        # Test that reading the resource uses the first server's implementation
+        result = await main_app.read_resource("shared://data")
+        assert isinstance(result, ResourceResult)
+        assert result.contents[0].content == "First app data"
 
     async def test_first_server_wins_resources_same_prefix(self):
         """Test that first mounted server wins for resources when same prefix is used."""
@@ -437,19 +438,16 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app, "api")
         main_app.mount(second_app, "api")
 
-        async with Client(main_app) as client:
-            # Test that list_resources shows the resource
-            resources = await client.list_resources()
-            resource_uris = [str(r.uri) for r in resources]
-            assert "shared://api/data" in resource_uris
-            assert (
-                resource_uris.count("shared://api/data") == 1
-            )  # Should only appear once
+        # Test that get_resources shows the resource
+        resources = await main_app.get_resources()
+        resource_uris = [str(r.uri) for r in resources]
+        assert "shared://api/data" in resource_uris
+        assert resource_uris.count("shared://api/data") == 1  # Should only appear once
 
-            # Test that reading the resource uses the first server's implementation
-            result = await client.read_resource("shared://api/data")
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "First app data"
+        # Test that reading the resource uses the first server's implementation
+        result = await main_app.read_resource("shared://api/data")
+        assert isinstance(result, ResourceResult)
+        assert result.contents[0].content == "First app data"
 
     async def test_first_server_wins_resource_templates_no_prefix(self):
         """Test that first mounted server wins for resource templates when no prefix is used."""
@@ -469,19 +467,18 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app)
         main_app.mount(second_app)
 
-        async with Client(main_app) as client:
-            # Test that list_resource_templates shows the template
-            templates = await client.list_resource_templates()
-            template_uris = [t.uriTemplate for t in templates]
-            assert "users://{user_id}/profile" in template_uris
-            assert (
-                template_uris.count("users://{user_id}/profile") == 1
-            )  # Should only appear once
+        # Test that get_resource_templates shows the template
+        templates = await main_app.get_resource_templates()
+        template_uris = [t.uri_template for t in templates]
+        assert "users://{user_id}/profile" in template_uris
+        assert (
+            template_uris.count("users://{user_id}/profile") == 1
+        )  # Should only appear once
 
-            # Test that reading the resource uses the first server's implementation
-            result = await client.read_resource("users://123/profile")
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "First app user 123"
+        # Test that reading the resource uses the first server's implementation
+        result = await main_app.read_resource("users://123/profile")
+        assert isinstance(result, ResourceResult)
+        assert result.contents[0].content == "First app user 123"
 
     async def test_first_server_wins_resource_templates_same_prefix(self):
         """Test that first mounted server wins for resource templates when same prefix is used."""
@@ -501,19 +498,18 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app, "api")
         main_app.mount(second_app, "api")
 
-        async with Client(main_app) as client:
-            # Test that list_resource_templates shows the template
-            templates = await client.list_resource_templates()
-            template_uris = [t.uriTemplate for t in templates]
-            assert "users://api/{user_id}/profile" in template_uris
-            assert (
-                template_uris.count("users://api/{user_id}/profile") == 1
-            )  # Should only appear once
+        # Test that get_resource_templates shows the template
+        templates = await main_app.get_resource_templates()
+        template_uris = [t.uri_template for t in templates]
+        assert "users://api/{user_id}/profile" in template_uris
+        assert (
+            template_uris.count("users://api/{user_id}/profile") == 1
+        )  # Should only appear once
 
-            # Test that reading the resource uses the first server's implementation
-            result = await client.read_resource("users://api/123/profile")
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "First app user 123"
+        # Test that reading the resource uses the first server's implementation
+        result = await main_app.read_resource("users://api/123/profile")
+        assert isinstance(result, ResourceResult)
+        assert result.contents[0].content == "First app user 123"
 
     async def test_first_server_wins_prompts_no_prefix(self):
         """Test that first mounted server wins for prompts when no prefix is used."""
@@ -533,18 +529,18 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app)
         main_app.mount(second_app)
 
-        async with Client(main_app) as client:
-            # Test that list_prompts shows the prompt
-            prompts = await client.list_prompts()
-            prompt_names = [p.name for p in prompts]
-            assert "shared_prompt" in prompt_names
-            assert prompt_names.count("shared_prompt") == 1  # Should only appear once
+        # Test that get_prompts shows the prompt
+        prompts = await main_app.get_prompts()
+        prompt_names = [p.name for p in prompts]
+        assert "shared_prompt" in prompt_names
+        assert prompt_names.count("shared_prompt") == 1  # Should only appear once
 
-            # Test that getting the prompt uses the first server's implementation
-            result = await client.get_prompt("shared_prompt", {})
-            assert result.messages is not None
-            assert isinstance(result.messages[0].content, TextContent)
-            assert result.messages[0].content.text == "First app prompt"
+        # Test that getting the prompt uses the first server's implementation
+        result = await main_app.render_prompt("shared_prompt")
+        assert isinstance(result, PromptResult)
+        assert result.messages is not None
+        assert isinstance(result.messages[0].content, TextContent)
+        assert result.messages[0].content.text == "First app prompt"
 
     async def test_first_server_wins_prompts_same_prefix(self):
         """Test that first mounted server wins for prompts when same prefix is used."""
@@ -564,20 +560,18 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app, "api")
         main_app.mount(second_app, "api")
 
-        async with Client(main_app) as client:
-            # Test that list_prompts shows the prompt
-            prompts = await client.list_prompts()
-            prompt_names = [p.name for p in prompts]
-            assert "api_shared_prompt" in prompt_names
-            assert (
-                prompt_names.count("api_shared_prompt") == 1
-            )  # Should only appear once
+        # Test that get_prompts shows the prompt
+        prompts = await main_app.get_prompts()
+        prompt_names = [p.name for p in prompts]
+        assert "api_shared_prompt" in prompt_names
+        assert prompt_names.count("api_shared_prompt") == 1  # Should only appear once
 
-            # Test that getting the prompt uses the first server's implementation
-            result = await client.get_prompt("api_shared_prompt", {})
-            assert result.messages is not None
-            assert isinstance(result.messages[0].content, TextContent)
-            assert result.messages[0].content.text == "First app prompt"
+        # Test that getting the prompt uses the first server's implementation
+        result = await main_app.render_prompt("api_shared_prompt")
+        assert isinstance(result, PromptResult)
+        assert result.messages is not None
+        assert isinstance(result.messages[0].content, TextContent)
+        assert result.messages[0].content.text == "First app prompt"
 
 
 class TestDynamicChanges:
@@ -605,9 +599,9 @@ class TestDynamicChanges:
         assert any(t.name == "sub_dynamic_tool" for t in tools)
 
         # Call the dynamically added tool
-        async with Client(main_app) as client:
-            result = await client.call_tool("sub_dynamic_tool", {})
-            assert result.data == "Added after mounting"
+        result = await main_app.call_tool("sub_dynamic_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "Added after mounting"}
 
     async def test_removing_tool_after_mounting(self):
         """Test that tools removed from mounted servers are no longer accessible."""
@@ -653,11 +647,12 @@ class TestResourcesAndTemplates:
         assert any(str(r.uri) == "data://data/users" for r in resources)
 
         # Check that resource can be accessed
-        async with Client(main_app) as client:
-            result = await client.read_resource("data://data/users")
-            assert len(result) == 1
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "user1, user2"
+        result = await main_app.read_resource("data://data/users")
+        assert isinstance(result, ResourceResult)
+        assert len(result.contents) == 1
+        # Note: The function returns "user1, user2" which is not valid JSON
+        # This test should be updated to return proper JSON or check the string directly
+        assert result.contents[0].content == "user1, user2"
 
     async def test_mount_with_resource_templates(self):
         """Test mounting a server with resource templates."""
@@ -676,12 +671,12 @@ class TestResourcesAndTemplates:
         assert any(t.uri_template == "users://api/{user_id}/profile" for t in templates)
 
         # Check template instantiation
-        async with Client(main_app) as client:
-            result = await client.read_resource("users://api/123/profile")
-            assert isinstance(result[0], TextResourceContents)
-            profile = json.loads(result[0].text)
-            assert profile["id"] == "123"
-            assert profile["name"] == "User 123"
+        result = await main_app.read_resource("users://api/123/profile")
+        assert isinstance(result, ResourceResult)
+        assert len(result.contents) == 1
+        profile = json.loads(result.contents[0].content)
+        assert profile["id"] == "123"
+        assert profile["name"] == "User 123"
 
     async def test_adding_resource_after_mounting(self):
         """Test adding a resource after mounting."""
@@ -701,11 +696,11 @@ class TestResourcesAndTemplates:
         assert any(str(r.uri) == "data://data/config" for r in resources)
 
         # Check access to the resource
-        async with Client(main_app) as client:
-            result = await client.read_resource("data://data/config")
-            assert isinstance(result[0], TextResourceContents)
-            config = json.loads(result[0].text)
-            assert config["version"] == "1.0"
+        result = await main_app.read_resource("data://data/config")
+        assert isinstance(result, ResourceResult)
+        assert len(result.contents) == 1
+        config = json.loads(result.contents[0].content)
+        assert config["version"] == "1.0"
 
 
 class TestPrompts:
@@ -728,9 +723,9 @@ class TestPrompts:
         assert any(p.name == "assistant_greeting" for p in prompts)
 
         # Render the prompt
-        async with Client(main_app) as client:
-            result = await client.get_prompt("assistant_greeting", {"name": "World"})
-            assert result.messages is not None
+        result = await main_app.render_prompt("assistant_greeting", {"name": "World"})
+        assert isinstance(result, PromptResult)
+        assert result.messages is not None
         # The message should contain our greeting text
 
     async def test_adding_prompt_after_mounting(self):
@@ -751,9 +746,9 @@ class TestPrompts:
         assert any(p.name == "assistant_farewell" for p in prompts)
 
         # Render the prompt
-        async with Client(main_app) as client:
-            result = await client.get_prompt("assistant_farewell", {"name": "World"})
-            assert result.messages is not None
+        result = await main_app.render_prompt("assistant_farewell", {"name": "World"})
+        assert isinstance(result, PromptResult)
+        assert result.messages is not None
         # The message should contain our farewell text
 
 
@@ -781,9 +776,9 @@ class TestProxyServer:
         assert any(t.name == "proxy_get_data" for t in tools)
 
         # Call the tool
-        async with Client(main_app) as client:
-            result = await client.call_tool("proxy_get_data", {"query": "test"})
-            assert result.data == "Data for test"
+        result = await main_app.call_tool("proxy_get_data", {"query": "test"})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "Data for test"}
 
     async def test_dynamically_adding_to_proxied_server(self):
         """Test that changes to the original server are reflected in the mounted proxy."""
@@ -807,9 +802,9 @@ class TestProxyServer:
         assert any(t.name == "proxy_dynamic_data" for t in tools)
 
         # Call the tool
-        async with Client(main_app) as client:
-            result = await client.call_tool("proxy_dynamic_data", {})
-            assert result.data == "Dynamic data"
+        result = await main_app.call_tool("proxy_dynamic_data", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "Dynamic data"}
 
     async def test_proxy_server_with_resources(self):
         """Test mounting a proxy server with resources."""
@@ -828,11 +823,11 @@ class TestProxyServer:
         main_app.mount(proxy_server, "proxy")
 
         # Resource should be accessible through main app
-        async with Client(main_app) as client:
-            result = await client.read_resource("config://proxy/settings")
-            assert isinstance(result[0], TextResourceContents)
-            config = json.loads(result[0].text)
-            assert config["api_key"] == "12345"
+        result = await main_app.read_resource("config://proxy/settings")
+        assert isinstance(result, ResourceResult)
+        assert len(result.contents) == 1
+        config = json.loads(result.contents[0].content)
+        assert config["api_key"] == "12345"
 
     async def test_proxy_server_with_prompts(self):
         """Test mounting a proxy server with prompts."""
@@ -851,9 +846,9 @@ class TestProxyServer:
         main_app.mount(proxy_server, "proxy")
 
         # Prompt should be accessible through main app
-        async with Client(main_app) as client:
-            result = await client.get_prompt("proxy_welcome", {"name": "World"})
-            assert result.messages is not None
+        result = await main_app.render_prompt("proxy_welcome", {"name": "World"})
+        assert isinstance(result, PromptResult)
+        assert result.messages is not None
         # The message should contain our welcome text
 
 
@@ -1077,18 +1072,18 @@ class TestParentTagFiltering:
 
         parent.mount(mounted)
 
-        async with Client(parent) as client:
-            tools = await client.list_tools()
-            tool_names = {t.name for t in tools}
-            assert "allowed_tool" in tool_names
-            assert "blocked_tool" not in tool_names
+        tools = await parent.get_tools()
+        tool_names = {t.name for t in tools}
+        assert "allowed_tool" in tool_names
+        assert "blocked_tool" not in tool_names
 
-            # Verify execution also respects filters
-            result = await client.call_tool("allowed_tool", {})
-            assert result.data == "allowed"
+        # Verify execution also respects filters
+        result = await parent.call_tool("allowed_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "allowed"}
 
-            with pytest.raises(Exception, match="Unknown tool"):
-                await client.call_tool("blocked_tool", {})
+        with pytest.raises(NotFoundError, match="Unknown tool"):
+            await parent.call_tool("blocked_tool", {})
 
     async def test_parent_exclude_tags_filters_mounted_tools(self):
         """Test that parent exclude_tags filters out matching mounted tools."""
@@ -1105,11 +1100,10 @@ class TestParentTagFiltering:
 
         parent.mount(mounted)
 
-        async with Client(parent) as client:
-            tools = await client.list_tools()
-            tool_names = {t.name for t in tools}
-            assert "production_tool" in tool_names
-            assert "blocked_tool" not in tool_names
+        tools = await parent.get_tools()
+        tool_names = {t.name for t in tools}
+        assert "production_tool" in tool_names
+        assert "blocked_tool" not in tool_names
 
     async def test_parent_filters_apply_to_mounted_resources(self):
         """Test that parent tag filters apply to mounted resources."""
@@ -1126,11 +1120,10 @@ class TestParentTagFiltering:
 
         parent.mount(mounted)
 
-        async with Client(parent) as client:
-            resources = await client.list_resources()
-            resource_uris = {str(r.uri) for r in resources}
-            assert "resource://allowed" in resource_uris
-            assert "resource://blocked" not in resource_uris
+        resources = await parent.get_resources()
+        resource_uris = {str(r.uri) for r in resources}
+        assert "resource://allowed" in resource_uris
+        assert "resource://blocked" not in resource_uris
 
     async def test_parent_filters_apply_to_mounted_prompts(self):
         """Test that parent tag filters apply to mounted prompts."""
@@ -1147,11 +1140,10 @@ class TestParentTagFiltering:
 
         parent.mount(mounted)
 
-        async with Client(parent) as client:
-            prompts = await client.list_prompts()
-            prompt_names = {p.name for p in prompts}
-            assert "allowed_prompt" in prompt_names
-            assert "blocked_prompt" not in prompt_names
+        prompts = await parent.get_prompts()
+        prompt_names = {p.name for p in prompts}
+        assert "allowed_prompt" in prompt_names
+        assert "blocked_prompt" not in prompt_names
 
 
 class TestCustomRouteForwarding:
@@ -1257,14 +1249,15 @@ class TestDeeplyNestedMount:
         middle.mount(leaf, namespace="leaf")
         root.mount(middle, namespace="middle")
 
-        async with Client(root) as client:
-            # Tool at level 2 should work
-            result = await client.call_tool("middle_multiply", {"a": 3, "b": 4})
-            assert result.data == 12
+        # Tool at level 2 should work
+        result = await root.call_tool("middle_multiply", {"a": 3, "b": 4})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 12}
 
-            # Tool at level 3 should also work (this was the bug)
-            result = await client.call_tool("middle_leaf_add", {"a": 5, "b": 7})
-            assert result.data == 12
+        # Tool at level 3 should also work (this was the bug)
+        result = await root.call_tool("middle_leaf_add", {"a": 5, "b": 7})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 12}
 
     async def test_three_level_nested_resource_invocation(self):
         """Test reading resources from servers mounted 3 levels deep."""
@@ -1283,14 +1276,15 @@ class TestDeeplyNestedMount:
         middle.mount(leaf, namespace="leaf")
         root.mount(middle, namespace="middle")
 
-        async with Client(root) as client:
-            # Resource at level 2 should work
-            result = await client.read_resource("middle://middle/data")
-            assert result[0].text == "middle data"
+        # Resource at level 2 should work
+        result = await root.read_resource("middle://middle/data")
+        assert isinstance(result, ResourceResult)
+        assert result.contents[0].content == "middle data"
 
-            # Resource at level 3 should also work
-            result = await client.read_resource("leaf://middle/leaf/data")
-            assert result[0].text == "leaf data"
+        # Resource at level 3 should also work
+        result = await root.read_resource("leaf://middle/leaf/data")
+        assert isinstance(result, ResourceResult)
+        assert result.contents[0].content == "leaf data"
 
     async def test_three_level_nested_resource_template_invocation(self):
         """Test reading resource templates from servers mounted 3 levels deep."""
@@ -1309,14 +1303,15 @@ class TestDeeplyNestedMount:
         middle.mount(leaf, namespace="leaf")
         root.mount(middle, namespace="middle")
 
-        async with Client(root) as client:
-            # Resource template at level 2 should work
-            result = await client.read_resource("middle://middle/item/42")
-            assert result[0].text == "middle item 42"
+        # Resource template at level 2 should work
+        result = await root.read_resource("middle://middle/item/42")
+        assert isinstance(result, ResourceResult)
+        assert result.contents[0].content == "middle item 42"
 
-            # Resource template at level 3 should also work
-            result = await client.read_resource("leaf://middle/leaf/item/99")
-            assert result[0].text == "leaf item 99"
+        # Resource template at level 3 should also work
+        result = await root.read_resource("leaf://middle/leaf/item/99")
+        assert isinstance(result, ResourceResult)
+        assert result.contents[0].content == "leaf item 99"
 
     async def test_three_level_nested_prompt_invocation(self):
         """Test getting prompts from servers mounted 3 levels deep."""
@@ -1335,18 +1330,17 @@ class TestDeeplyNestedMount:
         middle.mount(leaf, namespace="leaf")
         root.mount(middle, namespace="middle")
 
-        async with Client(root) as client:
-            # Prompt at level 2 should work
-            result = await client.get_prompt("middle_middle_prompt", {"name": "World"})
-            assert isinstance(result.messages[0].content, TextContent)
-            assert "Hello from middle: World" in result.messages[0].content.text
+        # Prompt at level 2 should work
+        result = await root.render_prompt("middle_middle_prompt", {"name": "World"})
+        assert isinstance(result, PromptResult)
+        assert isinstance(result.messages[0].content, TextContent)
+        assert "Hello from middle: World" in result.messages[0].content.text
 
-            # Prompt at level 3 should also work
-            result = await client.get_prompt(
-                "middle_leaf_leaf_prompt", {"name": "Test"}
-            )
-            assert isinstance(result.messages[0].content, TextContent)
-            assert "Hello from leaf: Test" in result.messages[0].content.text
+        # Prompt at level 3 should also work
+        result = await root.render_prompt("middle_leaf_leaf_prompt", {"name": "Test"})
+        assert isinstance(result, PromptResult)
+        assert isinstance(result.messages[0].content, TextContent)
+        assert "Hello from leaf: Test" in result.messages[0].content.text
 
     async def test_four_level_nested_tool_invocation(self):
         """Test invoking tools from servers mounted 4 levels deep."""
@@ -1363,15 +1357,15 @@ class TestDeeplyNestedMount:
         level1.mount(level2, namespace="l2")
         root.mount(level1, namespace="l1")
 
-        async with Client(root) as client:
-            # Verify tool is listed
-            tools = await client.list_tools()
-            tool_names = [t.name for t in tools]
-            assert "l1_l2_l3_deep_tool" in tool_names
+        # Verify tool is listed
+        tools = await root.get_tools()
+        tool_names = [t.name for t in tools]
+        assert "l1_l2_l3_deep_tool" in tool_names
 
-            # Tool at level 4 should work
-            result = await client.call_tool("l1_l2_l3_deep_tool", {})
-            assert result.data == "very deep"
+        # Tool at level 4 should work
+        result = await root.call_tool("l1_l2_l3_deep_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "very deep"}
 
 
 class TestToolNameOverrides:
@@ -1400,16 +1394,10 @@ class TestToolNameOverrides:
 
         # Server introspection shows transformed names
         tools = await main.get_tools()
-        assert any(t.name == "custom_name" for t in tools)
-        assert not any(t.name == "original_tool" for t in tools)
-        assert not any(t.name == "prefix_original_tool" for t in tools)
-
-        # Client-facing API shows the same transformed names
-        async with Client(main) as client:
-            client_tools = await client.list_tools()
-            tool_names = [t.name for t in client_tools]
-            assert "custom_name" in tool_names
-            assert "prefix_original_tool" not in tool_names
+        tool_names = [t.name for t in tools]
+        assert "custom_name" in tool_names
+        assert "original_tool" not in tool_names
+        assert "prefix_original_tool" not in tool_names
 
     async def test_tool_names_override_applied_in_list_tools(self):
         """Test that tool_names override is reflected in list_tools()."""
@@ -1426,11 +1414,10 @@ class TestToolNameOverrides:
             tool_names={"original_tool": "custom_name"},
         )
 
-        async with Client(main) as client:
-            tools = await client.list_tools()
-            tool_names = [t.name for t in tools]
-            assert "custom_name" in tool_names
-            assert "prefix_original_tool" not in tool_names
+        tools = await main.get_tools()
+        tool_names = [t.name for t in tools]
+        assert "custom_name" in tool_names
+        assert "prefix_original_tool" not in tool_names
 
     async def test_tool_call_with_overridden_name(self):
         """Test that overridden tool can be called by its new name."""
@@ -1447,9 +1434,9 @@ class TestToolNameOverrides:
             tool_names={"original_tool": "renamed"},
         )
 
-        async with Client(main) as client:
-            result = await client.call_tool("renamed", {})
-            assert result.data == "success"
+        result = await main.call_tool("renamed", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "success"}
 
     def test_duplicate_tool_rename_targets_raises_error(self):
         """Test that duplicate target names in tool_renames raises ValueError."""

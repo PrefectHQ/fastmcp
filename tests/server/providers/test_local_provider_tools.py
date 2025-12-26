@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import pytest
-from inline_snapshot import snapshot
 from mcp.types import (
     AudioContent,
     BlobResourceContents,
@@ -30,9 +29,8 @@ from mcp.types import (
 from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
 from typing_extensions import TypedDict
 
-from fastmcp import Client, Context, FastMCP
-from fastmcp.client.client import CallToolResult
-from fastmcp.exceptions import ToolError
+from fastmcp import Context, FastMCP
+from fastmcp.exceptions import NotFoundError
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import Audio, File, Image
@@ -151,9 +149,9 @@ class TestToolReturnTypes:
         def string_tool() -> str:
             return "Hello, world!"
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("string_tool", {})
-            assert result.data == "Hello, world!"
+        result = await mcp.call_tool("string_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "Hello, world!"}
 
     async def test_bytes(self, tmp_path: Path):
         mcp = FastMCP()
@@ -162,9 +160,9 @@ class TestToolReturnTypes:
         def bytes_tool() -> bytes:
             return b"Hello, world!"
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("bytes_tool", {})
-            assert result.data == "Hello, world!"
+        result = await mcp.call_tool("bytes_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "Hello, world!"}
 
     async def test_uuid(self):
         mcp = FastMCP()
@@ -175,9 +173,9 @@ class TestToolReturnTypes:
         def uuid_tool() -> uuid.UUID:
             return test_uuid
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("uuid_tool", {})
-            assert result.data == str(test_uuid)
+        result = await mcp.call_tool("uuid_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": str(test_uuid)}
 
     async def test_path(self):
         mcp = FastMCP()
@@ -188,9 +186,9 @@ class TestToolReturnTypes:
         def path_tool() -> Path:
             return test_path
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("path_tool", {})
-            assert result.data == str(test_path)
+        result = await mcp.call_tool("path_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": str(test_path)}
 
     async def test_datetime(self):
         mcp = FastMCP()
@@ -201,9 +199,9 @@ class TestToolReturnTypes:
         def datetime_tool() -> datetime.datetime:
             return dt
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("datetime_tool", {})
-            assert result.data == dt
+        result = await mcp.call_tool("datetime_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": dt.isoformat()}
 
     async def test_image(self, tmp_path: Path):
         mcp = FastMCP()
@@ -215,15 +213,16 @@ class TestToolReturnTypes:
         image_path = tmp_path / "test.png"
         image_path.write_bytes(b"fake png data")
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("image_tool", {"path": str(image_path)})
-            assert result.structured_content is None
-            content = result.content[0]
-            assert isinstance(content, ImageContent)
-            assert content.type == "image"
-            assert content.mimeType == "image/png"
-            decoded = base64.b64decode(content.data)
-            assert decoded == b"fake png data"
+        result = await mcp.call_tool("image_tool", {"path": str(image_path)})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content is None
+        assert isinstance(result.content, list)
+        content = result.content[0]
+        assert isinstance(content, ImageContent)
+        assert content.type == "image"
+        assert content.mimeType == "image/png"
+        decoded = base64.b64decode(content.data)
+        assert decoded == b"fake png data"
 
     async def test_audio(self, tmp_path: Path):
         mcp = FastMCP()
@@ -235,14 +234,15 @@ class TestToolReturnTypes:
         audio_path = tmp_path / "test.wav"
         audio_path.write_bytes(b"fake wav data")
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("audio_tool", {"path": str(audio_path)})
-            content = result.content[0]
-            assert isinstance(content, AudioContent)
-            assert content.type == "audio"
-            assert content.mimeType == "audio/wav"
-            decoded = base64.b64decode(content.data)
-            assert decoded == b"fake wav data"
+        result = await mcp.call_tool("audio_tool", {"path": str(audio_path)})
+        assert isinstance(result, ToolResult)
+        assert isinstance(result.content, list)
+        content = result.content[0]
+        assert isinstance(content, AudioContent)
+        assert content.type == "audio"
+        assert content.mimeType == "audio/wav"
+        decoded = base64.b64decode(content.data)
+        assert decoded == b"fake wav data"
 
     async def test_file(self, tmp_path: Path):
         mcp = FastMCP()
@@ -254,39 +254,41 @@ class TestToolReturnTypes:
         file_path = tmp_path / "test.bin"
         file_path.write_bytes(b"test file data")
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("file_tool", {"path": str(file_path)})
-            content = result.content[0]
-            assert isinstance(content, EmbeddedResource)
-            assert content.type == "resource"
-            resource = content.resource
-            assert resource.mimeType == "application/octet-stream"
-            assert hasattr(resource, "blob")
-            blob_data = getattr(resource, "blob")
-            decoded = base64.b64decode(blob_data)
-            assert decoded == b"test file data"
-            assert str(resource.uri) == file_path.resolve().as_uri()
+        result = await mcp.call_tool("file_tool", {"path": str(file_path)})
+        assert isinstance(result, ToolResult)
+        assert isinstance(result.content, list)
+        content = result.content[0]
+        assert isinstance(content, EmbeddedResource)
+        assert content.type == "resource"
+        resource = content.resource
+        assert resource.mimeType == "application/octet-stream"
+        assert hasattr(resource, "blob")
+        blob_data = getattr(resource, "blob")
+        decoded = base64.b64decode(blob_data)
+        assert decoded == b"test file data"
+        assert str(resource.uri) == file_path.resolve().as_uri()
 
     async def test_tool_mixed_content(self, tool_server: FastMCP):
-        async with Client(tool_server) as client:
-            result = await client.call_tool("mixed_content_tool", {})
-            assert len(result.content) == 3
-            content1 = result.content[0]
-            content2 = result.content[1]
-            content3 = result.content[2]
-            assert isinstance(content1, TextContent)
-            assert content1.text == "Hello"
-            assert isinstance(content2, ImageContent)
-            assert content2.mimeType == "application/octet-stream"
-            assert content2.data == "abc"
-            assert isinstance(content3, EmbeddedResource)
-            assert content3.type == "resource"
-            resource = content3.resource
-            assert resource.mimeType == "application/octet-stream"
-            assert hasattr(resource, "blob")
-            blob_data = getattr(resource, "blob")
-            decoded = base64.b64decode(blob_data)
-            assert decoded == b"abc"
+        result = await tool_server.call_tool("mixed_content_tool", {})
+        assert isinstance(result, ToolResult)
+        assert isinstance(result.content, list)
+        assert len(result.content) == 3
+        content1 = result.content[0]
+        content2 = result.content[1]
+        content3 = result.content[2]
+        assert isinstance(content1, TextContent)
+        assert content1.text == "Hello"
+        assert isinstance(content2, ImageContent)
+        assert content2.mimeType == "application/octet-stream"
+        assert content2.data == "abc"
+        assert isinstance(content3, EmbeddedResource)
+        assert content3.type == "resource"
+        resource = content3.resource
+        assert resource.mimeType == "application/octet-stream"
+        assert hasattr(resource, "blob")
+        blob_data = getattr(resource, "blob")
+        decoded = base64.b64decode(blob_data)
+        assert decoded == b"abc"
 
     async def test_tool_mixed_list_with_image(
         self, tool_server: FastMCP, tmp_path: Path
@@ -296,24 +298,25 @@ class TestToolReturnTypes:
         image_path = tmp_path / "test.png"
         image_path.write_bytes(b"test image data")
 
-        async with Client(tool_server) as client:
-            result = await client.call_tool(
-                "mixed_list_fn", {"image_path": str(image_path)}
-            )
-            assert len(result.content) == 4
-            content1 = result.content[0]
-            assert isinstance(content1, TextContent)
-            assert content1.text == "text message"
-            content2 = result.content[1]
-            assert isinstance(content2, ImageContent)
-            assert content2.mimeType == "image/png"
-            assert base64.b64decode(content2.data) == b"test image data"
-            content3 = result.content[2]
-            assert isinstance(content3, TextContent)
-            assert json.loads(content3.text) == {"key": "value"}
-            content4 = result.content[3]
-            assert isinstance(content4, TextContent)
-            assert content4.text == "direct content"
+        result = await tool_server.call_tool(
+            "mixed_list_fn", {"image_path": str(image_path)}
+        )
+        assert isinstance(result, ToolResult)
+        assert isinstance(result.content, list)
+        assert len(result.content) == 4
+        content1 = result.content[0]
+        assert isinstance(content1, TextContent)
+        assert content1.text == "text message"
+        content2 = result.content[1]
+        assert isinstance(content2, ImageContent)
+        assert content2.mimeType == "image/png"
+        assert base64.b64decode(content2.data) == b"test image data"
+        content3 = result.content[2]
+        assert isinstance(content3, TextContent)
+        assert json.loads(content3.text) == {"key": "value"}
+        content4 = result.content[3]
+        assert isinstance(content4, TextContent)
+        assert content4.text == "direct content"
 
     async def test_tool_mixed_list_with_audio(
         self, tool_server: FastMCP, tmp_path: Path
@@ -323,24 +326,25 @@ class TestToolReturnTypes:
         audio_path = tmp_path / "test.wav"
         audio_path.write_bytes(b"test audio data")
 
-        async with Client(tool_server) as client:
-            result = await client.call_tool(
-                "mixed_audio_list_fn", {"audio_path": str(audio_path)}
-            )
-            assert len(result.content) == 4
-            content1 = result.content[0]
-            assert isinstance(content1, TextContent)
-            assert content1.text == "text message"
-            content2 = result.content[1]
-            assert isinstance(content2, AudioContent)
-            assert content2.mimeType == "audio/wav"
-            assert base64.b64decode(content2.data) == b"test audio data"
-            content3 = result.content[2]
-            assert isinstance(content3, TextContent)
-            assert json.loads(content3.text) == {"key": "value"}
-            content4 = result.content[3]
-            assert isinstance(content4, TextContent)
-            assert content4.text == "direct content"
+        result = await tool_server.call_tool(
+            "mixed_audio_list_fn", {"audio_path": str(audio_path)}
+        )
+        assert isinstance(result, ToolResult)
+        assert isinstance(result.content, list)
+        assert len(result.content) == 4
+        content1 = result.content[0]
+        assert isinstance(content1, TextContent)
+        assert content1.text == "text message"
+        content2 = result.content[1]
+        assert isinstance(content2, AudioContent)
+        assert content2.mimeType == "audio/wav"
+        assert base64.b64decode(content2.data) == b"test audio data"
+        content3 = result.content[2]
+        assert isinstance(content3, TextContent)
+        assert json.loads(content3.text) == {"key": "value"}
+        content4 = result.content[3]
+        assert isinstance(content4, TextContent)
+        assert content4.text == "direct content"
 
     async def test_tool_mixed_list_with_file(
         self, tool_server: FastMCP, tmp_path: Path
@@ -350,28 +354,29 @@ class TestToolReturnTypes:
         file_path = tmp_path / "test.bin"
         file_path.write_bytes(b"test file data")
 
-        async with Client(tool_server) as client:
-            result = await client.call_tool(
-                "mixed_file_list_fn", {"file_path": str(file_path)}
-            )
-            assert len(result.content) == 4
-            content1 = result.content[0]
-            assert isinstance(content1, TextContent)
-            assert content1.text == "text message"
-            content2 = result.content[1]
-            assert isinstance(content2, EmbeddedResource)
-            assert content2.type == "resource"
-            resource = content2.resource
-            assert resource.mimeType == "application/octet-stream"
-            assert hasattr(resource, "blob")
-            blob_data = getattr(resource, "blob")
-            assert base64.b64decode(blob_data) == b"test file data"
-            content3 = result.content[2]
-            assert isinstance(content3, TextContent)
-            assert json.loads(content3.text) == {"key": "value"}
-            content4 = result.content[3]
-            assert isinstance(content4, TextContent)
-            assert content4.text == "direct content"
+        result = await tool_server.call_tool(
+            "mixed_file_list_fn", {"file_path": str(file_path)}
+        )
+        assert isinstance(result, ToolResult)
+        assert isinstance(result.content, list)
+        assert len(result.content) == 4
+        content1 = result.content[0]
+        assert isinstance(content1, TextContent)
+        assert content1.text == "text message"
+        content2 = result.content[1]
+        assert isinstance(content2, EmbeddedResource)
+        assert content2.type == "resource"
+        resource = content2.resource
+        assert resource.mimeType == "application/octet-stream"
+        assert hasattr(resource, "blob")
+        blob_data = getattr(resource, "blob")
+        assert base64.b64decode(blob_data) == b"test file data"
+        content3 = result.content[2]
+        assert isinstance(content3, TextContent)
+        assert json.loads(content3.text) == {"key": "value"}
+        content4 = result.content[3]
+        assert isinstance(content4, TextContent)
+        assert content4.text == "direct content"
 
 
 class TestToolParameters:
@@ -386,18 +391,17 @@ class TestToolParameters:
             """A greeting tool"""
             return f"Hello {title} {name}"
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            assert len(tools) == 1
-            tool = tools[0]
+        tools = await mcp.get_tools()
+        assert len(tools) == 1
+        tool = tools[0]
 
-            properties = tool.inputSchema["properties"]
-            assert "name" in properties
-            assert properties["name"]["description"] == "The name to greet"
-            assert "title" in properties
-            assert properties["title"]["description"] == "Optional title"
-            assert properties["title"]["default"] == ""
-            assert tool.inputSchema["required"] == ["name"]
+        properties = tool.parameters["properties"]
+        assert "name" in properties
+        assert properties["name"]["description"] == "The name to greet"
+        assert "title" in properties
+        assert properties["title"]["description"] == "Optional title"
+        assert properties["title"]["default"] == ""
+        assert tool.parameters["required"] == ["name"]
 
     async def test_parameter_descriptions_with_field_defaults(self):
         mcp = FastMCP("Test Server")
@@ -410,18 +414,17 @@ class TestToolParameters:
             """A greeting tool"""
             return f"Hello {title} {name}"
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            assert len(tools) == 1
-            tool = tools[0]
+        tools = await mcp.get_tools()
+        assert len(tools) == 1
+        tool = tools[0]
 
-            properties = tool.inputSchema["properties"]
-            assert "name" in properties
-            assert properties["name"]["description"] == "The name to greet"
-            assert "title" in properties
-            assert properties["title"]["description"] == "Optional title"
-            assert properties["title"]["default"] == ""
-            assert tool.inputSchema["required"] == ["name"]
+        properties = tool.parameters["properties"]
+        assert "name" in properties
+        assert properties["name"]["description"] == "The name to greet"
+        assert "title" in properties
+        assert properties["title"]["description"] == "Optional title"
+        assert properties["title"]["default"] == ""
+        assert tool.parameters["required"] == ["name"]
 
     async def test_tool_with_bytes_input(self):
         mcp = FastMCP()
@@ -430,28 +433,28 @@ class TestToolParameters:
         def process_image(image: bytes) -> Image:
             return Image(data=image)
 
-        async with Client(mcp) as client:
-            result = await client.call_tool(
-                "process_image", {"image": b"fake png data"}
-            )
-            assert result.structured_content is None
-            assert isinstance(result.content[0], ImageContent)
-            assert result.content[0].mimeType == "image/png"
-            assert result.content[0].data == base64.b64encode(b"fake png data").decode()
+        result = await mcp.call_tool("process_image", {"image": b"fake png data"})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content is None
+        assert isinstance(result.content, list)
+        assert isinstance(result.content[0], ImageContent)
+        assert result.content[0].mimeType == "image/png"
+        assert result.content[0].data == base64.b64encode(b"fake png data").decode()
 
     async def test_tool_with_invalid_input(self):
+        from pydantic import ValidationError
+
         mcp = FastMCP()
 
         @mcp.tool
         def my_tool(x: int) -> int:
             return x + 1
 
-        async with Client(mcp) as client:
-            with pytest.raises(
-                ToolError,
-                match="Input should be a valid integer",
-            ):
-                await client.call_tool("my_tool", {"x": "not an int"})
+        with pytest.raises(
+            ValidationError,
+            match="Input should be a valid integer",
+        ):
+            await mcp.call_tool("my_tool", {"x": "not an int"})
 
     async def test_tool_int_coercion(self):
         """Test that string ints are coerced by default."""
@@ -461,9 +464,9 @@ class TestToolParameters:
         def add_one(x: int) -> int:
             return x + 1
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("add_one", {"x": "42"})
-            assert result.data == 43
+        result = await mcp.call_tool("add_one", {"x": "42"})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 43}
 
     async def test_tool_bool_coercion(self):
         """Test that string bools are coerced by default."""
@@ -473,65 +476,70 @@ class TestToolParameters:
         def toggle(flag: bool) -> bool:
             return not flag
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("toggle", {"flag": "true"})
-            assert result.data is False
+        result = await mcp.call_tool("toggle", {"flag": "true"})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": False}
 
-            result = await client.call_tool("toggle", {"flag": "false"})
-            assert result.data is True
+        result = await mcp.call_tool("toggle", {"flag": "false"})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": True}
 
     async def test_annotated_field_validation(self):
+        from pydantic import ValidationError
+
         mcp = FastMCP()
 
         @mcp.tool
         def analyze(x: Annotated[int, Field(ge=1)]) -> None:
             pass
 
-        async with Client(mcp) as client:
-            with pytest.raises(
-                ToolError,
-                match="Input should be greater than or equal to 1",
-            ):
-                await client.call_tool("analyze", {"x": 0})
+        with pytest.raises(
+            ValidationError,
+            match="Input should be greater than or equal to 1",
+        ):
+            await mcp.call_tool("analyze", {"x": 0})
 
     async def test_default_field_validation(self):
+        from pydantic import ValidationError
+
         mcp = FastMCP()
 
         @mcp.tool
         def analyze(x: int = Field(ge=1)) -> None:
             pass
 
-        async with Client(mcp) as client:
-            with pytest.raises(
-                ToolError,
-                match="Input should be greater than or equal to 1",
-            ):
-                await client.call_tool("analyze", {"x": 0})
+        with pytest.raises(
+            ValidationError,
+            match="Input should be greater than or equal to 1",
+        ):
+            await mcp.call_tool("analyze", {"x": 0})
 
     async def test_default_field_is_still_required_if_no_default_specified(self):
+        from pydantic import ValidationError
+
         mcp = FastMCP()
 
         @mcp.tool
         def analyze(x: int = Field()) -> None:
             pass
 
-        async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="Missing required argument"):
-                await client.call_tool("analyze", {})
+        with pytest.raises(ValidationError, match="missing"):
+            await mcp.call_tool("analyze", {})
 
     async def test_literal_type_validation_error(self):
+        from pydantic import ValidationError
+
         mcp = FastMCP()
 
         @mcp.tool
         def analyze(x: Literal["a", "b"]) -> None:
             pass
 
-        async with Client(mcp) as client:
-            with pytest.raises(
-                ToolError,
-                match="Input should be 'a' or 'b'",
-            ):
-                await client.call_tool("analyze", {"x": "c"})
+        with pytest.raises(
+            ValidationError,
+            match="Input should be 'a' or 'b'",
+        ):
+            await mcp.call_tool("analyze", {"x": "c"})
 
     async def test_literal_type_validation_success(self):
         mcp = FastMCP()
@@ -540,11 +548,13 @@ class TestToolParameters:
         def analyze(x: Literal["a", "b"]) -> str:
             return x
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("analyze", {"x": "a"})
-            assert result.data == "a"
+        result = await mcp.call_tool("analyze", {"x": "a"})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "a"}
 
     async def test_enum_type_validation_error(self):
+        from pydantic import ValidationError
+
         mcp = FastMCP()
 
         class MyEnum(Enum):
@@ -556,12 +566,11 @@ class TestToolParameters:
         def analyze(x: MyEnum) -> str:
             return x.value
 
-        async with Client(mcp) as client:
-            with pytest.raises(
-                ToolError,
-                match="Input should be 'red', 'green' or 'blue'",
-            ):
-                await client.call_tool("analyze", {"x": "some-color"})
+        with pytest.raises(
+            ValidationError,
+            match="Input should be 'red', 'green' or 'blue'",
+        ):
+            await mcp.call_tool("analyze", {"x": "some-color"})
 
     async def test_enum_type_validation_success(self):
         mcp = FastMCP()
@@ -575,29 +584,32 @@ class TestToolParameters:
         def analyze(x: MyEnum) -> str:
             return x.value
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("analyze", {"x": "red"})
-            assert result.data == "red"
+        result = await mcp.call_tool("analyze", {"x": "red"})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "red"}
 
     async def test_union_type_validation(self):
+        from pydantic import ValidationError
+
         mcp = FastMCP()
 
         @mcp.tool
         def analyze(x: int | float) -> str:
             return str(x)
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("analyze", {"x": 1})
-            assert result.data == "1"
+        result = await mcp.call_tool("analyze", {"x": 1})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "1"}
 
-            result = await client.call_tool("analyze", {"x": 1.0})
-            assert result.data == "1.0"
+        result = await mcp.call_tool("analyze", {"x": 1.0})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "1.0"}
 
-            with pytest.raises(
-                ToolError,
-                match="Input should be a valid",
-            ):
-                await client.call_tool("analyze", {"x": "not a number"})
+        with pytest.raises(
+            ValidationError,
+            match="Input should be a valid",
+        ):
+            await mcp.call_tool("analyze", {"x": "not a number"})
 
     async def test_path_type(self):
         mcp = FastMCP()
@@ -609,20 +621,21 @@ class TestToolParameters:
 
         test_path = Path("tmp") / "test.txt"
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("send_path", {"path": str(test_path)})
-            assert result.data == str(test_path)
+        result = await mcp.call_tool("send_path", {"path": str(test_path)})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": str(test_path)}
 
     async def test_path_type_error(self):
+        from pydantic import ValidationError
+
         mcp = FastMCP()
 
         @mcp.tool
         def send_path(path: Path) -> str:
             return str(path)
 
-        async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="Input is not a valid path"):
-                await client.call_tool("send_path", {"path": 1})
+        with pytest.raises(ValidationError, match="Input is not a valid path"):
+            await mcp.call_tool("send_path", {"path": 1})
 
     async def test_uuid_type(self):
         mcp = FastMCP()
@@ -634,20 +647,21 @@ class TestToolParameters:
 
         test_uuid = uuid.uuid4()
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("send_uuid", {"x": test_uuid})
-            assert result.data == str(test_uuid)
+        result = await mcp.call_tool("send_uuid", {"x": test_uuid})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": str(test_uuid)}
 
     async def test_uuid_type_error(self):
+        from pydantic import ValidationError
+
         mcp = FastMCP()
 
         @mcp.tool
         def send_uuid(x: uuid.UUID) -> str:
             return str(x)
 
-        async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="Input should be a valid UUID"):
-                await client.call_tool("send_uuid", {"x": "not a uuid"})
+        with pytest.raises(ValidationError, match="Input should be a valid UUID"):
+            await mcp.call_tool("send_uuid", {"x": "not a uuid"})
 
     async def test_datetime_type(self):
         mcp = FastMCP()
@@ -658,9 +672,9 @@ class TestToolParameters:
 
         dt = datetime.datetime(2025, 4, 25, 1, 2, 3)
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("send_datetime", {"x": dt})
-            assert result.data == dt.isoformat()
+        result = await mcp.call_tool("send_datetime", {"x": dt})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": dt.isoformat()}
 
     async def test_datetime_type_parse_string(self):
         mcp = FastMCP()
@@ -669,22 +683,21 @@ class TestToolParameters:
         def send_datetime(x: datetime.datetime) -> str:
             return x.isoformat()
 
-        async with Client(mcp) as client:
-            result = await client.call_tool(
-                "send_datetime", {"x": "2021-01-01T00:00:00"}
-            )
-            assert result.data == "2021-01-01T00:00:00"
+        result = await mcp.call_tool("send_datetime", {"x": "2021-01-01T00:00:00"})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "2021-01-01T00:00:00"}
 
     async def test_datetime_type_error(self):
+        from pydantic import ValidationError
+
         mcp = FastMCP()
 
         @mcp.tool
         def send_datetime(x: datetime.datetime) -> str:
             return x.isoformat()
 
-        async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="Input should be a valid datetime"):
-                await client.call_tool("send_datetime", {"x": "not a datetime"})
+        with pytest.raises(ValidationError, match="Input should be a valid datetime"):
+            await mcp.call_tool("send_datetime", {"x": "not a datetime"})
 
     async def test_date_type(self):
         mcp = FastMCP()
@@ -693,9 +706,11 @@ class TestToolParameters:
         def send_date(x: datetime.date) -> str:
             return x.isoformat()
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("send_date", {"x": datetime.date.today()})
-            assert result.data == datetime.date.today().isoformat()
+        result = await mcp.call_tool("send_date", {"x": datetime.date.today()})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {
+            "result": datetime.date.today().isoformat()
+        }
 
     async def test_date_type_parse_string(self):
         mcp = FastMCP()
@@ -704,9 +719,9 @@ class TestToolParameters:
         def send_date(x: datetime.date) -> str:
             return x.isoformat()
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("send_date", {"x": "2021-01-01"})
-            assert result.data == "2021-01-01"
+        result = await mcp.call_tool("send_date", {"x": "2021-01-01"})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "2021-01-01"}
 
     async def test_timedelta_type(self):
         mcp = FastMCP()
@@ -715,11 +730,11 @@ class TestToolParameters:
         def send_timedelta(x: datetime.timedelta) -> str:
             return str(x)
 
-        async with Client(mcp) as client:
-            result = await client.call_tool(
-                "send_timedelta", {"x": datetime.timedelta(days=1)}
-            )
-            assert result.data == "1 day, 0:00:00"
+        result = await mcp.call_tool(
+            "send_timedelta", {"x": datetime.timedelta(days=1)}
+        )
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "1 day, 0:00:00"}
 
     async def test_timedelta_type_parse_int(self):
         """Test that int input is coerced to timedelta (seconds)."""
@@ -729,11 +744,13 @@ class TestToolParameters:
         def send_timedelta(x: datetime.timedelta) -> str:
             return str(x)
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("send_timedelta", {"x": 1000})
-            assert (
-                "0:16:40" in result.data or "16:40" in result.data
-            )  # 1000 seconds = 16 minutes 40 seconds
+        result = await mcp.call_tool("send_timedelta", {"x": 1000})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content is not None
+        result_str = result.structured_content["result"]
+        assert (
+            "0:16:40" in result_str or "16:40" in result_str
+        )  # 1000 seconds = 16 minutes 40 seconds
 
     async def test_annotated_string_description(self):
         mcp = FastMCP()
@@ -742,10 +759,9 @@ class TestToolParameters:
         def f(x: Annotated[int, "A number"]):
             return x
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            assert len(tools) == 1
-            assert tools[0].inputSchema["properties"]["x"]["description"] == "A number"
+        tools = await mcp.get_tools()
+        assert len(tools) == 1
+        assert tools[0].parameters["properties"]["x"]["description"] == "A number"
 
 
 class TestToolOutputSchema:
@@ -757,18 +773,17 @@ class TestToolOutputSchema:
         def f() -> annotation:
             return "hello"
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            assert len(tools) == 1
+        tools = await mcp.get_tools()
+        assert len(tools) == 1
 
-            type_schema = TypeAdapter(annotation).json_schema()
-            type_schema = compress_schema(type_schema, prune_titles=True)
-            assert tools[0].outputSchema == {
-                "type": "object",
-                "properties": {"result": type_schema},
-                "required": ["result"],
-                "x-fastmcp-wrap-result": True,
-            }
+        type_schema = TypeAdapter(annotation).json_schema()
+        type_schema = compress_schema(type_schema, prune_titles=True)
+        assert tools[0].output_schema == {
+            "type": "object",
+            "properties": {"result": type_schema},
+            "required": ["result"],
+            "x-fastmcp-wrap-result": True,
+        }
 
     @pytest.mark.parametrize(
         "annotation",
@@ -781,17 +796,16 @@ class TestToolOutputSchema:
         def f() -> annotation:
             return {"name": "John", "age": 30}
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
+        tools = await mcp.get_tools()
 
-            type_schema = compress_schema(
-                TypeAdapter(annotation).json_schema(), prune_titles=True
-            )
-            assert len(tools) == 1
+        type_schema = compress_schema(
+            TypeAdapter(annotation).json_schema(), prune_titles=True
+        )
+        assert len(tools) == 1
 
-            actual_schema = _normalize_anyof_order(tools[0].outputSchema)
-            expected_schema = _normalize_anyof_order(type_schema)
-            assert actual_schema == expected_schema
+        actual_schema = _normalize_anyof_order(tools[0].output_schema)
+        expected_schema = _normalize_anyof_order(type_schema)
+        assert actual_schema == expected_schema
 
     async def test_disabled_output_schema_no_structured_content(self):
         mcp = FastMCP()
@@ -800,12 +814,12 @@ class TestToolOutputSchema:
         def f() -> int:
             return 42
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("f", {})
-            assert isinstance(result.content[0], TextContent)
-            assert result.content[0].text == "42"
-            assert result.structured_content is None
-            assert result.data is None
+        result = await mcp.call_tool("f", {})
+        assert isinstance(result, ToolResult)
+        assert isinstance(result.content, list)
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "42"
+        assert result.structured_content is None
 
     async def test_manual_structured_content(self):
         mcp = FastMCP()
@@ -818,36 +832,34 @@ class TestToolOutputSchema:
 
         assert f.output_schema is None
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("f", {})
-            assert isinstance(result.content[0], TextContent)
-            assert result.content[0].text == "Hello, world!"
-            assert result.structured_content == {"message": "Hello, world!"}
-            assert result.data == {"message": "Hello, world!"}
+        result = await mcp.call_tool("f", {})
+        assert isinstance(result, ToolResult)
+        assert isinstance(result.content, list)
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Hello, world!"
+        assert result.structured_content == {"message": "Hello, world!"}
 
-    async def test_output_schema_none_full_handshake(self):
-        """Test that output_schema=None works through full client/server
-        handshake. We test this by returning a scalar, which requires an output
-        schema to serialize."""
+    async def test_output_schema_none(self):
+        """Test that output_schema=None works correctly."""
         mcp = FastMCP()
 
         @mcp.tool(output_schema=None)
         def simple_tool() -> int:
             return 42
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            tool = next(t for t in tools if t.name == "simple_tool")
-            assert tool.outputSchema is None
+        tools = await mcp.get_tools()
+        tool = next(t for t in tools if t.name == "simple_tool")
+        assert tool.output_schema is None
 
-            result = await client.call_tool("simple_tool", {})
-            assert result.structured_content is None
-            assert result.data is None
-            assert isinstance(result.content[0], TextContent)
-            assert result.content[0].text == "42"
+        result = await mcp.call_tool("simple_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content is None
+        assert isinstance(result.content, list)
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "42"
 
-    async def test_output_schema_explicit_object_full_handshake(self):
-        """Test explicit object output schema through full client/server handshake."""
+    async def test_output_schema_explicit_object(self):
+        """Test explicit object output schema."""
         mcp = FastMCP()
 
         @mcp.tool(
@@ -863,77 +875,72 @@ class TestToolOutputSchema:
         def explicit_tool() -> dict[str, Any]:
             return {"greeting": "Hello", "count": 42}
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            tool = next(t for t in tools if t.name == "explicit_tool")
-            expected_schema = {
-                "type": "object",
-                "properties": {
-                    "greeting": {"type": "string"},
-                    "count": {"type": "integer"},
-                },
-                "required": ["greeting"],
-            }
-            assert tool.outputSchema == expected_schema
+        tools = await mcp.get_tools()
+        tool = next(t for t in tools if t.name == "explicit_tool")
+        expected_schema = {
+            "type": "object",
+            "properties": {
+                "greeting": {"type": "string"},
+                "count": {"type": "integer"},
+            },
+            "required": ["greeting"],
+        }
+        assert tool.output_schema == expected_schema
 
-            result = await client.call_tool("explicit_tool", {})
-            assert result.structured_content == {"greeting": "Hello", "count": 42}
-            assert result.data is not None
-            assert result.data.greeting == "Hello"  # type: ignore[attr-defined]
-            assert result.data.count == 42  # type: ignore[attr-defined]
+        result = await mcp.call_tool("explicit_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"greeting": "Hello", "count": 42}
 
-    async def test_output_schema_wrapped_primitive_full_handshake(self):
-        """Test wrapped primitive output schema through full client/server handshake."""
+    async def test_output_schema_wrapped_primitive(self):
+        """Test wrapped primitive output schema."""
         mcp = FastMCP()
 
         @mcp.tool
         def primitive_tool() -> str:
             return "Hello, primitives!"
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            tool = next(t for t in tools if t.name == "primitive_tool")
-            expected_schema = {
-                "type": "object",
-                "properties": {"result": {"type": "string"}},
-                "required": ["result"],
-                "x-fastmcp-wrap-result": True,
-            }
-            assert tool.outputSchema == expected_schema
+        tools = await mcp.get_tools()
+        tool = next(t for t in tools if t.name == "primitive_tool")
+        expected_schema = {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+            "required": ["result"],
+            "x-fastmcp-wrap-result": True,
+        }
+        assert tool.output_schema == expected_schema
 
-            result = await client.call_tool("primitive_tool", {})
-            assert result.structured_content == {"result": "Hello, primitives!"}
-            assert result.data == "Hello, primitives!"
+        result = await mcp.call_tool("primitive_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "Hello, primitives!"}
 
-    async def test_output_schema_complex_type_full_handshake(self):
-        """Test complex type output schema through full client/server handshake."""
+    async def test_output_schema_complex_type(self):
+        """Test complex type output schema."""
         mcp = FastMCP()
 
         @mcp.tool
         def complex_tool() -> list[dict[str, int]]:
             return [{"a": 1, "b": 2}, {"c": 3, "d": 4}]
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            tool = next(t for t in tools if t.name == "complex_tool")
-            expected_inner_schema = compress_schema(
-                TypeAdapter(list[dict[str, int]]).json_schema(), prune_titles=True
-            )
-            expected_schema = {
-                "type": "object",
-                "properties": {"result": expected_inner_schema},
-                "required": ["result"],
-                "x-fastmcp-wrap-result": True,
-            }
-            assert tool.outputSchema == expected_schema
+        tools = await mcp.get_tools()
+        tool = next(t for t in tools if t.name == "complex_tool")
+        expected_inner_schema = compress_schema(
+            TypeAdapter(list[dict[str, int]]).json_schema(), prune_titles=True
+        )
+        expected_schema = {
+            "type": "object",
+            "properties": {"result": expected_inner_schema},
+            "required": ["result"],
+            "x-fastmcp-wrap-result": True,
+        }
+        assert tool.output_schema == expected_schema
 
-            result = await client.call_tool("complex_tool", {})
-            expected_data = [{"a": 1, "b": 2}, {"c": 3, "d": 4}]
-            assert result.structured_content == {"result": expected_data}
-            assert result.data is not None
+        result = await mcp.call_tool("complex_tool", {})
+        assert isinstance(result, ToolResult)
+        expected_data = [{"a": 1, "b": 2}, {"c": 3, "d": 4}]
+        assert result.structured_content == {"result": expected_data}
 
-    async def test_output_schema_dataclass_full_handshake(self):
-        """Test dataclass output schema through full client/server handshake."""
+    async def test_output_schema_dataclass(self):
+        """Test dataclass output schema."""
         mcp = FastMCP()
 
         @dataclass
@@ -945,22 +952,17 @@ class TestToolOutputSchema:
         def dataclass_tool() -> User:
             return User(name="Alice", age=30)
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            tool = next(t for t in tools if t.name == "dataclass_tool")
-            expected_schema = compress_schema(
-                TypeAdapter(User).json_schema(), prune_titles=True
-            )
-            assert tool.outputSchema == expected_schema
-            assert (
-                tool.outputSchema and "x-fastmcp-wrap-result" not in tool.outputSchema
-            )
+        tools = await mcp.get_tools()
+        tool = next(t for t in tools if t.name == "dataclass_tool")
+        expected_schema = compress_schema(
+            TypeAdapter(User).json_schema(), prune_titles=True
+        )
+        assert tool.output_schema == expected_schema
+        assert tool.output_schema and "x-fastmcp-wrap-result" not in tool.output_schema
 
-            result = await client.call_tool("dataclass_tool", {})
-            assert result.structured_content == {"name": "Alice", "age": 30}
-            assert result.data is not None
-            assert result.data.name == "Alice"  # type: ignore[attr-defined]
-            assert result.data.age == 30  # type: ignore[attr-defined]
+        result = await mcp.call_tool("dataclass_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"name": "Alice", "age": 30}
 
     async def test_output_schema_mixed_content_types(self):
         """Test tools with mixed content and output schemas."""
@@ -974,41 +976,16 @@ class TestToolOutputSchema:
                 TextContent(type="text", text="direct MCP content"),
             ]
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("mixed_output", {})
-
-            assert result == snapshot(
-                CallToolResult(
-                    content=[
-                        TextContent(type="text", text="text message"),
-                        TextContent(type="text", text='{"structured":"data"}'),
-                        TextContent(type="text", text="direct MCP content"),
-                    ],
-                    structured_content={
-                        "result": [
-                            "text message",
-                            {"structured": "data"},
-                            {
-                                "type": "text",
-                                "text": "direct MCP content",
-                                "annotations": None,
-                                "_meta": None,
-                            },
-                        ]
-                    },
-                    data=[
-                        "text message",
-                        {"structured": "data"},
-                        {
-                            "type": "text",
-                            "text": "direct MCP content",
-                            "annotations": None,
-                            "_meta": None,
-                        },
-                    ],
-                    meta=None,
-                )
-            )
+        result = await mcp.call_tool("mixed_output", {})
+        assert isinstance(result, ToolResult)
+        assert isinstance(result.content, list)
+        assert len(result.content) == 3
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "text message"
+        assert isinstance(result.content[1], TextContent)
+        assert result.content[1].text == '{"structured":"data"}'
+        assert isinstance(result.content[2], TextContent)
+        assert result.content[2].text == "direct MCP content"
 
     async def test_output_schema_serialization_edge_cases(self):
         """Test edge cases in output schema serialization."""
@@ -1018,46 +995,45 @@ class TestToolOutputSchema:
         def edge_case_tool() -> tuple[int, str]:
             return (42, "hello")
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            tool = next(t for t in tools if t.name == "edge_case_tool")
+        tools = await mcp.get_tools()
+        tool = next(t for t in tools if t.name == "edge_case_tool")
 
-            assert tool.outputSchema and "x-fastmcp-wrap-result" in tool.outputSchema
+        assert tool.output_schema and "x-fastmcp-wrap-result" in tool.output_schema
 
-            result = await client.call_tool("edge_case_tool", {})
-            assert result.structured_content == {"result": [42, "hello"]}
-            assert result.data == [42, "hello"]
+        result = await mcp.call_tool("edge_case_tool", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": [42, "hello"]}
 
 
 class TestToolContextInjection:
     """Test context injection in tools."""
 
     async def test_context_detection(self):
-        """Test that context parameters are properly detected."""
+        """Test that context parameters are properly detected and excluded from schema."""
         mcp = FastMCP()
 
         @mcp.tool
         def tool_with_context(x: int, ctx: Context) -> str:
-            return f"Request {ctx.request_id}: {x}"
+            return f"Request: {x}"
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            assert len(tools) == 1
-            assert tools[0].name == "tool_with_context"
+        tools = await mcp.get_tools()
+        assert len(tools) == 1
+        assert tools[0].name == "tool_with_context"
+        # Context param should not appear in schema
+        assert "ctx" not in tools[0].parameters.get("properties", {})
 
-    async def test_context_injection(self):
+    async def test_context_injection_basic(self):
         """Test that context is properly injected into tool calls."""
         mcp = FastMCP()
 
         @mcp.tool
         def tool_with_context(x: int, ctx: Context) -> str:
             assert isinstance(ctx, Context)
-            assert ctx.request_id is not None
-            return ctx.request_id
+            return f"Got context with x={x}"
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("tool_with_context", {"x": 42})
-            assert result.data == "1"
+        result = await mcp.call_tool("tool_with_context", {"x": 42})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "Got context with x=42"}
 
     async def test_async_context(self):
         """Test that context works in async functions."""
@@ -1065,12 +1041,12 @@ class TestToolContextInjection:
 
         @mcp.tool
         async def async_tool(x: int, ctx: Context) -> str:
-            assert ctx.request_id is not None
-            return f"Async request {ctx.request_id}: {x}"
+            assert isinstance(ctx, Context)
+            return f"Async with x={x}"
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("async_tool", {"x": 42})
-            assert result.data == "Async request 1: 42"
+        result = await mcp.call_tool("async_tool", {"x": 42})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "Async with x=42"}
 
     async def test_optional_context(self):
         """Test that context is optional."""
@@ -1080,9 +1056,9 @@ class TestToolContextInjection:
         def no_context(x: int) -> int:
             return x * 2
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("no_context", {"x": 21})
-            assert result.data == 42
+        result = await mcp.call_tool("no_context", {"x": 21})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 42}
 
     async def test_context_resource_access(self):
         """Test that context can access resources."""
@@ -1099,11 +1075,11 @@ class TestToolContextInjection:
             r = result.contents[0]
             return f"Read resource: {r.content} with mime type {r.mime_type}"
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("tool_with_resource", {})
-            assert (
-                result.data == "Read resource: resource data with mime type text/plain"
-            )
+        result = await mcp.call_tool("tool_with_resource", {})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {
+            "result": "Read resource: resource data with mime type text/plain"
+        }
 
     async def test_tool_decorator_with_tags(self):
         """Test that the tool decorator properly sets tags."""
@@ -1113,9 +1089,9 @@ class TestToolContextInjection:
         def sample_tool(x: int) -> int:
             return x * 2
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            assert len(tools) == 1
+        tools = await mcp.get_tools()
+        assert len(tools) == 1
+        assert tools[0].tags == {"example", "test-tag"}
 
     async def test_callable_object_with_context(self):
         """Test that a callable object can be used as a tool with context."""
@@ -1123,13 +1099,14 @@ class TestToolContextInjection:
 
         class MyTool:
             async def __call__(self, x: int, ctx: Context) -> int:
-                return x + int(ctx.request_id)
+                assert isinstance(ctx, Context)
+                return x + 1
 
         mcp.add_tool(Tool.from_function(MyTool(), name="MyTool"))
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("MyTool", {"x": 2})
-            assert result.data == 3
+        result = await mcp.call_tool("MyTool", {"x": 2})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 3}
 
     async def test_decorated_tool_with_functools_wraps(self):
         """Regression test for #2524: @mcp.tool with functools.wraps decorator."""
@@ -1149,23 +1126,23 @@ class TestToolContextInjection:
             assert isinstance(ctx, Context)
             return f"query: {query}"
 
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            tool = next(t for t in tools if t.name == "decorated_tool")
-            assert "ctx" not in tool.inputSchema.get("properties", {})
+        tools = await mcp.get_tools()
+        tool = next(t for t in tools if t.name == "decorated_tool")
+        assert "ctx" not in tool.parameters.get("properties", {})
 
-            result = await client.call_tool("decorated_tool", {"query": "test"})
-            assert result.data == "query: test"
+        result = await mcp.call_tool("decorated_tool", {"query": "test"})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "query: test"}
 
 
 class TestToolDecorator:
     async def test_no_tools_before_decorator(self):
-        mcp = FastMCP()
-
         from fastmcp.exceptions import NotFoundError
 
+        mcp = FastMCP()
+
         with pytest.raises(NotFoundError, match="Unknown tool: 'add'"):
-            await mcp._call_tool_mcp("add", {"x": 1, "y": 2})
+            await mcp.call_tool("add", {"x": 1, "y": 2})
 
     async def test_tool_decorator(self):
         mcp = FastMCP()
@@ -1174,9 +1151,9 @@ class TestToolDecorator:
         def add(x: int, y: int) -> int:
             return x + y
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("add", {"x": 1, "y": 2})
-            assert result.data == 3
+        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 3}
 
     async def test_tool_decorator_without_parentheses(self):
         """Test that @tool decorator works without parentheses."""
@@ -1189,9 +1166,9 @@ class TestToolDecorator:
         tools = await mcp.get_tools()
         assert any(t.name == "add" for t in tools)
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("add", {"x": 1, "y": 2})
-            assert result.data == 3
+        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 3}
 
     async def test_tool_decorator_with_name(self):
         mcp = FastMCP()
@@ -1200,9 +1177,9 @@ class TestToolDecorator:
         def add(x: int, y: int) -> int:
             return x + y
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("custom-add", {"x": 1, "y": 2})
-            assert result.data == 3
+        result = await mcp.call_tool("custom-add", {"x": 1, "y": 2})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 3}
 
     async def test_tool_decorator_with_description(self):
         mcp = FastMCP()
@@ -1211,7 +1188,7 @@ class TestToolDecorator:
         def add(x: int, y: int) -> int:
             return x + y
 
-        tools = await mcp._list_tools_mcp()
+        tools = await mcp.get_tools()
         assert len(tools) == 1
         tool = tools[0]
         assert tool.description == "Add two numbers"
@@ -1228,9 +1205,9 @@ class TestToolDecorator:
 
         obj = MyClass(10)
         mcp.add_tool(Tool.from_function(obj.add))
-        async with Client(mcp) as client:
-            result = await client.call_tool("add", {"y": 2})
-            assert result.data == 12
+        result = await mcp.call_tool("add", {"y": 2})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 12}
 
     async def test_tool_decorator_classmethod(self):
         mcp = FastMCP()
@@ -1243,9 +1220,9 @@ class TestToolDecorator:
                 return cls.x + y
 
         mcp.add_tool(Tool.from_function(MyClass.add))
-        async with Client(mcp) as client:
-            result = await client.call_tool("add", {"y": 2})
-            assert result.data == 12
+        result = await mcp.call_tool("add", {"y": 2})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 12}
 
     async def test_tool_decorator_staticmethod(self):
         mcp = FastMCP()
@@ -1256,9 +1233,9 @@ class TestToolDecorator:
             def add(x: int, y: int) -> int:
                 return x + y
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("add", {"x": 1, "y": 2})
-            assert result.data == 3
+        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 3}
 
     async def test_tool_decorator_async_function(self):
         mcp = FastMCP()
@@ -1267,9 +1244,9 @@ class TestToolDecorator:
         async def add(x: int, y: int) -> int:
             return x + y
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("add", {"x": 1, "y": 2})
-            assert result.data == 3
+        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 3}
 
     async def test_tool_decorator_classmethod_error(self):
         mcp = FastMCP()
@@ -1293,9 +1270,9 @@ class TestToolDecorator:
                 return cls.x + y
 
         mcp.add_tool(Tool.from_function(MyClass.add))
-        async with Client(mcp) as client:
-            result = await client.call_tool("add", {"y": 2})
-            assert result.data == 12
+        result = await mcp.call_tool("add", {"y": 2})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 12}
 
     async def test_tool_decorator_staticmethod_async_function(self):
         mcp = FastMCP()
@@ -1306,9 +1283,9 @@ class TestToolDecorator:
                 return x + y
 
         mcp.add_tool(Tool.from_function(MyClass.add))
-        async with Client(mcp) as client:
-            result = await client.call_tool("add", {"x": 1, "y": 2})
-            assert result.data == 3
+        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 3}
 
     async def test_tool_decorator_staticmethod_order(self):
         """Test that the recommended decorator order works for static methods"""
@@ -1320,9 +1297,9 @@ class TestToolDecorator:
             def add_v1(x: int, y: int) -> int:
                 return x + y
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("add_v1", {"x": 1, "y": 2})
-            assert result.data == 3
+        result = await mcp.call_tool("add_v1", {"x": 1, "y": 2})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 3}
 
     async def test_tool_decorator_with_tags(self):
         """Test that the tool decorator properly sets tags."""
@@ -1349,9 +1326,9 @@ class TestToolDecorator:
         tools = await mcp.get_tools()
         assert any(t.name == "custom_multiply" for t in tools)
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("custom_multiply", {"a": 5, "b": 3})
-            assert result.data == 15
+        result = await mcp.call_tool("custom_multiply", {"a": 5, "b": 3})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 15}
 
         assert not any(t.name == "multiply" for t in tools)
 
@@ -1389,13 +1366,13 @@ class TestToolDecorator:
 
     async def test_tool_direct_function_call(self):
         """Test that tools can be registered via direct function call."""
+        from fastmcp.tools import FunctionTool
+
         mcp = FastMCP()
 
         def standalone_function(x: int, y: int) -> int:
             """A standalone function to be registered."""
             return x + y
-
-        from fastmcp.tools import FunctionTool
 
         result_fn = mcp.tool(standalone_function, name="direct_call_tool")
 
@@ -1405,9 +1382,9 @@ class TestToolDecorator:
         tool = next(t for t in tools if t.name == "direct_call_tool")
         assert tool is result_fn
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("direct_call_tool", {"x": 5, "y": 3})
-            assert result.data == 8
+        result = await mcp.call_tool("direct_call_tool", {"x": 5, "y": 3})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": 8}
 
     async def test_tool_decorator_with_string_name(self):
         """Test that @tool("custom_name") syntax works correctly."""
@@ -1422,9 +1399,9 @@ class TestToolDecorator:
         assert any(t.name == "string_named_tool" for t in tools)
         assert not any(t.name == "my_function" for t in tools)
 
-        async with Client(mcp) as client:
-            result = await client.call_tool("string_named_tool", {"x": 42})
-            assert result.data == "Result: 42"
+        result = await mcp.call_tool("string_named_tool", {"x": 42})
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == {"result": "Result: 42"}
 
     async def test_tool_decorator_conflicting_names_error(self):
         """Test that providing both positional and keyword name raises an error."""
@@ -1465,3 +1442,153 @@ class TestToolDecorator:
         tool = next(t for t in tools if t.name == "multiply")
 
         assert tool.meta == meta_data
+
+
+class TestToolTags:
+    def create_server(self, include_tags=None, exclude_tags=None):
+        mcp = FastMCP(include_tags=include_tags, exclude_tags=exclude_tags)
+
+        @mcp.tool(tags={"a", "b"})
+        def tool_1() -> int:
+            return 1
+
+        @mcp.tool(tags={"b", "c"})
+        def tool_2() -> int:
+            return 2
+
+        return mcp
+
+    async def test_include_tags_all_tools(self):
+        mcp = self.create_server(include_tags={"a", "b"})
+        tools = await mcp.get_tools()
+        assert {t.name for t in tools} == {"tool_1", "tool_2"}
+
+    async def test_include_tags_some_tools(self):
+        mcp = self.create_server(include_tags={"a", "z"})
+        tools = await mcp.get_tools()
+        assert {t.name for t in tools} == {"tool_1"}
+
+    async def test_exclude_tags_all_tools(self):
+        mcp = self.create_server(exclude_tags={"a", "b"})
+        tools = await mcp.get_tools()
+        assert {t.name for t in tools} == set()
+
+    async def test_exclude_tags_some_tools(self):
+        mcp = self.create_server(exclude_tags={"a", "z"})
+        tools = await mcp.get_tools()
+        assert {t.name for t in tools} == {"tool_2"}
+
+    async def test_exclude_precedence(self):
+        mcp = self.create_server(exclude_tags={"a"}, include_tags={"b"})
+        tools = await mcp.get_tools()
+        assert {t.name for t in tools} == {"tool_2"}
+
+    async def test_call_included_tool(self):
+        mcp = self.create_server(include_tags={"a"})
+        result_1 = await mcp.call_tool("tool_1", {})
+        assert result_1.structured_content == {"result": 1}
+
+        with pytest.raises(NotFoundError, match="Unknown tool"):
+            await mcp.call_tool("tool_2", {})
+
+    async def test_call_excluded_tool(self):
+        mcp = self.create_server(exclude_tags={"a"})
+        with pytest.raises(NotFoundError, match="Unknown tool"):
+            await mcp.call_tool("tool_1", {})
+
+        result_2 = await mcp.call_tool("tool_2", {})
+        assert result_2.structured_content == {"result": 2}
+
+
+class TestToolEnabled:
+    async def test_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        # Tool is enabled by default
+        tools = await mcp.get_tools()
+        assert any(t.name == "sample_tool" for t in tools)
+
+        # Disable via server
+        mcp.disable(keys=["tool:sample_tool"])
+
+        # Tool should not be in list when disabled
+        tools = await mcp.get_tools()
+        assert not any(t.name == "sample_tool" for t in tools)
+
+        # Re-enable via server
+        mcp.enable(keys=["tool:sample_tool"])
+        tools = await mcp.get_tools()
+        assert any(t.name == "sample_tool" for t in tools)
+
+    async def test_tool_disabled_via_server(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        mcp.disable(keys=["tool:sample_tool"])
+        tools = await mcp.get_tools()
+        assert len(tools) == 0
+
+        with pytest.raises(NotFoundError, match="Unknown tool"):
+            await mcp.call_tool("sample_tool", {"x": 5})
+
+    async def test_tool_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        mcp.disable(keys=["tool:sample_tool"])
+        mcp.enable(keys=["tool:sample_tool"])
+        tools = await mcp.get_tools()
+        assert len(tools) == 1
+
+    async def test_tool_toggle_disabled(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        mcp.disable(keys=["tool:sample_tool"])
+        tools = await mcp.get_tools()
+        assert len(tools) == 0
+
+        with pytest.raises(NotFoundError, match="Unknown tool"):
+            await mcp.call_tool("sample_tool", {"x": 5})
+
+    async def test_get_tool_and_disable(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        tool = await mcp.get_tool(name="sample_tool")
+        assert tool is not None
+
+        mcp.disable(keys=["tool:sample_tool"])
+        tools = await mcp.get_tools()
+        assert len(tools) == 0
+
+        with pytest.raises(NotFoundError, match="Unknown tool"):
+            await mcp.call_tool("sample_tool", {"x": 5})
+
+    async def test_cant_call_disabled_tool(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        mcp.disable(keys=["tool:sample_tool"])
+
+        with pytest.raises(NotFoundError, match="Unknown tool"):
+            await mcp.call_tool("sample_tool", {"x": 5})
