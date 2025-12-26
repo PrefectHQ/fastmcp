@@ -13,7 +13,8 @@ from __future__ import annotations
 import re
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any, overload
 
 import mcp.types
 from mcp.types import AnyUrl
@@ -85,6 +86,20 @@ class FastMCPProviderTool(Tool):
             task_config=tool.task_config,
         )
 
+    @overload
+    async def _run(
+        self,
+        arguments: dict[str, Any],
+        task_meta: None = None,
+    ) -> ToolResult: ...
+
+    @overload
+    async def _run(
+        self,
+        arguments: dict[str, Any],
+        task_meta: TaskMeta,
+    ) -> mcp.types.CreateTaskResult: ...
+
     async def _run(
         self,
         arguments: dict[str, Any],
@@ -94,7 +109,15 @@ class FastMCPProviderTool(Tool):
 
         Passes task_meta through to the child server so it can handle
         backgrounding appropriately.
+
+        Enriches fn_key with self.key (the parent's namespaced tool name) so that
+        when the child tool delegates to Docket, it uses the correct lookup key
+        that was registered via get_tasks().
         """
+        # Enrich fn_key with parent's key before delegating to child
+        if task_meta is not None and task_meta.fn_key is None:
+            task_meta = replace(task_meta, fn_key=self.key)
+
         return await self._server.call_tool(
             self._original_name, arguments, task_meta=task_meta
         )
@@ -148,19 +171,29 @@ class FastMCPProviderResource(Resource):
             task_config=resource.task_config,
         )
 
-    async def _read(self) -> ResourceResult | mcp.types.CreateTaskResult:
-        """Skip task routing - delegate to child server's read_resource().
+    @overload
+    async def _read(self, task_meta: None = None) -> ResourceResult: ...
 
-        The actual underlying resource will check _task_metadata contextvar and
-        submit to Docket if appropriate. This wrapper just passes through.
+    @overload
+    async def _read(self, task_meta: TaskMeta) -> mcp.types.CreateTaskResult: ...
 
-        Note: The _docket_fn_key contextvar is intentionally NOT updated here.
-        The parent set it to the full namespaced key (e.g., data://c/gc/value)
-        which is what the function is registered under in Docket. All provider
-        layers pass this through unchanged so the eventual resource._read()
-        uses the correct Docket lookup key.
+    async def _read(
+        self, task_meta: TaskMeta | None = None
+    ) -> ResourceResult | mcp.types.CreateTaskResult:
+        """Delegate to child server's read_resource() with task_meta.
+
+        Passes task_meta through to the child server so it can handle
+        backgrounding appropriately.
+
+        Enriches fn_key with self.key (the parent's namespaced URI) so that
+        when the child resource delegates to Docket, it uses the correct
+        lookup key that was registered via get_tasks().
         """
-        return await self._server.read_resource(self._original_uri)
+        # Enrich fn_key with parent's URI before delegating to child
+        if task_meta is not None and task_meta.fn_key is None:
+            task_meta = TaskMeta(ttl=task_meta.ttl, fn_key=self.key)
+
+        return await self._server.read_resource(self._original_uri, task_meta=task_meta)
 
 
 class FastMCPProviderPrompt(Prompt):
@@ -277,41 +310,36 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             mime_type=self.mime_type,
         )
 
+    @overload
     async def _read(
-        self, uri: str, params: dict[str, Any]
+        self, uri: str, params: dict[str, Any], task_meta: None = None
+    ) -> ResourceResult: ...
+
+    @overload
+    async def _read(
+        self, uri: str, params: dict[str, Any], task_meta: TaskMeta
+    ) -> mcp.types.CreateTaskResult: ...
+
+    async def _read(
+        self, uri: str, params: dict[str, Any], task_meta: TaskMeta | None = None
     ) -> ResourceResult | mcp.types.CreateTaskResult:
-        """Delegate to child server's read_resource().
+        """Delegate to child server's read_resource() with task_meta.
 
-        Skips task routing at this layer - the child's template._read() will
-        check _task_metadata contextvar and submit to Docket if appropriate.
+        Passes task_meta through to the child server so it can handle
+        backgrounding appropriately.
 
-        Sets _docket_fn_key to self.uri_template (the transformed pattern) so that
-        when the child template's _read() submits to Docket, it uses the correct
-        key that matches what was registered via TransformingProvider.get_tasks().
-
-        Only sets _docket_fn_key if not already set - in nested mounts, the
-        outermost wrapper sets the key and inner wrappers preserve it.
+        Enriches fn_key with self.key (the parent's namespaced template pattern)
+        so that when the child template delegates to Docket, it uses the correct
+        lookup key that was registered via get_tasks().
         """
-        from fastmcp.server.dependencies import _docket_fn_key
-
         # Expand the original template with params to get internal URI
         original_uri = _expand_uri_template(self._original_uri_template or "", params)
 
-        # Set _docket_fn_key to the template pattern, but only if the current
-        # value isn't already a template pattern (contains '{').
-        # - Server sets concrete URI (e.g., "item://c/gc/42") - no '{', override it
-        # - Outer wrapper sets pattern (e.g., "item://c/gc/{id}") - has '{', keep it
-        # In nested mounts (parent→child→grandchild), the outermost wrapper
-        # has the fully-transformed pattern that matches Docket registration.
-        existing_key = _docket_fn_key.get()
-        key_token = None
-        if not existing_key or "{" not in existing_key:
-            key_token = _docket_fn_key.set(self.key)
-        try:
-            return await self._server.read_resource(original_uri)
-        finally:
-            if key_token is not None:
-                _docket_fn_key.reset(key_token)
+        # Enrich fn_key with parent's namespaced template pattern before delegating
+        if task_meta is not None and task_meta.fn_key is None:
+            task_meta = replace(task_meta, fn_key=self.key)
+
+        return await self._server.read_resource(original_uri, task_meta=task_meta)
 
     async def read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult:
         """Read the resource content for background task execution.

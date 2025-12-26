@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from fastmcp import Context, FastMCP
 from fastmcp.resources import ResourceTemplate
-from fastmcp.resources.resource import FunctionResource, ResourceResult
+from fastmcp.resources.resource import FunctionResource
 from fastmcp.resources.template import match_uri_template
 
 
@@ -188,7 +188,6 @@ class TestResourceTemplate:
 
         # _read() wraps in ResourceResult
         resource_result = await resource._read()
-        assert isinstance(resource_result, ResourceResult)
         assert len(resource_result.contents) == 1
         assert resource_result.contents[0].content == "key=foo, value=123"
 

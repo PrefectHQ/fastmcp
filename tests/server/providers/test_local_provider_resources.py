@@ -82,7 +82,6 @@ class TestResourceTemplates:
             return f"Data for {name}"
 
         result = await mcp.read_resource("resource://test/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Data for test"
 
     async def test_resource_mismatched_params(self):
@@ -107,7 +106,6 @@ class TestResourceTemplates:
             return f"Data for {org}/{repo}"
 
         result = await mcp.read_resource("resource://cursor/fastmcp/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Data for cursor/fastmcp"
 
     async def test_resource_multiple_mismatched_params(self):
@@ -132,7 +130,6 @@ class TestResourceTemplates:
             return str(sum(int(v) for v in kwargs.values()))
 
         result = await mcp.read_resource("test://1/2/3")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "6"
 
     async def test_template_with_default_params(self):
@@ -148,11 +145,9 @@ class TestResourceTemplates:
         assert templates[0].uri_template == "math://add/{x}"
 
         result = await mcp.read_resource("math://add/5")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "15"
 
         result2 = await mcp.read_resource("math://add/7")
-        assert isinstance(result2, ResourceResult)
         assert result2.contents[0].content == "17"
 
     async def test_template_to_resource_conversion(self):
@@ -168,7 +163,6 @@ class TestResourceTemplates:
         assert templates[0].uri_template == "resource://{name}/data"
 
         result = await mcp.read_resource("resource://test/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Data for test"
 
     async def test_template_decorator_with_tags(self):
@@ -190,7 +184,6 @@ class TestResourceTemplates:
             return f"Template resource: {param}"
 
         result = await mcp.read_resource("resource://test/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Template resource: test/data"
 
     async def test_template_with_query_params(self):
@@ -202,15 +195,12 @@ class TestResourceTemplates:
             return f"id={id}, format={format}, limit={limit}"
 
         result = await mcp.read_resource("data://123")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "id=123, format=json, limit=10"
 
         result = await mcp.read_resource("data://123?format=xml")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "id=123, format=xml, limit=10"
 
         result = await mcp.read_resource("data://123?format=csv&limit=50")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "id=123, format=csv, limit=50"
 
     async def test_templates_match_in_order_of_definition(self):
@@ -226,11 +216,9 @@ class TestResourceTemplates:
             return f"Template resource 2: {x}/{y}"
 
         result = await mcp.read_resource("resource://a/b/c")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Template resource 1: a/b/c"
 
         result = await mcp.read_resource("resource://a/b")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Template resource 1: a/b"
 
     async def test_templates_shadow_each_other_reorder(self):
@@ -246,11 +234,9 @@ class TestResourceTemplates:
             return f"Template resource 2: {param}"
 
         result = await mcp.read_resource("resource://a/b/c")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Template resource 2: a/b/c"
 
         result = await mcp.read_resource("resource://a/b")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Template resource 1: a/b"
 
     async def test_resource_template_with_annotations(self):
@@ -324,7 +310,6 @@ class TestResourceDecorator:
             return "Hello, world!"
 
         result = await mcp.read_resource("resource://data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Hello, world!"
 
     async def test_resource_decorator_incorrect_usage(self):
@@ -350,7 +335,6 @@ class TestResourceDecorator:
         assert resources[0].name == "custom-data"
 
         result = await mcp.read_resource("resource://data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Hello, world!"
 
     async def test_resource_decorator_with_description(self):
@@ -395,7 +379,6 @@ class TestResourceDecorator:
         )
 
         result = await mcp.read_resource("resource://data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "My prefix: Hello, world!"
 
     async def test_resource_decorator_classmethod(self):
@@ -415,7 +398,6 @@ class TestResourceDecorator:
         )
 
         result = await mcp.read_resource("resource://data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Class prefix: Hello, world!"
 
     async def test_resource_decorator_classmethod_error(self):
@@ -439,7 +421,6 @@ class TestResourceDecorator:
                 return "Static Hello, world!"
 
         result = await mcp.read_resource("resource://data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Static Hello, world!"
 
     async def test_resource_decorator_async_function(self):
@@ -450,7 +431,6 @@ class TestResourceDecorator:
             return "Async Hello, world!"
 
         result = await mcp.read_resource("resource://data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Async Hello, world!"
 
     async def test_resource_decorator_staticmethod_order(self):
@@ -464,7 +444,6 @@ class TestResourceDecorator:
                 return "Static Hello, world!"
 
         result = await mcp.read_resource("resource://data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Static Hello, world!"
 
     async def test_resource_decorator_with_meta(self):
@@ -499,7 +478,6 @@ class TestResourceDecorator:
             )
 
         result = await mcp.read_resource("resource://widget")
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         assert result.contents[0].content == "<widget>content</widget>"
         assert result.contents[0].mime_type == "text/html"
@@ -521,7 +499,6 @@ class TestResourceDecorator:
             )
 
         result = await mcp.read_resource("resource://binary")
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         assert result.contents[0].content == b"\x00\x01\x02"
         assert result.contents[0].meta == {"encoding": "raw"}
@@ -535,7 +512,6 @@ class TestResourceDecorator:
             return ResourceResult([ResourceContent(content="plain content")])
 
         result = await mcp.read_resource("resource://plain")
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         assert result.contents[0].content == "plain content"
         assert result.contents[0].meta is None
@@ -555,7 +531,6 @@ class TestTemplateDecorator:
         assert templates[0].uri_template == "resource://{name}/data"
 
         result = await mcp.read_resource("resource://test/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Data for test"
 
     async def test_template_decorator_incorrect_usage(self):
@@ -581,7 +556,6 @@ class TestTemplateDecorator:
         assert templates[0].name == "custom-template"
 
         result = await mcp.read_resource("resource://test/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Data for test"
 
     async def test_template_decorator_with_description(self):
@@ -614,7 +588,6 @@ class TestTemplateDecorator:
         mcp.add_template(template)
 
         result = await mcp.read_resource("resource://test/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "My prefix: Data for test"
 
     async def test_template_decorator_classmethod(self):
@@ -635,7 +608,6 @@ class TestTemplateDecorator:
         mcp.add_template(template)
 
         result = await mcp.read_resource("resource://test/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Class prefix: Data for test"
 
     async def test_template_decorator_staticmethod(self):
@@ -648,7 +620,6 @@ class TestTemplateDecorator:
                 return f"Static Data for {name}"
 
         result = await mcp.read_resource("resource://test/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Static Data for test"
 
     async def test_template_decorator_async_function(self):
@@ -659,7 +630,6 @@ class TestTemplateDecorator:
             return f"Async Data for {name}"
 
         result = await mcp.read_resource("resource://test/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Async Data for test"
 
     async def test_template_decorator_with_tags(self):

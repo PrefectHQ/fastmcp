@@ -9,7 +9,6 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.dependencies import CurrentContext, Depends
 from fastmcp.prompts import PromptResult
-from fastmcp.resources import ResourceResult
 from fastmcp.server.context import Context
 
 HUZZAH = "huzzah!"
@@ -266,7 +265,6 @@ async def test_resource_with_dependency(mcp: FastMCP):
         return f"Settings loaded from {storage}"
 
     result = await mcp.read_resource("config://settings")
-    assert isinstance(result, ResourceResult)
     assert len(result.contents) == 1
     assert result.contents[0].content == "Settings loaded from /data/config"
 
@@ -343,7 +341,6 @@ async def test_resource_template_with_dependency(mcp: FastMCP):
         return f"Reading {base_path}/{filename}"
 
     result = await mcp.read_resource("data://config.txt")
-    assert isinstance(result, ResourceResult)
     assert len(result.contents) == 1
     assert result.contents[0].content == "Reading /var/data/config.txt"
 
@@ -399,7 +396,6 @@ async def test_async_resource_context_manager_stays_open(mcp: FastMCP):
         return f"open={connection.is_open}"
 
     result = await mcp.read_resource("data://config")
-    assert isinstance(result, ResourceResult)
     assert result.contents[0].content == "open=True"
 
 
@@ -415,7 +411,6 @@ async def test_async_resource_template_context_manager_stays_open(mcp: FastMCP):
         return f"open={connection.is_open},user={user_id}"
 
     result = await mcp.read_resource("user://123")
-    assert isinstance(result, ResourceResult)
     assert isinstance(result.contents[0].content, str)
     assert "open=True" in result.contents[0].content
 
@@ -525,7 +520,6 @@ async def test_sync_resource_context_manager_stays_open(mcp: FastMCP):
         return f"open={connection.is_open}"
 
     result = await mcp.read_resource("data://sync")
-    assert isinstance(result, ResourceResult)
     assert result.contents[0].content == "open=True"
     assert not conn.is_open
 
@@ -551,7 +545,6 @@ async def test_sync_resource_template_context_manager_stays_open(mcp: FastMCP):
         return f"open={connection.is_open},item={item_id}"
 
     result = await mcp.read_resource("item://456")
-    assert isinstance(result, ResourceResult)
     assert isinstance(result.contents[0].content, str)
     assert "open=True" in result.contents[0].content
     assert not conn.is_open
@@ -663,7 +656,6 @@ async def test_resource_dependency_cannot_be_overridden_externally(mcp: FastMCP)
 
     # Normal call
     result = await mcp.read_resource("data://config")
-    assert isinstance(result, ResourceResult)
     assert isinstance(result.contents[0].content, str)
     assert "API Key: real_api_key" in result.contents[0].content
 
@@ -689,7 +681,6 @@ async def test_resource_template_dependency_cannot_be_overridden_externally(
 
     # Normal call
     result = await mcp.read_resource("user://123")
-    assert isinstance(result, ResourceResult)
     assert isinstance(result.contents[0].content, str)
     assert "User: 123, Token: real_token" in result.contents[0].content
 

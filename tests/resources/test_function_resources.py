@@ -1,7 +1,7 @@
 import pytest
 from pydantic import AnyUrl, BaseModel
 
-from fastmcp.resources.resource import FunctionResource, ResourceContent, ResourceResult
+from fastmcp.resources.resource import FunctionResource, ResourceContent
 
 
 class TestFunctionResource:
@@ -42,7 +42,6 @@ class TestFunctionResource:
 
         # _read() converts to ResourceResult
         result = await resource._read()
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         assert result.contents[0].content == "Hello, world!"
         assert result.contents[0].mime_type == "text/plain"
@@ -64,7 +63,6 @@ class TestFunctionResource:
 
         # _read() converts to ResourceResult
         result = await resource._read()
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == b"Hello, world!"
 
     async def test_dict_return_raises_type_error(self):
@@ -159,7 +157,6 @@ class TestFunctionResource:
 
         # _read() converts to ResourceResult
         result = await resource._read()
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "Hello, world!"
         assert result.contents[0].mime_type == "text/plain"
 

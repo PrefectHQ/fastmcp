@@ -5,7 +5,8 @@ from __future__ import annotations
 import base64
 import inspect
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar
+from dataclasses import replace
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, overload
 
 import mcp.types
 
@@ -27,7 +28,7 @@ from pydantic import (
 from typing_extensions import Self
 
 from fastmcp.server.dependencies import without_injected_parameters
-from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import get_fn_name
 
@@ -300,23 +301,42 @@ class Resource(FastMCPComponent):
         # ResourceResult.__init__ handles all normalization
         return ResourceResult(raw_value)
 
-    async def _read(self) -> ResourceResult | mcp.types.CreateTaskResult:
+    @overload
+    async def _read(self, task_meta: None = None) -> ResourceResult: ...
+
+    @overload
+    async def _read(self, task_meta: TaskMeta) -> mcp.types.CreateTaskResult: ...
+
+    async def _read(
+        self, task_meta: TaskMeta | None = None
+    ) -> ResourceResult | mcp.types.CreateTaskResult:
         """Server entry point that handles task routing.
 
         This allows ANY Resource subclass to support background execution by setting
         task_config.mode to "supported" or "required". The server calls this
         method instead of read() directly.
 
+        Args:
+            task_meta: If provided, execute as a background task and return
+                CreateTaskResult. If None (default), execute synchronously and
+                return ResourceResult.
+
+        Returns:
+            ResourceResult when task_meta is None.
+            CreateTaskResult when task_meta is provided.
+
         Subclasses can override this to customize task routing behavior.
         For example, FastMCPProviderResource overrides to delegate to child
         middleware without submitting to Docket.
         """
-        from fastmcp.server.dependencies import _docket_fn_key
         from fastmcp.server.tasks.routing import check_background_task
 
-        key = _docket_fn_key.get() or self.key
+        # Enrich task_meta with fn_key if not already set (fallback for programmatic API)
+        if task_meta is not None and task_meta.fn_key is None:
+            task_meta = replace(task_meta, fn_key=self.key)
+
         task_result = await check_background_task(
-            component=self, task_type="resource", key=key
+            component=self, task_type="resource", arguments=None, task_meta=task_meta
         )
         if task_result:
             return task_result

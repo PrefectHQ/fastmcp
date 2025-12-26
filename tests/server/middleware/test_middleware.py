@@ -7,7 +7,6 @@ import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp.resources.resource import ResourceResult
 from fastmcp.server.context import Context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
@@ -514,7 +513,6 @@ class TestApplyMiddlewareParameter:
 
         result = await server.read_resource("resource://test")
 
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         assert result.contents[0].content == "test content"
         assert recording.assert_called(hook="on_read_resource", times=1)
@@ -532,7 +530,6 @@ class TestApplyMiddlewareParameter:
 
         result = await server.read_resource("resource://test", run_middleware=False)
 
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         assert result.contents[0].content == "test content"
         # Middleware should not have been called
@@ -551,7 +548,6 @@ class TestApplyMiddlewareParameter:
 
         result = await server.read_resource("resource://items/42", run_middleware=False)
 
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         assert result.contents[0].content == "item 42"
         assert len(recording.calls) == 0

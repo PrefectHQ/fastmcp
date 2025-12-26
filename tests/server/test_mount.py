@@ -10,7 +10,6 @@ from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, SSETransport
 from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts import PromptResult
-from fastmcp.resources import ResourceResult
 from fastmcp.server.providers import FastMCPProvider, TransformingProvider
 from fastmcp.server.providers.proxy import FastMCPProxy
 from fastmcp.tools.tool import Tool
@@ -143,7 +142,6 @@ class TestBasicMount:
 
         # Test actual functionality
         resource_result = await main_app.read_resource("data://config")
-        assert isinstance(resource_result, ResourceResult)
         assert resource_result.contents[0].content == "Sub resource data"
 
     async def test_mount_resource_templates_no_prefix(self):
@@ -164,7 +162,6 @@ class TestBasicMount:
 
         # Test actual functionality
         template_result = await main_app.read_resource("users://123/info")
-        assert isinstance(template_result, ResourceResult)
         assert template_result.contents[0].content == "Sub template for user 123"
 
     async def test_mount_prompts_no_prefix(self):
@@ -409,7 +406,6 @@ class TestPrefixConflictResolution:
 
         # Test that reading the resource uses the first server's implementation
         result = await main_app.read_resource("shared://data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "First app data"
 
     async def test_first_server_wins_resources_same_prefix(self):
@@ -438,7 +434,6 @@ class TestPrefixConflictResolution:
 
         # Test that reading the resource uses the first server's implementation
         result = await main_app.read_resource("shared://api/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "First app data"
 
     async def test_first_server_wins_resource_templates_no_prefix(self):
@@ -469,7 +464,6 @@ class TestPrefixConflictResolution:
 
         # Test that reading the resource uses the first server's implementation
         result = await main_app.read_resource("users://123/profile")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "First app user 123"
 
     async def test_first_server_wins_resource_templates_same_prefix(self):
@@ -500,7 +494,6 @@ class TestPrefixConflictResolution:
 
         # Test that reading the resource uses the first server's implementation
         result = await main_app.read_resource("users://api/123/profile")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "First app user 123"
 
     async def test_first_server_wins_prompts_no_prefix(self):
@@ -639,7 +632,6 @@ class TestResourcesAndTemplates:
 
         # Check that resource can be accessed
         result = await main_app.read_resource("data://data/users")
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         # Note: The function returns "user1, user2" which is not valid JSON
         # This test should be updated to return proper JSON or check the string directly
@@ -663,7 +655,6 @@ class TestResourcesAndTemplates:
 
         # Check template instantiation
         result = await main_app.read_resource("users://api/123/profile")
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         profile = json.loads(result.contents[0].content)
         assert profile["id"] == "123"
@@ -688,7 +679,6 @@ class TestResourcesAndTemplates:
 
         # Check access to the resource
         result = await main_app.read_resource("data://data/config")
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         config = json.loads(result.contents[0].content)
         assert config["version"] == "1.0"
@@ -813,7 +803,6 @@ class TestProxyServer:
 
         # Resource should be accessible through main app
         result = await main_app.read_resource("config://proxy/settings")
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         config = json.loads(result.contents[0].content)
         assert config["api_key"] == "12345"
@@ -1264,12 +1253,10 @@ class TestDeeplyNestedMount:
 
         # Resource at level 2 should work
         result = await root.read_resource("middle://middle/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "middle data"
 
         # Resource at level 3 should also work
         result = await root.read_resource("leaf://middle/leaf/data")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "leaf data"
 
     async def test_three_level_nested_resource_template_invocation(self):
@@ -1291,12 +1278,10 @@ class TestDeeplyNestedMount:
 
         # Resource template at level 2 should work
         result = await root.read_resource("middle://middle/item/42")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "middle item 42"
 
         # Resource template at level 3 should also work
         result = await root.read_resource("leaf://middle/leaf/item/99")
-        assert isinstance(result, ResourceResult)
         assert result.contents[0].content == "leaf item 99"
 
     async def test_three_level_nested_prompt_invocation(self):

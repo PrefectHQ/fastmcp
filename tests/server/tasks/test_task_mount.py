@@ -773,3 +773,147 @@ class TestMiddlewareWithMountedTasks:
             "parent:after",
             "grandchild:template",
         ]
+
+
+class TestMountedTasksWithTaskMetaParameter:
+    """Test mounted components called directly with task_meta parameter.
+
+    These tests verify the programmatic API where server.call_tool() or
+    server.read_resource() is called with an explicit task_meta parameter,
+    as opposed to using the Client with task=True.
+
+    Direct server calls require a running server context, so we use an outer
+    tool that makes the direct call internally.
+    """
+
+    async def test_mounted_tool_with_task_meta_creates_task(self):
+        """Mounted tool called with task_meta returns CreateTaskResult."""
+        from fastmcp.server.tasks.config import TaskMeta
+
+        child = FastMCP("Child")
+
+        @child.tool(task=True)
+        async def add(a: int, b: int) -> int:
+            return a + b
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="child")
+
+        @parent.tool
+        async def outer() -> str:
+            # Direct call with task_meta from within server context
+            result = await parent.call_tool(
+                "child_add", {"a": 2, "b": 3}, task_meta=TaskMeta(ttl=300)
+            )
+            assert isinstance(result, mt.CreateTaskResult)
+            return f"task:{result.task.taskId}"
+
+        async with Client(parent) as client:
+            result = await client.call_tool("outer", {})
+            assert "task:" in str(result)
+
+    async def test_mounted_resource_with_task_meta_creates_task(self):
+        """Mounted resource called with task_meta returns CreateTaskResult."""
+        from fastmcp.server.tasks.config import TaskMeta
+
+        child = FastMCP("Child")
+
+        @child.resource("data://info", task=True)
+        async def get_info() -> str:
+            return "child info"
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="child")
+
+        @parent.tool
+        async def outer() -> str:
+            result = await parent.read_resource(
+                "data://child/info", task_meta=TaskMeta(ttl=300)
+            )
+            assert isinstance(result, mt.CreateTaskResult)
+            return f"task:{result.task.taskId}"
+
+        async with Client(parent) as client:
+            result = await client.call_tool("outer", {})
+            assert "task:" in str(result)
+
+    async def test_mounted_template_with_task_meta_creates_task(self):
+        """Mounted resource template with task_meta returns CreateTaskResult."""
+        from fastmcp.server.tasks.config import TaskMeta
+
+        child = FastMCP("Child")
+
+        @child.resource("item://{id}", task=True)
+        async def get_item(id: str) -> str:
+            return f"item-{id}"
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="child")
+
+        @parent.tool
+        async def outer() -> str:
+            result = await parent.read_resource(
+                "item://child/42", task_meta=TaskMeta(ttl=300)
+            )
+            assert isinstance(result, mt.CreateTaskResult)
+            return f"task:{result.task.taskId}"
+
+        async with Client(parent) as client:
+            result = await client.call_tool("outer", {})
+            assert "task:" in str(result)
+
+    async def test_deeply_nested_tool_with_task_meta(self):
+        """Three-level nested tool works with task_meta."""
+        from fastmcp.server.tasks.config import TaskMeta
+
+        grandchild = FastMCP("Grandchild")
+
+        @grandchild.tool(task=True)
+        async def compute(n: int) -> int:
+            return n * 3
+
+        child = FastMCP("Child")
+        child.mount(grandchild, namespace="gc")
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="c")
+
+        @parent.tool
+        async def outer() -> str:
+            result = await parent.call_tool(
+                "c_gc_compute", {"n": 7}, task_meta=TaskMeta(ttl=300)
+            )
+            assert isinstance(result, mt.CreateTaskResult)
+            return f"task:{result.task.taskId}"
+
+        async with Client(parent) as client:
+            result = await client.call_tool("outer", {})
+            assert "task:" in str(result)
+
+    async def test_deeply_nested_template_with_task_meta(self):
+        """Three-level nested template works with task_meta."""
+        from fastmcp.server.tasks.config import TaskMeta
+
+        grandchild = FastMCP("Grandchild")
+
+        @grandchild.resource("doc://{name}", task=True)
+        async def get_doc(name: str) -> str:
+            return f"doc: {name}"
+
+        child = FastMCP("Child")
+        child.mount(grandchild, namespace="gc")
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="c")
+
+        @parent.tool
+        async def outer() -> str:
+            result = await parent.read_resource(
+                "doc://c/gc/readme", task_meta=TaskMeta(ttl=300)
+            )
+            assert isinstance(result, mt.CreateTaskResult)
+            return f"task:{result.task.taskId}"
+
+        async with Client(parent) as client:
+            result = await client.call_tool("outer", {})
+            assert "task:" in str(result)

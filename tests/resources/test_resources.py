@@ -303,7 +303,6 @@ class TestResourceConvertResult:
 
         resource = FunctionResource(uri=AnyUrl("test://test"), name="test", fn=fn)
         result = await resource._read()
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         assert result.contents[0].content == "hello world"
 

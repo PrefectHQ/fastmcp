@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import warnings
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -12,6 +12,7 @@ from typing import (
     Generic,
     TypeAlias,
     get_type_hints,
+    overload,
 )
 
 import mcp.types
@@ -277,6 +278,20 @@ class Tool(FastMCPComponent):
             structured_content={"result": structured} if wrap_result else structured,
         )
 
+    @overload
+    async def _run(
+        self,
+        arguments: dict[str, Any],
+        task_meta: None = None,
+    ) -> ToolResult: ...
+
+    @overload
+    async def _run(
+        self,
+        arguments: dict[str, Any],
+        task_meta: TaskMeta,
+    ) -> mcp.types.CreateTaskResult: ...
+
     async def _run(
         self,
         arguments: dict[str, Any],
@@ -290,14 +305,23 @@ class Tool(FastMCPComponent):
 
         Args:
             arguments: Tool arguments
-            task_meta: If provided, execute as background task. If None, execute
-                synchronously.
+            task_meta: If provided, execute as background task and return
+                CreateTaskResult. If None (default), execute synchronously and
+                return ToolResult.
+
+        Returns:
+            ToolResult when task_meta is None.
+            CreateTaskResult when task_meta is provided.
 
         Subclasses can override this to customize task routing behavior.
         For example, FastMCPProviderTool overrides to delegate to child
         middleware without submitting to Docket.
         """
         from fastmcp.server.tasks.routing import check_background_task
+
+        # Enrich task_meta with fn_key if not already set (fallback for programmatic API)
+        if task_meta is not None and task_meta.fn_key is None:
+            task_meta = replace(task_meta, fn_key=self.key)
 
         task_result = await check_background_task(
             component=self,

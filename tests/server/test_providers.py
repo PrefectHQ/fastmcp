@@ -8,7 +8,6 @@ from mcp.types import AnyUrl, TextContent
 
 from fastmcp import FastMCP
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt, PromptResult
-from fastmcp.resources import ResourceResult
 from fastmcp.resources.resource import FunctionResource, Resource
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.server.providers import Provider
@@ -389,7 +388,6 @@ class TestProviderExecutionMethods:
 
         result = await mcp.read_resource("test://data")
 
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         assert result.contents[0].content == "hello world"
 
@@ -412,7 +410,6 @@ class TestProviderExecutionMethods:
 
         result = await mcp.read_resource("data://files/test.txt")
 
-        assert isinstance(result, ResourceResult)
         assert len(result.contents) == 1
         assert result.contents[0].content == "content of test.txt"
 
