@@ -7,6 +7,7 @@ import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.resources.resource import ResourceResult
 from fastmcp.server.context import Context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
@@ -513,8 +514,9 @@ class TestApplyMiddlewareParameter:
 
         result = await server.read_resource("resource://test")
 
-        assert len(result) == 1  # type: ignore[arg-type]
-        assert result[0].content == "test content"  # type: ignore[union-attr,index]
+        assert isinstance(result, ResourceResult)
+        assert len(result.contents) == 1
+        assert result.contents[0].content == "test content"
         assert recording.assert_called(hook="on_read_resource", times=1)
 
     async def test_read_resource_with_run_middleware_false(self):
@@ -530,8 +532,9 @@ class TestApplyMiddlewareParameter:
 
         result = await server.read_resource("resource://test", run_middleware=False)
 
-        assert len(result) == 1  # type: ignore[arg-type]
-        assert result[0].content == "test content"  # type: ignore[union-attr,index]
+        assert isinstance(result, ResourceResult)
+        assert len(result.contents) == 1
+        assert result.contents[0].content == "test content"
         # Middleware should not have been called
         assert len(recording.calls) == 0
 
@@ -548,8 +551,9 @@ class TestApplyMiddlewareParameter:
 
         result = await server.read_resource("resource://items/42", run_middleware=False)
 
-        assert len(result) == 1  # type: ignore[arg-type]
-        assert result[0].content == "item 42"  # type: ignore[union-attr,index]
+        assert isinstance(result, ResourceResult)
+        assert len(result.contents) == 1
+        assert result.contents[0].content == "item 42"
         assert len(recording.calls) == 0
 
     async def test_render_prompt_with_run_middleware_true(self):

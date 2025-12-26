@@ -132,14 +132,14 @@ class TrackingCalculator:
     def how_to_calculate(self, a: int, b: int) -> str:
         return f"To calculate {a} + {b}, you need to add {a} and {b} together."
 
-    def get_add_calls(self) -> int:
-        return self.add_calls
+    def get_add_calls(self) -> str:
+        return str(self.add_calls)
 
-    def get_multiply_calls(self) -> int:
-        return self.multiply_calls
+    def get_multiply_calls(self) -> str:
+        return str(self.multiply_calls)
 
-    def get_crazy_calls(self) -> int:
-        return self.crazy_calls
+    def get_crazy_calls(self) -> str:
+        return str(self.crazy_calls)
 
     async def update_tool_list(self, context: Context):
         import mcp.types

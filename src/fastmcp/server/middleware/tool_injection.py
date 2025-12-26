@@ -9,7 +9,7 @@ from mcp.types import Prompt
 from pydantic import AnyUrl
 from typing_extensions import override
 
-from fastmcp.resources.resource import ResourceContent
+from fastmcp.resources.resource import ResourceResult
 from fastmcp.server.context import Context
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import Tool, ToolResult
@@ -98,7 +98,7 @@ list_resources_tool = Tool.from_function(
 async def read_resource(
     context: Context,
     uri: Annotated[AnyUrl | str, "The URI of the resource to read."],
-) -> list[ResourceContent]:
+) -> ResourceResult:
     """Read a resource available on the server."""
     return await context.read_resource(uri=uri)
 

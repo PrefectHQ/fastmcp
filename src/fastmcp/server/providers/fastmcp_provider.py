@@ -19,7 +19,7 @@ import mcp.types
 from mcp.types import AnyUrl
 
 from fastmcp.prompts.prompt import Prompt, PromptResult
-from fastmcp.resources.resource import Resource, ResourceContent
+from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.base import Provider
 from fastmcp.tools.tool import Tool, ToolResult
@@ -140,16 +140,11 @@ class FastMCPProviderResource(Resource):
             task_config=resource.task_config,
         )
 
-    async def _read(self) -> ResourceContent | mcp.types.CreateTaskResult:
-        """Skip task routing - delegate to read() which calls child middleware.
+    async def _read(self) -> ResourceResult | mcp.types.CreateTaskResult:
+        """Skip task routing - delegate to child server's read_resource().
 
         The actual underlying resource will check _task_metadata contextvar and
         submit to Docket if appropriate. This wrapper just passes through.
-        """
-        return await self.read()
-
-    async def read(self) -> ResourceContent | mcp.types.CreateTaskResult:  # type: ignore[override]
-        """Delegate to child server's read_resource().
 
         Note: The _docket_fn_key contextvar is intentionally NOT updated here.
         The parent set it to the full namespaced key (e.g., data://c/gc/value)
@@ -157,10 +152,7 @@ class FastMCPProviderResource(Resource):
         layers pass this through unchanged so the eventual resource._read()
         uses the correct Docket lookup key.
         """
-        result = await self._server.read_resource(self._original_uri)
-        if isinstance(result, mcp.types.CreateTaskResult):
-            return result
-        return result[0]
+        return await self._server.read_resource(self._original_uri)
 
 
 class FastMCPProviderPrompt(Prompt):
@@ -279,7 +271,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
 
     async def _read(
         self, uri: str, params: dict[str, Any]
-    ) -> ResourceContent | mcp.types.CreateTaskResult:
+    ) -> ResourceResult | mcp.types.CreateTaskResult:
         """Delegate to child server's read_resource().
 
         Skips task routing at this layer - the child's template._read() will
@@ -308,18 +300,15 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         if not existing_key or "{" not in existing_key:
             key_token = _docket_fn_key.set(self.key)
         try:
-            result = await self._server.read_resource(original_uri)
-            if isinstance(result, mcp.types.CreateTaskResult):
-                return result
-            return result[0]
+            return await self._server.read_resource(original_uri)
         finally:
             if key_token is not None:
                 _docket_fn_key.reset(key_token)
 
-    async def read(self, arguments: dict[str, Any]) -> str | bytes:
+    async def read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult:
         """Read the resource content for background task execution.
 
-        Creates a resource from this template and reads its content.
+        Reads the resource via the wrapped server and returns the ResourceResult.
         This method is called by Docket during background task execution.
         """
         # Expand the original template with arguments to get internal URI
@@ -327,21 +316,12 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             self._original_uri_template or "", arguments
         )
 
-        # Create and read the resource
-        resource = FastMCPProviderResource(
-            server=self._server,
-            original_uri=original_uri,
-            uri=AnyUrl(original_uri),
-            name=self.name,
-            description=self.description,
-            mime_type=self.mime_type,
-        )
-        result = await resource.read()
+        # Read from the wrapped server
+        result = await self._server.read_resource(original_uri)
+        if isinstance(result, mcp.types.CreateTaskResult):
+            raise RuntimeError("Unexpected CreateTaskResult during Docket execution")
 
-        # Return raw content (str or bytes)
-        if hasattr(result, "content"):
-            return result.content  # type: ignore[return-value]
-        return result  # type: ignore[return-value]
+        return result
 
     def register_with_docket(self, docket: Docket) -> None:
         """No-op: the child's actual template is registered via get_tasks()."""

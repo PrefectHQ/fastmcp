@@ -54,17 +54,23 @@ def create_test_server() -> FastMCP:
         return f"Hello, {name}!"
 
     @server.resource(uri="data://users")
-    async def get_users():
-        return ["Alice", "Bob", "Charlie"]
+    async def get_users() -> str:
+        import json
+
+        return json.dumps(["Alice", "Bob", "Charlie"])
 
     @server.resource(uri="data://user/{user_id}")
-    async def get_user(user_id: str):
-        return {"id": user_id, "name": f"User {user_id}", "active": True}
+    async def get_user(user_id: str) -> str:
+        import json
+
+        return json.dumps({"id": user_id, "name": f"User {user_id}", "active": True})
 
     @server.resource(uri="request://headers")
-    async def get_headers() -> dict[str, str]:
+    async def get_headers() -> str:
+        import json
+
         request = get_http_request()
-        return dict(request.headers)
+        return json.dumps(dict(request.headers))
 
     @server.prompt
     def welcome(name: str) -> str:

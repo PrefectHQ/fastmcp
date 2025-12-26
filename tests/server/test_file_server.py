@@ -1,9 +1,10 @@
-import json
 from pathlib import Path
 
+import mcp.types as mcp_types
 import pytest
 
 from fastmcp import FastMCP
+from fastmcp.resources import ResourceContent, ResourceResult
 
 
 @pytest.fixture()
@@ -29,9 +30,10 @@ def mcp() -> FastMCP:
 @pytest.fixture(autouse=True)
 def resources(mcp: FastMCP, test_dir: Path) -> FastMCP:
     @mcp.resource("dir://test_dir")
-    def list_test_dir() -> list[str]:
+    def list_test_dir() -> ResourceResult:
         """List the files in the test directory"""
-        return [str(f) for f in test_dir.iterdir()]
+        files = [str(f) for f in test_dir.iterdir()]
+        return ResourceResult([ResourceContent(f) for f in files])
 
     @mcp.resource("file://test_dir/example.py")
     def read_example_py() -> str:
@@ -86,13 +88,16 @@ async def test_list_resources(mcp: FastMCP):
 
 
 async def test_read_resource_dir(mcp: FastMCP):
-    res_iter = await mcp._read_resource_mcp("dir://test_dir")
-    res_list = list(res_iter)
-    assert len(res_list) == 1
-    res = res_list[0]
-    assert res.mime_type == "text/plain"
-
-    files = json.loads(res.content)
+    res_result = await mcp._read_resource_mcp("dir://test_dir")
+    assert isinstance(res_result, mcp_types.ReadResourceResult)
+    # ResourceResult splits lists into multiple contents (one per file path)
+    assert len(res_result.contents) == 3
+    # Extract file paths from each content
+    files = [
+        item.text
+        for item in res_result.contents
+        if isinstance(item, mcp_types.TextResourceContents)
+    ]
 
     assert sorted([Path(f).name for f in files]) == [
         "config.json",
@@ -102,11 +107,12 @@ async def test_read_resource_dir(mcp: FastMCP):
 
 
 async def test_read_resource_file(mcp: FastMCP):
-    res_iter = await mcp._read_resource_mcp("file://test_dir/example.py")
-    res_list = list(res_iter)
-    assert len(res_list) == 1
-    res = res_list[0]
-    assert res.content == "print('hello world')"
+    res_result = await mcp._read_resource_mcp("file://test_dir/example.py")
+    assert isinstance(res_result, mcp_types.ReadResourceResult)
+    assert len(res_result.contents) == 1
+    res = res_result.contents[0]
+    assert isinstance(res, mcp_types.TextResourceContents)
+    assert res.text == "print('hello world')"
 
 
 async def test_delete_file(mcp: FastMCP, test_dir: Path):
@@ -120,8 +126,9 @@ async def test_delete_file_and_check_resources(mcp: FastMCP, test_dir: Path):
     await mcp._call_tool_mcp(
         "delete_file", arguments=dict(path=str(test_dir / "example.py"))
     )
-    res_iter = await mcp._read_resource_mcp("file://test_dir/example.py")
-    res_list = list(res_iter)
-    assert len(res_list) == 1
-    res = res_list[0]
-    assert res.content == "File not found"
+    res_result = await mcp._read_resource_mcp("file://test_dir/example.py")
+    assert isinstance(res_result, mcp_types.ReadResourceResult)
+    assert len(res_result.contents) == 1
+    res = res_result.contents[0]
+    assert isinstance(res, mcp_types.TextResourceContents)
+    assert res.text == "File not found"

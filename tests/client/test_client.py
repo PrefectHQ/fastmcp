@@ -50,15 +50,22 @@ def fastmcp_server():
         await asyncio.sleep(seconds)
         return f"Slept for {seconds} seconds"
 
-    # Add a resource
+    # Add a resource (return JSON string for proper typing)
     @server.resource(uri="data://users")
-    async def get_users():
-        return ["Alice", "Bob", "Charlie"]
+    async def get_users() -> str:
+        import json
 
-    # Add a resource template
+        return json.dumps(["Alice", "Bob", "Charlie"], separators=(",", ":"))
+
+    # Add a resource template (return JSON string for proper typing)
     @server.resource(uri="data://user/{user_id}")
-    async def get_user(user_id: str):
-        return {"id": user_id, "name": f"User {user_id}", "active": True}
+    async def get_user(user_id: str) -> str:
+        import json
+
+        return json.dumps(
+            {"id": user_id, "name": f"User {user_id}", "active": True},
+            separators=(",", ":"),
+        )
 
     # Add a prompt
     @server.prompt
@@ -72,14 +79,16 @@ def fastmcp_server():
 @pytest.fixture
 def tagged_resources_server():
     """Fixture that creates a FastMCP server with tagged resources and templates."""
+    import json
+
     server = FastMCP("TaggedResourcesServer")
 
     # Add a resource with tags
     @server.resource(
         uri="data://tagged", tags={"test", "metadata"}, description="A tagged resource"
     )
-    async def get_tagged_data():
-        return {"type": "tagged_data"}
+    async def get_tagged_data() -> str:
+        return json.dumps({"type": "tagged_data"}, separators=(",", ":"))
 
     # Add a resource template with tags
     @server.resource(
@@ -87,8 +96,8 @@ def tagged_resources_server():
         tags={"template", "parameterized"},
         description="A tagged template",
     )
-    async def get_template_data(id: str):
-        return {"id": id, "type": "template_data"}
+    async def get_template_data(id: str) -> str:
+        return json.dumps({"id": id, "type": "template_data"}, separators=(",", ":"))
 
     return server
 

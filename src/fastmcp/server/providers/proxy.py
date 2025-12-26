@@ -36,7 +36,7 @@ from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt, PromptResult
 from fastmcp.prompts.prompt import PromptArgument
 from fastmcp.resources import Resource, ResourceTemplate
-from fastmcp.resources.resource import ResourceContent
+from fastmcp.resources.resource import ResourceContent, ResourceResult
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.providers.base import Provider
@@ -154,14 +154,14 @@ class ProxyResource(Resource):
     """A Resource that represents and reads a resource from a remote server."""
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
-    _cached_content: ResourceContent | None = None
+    _cached_content: ResourceResult | None = None
     _backend_uri: str | None = None
 
     def __init__(
         self,
         client_factory: ClientFactoryT,
         *,
-        _cached_content: ResourceContent | None = None,
+        _cached_content: ResourceResult | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -205,7 +205,7 @@ class ProxyResource(Resource):
             task_config=TaskConfig(mode="forbidden"),
         )
 
-    async def read(self) -> ResourceContent:
+    async def read(self) -> ResourceResult:
         """Read the resource content from the remote server."""
         if self._cached_content is not None:
             return self._cached_content
@@ -219,16 +219,24 @@ class ProxyResource(Resource):
                 f"Remote server returned empty content for {backend_uri}"
             )
         if isinstance(result[0], TextResourceContents):
-            return ResourceContent(
-                content=result[0].text,
-                mime_type=result[0].mimeType,
-                meta=result[0].meta,
+            return ResourceResult(
+                contents=[
+                    ResourceContent(
+                        content=result[0].text,
+                        mime_type=result[0].mimeType,
+                        meta=result[0].meta,
+                    )
+                ]
             )
         elif isinstance(result[0], BlobResourceContents):
-            return ResourceContent(
-                content=base64.b64decode(result[0].blob),
-                mime_type=result[0].mimeType,
-                meta=result[0].meta,
+            return ResourceResult(
+                contents=[
+                    ResourceContent(
+                        content=base64.b64decode(result[0].blob),
+                        mime_type=result[0].mimeType,
+                        meta=result[0].meta,
+                    )
+                ]
             )
         else:
             raise ResourceError(f"Unsupported content type: {type(result[0])}")
@@ -303,16 +311,24 @@ class ProxyTemplate(ResourceTemplate):
                 f"Remote server returned empty content for {parameterized_uri}"
             )
         if isinstance(result[0], TextResourceContents):
-            cached_content = ResourceContent(
-                content=result[0].text,
-                mime_type=result[0].mimeType,
-                meta=result[0].meta,
+            cached_content = ResourceResult(
+                contents=[
+                    ResourceContent(
+                        content=result[0].text,
+                        mime_type=result[0].mimeType,
+                        meta=result[0].meta,
+                    )
+                ]
             )
         elif isinstance(result[0], BlobResourceContents):
-            cached_content = ResourceContent(
-                content=base64.b64decode(result[0].blob),
-                mime_type=result[0].mimeType,
-                meta=result[0].meta,
+            cached_content = ResourceResult(
+                contents=[
+                    ResourceContent(
+                        content=base64.b64decode(result[0].blob),
+                        mime_type=result[0].mimeType,
+                        meta=result[0].meta,
+                    )
+                ]
             )
         else:
             raise ResourceError(f"Unsupported content type: {type(result[0])}")

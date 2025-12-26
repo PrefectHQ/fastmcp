@@ -67,8 +67,10 @@ def fastmcp_server():
         return "👋"
 
     @server.resource(uri="data://users")
-    async def get_users() -> list[dict[str, Any]]:
-        return USERS
+    async def get_users() -> str:
+        import json
+
+        return json.dumps(USERS, separators=(",", ":"))
 
     @server.resource(
         uri="data://user/{user_id}",
@@ -76,8 +78,11 @@ def fastmcp_server():
         title="User Template",
         icons=[Icon(src="https://example.com/user-icon.png")],
     )
-    async def get_user(user_id: str) -> dict[str, Any] | None:
-        return next((user for user in USERS if user["id"] == user_id), None)
+    async def get_user(user_id: str) -> str:
+        import json
+
+        user = next((user for user in USERS if user["id"] == user_id), None)
+        return json.dumps(user, separators=(",", ":")) if user else "null"
 
     # --- Prompts ---
 
@@ -302,8 +307,11 @@ class TestResources:
     async def test_read_json_resource(self, proxy_server: FastMCPProxy):
         async with Client(proxy_server) as client:
             result = await client.read_resource("data://users")
+        assert len(result) == 1
         assert isinstance(result[0], TextResourceContents)
-        assert json.loads(result[0].text) == USERS
+        # The resource returns all users serialized as JSON
+        users = json.loads(result[0].text)
+        assert users == USERS
 
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(
@@ -388,13 +396,15 @@ class TestResourceTemplates:
         """
 
         @proxy_server.resource(uri="data://user/{user_id}", name="overwritten_get_user")
-        def overwritten_get_user(user_id: str) -> dict[str, Any]:
-            return {
-                "id": user_id,
-                "name": "Overwritten User",
-                "active": True,
-                "extra": "data",
-            }
+        def overwritten_get_user(user_id: str) -> str:
+            return json.dumps(
+                {
+                    "id": user_id,
+                    "name": "Overwritten User",
+                    "active": True,
+                    "extra": "data",
+                }
+            )
 
         async with Client(proxy_server) as client:
             result = await client.read_resource("data://user/1")

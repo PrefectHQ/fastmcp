@@ -1,13 +1,11 @@
 """Tests for FastMCPProvider."""
 
-from collections.abc import Sequence
-
 import mcp.types as mt
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.prompts.prompt import PromptResult
-from fastmcp.resources.resource import ResourceContent
+from fastmcp.resources.resource import ResourceResult
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers import FastMCPProvider
 from fastmcp.tools.tool import ToolResult
@@ -43,8 +41,8 @@ class ResourceTracingMiddleware(Middleware):
     async def on_read_resource(
         self,
         context: MiddlewareContext[mt.ReadResourceRequestParams],
-        call_next: CallNext[mt.ReadResourceRequestParams, Sequence[ResourceContent]],
-    ) -> Sequence[ResourceContent]:
+        call_next: CallNext[mt.ReadResourceRequestParams, ResourceResult],
+    ) -> ResourceResult:
         self._calls.append(f"{self._name}:before")
         result = await call_next(context)
         self._calls.append(f"{self._name}:after")

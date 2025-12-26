@@ -11,7 +11,12 @@ import httpx
 from mcp.types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
-from fastmcp.resources import Resource, ResourceContent, ResourceTemplate
+from fastmcp.resources import (
+    Resource,
+    ResourceContent,
+    ResourceResult,
+    ResourceTemplate,
+)
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.tool import Tool, ToolResult
@@ -185,7 +190,7 @@ class OpenAPIResource(Resource):
     def __repr__(self) -> str:
         return f"OpenAPIResource(name={self.name!r}, uri={self.uri!r}, path={self._route.path})"
 
-    async def read(self) -> ResourceContent:
+    async def read(self) -> ResourceResult:
         """Fetch the resource data by making an HTTP request."""
         try:
             path = self._route.path
@@ -229,14 +234,26 @@ class OpenAPIResource(Resource):
 
             if "application/json" in content_type:
                 result = response.json()
-                return ResourceContent(
-                    content=json.dumps(result), mime_type="application/json"
+                return ResourceResult(
+                    contents=[
+                        ResourceContent(
+                            content=json.dumps(result), mime_type="application/json"
+                        )
+                    ]
                 )
             elif any(ct in content_type for ct in ["text/", "application/xml"]):
-                return ResourceContent(content=response.text, mime_type=self.mime_type)
+                return ResourceResult(
+                    contents=[
+                        ResourceContent(content=response.text, mime_type=self.mime_type)
+                    ]
+                )
             else:
-                return ResourceContent(
-                    content=response.content, mime_type=self.mime_type
+                return ResourceResult(
+                    contents=[
+                        ResourceContent(
+                            content=response.content, mime_type=self.mime_type
+                        )
+                    ]
                 )
 
         except httpx.HTTPStatusError as e:

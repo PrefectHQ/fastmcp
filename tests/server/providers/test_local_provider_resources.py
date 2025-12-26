@@ -14,7 +14,12 @@ from mcp.types import BlobResourceContents, TextResourceContents
 from pydantic import AnyUrl
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.resources import Resource, ResourceContent, ResourceTemplate
+from fastmcp.resources import (
+    Resource,
+    ResourceContent,
+    ResourceResult,
+    ResourceTemplate,
+)
 
 
 class TestResourceContext:
@@ -127,8 +132,8 @@ class TestResourceTemplates:
         mcp = FastMCP()
 
         @mcp.resource("test://{x}/{y}/{z}")
-        def func(**kwargs: int) -> int:
-            return sum(kwargs.values())
+        def func(**kwargs: int) -> str:
+            return str(sum(int(v) for v in kwargs.values()))
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("test://1/2/3"))
@@ -140,8 +145,8 @@ class TestResourceTemplates:
         mcp = FastMCP()
 
         @mcp.resource("math://add/{x}")
-        def add(x: int, y: int = 10) -> int:
-            return x + y
+        def add(x: int, y: int = 10) -> str:
+            return str(int(x) + y)
 
         templates = await mcp.get_resource_templates()
         assert len(templates) == 1
@@ -504,11 +509,15 @@ class TestResourceDecorator:
         mcp = FastMCP()
 
         @mcp.resource("resource://widget")
-        def get_widget() -> ResourceContent:
-            return ResourceContent(
-                content="<widget>content</widget>",
-                mime_type="text/html",
-                meta={"csp": "script-src 'self'", "version": "1.0"},
+        def get_widget() -> ResourceResult:
+            return ResourceResult(
+                [
+                    ResourceContent(
+                        content="<widget>content</widget>",
+                        mime_type="text/html",
+                        meta={"csp": "script-src 'self'", "version": "1.0"},
+                    )
+                ]
             )
 
         async with Client(mcp) as client:
@@ -525,10 +534,14 @@ class TestResourceDecorator:
         mcp = FastMCP()
 
         @mcp.resource("resource://binary")
-        def get_binary() -> ResourceContent:
-            return ResourceContent(
-                content=b"\x00\x01\x02",
-                meta={"encoding": "raw"},
+        def get_binary() -> ResourceResult:
+            return ResourceResult(
+                [
+                    ResourceContent(
+                        content=b"\x00\x01\x02",
+                        meta={"encoding": "raw"},
+                    )
+                ]
             )
 
         async with Client(mcp) as client:
@@ -543,8 +556,8 @@ class TestResourceDecorator:
         mcp = FastMCP()
 
         @mcp.resource("resource://plain")
-        def get_plain() -> ResourceContent:
-            return ResourceContent(content="plain content")
+        def get_plain() -> ResourceResult:
+            return ResourceResult([ResourceContent(content="plain content")])
 
         async with Client(mcp) as client:
             result = await client.read_resource("resource://plain")

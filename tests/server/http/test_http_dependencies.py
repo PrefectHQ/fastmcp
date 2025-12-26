@@ -22,10 +22,11 @@ def fastmcp_server():
         return dict(request.headers)
 
     @server.resource(uri="request://headers")
-    async def get_headers_resource() -> dict[str, str]:
-        request = get_http_request()
+    async def get_headers_resource() -> str:
+        import json
 
-        return dict(request.headers)
+        request = get_http_request()
+        return json.dumps(dict(request.headers))
 
     # Add a prompt
     @server.prompt

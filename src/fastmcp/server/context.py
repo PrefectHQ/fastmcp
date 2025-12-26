@@ -38,7 +38,7 @@ from starlette.requests import Request
 from typing_extensions import TypeVar
 
 from fastmcp import settings
-from fastmcp.resources.resource import ResourceContent
+from fastmcp.resources.resource import ResourceResult
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
@@ -310,14 +310,14 @@ class Context:
             )
         return result.to_mcp_prompt_result()
 
-    async def read_resource(self, uri: str | AnyUrl) -> list[ResourceContent]:
+    async def read_resource(self, uri: str | AnyUrl) -> ResourceResult:
         """Read a resource by URI.
 
         Args:
             uri: Resource URI to read
 
         Returns:
-            List of ResourceContent objects
+            ResourceResult with contents
         """
         result = await self.fastmcp.read_resource(str(uri))
         if isinstance(result, mcp.types.CreateTaskResult):

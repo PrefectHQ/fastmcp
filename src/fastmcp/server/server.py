@@ -66,7 +66,7 @@ from fastmcp.exceptions import (
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import FunctionPrompt, PromptResult
-from fastmcp.resources.resource import Resource, ResourceContent
+from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.event_store import EventStore
@@ -1197,7 +1197,7 @@ class FastMCP(Generic[LifespanResultT]):
         uri: str,
         *,
         run_middleware: bool = True,
-    ) -> list[ResourceContent] | mcp.types.CreateTaskResult:
+    ) -> ResourceResult | mcp.types.CreateTaskResult:
         """Read a resource by URI.
 
         This is the public API for reading resources. By default, middleware is applied.
@@ -1209,7 +1209,7 @@ class FastMCP(Generic[LifespanResultT]):
                 Set to False when called from middleware to avoid re-applying.
 
         Returns:
-            List of ResourceContent objects.
+            ResourceResult with contents.
             May return CreateTaskResult if called in MCP context with task metadata.
 
         Raises:
@@ -1235,7 +1235,7 @@ class FastMCP(Generic[LifespanResultT]):
                 )
                 if isinstance(result, mcp.types.CreateTaskResult):
                     return result
-                return list(result)
+                return result
 
             # Core logic: find and read resource
             # First pass: try concrete resources from all providers
@@ -1246,9 +1246,7 @@ class FastMCP(Generic[LifespanResultT]):
                         result = await resource._read()
                         if isinstance(result, mcp.types.CreateTaskResult):
                             return result
-                        if result.mime_type is None:
-                            result.mime_type = resource.mime_type
-                        return [result]
+                        return result
                     except (FastMCPError, McpError):
                         logger.exception(f"Error reading resource {uri!r}")
                         raise
@@ -1272,7 +1270,7 @@ class FastMCP(Generic[LifespanResultT]):
                             result = await template._read(uri, params)
                             if isinstance(result, mcp.types.CreateTaskResult):
                                 return result
-                            return [result]
+                            return result
                         except (FastMCPError, McpError):
                             logger.exception(f"Error reading resource {uri!r}")
                             raise
@@ -1540,16 +1538,45 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def _read_resource_mcp(
         self, uri: AnyUrl | str
-    ) -> list[ResourceContent] | mcp.types.CreateTaskResult:
+    ) -> mcp.types.ReadResourceResult | mcp.types.CreateTaskResult:
         """Handle MCP 'readResource' requests.
 
-        The LowLevelServer.read_resource() decorator handles task metadata,
-        contextvars, and MCP conversion.
+        Sets task metadata contextvar and calls read_resource(). The resource's
+        _read() method handles the backgrounding decision.
+
+        Args:
+            uri: The resource URI
+
+        Returns:
+            ReadResourceResult or CreateTaskResult for background execution
         """
+        from fastmcp.server.dependencies import _docket_fn_key, _task_metadata
+
         logger.debug(f"[{self.name}] Handler called: read_resource %s", uri)
 
         try:
-            return await self.read_resource(str(uri))
+            # Extract SEP-1686 task metadata from request context
+            task_meta_dict: dict[str, Any] | None = None
+            try:
+                ctx = self._mcp_server.request_context
+                if ctx.experimental.is_task:
+                    task_meta = ctx.experimental.task_metadata
+                    task_meta_dict = task_meta.model_dump(exclude_none=True)
+            except (AttributeError, LookupError):
+                pass
+
+            # Set contextvars so resource._read() can access them
+            task_token = _task_metadata.set(task_meta_dict)
+            key_token = _docket_fn_key.set(Resource.make_key(str(uri)))
+            try:
+                result = await self.read_resource(str(uri))
+
+                if isinstance(result, mcp.types.CreateTaskResult):
+                    return result
+                return result.to_mcp_result(uri)
+            finally:
+                _task_metadata.reset(task_token)
+                _docket_fn_key.reset(key_token)
         except DisabledError as e:
             raise NotFoundError(f"Unknown resource: {str(uri)!r}") from e
         except NotFoundError:

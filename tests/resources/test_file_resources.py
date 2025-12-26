@@ -7,7 +7,7 @@ from pydantic import FileUrl
 
 from fastmcp.exceptions import ResourceError
 from fastmcp.resources import FileResource
-from fastmcp.resources.resource import ResourceContent
+from fastmcp.resources.resource import ResourceResult
 
 
 @pytest.fixture
@@ -63,9 +63,10 @@ class TestFileResource:
             path=temp_file,
         )
         result = await resource.read()
-        assert isinstance(result, ResourceContent)
-        assert result.content == "test content"
-        assert result.mime_type == "text/plain"
+        assert isinstance(result, ResourceResult)
+        assert len(result.contents) == 1
+        assert result.contents[0].content == "test content"
+        assert result.contents[0].mime_type == "text/plain"
 
     async def test_read_binary_file(self, temp_file: Path):
         """Test reading a file as binary."""
@@ -76,8 +77,9 @@ class TestFileResource:
             is_binary=True,
         )
         result = await resource.read()
-        assert isinstance(result, ResourceContent)
-        assert result.content == b"test content"
+        assert isinstance(result, ResourceResult)
+        assert len(result.contents) == 1
+        assert result.contents[0].content == b"test content"
 
     def test_relative_path_error(self):
         """Test error on relative path."""

@@ -191,9 +191,11 @@ async def resource_return_server():
         return "Simple text resource"
 
     @mcp.resource("data://json", task=True)
-    async def json_data() -> dict[str, Any]:
+    async def json_data() -> str:
         """Return JSON-like data."""
-        return {"key": "value", "count": 123}
+        import json
+
+        return json.dumps({"key": "value", "count": 123})
 
     return mcp
 

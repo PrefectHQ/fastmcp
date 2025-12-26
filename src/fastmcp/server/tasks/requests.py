@@ -323,22 +323,16 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
             return mcp_result
 
         elif isinstance(component, ResourceTemplate):
-            resource_content = component.convert_result(raw_value)
-            mcp_content = resource_content.to_mcp_resource_contents(
-                component.uri_template
-            )
-            return mcp.types.ReadResourceResult(
-                contents=[mcp_content],
-                _meta=related_task_meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
-            )
+            fastmcp_result = component.convert_result(raw_value)
+            mcp_result = fastmcp_result.to_mcp_result(component.uri_template)
+            mcp_result._meta = related_task_meta  # type: ignore[attr-defined]
+            return mcp_result
 
         elif isinstance(component, Resource):
-            resource_content = component.convert_result(raw_value)
-            mcp_content = resource_content.to_mcp_resource_contents(str(component.uri))
-            return mcp.types.ReadResourceResult(
-                contents=[mcp_content],
-                _meta=related_task_meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
-            )
+            fastmcp_result = component.convert_result(raw_value)
+            mcp_result = fastmcp_result.to_mcp_result(str(component.uri))
+            mcp_result._meta = related_task_meta  # type: ignore[attr-defined]
+            return mcp_result
 
         else:
             raise McpError(

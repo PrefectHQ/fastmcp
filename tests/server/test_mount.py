@@ -642,8 +642,8 @@ class TestResourcesAndTemplates:
         data_app = FastMCP("DataApp")
 
         @data_app.resource(uri="data://users")
-        async def get_users():
-            return ["user1", "user2"]
+        async def get_users() -> str:
+            return "user1, user2"
 
         # Mount the data app
         main_app.mount(data_app, "data")
@@ -655,8 +655,9 @@ class TestResourcesAndTemplates:
         # Check that resource can be accessed
         async with Client(main_app) as client:
             result = await client.read_resource("data://data/users")
+            assert len(result) == 1
             assert isinstance(result[0], TextResourceContents)
-            assert json.loads(result[0].text) == ["user1", "user2"]
+            assert result[0].text == "user1, user2"
 
     async def test_mount_with_resource_templates(self):
         """Test mounting a server with resource templates."""
@@ -664,8 +665,8 @@ class TestResourcesAndTemplates:
         user_app = FastMCP("UserApp")
 
         @user_app.resource(uri="users://{user_id}/profile")
-        def get_user_profile(user_id: str) -> dict:
-            return {"id": user_id, "name": f"User {user_id}"}
+        def get_user_profile(user_id: str) -> str:
+            return json.dumps({"id": user_id, "name": f"User {user_id}"})
 
         # Mount the user app
         main_app.mount(user_app, "api")
@@ -692,8 +693,8 @@ class TestResourcesAndTemplates:
 
         # Add a resource after mounting
         @data_app.resource(uri="data://config")
-        def get_config():
-            return {"version": "1.0"}
+        def get_config() -> str:
+            return json.dumps({"version": "1.0"})
 
         # Resource should be accessible through main app
         resources = await main_app.get_resources()
@@ -816,8 +817,8 @@ class TestProxyServer:
         original_server = FastMCP("OriginalServer")
 
         @original_server.resource(uri="config://settings")
-        def get_config():
-            return {"api_key": "12345"}
+        def get_config() -> str:
+            return json.dumps({"api_key": "12345"})
 
         # Create proxy server
         proxy_server = FastMCP.as_proxy(FastMCPTransport(original_server))

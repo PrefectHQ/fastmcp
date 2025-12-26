@@ -104,8 +104,8 @@ async def test_import_with_resources():
 
     # Add a resource to the data app
     @data_app.resource(uri="data://users")
-    async def get_users():
-        return ["user1", "user2"]
+    async def get_users() -> str:
+        return "user1, user2"
 
     # Import the data app
     await main_app.import_server(data_app, "data")
@@ -123,8 +123,12 @@ async def test_import_with_resource_templates():
 
     # Add a resource template to the user app
     @user_app.resource(uri="users://{user_id}/profile")
-    def get_user_profile(user_id: str) -> dict:
-        return {"id": user_id, "name": f"User {user_id}"}
+    def get_user_profile(user_id: str) -> str:
+        import json
+
+        return json.dumps(
+            {"id": user_id, "name": f"User {user_id}"}, separators=(",", ":")
+        )
 
     # Import the user app
     await main_app.import_server(user_app, "api")
@@ -358,11 +362,15 @@ async def test_import_with_proxy_resources():
 
     # Create a resource in the API app
     @api_app.resource(uri="config://settings")
-    def get_config():
-        return {
-            "api_key": "12345",
-            "base_url": "https://api.example.com",
-        }
+    def get_config() -> str:
+        import json
+
+        return json.dumps(
+            {
+                "api_key": "12345",
+                "base_url": "https://api.example.com",
+            }
+        )
 
     proxy_app = FastMCP.as_proxy(api_app)
     await main_app.import_server(proxy_app, "api")
@@ -389,8 +397,10 @@ async def test_import_with_proxy_resource_templates():
 
     # Create a resource template in the API app
     @api_app.resource(uri="user://{name}/{email}")
-    def create_user(name: str, email: str):
-        return {"name": name, "email": email}
+    def create_user(name: str, email: str) -> str:
+        import json
+
+        return json.dumps({"name": name, "email": email})
 
     proxy_app = FastMCP.as_proxy(api_app)
     await main_app.import_server(proxy_app, "api")

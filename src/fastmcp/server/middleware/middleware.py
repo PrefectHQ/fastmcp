@@ -18,7 +18,7 @@ import mcp.types as mt
 from typing_extensions import TypeVar
 
 from fastmcp.prompts.prompt import Prompt, PromptResult
-from fastmcp.resources.resource import Resource, ResourceContent
+from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.tools.tool import Tool, ToolResult
 
@@ -163,8 +163,8 @@ class Middleware:
     async def on_read_resource(
         self,
         context: MiddlewareContext[mt.ReadResourceRequestParams],
-        call_next: CallNext[mt.ReadResourceRequestParams, Sequence[ResourceContent]],
-    ) -> Sequence[ResourceContent]:
+        call_next: CallNext[mt.ReadResourceRequestParams, ResourceResult],
+    ) -> ResourceResult:
         return await call_next(context)
 
     async def on_get_prompt(

@@ -26,8 +26,6 @@ from pydantic import AnyUrl
 
 from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import PromptResult
-from fastmcp.resources import Resource
-from fastmcp.resources.types import ResourceContent
 from fastmcp.server.dependencies import _docket_fn_key, _task_metadata
 from fastmcp.utilities.logging import get_logger
 
@@ -212,20 +210,19 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         [
             Callable[
                 [AnyUrl],
-                Awaitable[list[ResourceContent] | mcp.types.CreateTaskResult],
+                Awaitable[mcp.types.ReadResourceResult | mcp.types.CreateTaskResult],
             ]
         ],
         Callable[
             [AnyUrl],
-            Awaitable[list[ResourceContent] | mcp.types.CreateTaskResult],
+            Awaitable[mcp.types.ReadResourceResult | mcp.types.CreateTaskResult],
         ],
     ]:
         """
         Decorator for registering a read_resource handler with CreateTaskResult support.
 
         The MCP SDK's read_resource decorator does not support returning CreateTaskResult
-        for background task execution. This decorator provides that support by wrapping the
-        handler with task metadata extraction, contextvar management, and MCP format conversion.
+        for background task execution. This decorator wraps the result in ServerResult.
 
         This decorator can be removed once the MCP SDK adds native CreateTaskResult support
         for resources.
@@ -234,43 +231,17 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         def decorator(
             func: Callable[
                 [AnyUrl],
-                Awaitable[list[ResourceContent] | mcp.types.CreateTaskResult],
+                Awaitable[mcp.types.ReadResourceResult | mcp.types.CreateTaskResult],
             ],
         ) -> Callable[
             [AnyUrl],
-            Awaitable[list[ResourceContent] | mcp.types.CreateTaskResult],
+            Awaitable[mcp.types.ReadResourceResult | mcp.types.CreateTaskResult],
         ]:
             async def handler(
                 req: mcp.types.ReadResourceRequest,
             ) -> mcp.types.ServerResult:
-                uri = req.params.uri
-
-                # Extract task metadata from request context
-                task_meta_dict: dict[str, Any] | None = None
-                try:
-                    ctx = self.request_context
-                    if ctx.experimental.is_task:
-                        task_meta = ctx.experimental.task_metadata
-                        task_meta_dict = task_meta.model_dump(exclude_none=True)
-                except (AttributeError, LookupError):
-                    pass
-
-                # Set contextvars
-                task_token = _task_metadata.set(task_meta_dict)
-                key_token = _docket_fn_key.set(Resource.make_key(str(uri)))
-                try:
-                    result = await func(uri)
-
-                    if isinstance(result, mcp.types.CreateTaskResult):
-                        return mcp.types.ServerResult(result)
-
-                    contents = [item.to_mcp_resource_contents(uri) for item in result]
-                    return mcp.types.ServerResult(
-                        mcp.types.ReadResourceResult(contents=contents)
-                    )
-                finally:
-                    _task_metadata.reset(task_token)
-                    _docket_fn_key.reset(key_token)
+                result = await func(req.params.uri)
+                return mcp.types.ServerResult(result)
 
             self.request_handlers[mcp.types.ReadResourceRequest] = handler
             return func
