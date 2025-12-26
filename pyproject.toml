@@ -104,6 +104,7 @@ fallback-version = "0.0.0"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 # filterwarnings = ["error::DeprecationWarning"]
 filterwarnings = [
     # Suppress OAuth in-memory token storage warnings in tests
