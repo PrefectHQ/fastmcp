@@ -56,9 +56,9 @@ def pytest_runtest_makereport(item, call):
     outcome = yield
     report = outcome.get_result()
 
-    # Only process actual failures during the call phase, not xfails
+    # Only process actual failures during the call or teardown phase, not xfails
     if (
-        report.when == "call"
+        report.when in ("call", "teardown")
         and report.failed
         and not hasattr(report, "wasxfail")
         and item.module.__name__ == "tests.integration_tests.test_github_mcp_remote"
