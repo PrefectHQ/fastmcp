@@ -298,13 +298,16 @@ class OAuth(OAuthClientProvider):
             # First attempt with potentially cached credentials
             gen = super().async_auth_flow(request)
             response = None
-            while True:
-                try:
-                    # First iteration sends None, subsequent iterations send response
-                    yielded_request = await gen.asend(response)  # ty: ignore[invalid-argument-type]
-                    response = yield yielded_request
-                except StopAsyncIteration:
-                    break
+            try:
+                while True:
+                    try:
+                        # First iteration sends None, subsequent iterations send response
+                        yielded_request = await gen.asend(response)  # ty: ignore[invalid-argument-type]
+                        response = yield yielded_request
+                    except StopAsyncIteration:
+                        break
+            finally:
+                await gen.aclose()
 
         except ClientNotFoundError:
             logger.debug(
@@ -317,9 +320,12 @@ class OAuth(OAuthClientProvider):
             # Retry with fresh registration
             gen = super().async_auth_flow(request)
             response = None
-            while True:
-                try:
-                    yielded_request = await gen.asend(response)  # ty: ignore[invalid-argument-type]
-                    response = yield yielded_request
-                except StopAsyncIteration:
-                    break
+            try:
+                while True:
+                    try:
+                        yielded_request = await gen.asend(response)  # ty: ignore[invalid-argument-type]
+                        response = yield yielded_request
+                    except StopAsyncIteration:
+                        break
+            finally:
+                await gen.aclose()
