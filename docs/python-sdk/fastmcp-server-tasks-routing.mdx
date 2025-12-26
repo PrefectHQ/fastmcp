@@ -16,7 +16,7 @@ Provides unified task mode enforcement and docket routing logic.
 ### `check_background_task` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/routing.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-check_background_task(component: Tool | Resource | ResourceTemplate | Prompt, task_type: TaskType, key: str, arguments: dict[str, Any] | None = None) -> mcp.types.CreateTaskResult | None
+check_background_task(component: Tool | Resource | ResourceTemplate | Prompt, task_type: TaskType, arguments: dict[str, Any] | None = None, task_meta: TaskMeta | None = None) -> mcp.types.CreateTaskResult | None
 ```
 
 
@@ -25,8 +25,8 @@ Check task mode and submit to background if requested.
 **Args:**
 - `component`: The MCP component
 - `task_type`: Type of task ("tool", "resource", "template", "prompt")
-- `key`: Docket registration key (caller resolves from contextvar + fallback)
 - `arguments`: Arguments for tool/prompt/template execution
+- `task_meta`: Task execution metadata. If provided, execute as background task.
 
 **Returns:**
 - CreateTaskResult if submitted to docket, None for sync execution

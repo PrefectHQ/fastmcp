@@ -78,7 +78,7 @@ on_call_tool(self, context: MiddlewareContext[mt.CallToolRequestParams], call_ne
 #### `on_read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L163" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_read_resource(self, context: MiddlewareContext[mt.ReadResourceRequestParams], call_next: CallNext[mt.ReadResourceRequestParams, Sequence[ResourceContent]]) -> Sequence[ResourceContent]
+on_read_resource(self, context: MiddlewareContext[mt.ReadResourceRequestParams], call_next: CallNext[mt.ReadResourceRequestParams, ResourceResult]) -> ResourceResult
 ```
 
 #### `on_get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L170" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>

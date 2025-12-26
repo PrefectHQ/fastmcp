@@ -1,0 +1,31 @@
+---
+title: async_utils
+sidebarTitle: async_utils
+---
+
+# `fastmcp.utilities.async_utils`
+
+
+Async utilities for FastMCP.
+
+## Functions
+
+### `gather` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/async_utils.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+gather(*awaitables: Awaitable[T]) -> list[T] | list[T | BaseException]
+```
+
+
+Run awaitables concurrently and return results in order.
+
+Uses anyio TaskGroup for structured concurrency.
+
+**Args:**
+- `*awaitables`: Awaitables to run concurrently
+- `return_exceptions`: If True, exceptions are returned in results.
+              If False, first exception cancels all and raises.
+
+**Returns:**
+- List of results in the same order as input awaitables.
+

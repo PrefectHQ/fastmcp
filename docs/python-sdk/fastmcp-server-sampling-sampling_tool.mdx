@@ -10,7 +10,7 @@ SamplingTool for use during LLM sampling requests.
 
 ## Classes
 
-### `SamplingTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SamplingTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A tool that can be used during LLM sampling.
@@ -37,7 +37,7 @@ Create a SamplingTool explicitly when you need custom name/description:
 
 **Methods:**
 
-#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L45" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, arguments: dict[str, Any] | None = None) -> Any
@@ -52,7 +52,7 @@ Execute the tool with the given arguments.
 - The result of executing the tool function.
 
 
-#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any]) -> SamplingTool

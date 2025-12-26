@@ -7,7 +7,7 @@ sidebarTitle: low_level
 
 ## Classes
 
-### `MiddlewareServerSession` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L33" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `MiddlewareServerSession` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L35" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 ServerSession that routes initialization requests through FastMCP middleware.
@@ -15,7 +15,7 @@ ServerSession that routes initialization requests through FastMCP middleware.
 
 **Methods:**
 
-#### `fastmcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `fastmcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L45" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 fastmcp(self) -> FastMCP
@@ -24,11 +24,11 @@ fastmcp(self) -> FastMCP
 Get the FastMCP instance.
 
 
-### `LowLevelServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L130" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `LowLevelServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 **Methods:**
 
-#### `fastmcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L144" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `fastmcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L146" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 fastmcp(self) -> FastMCP
@@ -37,17 +37,47 @@ fastmcp(self) -> FastMCP
 Get the FastMCP instance.
 
 
-#### `create_initialization_options` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L151" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `create_initialization_options` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L153" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_initialization_options(self, notification_options: NotificationOptions | None = None, experimental_capabilities: dict[str, dict[str, Any]] | None = None, **kwargs: Any) -> InitializationOptions
 ```
 
-#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L166" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, read_stream: MemoryObjectReceiveStream[SessionMessage | Exception], write_stream: MemoryObjectSendStream[SessionMessage], initialization_options: InitializationOptions, raise_exceptions: bool = False, stateless: bool = False)
 ```
 
 Overrides the run method to use the MiddlewareServerSession.
+
+
+#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read_resource(self) -> Callable[[Callable[[AnyUrl], Awaitable[mcp.types.ReadResourceResult | mcp.types.CreateTaskResult]]], Callable[[AnyUrl], Awaitable[mcp.types.ReadResourceResult | mcp.types.CreateTaskResult]]]
+```
+
+Decorator for registering a read_resource handler with CreateTaskResult support.
+
+The MCP SDK's read_resource decorator does not support returning CreateTaskResult
+for background task execution. This decorator wraps the result in ServerResult.
+
+This decorator can be removed once the MCP SDK adds native CreateTaskResult support
+for resources.
+
+
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L248" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(self) -> Callable[[Callable[[str, dict[str, Any] | None], Awaitable[mcp.types.GetPromptResult | mcp.types.CreateTaskResult]]], Callable[[str, dict[str, Any] | None], Awaitable[mcp.types.GetPromptResult | mcp.types.CreateTaskResult]]]
+```
+
+Decorator for registering a get_prompt handler with CreateTaskResult support.
+
+The MCP SDK's get_prompt decorator does not support returning CreateTaskResult
+for background task execution. This decorator wraps the result in ServerResult.
+
+This decorator can be removed once the MCP SDK adds native CreateTaskResult support
+for prompts.
 

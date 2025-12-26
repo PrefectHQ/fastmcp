@@ -13,10 +13,10 @@ Handles queuing tool/prompt/resource executions to Docket as background tasks.
 
 ## Functions
 
-### `submit_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/handlers.py#L30" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `submit_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/handlers.py#L31" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-submit_to_docket(task_type: Literal['tool', 'resource', 'template', 'prompt'], key: str, component: Tool | Resource | ResourceTemplate | Prompt, arguments: dict[str, Any] | None = None) -> mcp.types.CreateTaskResult
+submit_to_docket(task_type: Literal['tool', 'resource', 'template', 'prompt'], key: str, component: Tool | Resource | ResourceTemplate | Prompt, arguments: dict[str, Any] | None = None, task_meta: TaskMeta | None = None) -> mcp.types.CreateTaskResult
 ```
 
 
@@ -28,15 +28,13 @@ methods (_run, _read, _render) when task metadata is present and mode allows.
 Queues the component's method to Docket, stores raw return values,
 and converts to MCP types on retrieval.
 
-Note: Client-requested TTL in task_meta is intentionally ignored.
-Server-side TTL policy (docket.execution_ttl) takes precedence for
-consistent task lifecycle management.
-
 **Args:**
 - `task_type`: Component type for task key construction
 - `key`: The component key as seen by MCP layer (with namespace prefix)
 - `component`: The component instance (Tool, Resource, ResourceTemplate, Prompt)
 - `arguments`: Arguments/params (None for Resource which has no args)
+- `task_meta`: Task execution metadata. If task_meta.ttl is provided, it
+overrides the server default (docket.execution_ttl).
 
 **Returns:**
 - Task stub with proper Task object

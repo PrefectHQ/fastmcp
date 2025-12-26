@@ -33,16 +33,16 @@ Example:
     logger = get_logger(__name__)
 
     # Load configuration from environment
-    OCI_CONFIG_URL = os.environ.get("OCI_CONFIG_URL")
-    OCI_CLIENT_ID = os.environ.get("OCI_CLIENT_ID")
-    OCI_CLIENT_SECRET = os.environ.get("OCI_CLIENT_SECRET")
-    OCI_IAM_GUID = os.environ.get("OCI_IAM_GUID")
+    config_url = os.environ.get("OCI_CONFIG_URL")  # OCI IAM Domain OIDC discovery URL
+    client_id = os.environ.get("OCI_CLIENT_ID")  # Client ID configured for the OCI IAM Domain Integrated Application
+    client_secret = os.environ.get("OCI_CLIENT_SECRET")  # Client secret configured for the OCI IAM Domain Integrated Application
+    iam_guid = os.environ.get("OCI_IAM_GUID")  # IAM GUID configured for the OCI IAM Domain
 
     # Simple OCI OIDC protection
     auth = OCIProvider(
-        config_url=OCI_CONFIG_URL,  # config URL is the OCI IAM Domain OIDC discovery URL
-        client_id=OCI_CLIENT_ID,  # This is same as the client ID configured for the OCI IAM Domain Integrated Application
-        client_secret=OCI_CLIENT_SECRET,  # This is same as the client secret configured for the OCI IAM Domain Integrated Application
+        config_url=config_url,  # config URL is the OCI IAM Domain OIDC discovery URL
+        client_id=client_id,  # This is same as the client ID configured for the OCI IAM Domain Integrated Application
+        client_secret=client_secret,  # This is same as the client secret configured for the OCI IAM Domain Integrated Application
         required_scopes=["openid", "profile", "email"],
         redirect_path="/auth/callback",
         base_url="http://localhost:8000",
@@ -69,9 +69,9 @@ Example:
         logger.debug(f"Creating new signer for token ID: {tokenID}")
         signer = TokenExchangeSigner(
             jwt_or_func=token,
-            oci_domain_id=OCI_IAM_GUID.split(".")[0] if OCI_IAM_GUID else "",  # This is same as IAM GUID configured for the OCI IAM Domain
-            client_id=OCI_CLIENT_ID,  # This is same as the client ID configured for the OCI IAM Domain Integrated Application
-            client_secret=OCI_CLIENT_SECRET  # This is same as the client secret configured for the OCI IAM Domain Integrated Application
+            oci_domain_id=iam_guid.split(".")[0] if iam_guid else None,  # This is same as IAM GUID configured for the OCI IAM Domain
+            client_id=client_id,  # This is same as the client ID configured for the OCI IAM Domain Integrated Application
+            client_secret=client_secret,  # This is same as the client secret configured for the OCI IAM Domain Integrated Application
         )
         logger.debug(f"Signer {signer} created for token ID: {tokenID}")
 
@@ -87,7 +87,7 @@ Example:
 
 ## Classes
 
-### `OCIProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/oci.py#L119" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `OCIProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/oci.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 An OCI IAM Domain provider implementation for FastMCP.

@@ -7,7 +7,29 @@ sidebarTitle: json_schema
 
 ## Functions
 
-### `compress_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/json_schema.py#L200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resolve_root_ref` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/json_schema.py#L7" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]
+```
+
+
+Resolve $ref at root level to meet MCP spec requirements.
+
+MCP specification requires outputSchema to have "type": "object" at the root level.
+When Pydantic generates schemas for self-referential models, it uses $ref at the
+root level pointing to $defs. This function resolves such references by inlining
+the referenced definition while preserving $defs for nested references.
+
+**Args:**
+- `schema`: JSON schema dict that may have $ref at root level
+
+**Returns:**
+- A new schema dict with root-level $ref resolved, or the original schema
+- if no resolution is needed
+
+
+### `compress_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/json_schema.py#L240" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 compress_schema(schema: dict, prune_params: list[str] | None = None, prune_defs: bool = True, prune_additional_properties: bool = True, prune_titles: bool = False) -> dict
