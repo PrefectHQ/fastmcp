@@ -844,36 +844,6 @@ class FastMCP(Generic[LifespanResultT]):
 
         raise NotFoundError(f"Unknown tool: {name!r}")
 
-    async def _get_resource_or_template_or_none(
-        self, uri: str
-    ) -> Resource | ResourceTemplate | None:
-        """Get an enabled resource or template by URI. Returns None if not found.
-
-        Returns the original ResourceTemplate (not a Resource created from it)
-        to preserve the registered function for task execution.
-
-        Queries all providers in parallel.
-        First provider wins. Checks concrete resources first, then templates.
-        """
-        # Resources listed first so they have priority over templates
-        results = await gather(
-            *[p.get_resource(uri) for p in self._providers],
-            *[p.get_resource_template(uri) for p in self._providers],
-            return_exceptions=True,
-        )
-
-        for result in results:
-            if isinstance(result, BaseException):
-                if not isinstance(result, NotFoundError):
-                    logger.debug(f"Error getting resource/template: {result}")
-                continue
-            if isinstance(
-                result, (Resource, ResourceTemplate)
-            ) and self._is_component_enabled(result):
-                return result
-
-        return None
-
     async def get_resources(self, *, run_middleware: bool = False) -> list[Resource]:
         """Get all enabled resources from providers.
 
@@ -1202,28 +1172,24 @@ class FastMCP(Generic[LifespanResultT]):
                     ),
                 )
 
-            # Core logic: find and execute tool
-            for provider in self._providers:
-                tool = await provider.get_tool(name)
-                if tool is not None and self._is_component_enabled(tool):
-                    # Set fn_key for background task routing
-                    if task_meta is not None and task_meta.fn_key is None:
-                        task_meta = replace(task_meta, fn_key=tool.key)
-                    try:
-                        return await tool._run(arguments or {}, task_meta=task_meta)
-                    except FastMCPError:
-                        logger.exception(f"Error calling tool {name!r}")
-                        raise
-                    except (ValidationError, PydanticValidationError):
-                        logger.exception(f"Error validating tool {name!r}")
-                        raise
-                    except Exception as e:
-                        logger.exception(f"Error calling tool {name!r}")
-                        if self._mask_error_details:
-                            raise ToolError(f"Error calling tool {name!r}") from e
-                        raise ToolError(f"Error calling tool {name!r}: {e}") from e
-
-            raise NotFoundError(f"Unknown tool: {name!r}")
+            # Core logic: find and execute tool (providers queried in parallel)
+            tool = await self.get_tool(name)
+            # Set fn_key for background task routing
+            if task_meta is not None and task_meta.fn_key is None:
+                task_meta = replace(task_meta, fn_key=tool.key)
+            try:
+                return await tool._run(arguments or {}, task_meta=task_meta)
+            except FastMCPError:
+                logger.exception(f"Error calling tool {name!r}")
+                raise
+            except (ValidationError, PydanticValidationError):
+                logger.exception(f"Error validating tool {name!r}")
+                raise
+            except Exception as e:
+                logger.exception(f"Error calling tool {name!r}")
+                if self._mask_error_details:
+                    raise ToolError(f"Error calling tool {name!r}") from e
+                raise ToolError(f"Error calling tool {name!r}: {e}") from e
 
     @overload
     async def read_resource(
@@ -1297,56 +1263,45 @@ class FastMCP(Generic[LifespanResultT]):
                     ),
                 )
 
-            # Core logic: find and read resource
-            # First pass: try concrete resources from all providers
-            for provider in self._providers:
-                resource = await provider.get_resource(uri)
-                if resource is not None and self._is_component_enabled(resource):
-                    # Set fn_key for background task routing
-                    if task_meta is not None and task_meta.fn_key is None:
-                        task_meta = replace(task_meta, fn_key=resource.key)
-                    try:
-                        return await resource._read(task_meta=task_meta)
-                    except (FastMCPError, McpError):
-                        logger.exception(f"Error reading resource {uri!r}")
-                        raise
-                    except Exception as e:
-                        logger.exception(f"Error reading resource {uri!r}")
-                        if self._mask_error_details:
-                            raise ResourceError(
-                                f"Error reading resource {uri!r}"
-                            ) from e
-                        raise ResourceError(
-                            f"Error reading resource {uri!r}: {e}"
-                        ) from e
+            # Core logic: find and read resource (providers queried in parallel)
+            # Try concrete resources first
+            try:
+                resource = await self.get_resource(uri)
+                # Set fn_key for background task routing
+                if task_meta is not None and task_meta.fn_key is None:
+                    task_meta = replace(task_meta, fn_key=resource.key)
+                return await resource._read(task_meta=task_meta)
+            except NotFoundError:
+                pass  # Fall through to try templates
+            except (FastMCPError, McpError):
+                logger.exception(f"Error reading resource {uri!r}")
+                raise
+            except Exception as e:
+                logger.exception(f"Error reading resource {uri!r}")
+                if self._mask_error_details:
+                    raise ResourceError(f"Error reading resource {uri!r}") from e
+                raise ResourceError(f"Error reading resource {uri!r}: {e}") from e
 
-            # Second pass: try templates from all providers
-            for provider in self._providers:
-                template = await provider.get_resource_template(uri)
-                if template is not None and self._is_component_enabled(template):
-                    params = template.matches(uri)
-                    if params is not None:
-                        # Set fn_key for background task routing
-                        if task_meta is not None and task_meta.fn_key is None:
-                            task_meta = replace(task_meta, fn_key=template.key)
-                        try:
-                            return await template._read(
-                                uri, params, task_meta=task_meta
-                            )
-                        except (FastMCPError, McpError):
-                            logger.exception(f"Error reading resource {uri!r}")
-                            raise
-                        except Exception as e:
-                            logger.exception(f"Error reading resource {uri!r}")
-                            if self._mask_error_details:
-                                raise ResourceError(
-                                    f"Error reading resource {uri!r}"
-                                ) from e
-                            raise ResourceError(
-                                f"Error reading resource {uri!r}: {e}"
-                            ) from e
-
-            raise NotFoundError(f"Unknown resource: {uri!r}")
+            # Try templates
+            try:
+                template = await self.get_resource_template(uri)
+            except NotFoundError:
+                raise NotFoundError(f"Unknown resource: {uri!r}") from None
+            params = template.matches(uri)
+            assert params is not None  # get_resource_template already verified match
+            # Set fn_key for background task routing
+            if task_meta is not None and task_meta.fn_key is None:
+                task_meta = replace(task_meta, fn_key=template.key)
+            try:
+                return await template._read(uri, params, task_meta=task_meta)
+            except (FastMCPError, McpError):
+                logger.exception(f"Error reading resource {uri!r}")
+                raise
+            except Exception as e:
+                logger.exception(f"Error reading resource {uri!r}")
+                if self._mask_error_details:
+                    raise ResourceError(f"Error reading resource {uri!r}") from e
+                raise ResourceError(f"Error reading resource {uri!r}: {e}") from e
 
     @overload
     async def render_prompt(
@@ -1419,27 +1374,21 @@ class FastMCP(Generic[LifespanResultT]):
                     ),
                 )
 
-            # Core logic: find and render prompt
-            for provider in self._providers:
-                prompt = await provider.get_prompt(name)
-                if prompt is not None and self._is_component_enabled(prompt):
-                    # Set fn_key for background task routing
-                    if task_meta is not None and task_meta.fn_key is None:
-                        task_meta = replace(task_meta, fn_key=prompt.key)
-                    try:
-                        return await prompt._render(arguments, task_meta=task_meta)
-                    except (FastMCPError, McpError):
-                        logger.exception(f"Error rendering prompt {name!r}")
-                        raise
-                    except Exception as e:
-                        logger.exception(f"Error rendering prompt {name!r}")
-                        if self._mask_error_details:
-                            raise PromptError(f"Error rendering prompt {name!r}") from e
-                        raise PromptError(
-                            f"Error rendering prompt {name!r}: {e}"
-                        ) from e
-
-            raise NotFoundError(f"Unknown prompt: {name!r}")
+            # Core logic: find and render prompt (providers queried in parallel)
+            prompt = await self.get_prompt(name)
+            # Set fn_key for background task routing
+            if task_meta is not None and task_meta.fn_key is None:
+                task_meta = replace(task_meta, fn_key=prompt.key)
+            try:
+                return await prompt._render(arguments, task_meta=task_meta)
+            except (FastMCPError, McpError):
+                logger.exception(f"Error rendering prompt {name!r}")
+                raise
+            except Exception as e:
+                logger.exception(f"Error rendering prompt {name!r}")
+                if self._mask_error_details:
+                    raise PromptError(f"Error rendering prompt {name!r}") from e
+                raise PromptError(f"Error rendering prompt {name!r}: {e}") from e
 
     def custom_route(
         self,
