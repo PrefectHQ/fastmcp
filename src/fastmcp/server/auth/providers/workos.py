@@ -12,46 +12,17 @@ from __future__ import annotations
 
 import httpx
 from key_value.aio.protocols import AsyncKeyValue
-from pydantic import AnyHttpUrl, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth import AccessToken, RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import NotSet, NotSetT
 
 logger = get_logger(__name__)
-
-
-class WorkOSProviderSettings(BaseSettings):
-    """Settings for WorkOS OAuth provider."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_SERVER_AUTH_WORKOS_",
-        env_file=ENV_FILE,
-        extra="ignore",
-    )
-
-    client_id: str | None = None
-    client_secret: SecretStr | None = None
-    authkit_domain: str | None = None  # e.g., "https://your-app.authkit.app"
-    base_url: AnyHttpUrl | str | None = None
-    issuer_url: AnyHttpUrl | str | None = None
-    redirect_path: str | None = None
-    required_scopes: list[str] | None = None
-    timeout_seconds: int | None = None
-    allowed_client_redirect_uris: list[str] | None = None
-    jwt_signing_key: str | None = None
-
-    @field_validator("required_scopes", mode="before")
-    @classmethod
-    def _parse_scopes(cls, v):
-        return parse_scopes(v)
 
 
 class WorkOSTokenVerifier(TokenVerifier):
@@ -163,17 +134,17 @@ class WorkOSProvider(OAuthProxy):
     def __init__(
         self,
         *,
-        client_id: str | NotSetT = NotSet,
-        client_secret: str | NotSetT = NotSet,
-        authkit_domain: str | NotSetT = NotSet,
-        base_url: AnyHttpUrl | str | NotSetT = NotSet,
-        issuer_url: AnyHttpUrl | str | NotSetT = NotSet,
-        redirect_path: str | NotSetT = NotSet,
-        required_scopes: list[str] | NotSetT | None = NotSet,
-        timeout_seconds: int | NotSetT = NotSet,
-        allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
+        client_id: str,
+        client_secret: str,
+        authkit_domain: str,
+        base_url: AnyHttpUrl | str,
+        issuer_url: AnyHttpUrl | str | None = None,
+        redirect_path: str | None = None,
+        required_scopes: list[str] | None = None,
+        timeout_seconds: int = 10,
+        allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
-        jwt_signing_key: str | bytes | NotSetT = NotSet,
+        jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
     ):
         """Initialize WorkOS OAuth provider.
@@ -187,7 +158,7 @@ class WorkOSProvider(OAuthProxy):
                 to avoid 404s during discovery when mounting under a path.
             redirect_path: Redirect path configured in WorkOS (defaults to "/auth/callback")
             required_scopes: Required OAuth scopes (no default)
-            timeout_seconds: HTTP request timeout for WorkOS API calls
+            timeout_seconds: HTTP request timeout for WorkOS API calls (defaults to 10)
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
@@ -201,104 +172,43 @@ class WorkOSProvider(OAuthProxy):
                 When False, authorization proceeds directly without user confirmation.
                 SECURITY WARNING: Only disable for local development or testing environments.
         """
-
-        settings = WorkOSProviderSettings.model_validate(
-            {
-                k: v
-                for k, v in {
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "authkit_domain": authkit_domain,
-                    "base_url": base_url,
-                    "issuer_url": issuer_url,
-                    "redirect_path": redirect_path,
-                    "required_scopes": required_scopes,
-                    "timeout_seconds": timeout_seconds,
-                    "allowed_client_redirect_uris": allowed_client_redirect_uris,
-                    "jwt_signing_key": jwt_signing_key,
-                }.items()
-                if v is not NotSet
-            }
-        )
-
-        # Validate required settings
-        if not settings.client_id:
-            raise ValueError(
-                "client_id is required - set via parameter or FASTMCP_SERVER_AUTH_WORKOS_CLIENT_ID"
-            )
-        if not settings.client_secret:
-            raise ValueError(
-                "client_secret is required - set via parameter or FASTMCP_SERVER_AUTH_WORKOS_CLIENT_SECRET"
-            )
-        if not settings.authkit_domain:
-            raise ValueError(
-                "authkit_domain is required - set via parameter or FASTMCP_SERVER_AUTH_WORKOS_AUTHKIT_DOMAIN"
-            )
-        if not settings.base_url:
-            raise ValueError(
-                "base_url is required - set via parameter or FASTMCP_SERVER_AUTH_WORKOS_BASE_URL"
-            )
-
         # Apply defaults and ensure authkit_domain is a full URL
-        authkit_domain_str = settings.authkit_domain
+        authkit_domain_str = authkit_domain
         if not authkit_domain_str.startswith(("http://", "https://")):
             authkit_domain_str = f"https://{authkit_domain_str}"
         authkit_domain_final = authkit_domain_str.rstrip("/")
-        timeout_seconds_final = settings.timeout_seconds or 10
-        scopes_final = settings.required_scopes or []
-        allowed_client_redirect_uris_final = settings.allowed_client_redirect_uris
-
-        # Extract secret string from SecretStr
-        client_secret_str = (
-            settings.client_secret.get_secret_value() if settings.client_secret else ""
+        scopes_final = (
+            parse_scopes(required_scopes) if required_scopes is not None else []
         )
 
         # Create WorkOS token verifier
         token_verifier = WorkOSTokenVerifier(
             authkit_domain=authkit_domain_final,
             required_scopes=scopes_final,
-            timeout_seconds=timeout_seconds_final,
+            timeout_seconds=timeout_seconds,
         )
 
         # Initialize OAuth proxy with WorkOS AuthKit endpoints
         super().__init__(
             upstream_authorization_endpoint=f"{authkit_domain_final}/oauth2/authorize",
             upstream_token_endpoint=f"{authkit_domain_final}/oauth2/token",
-            upstream_client_id=settings.client_id,
-            upstream_client_secret=client_secret_str,
+            upstream_client_id=client_id,
+            upstream_client_secret=client_secret,
             token_verifier=token_verifier,
-            base_url=settings.base_url,
-            redirect_path=settings.redirect_path,
-            issuer_url=settings.issuer_url
-            or settings.base_url,  # Default to base_url if not specified
-            allowed_client_redirect_uris=allowed_client_redirect_uris_final,
+            base_url=base_url,
+            redirect_path=redirect_path,
+            issuer_url=issuer_url or base_url,  # Default to base_url if not specified
+            allowed_client_redirect_uris=allowed_client_redirect_uris,
             client_storage=client_storage,
-            jwt_signing_key=settings.jwt_signing_key,
+            jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
         )
 
         logger.debug(
             "Initialized WorkOS OAuth provider for client %s with AuthKit domain %s",
-            settings.client_id,
+            client_id,
             authkit_domain_final,
         )
-
-
-class AuthKitProviderSettings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_",
-        env_file=ENV_FILE,
-        extra="ignore",
-    )
-
-    authkit_domain: AnyHttpUrl
-    base_url: AnyHttpUrl
-    required_scopes: list[str] | None = None
-
-    @field_validator("required_scopes", mode="before")
-    @classmethod
-    def _parse_scopes(cls, v):
-        return parse_scopes(v)
 
 
 class AuthKitProvider(RemoteAuthProvider):
@@ -340,9 +250,9 @@ class AuthKitProvider(RemoteAuthProvider):
     def __init__(
         self,
         *,
-        authkit_domain: AnyHttpUrl | str | NotSetT = NotSet,
-        base_url: AnyHttpUrl | str | NotSetT = NotSet,
-        required_scopes: list[str] | NotSetT | None = NotSet,
+        authkit_domain: AnyHttpUrl | str,
+        base_url: AnyHttpUrl | str,
+        required_scopes: list[str] | None = None,
         token_verifier: TokenVerifier | None = None,
     ):
         """Initialize AuthKit metadata provider.
@@ -353,20 +263,13 @@ class AuthKitProvider(RemoteAuthProvider):
             required_scopes: Optional list of scopes to require for all requests
             token_verifier: Optional token verifier. If None, creates JWT verifier for AuthKit
         """
-        settings = AuthKitProviderSettings.model_validate(
-            {
-                k: v
-                for k, v in {
-                    "authkit_domain": authkit_domain,
-                    "base_url": base_url,
-                    "required_scopes": required_scopes,
-                }.items()
-                if v is not NotSet
-            }
-        )
+        self.authkit_domain = str(authkit_domain).rstrip("/")
+        self.base_url = AnyHttpUrl(str(base_url).rstrip("/"))
 
-        self.authkit_domain = str(settings.authkit_domain).rstrip("/")
-        self.base_url = AnyHttpUrl(str(settings.base_url).rstrip("/"))
+        # Parse scopes if provided as string
+        parsed_scopes = (
+            parse_scopes(required_scopes) if required_scopes is not None else None
+        )
 
         # Create default JWT verifier if none provided
         if token_verifier is None:
@@ -374,7 +277,7 @@ class AuthKitProvider(RemoteAuthProvider):
                 jwks_uri=f"{self.authkit_domain}/oauth2/jwks",
                 issuer=self.authkit_domain,
                 algorithm="RS256",
-                required_scopes=settings.required_scopes,
+                required_scopes=parsed_scopes,
             )
 
         # Initialize RemoteAuthProvider with AuthKit as the authorization server

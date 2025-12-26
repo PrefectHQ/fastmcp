@@ -95,52 +95,20 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-## Environment Variables
+## Production Configuration
 
-For production deployments, use environment variables instead of hardcoding credentials.
-
-### Provider Selection
-
-Setting this environment variable allows the Descope provider to be used automatically without explicitly instantiating it in code.
-
-<Card>
-  <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-    Set to `fastmcp.server.auth.providers.descope.DescopeProvider` to use
-    Descope authentication.
-  </ParamField>
-</Card>
-
-### Descope-Specific Configuration
-
-These environment variables provide default values for the Descope provider, whether it's instantiated manually or configured via `FASTMCP_SERVER_AUTH`.
-
-<Card>
-<ParamField path="FASTMCP_SERVER_AUTH_DESCOPEPROVIDER_CONFIG_URL" required>
-Your Well-Known URL from the [Descope Console](https://app.descope.com/mcp-servers)
-</ParamField>
-
-<ParamField path="FASTMCP_SERVER_AUTH_DESCOPEPROVIDER_BASE_URL" required>
-  Public URL of your FastMCP server (e.g., `https://your-server.com` or
-  `http://localhost:8000` for development)
-</ParamField>
-</Card>
-
-Example `.env` file:
-
-```bash
-# Use the Descope provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.descope.DescopeProvider
-
-# Descope configuration
-FASTMCP_SERVER_AUTH_DESCOPEPROVIDER_CONFIG_URL=https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration
-FASTMCP_SERVER_AUTH_DESCOPEPROVIDER_BASE_URL=https://your-server.com
-```
-
-With environment variables set, your server code simplifies to:
+For production deployments, load configuration from environment variables:
 
 ```python server.py
+import os
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.descope import DescopeProvider
 
-# Authentication is automatically configured from environment
-mcp = FastMCP(name="My Descope Protected Server")
+# Load configuration from environment variables
+auth = DescopeProvider(
+    config_url=os.environ.get("DESCOPE_CONFIG_URL"),
+    base_url=os.environ.get("BASE_URL", "https://your-server.com")
+)
+
+mcp = FastMCP(name="My Descope Protected Server", auth=auth)
 ```

@@ -5,55 +5,11 @@ import time
 from typing import Any
 
 import pytest
-from pydantic import SecretStr
 from pytest_httpx import HTTPXMock
 
 from fastmcp.server.auth.providers.introspection import (
     IntrospectionTokenVerifier,
-    IntrospectionTokenVerifierSettings,
 )
-
-
-class TestIntrospectionTokenVerifierSettings:
-    """Test settings loading and validation."""
-
-    def test_settings_from_parameters(self):
-        """Test creating settings from parameters."""
-        settings = IntrospectionTokenVerifierSettings(
-            introspection_url="https://auth.example.com/introspect",
-            client_id="test-client",
-            client_secret=SecretStr("test-secret"),
-            timeout_seconds=5,
-            required_scopes=["read", "write"],
-        )
-
-        assert settings.introspection_url == "https://auth.example.com/introspect"
-        assert settings.client_id == "test-client"
-        assert settings.client_secret
-        assert settings.client_secret.get_secret_value() == "test-secret"
-        assert settings.timeout_seconds == 5
-        assert settings.required_scopes == ["read", "write"]
-
-    def test_settings_default_timeout(self):
-        """Test default timeout value."""
-        settings = IntrospectionTokenVerifierSettings(
-            introspection_url="https://auth.example.com/introspect",
-            client_id="test-client",
-            client_secret=SecretStr("test-secret"),
-        )
-
-        assert settings.timeout_seconds == 10
-
-    def test_settings_parse_scopes_from_string(self):
-        """Test scope parsing from comma-separated string."""
-        settings = IntrospectionTokenVerifierSettings(
-            introspection_url="https://auth.example.com/introspect",
-            client_id="test-client",
-            client_secret=SecretStr("test-secret"),
-            required_scopes="read,write,admin",  # type: ignore
-        )
-
-        assert settings.required_scopes == ["read", "write", "admin"]
 
 
 class TestIntrospectionTokenVerifier:
@@ -94,24 +50,24 @@ class TestIntrospectionTokenVerifier:
 
     def test_initialization_requires_introspection_url(self):
         """Test that introspection_url is required."""
-        with pytest.raises(ValueError, match="introspection_url is required"):
-            IntrospectionTokenVerifier(
+        with pytest.raises(TypeError):
+            IntrospectionTokenVerifier(  # ty: ignore[missing-argument]
                 client_id="test-client",
                 client_secret="test-secret",
             )
 
     def test_initialization_requires_client_id(self):
         """Test that client_id is required."""
-        with pytest.raises(ValueError, match="client_id is required"):
-            IntrospectionTokenVerifier(
+        with pytest.raises(TypeError):
+            IntrospectionTokenVerifier(  # ty: ignore[missing-argument]
                 introspection_url="https://auth.example.com/oauth/introspect",
                 client_secret="test-secret",
             )
 
     def test_initialization_requires_client_secret(self):
         """Test that client_secret is required."""
-        with pytest.raises(ValueError, match="client_secret is required"):
-            IntrospectionTokenVerifier(
+        with pytest.raises(TypeError):
+            IntrospectionTokenVerifier(  # ty: ignore[missing-argument]
                 introspection_url="https://auth.example.com/oauth/introspect",
                 client_id="test-client",
             )

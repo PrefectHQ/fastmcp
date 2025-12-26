@@ -28,38 +28,13 @@ import time
 from typing import Any
 
 import httpx
-from pydantic import AnyHttpUrl, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AnyHttpUrl, SecretStr
 
 from fastmcp.server.auth import AccessToken, TokenVerifier
-from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import NotSet, NotSetT
 
 logger = get_logger(__name__)
-
-
-class IntrospectionTokenVerifierSettings(BaseSettings):
-    """Settings for OAuth 2.0 Token Introspection verification."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_SERVER_AUTH_INTROSPECTION_",
-        env_file=ENV_FILE,
-        extra="ignore",
-    )
-
-    introspection_url: str | None = None
-    client_id: str | None = None
-    client_secret: SecretStr | None = None
-    timeout_seconds: int = 10
-    required_scopes: list[str] | None = None
-    base_url: AnyHttpUrl | str | None = None
-
-    @field_validator("required_scopes", mode="before")
-    @classmethod
-    def _parse_scopes(cls, v):
-        return parse_scopes(v)
 
 
 class IntrospectionTokenVerifier(TokenVerifier):
@@ -93,12 +68,12 @@ class IntrospectionTokenVerifier(TokenVerifier):
     def __init__(
         self,
         *,
-        introspection_url: str | NotSetT = NotSet,
-        client_id: str | NotSetT = NotSet,
-        client_secret: str | NotSetT = NotSet,
-        timeout_seconds: int | NotSetT = NotSet,
-        required_scopes: list[str] | NotSetT | None = NotSet,
-        base_url: AnyHttpUrl | str | NotSetT | None = NotSet,
+        introspection_url: str,
+        client_id: str,
+        client_secret: str | SecretStr,
+        timeout_seconds: int = 10,
+        required_scopes: list[str] | None = None,
+        base_url: AnyHttpUrl | str | None = None,
     ):
         """
         Initialize the introspection token verifier.
@@ -111,45 +86,21 @@ class IntrospectionTokenVerifier(TokenVerifier):
             required_scopes: Required scopes for all tokens (optional)
             base_url: Base URL for TokenVerifier protocol
         """
-        settings = IntrospectionTokenVerifierSettings.model_validate(
-            {
-                k: v
-                for k, v in {
-                    "introspection_url": introspection_url,
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "timeout_seconds": timeout_seconds,
-                    "required_scopes": required_scopes,
-                    "base_url": base_url,
-                }.items()
-                if v is not NotSet
-            }
+        # Parse scopes if provided as string
+        parsed_required_scopes = (
+            parse_scopes(required_scopes) if required_scopes is not None else None
         )
 
-        if not settings.introspection_url:
-            raise ValueError(
-                "introspection_url is required - set via parameter or "
-                "FASTMCP_SERVER_AUTH_INTROSPECTION_INTROSPECTION_URL"
-            )
-        if not settings.client_id:
-            raise ValueError(
-                "client_id is required - set via parameter or "
-                "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID"
-            )
-        if not settings.client_secret:
-            raise ValueError(
-                "client_secret is required - set via parameter or "
-                "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET"
-            )
+        super().__init__(base_url=base_url, required_scopes=parsed_required_scopes)
 
-        super().__init__(
-            base_url=settings.base_url, required_scopes=settings.required_scopes
+        self.introspection_url = introspection_url
+        self.client_id = client_id
+        self.client_secret = (
+            client_secret.get_secret_value()
+            if isinstance(client_secret, SecretStr)
+            else client_secret
         )
-
-        self.introspection_url = settings.introspection_url
-        self.client_id = settings.client_id
-        self.client_secret = settings.client_secret.get_secret_value()
-        self.timeout_seconds = settings.timeout_seconds
+        self.timeout_seconds = timeout_seconds
         self.logger = get_logger(__name__)
 
     def _create_basic_auth_header(self) -> str:

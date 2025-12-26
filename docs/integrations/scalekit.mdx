@@ -89,61 +89,23 @@ uv run python server.py
 
 Use any MCP client (for example, mcp-inspector, Claude, VS Code, or Windsurf) to connect to the running serve. Verify that authentication succeeds and requests are authorized as expected.
 
-### Provider selection
+## Production Configuration
 
-Setting this environment variable allows the Scalekit provider to be used automatically without explicitly instantiating it in code.
-
-<Card>
-<ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.scalekit.ScalekitProvider` to use Scalekit authentication.
-</ParamField>
-</Card>
-
-### Scalekit-specific configuration
-
-These environment variables provide default values for the Scalekit provider, whether it's instantiated manually or configured via `FASTMCP_SERVER_AUTH`.
-
-<Card>
-<ParamField path="FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_ENVIRONMENT_URL" required>
-Your Scalekit environment URL from the Admin Portal (e.g., `https://your-env.scalekit.com`)
-</ParamField>
-
-<ParamField path="FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_RESOURCE_ID" required>
-Your Scalekit resource server ID from the MCP Servers section
-</ParamField>
-
-<ParamField path="FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_BASE_URL" required>
-Public URL of your FastMCP server (e.g., `https://your-server.com` or `http://localhost:8000/` for development)
-</ParamField>
-
-Legacy `FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_MCP_URL` is still recognized for backward compatibility but will be removed soon-rename it to `...BASE_URL`.
-
-<ParamField path="FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_REQUIRED_SCOPES" default="[]">
-Comma-, space-, or JSON-separated list of scopes that tokens must include to access your server
-</ParamField>
-</Card>
-
-Example `.env`:
-
-```bash
-# Use the Scalekit provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.scalekit.ScalekitProvider
-
-# Scalekit configuration
-FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_ENVIRONMENT_URL=https://your-env.scalekit.com
-FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_RESOURCE_ID=res_456
-FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_BASE_URL=https://your-server.com/
-# FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_REQUIRED_SCOPES=read,write
-# FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_MCP_URL=https://your-server.com/  # Deprecated
-```
-
-With environment variables set, your server code simplifies to:
+For production deployments, load configuration from environment variables:
 
 ```python server.py
+import os
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.scalekit import ScalekitProvider
 
-# Authentication is automatically configured from environment
-mcp = FastMCP(name="My Scalekit Protected Server")
+# Load configuration from environment variables
+auth = ScalekitProvider(
+    environment_url=os.environ.get("SCALEKIT_ENVIRONMENT_URL"),
+    resource_id=os.environ.get("SCALEKIT_RESOURCE_ID"),
+    base_url=os.environ.get("BASE_URL", "https://your-server.com")
+)
+
+mcp = FastMCP(name="My Scalekit Protected Server", auth=auth)
 
 @mcp.tool
 def protected_action() -> str:

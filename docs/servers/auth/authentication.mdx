@@ -178,78 +178,28 @@ This example shows the basic structure of a custom OAuth provider. The actual im
 
 → **Complete guide**: [Full OAuth Server](/servers/auth/full-oauth-server)
 
-## Configuration Approaches
+## Configuration
 
-FastMCP supports both programmatic configuration for maximum flexibility and environment-based configuration for deployment simplicity.
+Authentication providers are configured programmatically by instantiating them directly in your code with their required parameters. This makes dependencies explicit and allows your IDE to provide helpful autocompletion and type checking.
 
-### Programmatic Configuration
-
-Programmatic configuration provides complete control over authentication settings and allows for complex initialization logic. This approach works well during development and when you need to customize authentication behavior based on runtime conditions.
-
-Authentication providers are instantiated directly in your code with their required parameters. This makes dependencies explicit and allows your IDE to provide helpful autocompletion and type checking.
-
-### Environment Configuration
-
-<VersionBadge version="2.12.1" />
-
-Environment-based configuration separates authentication settings from application code, enabling the same codebase to work across different deployment environments without modification.
-
-FastMCP automatically detects authentication configuration from environment variables when no explicit `auth` parameter is provided. The configuration system supports all authentication providers and their various options.
-
-#### Provider Configuration
-
-Authentication providers are configured by specifying the full module path to the provider class:
-
-<ParamField path="FASTMCP_SERVER_AUTH" type="string">
-The full module path to the authentication provider class. Examples:
-- `fastmcp.server.auth.providers.github.GitHubProvider` - GitHub OAuth
-- `fastmcp.server.auth.providers.google.GoogleProvider` - Google OAuth
-- `fastmcp.server.auth.providers.jwt.JWTVerifier` - JWT token verification
-- `fastmcp.server.auth.providers.workos.WorkOSProvider` - WorkOS OAuth
-- `fastmcp.server.auth.providers.workos.AuthKitProvider` - WorkOS AuthKit
-- `mycompany.auth.CustomProvider` - Your custom provider class
-</ParamField>
-
-When using providers like GitHub or Google, you'll need to set provider-specific environment variables:
-
-```bash
-# GitHub OAuth
-export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.github.GitHubProvider
-export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID="Ov23li..."
-export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET="github_pat_..."
-
-# Google OAuth
-export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.google.GoogleProvider
-export FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID="123456.apps.googleusercontent.com"
-export FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET="GOCSPX-..."
-```
-
-#### Provider-Specific Configuration
-
-Each provider has its own configuration options set through environment variables:
-
-```bash
-# JWT Token Verification
-export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.jwt.JWTVerifier
-export FASTMCP_SERVER_AUTH_JWT_JWKS_URI="https://auth.example.com/jwks"
-export FASTMCP_SERVER_AUTH_JWT_ISSUER="https://auth.example.com"
-export FASTMCP_SERVER_AUTH_JWT_AUDIENCE="mcp-server"
-
-# Custom Provider
-export FASTMCP_SERVER_AUTH=mycompany.auth.CustomProvider
-# Plus any environment variables your custom provider expects
-```
-
-With these environment variables set, creating an authenticated FastMCP server requires no additional configuration:
+For production deployments, load sensitive values like client secrets from environment variables:
 
 ```python
+import os
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.github import GitHubProvider
 
-# Authentication automatically configured from environment
-mcp = FastMCP(name="My Server")
+# Load secrets from environment variables
+auth = GitHubProvider(
+    client_id=os.environ.get("GITHUB_CLIENT_ID"),
+    client_secret=os.environ.get("GITHUB_CLIENT_SECRET"),
+    base_url=os.environ.get("BASE_URL", "http://localhost:8000")
+)
+
+mcp = FastMCP(name="My Server", auth=auth)
 ```
 
-This approach simplifies deployment pipelines and follows twelve-factor app principles for configuration management.
+This approach keeps secrets out of your codebase while maintaining explicit configuration. You can use any environment variable names you prefer - there are no special prefixes required.
 
 ## Choosing Your Implementation
 

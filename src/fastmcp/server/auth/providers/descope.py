@@ -10,38 +10,16 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import AnyHttpUrl, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import NotSet, NotSetT
 
 logger = get_logger(__name__)
-
-
-class DescopeProviderSettings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_SERVER_AUTH_DESCOPEPROVIDER_",
-        env_file=ENV_FILE,
-        extra="ignore",
-    )
-
-    config_url: AnyHttpUrl | None = None
-    project_id: str | None = None
-    descope_base_url: AnyHttpUrl | str | None = None
-    base_url: AnyHttpUrl
-    required_scopes: list[str] | None = None
-
-    @field_validator("required_scopes", mode="before")
-    @classmethod
-    def _parse_scopes(cls, v):
-        return parse_scopes(v)
 
 
 class DescopeProvider(RemoteAuthProvider):
@@ -85,46 +63,37 @@ class DescopeProvider(RemoteAuthProvider):
     def __init__(
         self,
         *,
-        config_url: AnyHttpUrl | str | NotSetT = NotSet,
-        project_id: str | NotSetT = NotSet,
-        descope_base_url: AnyHttpUrl | str | NotSetT = NotSet,
-        base_url: AnyHttpUrl | str | NotSetT = NotSet,
-        required_scopes: list[str] | NotSetT | None = NotSet,
+        base_url: AnyHttpUrl | str,
+        config_url: AnyHttpUrl | str | None = None,
+        project_id: str | None = None,
+        descope_base_url: AnyHttpUrl | str | None = None,
+        required_scopes: list[str] | None = None,
         token_verifier: TokenVerifier | None = None,
     ):
         """Initialize Descope metadata provider.
 
         Args:
+            base_url: Public URL of this FastMCP server
             config_url: Your Descope Well-Known URL (e.g., "https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration")
                 This is the new recommended way. If provided, project_id and descope_base_url are ignored.
             project_id: Your Descope Project ID (e.g., "P2abc123"). Used with descope_base_url for backwards compatibility.
             descope_base_url: Your Descope base URL (e.g., "https://api.descope.com"). Used with project_id for backwards compatibility.
-            base_url: Public URL of this FastMCP server
             required_scopes: Optional list of scopes that must be present in validated tokens.
                 These scopes will be included in the protected resource metadata.
             token_verifier: Optional token verifier. If None, creates JWT verifier for Descope
         """
-        settings = DescopeProviderSettings.model_validate(
-            {
-                k: v
-                for k, v in {
-                    "config_url": config_url,
-                    "project_id": project_id,
-                    "descope_base_url": descope_base_url,
-                    "base_url": base_url,
-                    "required_scopes": required_scopes,
-                }.items()
-                if v is not NotSet
-            }
+        self.base_url = AnyHttpUrl(str(base_url).rstrip("/"))
+
+        # Parse scopes if provided as string
+        parsed_scopes = (
+            parse_scopes(required_scopes) if required_scopes is not None else None
         )
 
-        self.base_url = AnyHttpUrl(str(settings.base_url).rstrip("/"))
-
         # Determine which API is being used
-        if settings.config_url is not None:
+        if config_url is not None:
             # New API: use config_url
             # Strip /.well-known/openid-configuration from config_url if present
-            issuer_url = str(settings.config_url)
+            issuer_url = str(config_url)
             if issuer_url.endswith("/.well-known/openid-configuration"):
                 issuer_url = issuer_url[: -len("/.well-known/openid-configuration")]
 
@@ -150,10 +119,10 @@ class DescopeProvider(RemoteAuthProvider):
             self.descope_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}".rstrip(
                 "/"
             )
-        elif settings.project_id is not None and settings.descope_base_url is not None:
+        elif project_id is not None and descope_base_url is not None:
             # Old API: use project_id and descope_base_url
-            self.project_id = settings.project_id
-            descope_base_url_str = str(settings.descope_base_url).rstrip("/")
+            self.project_id = project_id
+            descope_base_url_str = str(descope_base_url).rstrip("/")
             # Ensure descope_base_url has a scheme
             if not descope_base_url_str.startswith(("http://", "https://")):
                 descope_base_url_str = f"https://{descope_base_url_str}"
@@ -172,7 +141,7 @@ class DescopeProvider(RemoteAuthProvider):
                 issuer=issuer_url,
                 algorithm="RS256",
                 audience=self.project_id,
-                required_scopes=settings.required_scopes,
+                required_scopes=parsed_scopes,
             )
 
         # Initialize RemoteAuthProvider with Descope as the authorization server

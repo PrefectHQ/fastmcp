@@ -1,7 +1,5 @@
 """Tests for WorkOS OAuth provider."""
 
-import os
-from unittest.mock import patch
 from urllib.parse import urlparse
 
 import httpx
@@ -30,60 +28,6 @@ class TestWorkOSProvider:
         assert provider._upstream_client_id == "client_test123"
         assert provider._upstream_client_secret.get_secret_value() == "secret_test456"
         assert str(provider.base_url) == "https://myserver.com/"
-
-    @pytest.mark.parametrize(
-        "scopes_env",
-        [
-            "openid,email",
-            '["openid", "email"]',
-        ],
-    )
-    def test_init_with_env_vars(self, scopes_env):
-        """Test WorkOSProvider initialization from environment variables."""
-        with patch.dict(
-            os.environ,
-            {
-                "FASTMCP_SERVER_AUTH_WORKOS_CLIENT_ID": "env_client",
-                "FASTMCP_SERVER_AUTH_WORKOS_CLIENT_SECRET": "env_secret",
-                "FASTMCP_SERVER_AUTH_WORKOS_AUTHKIT_DOMAIN": "https://env.authkit.app",
-                "FASTMCP_SERVER_AUTH_WORKOS_BASE_URL": "https://envserver.com",
-                "FASTMCP_SERVER_AUTH_WORKOS_REQUIRED_SCOPES": scopes_env,
-                "FASTMCP_SERVER_AUTH_WORKOS_JWT_SIGNING_KEY": "test-secret",
-            },
-        ):
-            provider = WorkOSProvider()
-
-            assert provider._upstream_client_id == "env_client"
-            assert provider._upstream_client_secret.get_secret_value() == "env_secret"
-            assert str(provider.base_url) == "https://envserver.com/"
-            assert provider._token_validator.required_scopes == [
-                "openid",
-                "email",
-            ]
-
-    def test_init_missing_client_id_raises_error(self):
-        """Test that missing client_id raises ValueError."""
-        with pytest.raises(ValueError, match="client_id is required"):
-            WorkOSProvider(
-                client_secret="test_secret",
-                authkit_domain="https://test.authkit.app",
-            )
-
-    def test_init_missing_client_secret_raises_error(self):
-        """Test that missing client_secret raises ValueError."""
-        with pytest.raises(ValueError, match="client_secret is required"):
-            WorkOSProvider(
-                client_id="test_client",
-                authkit_domain="https://test.authkit.app",
-            )
-
-    def test_init_missing_authkit_domain_raises_error(self):
-        """Test that missing authkit_domain raises ValueError."""
-        with pytest.raises(ValueError, match="authkit_domain is required"):
-            WorkOSProvider(
-                client_id="test_client",
-                client_secret="test_secret",
-            )
 
     def test_authkit_domain_https_prefix_handling(self):
         """Test that authkit_domain handles missing https:// prefix."""
@@ -125,17 +69,6 @@ class TestWorkOSProvider:
         assert parsed.scheme == "http"
         assert parsed.netloc == "localhost:8080"
         assert parsed.path == "/oauth2/authorize"
-
-    def test_init_missing_base_url_raises_error(self):
-        """Test that missing base_url raises ValueError."""
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="base_url is required"):
-                WorkOSProvider(
-                    client_id="test_client",
-                    client_secret="test_secret",
-                    authkit_domain="https://test.authkit.app",
-                    jwt_signing_key="test-secret",
-                )
 
     def test_init_defaults(self):
         """Test that default values are applied correctly."""

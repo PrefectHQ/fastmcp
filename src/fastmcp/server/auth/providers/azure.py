@@ -9,15 +9,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from key_value.aio.protocols import AsyncKeyValue
-from pydantic import SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import NotSet, NotSetT
 
 if TYPE_CHECKING:
     from mcp.server.auth.provider import AuthorizationParams
@@ -29,39 +25,6 @@ logger = get_logger(__name__)
 # Per Microsoft docs: https://learn.microsoft.com/en-us/entra/identity-platform/scopes-oidc
 # "OIDC scopes are requested as simple string identifiers without resource prefixes"
 OIDC_SCOPES = frozenset({"openid", "profile", "email", "offline_access"})
-
-
-class AzureProviderSettings(BaseSettings):
-    """Settings for Azure OAuth provider."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_SERVER_AUTH_AZURE_",
-        env_file=ENV_FILE,
-        extra="ignore",
-    )
-
-    client_id: str | None = None
-    client_secret: SecretStr | None = None
-    tenant_id: str | None = None
-    identifier_uri: str | None = None
-    base_url: str | None = None
-    issuer_url: str | None = None
-    redirect_path: str | None = None
-    required_scopes: list[str] | None = None
-    additional_authorize_scopes: list[str] | None = None
-    allowed_client_redirect_uris: list[str] | None = None
-    jwt_signing_key: str | None = None
-    base_authority: str = "login.microsoftonline.com"
-
-    @field_validator("required_scopes", mode="before")
-    @classmethod
-    def _parse_scopes(cls, v: object) -> list[str] | None:
-        return parse_scopes(v)
-
-    @field_validator("additional_authorize_scopes", mode="before")
-    @classmethod
-    def _parse_additional_authorize_scopes(cls, v: object) -> list[str] | None:
-        return parse_scopes(v)
 
 
 class AzureProvider(OAuthProxy):
@@ -127,20 +90,20 @@ class AzureProvider(OAuthProxy):
     def __init__(
         self,
         *,
-        client_id: str | NotSetT = NotSet,
-        client_secret: str | NotSetT = NotSet,
-        tenant_id: str | NotSetT = NotSet,
-        identifier_uri: str | NotSetT | None = NotSet,
-        base_url: str | NotSetT = NotSet,
-        issuer_url: str | NotSetT = NotSet,
-        redirect_path: str | NotSetT = NotSet,
-        required_scopes: list[str] | NotSetT | None = NotSet,
-        additional_authorize_scopes: list[str] | NotSetT | None = NotSet,
-        allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
+        client_id: str,
+        client_secret: str,
+        tenant_id: str,
+        required_scopes: list[str],
+        base_url: str,
+        identifier_uri: str | None = None,
+        issuer_url: str | None = None,
+        redirect_path: str | None = None,
+        additional_authorize_scopes: list[str] | None = None,
+        allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
-        jwt_signing_key: str | bytes | NotSetT = NotSet,
+        jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
-        base_authority: str | NotSetT = NotSet,
+        base_authority: str = "login.microsoftonline.com",
     ) -> None:
         """Initialize Azure OAuth provider.
 
@@ -185,131 +148,75 @@ class AzureProvider(OAuthProxy):
                 When False, authorization proceeds directly without user confirmation.
                 SECURITY WARNING: Only disable for local development or testing environments.
         """
-        settings = AzureProviderSettings.model_validate(
-            {
-                k: v
-                for k, v in {
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "tenant_id": tenant_id,
-                    "identifier_uri": identifier_uri,
-                    "base_url": base_url,
-                    "issuer_url": issuer_url,
-                    "redirect_path": redirect_path,
-                    "required_scopes": required_scopes,
-                    "additional_authorize_scopes": additional_authorize_scopes,
-                    "allowed_client_redirect_uris": allowed_client_redirect_uris,
-                    "jwt_signing_key": jwt_signing_key,
-                    "base_authority": base_authority,
-                }.items()
-                if v is not NotSet
-            }
+        # Parse scopes if provided as string
+        parsed_required_scopes = parse_scopes(required_scopes)
+        parsed_additional_scopes = (
+            parse_scopes(additional_authorize_scopes)
+            if additional_authorize_scopes
+            else []
         )
-
-        # Validate required settings
-        if not settings.client_id:
-            msg = "client_id is required - set via parameter or FASTMCP_SERVER_AUTH_AZURE_CLIENT_ID"
-            raise ValueError(msg)
-        if not settings.client_secret:
-            msg = "client_secret is required - set via parameter or FASTMCP_SERVER_AUTH_AZURE_CLIENT_SECRET"
-            raise ValueError(msg)
-
-        # Validate tenant_id is provided
-        if not settings.tenant_id:
-            msg = (
-                "tenant_id is required - set via parameter or "
-                "FASTMCP_SERVER_AUTH_AZURE_TENANT_ID. Use your Azure tenant ID "
-                "(found in Azure Portal), 'organizations', or 'consumers'"
-            )
-            raise ValueError(msg)
-
-        # Validate required_scopes has at least one scope
-        if not settings.required_scopes:
-            msg = (
-                "required_scopes must include at least one scope - set via parameter or "
-                "FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES. Azure's OAuth API requires "
-                "the 'scope' parameter in authorization requests. Use the unprefixed scope "
-                "names from your Azure App registration (e.g., ['read', 'write'])"
-            )
-            raise ValueError(msg)
-
-        if not settings.base_url:
-            raise ValueError(
-                "base_url is required - set via parameter or FASTMCP_SERVER_AUTH_AZURE_BASE_URL"
-            )
 
         # Apply defaults
-        self.identifier_uri = settings.identifier_uri or f"api://{settings.client_id}"
-        self.additional_authorize_scopes = settings.additional_authorize_scopes or []
-        tenant_id_final = settings.tenant_id
+        self.identifier_uri = identifier_uri or f"api://{client_id}"
+        self.additional_authorize_scopes = parsed_additional_scopes
 
         # Always validate tokens against the app's API client ID using JWT
-        base_authority_final = settings.base_authority
-        issuer = f"https://{base_authority_final}/{tenant_id_final}/v2.0"
-        jwks_uri = (
-            f"https://{base_authority_final}/{tenant_id_final}/discovery/v2.0/keys"
-        )
+        issuer = f"https://{base_authority}/{tenant_id}/v2.0"
+        jwks_uri = f"https://{base_authority}/{tenant_id}/discovery/v2.0/keys"
 
         # Azure access tokens only include custom API scopes in the `scp` claim,
         # NOT standard OIDC scopes (openid, profile, email, offline_access).
         # Filter out OIDC scopes from validation - they'll still be sent to Azure
         # during authorization (handled by _prefix_scopes_for_azure).
-        validation_scopes = None
-        if settings.required_scopes:
+        if parsed_required_scopes:
             validation_scopes = [
-                s for s in settings.required_scopes if s not in OIDC_SCOPES
+                s for s in parsed_required_scopes if s not in OIDC_SCOPES
             ]
             # If all scopes were OIDC scopes, use None (no scope validation)
             if not validation_scopes:
                 validation_scopes = None
+        else:
+            validation_scopes = None
 
         token_verifier = JWTVerifier(
             jwks_uri=jwks_uri,
             issuer=issuer,
-            audience=settings.client_id,
+            audience=client_id,
             algorithm="RS256",
             required_scopes=validation_scopes,  # Only validate non-OIDC scopes
         )
 
-        # Extract secret string from SecretStr
-        client_secret_str = (
-            settings.client_secret.get_secret_value() if settings.client_secret else ""
-        )
-
         # Build Azure OAuth endpoints with tenant
         authorization_endpoint = (
-            f"https://{base_authority_final}/{tenant_id_final}/oauth2/v2.0/authorize"
+            f"https://{base_authority}/{tenant_id}/oauth2/v2.0/authorize"
         )
-        token_endpoint = (
-            f"https://{base_authority_final}/{tenant_id_final}/oauth2/v2.0/token"
-        )
+        token_endpoint = f"https://{base_authority}/{tenant_id}/oauth2/v2.0/token"
 
         # Initialize OAuth proxy with Azure endpoints
         super().__init__(
             upstream_authorization_endpoint=authorization_endpoint,
             upstream_token_endpoint=token_endpoint,
-            upstream_client_id=settings.client_id,
-            upstream_client_secret=client_secret_str,
+            upstream_client_id=client_id,
+            upstream_client_secret=client_secret,
             token_verifier=token_verifier,
-            base_url=settings.base_url,
-            redirect_path=settings.redirect_path,
-            issuer_url=settings.issuer_url
-            or settings.base_url,  # Default to base_url if not specified
-            allowed_client_redirect_uris=settings.allowed_client_redirect_uris,
+            base_url=base_url,
+            redirect_path=redirect_path,
+            issuer_url=issuer_url or base_url,  # Default to base_url if not specified
+            allowed_client_redirect_uris=allowed_client_redirect_uris,
             client_storage=client_storage,
-            jwt_signing_key=settings.jwt_signing_key,
+            jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
             # Advertise full scopes including OIDC (even though we only validate non-OIDC)
-            valid_scopes=settings.required_scopes,
+            valid_scopes=parsed_required_scopes,
         )
 
         authority_info = ""
-        if base_authority_final != "login.microsoftonline.com":
-            authority_info = f" using authority {base_authority_final}"
+        if base_authority != "login.microsoftonline.com":
+            authority_info = f" using authority {base_authority}"
         logger.info(
             "Initialized Azure OAuth provider for client %s with tenant %s%s%s",
-            settings.client_id,
-            tenant_id_final,
+            client_id,
+            tenant_id,
             f" and identifier_uri {self.identifier_uri}" if self.identifier_uri else "",
             authority_info,
         )

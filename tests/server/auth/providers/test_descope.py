@@ -27,42 +27,6 @@ class TestDescopeProvider:
         assert str(provider.base_url) == "https://myserver.com/"
         assert str(provider.descope_base_url) == "https://api.descope.com"
 
-    def test_init_with_env_vars(self):
-        """Test DescopeProvider initialization from environment variables."""
-        with patch.dict(
-            os.environ,
-            {
-                "FASTMCP_SERVER_AUTH_DESCOPEPROVIDER_CONFIG_URL": "https://api.descope.com/v1/apps/agentic/P2env123/M123/.well-known/openid-configuration",
-                "FASTMCP_SERVER_AUTH_DESCOPEPROVIDER_BASE_URL": "https://envserver.com",
-            },
-        ):
-            provider = DescopeProvider()
-
-            assert provider.project_id == "P2env123"
-            assert str(provider.base_url) == "https://envserver.com/"
-            assert str(provider.descope_base_url) == "https://api.descope.com"
-
-    def test_init_with_old_env_vars(self):
-        """Test DescopeProvider initialization from old environment variables (backwards compatibility)."""
-        with patch.dict(
-            os.environ,
-            {
-                "FASTMCP_SERVER_AUTH_DESCOPEPROVIDER_PROJECT_ID": "P2oldenv123",
-                "FASTMCP_SERVER_AUTH_DESCOPEPROVIDER_DESCOPE_BASE_URL": "https://api.descope.com",
-                "FASTMCP_SERVER_AUTH_DESCOPEPROVIDER_BASE_URL": "https://envserver.com",
-            },
-        ):
-            provider = DescopeProvider()
-
-            assert provider.project_id == "P2oldenv123"
-            assert str(provider.base_url) == "https://envserver.com/"
-            assert str(provider.descope_base_url) == "https://api.descope.com"
-            assert isinstance(provider.token_verifier, JWTVerifier)
-            assert (
-                provider.token_verifier.issuer
-                == "https://api.descope.com/v1/apps/P2oldenv123"
-            )
-
     def test_environment_variable_loading(self):
         """Test that environment variables are loaded correctly."""
         # This test verifies that the provider can be created with environment variables
@@ -219,7 +183,11 @@ class TestDescopeProvider:
                 "FASTMCP_SERVER_AUTH_DESCOPEPROVIDER_REQUIRED_SCOPES": "read,write",
             },
         ):
-            provider = DescopeProvider()
+            provider = DescopeProvider(
+                config_url="https://api.descope.com/v1/apps/agentic/P2env123/M123/.well-known/openid-configuration",
+                base_url="https://envserver.com",
+                required_scopes=["read", "write"],
+            )
 
             assert isinstance(provider.token_verifier, JWTVerifier)
             assert provider.token_verifier.required_scopes == ["read", "write"]

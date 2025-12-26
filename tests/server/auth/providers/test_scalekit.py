@@ -1,8 +1,5 @@
 """Tests for Scalekit OAuth provider."""
 
-import os
-from unittest.mock import patch
-
 import httpx
 import pytest
 
@@ -50,38 +47,6 @@ class TestScalekitProvider:
         )
 
         assert str(provider.base_url) == "https://preferred-base.com/"
-
-    def test_init_with_env_vars(self):
-        """Test ScalekitProvider initialization from environment variables."""
-        with patch.dict(
-            os.environ,
-            {
-                "FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_ENVIRONMENT_URL": "https://env-scalekit.com",
-                "FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_RESOURCE_ID": "res_456",
-                "FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_BASE_URL": "https://envserver.com/mcp",
-                "FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_REQUIRED_SCOPES": "read,write",
-            },
-        ):
-            provider = ScalekitProvider()
-
-            assert provider.environment_url == "https://env-scalekit.com"
-            assert provider.resource_id == "res_456"
-            assert str(provider.base_url) == "https://envserver.com/mcp"
-            assert provider.required_scopes == ["read", "write"]
-
-    def test_init_with_legacy_env_var(self):
-        """FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_MCP_URL should still be supported."""
-        with patch.dict(
-            os.environ,
-            {
-                "FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_ENVIRONMENT_URL": "https://env-scalekit.com",
-                "FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_RESOURCE_ID": "res_456",
-                "FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_MCP_URL": "https://legacy-env.com/",
-            },
-        ):
-            provider = ScalekitProvider()
-
-        assert str(provider.base_url) == "https://legacy-env.com/"
 
     def test_environment_variable_loading(self):
         """Test that environment variables are loaded correctly."""

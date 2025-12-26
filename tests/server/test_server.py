@@ -169,25 +169,11 @@ class TestResourcePrefixMounting:
 
 
 class TestSettingsFromEnvironment:
-    async def test_settings_from_environment_issue_1749(self):
-        """Test that when auth is enabled, the server starts."""
+    async def test_server_starts_without_auth(self):
+        """Test that server starts without auth configured."""
         from fastmcp.client.transports import PythonStdioTransport
-        from fastmcp.server.auth.providers.azure import AzureProvider
-        from fastmcp.settings import Settings
 
         script = dedent("""
-        import os
-
-        os.environ["FASTMCP_SERVER_AUTH"] = "fastmcp.server.auth.providers.azure.AzureProvider"
-
-        os.environ["FASTMCP_SERVER_AUTH_AZURE_TENANT_ID"] = "A_Valid_Value"
-        os.environ["FASTMCP_SERVER_AUTH_AZURE_CLIENT_ID"] = "A_Valid_Value"
-        os.environ["FASTMCP_SERVER_AUTH_AZURE_CLIENT_SECRET"] = "A_Valid_Value"
-        os.environ["FASTMCP_SERVER_AUTH_AZURE_REDIRECT_PATH"] = "/auth/callback"
-        os.environ["FASTMCP_SERVER_AUTH_AZURE_BASE_URL"] = "http://localhost:8000"
-        os.environ["FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES"] = "User.Read,email,profile"
-        os.environ["FASTMCP_SERVER_AUTH_AZURE_JWT_SIGNING_KEY"] = "test-secret"
-
         import fastmcp
         
         mcp = fastmcp.FastMCP("TestServer")
@@ -207,14 +193,6 @@ class TestSettingsFromEnvironment:
                 tools = await client.list_tools()
 
                 assert tools == []
-
-        settings = Settings(
-            server_auth="fastmcp.server.auth.providers.azure.AzureProvider"
-        )
-
-        auth_class = settings.server_auth_class
-
-        assert auth_class is AzureProvider
 
 
 class TestAbstractCollectionTypes:

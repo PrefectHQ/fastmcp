@@ -24,45 +24,16 @@ Example:
 from __future__ import annotations
 
 from key_value.aio.protocols import AsyncKeyValue
-from pydantic import AnyHttpUrl, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AnyHttpUrl
 
 from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import NotSet, NotSetT
 
 logger = get_logger(__name__)
-
-
-class AWSCognitoProviderSettings(BaseSettings):
-    """Settings for AWS Cognito OAuth provider."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_SERVER_AUTH_AWS_COGNITO_",
-        env_file=ENV_FILE,
-        extra="ignore",
-    )
-
-    user_pool_id: str | None = None
-    aws_region: str | None = None
-    client_id: str | None = None
-    client_secret: SecretStr | None = None
-    base_url: AnyHttpUrl | str | None = None
-    issuer_url: AnyHttpUrl | str | None = None
-    redirect_path: str | None = None
-    required_scopes: list[str] | None = None
-    allowed_client_redirect_uris: list[str] | None = None
-    jwt_signing_key: str | None = None
-
-    @field_validator("required_scopes", mode="before")
-    @classmethod
-    def _parse_scopes(cls, v):
-        return parse_scopes(v)
 
 
 class AWSCognitoTokenVerifier(JWTVerifier):
@@ -126,27 +97,27 @@ class AWSCognitoProvider(OIDCProxy):
     def __init__(
         self,
         *,
-        user_pool_id: str | NotSetT = NotSet,
-        aws_region: str | NotSetT = NotSet,
-        client_id: str | NotSetT = NotSet,
-        client_secret: str | NotSetT = NotSet,
-        base_url: AnyHttpUrl | str | NotSetT = NotSet,
-        issuer_url: AnyHttpUrl | str | NotSetT = NotSet,
-        redirect_path: str | NotSetT = NotSet,
-        required_scopes: list[str] | NotSetT = NotSet,
-        allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
+        user_pool_id: str,
+        client_id: str,
+        client_secret: str,
+        base_url: AnyHttpUrl | str,
+        aws_region: str = "eu-central-1",
+        issuer_url: AnyHttpUrl | str | None = None,
+        redirect_path: str = "/auth/callback",
+        required_scopes: list[str] | None = None,
+        allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
-        jwt_signing_key: str | bytes | NotSetT = NotSet,
+        jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
     ):
         """Initialize AWS Cognito OAuth provider.
 
         Args:
             user_pool_id: Your Cognito User Pool ID (e.g., "eu-central-1_XXXXXXXXX")
-            aws_region: AWS region where your User Pool is located (defaults to "eu-central-1")
             client_id: Cognito app client ID
             client_secret: Cognito app client secret
             base_url: Public URL where OAuth endpoints will be accessible (includes any mount path)
+            aws_region: AWS region where your User Pool is located (defaults to "eu-central-1")
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.
             redirect_path: Redirect path configured in Cognito app (defaults to "/auth/callback")
@@ -164,81 +135,37 @@ class AWSCognitoProvider(OIDCProxy):
                 When False, authorization proceeds directly without user confirmation.
                 SECURITY WARNING: Only disable for local development or testing environments.
         """
-
-        settings = AWSCognitoProviderSettings.model_validate(
-            {
-                k: v
-                for k, v in {
-                    "user_pool_id": user_pool_id,
-                    "aws_region": aws_region,
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "base_url": base_url,
-                    "issuer_url": issuer_url,
-                    "redirect_path": redirect_path,
-                    "required_scopes": required_scopes,
-                    "allowed_client_redirect_uris": allowed_client_redirect_uris,
-                    "jwt_signing_key": jwt_signing_key,
-                }.items()
-                if v is not NotSet
-            }
+        # Parse scopes if provided as string
+        required_scopes_final = (
+            parse_scopes(required_scopes) if required_scopes is not None else ["openid"]
         )
-
-        # Validate required settings
-        if not settings.user_pool_id:
-            raise ValueError(
-                "user_pool_id is required - set via parameter or FASTMCP_SERVER_AUTH_AWS_COGNITO_USER_POOL_ID"
-            )
-        if not settings.client_id:
-            raise ValueError(
-                "client_id is required - set via parameter or FASTMCP_SERVER_AUTH_AWS_COGNITO_CLIENT_ID"
-            )
-        if not settings.client_secret:
-            raise ValueError(
-                "client_secret is required - set via parameter or FASTMCP_SERVER_AUTH_AWS_COGNITO_CLIENT_SECRET"
-            )
-        if not settings.base_url:
-            raise ValueError(
-                "base_url is required - set via parameter or FASTMCP_SERVER_AUTH_AWS_COGNITO_BASE_URL"
-            )
-
-        # Apply defaults
-        required_scopes_final = settings.required_scopes or ["openid"]
-        allowed_client_redirect_uris_final = settings.allowed_client_redirect_uris
-        aws_region_final = settings.aws_region or "eu-central-1"
-        redirect_path_final = settings.redirect_path or "/auth/callback"
 
         # Construct OIDC discovery URL
-        config_url = f"https://cognito-idp.{aws_region_final}.amazonaws.com/{settings.user_pool_id}/.well-known/openid-configuration"
-
-        # Extract secret string from SecretStr
-        client_secret_str = (
-            settings.client_secret.get_secret_value() if settings.client_secret else ""
-        )
+        config_url = f"https://cognito-idp.{aws_region}.amazonaws.com/{user_pool_id}/.well-known/openid-configuration"
 
         # Store Cognito-specific info for claim filtering
-        self.user_pool_id = settings.user_pool_id
-        self.aws_region = aws_region_final
+        self.user_pool_id = user_pool_id
+        self.aws_region = aws_region
 
         # Initialize OIDC proxy with Cognito discovery
         super().__init__(
             config_url=config_url,
-            client_id=settings.client_id,
-            client_secret=client_secret_str,
+            client_id=client_id,
+            client_secret=client_secret,
             algorithm="RS256",
             required_scopes=required_scopes_final,
-            base_url=settings.base_url,
-            issuer_url=settings.issuer_url,
-            redirect_path=redirect_path_final,
-            allowed_client_redirect_uris=allowed_client_redirect_uris_final,
+            base_url=base_url,
+            issuer_url=issuer_url,
+            redirect_path=redirect_path,
+            allowed_client_redirect_uris=allowed_client_redirect_uris,
             client_storage=client_storage,
-            jwt_signing_key=settings.jwt_signing_key,
+            jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
         )
 
         logger.debug(
             "Initialized AWS Cognito OAuth provider for client %s with scopes: %s",
-            settings.client_id,
+            client_id,
             required_scopes_final,
         )
 

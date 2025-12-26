@@ -560,29 +560,23 @@ The consent page automatically displays your server's name, icon, and website UR
 - [MCP Security Best Practices](https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices#confused-deputy-problem) - Official specification guidance
 - [Confused Deputy Attacks Explained](https://den.dev/blog/mcp-confused-deputy-api-management/) - Detailed walkthrough by Den Delimarsky
 
-## Environment Configuration
+## Production Configuration
 
-<VersionBadge version="2.12.1" />
-
-For production deployments, configure the OAuth proxy through environment variables instead of hardcoding credentials:
-
-```bash
-# Specify the provider implementation
-export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.github.GitHubProvider
-
-# Provider-specific credentials
-export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID="Ov23li..."
-export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET="abc123..."
-export FASTMCP_SERVER_AUTH_GITHUB_BASE_URL="https://your-production-server.com"
-```
-
-With environment configuration, your server code simplifies to:
+For production deployments, load sensitive credentials from environment variables:
 
 ```python
+import os
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.github import GitHubProvider
 
-# Authentication automatically configured from environment
-mcp = FastMCP(name="My Server")
+# Load secrets from environment variables
+auth = GitHubProvider(
+    client_id=os.environ.get("GITHUB_CLIENT_ID"),
+    client_secret=os.environ.get("GITHUB_CLIENT_SECRET"),
+    base_url=os.environ.get("BASE_URL", "https://your-production-server.com")
+)
+
+mcp = FastMCP(name="My Server", auth=auth)
 
 @mcp.tool
 def protected_tool(data: str) -> str:
@@ -592,3 +586,5 @@ def protected_tool(data: str) -> str:
 if __name__ == "__main__":
     mcp.run(transport="http", port=8000)
 ```
+
+This keeps secrets out of your codebase while maintaining explicit configuration.

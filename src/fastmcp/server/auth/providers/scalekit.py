@@ -8,48 +8,16 @@ authentication for seamless MCP client authentication.
 from __future__ import annotations
 
 import httpx
-from pydantic import AnyHttpUrl, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import NotSet, NotSetT
 
 logger = get_logger(__name__)
-
-
-class ScalekitProviderSettings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_",
-        env_file=ENV_FILE,
-        extra="ignore",
-    )
-
-    environment_url: AnyHttpUrl
-    resource_id: str
-    base_url: AnyHttpUrl | None = None
-    mcp_url: AnyHttpUrl | None = None
-    required_scopes: list[str] | None = None
-
-    @field_validator("required_scopes", mode="before")
-    @classmethod
-    def _parse_scopes(cls, value: object):
-        return parse_scopes(value)
-
-    @model_validator(mode="after")
-    def _resolve_base_url(self):
-        resolved = self.base_url or self.mcp_url
-        if resolved is None:
-            msg = "Either base_url or mcp_url must be provided for ScalekitProvider"
-            raise ValueError(msg)
-
-        object.__setattr__(self, "base_url", resolved)
-        return self
 
 
 class ScalekitProvider(RemoteAuthProvider):
@@ -95,12 +63,12 @@ class ScalekitProvider(RemoteAuthProvider):
     def __init__(
         self,
         *,
-        environment_url: AnyHttpUrl | str | NotSetT = NotSet,
-        client_id: str | NotSetT = NotSet,
-        resource_id: str | NotSetT = NotSet,
-        base_url: AnyHttpUrl | str | NotSetT = NotSet,
-        mcp_url: AnyHttpUrl | str | NotSetT = NotSet,
-        required_scopes: list[str] | NotSetT = NotSet,
+        environment_url: AnyHttpUrl | str,
+        resource_id: str,
+        base_url: AnyHttpUrl | str | None = None,
+        mcp_url: AnyHttpUrl | str | None = None,
+        client_id: str | None = None,
+        required_scopes: list[str] | None = None,
         token_verifier: TokenVerifier | None = None,
     ):
         """Initialize Scalekit resource server provider.
@@ -108,42 +76,36 @@ class ScalekitProvider(RemoteAuthProvider):
         Args:
             environment_url: Your Scalekit environment URL (e.g., "https://your-env.scalekit.com")
             resource_id: Your Scalekit resource ID
-            base_url: Public URL of this FastMCP server
+            base_url: Public URL of this FastMCP server (or use mcp_url for backwards compatibility)
+            mcp_url: Deprecated alias for base_url. Will be removed in a future release.
+            client_id: Deprecated parameter, no longer required. Will be removed in a future release.
             required_scopes: Optional list of scopes that must be present in tokens
             token_verifier: Optional token verifier. If None, creates JWT verifier for Scalekit
         """
-        legacy_client_id = client_id is not NotSet
+        # Resolve base_url from mcp_url if needed (backwards compatibility)
+        resolved_base_url = base_url or mcp_url
+        if not resolved_base_url:
+            raise ValueError("Either base_url or mcp_url must be provided")
 
-        settings = ScalekitProviderSettings.model_validate(
-            {
-                k: v
-                for k, v in {
-                    "environment_url": environment_url,
-                    "resource_id": resource_id,
-                    "base_url": base_url,
-                    "mcp_url": mcp_url,
-                    "required_scopes": required_scopes,
-                }.items()
-                if v is not NotSet
-            }
-        )
-
-        if settings.mcp_url is not None:
+        if mcp_url is not None:
             logger.warning(
                 "ScalekitProvider parameter 'mcp_url' is deprecated and will be removed in a future release. "
                 "Rename it to 'base_url'."
             )
 
-        if legacy_client_id:
+        if client_id is not None:
             logger.warning(
                 "ScalekitProvider no longer requires 'client_id'. The parameter is accepted only for backward "
                 "compatibility and will be removed in a future release."
             )
 
-        self.environment_url = str(settings.environment_url).rstrip("/")
-        self.resource_id = settings.resource_id
-        self.required_scopes = settings.required_scopes or []
-        base_url_value = str(settings.base_url)
+        self.environment_url = str(environment_url).rstrip("/")
+        self.resource_id = resource_id
+        parsed_scopes = (
+            parse_scopes(required_scopes) if required_scopes is not None else []
+        )
+        self.required_scopes = parsed_scopes
+        base_url_value = str(resolved_base_url)
 
         logger.debug(
             "Initializing ScalekitProvider: environment_url=%s resource_id=%s base_url=%s required_scopes=%s",

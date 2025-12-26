@@ -233,31 +233,25 @@ OAuth scopes are configured with `required_scopes` to automatically request the 
 
 Dynamic clients created by the proxy will automatically include these scopes in their authorization requests.
 
-## Environment Configuration
+## Production Configuration
 
-<VersionBadge version="2.13.0" />
-
-For production deployments, configure the OIDC proxy through environment variables instead of hardcoding credentials:
-
-```bash
-# Specify the provider implementation
-export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.auth0.Auth0Provider
-
-# Provider-specific credentials
-export FASTMCP_SERVER_AUTH_AUTH0_CONFIG_URL=https://.../.well-known/openid-configuration
-export FASTMCP_SERVER_AUTH_AUTH0_CLIENT_ID=tv2ObNgaZAWWhhycr7Bz1LU2mxlnsmsB
-export FASTMCP_SERVER_AUTH_AUTH0_CLIENT_SECRET=vPYqbjemq...
-export FASTMCP_SERVER_AUTH_AUTH0_AUDIENCE=https://...
-export FASTMCP_SERVER_AUTH_AUTH0_BASE_URL=https://localhost:8000
-```
-
-With environment configuration, your server code simplifies to:
+For production deployments, load sensitive credentials from environment variables:
 
 ```python
+import os
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.auth0 import Auth0Provider
 
-# Authentication automatically configured from environment
-mcp = FastMCP(name="My Server")
+# Load secrets from environment variables
+auth = Auth0Provider(
+    config_url=os.environ.get("AUTH0_CONFIG_URL"),
+    client_id=os.environ.get("AUTH0_CLIENT_ID"),
+    client_secret=os.environ.get("AUTH0_CLIENT_SECRET"),
+    audience=os.environ.get("AUTH0_AUDIENCE"),
+    base_url=os.environ.get("BASE_URL", "https://localhost:8000")
+)
+
+mcp = FastMCP(name="My Server", auth=auth)
 
 @mcp.tool
 def protected_tool(data: str) -> str:
@@ -267,3 +261,5 @@ def protected_tool(data: str) -> str:
 if __name__ == "__main__":
     mcp.run(transport="http", port=8000)
 ```
+
+This keeps secrets out of your codebase while maintaining explicit configuration.

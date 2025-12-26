@@ -150,6 +150,31 @@ def my_prompt() -> Message:
 
 See [Prompts documentation](/servers/prompts#return-values) for full details.
 
+### Auth Provider Automatic Environment Variable Loading Removed
+
+Auth providers no longer automatically read configuration from environment variables. You can still use environment variables, but you must read them yourself:
+
+<CodeGroup>
+```python Before
+# Relied on FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID, etc.
+auth = GitHubProvider()
+```
+
+```python After
+import os
+
+auth = GitHubProvider(
+    client_id=os.environ["GITHUB_CLIENT_ID"],
+    client_secret=os.environ["GITHUB_CLIENT_SECRET"],
+    base_url=os.environ["GITHUB_BASE_URL"],
+)
+```
+</CodeGroup>
+
+This applies to all auth providers: `GitHubProvider`, `GoogleProvider`, `AzureProvider`, `Auth0Provider`, `AWSProvider`, `WorkOSProvider`, `DescopeProvider`, `DiscordProvider`, `ScalekitProvider`, `SupabaseProvider`, `OCIProvider`, `JWTVerifier`, and `IntrospectionVerifier`.
+
+The `FastMCPSettings` class has also been simplified - it no longer includes auth-related settings that were previously loaded from environment variables.
+
 ## v2.14.0
 
 ### OpenAPI Parser Promotion

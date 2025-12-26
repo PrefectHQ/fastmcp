@@ -11,15 +11,12 @@ from authlib.jose import JsonWebKey, JsonWebToken
 from authlib.jose.errors import JoseError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from pydantic import AnyHttpUrl, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AnyHttpUrl, SecretStr
 from typing_extensions import TypedDict
 
 from fastmcp.server.auth import AccessToken, TokenVerifier
-from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import NotSet, NotSetT
 
 logger = get_logger(__name__)
 
@@ -139,29 +136,6 @@ class RSAKeyPair:
         return token_bytes.decode("utf-8")
 
 
-class JWTVerifierSettings(BaseSettings):
-    """Settings for JWT token verification."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_SERVER_AUTH_JWT_",
-        env_file=ENV_FILE,
-        extra="ignore",
-    )
-
-    public_key: str | None = None
-    jwks_uri: str | None = None
-    issuer: str | list[str] | None = None
-    algorithm: str | None = None
-    audience: str | list[str] | None = None
-    required_scopes: list[str] | None = None
-    base_url: AnyHttpUrl | str | None = None
-
-    @field_validator("required_scopes", mode="before")
-    @classmethod
-    def _parse_scopes(cls, v):
-        return parse_scopes(v)
-
-
 class JWTVerifier(TokenVerifier):
     """
     JWT token verifier supporting both asymmetric (RSA/ECDSA) and symmetric (HMAC) algorithms.
@@ -184,52 +158,36 @@ class JWTVerifier(TokenVerifier):
     def __init__(
         self,
         *,
-        public_key: str | NotSetT | None = NotSet,
-        jwks_uri: str | NotSetT | None = NotSet,
-        issuer: str | list[str] | NotSetT | None = NotSet,
-        audience: str | list[str] | NotSetT | None = NotSet,
-        algorithm: str | NotSetT | None = NotSet,
-        required_scopes: list[str] | NotSetT | None = NotSet,
-        base_url: AnyHttpUrl | str | NotSetT | None = NotSet,
+        public_key: str | None = None,
+        jwks_uri: str | None = None,
+        issuer: str | list[str] | None = None,
+        audience: str | list[str] | None = None,
+        algorithm: str | None = None,
+        required_scopes: list[str] | None = None,
+        base_url: AnyHttpUrl | str | None = None,
     ):
         """
         Initialize a JWTVerifier configured to validate JWTs using either a static key or a JWKS endpoint.
 
         Parameters:
-            public_key (str | NotSetT | None): PEM-encoded public key for asymmetric algorithms or shared secret for symmetric algorithms.
-            jwks_uri (str | NotSetT | None): URI to fetch a JSON Web Key Set; used when verifying tokens with remote JWKS.
-            issuer (str | list[str] | NotSetT | None): Expected issuer claim value or list of allowed issuer values.
-            audience (str | list[str] | NotSetT | None): Expected audience claim value or list of allowed audience values.
-            algorithm (str | NotSetT | None): JWT signing algorithm to accept (default: "RS256"). Supported: HS256/384/512, RS256/384/512, ES256/384/512, PS256/384/512.
-            required_scopes (list[str] | NotSetT | None): Scopes that must be present in validated tokens.
-            base_url (AnyHttpUrl | str | NotSetT | None): Base URL passed to the parent TokenVerifier.
+            public_key: PEM-encoded public key for asymmetric algorithms or shared secret for symmetric algorithms.
+            jwks_uri: URI to fetch a JSON Web Key Set; used when verifying tokens with remote JWKS.
+            issuer: Expected issuer claim value or list of allowed issuer values.
+            audience: Expected audience claim value or list of allowed audience values.
+            algorithm: JWT signing algorithm to accept (default: "RS256"). Supported: HS256/384/512, RS256/384/512, ES256/384/512, PS256/384/512.
+            required_scopes: Scopes that must be present in validated tokens.
+            base_url: Base URL passed to the parent TokenVerifier.
 
         Raises:
             ValueError: If neither or both of `public_key` and `jwks_uri` are provided, or if `algorithm` is unsupported.
         """
-        settings = JWTVerifierSettings.model_validate(
-            {
-                k: v
-                for k, v in {
-                    "public_key": public_key,
-                    "jwks_uri": jwks_uri,
-                    "issuer": issuer,
-                    "audience": audience,
-                    "algorithm": algorithm,
-                    "required_scopes": required_scopes,
-                    "base_url": base_url,
-                }.items()
-                if v is not NotSet
-            }
-        )
-
-        if not settings.public_key and not settings.jwks_uri:
+        if not public_key and not jwks_uri:
             raise ValueError("Either public_key or jwks_uri must be provided")
 
-        if settings.public_key and settings.jwks_uri:
+        if public_key and jwks_uri:
             raise ValueError("Provide either public_key or jwks_uri, not both")
 
-        algorithm = settings.algorithm or "RS256"
+        algorithm = algorithm or "RS256"
         if algorithm not in {
             "HS256",
             "HS384",
@@ -246,17 +204,22 @@ class JWTVerifier(TokenVerifier):
         }:
             raise ValueError(f"Unsupported algorithm: {algorithm}.")
 
+        # Parse scopes if provided as string
+        parsed_required_scopes = (
+            parse_scopes(required_scopes) if required_scopes is not None else None
+        )
+
         # Initialize parent TokenVerifier
         super().__init__(
-            base_url=settings.base_url,
-            required_scopes=settings.required_scopes,
+            base_url=base_url,
+            required_scopes=parsed_required_scopes,
         )
 
         self.algorithm = algorithm
-        self.issuer = settings.issuer
-        self.audience = settings.audience
-        self.public_key = settings.public_key
-        self.jwks_uri = settings.jwks_uri
+        self.issuer = issuer
+        self.audience = audience
+        self.public_key = public_key
+        self.jwks_uri = jwks_uri
         self.jwt = JsonWebToken([self.algorithm])
         self.logger = get_logger(__name__)
 

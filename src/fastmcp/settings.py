@@ -5,10 +5,10 @@ import os
 import warnings
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import Annotated, Any, Literal
 
 from platformdirs import user_data_dir
-from pydantic import Field, ImportString, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import (
     BaseSettings,
     SettingsConfigDict,
@@ -25,9 +25,6 @@ LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
 TEN_MB_IN_BYTES = 1024 * 1024 * 10
-
-if TYPE_CHECKING:
-    from fastmcp.server.auth.auth import AuthProvider
 
 
 class DocketSettings(BaseSettings):
@@ -296,37 +293,6 @@ class Settings(BaseSettings):
         False  # If True, uses true stateless mode (new transport per request)
     )
 
-    # Auth settings
-    server_auth: Annotated[
-        str | None,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Configure the authentication provider for the server by specifying
-                the full module path to an AuthProvider class (e.g., 
-                'fastmcp.server.auth.providers.google.GoogleProvider').
-
-                The specified class will be imported and instantiated automatically
-                during FastMCP server creation. Any class that inherits from AuthProvider
-                can be used, including custom implementations.
-
-                If None, no automatic configuration will take place.
-
-                This setting is *always* overridden by any auth provider passed to the
-                FastMCP constructor.
-
-                Note that most auth providers require additional configuration
-                that must be provided via env vars.
-
-                Examples:
-                  - fastmcp.server.auth.providers.google.GoogleProvider
-                  - fastmcp.server.auth.providers.jwt.JWTVerifier
-                  - mycompany.auth.CustomAuthProvider
-                """
-            ),
-        ),
-    ] = None
-
     include_fastmcp_meta: Annotated[
         bool,
         Field(
@@ -366,22 +332,3 @@ class Settings(BaseSettings):
             ),
         ),
     ] = True
-
-    @property
-    def server_auth_class(self) -> AuthProvider | None:
-        from fastmcp.utilities.types import get_cached_typeadapter
-
-        if not self.server_auth:
-            return None
-
-        # https://github.com/jlowin/fastmcp/issues/1749
-        # Pydantic imports the module in an ImportString during model validation, but we don't want the server
-        # auth module imported during settings creation as it imports dependencies we aren't ready for yet.
-        # To fix this while limiting breaking changes, we delay the import by only creating the ImportString
-        # when the class is actually needed
-
-        type_adapter = get_cached_typeadapter(ImportString)
-
-        auth_class = type_adapter.validate_python(self.server_auth)
-
-        return auth_class

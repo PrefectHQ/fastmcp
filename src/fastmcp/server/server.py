@@ -200,7 +200,7 @@ class FastMCP(Generic[LifespanResultT]):
         version: str | None = None,
         website_url: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
-        auth: AuthProvider | NotSetT | None = NotSet,
+        auth: AuthProvider | None = None,
         middleware: Sequence[Middleware] | None = None,
         providers: Sequence[Provider] | None = None,
         lifespan: LifespanCallable | None = None,
@@ -290,16 +290,6 @@ class FastMCP(Generic[LifespanResultT]):
             lifespan=_lifespan_proxy(fastmcp_server=self),
         )
 
-        # if auth is `NotSet`, try to create a provider from the environment
-        if auth is NotSet:
-            if fastmcp.settings.server_auth is not None:
-                # server_auth_class returns the class itself, not an instance
-                auth_class = cast(
-                    type[AuthProvider], fastmcp.settings.server_auth_class
-                )
-                auth = auth_class()
-            else:
-                auth = None
         self.auth: AuthProvider | None = auth
 
         if tools:

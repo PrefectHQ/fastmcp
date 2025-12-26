@@ -1,10 +1,7 @@
 """Tests for Azure (Microsoft Entra) OAuth provider."""
 
-import os
-from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
-import pytest
 from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
@@ -35,115 +32,6 @@ class TestAzureProvider:
         assert "87654321-4321-4321-4321-210987654321" in parsed_auth.path
         parsed_token = urlparse(provider._upstream_token_endpoint)
         assert "87654321-4321-4321-4321-210987654321" in parsed_token.path
-
-    @pytest.mark.parametrize(
-        "scopes_env",
-        [
-            "read,write",
-            '["read", "write"]',
-        ],
-    )
-    def test_init_with_env_vars(self, scopes_env):
-        """Test AzureProvider initialization from environment variables."""
-        with patch.dict(
-            os.environ,
-            {
-                "FASTMCP_SERVER_AUTH_AZURE_CLIENT_ID": "env-client-id",
-                "FASTMCP_SERVER_AUTH_AZURE_CLIENT_SECRET": "env-secret",
-                "FASTMCP_SERVER_AUTH_AZURE_TENANT_ID": "env-tenant-id",
-                "FASTMCP_SERVER_AUTH_AZURE_BASE_URL": "https://envserver.com",
-                "FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES": scopes_env,
-                "FASTMCP_SERVER_AUTH_AZURE_JWT_SIGNING_KEY": "test-secret",
-            },
-        ):
-            provider = AzureProvider()
-
-            assert provider._upstream_client_id == "env-client-id"
-            assert provider._upstream_client_secret.get_secret_value() == "env-secret"
-            assert str(provider.base_url) == "https://envserver.com/"
-            # Scopes are stored unprefixed for token validation
-            # (Azure returns unprefixed scopes in JWT tokens)
-            assert provider._token_validator.required_scopes == [
-                "read",
-                "write",
-            ]
-            # Check tenant is in the endpoints
-            parsed_auth = urlparse(provider._upstream_authorization_endpoint)
-            assert "env-tenant-id" in parsed_auth.path
-            parsed_token = urlparse(provider._upstream_token_endpoint)
-            assert "env-tenant-id" in parsed_token.path
-
-    def test_init_missing_client_id_raises_error(self):
-        """Test that missing client_id raises ValueError."""
-        # Clear environment variables to ensure we're testing the parameter validation
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="client_id is required"):
-                AzureProvider(
-                    client_secret="test_secret",
-                    tenant_id="test-tenant",
-                    required_scopes=["read"],
-                )
-
-    def test_init_missing_client_secret_raises_error(self):
-        """Test that missing client_secret raises ValueError."""
-        # Clear environment variables to ensure we're testing the parameter validation
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="client_secret is required"):
-                AzureProvider(
-                    client_id="test_client",
-                    tenant_id="test-tenant",
-                    required_scopes=["read"],
-                )
-
-    def test_init_missing_tenant_id_raises_error(self):
-        """Test that missing tenant_id raises ValueError."""
-        # Clear environment variables to ensure we're testing the parameter validation
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="tenant_id is required"):
-                AzureProvider(
-                    client_id="test_client",
-                    client_secret="test_secret",
-                    required_scopes=["read"],
-                )
-
-    def test_init_missing_required_scopes_raises_error(self):
-        """Test that missing required_scopes raises ValueError."""
-        # Clear environment variables to ensure we're testing the parameter validation
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(
-                ValueError, match="required_scopes must include at least one scope"
-            ):
-                AzureProvider(
-                    client_id="test_client",
-                    client_secret="test_secret",
-                    tenant_id="test-tenant",
-                )
-
-    def test_init_empty_required_scopes_raises_error(self):
-        """Test that empty required_scopes raises ValueError."""
-        # Clear environment variables to ensure we're testing the parameter validation
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(
-                ValueError, match="required_scopes must include at least one scope"
-            ):
-                AzureProvider(
-                    client_id="test_client",
-                    client_secret="test_secret",
-                    tenant_id="test-tenant",
-                    required_scopes=[],
-                )
-
-    def test_init_missing_base_url_raises_error(self):
-        """Test that missing base_url raises ValueError."""
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="base_url is required"):
-                AzureProvider(
-                    client_id="test_client",
-                    client_secret="test_secret",
-                    tenant_id="test-tenant",
-                    required_scopes=["read"],
-                    jwt_signing_key="test-secret",
-                )
 
     def test_init_defaults(self):
         """Test that default values are applied correctly."""
@@ -463,39 +351,35 @@ class TestAzureProvider:
             == "https://login.microsoftonline.us/gov-tenant-id/discovery/v2.0/keys"
         )
 
-    def test_base_authority_from_environment_variable(self):
-        """Test that base_authority can be set via environment variable."""
-        with patch.dict(
-            os.environ,
-            {
-                "FASTMCP_SERVER_AUTH_AZURE_CLIENT_ID": "env-client-id",
-                "FASTMCP_SERVER_AUTH_AZURE_CLIENT_SECRET": "env-secret",
-                "FASTMCP_SERVER_AUTH_AZURE_TENANT_ID": "env-tenant-id",
-                "FASTMCP_SERVER_AUTH_AZURE_BASE_URL": "https://myserver.com",
-                "FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES": "read",
-                "FASTMCP_SERVER_AUTH_AZURE_BASE_AUTHORITY": "login.microsoftonline.us",
-                "FASTMCP_SERVER_AUTH_AZURE_JWT_SIGNING_KEY": "test-secret",
-            },
-        ):
-            provider = AzureProvider()
+    def test_base_authority_from_parameter(self):
+        """Test that base_authority can be set via parameter."""
+        provider = AzureProvider(
+            client_id="env-client-id",
+            client_secret="env-secret",
+            tenant_id="env-tenant-id",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            base_authority="login.microsoftonline.us",
+            jwt_signing_key="test-secret",
+        )
 
-            assert (
-                provider._upstream_authorization_endpoint
-                == "https://login.microsoftonline.us/env-tenant-id/oauth2/v2.0/authorize"
-            )
-            assert (
-                provider._upstream_token_endpoint
-                == "https://login.microsoftonline.us/env-tenant-id/oauth2/v2.0/token"
-            )
-            assert isinstance(provider._token_validator, JWTVerifier)
-            assert (
-                provider._token_validator.issuer
-                == "https://login.microsoftonline.us/env-tenant-id/v2.0"
-            )
-            assert (
-                provider._token_validator.jwks_uri
-                == "https://login.microsoftonline.us/env-tenant-id/discovery/v2.0/keys"
-            )
+        assert (
+            provider._upstream_authorization_endpoint
+            == "https://login.microsoftonline.us/env-tenant-id/oauth2/v2.0/authorize"
+        )
+        assert (
+            provider._upstream_token_endpoint
+            == "https://login.microsoftonline.us/env-tenant-id/oauth2/v2.0/token"
+        )
+        assert isinstance(provider._token_validator, JWTVerifier)
+        assert (
+            provider._token_validator.issuer
+            == "https://login.microsoftonline.us/env-tenant-id/v2.0"
+        )
+        assert (
+            provider._token_validator.jwks_uri
+            == "https://login.microsoftonline.us/env-tenant-id/discovery/v2.0/keys"
+        )
 
     def test_base_authority_with_special_tenant_values(self):
         """Test that base_authority works with special tenant values like 'organizations'."""

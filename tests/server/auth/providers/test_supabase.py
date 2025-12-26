@@ -1,8 +1,6 @@
 """Tests for Supabase Auth provider."""
 
-import os
 from collections.abc import Generator
-from unittest.mock import patch
 
 import httpx
 import pytest
@@ -26,27 +24,6 @@ class TestSupabaseProvider:
 
         assert provider.project_url == "https://abc123.supabase.co"
         assert str(provider.base_url) == "https://myserver.com/"
-
-    @pytest.mark.parametrize(
-        "scopes_env",
-        [
-            "openid,email",
-            '["openid", "email"]',
-        ],
-    )
-    def test_init_with_env_vars(self, scopes_env):
-        """Test SupabaseProvider initialization from environment variables."""
-        with patch.dict(
-            os.environ,
-            {
-                "FASTMCP_SERVER_AUTH_SUPABASE_PROJECT_URL": "https://env123.supabase.co",
-                "FASTMCP_SERVER_AUTH_SUPABASE_BASE_URL": "https://envserver.com",
-            },
-        ):
-            provider = SupabaseProvider()
-
-            assert provider.project_url == "https://env123.supabase.co"
-            assert str(provider.base_url) == "https://envserver.com/"
 
     def test_environment_variable_loading(self):
         """Test that environment variables are loaded correctly."""
@@ -139,20 +116,16 @@ class TestSupabaseProvider:
         assert isinstance(provider.token_verifier, JWTVerifier)
         assert provider.token_verifier.algorithm == "ES256"
 
-    def test_algorithm_from_env_var(self):
-        """Test that algorithm can be configured via environment variable."""
-        with patch.dict(
-            os.environ,
-            {
-                "FASTMCP_SERVER_AUTH_SUPABASE_PROJECT_URL": "https://env123.supabase.co",
-                "FASTMCP_SERVER_AUTH_SUPABASE_BASE_URL": "https://envserver.com",
-                "FASTMCP_SERVER_AUTH_SUPABASE_ALGORITHM": "RS256",
-            },
-        ):
-            provider = SupabaseProvider()
+    def test_algorithm_from_parameter(self):
+        """Test that algorithm can be configured via parameter."""
+        provider = SupabaseProvider(
+            project_url="https://env123.supabase.co",
+            base_url="https://envserver.com",
+            algorithm="RS256",
+        )
 
-            assert isinstance(provider.token_verifier, JWTVerifier)
-            assert provider.token_verifier.algorithm == "RS256"
+        assert isinstance(provider.token_verifier, JWTVerifier)
+        assert provider.token_verifier.algorithm == "RS256"
 
 
 def run_mcp_server(host: str, port: int) -> None:

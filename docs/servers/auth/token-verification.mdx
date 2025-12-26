@@ -303,39 +303,31 @@ print(f"Test token: {test_token}")
 
 This pattern enables comprehensive testing of JWT validation logic without depending on external token issuers. The generated tokens are cryptographically valid and will pass all standard JWT validation checks.
 
-## Environment Configuration
+## Production Configuration
 
-<VersionBadge version="2.12.1" />
-
-FastMCP supports both programmatic and environment-based configuration for token verification, enabling flexible deployment across different environments.
-
-Environment-based configuration separates authentication settings from application code, following twelve-factor app principles and simplifying deployment pipelines.
-
-```bash
-# Enable JWT verification
-export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.jwt.JWTVerifier
-
-# For asymmetric verification with JWKS endpoint:
-export FASTMCP_SERVER_AUTH_JWT_JWKS_URI="https://auth.company.com/.well-known/jwks.json"
-export FASTMCP_SERVER_AUTH_JWT_ISSUER="https://auth.company.com"
-export FASTMCP_SERVER_AUTH_JWT_AUDIENCE="mcp-production-api"
-export FASTMCP_SERVER_AUTH_JWT_REQUIRED_SCOPES="read:data,write:data"
-
-# OR for symmetric key verification (HMAC):
-export FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY="your-shared-secret-key-minimum-32-chars"
-export FASTMCP_SERVER_AUTH_JWT_ALGORITHM="HS256"  # or HS384, HS512
-export FASTMCP_SERVER_AUTH_JWT_ISSUER="internal-auth-service"
-export FASTMCP_SERVER_AUTH_JWT_AUDIENCE="mcp-internal-api"
-```
-
-With these environment variables configured, your FastMCP server automatically enables JWT verification:
+For production deployments, load sensitive configuration from environment variables:
 
 ```python
+import os
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 
-# Authentication automatically configured from environment
-mcp = FastMCP(name="Production API")
+# Load configuration from environment variables
+# Parse comma-separated scopes if provided
+scopes_env = os.environ.get("JWT_REQUIRED_SCOPES")
+required_scopes = scopes_env.split(",") if scopes_env else None
+
+verifier = JWTVerifier(
+    jwks_uri=os.environ.get("JWT_JWKS_URI"),
+    issuer=os.environ.get("JWT_ISSUER"),
+    audience=os.environ.get("JWT_AUDIENCE"),
+    required_scopes=required_scopes,
+)
+
+mcp = FastMCP(name="Production API", auth=verifier)
 ```
+
+This keeps configuration out of your codebase while maintaining explicit setup.
 
 This approach enables the same codebase to run across development, staging, and production environments with different authentication requirements. Development might use static tokens while production uses JWT verification, all controlled through environment configuration.
 

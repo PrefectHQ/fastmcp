@@ -17,7 +17,7 @@ This guide shows you how to secure your FastMCP server using **OCI IAM OAuth**. 
 ### Prerequisites
 
 1. An OCI cloud Account with access to create an Integrated Application in an Identity Domain.
-2. Your FastMCP server's URL (For dev environments, it is http://localhost:8000. For PROD environments, it could be https://mcp.${DOMAIN}.com)
+2. Your FastMCP server's URL (For dev environments, it is http://localhost:8000. For PROD environments, it could be https://mcp.yourdomain.com)
 
 ### Step 1: Make sure client access is enabled for JWK's URL
 
@@ -88,8 +88,7 @@ Follow the Steps as mentioned below to create an OAuth client.
     Click on "Submit" button to update OAuth configuration for the client application. 
     **Note: You don't need to do any special configuration to support PKCE for the OAuth client.**
     Make sure to Activate the client application.
-    Note down client ID and client secret for the application. Update .env file and replace FASTMCP_SERVER_AUTH_OCI_CLIENT_ID and FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET values. 
-    FASTMCP_SERVER_AUTH_OCI_IAM_GUID in the env file is the Identity domain URL that you chose for the MCP server.
+    Note down client ID and client secret for the application. You'll use these values when configuring the OCIProvider in your code.
 </Step>
 </Steps>
 
@@ -99,22 +98,20 @@ This is all you need to implement MCP server authentication against OCI IAM. How
 
 Token exchange helps you exchange a logged-in user's OCI IAM token for an OCI control plane session token, also known as UPST (User Principal Session Token). To learn more about token exchange, refer to my [Workload Identity Federation Blog](https://www.ateam-oracle.com/post/workload-identity-federation)
 
-For token exchange, we need to configure Identity propagation trust. The blog above discusses setting up the trust using REST APIs. However, you can also use OCI CLI. Before using the CLI command below, ensure that you have created a token exchange OAuth client. In most cases, you can use the same OAuth client that you created above. You will use the client ID of the token exchange OAuth client in the CLI command below and replace it with {FASTMCP_SERVER_AUTH_OCI_CLIENT_ID}. 
-
-You will also need to update the client secret for the token exchange OAuth client in the .env file. It is the FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET parameter. Update FASTMCP_SERVER_AUTH_OCI_IAM_GUID and FASTMCP_SERVER_AUTH_OCI_CLIENT_ID as well for the token exchange OAuth client in the .env file.
+For token exchange, we need to configure Identity propagation trust. The blog above discusses setting up the trust using REST APIs. However, you can also use OCI CLI. Before using the CLI command below, ensure that you have created a token exchange OAuth client. In most cases, you can use the same OAuth client that you created above. Replace `<IAM_GUID>` and `<CLIENT_ID>` in the CLI command below with your actual values.
 
 ```bash
 oci identity-domains identity-propagation-trust create \
 --schemas '["urn:ietf:params:scim:schemas:oracle:idcs:IdentityPropagationTrust"]' \
---public-key-endpoint "https://{FASTMCP_SERVER_AUTH_OCI_IAM_GUID}.identity.oraclecloud.com/admin/v1/SigningCert/jwk" \
+--public-key-endpoint "https://<IAM_GUID>.identity.oraclecloud.com/admin/v1/SigningCert/jwk" \
 --name "For Token Exchange" --type "JWT" \
 --issuer "https://identity.oraclecloud.com/" --active true \
---endpoint "https://{FASTMCP_SERVER_AUTH_OCI_IAM_GUID}.identity.oracleclcoud.com" \
+--endpoint "https://<IAM_GUID>.identity.oraclecloud.com" \
 --subject-claim-name "sub" --allow-impersonation false \
 --subject-mapping-attribute "username" \
 --subject-type "User" --client-claim-name "iss" \
 --client-claim-values '["https://identity.oraclecloud.com/"]' \
---oauth-clients '["{FASTMCP_SERVER_AUTH_OCI_CLIENT_ID}"]'
+--oauth-clients '["<CLIENT_ID>"]'
 ```
 
 To exchange access token for OCI token and create a signer object, you need to add below code in MCP server. You can then use the signer object to create any OCI control plane client. 
@@ -129,9 +126,9 @@ import os
 logger = get_logger(__name__)
 
 # Load configuration from environment
-FASTMCP_SERVER_AUTH_OCI_IAM_GUID = os.environ["FASTMCP_SERVER_AUTH_OCI_IAM_GUID"]
-FASTMCP_SERVER_AUTH_OCI_CLIENT_ID = os.environ["FASTMCP_SERVER_AUTH_OCI_CLIENT_ID"]
-FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET = os.environ["FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET"]
+OCI_IAM_GUID = os.environ.get("OCI_IAM_GUID")
+OCI_CLIENT_ID = os.environ.get("OCI_CLIENT_ID")
+OCI_CLIENT_SECRET = os.environ.get("OCI_CLIENT_SECRET")
 
 _global_token_cache = {} #In memory cache for OCI session token signer
     
@@ -152,9 +149,9 @@ def get_oci_signer() -> TokenExchangeSigner:
     logger.debug(f"Creating new signer for token ID: {tokenID}")
     signer = TokenExchangeSigner(
         jwt_or_func=token,
-        oci_domain_id=FASTMCP_SERVER_AUTH_OCI_IAM_GUID.split(".")[0],
-        client_id=FASTMCP_SERVER_AUTH_OCI_CLIENT_ID,
-        client_secret=FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET,
+        oci_domain_id=OCI_IAM_GUID.split(".")[0] if OCI_IAM_GUID else "",
+        client_id=OCI_CLIENT_ID,
+        client_secret=OCI_CLIENT_SECRET,
     )
     logger.debug(f"Signer {signer} created for token ID: {tokenID}")
         
@@ -220,16 +217,12 @@ from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet
 
 # Load configuration from environment
-FASTMCP_SERVER_AUTH_OCI_CONFIG_URL = os.environ["FASTMCP_SERVER_AUTH_OCI_CONFIG_URL"]
-FASTMCP_SERVER_AUTH_OCI_CLIENT_ID = os.environ["FASTMCP_SERVER_AUTH_OCI_CLIENT_ID"]
-FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET = os.environ["FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET"]
-
 # Production setup with encrypted persistent token storage
 auth_provider = OCIProvider(
-    config_url=FASTMCP_SERVER_AUTH_OCI_CONFIG_URL,
-    client_id=FASTMCP_SERVER_AUTH_OCI_CLIENT_ID,
-    client_secret=FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET,
-    base_url="https://your-production-domain.com",
+    config_url=os.environ.get("OCI_CONFIG_URL"),
+    client_id=os.environ.get("OCI_CLIENT_ID"),
+    client_secret=os.environ.get("OCI_CLIENT_SECRET"),
+    base_url=os.environ.get("BASE_URL", "https://your-production-domain.com"),
 
     # Production token management
     jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
@@ -254,80 +247,3 @@ For complete details on these parameters, see the [OAuth Proxy documentation](/s
 <Info>
 The client caches tokens locally, so you won't need to re-authenticate for subsequent runs unless the token expires or you explicitly clear the cache.
 </Info>
-
-## Environment Variables
-
-For production deployments, use environment variables instead of hardcoding credentials.
-
-### Provider Selection
-
-Setting this environment variable allows the OCI provider to be used automatically without explicitly instantiating it in code.
-
-<Card>
-<ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.oci.OCIProvider` to use OCI IAM authentication.
-</ParamField>
-</Card>
-
-### OCI-Specific Configuration
-
-These environment variables provide default values for the OCI IAM provider, whether it's instantiated manually or configured via `FASTMCP_SERVER_AUTH`.
-
-<Card>
-<ParamField path="FASTMCP_SERVER_AUTH_OCI_IAM_GUID" required>
-Your OCI Application Configuration URL (e.g., `idcs-asdascxasd11......identity.oraclecloud.com`)
-</ParamField>
-
-<ParamField path="FASTMCP_SERVER_AUTH_OCI_CONFIG_URL" required>
-Your OCI Application Configuration URL (e.g., `https://{FASTMCP_SERVER_AUTH_OCI_IAM_GUID}.identity.oraclecloud.com/.well-known/openid-configuration`)
-</ParamField>
-
-<ParamField path="FASTMCP_SERVER_AUTH_OCI_CLIENT_ID" required>
-Your OCI Application Client ID (e.g., `tv2ObNgaZAWWhhycr7Bz1LU2mxlnsmsB`)
-</ParamField>
-
-<ParamField path="FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET" required>
-Your OCI Application Client Secret (e.g., `idcsssvPYqbjemq...`)
-</ParamField>
-
-<ParamField path="FASTMCP_SERVER_AUTH_OCI_BASE_URL" required>
-Public URL where OAuth endpoints will be accessible (includes any mount path)
-</ParamField>
-
-<ParamField path="FASTMCP_SERVER_AUTH_OCI_REDIRECT_PATH" default="/auth/callback">
-Redirect path configured in your OCI IAM Integrated Application
-</ParamField>
-
-</Card>
-
-Example `.env` file:
-```bash
-# Use the OCI IAM provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.oci.OCIProvider
-
-# OCI IAM configuration and credentials
-FASTMCP_SERVER_AUTH_OCI_IAM_GUID=idcs-asaacasd1111.....
-FASTMCP_SERVER_AUTH_OCI_CONFIG_URL=https://{FASTMCP_SERVER_AUTH_OCI_IAM_GUID}.identity.oraclecloud.com/.well-known/openid-configuration
-FASTMCP_SERVER_AUTH_OCI_CLIENT_ID=<your-client-id>
-FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET=<your-client-secret>
-FASTMCP_SERVER_AUTH_OCI_BASE_URL=https://your-server.com
-```
-
-With environment variables set, your server code simplifies to:
-
-```python server.py
-from fastmcp import FastMCP
-from fastmcp.server.dependencies import get_access_token
-
-# Authentication is automatically configured from environment
-mcp = FastMCP(name="OCI Secured App")
-
-@mcp.tool
-def whoami() -> str:
-    """The whoami function is to test MCP server without requiring token exchange.
-    This tool can be used to test successful authentication against OCI IAM.
-    It will return logged in user's subject (username from IAM domain)."""
-    token = get_access_token()
-    user = token.claims.get("sub")
-    return f"You are User: {user}"
-```

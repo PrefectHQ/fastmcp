@@ -19,22 +19,22 @@ Example:
 
     import os
 
-    # Load configuration from environment
-    FASTMCP_SERVER_AUTH_OCI_CONFIG_URL = os.environ["FASTMCP_SERVER_AUTH_OCI_CONFIG_URL"]
-    FASTMCP_SERVER_AUTH_OCI_CLIENT_ID = os.environ["FASTMCP_SERVER_AUTH_OCI_CLIENT_ID"]
-    FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET = os.environ["FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET"]
-    FASTMCP_SERVER_AUTH_OCI_IAM_GUID = os.environ["FASTMCP_SERVER_AUTH_OCI_IAM_GUID"]
-
     import oci
     from oci.auth.signers import TokenExchangeSigner
 
     logger = get_logger(__name__)
 
+    # Load configuration from environment
+    config_url = os.environ.get("OCI_CONFIG_URL")  # OCI IAM Domain OIDC discovery URL
+    client_id = os.environ.get("OCI_CLIENT_ID")  # Client ID configured for the OCI IAM Domain Integrated Application
+    client_secret = os.environ.get("OCI_CLIENT_SECRET")  # Client secret configured for the OCI IAM Domain Integrated Application
+    iam_guid = os.environ.get("OCI_IAM_GUID")  # IAM GUID configured for the OCI IAM Domain
+
     # Simple OCI OIDC protection
     auth = OCIProvider(
-        config_url=FASTMCP_SERVER_AUTH_OCI_CONFIG_URL, #config URL is the OCI IAM Domain OIDC discovery URL.
-        client_id=FASTMCP_SERVER_AUTH_OCI_CLIENT_ID, #This is same as the client ID configured for the OCI IAM Domain Integrated Application
-        client_secret=FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET, #This is same as the client secret configured for the OCI IAM Domain Integrated Application
+        config_url=config_url,  # config URL is the OCI IAM Domain OIDC discovery URL
+        client_id=client_id,  # This is same as the client ID configured for the OCI IAM Domain Integrated Application
+        client_secret=client_secret,  # This is same as the client secret configured for the OCI IAM Domain Integrated Application
         required_scopes=["openid", "profile", "email"],
         redirect_path="/auth/callback",
         base_url="http://localhost:8000",
@@ -42,7 +42,7 @@ Example:
 
     # NOTE: For production use, replace this with a thread-safe cache implementation
     # such as threading.Lock-protected dict or a proper caching library
-    _global_token_cache = {} #In memory cache for OCI session token signer
+    _global_token_cache = {}  # In memory cache for OCI session token signer
 
     def get_oci_signer() -> TokenExchangeSigner:
 
@@ -50,20 +50,20 @@ Example:
         tokenID = authntoken.claims.get("jti")
         token = authntoken.token
 
-        #Check if the signer exists for the token ID in memory cache
+        # Check if the signer exists for the token ID in memory cache
         cached_signer = _global_token_cache.get(tokenID)
         logger.debug(f"Global cached signer: {cached_signer}")
         if cached_signer:
             logger.debug(f"Using globally cached signer for token ID: {tokenID}")
             return cached_signer
 
-        #If the signer is not yet created for the token then create new OCI signer object
+        # If the signer is not yet created for the token then create new OCI signer object
         logger.debug(f"Creating new signer for token ID: {tokenID}")
         signer = TokenExchangeSigner(
             jwt_or_func=token,
-            oci_domain_id=FASTMCP_SERVER_AUTH_OCI_IAM_GUID.split(".")[0],   #This is same as IAM GUID configured for the OCI IAM Domain
-            client_id=FASTMCP_SERVER_AUTH_OCI_CLIENT_ID, #This is same as the client ID configured for the OCI IAM Domain Integrated Application
-            client_secret=FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET #This is same as the client secret configured for the OCI IAM Domain Integrated Application
+            oci_domain_id=iam_guid.split(".")[0] if iam_guid else None,  # This is same as IAM GUID configured for the OCI IAM Domain
+            client_id=client_id,  # This is same as the client ID configured for the OCI IAM Domain Integrated Application
+            client_secret=client_secret,  # This is same as the client secret configured for the OCI IAM Domain Integrated Application
         )
         logger.debug(f"Signer {signer} created for token ID: {tokenID}")
 
@@ -78,42 +78,13 @@ Example:
 """
 
 from key_value.aio.protocols import AsyncKeyValue
-from pydantic import AnyHttpUrl, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AnyHttpUrl
 
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
-from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import NotSet, NotSetT
 
 logger = get_logger(__name__)
-
-
-class OCIProviderSettings(BaseSettings):
-    """Settings for OCI IAM domain OIDC provider."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_SERVER_AUTH_OCI_",
-        env_file=ENV_FILE,
-        extra="ignore",
-    )
-
-    config_url: AnyHttpUrl | None = None
-    client_id: str | None = None
-    client_secret: SecretStr | None = None
-    audience: str | None = None
-    base_url: AnyHttpUrl | None = None
-    issuer_url: AnyHttpUrl | None = None
-    redirect_path: str | None = None
-    required_scopes: list[str] | None = None
-    allowed_client_redirect_uris: list[str] | None = None
-    jwt_signing_key: str | bytes | None = None
-
-    @field_validator("required_scopes", mode="before")
-    @classmethod
-    def _parse_scopes(cls, v):
-        return parse_scopes(v)
 
 
 class OCIProvider(OIDCProxy):
@@ -127,11 +98,13 @@ class OCIProvider(OIDCProxy):
         from fastmcp import FastMCP
         from fastmcp.server.auth.providers.oci import OCIProvider
 
-        # Simple OCI OIDC protection
+        import os
+
+        # Load configuration from environment
         auth = OCIProvider(
-            config_url=FASTMCP_SERVER_AUTH_OCI_CONFIG_URL, #config URL is the OCI IAM Domain OIDC discovery URL.
-            client_id=FASTMCP_SERVER_AUTH_OCI_CLIENT_ID, #This is same as the client ID configured for the OCI IAM Domain Integrated Application
-            client_secret=FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET, #This is same as the client secret configured for the OCI IAM Domain Integrated Application
+            config_url=os.environ.get("OCI_CONFIG_URL"),  # OCI IAM Domain OIDC discovery URL
+            client_id=os.environ.get("OCI_CLIENT_ID"),  # Client ID configured for the OCI IAM Domain Integrated Application
+            client_secret=os.environ.get("OCI_CLIENT_SECRET"),  # Client secret configured for the OCI IAM Domain Integrated Application
             base_url="http://localhost:8000",
             required_scopes=["openid", "profile", "email"],
             redirect_path="/auth/callback",
@@ -144,17 +117,17 @@ class OCIProvider(OIDCProxy):
     def __init__(
         self,
         *,
-        config_url: AnyHttpUrl | str | NotSetT = NotSet,
-        client_id: str | NotSetT = NotSet,
-        client_secret: str | NotSetT = NotSet,
-        audience: str | NotSetT = NotSet,
-        base_url: AnyHttpUrl | str | NotSetT = NotSet,
-        issuer_url: AnyHttpUrl | str | NotSetT = NotSet,
-        required_scopes: list[str] | NotSetT = NotSet,
-        redirect_path: str | NotSetT = NotSet,
-        allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
+        config_url: AnyHttpUrl | str,
+        client_id: str,
+        client_secret: str,
+        base_url: AnyHttpUrl | str,
+        audience: str | None = None,
+        issuer_url: AnyHttpUrl | str | None = None,
+        required_scopes: list[str] | None = None,
+        redirect_path: str | None = None,
+        allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
-        jwt_signing_key: str | bytes | NotSetT = NotSet,
+        jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
     ) -> None:
         """Initialize OCI OIDC provider.
@@ -163,71 +136,35 @@ class OCIProvider(OIDCProxy):
             config_url: OCI OIDC Discovery URL
             client_id: OCI IAM Domain Integrated Application client id
             client_secret: OCI Integrated Application client secret
-            audience: OCI API audience (optional)
             base_url: Public URL where OIDC endpoints will be accessible (includes any mount path)
+            audience: OCI API audience (optional)
             issuer_url: Issuer URL for OCI IAM Domain metadata. This will override issuer URL from the discovery URL.
             required_scopes: Required OCI scopes (defaults to ["openid"])
             redirect_path: Redirect path configured in OCI IAM Domain Integrated Application. The default is "/auth/callback".
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
         """
-
-        overrides: dict[str, object] = {
-            k: v
-            for k, v in {
-                "config_url": config_url,
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "audience": audience,
-                "base_url": base_url,
-                "issuer_url": issuer_url,
-                "required_scopes": required_scopes,
-                "redirect_path": redirect_path,
-                "allowed_client_redirect_uris": allowed_client_redirect_uris,
-                "jwt_signing_key": jwt_signing_key,
-            }.items()
-            if v is not NotSet
-        }
-        settings = OCIProviderSettings(**overrides)  # type: ignore[arg-type]
-
-        if not settings.config_url:
-            raise ValueError(
-                "config_url is required - set via parameter or FASTMCP_SERVER_AUTH_OCI_CONFIG_URL"
-            )
-
-        if not settings.client_id:
-            raise ValueError(
-                "client_id is required - set via parameter or FASTMCP_SERVER_AUTH_OCI_CLIENT_ID"
-            )
-
-        if not settings.client_secret:
-            raise ValueError(
-                "client_secret is required - set via parameter or FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET"
-            )
-
-        if not settings.base_url:
-            raise ValueError(
-                "base_url is required - set via parameter or FASTMCP_SERVER_AUTH_OCI_BASE_URL"
-            )
-
-        oci_required_scopes = settings.required_scopes or ["openid"]
+        # Parse scopes if provided as string
+        oci_required_scopes = (
+            parse_scopes(required_scopes) if required_scopes is not None else ["openid"]
+        )
 
         super().__init__(
-            config_url=settings.config_url,
-            client_id=settings.client_id,
-            client_secret=settings.client_secret.get_secret_value(),
-            audience=settings.audience,
-            base_url=settings.base_url,
-            issuer_url=settings.issuer_url,
-            redirect_path=settings.redirect_path,
+            config_url=config_url,
+            client_id=client_id,
+            client_secret=client_secret,
+            audience=audience,
+            base_url=base_url,
+            issuer_url=issuer_url,
+            redirect_path=redirect_path,
             required_scopes=oci_required_scopes,
-            allowed_client_redirect_uris=settings.allowed_client_redirect_uris,
+            allowed_client_redirect_uris=allowed_client_redirect_uris,
             client_storage=client_storage,
-            jwt_signing_key=settings.jwt_signing_key,
+            jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
         )
 
         logger.debug(
             "Initialized OCI OAuth provider for client %s with scopes: %s",
-            settings.client_id,
+            client_id,
             oci_required_scopes,
         )
