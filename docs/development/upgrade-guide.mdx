@@ -116,6 +116,40 @@ tool = next((t for t in tools if t.name == "my_tool"), None)
 
 The dict key was redundant since components already have `.name` or `.uri` attributes. Use list comprehensions or `next()` for lookups.
 
+### Prompt Return Types
+
+Prompt functions now use `Message` instead of `mcp.types.PromptMessage`. The `Message` class provides auto-serialization and a simpler API:
+
+<CodeGroup>
+```python Before
+from mcp.types import PromptMessage, TextContent
+
+@mcp.prompt
+def my_prompt() -> PromptMessage:
+    return PromptMessage(
+        role="user",
+        content=TextContent(type="text", text="Hello")
+    )
+```
+
+```python After
+from fastmcp.prompts import Message
+
+@mcp.prompt
+def my_prompt() -> Message:
+    return Message("Hello")  # role defaults to "user"
+```
+</CodeGroup>
+
+**Key changes:**
+
+- Use `Message(content, role="user")` instead of `PromptMessage(role=..., content=TextContent(...))`
+- `Message` auto-serializes dicts, lists, and Pydantic models to JSON
+- `PromptResult` now accepts `str | list[Message]` (no single `Message`)
+- Returning `mcp.types.PromptMessage` directly is no longer supported
+
+See [Prompts documentation](/servers/prompts#return-values) for full details.
+
 ## v2.14.0
 
 ### OpenAPI Parser Promotion

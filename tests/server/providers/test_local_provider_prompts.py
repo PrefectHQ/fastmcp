@@ -9,7 +9,7 @@ import pytest
 from mcp.types import TextContent
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.prompts.prompt import FunctionPrompt, Prompt, PromptResult
+from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 
 
 class TestPromptContext:
@@ -58,8 +58,6 @@ class TestPromptDecorator:
         prompt = next(p for p in prompts if p.name == "fn")
         assert prompt.name == "fn"
         content = await prompt.render()
-        if not isinstance(content, PromptResult):
-            content = PromptResult.from_value(content)
         assert isinstance(content.messages[0].content, TextContent)
         assert content.messages[0].content.text == "Hello, world!"
 
@@ -91,8 +89,6 @@ class TestPromptDecorator:
         prompt = next(p for p in prompts_list if p.name == "custom_name")
         assert prompt.name == "custom_name"
         content = await prompt.render()
-        if not isinstance(content, PromptResult):
-            content = PromptResult.from_value(content)
         assert isinstance(content.messages[0].content, TextContent)
         assert content.messages[0].content.text == "Hello, world!"
 
@@ -108,8 +104,6 @@ class TestPromptDecorator:
         prompt = next(p for p in prompts_list if p.name == "fn")
         assert prompt.description == "A custom description"
         content = await prompt.render()
-        if not isinstance(content, PromptResult):
-            content = PromptResult.from_value(content)
         assert isinstance(content.messages[0].content, TextContent)
         assert content.messages[0].content.text == "Hello, world!"
 

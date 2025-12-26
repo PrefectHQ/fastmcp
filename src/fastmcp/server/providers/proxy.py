@@ -33,7 +33,7 @@ from fastmcp.client.roots import RootsList
 from fastmcp.client.transports import ClientTransportT
 from fastmcp.exceptions import ResourceError, ToolError
 from fastmcp.mcp_config import MCPConfig
-from fastmcp.prompts import Prompt, PromptResult
+from fastmcp.prompts import Message, Prompt, PromptResult
 from fastmcp.prompts.prompt import PromptArgument
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.resources.resource import ResourceContent, ResourceResult
@@ -405,8 +405,10 @@ class ProxyPrompt(Prompt):
             result = await client.get_prompt(self._backend_name or self.name, arguments)
         # Convert GetPromptResult to PromptResult, preserving runtime meta from the result
         # (not the static prompt meta which includes fastmcp tags)
+        # Convert PromptMessages to Messages
+        messages = [Message(content=m.content, role=m.role) for m in result.messages]
         return PromptResult(
-            messages=result.messages,
+            messages=messages,
             description=result.description,
             meta=result.meta,
         )

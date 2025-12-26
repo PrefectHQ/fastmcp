@@ -17,7 +17,7 @@ from typing_extensions import TypedDict
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
-from fastmcp.prompts.prompt import PromptMessage, PromptResult
+from fastmcp.prompts.prompt import Message
 from fastmcp.resources import FileResource
 from fastmcp.resources.resource import FunctionResource
 from fastmcp.utilities.tests import temporary_settings
@@ -841,8 +841,6 @@ class TestPrompts:
         assert prompt.name == "fn"
         # Don't compare functions directly since validate_call wraps them
         content = await prompt.render()
-        if not isinstance(content, PromptResult):
-            content = PromptResult.from_value(content)
         assert isinstance(content.messages[0].content, TextContent)
         assert content.messages[0].content.text == "Hello, world!"
 
@@ -859,8 +857,6 @@ class TestPrompts:
         prompt = next(p for p in prompts if p.name == "custom_name")
         assert prompt.name == "custom_name"
         content = await prompt.render()
-        if not isinstance(content, PromptResult):
-            content = PromptResult.from_value(content)
         assert isinstance(content.messages[0].content, TextContent)
         assert content.messages[0].content.text == "Hello, world!"
 
@@ -877,8 +873,6 @@ class TestPrompts:
         prompt = next(p for p in prompts if p.name == "fn")
         assert prompt.description == "A custom description"
         content = await prompt.render()
-        if not isinstance(content, PromptResult):
-            content = PromptResult.from_value(content)
         assert isinstance(content.messages[0].content, TextContent)
         assert content.messages[0].content.text == "Hello, world!"
 
@@ -995,18 +989,20 @@ class TestPrompts:
         mcp = FastMCP()
 
         @mcp.prompt
-        def fn() -> PromptMessage:
-            return PromptMessage(
-                role="user",
-                content=EmbeddedResource(
-                    type="resource",
-                    resource=TextResourceContents(
-                        uri=AnyUrl("file://file.txt"),
-                        text="File contents",
-                        mimeType="text/plain",
+        def fn() -> list[Message]:
+            return [
+                Message(
+                    content=EmbeddedResource(
+                        type="resource",
+                        resource=TextResourceContents(
+                            uri=AnyUrl("file://file.txt"),
+                            text="File contents",
+                            mimeType="text/plain",
+                        ),
                     ),
-                ),
-            )
+                    role="user",
+                )
+            ]
 
         async with Client(mcp) as client:
             result = await client.get_prompt("fn")
@@ -1016,6 +1012,27 @@ class TestPrompts:
             assert isinstance(content.resource, TextResourceContents)
             assert content.resource.text == "File contents"
             assert content.resource.mimeType == "text/plain"
+
+    async def test_get_prompt_with_meta(self):
+        """Test that PromptResult meta is passed through to client."""
+        from fastmcp.prompts import PromptResult
+
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def fn() -> PromptResult:
+            return PromptResult(
+                "Hello!",
+                description="A greeting",
+                meta={"priority": "high", "category": "greeting"},
+            )
+
+        async with Client(mcp) as client:
+            result = await client.get_prompt("fn")
+            assert result.description == "A greeting"
+            assert result.meta is not None
+            assert result.meta["priority"] == "high"
+            assert result.meta["category"] == "greeting"
 
     async def test_get_unknown_prompt(self):
         """Test error when getting unknown prompt."""

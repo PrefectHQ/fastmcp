@@ -17,7 +17,7 @@ from key_value.aio.wrappers.statistics.wrapper import (
 from pydantic import BaseModel, Field
 from typing_extensions import NotRequired, Self, override
 
-from fastmcp.prompts.prompt import Prompt, PromptResult
+from fastmcp.prompts.prompt import Message, Prompt, PromptResult
 from fastmcp.resources.resource import Resource, ResourceContent, ResourceResult
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import Tool, ToolResult
@@ -92,6 +92,44 @@ class CachableToolResult(BaseModel):
         return ToolResult(
             content=self.content,
             structured_content=self.structured_content,
+            meta=self.meta,
+        )
+
+
+class CachableMessage(BaseModel):
+    """A wrapper for Message that can be cached."""
+
+    role: str
+    content: mcp.types.TextContent | mcp.types.EmbeddedResource
+
+
+class CachablePromptResult(BaseModel):
+    """A wrapper for PromptResult that can be cached."""
+
+    messages: list[CachableMessage]
+    description: str | None = None
+    meta: dict[str, Any] | None = None
+
+    def get_size(self) -> int:
+        return len(self.model_dump_json())
+
+    @classmethod
+    def wrap(cls, value: PromptResult) -> Self:
+        return cls(
+            messages=[
+                CachableMessage(role=m.role, content=m.content) for m in value.messages
+            ],
+            description=value.description,
+            meta=value.meta,
+        )
+
+    def unwrap(self) -> PromptResult:
+        return PromptResult(
+            messages=[
+                Message(content=m.content, role=m.role)  # type: ignore[arg-type]
+                for m in self.messages
+            ],
+            description=self.description,
             meta=self.meta,
         )
 
@@ -232,9 +270,9 @@ class ResponseCachingMiddleware(Middleware):
             )
         )
 
-        self._get_prompt_cache: PydanticAdapter[PromptResult] = PydanticAdapter(
+        self._get_prompt_cache: PydanticAdapter[CachablePromptResult] = PydanticAdapter(
             key_value=self._stats,
-            pydantic_model=PromptResult,  # type: ignore[arg-type]
+            pydantic_model=CachablePromptResult,  # type: ignore[arg-type]
             default_collection="prompts/get",
         )
 
@@ -434,13 +472,13 @@ class ResponseCachingMiddleware(Middleware):
         cache_key: str = f"{context.message.name}:{_get_arguments_str(arguments=context.message.arguments)}"
 
         if cached_value := await self._get_prompt_cache.get(key=cache_key):
-            return cached_value
+            return cached_value.unwrap()
 
         value: PromptResult = await call_next(context=context)
 
         await self._get_prompt_cache.put(
             key=cache_key,
-            value=value,
+            value=CachablePromptResult.wrap(value),
             ttl=self._get_prompt_settings.get("ttl", ONE_HOUR_IN_SECONDS),
         )
 
