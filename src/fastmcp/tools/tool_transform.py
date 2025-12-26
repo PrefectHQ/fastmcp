@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import warnings
 from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
@@ -13,6 +14,7 @@ from pydantic import ConfigDict
 from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
 
+import fastmcp
 from fastmcp.tools.tool import ParsedFunction, Tool, ToolResult, _convert_to_content
 from fastmcp.utilities.components import _convert_set_default_none
 from fastmcp.utilities.json_schema import compress_schema
@@ -371,7 +373,7 @@ class TransformedTool(Tool):
         transform_args: dict[str, ArgTransform] | None = None,
         annotations: ToolAnnotations | NotSetT | None = NotSet,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: Callable[[Any], str] | NotSetT | None = NotSet,
+        serializer: Callable[[Any], str] | NotSetT | None = NotSet,  # Deprecated
         meta: dict[str, Any] | NotSetT | None = NotSet,
     ) -> TransformedTool:
         """Create a transformed tool from a parent tool.
@@ -395,7 +397,7 @@ class TransformedTool(Tool):
                 - None (default): Inherit from transform_fn if available, then parent tool
                 - dict: Use custom output schema
                 - False: Disable output schema and structured outputs
-            serializer: New serializer. Defaults to parent's serializer.
+            serializer: Deprecated. Return ToolResult from your tools for full control over serialization.
             meta: Control meta information:
                 - NotSet (default): Inherit from parent tool
                 - dict: Use custom meta information
@@ -448,6 +450,18 @@ class TransformedTool(Tool):
                 )
             ```
         """
+        if (
+            serializer is not NotSet
+            and serializer is not None
+            and fastmcp.settings.deprecation_warnings
+        ):
+            warnings.warn(
+                "The `serializer` parameter is deprecated. "
+                "Return ToolResult from your tools for full control over serialization. "
+                "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         transform_args = transform_args or {}
 
         if transform_fn is not None:

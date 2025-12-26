@@ -150,6 +150,10 @@ def my_prompt() -> Message:
 
 See [Prompts documentation](/servers/prompts#return-values) for full details.
 
+### Tool Serializer Deprecated
+
+The `tool_serializer` parameter on `FastMCP` is deprecated. Return `ToolResult` from your tools for explicit control over serialization. See [Custom Serialization](/servers/tools#custom-serialization) for examples.
+
 ### Auth Provider Automatic Environment Variable Loading Removed
 
 Auth providers no longer automatically read configuration from environment variables. You can still use environment variables, but you must read them yourself:

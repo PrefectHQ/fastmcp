@@ -270,6 +270,15 @@ class FastMCP(Generic[LifespanResultT]):
             if mask_error_details is not None
             else fastmcp.settings.mask_error_details
         )
+
+        if tool_serializer is not None and fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "The `tool_serializer` parameter is deprecated. "
+                "Return ToolResult from your tools for full control over serialization. "
+                "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         self._tool_serializer: Callable[[Any], str] | None = tool_serializer
 
         self._lifespan: LifespanCallable[LifespanResultT] = lifespan or default_lifespan

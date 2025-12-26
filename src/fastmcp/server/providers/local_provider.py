@@ -25,6 +25,7 @@ server2 = FastMCP("Server2", providers=[provider])
 from __future__ import annotations
 
 import inspect
+import warnings
 from collections.abc import Callable, Sequence
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
@@ -32,6 +33,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 import mcp.types
 from mcp.types import Annotations, AnyFunction, ToolAnnotations
 
+import fastmcp
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
@@ -358,7 +360,7 @@ class LocalProvider(Provider):
         meta: dict[str, Any] | None = None,
         enabled: bool = True,
         task: bool | TaskConfig | None = None,
-        serializer: ToolResultSerializerType | None = None,
+        serializer: ToolResultSerializerType | None = None,  # Deprecated
     ) -> FunctionTool: ...
 
     @overload
@@ -377,7 +379,7 @@ class LocalProvider(Provider):
         meta: dict[str, Any] | None = None,
         enabled: bool = True,
         task: bool | TaskConfig | None = None,
-        serializer: ToolResultSerializerType | None = None,
+        serializer: ToolResultSerializerType | None = None,  # Deprecated
     ) -> Callable[[AnyFunction], FunctionTool]: ...
 
     def tool(
@@ -395,7 +397,7 @@ class LocalProvider(Provider):
         meta: dict[str, Any] | None = None,
         enabled: bool = True,
         task: bool | TaskConfig | None = None,
-        serializer: ToolResultSerializerType | None = None,
+        serializer: ToolResultSerializerType | None = None,  # Deprecated
     ) -> (
         Callable[[AnyFunction], FunctionTool]
         | FunctionTool
@@ -423,7 +425,7 @@ class LocalProvider(Provider):
             meta: Optional meta information about the tool
             enabled: Whether the tool is enabled (default True). If False, adds to blocklist.
             task: Optional task configuration for background execution
-            serializer: Optional serializer for the tool result
+            serializer: Deprecated. Return ToolResult from your tools for full control over serialization.
 
         Returns:
             The registered FunctionTool or a decorator function.
@@ -441,6 +443,14 @@ class LocalProvider(Provider):
                 return str(x)
             ```
         """
+        if serializer is not None and fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "The `serializer` parameter is deprecated. "
+                "Return ToolResult from your tools for full control over serialization. "
+                "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         if isinstance(annotations, dict):
             annotations = ToolAnnotations(**annotations)
 

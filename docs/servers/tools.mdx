@@ -713,6 +713,31 @@ The `meta` field in `ToolResult` is for runtime metadata about tool execution (e
 
 When returning `ToolResult`, you have full control - FastMCP won't automatically wrap or transform your data. `ToolResult` can be returned with or without an output schema.
 
+### Custom Serialization
+
+When you need custom serialization (like YAML, Markdown tables, or specialized formats), return `ToolResult` with your serialized content. This makes the serialization explicit and visible in your tool's code:
+
+```python
+import yaml
+from fastmcp import FastMCP
+from fastmcp.tools.tool import ToolResult
+
+mcp = FastMCP("MyServer")
+
+@mcp.tool
+def get_config() -> ToolResult:
+    """Returns configuration as YAML."""
+    data = {"api_key": "abc123", "debug": True, "rate_limit": 100}
+    return ToolResult(
+        content=yaml.dump(data, sort_keys=False),
+        structured_content=data
+    )
+```
+
+<Tip>
+For reusable serialization across multiple tools, create a wrapper decorator that returns `ToolResult`. This lets you compose serializers with other behaviors (logging, validation, caching) and keeps the serialization visible at the tool definition. See [examples/custom_tool_serializer_decorator.py](https://github.com/jlowin/fastmcp/blob/main/examples/custom_tool_serializer_decorator.py) for a complete implementation.
+</Tip>
+
 ## Error Handling
 
 <VersionBadge version="2.4.1" />

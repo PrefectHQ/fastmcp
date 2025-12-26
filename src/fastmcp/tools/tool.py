@@ -158,7 +158,9 @@ class Tool(FastMCPComponent):
     ] = None
     serializer: Annotated[
         ToolResultSerializerType | None,
-        Field(description="Optional custom serializer for tool results"),
+        Field(
+            description="Deprecated. Return ToolResult from your tools for full control over serialization."
+        ),
     ] = None
 
     @model_validator(mode="after")
@@ -206,7 +208,7 @@ class Tool(FastMCPComponent):
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: ToolResultSerializerType | None = None,
+        serializer: ToolResultSerializerType | None = None,  # Deprecated
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
     ) -> FunctionTool:
@@ -370,7 +372,7 @@ class Tool(FastMCPComponent):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | NotSetT | None = NotSet,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: ToolResultSerializerType | None = None,
+        serializer: ToolResultSerializerType | None = None,  # Deprecated
         meta: dict[str, Any] | NotSetT | None = NotSet,
         transform_args: dict[str, ArgTransform] | None = None,
         transform_fn: Callable[..., Any] | None = None,
@@ -429,11 +431,19 @@ class FunctionTool(Tool):
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: ToolResultSerializerType | None = None,
+        serializer: ToolResultSerializerType | None = None,  # Deprecated
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
+        if serializer is not None and fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "The `serializer` parameter is deprecated. "
+                "Return ToolResult from your tools for full control over serialization. "
+                "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         if exclude_args and fastmcp.settings.deprecation_warnings:
             warnings.warn(
                 "The `exclude_args` parameter is deprecated as of FastMCP 2.14. "

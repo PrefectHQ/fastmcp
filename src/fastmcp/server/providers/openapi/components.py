@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +12,7 @@ import httpx
 from mcp.types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
+import fastmcp
 from fastmcp.resources import (
     Resource,
     ResourceContent,
@@ -76,8 +78,16 @@ class OpenAPITool(Tool):
         tags: set[str] | None = None,
         timeout: float | None = None,
         annotations: ToolAnnotations | None = None,
-        serializer: Callable[[Any], str] | None = None,
+        serializer: Callable[[Any], str] | None = None,  # Deprecated
     ):
+        if serializer is not None and fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "The `serializer` parameter is deprecated. "
+                "Return ToolResult from your tools for full control over serialization. "
+                "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         super().__init__(
             name=name,
             description=description,

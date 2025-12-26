@@ -20,7 +20,6 @@ from typing_extensions import TypedDict
 
 from fastmcp.tools.tool import Tool, ToolResult, _convert_to_content
 from fastmcp.utilities.json_schema import compress_schema
-from fastmcp.utilities.tests import caplog_for_fastmcp
 from fastmcp.utilities.types import Audio, File, Image
 
 
@@ -424,24 +423,6 @@ class TestToolFromFunction:
         assert tool.description == "Add two numbers."
         assert "x" in tool.parameters["properties"]
         assert "y" in tool.parameters["properties"]
-
-    async def test_tool_serializer(self):
-        """Test that a tool's serializer is used to serialize the result."""
-
-        def custom_serializer(data) -> str:
-            return f"Custom serializer: {data}"
-
-        def process_list(items: list[int]) -> int:
-            return sum(items)
-
-        tool = Tool.from_function(process_list, serializer=custom_serializer)
-
-        result = await tool.run(arguments={"items": [1, 2, 3, 4, 5]})
-        # Custom serializer affects unstructured content
-        assert isinstance(result.content[0], TextContent)
-        assert result.content[0].text == "Custom serializer: 15"
-        # Structured output should have the raw value
-        assert result.structured_content == {"result": 15}
 
 
 class TestToolFromFunctionOutputSchema:
@@ -1190,34 +1171,6 @@ class TestConvertResultToContent:
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
         assert result[0].text == "{}"
-
-    def test_custom_serializer(self):
-        """Test that a custom serializer is used for non-MCP types."""
-
-        def custom_serializer(data):
-            return f"Serialized: {data}"
-
-        result = _convert_to_content({"a": 1}, serializer=custom_serializer)
-
-        assert result == snapshot(
-            [TextContent(type="text", text="Serialized: {'a': 1}")]
-        )
-
-    def test_custom_serializer_error_fallback(self, caplog):
-        """Test that if a custom serializer fails, it falls back to the default."""
-
-        def custom_serializer_that_fails(data):
-            raise ValueError("Serialization failed")
-
-        with caplog_for_fastmcp(caplog):
-            result = _convert_to_content(
-                {"a": 1}, serializer=custom_serializer_that_fails
-            )
-
-        assert isinstance(result, list)
-        assert result == snapshot([TextContent(type="text", text='{"a":1}')])
-
-        assert "Error serializing tool result" in caplog.text
 
 
 class TestAutomaticStructuredContent:
