@@ -38,8 +38,9 @@ class SupabaseProvider(RemoteAuthProvider):
        - Asymmetric keys (RS256/ES256) are recommended for production
 
     2. JWT Verification:
-       - FastMCP verifies JWTs using the JWKS endpoint at {project_url}/auth/v1/.well-known/jwks.json
-       - JWTs are issued by {project_url}/auth/v1
+       - FastMCP verifies JWTs using the JWKS endpoint at {project_url}{auth_route}/.well-known/jwks.json
+       - JWTs are issued by {project_url}{auth_route}
+       - Default auth_route is "/auth/v1" (can be customized for self-hosted setups)
        - Tokens are cached for up to 10 minutes by Supabase's edge servers
        - Algorithm must match your Supabase Auth configuration
 
@@ -72,6 +73,7 @@ class SupabaseProvider(RemoteAuthProvider):
         *,
         project_url: AnyHttpUrl | str,
         base_url: AnyHttpUrl | str,
+        auth_route: str = "/auth/v1",
         algorithm: Literal["HS256", "RS256", "ES256"] = "ES256",
         required_scopes: list[str] | None = None,
         token_verifier: TokenVerifier | None = None,
@@ -81,6 +83,8 @@ class SupabaseProvider(RemoteAuthProvider):
         Args:
             project_url: Your Supabase project URL (e.g., "https://abc123.supabase.co")
             base_url: Public URL of this FastMCP server
+            auth_route: Supabase Auth route. Defaults to "/auth/v1". Can be customized
+                for self-hosted Supabase Auth setups using custom routes.
             algorithm: JWT signing algorithm (HS256, RS256, or ES256). Must match your
                 Supabase Auth configuration. Defaults to ES256.
             required_scopes: Optional list of scopes to require for all requests.
@@ -90,6 +94,7 @@ class SupabaseProvider(RemoteAuthProvider):
         """
         self.project_url = str(project_url).rstrip("/")
         self.base_url = AnyHttpUrl(str(base_url).rstrip("/"))
+        self.auth_route = auth_route.strip("/")
 
         # Parse scopes if provided as string
         parsed_scopes = (
@@ -99,8 +104,8 @@ class SupabaseProvider(RemoteAuthProvider):
         # Create default JWT verifier if none provided
         if token_verifier is None:
             token_verifier = JWTVerifier(
-                jwks_uri=f"{self.project_url}/auth/v1/.well-known/jwks.json",
-                issuer=f"{self.project_url}/auth/v1",
+                jwks_uri=f"{self.project_url}/{self.auth_route}/.well-known/jwks.json",
+                issuer=f"{self.project_url}/{self.auth_route}",
                 algorithm=algorithm,
                 required_scopes=parsed_scopes,
             )
@@ -108,7 +113,7 @@ class SupabaseProvider(RemoteAuthProvider):
         # Initialize RemoteAuthProvider with Supabase as the authorization server
         super().__init__(
             token_verifier=token_verifier,
-            authorization_servers=[AnyHttpUrl(f"{self.project_url}/auth/v1")],
+            authorization_servers=[AnyHttpUrl(f"{self.project_url}/{self.auth_route}")],
             base_url=self.base_url,
         )
 
@@ -133,7 +138,7 @@ class SupabaseProvider(RemoteAuthProvider):
             try:
                 async with httpx.AsyncClient() as client:
                     response = await client.get(
-                        f"{self.project_url}/auth/v1/.well-known/oauth-authorization-server"
+                        f"{self.project_url}/{self.auth_route}/.well-known/oauth-authorization-server"
                     )
                     response.raise_for_status()
                     metadata = response.json()
