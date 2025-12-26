@@ -26,7 +26,7 @@ from mcp.types import (
     ToolExecution,
 )
 from mcp.types import Tool as MCPTool
-from pydantic import Field, PydanticSchemaGenerationError, model_validator
+from pydantic import BaseModel, Field, PydanticSchemaGenerationError, model_validator
 from typing_extensions import TypeVar
 
 import fastmcp
@@ -75,7 +75,17 @@ def default_serializer(data: Any) -> str:
     return pydantic_core.to_json(data, fallback=str).decode()
 
 
-class ToolResult:
+class ToolResult(BaseModel):
+    content: list[ContentBlock] = Field(
+        description="List of content blocks for the tool result"
+    )
+    structured_content: dict[str, Any] | None = Field(
+        default=None, description="Structured content matching the tool's output schema"
+    )
+    meta: dict[str, Any] | None = Field(
+        default=None, description="Runtime metadata about the tool execution"
+    )
+
     def __init__(
         self,
         content: list[ContentBlock] | Any | None = None,
@@ -87,8 +97,7 @@ class ToolResult:
         elif content is None:
             content = structured_content
 
-        self.content: list[ContentBlock] = _convert_to_content(result=content)
-        self.meta: dict[str, Any] | None = meta
+        converted_content: list[ContentBlock] = _convert_to_content(result=content)
 
         if structured_content is not None:
             try:
@@ -106,7 +115,12 @@ class ToolResult:
                     f"Got {type(structured_content).__name__}: {structured_content!r}. "
                     "Tools should wrap non-dict values based on their output_schema."
                 )
-        self.structured_content: dict[str, Any] | None = structured_content
+
+        super().__init__(
+            content=converted_content,
+            structured_content=structured_content,
+            meta=meta,
+        )
 
     def to_mcp_result(
         self,
