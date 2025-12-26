@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import webbrowser
 from collections.abc import AsyncGenerator
+from contextlib import aclosing
 from typing import Any
 
 import anyio
@@ -296,9 +297,8 @@ class OAuth(OAuthClientProvider):
         """
         try:
             # First attempt with potentially cached credentials
-            gen = super().async_auth_flow(request)
-            response = None
-            try:
+            async with aclosing(super().async_auth_flow(request)) as gen:
+                response = None
                 while True:
                     try:
                         # First iteration sends None, subsequent iterations send response
@@ -306,8 +306,6 @@ class OAuth(OAuthClientProvider):
                         response = yield yielded_request
                     except StopAsyncIteration:
                         break
-            finally:
-                await gen.aclose()
 
         except ClientNotFoundError:
             logger.debug(
@@ -318,14 +316,11 @@ class OAuth(OAuthClientProvider):
             await self.token_storage_adapter.clear()
 
             # Retry with fresh registration
-            gen = super().async_auth_flow(request)
-            response = None
-            try:
+            async with aclosing(super().async_auth_flow(request)) as gen:
+                response = None
                 while True:
                     try:
                         yielded_request = await gen.asend(response)  # ty: ignore[invalid-argument-type]
                         response = yield yielded_request
                     except StopAsyncIteration:
                         break
-            finally:
-                await gen.aclose()

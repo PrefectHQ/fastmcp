@@ -1,3 +1,4 @@
+from unittest.mock import patch
 from urllib.parse import urlparse
 
 import httpx
@@ -173,3 +174,107 @@ class TestOAuthClientUrlHandling:
 
         # Token storage should key by the full URL, not just the host
         assert oauth.token_storage_adapter._server_url == mcp_url
+
+
+class TestOAuthGeneratorCleanup:
+    """Tests for OAuth async generator cleanup (issue #2643).
+
+    The MCP SDK's OAuthClientProvider.async_auth_flow() holds a lock via
+    `async with self.context.lock`. If the generator is not explicitly closed,
+    GC may clean it up from a different task, causing:
+    RuntimeError: The current task is not holding this lock
+    """
+
+    async def test_generator_closed_on_successful_flow(self):
+        """Verify aclose() is called on the parent generator after successful flow."""
+        oauth = OAuth(mcp_url="https://example.com")
+
+        # Track generator lifecycle using a wrapper class
+        class TrackedGenerator:
+            def __init__(self):
+                self.aclose_called = False
+                self._exhausted = False
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if self._exhausted:
+                    raise StopAsyncIteration
+                self._exhausted = True
+                return httpx.Request("GET", "https://example.com")
+
+            async def asend(self, value):
+                if self._exhausted:
+                    raise StopAsyncIteration
+                self._exhausted = True
+                return httpx.Request("GET", "https://example.com")
+
+            async def athrow(self, exc_type, exc_val=None, exc_tb=None):
+                raise StopAsyncIteration
+
+            async def aclose(self):
+                self.aclose_called = True
+
+        tracked_gen = TrackedGenerator()
+
+        # Patch the parent class to return our tracked generator
+        with patch.object(
+            OAuth.__bases__[0], "async_auth_flow", return_value=tracked_gen
+        ):
+            # Drive the OAuth flow
+            flow = oauth.async_auth_flow(httpx.Request("GET", "https://example.com"))
+            try:
+                # First asend(None) starts the generator per async generator protocol
+                await flow.asend(None)  # ty: ignore[invalid-argument-type]
+                try:
+                    await flow.asend(httpx.Response(200))
+                except StopAsyncIteration:
+                    pass
+            except StopAsyncIteration:
+                pass
+
+        assert tracked_gen.aclose_called, (
+            "Generator aclose() was not called after flow completion"
+        )
+
+    async def test_generator_closed_on_exception(self):
+        """Verify aclose() is called even when an exception occurs mid-flow."""
+        oauth = OAuth(mcp_url="https://example.com")
+
+        class FailingGenerator:
+            def __init__(self):
+                self.aclose_called = False
+                self._first_call = True
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                return await self.asend(None)
+
+            async def asend(self, value):
+                if self._first_call:
+                    self._first_call = False
+                    return httpx.Request("GET", "https://example.com")
+                raise ValueError("Simulated failure")
+
+            async def athrow(self, exc_type, exc_val=None, exc_tb=None):
+                raise StopAsyncIteration
+
+            async def aclose(self):
+                self.aclose_called = True
+
+        tracked_gen = FailingGenerator()
+
+        with patch.object(
+            OAuth.__bases__[0], "async_auth_flow", return_value=tracked_gen
+        ):
+            flow = oauth.async_auth_flow(httpx.Request("GET", "https://example.com"))
+            with pytest.raises(ValueError, match="Simulated failure"):
+                await flow.asend(None)  # ty: ignore[invalid-argument-type]
+                await flow.asend(httpx.Response(200))
+
+        assert tracked_gen.aclose_called, (
+            "Generator aclose() was not called after exception"
+        )
