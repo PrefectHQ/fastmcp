@@ -13,7 +13,7 @@ from fastmcp.prompts import PromptResult
 from fastmcp.resources import ResourceResult
 from fastmcp.server.providers import FastMCPProvider, TransformingProvider
 from fastmcp.server.providers.proxy import FastMCPProxy
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.tool import Tool
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.tests import caplog_for_fastmcp
 
@@ -47,7 +47,6 @@ class TestBasicMount:
         assert any(t.name == "sub_transformed_tool" for t in tools)
 
         result = await main_app.call_tool("sub_tool", {})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": "This is from the sub app"}
 
     async def test_mount_with_custom_separator(self):
@@ -68,7 +67,6 @@ class TestBasicMount:
 
         # Call the tool
         result = await main_app.call_tool("sub_greet", {"name": "World"})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": "Hello, World!"}
 
     @pytest.mark.parametrize("prefix", ["", None])
@@ -105,7 +103,6 @@ class TestBasicMount:
 
         # Call the tool to verify it works
         result = await main_app.call_tool("sub_tool", {})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": "This is from the sub app"}
 
     async def test_mount_tools_no_prefix(self):
@@ -126,7 +123,6 @@ class TestBasicMount:
 
         # Test actual functionality
         tool_result = await main_app.call_tool("sub_tool", {})
-        assert isinstance(tool_result, ToolResult)
         assert tool_result.structured_content == {"result": "Sub tool result"}
 
     async def test_mount_resources_no_prefix(self):
@@ -221,10 +217,8 @@ class TestMultipleServerMount:
 
         # Call tools from both mounted servers
         result1 = await main_app.call_tool("weather_get_forecast", {})
-        assert isinstance(result1, ToolResult)
         assert result1.structured_content == {"result": "Weather forecast"}
         result2 = await main_app.call_tool("news_get_headlines", {})
-        assert isinstance(result2, ToolResult)
         assert result2.structured_content == {"result": "News headlines"}
 
     async def test_mount_same_prefix(self):
@@ -359,7 +353,6 @@ class TestPrefixConflictResolution:
 
         # Test that calling the tool uses the first server's implementation
         result = await main_app.call_tool("shared_tool", {})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": "First app tool"}
 
     async def test_first_server_wins_tools_same_prefix(self):
@@ -388,7 +381,6 @@ class TestPrefixConflictResolution:
 
         # Test that calling the tool uses the first server's implementation
         result = await main_app.call_tool("api_shared_tool", {})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": "First app tool"}
 
     async def test_first_server_wins_resources_no_prefix(self):
@@ -600,7 +592,6 @@ class TestDynamicChanges:
 
         # Call the dynamically added tool
         result = await main_app.call_tool("sub_dynamic_tool", {})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": "Added after mounting"}
 
     async def test_removing_tool_after_mounting(self):
@@ -777,7 +768,6 @@ class TestProxyServer:
 
         # Call the tool
         result = await main_app.call_tool("proxy_get_data", {"query": "test"})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": "Data for test"}
 
     async def test_dynamically_adding_to_proxied_server(self):
@@ -803,7 +793,6 @@ class TestProxyServer:
 
         # Call the tool
         result = await main_app.call_tool("proxy_dynamic_data", {})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": "Dynamic data"}
 
     async def test_proxy_server_with_resources(self):
@@ -1079,7 +1068,6 @@ class TestParentTagFiltering:
 
         # Verify execution also respects filters
         result = await parent.call_tool("allowed_tool", {})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": "allowed"}
 
         with pytest.raises(NotFoundError, match="Unknown tool"):
@@ -1251,12 +1239,10 @@ class TestDeeplyNestedMount:
 
         # Tool at level 2 should work
         result = await root.call_tool("middle_multiply", {"a": 3, "b": 4})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": 12}
 
         # Tool at level 3 should also work (this was the bug)
         result = await root.call_tool("middle_leaf_add", {"a": 5, "b": 7})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": 12}
 
     async def test_three_level_nested_resource_invocation(self):
@@ -1364,7 +1350,6 @@ class TestDeeplyNestedMount:
 
         # Tool at level 4 should work
         result = await root.call_tool("l1_l2_l3_deep_tool", {})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": "very deep"}
 
 
@@ -1435,7 +1420,6 @@ class TestToolNameOverrides:
         )
 
         result = await main.call_tool("renamed", {})
-        assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": "success"}
 
     def test_duplicate_tool_rename_targets_raises_error(self):

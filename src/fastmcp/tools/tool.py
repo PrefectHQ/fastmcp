@@ -31,7 +31,7 @@ from typing_extensions import TypeVar
 
 import fastmcp
 from fastmcp.server.dependencies import without_injected_parameters
-from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema, resolve_root_ref
 from fastmcp.utilities.logging import get_logger
@@ -278,7 +278,9 @@ class Tool(FastMCPComponent):
         )
 
     async def _run(
-        self, arguments: dict[str, Any]
+        self,
+        arguments: dict[str, Any],
+        task_meta: TaskMeta | None = None,
     ) -> ToolResult | mcp.types.CreateTaskResult:
         """Server entry point that handles task routing.
 
@@ -286,16 +288,22 @@ class Tool(FastMCPComponent):
         task_config.mode to "supported" or "required". The server calls this
         method instead of run() directly.
 
+        Args:
+            arguments: Tool arguments
+            task_meta: If provided, execute as background task. If None, execute
+                synchronously.
+
         Subclasses can override this to customize task routing behavior.
         For example, FastMCPProviderTool overrides to delegate to child
         middleware without submitting to Docket.
         """
-        from fastmcp.server.dependencies import _docket_fn_key
         from fastmcp.server.tasks.routing import check_background_task
 
-        key = _docket_fn_key.get() or self.key
         task_result = await check_background_task(
-            component=self, task_type="tool", key=key, arguments=arguments
+            component=self,
+            task_type="tool",
+            arguments=arguments,
+            task_meta=task_meta,
         )
         if task_result:
             return task_result

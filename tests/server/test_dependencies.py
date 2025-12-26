@@ -11,7 +11,6 @@ from fastmcp.dependencies import CurrentContext, Depends
 from fastmcp.prompts import PromptResult
 from fastmcp.resources import ResourceResult
 from fastmcp.server.context import Context
-from fastmcp.tools.tool import ToolResult
 
 HUZZAH = "huzzah!"
 
@@ -56,7 +55,6 @@ async def test_depends_with_sync_function(mcp: FastMCP):
         )
 
     result = await mcp.call_tool("fetch_data", {"query": "users"})
-    assert isinstance(result, ToolResult)
     assert result.structured_content is not None
     text = result.structured_content["result"]
     assert "Fetching 'users' from https://api.example.com" in text
@@ -74,7 +72,6 @@ async def test_depends_with_async_function(mcp: FastMCP):
         return f"Hello {name}, your ID is {user_id}"
 
     result = await mcp.call_tool("greet_user", {"name": "Alice"})
-    assert isinstance(result, ToolResult)
     assert result.structured_content is not None
     assert result.structured_content["result"] == "Hello Alice, your ID is 42"
 
@@ -97,7 +94,6 @@ async def test_depends_with_async_context_manager(mcp: FastMCP):
         return f"Executing '{sql}' on {db}"
 
     result = await mcp.call_tool("query_db", {"sql": "SELECT * FROM users"})
-    assert isinstance(result, ToolResult)
     assert result.structured_content is not None
     assert (
         "Executing 'SELECT * FROM users' on db_connection"
@@ -122,7 +118,6 @@ async def test_nested_dependencies(mcp: FastMCP):
         return f"Calling {client['base_url']}/{client['version']}/{endpoint}"
 
     result = await mcp.call_tool("call_api", {"endpoint": "users"})
-    assert isinstance(result, ToolResult)
     assert result.structured_content is not None
     assert (
         result.structured_content["result"]
@@ -160,7 +155,6 @@ async def test_current_context_dependency(mcp: FastMCP):
         return HUZZAH
 
     result = await mcp.call_tool("use_context", {})
-    assert isinstance(result, ToolResult)
     assert result.structured_content is not None
     assert result.structured_content["result"] == HUZZAH
 
@@ -179,7 +173,6 @@ async def test_current_context_and_legacy_context_coexist(mcp: FastMCP):
         return HUZZAH
 
     result = await mcp.call_tool("use_both_contexts", {})
-    assert isinstance(result, ToolResult)
     assert result.structured_content is not None
     assert result.structured_content["result"] == HUZZAH
 
@@ -210,7 +203,6 @@ async def test_sync_tool_with_async_dependency(mcp: FastMCP):
         return f"Processing {value} with {config}"
 
     result = await mcp.call_tool("process_data", {"value": 100})
-    assert isinstance(result, ToolResult)
     assert result.structured_content is not None
     assert result.structured_content["result"] == "Processing 100 with loaded_config"
 
@@ -232,7 +224,6 @@ async def test_dependency_caching(mcp: FastMCP):
         return f"{dep1} + {dep2} = {dep1 + dep2}"
 
     result = await mcp.call_tool("tool_with_cached_dep", {})
-    assert isinstance(result, ToolResult)
     assert result.structured_content is not None
     assert result.structured_content["result"] == "42 + 42 = 84"
     assert call_count == 1
@@ -395,7 +386,6 @@ async def test_async_tool_context_manager_stays_open(mcp: FastMCP):
         return f"open={connection.is_open}"
 
     result = await mcp.call_tool("query_data", {"query": "test"})
-    assert isinstance(result, ToolResult)
     assert result.structured_content is not None
     assert result.structured_content["result"] == "open=True"
 
@@ -464,7 +454,6 @@ async def test_argument_validation_with_dependencies(mcp: FastMCP):
 
     # Valid argument
     result = await mcp.call_tool("validated_tool", {"age": 25})
-    assert isinstance(result, ToolResult)
     assert result.structured_content is not None
     assert result.structured_content["result"] == "age=25"
 
@@ -513,7 +502,6 @@ async def test_sync_tool_context_manager_stays_open(mcp: FastMCP):
         return f"open={connection.is_open}"
 
     result = await mcp.call_tool("query_sync", {"query": "test"})
-    assert isinstance(result, ToolResult)
     assert result.structured_content is not None
     assert result.structured_content["result"] == "open=True"
     assert not conn.is_open
@@ -617,7 +605,6 @@ async def test_external_user_cannot_override_dependency(mcp: FastMCP):
 
     # Normal call - dependency is resolved
     result = await mcp.call_tool("check_permission", {"action": "read"})
-    assert isinstance(result, ToolResult)
     assert result.structured_content is not None
     assert "admin=not_admin" in result.structured_content["result"]
 

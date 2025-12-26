@@ -15,6 +15,7 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from fastmcp.server.dependencies import _current_docket, get_context
+from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.tasks.keys import build_task_key
 
 if TYPE_CHECKING:
@@ -32,6 +33,7 @@ async def submit_to_docket(
     key: str,
     component: Tool | Resource | ResourceTemplate | Prompt,
     arguments: dict[str, Any] | None = None,
+    task_meta: TaskMeta | None = None,
 ) -> mcp.types.CreateTaskResult:
     """Submit any component to Docket for background execution (SEP-1686).
 
@@ -41,15 +43,13 @@ async def submit_to_docket(
     Queues the component's method to Docket, stores raw return values,
     and converts to MCP types on retrieval.
 
-    Note: Client-requested TTL in task_meta is intentionally ignored.
-    Server-side TTL policy (docket.execution_ttl) takes precedence for
-    consistent task lifecycle management.
-
     Args:
         task_type: Component type for task key construction
         key: The component key as seen by MCP layer (with namespace prefix)
         component: The component instance (Tool, Resource, ResourceTemplate, Prompt)
         arguments: Arguments/params (None for Resource which has no args)
+        task_meta: Task execution metadata. If task_meta.ttl is provided, it
+            overrides the server default (docket.execution_ttl).
 
     Returns:
         CreateTaskResult: Task stub with proper Task object
@@ -61,9 +61,12 @@ async def submit_to_docket(
     # Record creation timestamp per SEP-1686 final spec (line 430)
     created_at = datetime.now(timezone.utc)
 
-    # Get session ID and Docket
+    # Get session ID - use "internal" for programmatic calls without MCP session
     ctx = get_context()
-    session_id = ctx.session_id
+    try:
+        session_id = ctx.session_id
+    except RuntimeError:
+        session_id = "internal"
 
     docket = _current_docket.get()
     if docket is None:
@@ -77,13 +80,17 @@ async def submit_to_docket(
     # Build full task key with embedded metadata
     task_key = build_task_key(session_id, server_task_id, task_type, key)
 
+    # Determine TTL: use task_meta.ttl if provided, else docket default
+    if task_meta is not None and task_meta.ttl is not None:
+        ttl_ms = task_meta.ttl
+    else:
+        ttl_ms = int(docket.execution_ttl.total_seconds() * 1000)
+    ttl_seconds = int(ttl_ms / 1000) + TASK_MAPPING_TTL_BUFFER_SECONDS
+
     # Store task metadata in Redis for protocol handlers
     redis_key = f"fastmcp:task:{session_id}:{server_task_id}"
     created_at_key = f"fastmcp:task:{session_id}:{server_task_id}:created_at"
     poll_interval_key = f"fastmcp:task:{session_id}:{server_task_id}:poll_interval"
-    ttl_seconds = int(
-        docket.execution_ttl.total_seconds() + TASK_MAPPING_TTL_BUFFER_SECONDS
-    )
     poll_interval_ms = int(component.task_config.poll_interval.total_seconds() * 1000)
     async with docket.redis() as redis:
         await redis.set(redis_key, task_key, ex=ttl_seconds)
@@ -140,7 +147,7 @@ async def submit_to_docket(
             status="working",
             createdAt=created_at,
             lastUpdatedAt=created_at,
-            ttl=int(docket.execution_ttl.total_seconds() * 1000),
+            ttl=ttl_ms,
             pollInterval=poll_interval_ms,
         )
     )

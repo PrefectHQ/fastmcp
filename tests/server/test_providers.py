@@ -162,7 +162,6 @@ class TestProvider:
             name="dynamic_multiply", arguments={"a": 7, "b": 6}
         )
 
-        assert isinstance(result, ToolResult)
         assert result.structured_content is not None
         assert isinstance(result.structured_content, dict)
         assert result.structured_content["result"] == 42
@@ -179,7 +178,6 @@ class TestProvider:
             name="dynamic_add", arguments={"a": 5, "b": 3}
         )
 
-        assert isinstance(result, ToolResult)
         assert result.structured_content is not None
         # 5 + 3 + 100 (value offset) = 108
         assert isinstance(result.structured_content, dict)
@@ -196,7 +194,6 @@ class TestProvider:
             name="static_add", arguments={"a": 10, "b": 5}
         )
 
-        assert isinstance(result, ToolResult)
         assert result.structured_content is not None
         assert isinstance(result.structured_content, dict)
         assert result.structured_content["result"] == 15
@@ -232,7 +229,6 @@ class TestProvider:
             name="test_tool", arguments={"a": 1, "b": 2}
         )
 
-        assert isinstance(result, ToolResult)
         assert result.structured_content is not None
         # Default get_tool should have called list_tools
         assert provider.list_tools_call_count >= 1
@@ -272,7 +268,6 @@ class TestProvider:
             name="static_subtract", arguments={"a": 10, "b": 3}
         )
 
-        assert isinstance(result, ToolResult)
         assert result.structured_content is not None
         assert isinstance(result.structured_content, dict)
         assert result.structured_content["result"] == 7
@@ -371,7 +366,6 @@ class TestProviderExecutionMethods:
 
         result = await mcp.call_tool("test_tool", {"a": 1, "b": 2})
 
-        assert isinstance(result, ToolResult)
         assert result.structured_content is not None
         assert isinstance(result.structured_content, dict)
         assert result.structured_content["result"] == 3

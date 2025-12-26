@@ -22,6 +22,22 @@ DEFAULT_TTL_MS = 60_000  # Default TTL in milliseconds
 
 
 @dataclass
+class TaskMeta:
+    """Metadata for task-augmented execution requests.
+
+    When passed to call_tool/read_resource/get_prompt, signals that
+    the operation should be submitted as a background task.
+
+    Attributes:
+        ttl: Client-requested TTL in milliseconds. If None, uses server default.
+        fn_key: Docket routing key. Auto-derived from component name if None.
+    """
+
+    ttl: int | None = None
+    fn_key: str | None = None
+
+
+@dataclass
 class TaskConfig:
     """Configuration for MCP background task execution (SEP-1686).
 

@@ -22,6 +22,7 @@ from fastmcp.prompts.prompt import Prompt, PromptResult
 from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.base import Provider
+from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.components import FastMCPComponent
 
@@ -85,24 +86,31 @@ class FastMCPProviderTool(Tool):
         )
 
     async def _run(
-        self, arguments: dict[str, Any]
+        self,
+        arguments: dict[str, Any],
+        task_meta: TaskMeta | None = None,
     ) -> ToolResult | mcp.types.CreateTaskResult:
-        """Skip task handling - delegate to run() which calls child middleware.
+        """Delegate to child server's call_tool() with task_meta.
 
-        The actual underlying tool will check _task_metadata contextvar and
-        submit to Docket if appropriate. This wrapper just passes through.
+        Passes task_meta through to the child server so it can handle
+        backgrounding appropriately.
         """
-        return await self.run(arguments)
+        return await self._server.call_tool(
+            self._original_name, arguments, task_meta=task_meta
+        )
 
     async def run(
         self, arguments: dict[str, Any]
     ) -> ToolResult | mcp.types.CreateTaskResult:  # type: ignore[override]
-        """Delegate to child server's call_tool().
+        """Not implemented - use _run() which delegates to child server.
 
-        This runs BEFORE any backgrounding decision - the actual underlying
-        tool will check contextvars and submit to Docket if appropriate.
+        FastMCPProviderTool._run() handles all execution by delegating
+        to the child server's call_tool() with task_meta.
         """
-        return await self._server.call_tool(self._original_name, arguments)
+        raise NotImplementedError(
+            "FastMCPProviderTool.run() should not be called directly. "
+            "Use _run() which delegates to the child server's call_tool()."
+        )
 
 
 class FastMCPProviderResource(Resource):
