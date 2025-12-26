@@ -218,28 +218,30 @@ class ProxyResource(Resource):
             raise ResourceError(
                 f"Remote server returned empty content for {backend_uri}"
             )
-        if isinstance(result[0], TextResourceContents):
-            return ResourceResult(
-                contents=[
+
+        # Process all items in the result list, not just the first one
+        contents: list[ResourceContent] = []
+        for item in result:
+            if isinstance(item, TextResourceContents):
+                contents.append(
                     ResourceContent(
-                        content=result[0].text,
-                        mime_type=result[0].mimeType,
-                        meta=result[0].meta,
+                        content=item.text,
+                        mime_type=item.mimeType,
+                        meta=item.meta,
                     )
-                ]
-            )
-        elif isinstance(result[0], BlobResourceContents):
-            return ResourceResult(
-                contents=[
+                )
+            elif isinstance(item, BlobResourceContents):
+                contents.append(
                     ResourceContent(
-                        content=base64.b64decode(result[0].blob),
-                        mime_type=result[0].mimeType,
-                        meta=result[0].meta,
+                        content=base64.b64decode(item.blob),
+                        mime_type=item.mimeType,
+                        meta=item.meta,
                     )
-                ]
-            )
-        else:
-            raise ResourceError(f"Unsupported content type: {type(result[0])}")
+                )
+            else:
+                raise ResourceError(f"Unsupported content type: {type(item)}")
+
+        return ResourceResult(contents=contents)
 
 
 class ProxyTemplate(ResourceTemplate):
@@ -310,28 +312,30 @@ class ProxyTemplate(ResourceTemplate):
             raise ResourceError(
                 f"Remote server returned empty content for {parameterized_uri}"
             )
-        if isinstance(result[0], TextResourceContents):
-            cached_content = ResourceResult(
-                contents=[
+
+        # Process all items in the result list, not just the first one
+        contents: list[ResourceContent] = []
+        for item in result:
+            if isinstance(item, TextResourceContents):
+                contents.append(
                     ResourceContent(
-                        content=result[0].text,
-                        mime_type=result[0].mimeType,
-                        meta=result[0].meta,
+                        content=item.text,
+                        mime_type=item.mimeType,
+                        meta=item.meta,
                     )
-                ]
-            )
-        elif isinstance(result[0], BlobResourceContents):
-            cached_content = ResourceResult(
-                contents=[
+                )
+            elif isinstance(item, BlobResourceContents):
+                contents.append(
                     ResourceContent(
-                        content=base64.b64decode(result[0].blob),
-                        mime_type=result[0].mimeType,
-                        meta=result[0].meta,
+                        content=base64.b64decode(item.blob),
+                        mime_type=item.mimeType,
+                        meta=item.meta,
                     )
-                ]
-            )
-        else:
-            raise ResourceError(f"Unsupported content type: {type(result[0])}")
+                )
+            else:
+                raise ResourceError(f"Unsupported content type: {type(item)}")
+
+        cached_content = ResourceResult(contents=contents)
 
         return ProxyResource(
             client_factory=self._client_factory,
@@ -339,7 +343,9 @@ class ProxyTemplate(ResourceTemplate):
             name=self.name,
             title=self.title,
             description=self.description,
-            mime_type=result[0].mimeType,
+            mime_type=result[
+                0
+            ].mimeType,  # Use first item's mimeType for backward compatibility
             icons=self.icons,
             meta=self.meta,
             tags=(self.meta or {}).get("_fastmcp", {}).get("tags", []),

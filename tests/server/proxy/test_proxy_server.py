@@ -13,6 +13,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
 from fastmcp.exceptions import ToolError
+from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 from fastmcp.tools.tool import ToolResult
 from fastmcp.tools.tool_transform import (
@@ -83,6 +84,36 @@ def fastmcp_server():
 
         user = next((user for user in USERS if user["id"] == user_id), None)
         return json.dumps(user, separators=(",", ":")) if user else "null"
+
+    @server.resource(uri="data://multi")
+    def get_multi_content() -> ResourceResult:
+        """Resource that returns multiple content items."""
+        return ResourceResult(
+            contents=[
+                ResourceContent(content="First item", mime_type="text/plain"),
+                ResourceContent(
+                    content='{"key": "value"}', mime_type="application/json"
+                ),
+                ResourceContent(
+                    content="# Markdown\nContent", mime_type="text/markdown"
+                ),
+            ],
+            meta={"count": 3},
+        )
+
+    @server.resource(uri="data://multi/{id}")
+    def get_multi_template(id: str) -> ResourceResult:
+        """Resource template that returns multiple content items."""
+        return ResourceResult(
+            contents=[
+                ResourceContent(content=f"Item {id} - First", mime_type="text/plain"),
+                ResourceContent(
+                    content=f'{{"id": "{id}", "status": "active"}}',
+                    mime_type="application/json",
+                ),
+            ],
+            meta={"id": id},
+        )
 
     # --- Prompts ---
 
@@ -313,6 +344,40 @@ class TestResources:
         users = json.loads(result[0].text)
         assert users == USERS
 
+    async def test_proxy_returns_all_resource_contents(
+        self, fastmcp_server, proxy_server
+    ):
+        """Test that proxy correctly returns all resource contents, not just the first one."""
+        # Read from original server
+        async with Client(fastmcp_server) as client:
+            original_result = await client.read_resource("data://multi")
+
+        # Read from proxy server
+        async with Client(proxy_server) as client:
+            proxy_result = await client.read_resource("data://multi")
+
+        # Both should return the same number of contents
+        assert len(original_result) == len(proxy_result)
+        assert len(original_result) == 3
+
+        # Verify all contents match
+        for i, (original, proxied) in enumerate(zip(original_result, proxy_result)):
+            assert isinstance(original, TextResourceContents)
+            assert isinstance(proxied, TextResourceContents)
+            assert original.text == proxied.text, f"Content {i} text mismatch"
+            assert original.mimeType == proxied.mimeType, (
+                f"Content {i} mimeType mismatch"
+            )
+            assert original.meta == proxied.meta, f"Content {i} meta mismatch"
+
+        # Verify the contents are what we expect
+        assert original_result[0].text == "First item"
+        assert original_result[0].mimeType == "text/plain"
+        assert original_result[1].text == '{"key": "value"}'
+        assert original_result[1].mimeType == "application/json"
+        assert original_result[2].text == "# Markdown\nContent"
+        assert original_result[2].mimeType == "text/markdown"
+
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(
             McpError, match="Unknown resource: 'resource://nonexistent'"
@@ -389,6 +454,37 @@ class TestResourceTemplates:
         async with Client(proxy_server) as client:
             proxy_result = await client.read_resource("data://user/1")
         assert proxy_result == result
+
+    async def test_proxy_template_returns_all_resource_contents(
+        self, fastmcp_server, proxy_server
+    ):
+        """Test that proxy template correctly returns all resource contents."""
+        # Read from original server
+        async with Client(fastmcp_server) as client:
+            original_result = await client.read_resource("data://multi/test123")
+
+        # Read from proxy server
+        async with Client(proxy_server) as client:
+            proxy_result = await client.read_resource("data://multi/test123")
+
+        # Both should return the same number of contents
+        assert len(original_result) == len(proxy_result)
+        assert len(original_result) == 2
+
+        # Verify all contents match
+        for i, (original, proxied) in enumerate(zip(original_result, proxy_result)):
+            assert isinstance(original, TextResourceContents)
+            assert isinstance(proxied, TextResourceContents)
+            assert original.text == proxied.text, f"Content {i} text mismatch"
+            assert original.mimeType == proxied.mimeType, (
+                f"Content {i} mimeType mismatch"
+            )
+
+        # Verify the contents are what we expect
+        assert original_result[0].text == "Item test123 - First"
+        assert original_result[0].mimeType == "text/plain"
+        assert original_result[1].text == '{"id": "test123", "status": "active"}'
+        assert original_result[1].mimeType == "application/json"
 
     async def test_proxy_can_overwrite_proxied_resource_template(self, proxy_server):
         """
