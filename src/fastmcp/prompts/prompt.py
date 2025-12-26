@@ -242,10 +242,9 @@ class Prompt(FastMCPComponent):
         """Create a Prompt from a function.
 
         The function can return:
-        - A string (converted to a message)
-        - A Message object
-        - A dict (converted to a message)
-        - A sequence of any of the above
+        - str: wrapped as single user Message
+        - list[Message | str]: converted to list[Message]
+        - PromptResult: used directly
         """
         return FunctionPrompt.from_function(
             fn=fn,
@@ -385,10 +384,9 @@ class FunctionPrompt(Prompt):
         """Create a Prompt from a function.
 
         The function can return:
-        - A string (converted to a message)
-        - A Message object
-        - A dict (converted to a message)
-        - A sequence of any of the above
+        - str: wrapped as single user Message
+        - list[Message | str]: converted to list[Message]
+        - PromptResult: used directly
         """
 
         func_name = name or getattr(fn, "__name__", None) or fn.__class__.__name__

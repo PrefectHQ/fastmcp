@@ -38,11 +38,14 @@ def ask_about_topic(topic: str) -> str:
     """Generates a user message asking for an explanation of a topic."""
     return f"Can you please explain the concept of '{topic}'?"
 
-# Prompt returning a specific message type
+# Prompt returning multiple messages
 @mcp.prompt
-def generate_code_request(language: str, task_description: str) -> Message:
-    """Generates a user message requesting code generation."""
-    return Message(f"Write a {language} function that performs the following task: {task_description}")
+def generate_code_request(language: str, task_description: str) -> list[Message]:
+    """Generates a conversation for code generation."""
+    return [
+        Message(f"Write a {language} function that performs the following task: {task_description}"),
+        Message("I'll help you write that function.", role="assistant"),
+    ]
 ```
 
 **Key Concepts:**
