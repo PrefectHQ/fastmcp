@@ -68,7 +68,6 @@ class Message(pydantic.BaseModel):
         self,
         content: Any,
         role: Literal["user", "assistant"] = "user",
-        **kwargs: Any,
     ):
         """Create Message with automatic serialization.
 
@@ -88,7 +87,7 @@ class Message(pydantic.BaseModel):
             serialized = pydantic_core.to_json(content, fallback=str).decode()
             normalized_content = TextContent(type="text", text=serialized)
 
-        super().__init__(role=role, content=normalized_content, **kwargs)
+        super().__init__(role=role, content=normalized_content)
 
     def to_mcp_prompt_message(self) -> PromptMessage:
         """Convert to MCP PromptMessage."""
@@ -148,7 +147,6 @@ class PromptResult(pydantic.BaseModel):
         messages: str | list[Message],
         description: str | None = None,
         meta: dict[str, Any] | None = None,
-        **kwargs: Any,
     ):
         """Create PromptResult.
 
@@ -158,9 +156,7 @@ class PromptResult(pydantic.BaseModel):
             meta: Optional metadata about the prompt result.
         """
         normalized = self._normalize_messages(messages)
-        super().__init__(
-            messages=normalized, description=description, meta=meta, **kwargs
-        )
+        super().__init__(messages=normalized, description=description, meta=meta)
 
     @staticmethod
     def _normalize_messages(

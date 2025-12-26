@@ -16,14 +16,14 @@ from key_value.aio.stores.memory import MemoryStore
 from mcp.server.streamable_http import EventCallback, EventId, EventMessage, StreamId
 from mcp.server.streamable_http import EventStore as SDKEventStore
 from mcp.types import JSONRPCMessage
-from pydantic import BaseModel
 
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.types import FastMCPBaseModel
 
 logger = get_logger(__name__)
 
 
-class EventEntry(BaseModel):
+class EventEntry(FastMCPBaseModel):
     """Stored event entry."""
 
     event_id: str
@@ -31,7 +31,7 @@ class EventEntry(BaseModel):
     message: dict | None  # JSONRPCMessage serialized to dict
 
 
-class StreamEventList(BaseModel):
+class StreamEventList(FastMCPBaseModel):
     """List of event IDs for a stream."""
 
     event_ids: list[str]

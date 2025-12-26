@@ -117,9 +117,7 @@ class ToolResult(BaseModel):
                 )
 
         super().__init__(
-            content=converted_content,
-            structured_content=structured_content,
-            meta=meta,
+            content=converted_content, structured_content=structured_content, meta=meta
         )
 
     def to_mcp_result(

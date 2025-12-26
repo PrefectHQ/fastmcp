@@ -29,9 +29,7 @@ from typing_extensions import Self
 from fastmcp.server.dependencies import without_injected_parameters
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.components import FastMCPComponent
-from fastmcp.utilities.types import (
-    get_fn_name,
-)
+from fastmcp.utilities.types import get_fn_name
 
 
 class ResourceContent(pydantic.BaseModel):
@@ -65,7 +63,6 @@ class ResourceContent(pydantic.BaseModel):
         content: Any,
         mime_type: str | None = None,
         meta: dict[str, Any] | None = None,
-        **kwargs: Any,
     ):
         """Create ResourceContent with automatic serialization.
 
@@ -88,9 +85,7 @@ class ResourceContent(pydantic.BaseModel):
             normalized_content = pydantic_core.to_json(content, fallback=str).decode()
             mime_type = mime_type or "application/json"
 
-        super().__init__(
-            content=normalized_content, mime_type=mime_type, meta=meta, **kwargs
-        )
+        super().__init__(content=normalized_content, mime_type=mime_type, meta=meta)
 
     def to_mcp_resource_contents(
         self, uri: AnyUrl | str
@@ -162,7 +157,6 @@ class ResourceResult(pydantic.BaseModel):
         self,
         contents: str | bytes | list[ResourceContent],
         meta: dict[str, Any] | None = None,
-        **kwargs: Any,
     ):
         """Create ResourceResult.
 
@@ -171,7 +165,7 @@ class ResourceResult(pydantic.BaseModel):
             meta: Optional metadata about the resource result.
         """
         normalized = self._normalize_contents(contents)
-        super().__init__(contents=normalized, meta=meta, **kwargs)
+        super().__init__(contents=normalized, meta=meta)
 
     @staticmethod
     def _normalize_contents(

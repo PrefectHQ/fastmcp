@@ -7,12 +7,13 @@ from collections.abc import Callable
 from typing import Any
 
 from mcp.types import Tool as SDKTool
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 
 from fastmcp.tools.tool import ParsedFunction
+from fastmcp.utilities.types import FastMCPBaseModel
 
 
-class SamplingTool(BaseModel):
+class SamplingTool(FastMCPBaseModel):
     """A tool that can be used during LLM sampling.
 
     SamplingTools bundle a tool's schema (name, description, parameters) with
