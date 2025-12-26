@@ -128,7 +128,7 @@ def get_application_status() -> dict:
 <ParamField body="meta" type="dict[str, Any] | None">
   <VersionBadge version="2.11.0" />
   
-  Optional meta information about the resource. This data is passed through to the MCP client as the `_meta` field of the client-side resource object and can be used for custom metadata, versioning, or other application-specific purposes.
+  Optional meta information about the resource. This data is passed through to the MCP client as the `meta` field of the client-side resource object and can be used for custom metadata, versioning, or other application-specific purposes.
 </ParamField>
 </Card>
 
@@ -170,7 +170,7 @@ def get_widget() -> ResourceContent:
 
 **`mime_type`** - Optional MIME type for the content. Defaults to `"text/plain"` for string content and `"application/octet-stream"` for binary content.
 
-**`meta`** - Optional metadata dictionary that will be included in the MCP response's `_meta` field. Use this for runtime metadata like Content Security Policy headers, caching hints, or other client-specific data.
+**`meta`** - Optional metadata dictionary that will be included in the MCP response's `meta` field. Use this for runtime metadata like Content Security Policy headers, caching hints, or other client-specific data.
 
 ```python
 # Binary content with metadata

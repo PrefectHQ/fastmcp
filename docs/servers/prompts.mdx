@@ -107,7 +107,7 @@ def data_analysis_prompt(
 <ParamField body="meta" type="dict[str, Any] | None">
   <VersionBadge version="2.11.0" />
 
-  Optional meta information about the prompt. This data is passed through to the MCP client as the `_meta` field of the client-side prompt object and can be used for custom metadata, versioning, or other application-specific purposes.
+  Optional meta information about the prompt. This data is passed through to the MCP client as the `meta` field of the client-side prompt object and can be used for custom metadata, versioning, or other application-specific purposes.
 </ParamField>
 </Card>
 
@@ -241,7 +241,7 @@ def code_review(code: str) -> PromptResult:
 
 **`description`** - Optional description of the prompt result. If not provided, defaults to the prompt's docstring.
 
-**`meta`** - Optional metadata dictionary that will be included in the MCP response's `_meta` field. Use this for runtime metadata like categorization, priority, or other client-specific data.
+**`meta`** - Optional metadata dictionary that will be included in the MCP response's `meta` field. Use this for runtime metadata like categorization, priority, or other client-specific data.
 
 <Note>
 The `meta` field in `PromptResult` is for runtime metadata specific to this render response. This is separate from the `meta` parameter in `@mcp.prompt(meta={...})`, which provides static metadata about the prompt definition itself (returned when listing prompts).

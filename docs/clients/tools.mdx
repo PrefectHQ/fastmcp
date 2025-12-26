@@ -26,7 +26,7 @@ async with client:
         if tool.inputSchema:
             print(f"Parameters: {tool.inputSchema}")
         # Access tags and other metadata
-        if hasattr(tool, 'meta') and tool.meta:
+        if tool.meta:
             fastmcp_meta = tool.meta.get('_fastmcp', {})
             print(f"Tags: {fastmcp_meta.get('tags', [])}")
 ```
@@ -44,7 +44,7 @@ async with client:
     # Filter tools by tag
     analysis_tools = [
         tool for tool in tools 
-        if hasattr(tool, 'meta') and tool.meta and
+        if tool.meta and
            tool.meta.get('_fastmcp', {}) and
            'analysis' in tool.meta.get('_fastmcp', {}).get('tags', [])
     ]
