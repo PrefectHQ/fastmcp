@@ -805,11 +805,10 @@ class OAuthProxy(OAuthProvider):
                 salt="fastmcp-jwt-signing-key",
             )
 
-        self._jwt_issuer: JWTIssuer = JWTIssuer(
-            issuer=str(self.base_url),
-            audience=f"{str(self.base_url).rstrip('/')}/mcp",
-            signing_key=jwt_signing_key,
-        )
+        # Store JWT signing key for deferred JWTIssuer creation in set_mcp_path()
+        self._jwt_signing_key: bytes = jwt_signing_key
+        # JWTIssuer will be created in set_mcp_path() with correct audience
+        self._jwt_issuer: JWTIssuer | None = None
 
         # If the user does not provide a store, we will provide an encrypted disk store
         if client_storage is None:
@@ -896,6 +895,47 @@ class OAuthProxy(OAuthProvider):
             "Initialized OAuth proxy provider with upstream server %s",
             self._upstream_authorization_endpoint,
         )
+
+    # -------------------------------------------------------------------------
+    # MCP Path Configuration
+    # -------------------------------------------------------------------------
+
+    def set_mcp_path(self, mcp_path: str | None) -> None:
+        """Set the MCP endpoint path and create JWTIssuer with correct audience.
+
+        This method is called by get_routes() to configure the resource URL
+        and create the JWTIssuer. The JWT audience is set to the full resource
+        URL (e.g., http://localhost:8000/mcp) to ensure tokens are bound to
+        this specific MCP endpoint.
+
+        Args:
+            mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
+        """
+        super().set_mcp_path(mcp_path)
+
+        # Create JWT issuer with correct audience based on actual MCP path
+        # This ensures tokens are bound to the specific resource URL
+        self._jwt_issuer = JWTIssuer(
+            issuer=str(self.base_url),
+            audience=str(self._resource_url),
+            signing_key=self._jwt_signing_key,
+        )
+
+        logger.debug("Configured OAuth proxy for resource URL: %s", self._resource_url)
+
+    @property
+    def jwt_issuer(self) -> JWTIssuer:
+        """Get the JWT issuer, ensuring it has been initialized.
+
+        The JWT issuer is created when set_mcp_path() is called (via get_routes()).
+        This property ensures a clear error if used before initialization.
+        """
+        if self._jwt_issuer is None:
+            raise RuntimeError(
+                "JWT issuer not initialized. Ensure get_routes() is called "
+                "before token operations."
+            )
+        return self._jwt_issuer
 
     # -------------------------------------------------------------------------
     # PKCE Helper Methods
@@ -998,13 +1038,29 @@ class OAuthProxy(OAuthProvider):
         """Start OAuth transaction and route through consent interstitial.
 
         Flow:
-        1. Store transaction with client details and PKCE (if forwarding)
-        2. Return local /consent URL; browser visits consent first
-        3. Consent handler redirects to upstream IdP if approved/already approved
+        1. Validate client's resource matches server's resource URL (security check)
+        2. Store transaction with client details and PKCE (if forwarding)
+        3. Return local /consent URL; browser visits consent first
+        4. Consent handler redirects to upstream IdP if approved/already approved
 
         If consent is disabled (require_authorization_consent=False), skip the consent screen
         and redirect directly to the upstream IdP.
         """
+        # Security check: validate client's requested resource matches this server
+        # This prevents tokens intended for one server from being used on another
+        client_resource = getattr(params, "resource", None)
+        if client_resource and self._resource_url:
+            if str(client_resource) != str(self._resource_url):
+                logger.warning(
+                    "Resource mismatch: client requested %s but server is %s",
+                    client_resource,
+                    self._resource_url,
+                )
+                raise AuthorizeError(
+                    error="invalid_target",  # type: ignore[arg-type]
+                    error_description="Resource does not match this server",
+                )
+
         # Generate transaction ID for this authorization request
         txn_id = secrets.token_urlsafe(32)
 
@@ -1216,7 +1272,7 @@ class OAuthProxy(OAuthProvider):
         # Issue minimal FastMCP access token (just a reference via JTI)
         if client.client_id is None:
             raise TokenError("invalid_client", "Client ID is required")
-        fastmcp_access_token = self._jwt_issuer.issue_access_token(
+        fastmcp_access_token = self.jwt_issuer.issue_access_token(
             client_id=client.client_id,
             scopes=authorization_code.scopes,
             jti=access_jti,
@@ -1227,7 +1283,7 @@ class OAuthProxy(OAuthProvider):
         # Use upstream refresh token expiry to align lifetimes
         fastmcp_refresh_token = None
         if refresh_jti and refresh_expires_in:
-            fastmcp_refresh_token = self._jwt_issuer.issue_refresh_token(
+            fastmcp_refresh_token = self.jwt_issuer.issue_refresh_token(
                 client_id=client.client_id,
                 scopes=authorization_code.scopes,
                 jti=refresh_jti,
@@ -1352,7 +1408,7 @@ class OAuthProxy(OAuthProvider):
         """
         # Verify FastMCP refresh token
         try:
-            refresh_payload = self._jwt_issuer.verify_token(refresh_token.token)
+            refresh_payload = self.jwt_issuer.verify_token(refresh_token.token)
             refresh_jti = refresh_payload["jti"]
         except Exception as e:
             logger.debug("FastMCP refresh token validation failed: %s", e)
@@ -1461,7 +1517,7 @@ class OAuthProxy(OAuthProvider):
         if client.client_id is None:
             raise TokenError("invalid_client", "Client ID is required")
         new_access_jti = secrets.token_urlsafe(32)
-        new_fastmcp_access = self._jwt_issuer.issue_access_token(
+        new_fastmcp_access = self.jwt_issuer.issue_access_token(
             client_id=client.client_id,
             scopes=scopes,
             jti=new_access_jti,
@@ -1482,7 +1538,7 @@ class OAuthProxy(OAuthProvider):
         # Issue NEW minimal FastMCP refresh token (rotation for security)
         # Use upstream refresh token expiry to align lifetimes
         new_refresh_jti = secrets.token_urlsafe(32)
-        new_fastmcp_refresh = self._jwt_issuer.issue_refresh_token(
+        new_fastmcp_refresh = self.jwt_issuer.issue_refresh_token(
             client_id=client.client_id,
             scopes=scopes,
             jti=new_refresh_jti,
@@ -1558,7 +1614,7 @@ class OAuthProxy(OAuthProvider):
         """
         try:
             # 1. Verify FastMCP JWT signature and claims
-            payload = self._jwt_issuer.verify_token(token)
+            payload = self.jwt_issuer.verify_token(token)
             jti = payload["jti"]
 
             # 2. Look up upstream token via JTI mapping

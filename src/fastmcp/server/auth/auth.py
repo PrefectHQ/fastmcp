@@ -114,6 +114,8 @@ class AuthProvider(TokenVerifierProtocol):
             base_url = AnyHttpUrl(base_url)
         self.base_url = base_url
         self.required_scopes = required_scopes or []
+        self._mcp_path: str | None = None
+        self._resource_url: AnyHttpUrl | None = None
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a bearer token and return access info if valid.
@@ -127,6 +129,20 @@ class AuthProvider(TokenVerifierProtocol):
             AccessToken object if valid, None if invalid or expired
         """
         raise NotImplementedError("Subclasses must implement verify_token")
+
+    def set_mcp_path(self, mcp_path: str | None) -> None:
+        """Set the MCP endpoint path and compute resource URL.
+
+        This method is called by get_routes() to configure the expected
+        resource URL before route creation. Subclasses can override to
+        perform additional initialization that depends on knowing the
+        MCP endpoint path.
+
+        Args:
+            mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
+        """
+        self._mcp_path = mcp_path
+        self._resource_url = self._get_resource_url(mcp_path)
 
     def get_routes(
         self,
@@ -407,6 +423,8 @@ class OAuthProvider(
         Returns:
             List of OAuth routes
         """
+        # Configure resource URL before creating routes
+        self.set_mcp_path(mcp_path)
 
         # Create standard OAuth authorization server routes
         # Pass base_url as issuer_url to ensure metadata declares endpoints where
@@ -451,11 +469,8 @@ class OAuthProvider(
             else:
                 oauth_routes.append(route)
 
-        # Get the resource URL based on the MCP path
-        resource_url = self._get_resource_url(mcp_path)
-
         # Add protected resource routes if this server is also acting as a resource server
-        if resource_url:
+        if self._resource_url:
             supported_scopes = (
                 self.client_registration_options.valid_scopes
                 if self.client_registration_options
@@ -463,7 +478,7 @@ class OAuthProvider(
                 else self.required_scopes
             )
             protected_routes = create_protected_resource_routes(
-                resource_url=resource_url,
+                resource_url=self._resource_url,
                 authorization_servers=[cast(AnyHttpUrl, self.issuer_url)],
                 scopes_supported=supported_scopes,
             )
