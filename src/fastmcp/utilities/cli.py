@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 from rich.align import Align
@@ -197,23 +197,8 @@ LOGO_ASCII_4 = (
 )
 
 
-def log_server_banner(
-    server: FastMCP[Any],
-    transport: Literal["stdio", "http", "sse", "streamable-http"],
-    *,
-    host: str | None = None,
-    port: int | None = None,
-    path: str | None = None,
-) -> None:
-    """Creates and logs a formatted banner with server information and logo.
-
-    Args:
-        transport: The transport protocol being used
-        server_name: Optional server name to display
-        host: Host address (for HTTP transports)
-        port: Port number (for HTTP transports)
-        path: Server path (for HTTP transports)
-    """
+def log_server_banner(server: FastMCP[Any]) -> None:
+    """Creates and logs a formatted banner with server information and logo."""
 
     # Create the logo text
     # Use Text with no_wrap and markup disabled to preserve ANSI escape codes
@@ -228,37 +213,32 @@ def log_server_banner(
     info_table.add_column(style="cyan", justify="left")  # Label column
     info_table.add_column(style="dim", justify="left")  # Value column
 
-    match transport:
-        case "http" | "streamable-http":
-            display_transport = "HTTP"
-        case "sse":
-            display_transport = "SSE"
-        case "stdio":
-            display_transport = "STDIO"
-
-    info_table.add_row("🖥", "Server name:", Text(server.name + "\n", style="bold blue"))
-    info_table.add_row("📦", "Transport:", display_transport)
-
-    # Show connection info based on transport
-    if transport in ("http", "streamable-http", "sse") and host and port:
-        server_url = f"http://{host}:{port}"
-        if path:
-            server_url += f"/{path.lstrip('/')}"
-        info_table.add_row("🔗", "Server URL:", server_url)
-
-    # Add documentation link
-    info_table.add_row("", "", "")
-    info_table.add_row("📚", "Docs:", "https://gofastmcp.com")
-    info_table.add_row("🚀", "Hosting:", "https://fastmcp.cloud")
+    info_table.add_row("🖥", "Server:", Text(server.name, style="dim"))
+    info_table.add_row("🚀", "Deploy free:", "https://fastmcp.cloud")
 
     # Create panel with logo, title, and information using Group
+    docs_url = Text("https://gofastmcp.com", style="dim")
     panel_content = Group(
+        "",
         Align.center(logo_text),
         "",
-        Align.center(title_text),
         "",
+        Align.center(title_text),
+        Align.center(docs_url),
         "",
         Align.center(info_table),
+    )
+
+    # v3 notice banner (shown below main panel)
+    v3_line1 = Text("✨ FastMCP 3.0 is coming!", style="bold")
+    v3_line2 = Text(
+        "Pin fastmcp<3 in production, then upgrade when you're ready.", style="dim"
+    )
+    v3_notice = Panel(
+        Group(Align.center(v3_line1), Align.center(v3_line2)),
+        border_style="blue",
+        padding=(0, 2),
+        width=80,
     )
 
     panel = Panel(
@@ -270,5 +250,5 @@ def log_server_banner(
     )
 
     console = Console(stderr=True)
-    # Center the panel itself
-    console.print(Group("\n", Align.center(panel), "\n"))
+    # Center both panels
+    console.print(Group("\n", Align.center(panel), Align.center(v3_notice), "\n"))

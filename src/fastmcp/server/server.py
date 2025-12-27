@@ -2060,10 +2060,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         # Display server banner
         if show_banner:
-            log_server_banner(
-                server=self,
-                transport="stdio",
-            )
+            log_server_banner(server=self)
 
         with temporary_log_level(log_level):
             async with self._lifespan_manager():
@@ -2126,22 +2123,9 @@ class FastMCP(Generic[LifespanResultT]):
             stateless_http=stateless_http,
         )
 
-        # Get the path for the server URL
-        server_path = (
-            app.state.path.lstrip("/")
-            if hasattr(app, "state") and hasattr(app.state, "path")
-            else path or ""
-        )
-
         # Display server banner
         if show_banner:
-            log_server_banner(
-                server=self,
-                transport=transport,
-                host=host,
-                port=port,
-                path=server_path,
-            )
+            log_server_banner(server=self)
         uvicorn_config_from_user = uvicorn_config or {}
 
         config_kwargs: dict[str, Any] = {
