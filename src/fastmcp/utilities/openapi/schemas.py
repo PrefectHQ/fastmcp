@@ -539,9 +539,9 @@ def extract_output_schema_from_responses(
                 # Replace $ref with the actual schema definition
                 output_schema = _replace_ref_with_defs(schema_definitions[schema_name])
 
-    # Convert OpenAPI schema to JSON Schema format
-    # Only needed for OpenAPI 3.0 - 3.1 uses standard JSON Schema null types
-    if openapi_version and openapi_version.startswith("3.0"):
+    if openapi_version and openapi_version.startswith("3"):
+        # Convert OpenAPI 3.x schema to JSON Schema format for proper handling
+        # of constructs like oneOf, anyOf, and nullable fields
         from .json_schema_converter import convert_openapi_schema_to_json_schema
 
         output_schema = convert_openapi_schema_to_json_schema(
@@ -570,7 +570,7 @@ def extract_output_schema_from_responses(
                 processed_defs[name] = _replace_ref_with_defs(schema)
 
         # Convert OpenAPI schema definitions to JSON Schema format if needed
-        if openapi_version and openapi_version.startswith("3.0"):
+        if openapi_version and openapi_version.startswith("3"):
             from .json_schema_converter import convert_openapi_schema_to_json_schema
 
             for def_name in list(processed_defs.keys()):
