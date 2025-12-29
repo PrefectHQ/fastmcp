@@ -785,6 +785,17 @@ async def test_dict_based_titled_single_select():
         return "declined"
 
     async def elicitation_handler(message, response_type, params, ctx):
+        # Verify schema follows SEP-1330 pattern with type: "string"
+        schema = params.requestedSchema
+        assert schema["type"] == "object"
+        assert "value" in schema["properties"]
+        value_schema = schema["properties"]["value"]
+        assert value_schema["type"] == "string"
+        assert "oneOf" in value_schema
+        one_of = value_schema["oneOf"]
+        assert {"const": "low", "title": "Low Priority"} in one_of
+        assert {"const": "high", "title": "High Priority"} in one_of
+
         return ElicitResult(action="accept", content={"value": "low"})
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
@@ -847,14 +858,15 @@ async def test_list_dict_multi_select_titled():
         return "declined"
 
     async def elicitation_handler(message, response_type, params, ctx):
-        # Verify schema has array with anyOf pattern
+        # Verify schema has array with SEP-1330 compliant items (anyOf pattern)
         schema = params.requestedSchema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
         assert value_schema["type"] == "array"
-        assert "anyOf" in value_schema["items"]
-        any_of = value_schema["items"]["anyOf"]
+        items_schema = value_schema["items"]
+        assert "anyOf" in items_schema
+        any_of = items_schema["anyOf"]
         assert {"const": "low", "title": "Low Priority"} in any_of
         assert {"const": "high", "title": "High Priority"} in any_of
 
@@ -944,7 +956,7 @@ async def test_validation_allows_enum_arrays():
 
 
 async def test_validation_allows_enum_arrays_with_anyof():
-    """Test validation accepts arrays with anyOf enum pattern."""
+    """Test validation accepts arrays with anyOf enum pattern (SEP-1330 compliant)."""
     schema = {
         "type": "object",
         "properties": {

@@ -304,15 +304,19 @@ def _dict_to_enum_schema(
         multi_select: If True, use anyOf pattern; if False, use oneOf pattern
 
     Returns:
-        {"oneOf": [{"const": "low", "title": "Low Priority"}, ...]} for single-select
-        {"anyOf": [{"const": "low", "title": "Low Priority"}, ...]} for multi-select
+        {"type": "string", "oneOf": [...]} for single-select
+        {"anyOf": [...]} for multi-select (used as array items)
     """
     pattern_key = "anyOf" if multi_select else "oneOf"
     pattern = []
     for value, metadata in enum_dict.items():
         title = metadata.get("title", value)
         pattern.append({"const": value, "title": title})
-    return {pattern_key: pattern}
+
+    result: dict[str, Any] = {pattern_key: pattern}
+    if not multi_select:
+        result["type"] = "string"
+    return result
 
 
 def get_elicitation_schema(response_type: type[T]) -> dict[str, Any]:
