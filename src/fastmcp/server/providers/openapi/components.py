@@ -108,11 +108,7 @@ class OpenAPITool(Tool):
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the HTTP request using RequestDirector."""
         try:
-            base_url = (
-                str(self._client.base_url)
-                if self._client.base_url
-                else "http://localhost"
-            )
+            base_url = str(self._client.base_url) or "http://localhost"
 
             # Build the request using RequestDirector
             request = self._director.build(self._route, arguments, base_url)

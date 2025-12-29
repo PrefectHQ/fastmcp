@@ -512,6 +512,38 @@ class TestOpenAPIComprehensive:
             assert "123" in str(request.url)
             assert "users/123" in str(request.url)
 
+    async def test_request_uses_localhost_fallback_when_no_base_url(
+        self, comprehensive_openapi_spec
+    ):
+        """Test that tool uses localhost fallback when client has no base_url."""
+        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client.base_url = httpx.URL("")  # Empty URL, same as httpx default
+        mock_client.headers = None
+
+        mock_response = Mock(spec=Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "id": 123,
+            "name": "Test User",
+            "email": "test@example.com",
+        }
+        mock_response.raise_for_status = Mock()
+
+        mock_client.send = AsyncMock(return_value=mock_response)
+
+        server = create_openapi_server(
+            openapi_spec=comprehensive_openapi_spec,
+            client=mock_client,
+        )
+
+        async with Client(server) as mcp_client:
+            await mcp_client.call_tool("get_user", {"id": 123})
+
+        # Verify request was made to localhost fallback
+        mock_client.send.assert_called_once()
+        request = mock_client.send.call_args[0][0]
+        assert str(request.url).startswith("http://localhost")
+
     async def test_complex_request_with_body_and_parameters(
         self, comprehensive_openapi_spec
     ):
