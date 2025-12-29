@@ -22,6 +22,8 @@ Often, an existing tool is *almost* perfect for your use case, but it might have
 
 Instead of rewriting the tool from scratch, you can **transform** it to fit your needs.
 
+Transformation is also powerful for **environment-aware tools**. You can dynamically update argument descriptions or `typing.Literal` enumerations to reflect the data actually available in your current environment.
+
 ## Basic Transformation
 
 The primary way to create a transformed tool is with the `Tool.from_tool()` class method. At its simplest, you can use it to change a tool's top-level metadata like its `name`, `description`, or `tags`.
