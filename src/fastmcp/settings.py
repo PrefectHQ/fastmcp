@@ -320,14 +320,15 @@ class Settings(BaseSettings):
         ),
     ] = False
 
-    show_cli_banner: Annotated[
+    show_server_banner: Annotated[
         bool,
         Field(
             description=inspect.cleandoc(
                 """
-                If True, the server banner will be displayed when running the server via CLI.
-                This setting can be overridden by the --no-banner CLI flag.
-                Set to False via FASTMCP_SHOW_CLI_BANNER=false to suppress the banner.
+                If True, the server banner will be displayed when running the server.
+                This setting can be overridden by the --no-banner CLI flag or by
+                passing show_banner=False to server.run().
+                Set to False via FASTMCP_SHOW_SERVER_BANNER=false to suppress the banner.
                 """
             ),
         ),

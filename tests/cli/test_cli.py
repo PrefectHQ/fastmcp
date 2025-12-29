@@ -374,8 +374,8 @@ class TestRunCommand:
         assert bound.arguments["project"] == Path("./test-env")
         assert bound.arguments["skip_source"] is True
 
-    def test_show_cli_banner_setting(self):
-        """Test that show_cli_banner setting works with environment variable."""
+    def test_show_server_banner_setting(self):
+        """Test that show_server_banner setting works with environment variable."""
         import os
         from unittest import mock
 
@@ -383,19 +383,19 @@ class TestRunCommand:
 
         # Test default (banner shown)
         settings = Settings()
-        assert settings.show_cli_banner is True
+        assert settings.show_server_banner is True
 
         # Test with env var set to false (banner hidden)
-        with mock.patch.dict(os.environ, {"FASTMCP_SHOW_CLI_BANNER": "false"}):
+        with mock.patch.dict(os.environ, {"FASTMCP_SHOW_SERVER_BANNER": "false"}):
             settings = Settings()
-            assert settings.show_cli_banner is False
+            assert settings.show_server_banner is False
 
         # Test CLI precedence logic (simulated)
-        with mock.patch.dict(os.environ, {"FASTMCP_SHOW_CLI_BANNER": "true"}):
+        with mock.patch.dict(os.environ, {"FASTMCP_SHOW_SERVER_BANNER": "true"}):
             settings = Settings()
             # CLI --no-banner flag would override
             cli_no_banner = True
-            final = cli_no_banner if cli_no_banner else not settings.show_cli_banner
+            final = cli_no_banner if cli_no_banner else not settings.show_server_banner
             assert final is True  # Banner suppressed by CLI flag
 
 

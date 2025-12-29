@@ -179,6 +179,15 @@ This applies to all auth providers: `GitHubProvider`, `GoogleProvider`, `AzurePr
 
 The `FastMCPSettings` class has also been simplified - it no longer includes auth-related settings that were previously loaded from environment variables.
 
+### Server Banner Environment Variable Renamed
+
+The environment variable for controlling the server banner has been renamed:
+
+- **Before:** `FASTMCP_SHOW_CLI_BANNER`
+- **After:** `FASTMCP_SHOW_SERVER_BANNER`
+
+This change reflects that the setting now applies to all server startup methods, not just the CLI. The banner is now suppressed when running `python server.py` directly, not just when using `fastmcp run`.
+
 ## v2.14.0
 
 ### OpenAPI Parser Promotion

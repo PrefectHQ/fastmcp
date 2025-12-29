@@ -423,8 +423,10 @@ async def run(
     final_log_level = log_level or config.deployment.log_level
     final_server_args = server_args or config.deployment.args
     # Use CLI override if provided, otherwise use settings
-    # no_banner CLI flag overrides the show_cli_banner setting
-    final_no_banner = no_banner if no_banner else not fastmcp.settings.show_cli_banner
+    # no_banner CLI flag overrides the show_server_banner setting
+    final_no_banner = (
+        no_banner if no_banner else not fastmcp.settings.show_server_banner
+    )
 
     logger.debug(
         "Running server or client",

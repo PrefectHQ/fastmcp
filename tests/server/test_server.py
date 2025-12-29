@@ -1,6 +1,8 @@
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from textwrap import dedent
+from unittest import mock
 
 from mcp.types import TextContent, TextResourceContents
 
@@ -417,3 +419,51 @@ class TestMeta:
             tool = next(t for t in tools if t.name == "sample_tool")
             assert tool.meta is not None
             assert set(tool.meta["_fastmcp"]["tags"]) == {"test-tag"}
+
+
+class TestShowServerBannerSetting:
+    """Test that show_server_banner setting controls banner display."""
+
+    async def test_show_banner_defaults_to_setting_true(self):
+        """Test that show_banner=None uses the setting (default True)."""
+        mcp = FastMCP()
+
+        with mock.patch.object(mcp, "run_stdio_async") as mock_run:
+            mock_run.return_value = None
+            await mcp.run_async(transport="stdio")
+            mock_run.assert_called_once()
+            assert mock_run.call_args.kwargs["show_banner"] is True
+
+    async def test_show_banner_respects_setting_false(self):
+        """Test that show_banner=None uses the setting when False."""
+        mcp = FastMCP()
+
+        with mock.patch.dict(os.environ, {"FASTMCP_SHOW_SERVER_BANNER": "false"}):
+            with temporary_settings(show_server_banner=False):
+                with mock.patch.object(mcp, "run_stdio_async") as mock_run:
+                    mock_run.return_value = None
+                    await mcp.run_async(transport="stdio")
+                    mock_run.assert_called_once()
+                    assert mock_run.call_args.kwargs["show_banner"] is False
+
+    async def test_show_banner_explicit_true_overrides_setting(self):
+        """Test that explicit show_banner=True overrides False setting."""
+        mcp = FastMCP()
+
+        with temporary_settings(show_server_banner=False):
+            with mock.patch.object(mcp, "run_stdio_async") as mock_run:
+                mock_run.return_value = None
+                await mcp.run_async(transport="stdio", show_banner=True)
+                mock_run.assert_called_once()
+                assert mock_run.call_args.kwargs["show_banner"] is True
+
+    async def test_show_banner_explicit_false_overrides_setting(self):
+        """Test that explicit show_banner=False overrides True setting."""
+        mcp = FastMCP()
+
+        with temporary_settings(show_server_banner=True):
+            with mock.patch.object(mcp, "run_stdio_async") as mock_run:
+                mock_run.return_value = None
+                await mcp.run_async(transport="stdio", show_banner=False)
+                mock_run.assert_called_once()
+                assert mock_run.call_args.kwargs["show_banner"] is False

@@ -556,14 +556,18 @@ class FastMCP(Generic[LifespanResultT]):
     async def run_async(
         self,
         transport: Transport | None = None,
-        show_banner: bool = True,
+        show_banner: bool | None = None,
         **transport_kwargs: Any,
     ) -> None:
         """Run the FastMCP server asynchronously.
 
         Args:
             transport: Transport protocol to use ("stdio", "sse", or "streamable-http")
+            show_banner: Whether to display the server banner. If None, uses the
+                FASTMCP_SHOW_SERVER_BANNER setting (default: True).
         """
+        if show_banner is None:
+            show_banner = fastmcp.settings.show_server_banner
         if transport is None:
             transport = "stdio"
         if transport not in {"stdio", "http", "sse", "streamable-http"}:
@@ -586,13 +590,15 @@ class FastMCP(Generic[LifespanResultT]):
     def run(
         self,
         transport: Transport | None = None,
-        show_banner: bool = True,
+        show_banner: bool | None = None,
         **transport_kwargs: Any,
     ) -> None:
         """Run the FastMCP server. Note this is a synchronous function.
 
         Args:
             transport: Transport protocol to use ("http", "stdio", "sse", or "streamable-http")
+            show_banner: Whether to display the server banner. If None, uses the
+                FASTMCP_SHOW_SERVER_BANNER setting (default: True).
         """
 
         anyio.run(
