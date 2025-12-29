@@ -1,3 +1,4 @@
+from mcp.types import ToolAnnotations
 from phue2 import Bridge
 
 from fastmcp import FastMCP
@@ -11,7 +12,7 @@ hub_mcp.mount(lights_mcp, prefix="hue")
 
 
 # Add a status check for the hub
-@hub_mcp.tool
+@hub_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
 def hub_status() -> str:
     """Checks the status of the main hub and connections."""
     try:
