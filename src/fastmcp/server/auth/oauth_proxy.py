@@ -34,7 +34,6 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client
 from cryptography.fernet import Fernet
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
-from key_value.aio.stores.disk import DiskStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.server.auth.provider import (
     AccessToken,
@@ -812,6 +811,9 @@ class OAuthProxy(OAuthProvider):
 
         # If the user does not provide a store, we will provide an encrypted disk store
         if client_storage is None:
+            # Import lazily to avoid sqlite3 dependency when not using OAuthProxy
+            from key_value.aio.stores.disk import DiskStore
+
             storage_encryption_key = derive_jwt_key(
                 high_entropy_material=jwt_signing_key.decode(),
                 salt="fastmcp-storage-encryption-key",
