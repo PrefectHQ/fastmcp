@@ -47,19 +47,19 @@ class AccessToken(_SDKAccessToken):
 
 
 class TokenHandler(_SDKTokenHandler):
-    """TokenHandler that returns OAuth 2.1 compliant error responses.
+    """TokenHandler that returns MCP-compliant error responses.
 
-    The MCP SDK returns `unauthorized_client` for client authentication failures.
-    However, per RFC 6749 Section 5.2, authentication failures should return
-    `invalid_client` with HTTP 401, not `unauthorized_client`.
+    This handler addresses two SDK issues:
 
-    This distinction matters: `unauthorized_client` means "client exists but
-    can't do this", while `invalid_client` means "client doesn't exist or
-    credentials are wrong". Claude's OAuth client uses this to decide whether
-    to re-register.
+    1. Error code: The SDK returns `unauthorized_client` for client authentication
+       failures, but RFC 6749 Section 5.2 requires `invalid_client` with HTTP 401.
+       This distinction matters for client re-registration behavior.
 
-    This handler transforms 401 responses with `unauthorized_client` to use
-    `invalid_client` instead, making the error semantics correct per OAuth spec.
+    2. Status code: The SDK returns HTTP 400 for all token errors including
+       `invalid_grant` (expired/invalid tokens). However, the MCP spec requires:
+       "Invalid or expired tokens MUST receive a HTTP 401 response."
+
+    This handler transforms responses to be compliant with both OAuth 2.1 and MCP specs.
     """
 
     async def handle(self, request: Any):
@@ -74,6 +74,26 @@ class TokenHandler(_SDKTokenHandler):
                     return PydanticJSONResponse(
                         content=TokenErrorResponse(
                             error="invalid_client",
+                            error_description=body.get("error_description"),
+                        ),
+                        status_code=401,
+                        headers={
+                            "Cache-Control": "no-store",
+                            "Pragma": "no-cache",
+                        },
+                    )
+            except (json.JSONDecodeError, AttributeError):
+                pass  # Not JSON or unexpected format, return as-is
+
+        # Transform 400 invalid_grant -> 401 for expired/invalid tokens
+        # Per MCP spec: "Invalid or expired tokens MUST receive a HTTP 401 response."
+        if response.status_code == 400:
+            try:
+                body = json.loads(response.body)
+                if body.get("error") == "invalid_grant":
+                    return PydanticJSONResponse(
+                        content=TokenErrorResponse(
+                            error="invalid_grant",
                             error_description=body.get("error_description"),
                         ),
                         status_code=401,

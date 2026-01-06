@@ -1303,24 +1303,60 @@ class TestTokenHandlerErrorTransformation:
         assert response.status_code == 400
         assert b'"error":"unauthorized_client"' in response.body
 
-    def test_does_not_transform_other_errors(self):
-        """Test that other error types pass through unchanged."""
+    async def test_transforms_invalid_grant_to_401(self):
+        """Test that invalid_grant errors return 401 per MCP spec.
+
+        Per MCP spec: "Invalid or expired tokens MUST receive a HTTP 401 response."
+        The SDK incorrectly returns 400 for all TokenErrorResponse including invalid_grant.
+        """
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.auth.handlers.token import TokenHandler as SDKTokenHandler
+
+        from fastmcp.server.auth.auth import TokenHandler
+
+        handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
+
+        # Create a mock 400 response like the SDK returns for invalid_grant
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_response.body = (
+            b'{"error":"invalid_grant","error_description":"refresh token has expired"}'
+        )
+
+        # Patch the parent class's handle() to return our mock response
+        with patch.object(
+            SDKTokenHandler,
+            "handle",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = await handler.handle(Mock())
+
+        # Should transform to MCP-compliant 401 response
+        assert response.status_code == 401
+        assert b'"error":"invalid_grant"' in response.body
+        assert b'"error_description":"refresh token has expired"' in response.body
+
+    def test_does_not_transform_other_400_errors(self):
+        """Test that non-invalid_grant 400 errors pass through unchanged."""
         from mcp.server.auth.handlers.token import TokenErrorResponse
 
         from fastmcp.server.auth.auth import TokenHandler
 
         handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
 
+        # Test with invalid_request error (should stay 400)
         error_response = TokenErrorResponse(
-            error="invalid_grant",
-            error_description="Authorization code has expired",
+            error="invalid_request",
+            error_description="Missing required parameter",
         )
 
         response = handler.response(error_response)
 
-        # Should pass through unchanged
+        # Should pass through unchanged as 400
         assert response.status_code == 400
-        assert b'"error":"invalid_grant"' in response.body
+        assert b'"error":"invalid_request"' in response.body
 
 
 class TestErrorPageRendering:
