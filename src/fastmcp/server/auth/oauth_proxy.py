@@ -1576,7 +1576,7 @@ class OAuthProxy(OAuthProvider):
         )
 
         # Store new refresh token JTI mapping with aligned expiry
-        refresh_ttl = new_refresh_expires_in or 60 * 60 * 24 * 30
+        # (reuse refresh_ttl calculated above for upstream token store)
         await self._jti_mapping_store.put(
             key=new_refresh_jti,
             value=JTIMapping(
