@@ -106,10 +106,13 @@ class TokenStorageAdapter(TokenStorage):
 
     @override
     async def set_tokens(self, tokens: OAuthToken) -> None:
+        # Don't set TTL based on access token expiry - the refresh token may be
+        # valid much longer. Use 1 year as a reasonable upper bound; the OAuth
+        # provider handles actual token expiry/refresh logic.
         await self._storage_oauth_token.put(
             key=self._get_token_cache_key(),
             value=tokens,
-            ttl=tokens.expires_in,
+            ttl=60 * 60 * 24 * 365,  # 1 year
         )
 
     @override

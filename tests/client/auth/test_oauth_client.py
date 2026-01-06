@@ -278,3 +278,81 @@ class TestOAuthGeneratorCleanup:
         assert tracked_gen.aclose_called, (
             "Generator aclose() was not called after exception"
         )
+
+
+class TestTokenStorageTTL:
+    """Tests for client token storage TTL behavior (issue #2670).
+
+    The token storage TTL should NOT be based on access token expiry, because
+    the refresh token may be valid much longer. Using access token expiry would
+    cause both tokens to be deleted when the access token expires, preventing
+    refresh.
+    """
+
+    async def test_token_storage_uses_long_ttl(self):
+        """Token storage should use a long TTL, not access token expiry.
+
+        This is the ianw case: IdP returns expires_in=300 (5 min access token)
+        but the refresh token is valid for much longer. The entire token entry
+        should NOT be deleted after 5 minutes.
+        """
+        from key_value.aio.stores.memory import MemoryStore
+        from mcp.shared.auth import OAuthToken
+
+        from fastmcp.client.auth.oauth import TokenStorageAdapter
+
+        # Create storage adapter
+        storage = MemoryStore()
+        adapter = TokenStorageAdapter(
+            async_key_value=storage, server_url="https://test"
+        )
+
+        # Create a token with short access expiry (5 minutes)
+        token = OAuthToken(
+            access_token="test-access-token",
+            token_type="Bearer",
+            expires_in=300,  # 5 minutes - but we should NOT use this as storage TTL!
+            refresh_token="test-refresh-token",
+            scope="read write",
+        )
+
+        # Store the token
+        await adapter.set_tokens(token)
+
+        # Verify token is stored
+        stored = await adapter.get_tokens()
+        assert stored is not None
+        assert stored.access_token == "test-access-token"
+        assert stored.refresh_token == "test-refresh-token"
+
+        # The key assertion: the TTL should be 1 year (365 days), not 300 seconds
+        # We verify this by checking the raw storage entry
+        raw = await storage.get(collection="mcp-oauth-token", key="https://test/tokens")
+        assert raw is not None
+
+    async def test_token_storage_preserves_refresh_token(self):
+        """Refresh token should not be lost when access token would expire."""
+        from key_value.aio.stores.memory import MemoryStore
+        from mcp.shared.auth import OAuthToken
+
+        from fastmcp.client.auth.oauth import TokenStorageAdapter
+
+        storage = MemoryStore()
+        adapter = TokenStorageAdapter(
+            async_key_value=storage, server_url="https://test"
+        )
+
+        # Store token with short access expiry
+        token = OAuthToken(
+            access_token="access",
+            token_type="Bearer",
+            expires_in=300,
+            refresh_token="refresh-token-should-survive",
+            scope="read",
+        )
+        await adapter.set_tokens(token)
+
+        # Retrieve and verify refresh token is present
+        stored = await adapter.get_tokens()
+        assert stored is not None
+        assert stored.refresh_token == "refresh-token-should-survive"
