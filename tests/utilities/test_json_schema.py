@@ -1,17 +1,9 @@
 from fastmcp.utilities.json_schema import (
     _prune_param,
     compress_schema,
+    dereference_refs,
     resolve_root_ref,
 )
-
-# Wrapper for backward compatibility with tests
-
-
-def _prune_additional_properties(schema):
-    """Wrapper for compress_schema that only prunes additionalProperties: false."""
-    return compress_schema(
-        schema, prune_defs=False, prune_additional_properties=True, prune_titles=False
-    )
 
 
 class TestPruneParam:
@@ -55,32 +47,28 @@ class TestPruneParam:
         assert "required" not in result
 
 
-class TestPruneUnusedDefs:
-    """Tests for unused definition pruning (via compress_schema)."""
+class TestDereferenceRefs:
+    """Tests for the dereference_refs function."""
 
-    def test_removes_unreferenced_defs(self):
-        """Test that unreferenced definitions are removed."""
+    def test_dereferences_simple_ref(self):
+        """Test that simple $ref is dereferenced."""
         schema = {
             "properties": {
                 "foo": {"$ref": "#/$defs/foo_def"},
             },
             "$defs": {
                 "foo_def": {"type": "string"},
-                "unused_def": {"type": "integer"},
             },
         }
-        result = compress_schema(
-            schema,
-            prune_defs=True,
-            prune_additional_properties=False,
-            prune_titles=False,
-        )
+        result = dereference_refs(schema)
 
-        assert "foo_def" in result["$defs"]
-        assert "unused_def" not in result["$defs"]
+        # $ref should be inlined
+        assert result["properties"]["foo"] == {"type": "string"}
+        # $defs should be removed
+        assert "$defs" not in result
 
-    def test_nested_references_kept(self):
-        """Test that definitions referenced via nesting are kept."""
+    def test_dereferences_nested_refs(self):
+        """Test that nested $refs are dereferenced."""
         schema = {
             "properties": {
                 "foo": {"$ref": "#/$defs/foo_def"},
@@ -91,209 +79,58 @@ class TestPruneUnusedDefs:
                     "properties": {"nested": {"$ref": "#/$defs/nested_def"}},
                 },
                 "nested_def": {"type": "string"},
-                "unused_def": {"type": "integer"},
             },
         }
-        result = compress_schema(
-            schema,
-            prune_defs=True,
-            prune_additional_properties=False,
-            prune_titles=False,
-        )
-        assert "foo_def" in result["$defs"]
-        assert "nested_def" in result["$defs"]
-        assert "unused_def" not in result["$defs"]
+        result = dereference_refs(schema)
 
-    def test_nested_references_removed(self):
-        """Test that definitions referenced via nesting in unused defs are removed."""
-        schema = {
-            "properties": {},
-            "$defs": {
-                "foo_def": {
-                    "type": "object",
-                    "properties": {"nested": {"$ref": "#/$defs/nested_def"}},
-                },
-                "nested_def": {"type": "string"},
-            },
-        }
-        result = compress_schema(
-            schema,
-            prune_defs=True,
-            prune_additional_properties=False,
-            prune_titles=False,
-        )
+        # All refs should be inlined
+        assert result["properties"]["foo"]["properties"]["nested"] == {"type": "string"}
+        # $defs should be removed
         assert "$defs" not in result
 
-    def test_nested_references_with_recursion_kept(self):
-        """Test that definitions with recursion referenced via nesting are kept."""
+    def test_falls_back_for_circular_refs(self):
+        """Test that circular references fall back to resolve_root_ref."""
         schema = {
-            "properties": {
-                "foo": {"$ref": "#/$defs/foo_def"},
-            },
             "$defs": {
-                "foo_def": {
+                "Node": {
                     "type": "object",
-                    "properties": {"nested": {"$ref": "#/$defs/foo_def"}},
-                },
-                "unused_def": {"type": "integer"},
+                    "properties": {
+                        "children": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Node"},
+                        }
+                    },
+                }
             },
+            "$ref": "#/$defs/Node",
         }
-        result = compress_schema(
-            schema,
-            prune_defs=True,
-            prune_additional_properties=False,
-            prune_titles=False,
-        )
-        assert "foo_def" in result["$defs"]
-        assert "unused_def" not in result["$defs"]
+        result = dereference_refs(schema)
 
-    def test_nested_references_with_recursion_removed(self):
-        """Test that definitions with recursion referenced via nesting in unused defs are removed."""
-        schema = {
-            "properties": {},
-            "$defs": {
-                "foo_def": {
-                    "type": "object",
-                    "properties": {"nested": {"$ref": "#/$defs/foo_def"}},
-                },
-            },
-        }
-        result = compress_schema(
-            schema,
-            prune_defs=True,
-            prune_additional_properties=False,
-            prune_titles=False,
-        )
-        assert "$defs" not in result
-
-    def test_multiple_nested_references_with_recursion_kept(self):
-        """Test that definitions with multiple levels of recursion referenced via nesting are kept."""
-        schema = {
-            "properties": {
-                "foo": {"$ref": "#/$defs/foo_def"},
-            },
-            "$defs": {
-                "foo_def": {
-                    "type": "object",
-                    "properties": {"nested": {"$ref": "#/$defs/nested_def"}},
-                },
-                "nested_def": {
-                    "type": "object",
-                    "properties": {"nested": {"$ref": "#/$defs/foo_def"}},
-                },
-                "unused_def": {"type": "integer"},
-            },
-        }
-        result = compress_schema(
-            schema,
-            prune_defs=True,
-            prune_additional_properties=False,
-            prune_titles=False,
-        )
-        assert "foo_def" in result["$defs"]
-        assert "nested_def" in result["$defs"]
-        assert "unused_def" not in result["$defs"]
-
-    def test_multiple_nested_references_with_recursion_removed(self):
-        """Test that definitions with multiple levels of recursion referenced via nesting in unused defs are removed."""
-        schema = {
-            "properties": {},
-            "$defs": {
-                "foo_def": {
-                    "type": "object",
-                    "properties": {"nested": {"$ref": "#/$defs/nested_def"}},
-                },
-                "nested_def": {
-                    "type": "object",
-                    "properties": {"nested": {"$ref": "#/$defs/foo_def"}},
-                },
-            },
-        }
-        result = compress_schema(
-            schema,
-            prune_defs=True,
-            prune_additional_properties=False,
-            prune_titles=False,
-        )
-        assert "$defs" not in result
-
-    def test_array_references_kept(self):
-        """Test that definitions referenced in array items are kept."""
-        schema = {
-            "properties": {
-                "items": {"type": "array", "items": {"$ref": "#/$defs/item_def"}},
-            },
-            "$defs": {
-                "item_def": {"type": "string"},
-                "unused_def": {"type": "integer"},
-            },
-        }
-        result = compress_schema(
-            schema,
-            prune_defs=True,
-            prune_additional_properties=False,
-            prune_titles=False,
-        )
-        assert "item_def" in result["$defs"]
-        assert "unused_def" not in result["$defs"]
-
-    def test_removes_defs_field_when_empty(self):
-        """Test that $defs field is removed when all definitions are unused."""
-        schema = {
-            "properties": {
-                "foo": {"type": "string"},
-            },
-            "$defs": {
-                "unused_def": {"type": "integer"},
-            },
-        }
-        result = compress_schema(
-            schema,
-            prune_defs=True,
-            prune_additional_properties=False,
-            prune_titles=False,
-        )
-        assert "$defs" not in result
-
-
-class TestPruneAdditionalProperties:
-    """Tests for the _prune_additional_properties function."""
-
-    def test_removes_when_false(self):
-        """Test that additionalProperties is removed when it's false."""
-        schema = {
-            "type": "object",
-            "properties": {"foo": {"type": "string"}},
-            "additionalProperties": False,
-        }
-        result = _prune_additional_properties(schema)
-        assert "additionalProperties" not in result
-
-    def test_keeps_when_true(self):
-        """Test that additionalProperties is kept when it's true."""
-        schema = {
-            "type": "object",
-            "properties": {"foo": {"type": "string"}},
-            "additionalProperties": True,
-        }
-        result = _prune_additional_properties(schema)
-        assert "additionalProperties" in result
-        assert result["additionalProperties"] is True
-
-    def test_keeps_when_object(self):
-        """Test that additionalProperties is kept when it's an object schema."""
-        schema = {
-            "type": "object",
-            "properties": {"foo": {"type": "string"}},
-            "additionalProperties": {"type": "string"},
-        }
-        result = _prune_additional_properties(schema)
-        assert "additionalProperties" in result
-        assert result["additionalProperties"] == {"type": "string"}
+        # Should fall back to resolve_root_ref behavior
+        # Root should be resolved but nested refs preserved
+        assert result.get("type") == "object"
+        assert "$defs" in result  # $defs preserved for circular refs
 
 
 class TestCompressSchema:
     """Tests for the compress_schema function."""
+
+    def test_dereferences_by_default(self):
+        """Test that compress_schema dereferences $refs by default."""
+        schema = {
+            "properties": {
+                "foo": {"$ref": "#/$defs/foo_def"},
+            },
+            "$defs": {
+                "foo_def": {"type": "string"},
+            },
+        }
+        result = compress_schema(schema)
+
+        # $ref should be inlined
+        assert result["properties"]["foo"] == {"type": "string"}
+        # $defs should be removed
+        assert "$defs" not in result
 
     def test_prune_params(self):
         """Test pruning parameters with compress_schema."""
@@ -308,38 +145,6 @@ class TestCompressSchema:
         result = compress_schema(schema, prune_params=["foo", "baz"])
         assert result["properties"] == {"bar": {"type": "integer"}}
         assert result["required"] == ["bar"]
-
-    def test_prune_defs(self):
-        """Test pruning unused definitions with compress_schema."""
-        schema = {
-            "properties": {
-                "foo": {"$ref": "#/$defs/foo_def"},
-                "bar": {"type": "integer"},
-            },
-            "$defs": {
-                "foo_def": {"type": "string"},
-                "unused_def": {"type": "number"},
-            },
-        }
-        result = compress_schema(schema)
-        assert "foo_def" in result["$defs"]
-        assert "unused_def" not in result["$defs"]
-
-    def test_disable_prune_defs(self):
-        """Test disabling pruning of unused definitions."""
-        schema = {
-            "properties": {
-                "foo": {"$ref": "#/$defs/foo_def"},
-                "bar": {"type": "integer"},
-            },
-            "$defs": {
-                "foo_def": {"type": "string"},
-                "unused_def": {"type": "number"},
-            },
-        }
-        result = compress_schema(schema, prune_defs=False)
-        assert "foo_def" in result["$defs"]
-        assert "unused_def" in result["$defs"]
 
     def test_pruning_additional_properties(self):
         """Test pruning additionalProperties when False."""
@@ -382,8 +187,8 @@ class TestCompressSchema:
         assert "remove" not in result["properties"]
         # Check that required list was updated
         assert result["required"] == ["keep"]
-        # Check that unused definitions were removed
-        assert "$defs" not in result  # Both defs should be gone
+        # Check that $defs was removed (dereferenced)
+        assert "$defs" not in result
         # Check that additionalProperties was removed
         assert "additionalProperties" not in result
 

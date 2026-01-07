@@ -580,8 +580,8 @@ class TestEdgeCases:
             len(properties) > 0
         )  # Should have some properties from one of the content types
 
-    def test_oneof_reference_preserved(self):
-        """Test that schemas referenced in oneOf are preserved."""
+    def test_oneof_reference_dereferenced(self):
+        """Test that schemas referenced in oneOf are dereferenced."""
 
         schema = {
             "type": "object",
@@ -594,14 +594,14 @@ class TestEdgeCases:
 
         result = compress_schema(schema)
 
-        # TestSchema should be preserved (referenced in oneOf)
-        assert "TestSchema" in result["$defs"]
+        # $defs should be removed (all refs dereferenced)
+        assert "$defs" not in result
 
-        # UnusedSchema should be removed
-        assert "UnusedSchema" not in result["$defs"]
+        # TestSchema should be inlined in oneOf
+        assert result["properties"]["data"]["oneOf"] == [{"type": "string"}]
 
-    def test_anyof_reference_preserved(self):
-        """Test that schemas referenced in anyOf are preserved."""
+    def test_anyof_reference_dereferenced(self):
+        """Test that schemas referenced in anyOf are dereferenced."""
 
         schema = {
             "type": "object",
@@ -614,11 +614,14 @@ class TestEdgeCases:
 
         result = compress_schema(schema)
 
-        assert "TestSchema" in result["$defs"]
-        assert "UnusedSchema" not in result["$defs"]
+        # $defs should be removed (all refs dereferenced)
+        assert "$defs" not in result
 
-    def test_allof_reference_preserved(self):
-        """Test that schemas referenced in allOf are preserved."""
+        # TestSchema should be inlined in anyOf
+        assert result["properties"]["data"]["anyOf"] == [{"type": "string"}]
+
+    def test_allof_reference_dereferenced(self):
+        """Test that schemas referenced in allOf are dereferenced."""
 
         schema = {
             "type": "object",
@@ -631,5 +634,8 @@ class TestEdgeCases:
 
         result = compress_schema(schema)
 
-        assert "TestSchema" in result["$defs"]
-        assert "UnusedSchema" not in result["$defs"]
+        # $defs should be removed (all refs dereferenced)
+        assert "$defs" not in result
+
+        # TestSchema should be inlined in allOf
+        assert result["properties"]["data"]["allOf"] == [{"type": "string"}]

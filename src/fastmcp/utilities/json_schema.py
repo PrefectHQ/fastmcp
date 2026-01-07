@@ -3,6 +3,52 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+from jsonref import JsonRefError, replace_refs
+
+
+def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Resolve all $ref references in a JSON schema by inlining definitions.
+
+    This function resolves $ref references that point to $defs, replacing them
+    with the actual definition content. This is necessary because some MCP clients
+    (e.g., VS Code Copilot) don't properly handle $ref in tool input schemas.
+
+    For self-referencing/circular schemas where full dereferencing is not possible,
+    this function falls back to resolving only the root-level $ref while preserving
+    $defs for nested references.
+
+    Args:
+        schema: JSON schema dict that may contain $ref references
+
+    Returns:
+        A new schema dict with $ref resolved where possible and $defs removed
+        when no longer needed
+
+    Example:
+        >>> schema = {
+        ...     "$defs": {"Category": {"enum": ["a", "b"], "type": "string"}},
+        ...     "properties": {"cat": {"$ref": "#/$defs/Category"}}
+        ... }
+        >>> resolved = dereference_refs(schema)
+        >>> # Result: {"properties": {"cat": {"enum": ["a", "b"], "type": "string"}}}
+    """
+    try:
+        # Use jsonref to resolve all $ref references
+        # proxies=False returns plain dicts (not proxy objects)
+        # lazy_load=False resolves immediately
+        dereferenced = replace_refs(schema, proxies=False, lazy_load=False)
+
+        # Remove $defs since all references have been resolved
+        if isinstance(dereferenced, dict) and "$defs" in dereferenced:
+            dereferenced = {k: v for k, v in dereferenced.items() if k != "$defs"}
+
+        return dereferenced
+
+    except JsonRefError:
+        # Self-referencing/circular schemas can't be fully dereferenced
+        # Fall back to resolving only root-level $ref (for MCP spec compliance)
+        return resolve_root_ref(schema)
+
 
 def resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]:
     """Resolve $ref at root level to meet MCP spec requirements.
@@ -240,31 +286,38 @@ def _single_pass_optimize(
 def compress_schema(
     schema: dict,
     prune_params: list[str] | None = None,
-    prune_defs: bool = True,
     prune_additional_properties: bool = True,
     prune_titles: bool = False,
 ) -> dict:
     """
-    Remove the given parameters from the schema.
+    Compress and optimize a JSON schema for MCP compatibility.
+
+    This function dereferences all $ref entries (inlining definitions) to ensure
+    compatibility with MCP clients that don't properly handle $ref in schemas
+    (e.g., VS Code Copilot). It also applies various optimizations to reduce
+    schema size.
 
     Args:
         schema: The schema to compress
         prune_params: List of parameter names to remove from properties
-        prune_defs: Whether to remove unused definitions
         prune_additional_properties: Whether to remove additionalProperties: false
         prune_titles: Whether to remove title fields from the schema
     """
+    # Dereference $ref - this inlines all definitions and removes $defs
+    # Required for MCP client compatibility
+    schema = dereference_refs(schema)
+
     # Remove specific parameters if requested
     for param in prune_params or []:
         schema = _prune_param(schema, param=param)
 
     # Apply combined optimizations in a single tree traversal
-    if prune_titles or prune_additional_properties or prune_defs:
+    if prune_titles or prune_additional_properties:
         schema = _single_pass_optimize(
             schema,
             prune_titles=prune_titles,
             prune_additional_properties=prune_additional_properties,
-            prune_defs=prune_defs,
+            prune_defs=False,
         )
 
     return schema

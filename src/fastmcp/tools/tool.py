@@ -34,7 +34,7 @@ import fastmcp
 from fastmcp.server.dependencies import without_injected_parameters
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
-from fastmcp.utilities.json_schema import compress_schema, resolve_root_ref
+from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     Audio,
@@ -685,10 +685,6 @@ class ParsedFunction:
                     output_schema = base_schema
 
                 output_schema = compress_schema(output_schema, prune_titles=True)
-
-                # Resolve root-level $ref to meet MCP spec requirement for type: object
-                # Self-referential Pydantic models generate schemas with $ref at root
-                output_schema = resolve_root_ref(output_schema)
 
             except PydanticSchemaGenerationError as e:
                 if "_UnserializableType" not in str(e):

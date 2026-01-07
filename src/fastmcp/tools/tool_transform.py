@@ -680,7 +680,7 @@ class TransformedTool(Tool):
 
         if parent_defs:
             schema["$defs"] = parent_defs
-            schema = compress_schema(schema, prune_defs=True)
+            schema = compress_schema(schema)
 
         # Create forwarding function that closes over everything it needs
         async def _forward(**kwargs: Any):
@@ -863,7 +863,7 @@ class TransformedTool(Tool):
 
         if merged_defs:
             result["$defs"] = merged_defs
-            result = compress_schema(result, prune_defs=True)
+            result = compress_schema(result)
 
         return result
 
