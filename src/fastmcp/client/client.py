@@ -686,6 +686,8 @@ class Client(Generic[ClientTransportT]):
 
         # If session task already failed, raise immediately
         if session_task.done():
+            # Close the coroutine to avoid "was never awaited" warning
+            coro.close()
             exc = session_task.exception()
             if exc:
                 raise exc

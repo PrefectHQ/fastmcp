@@ -110,6 +110,9 @@ filterwarnings = [
     # Suppress OAuth in-memory token storage warnings in tests
     # Tests intentionally use ephemeral storage; this warning is for end users
     "ignore:Using in-memory token storage:UserWarning",
+    # Treat unawaited coroutine warnings as errors - these are almost always bugs
+    "error:coroutine .* was never awaited:RuntimeWarning",
+    "error:Exception ignored in.*coroutine:pytest.PytestUnraisableExceptionWarning",
 ]
 timeout = 5
 env = [
