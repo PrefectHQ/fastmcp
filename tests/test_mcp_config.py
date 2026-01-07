@@ -70,6 +70,37 @@ def test_parse_single_stdio_config():
     assert transport.args == ["hello"]
 
 
+def test_stdio_config_keep_alive_passthrough():
+    """Test that keep_alive parameter is passed through from StdioMCPServer to StdioTransport."""
+    # Test with keep_alive=False
+    server = StdioMCPServer(command="test", keep_alive=False)
+    assert server.keep_alive is False
+    transport = server.to_transport()
+    assert isinstance(transport, StdioTransport)
+    assert transport.keep_alive is False
+
+    # Test with keep_alive=True
+    server = StdioMCPServer(command="test", keep_alive=True)
+    assert server.keep_alive is True
+    transport = server.to_transport()
+    assert isinstance(transport, StdioTransport)
+    assert transport.keep_alive is True
+
+    # Test with keep_alive=None (should default to True in StdioTransport)
+    server = StdioMCPServer(command="test", keep_alive=None)
+    assert server.keep_alive is None
+    transport = server.to_transport()
+    assert isinstance(transport, StdioTransport)
+    assert transport.keep_alive is True  # StdioTransport defaults to True
+
+    # Test with keep_alive not specified (should default to None, then True in StdioTransport)
+    server = StdioMCPServer(command="test")
+    assert server.keep_alive is None
+    transport = server.to_transport()
+    assert isinstance(transport, StdioTransport)
+    assert transport.keep_alive is True  # StdioTransport defaults to True
+
+
 def test_parse_extra_keys():
     config = {
         "mcpServers": {

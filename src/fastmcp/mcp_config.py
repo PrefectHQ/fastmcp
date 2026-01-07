@@ -143,6 +143,9 @@ class StdioMCPServer(BaseModel):
     # Execution context
     cwd: str | None = None  # Working directory for command execution
     timeout: int | None = None  # Maximum response time in milliseconds
+    keep_alive: bool | None = (
+        None  # Whether to keep the subprocess alive between connections
+    )
 
     # Metadata
     description: str | None = None  # Human-readable server description
@@ -161,6 +164,7 @@ class StdioMCPServer(BaseModel):
             args=self.args,
             env=self.env,
             cwd=self.cwd,
+            keep_alive=self.keep_alive,
         )
 
 
