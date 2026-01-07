@@ -143,6 +143,9 @@ python-version = "3.10"
 # Some code uses `# ty: ignore[invalid-argument-type]` for this limitation.
 # TODO: Remove these ignores once ty supports union narrowing
 
+[tool.ty.terminal]
+error-on-warning = true
+
 [tool.ruff.lint]
 fixable = ["ALL"]
 ignore = [

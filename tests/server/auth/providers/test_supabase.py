@@ -135,10 +135,11 @@ class TestSupabaseProvider:
         )
 
         assert provider.auth_route == "custom/auth/route"
+        assert isinstance(provider.token_verifier, JWTVerifier)
         assert (
             provider.token_verifier.jwks_uri
             == "https://abc123.supabase.co/custom/auth/route/.well-known/jwks.json"
-        )  # type: ignore[attr-defined]
+        )
 
     def test_custom_auth_route_trailing_slash(self):
         provider = SupabaseProvider(
