@@ -13,6 +13,7 @@ from typing import Annotated, Literal
 
 import cyclopts
 import pyperclip
+from cyclopts import Parameter
 from rich.console import Console
 from rich.table import Table
 
@@ -36,6 +37,8 @@ app = cyclopts.App(
     name="fastmcp",
     help="FastMCP 2.0 - The fast, Pythonic way to build MCP servers and clients.",
     version=fastmcp.__version__,
+    # Disable automatic negative parameters by default
+    default_parameter=Parameter(negative=()),
 )
 
 
@@ -90,11 +93,7 @@ def version(
     *,
     copy: Annotated[
         bool,
-        cyclopts.Parameter(
-            "--copy",
-            help="Copy version information to clipboard",
-            negative="",
-        ),
+        cyclopts.Parameter("--copy", help="Copy version information to clipboard"),
     ] = False,
 ):
     """Display version information and platform details."""
@@ -132,15 +131,12 @@ async def dev(
         cyclopts.Parameter(
             "--with-editable",
             help="Directory containing pyproject.toml to install in editable mode (can be used multiple times)",
-            negative="",
         ),
     ] = None,
     with_packages: Annotated[
         list[str] | None,
         cyclopts.Parameter(
-            "--with",
-            help="Additional packages to install (can be used multiple times)",
-            negative="",
+            "--with", help="Additional packages to install (can be used multiple times)"
         ),
     ] = None,
     inspector_version: Annotated[
@@ -324,11 +320,7 @@ async def run(
     ] = None,
     no_banner: Annotated[
         bool,
-        cyclopts.Parameter(
-            "--no-banner",
-            help="Don't show the server banner",
-            negative="",
-        ),
+        cyclopts.Parameter("--no-banner", help="Don't show the server banner"),
     ] = False,
     python: Annotated[
         str | None,
@@ -340,9 +332,7 @@ async def run(
     with_packages: Annotated[
         list[str] | None,
         cyclopts.Parameter(
-            "--with",
-            help="Additional packages to install (can be used multiple times)",
-            negative="",
+            "--with", help="Additional packages to install (can be used multiple times)"
         ),
     ] = None,
     project: Annotated[
@@ -364,7 +354,6 @@ async def run(
         cyclopts.Parameter(
             "--skip-source",
             help="Skip source preparation step (use when source is already prepared)",
-            negative="",
         ),
     ] = False,
     skip_env: Annotated[
@@ -372,7 +361,6 @@ async def run(
         cyclopts.Parameter(
             "--skip-env",
             help="Skip environment configuration (for internal use when already in a uv environment)",
-            negative="",
         ),
     ] = False,
 ) -> None:
@@ -547,9 +535,7 @@ async def inspect(
     with_packages: Annotated[
         list[str] | None,
         cyclopts.Parameter(
-            "--with",
-            help="Additional packages to install (can be used multiple times)",
-            negative="",
+            "--with", help="Additional packages to install (can be used multiple times)"
         ),
     ] = None,
     project: Annotated[
@@ -571,7 +557,6 @@ async def inspect(
         cyclopts.Parameter(
             "--skip-env",
             help="Skip environment configuration (for internal use when already in a uv environment)",
-            negative="",
         ),
     ] = False,
 ) -> None:
