@@ -7,8 +7,8 @@ from smart_home.settings import settings
 
 hub_mcp = FastMCP("Smart Home Hub (phue2)")
 
-# Mount the lights service under the 'hue' prefix
-hub_mcp.mount(lights_mcp, prefix="hue")
+# Mount the lights service under the 'hue' namespace
+hub_mcp.mount(lights_mcp, namespace="hue")
 
 
 # Add a status check for the hub

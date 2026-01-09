@@ -26,6 +26,16 @@ class HueAttributes(TypedDict, total=False):
             int,
             Field(
                 ge=0,
+                le=65535,
+                description="hue (color wheel position)",
+            ),
+        ]
+    ]
+    sat: NotRequired[
+        Annotated[
+            int,
+            Field(
+                ge=0,
                 le=254,
                 description="saturation",
             ),
