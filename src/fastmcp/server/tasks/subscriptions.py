@@ -107,8 +107,7 @@ async def _send_status_notification(
     key_parts = parse_task_key(task_key)
     session_id = key_parts["session_id"]
 
-    # Retrieve createdAt timestamp from Redis
-    created_at_key = f"fastmcp:task:{session_id}:{task_id}:created_at"
+    created_at_key = docket.key(f"fastmcp:task:{session_id}:{task_id}:created_at")
     async with docket.redis() as redis:
         created_at_bytes = await redis.get(created_at_key)
 
@@ -183,8 +182,7 @@ async def _send_progress_notification(
     key_parts = parse_task_key(task_key)
     session_id = key_parts["session_id"]
 
-    # Retrieve createdAt timestamp from Redis
-    created_at_key = f"fastmcp:task:{session_id}:{task_id}:created_at"
+    created_at_key = docket.key(f"fastmcp:task:{session_id}:{task_id}:created_at")
     async with docket.redis() as redis:
         created_at_bytes = await redis.get(created_at_key)
 

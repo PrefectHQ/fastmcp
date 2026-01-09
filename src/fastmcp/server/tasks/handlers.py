@@ -88,12 +88,16 @@ async def submit_to_docket(
     ttl_seconds = int(ttl_ms / 1000) + TASK_MAPPING_TTL_BUFFER_SECONDS
 
     # Store task metadata in Redis for protocol handlers
-    redis_key = f"fastmcp:task:{session_id}:{server_task_id}"
-    created_at_key = f"fastmcp:task:{session_id}:{server_task_id}:created_at"
-    poll_interval_key = f"fastmcp:task:{session_id}:{server_task_id}:poll_interval"
+    task_meta_key = docket.key(f"fastmcp:task:{session_id}:{server_task_id}")
+    created_at_key = docket.key(
+        f"fastmcp:task:{session_id}:{server_task_id}:created_at"
+    )
+    poll_interval_key = docket.key(
+        f"fastmcp:task:{session_id}:{server_task_id}:poll_interval"
+    )
     poll_interval_ms = int(component.task_config.poll_interval.total_seconds() * 1000)
     async with docket.redis() as redis:
-        await redis.set(redis_key, task_key, ex=ttl_seconds)
+        await redis.set(task_meta_key, task_key, ex=ttl_seconds)
         await redis.set(created_at_key, created_at.isoformat(), ex=ttl_seconds)
         await redis.set(poll_interval_key, str(poll_interval_ms), ex=ttl_seconds)
 

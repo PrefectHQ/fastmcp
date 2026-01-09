@@ -60,15 +60,18 @@ async def _lookup_task_execution(
     Raises:
         McpError: If task not found or execution not found
     """
-    # Build Redis keys
-    redis_key = f"fastmcp:task:{session_id}:{client_task_id}"
-    created_at_key = f"{redis_key}:created_at"
-    poll_interval_key = f"{redis_key}:poll_interval"
+    task_meta_key = docket.key(f"fastmcp:task:{session_id}:{client_task_id}")
+    created_at_key = docket.key(
+        f"fastmcp:task:{session_id}:{client_task_id}:created_at"
+    )
+    poll_interval_key = docket.key(
+        f"fastmcp:task:{session_id}:{client_task_id}:poll_interval"
+    )
 
     # Fetch metadata (single round-trip with mget)
     async with docket.redis() as redis:
         task_key_bytes, created_at_bytes, poll_interval_bytes = await redis.mget(
-            redis_key, created_at_key, poll_interval_key
+            task_meta_key, created_at_key, poll_interval_key
         )
 
     # Decode and validate task_key
@@ -225,9 +228,9 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
             )
 
         # Look up full task key from Redis
-        redis_key = f"fastmcp:task:{session_id}:{client_task_id}"
+        task_meta_key = docket.key(f"fastmcp:task:{session_id}:{client_task_id}")
         async with docket.redis() as redis:
-            task_key_bytes = await redis.get(redis_key)
+            task_key_bytes = await redis.get(task_meta_key)
 
         task_key = None if task_key_bytes is None else task_key_bytes.decode("utf-8")
 
