@@ -1,0 +1,379 @@
+---
+title: v3.0 Feature Tracking
+---
+
+This document tracks major features in FastMCP v3.0 for release notes preparation.
+
+## Provider-Based Architecture
+
+v3.0 introduces a provider-based component system that replaces v2's static-only registration. Providers dynamically source tools, resources, templates, and prompts at runtime.
+
+**Core abstraction** (`src/fastmcp/server/providers/base.py`):
+```python
+class Provider:
+    async def list_tools(self) -> Sequence[Tool]: ...
+    async def get_tool(self, name: str) -> Tool | None: ...
+    async def list_resources(self) -> Sequence[Resource]: ...
+    async def get_resource(self, uri: str) -> Resource | None: ...
+    async def list_resource_templates(self) -> Sequence[ResourceTemplate]: ...
+    async def get_resource_template(self, uri: str) -> ResourceTemplate | None: ...
+    async def list_prompts(self) -> Sequence[Prompt]: ...
+    async def get_prompt(self, name: str) -> Prompt | None: ...
+```
+
+Providers support:
+- **Lifecycle management**: `async def lifespan()` for setup/teardown
+- **Visibility control**: `enable()` / `disable()` with keys, tags, and allowlist mode
+- **Transformation chaining**: `provider.with_transforms(namespace=..., tool_renames=...)`
+
+### LocalProvider
+
+`LocalProvider` (`src/fastmcp/server/providers/local_provider.py`) manages components registered via decorators. Can be used standalone and attached to multiple servers:
+
+```python
+from fastmcp.server.providers import LocalProvider
+
+provider = LocalProvider()
+
+@provider.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+# Attach to multiple servers
+server1 = FastMCP("Server1", providers=[provider])
+server2 = FastMCP("Server2", providers=[provider])
+```
+
+### ProxyProvider
+
+`ProxyProvider` (`src/fastmcp/server/providers/proxy.py`) proxies components from remote MCP servers via a client factory. Used by `FastMCP.as_proxy()` and `FastMCP.mount()` for remote server integration.
+
+```python
+from fastmcp import FastMCP
+
+# Create proxy to remote server
+server = FastMCP.as_proxy("http://remote-server/mcp")
+```
+
+### OpenAPIProvider
+
+`OpenAPIProvider` (`src/fastmcp/server/providers/openapi/provider.py`) creates MCP components from OpenAPI specifications. Routes map HTTP operations to tools, resources, or templates based on configurable rules.
+
+```python
+from fastmcp.server.providers.openapi import OpenAPIProvider
+import httpx
+
+client = httpx.AsyncClient(base_url="https://api.example.com")
+provider = OpenAPIProvider(openapi_spec=spec, client=client)
+
+mcp = FastMCP("API Server", providers=[provider])
+```
+
+Features:
+- Automatic route-to-component mapping (GET → resource, POST/PUT/DELETE → tool)
+- Custom route mappings via `route_maps` or `route_map_fn`
+- Component customization via `mcp_component_fn`
+- Name collision detection and handling
+
+### FastMCPProvider
+
+`FastMCPProvider` (`src/fastmcp/server/providers/fastmcp_provider.py`) wraps a FastMCP server to enable mounting one server onto another. Components delegate execution through the wrapped server's middleware chain.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers import FastMCPProvider
+
+main = FastMCP("Main")
+sub = FastMCP("Sub")
+
+@sub.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+# Mount with namespace
+main.add_provider(FastMCPProvider(sub).with_namespace("sub"))
+# Tool accessible as "sub_greet"
+```
+
+### TransformingProvider
+
+`TransformingProvider` (`src/fastmcp/server/providers/transforming.py`) wraps any provider to apply namespace prefixes and tool renames. Usually accessed via `provider.with_transforms()`.
+
+```python
+provider = SomeProvider().with_transforms(
+    namespace="api",
+    tool_renames={"verbose_tool_name": "short"}
+)
+
+# Stacking composes transformations
+provider = (
+    SomeProvider()
+    .with_transforms(namespace="api")
+    .with_transforms(tool_renames={"api_foo": "bar"})
+)
+# "foo" → "api_foo" → "bar"
+```
+
+---
+
+## Visibility System
+
+Components can be dynamically enabled/disabled at runtime using the visibility system (`src/fastmcp/utilities/visibility.py`).
+
+```python
+mcp = FastMCP("Server")
+
+# Disable specific components
+mcp.disable(keys=["tool:dangerous_tool"])
+
+# Disable by tag
+mcp.disable(tags={"admin"})
+
+# Allowlist mode - only show these
+mcp.enable(keys=["tool:safe_tool"], only=True)
+```
+
+Works at both server and provider level. Supports:
+- **Blocklist mode** (default): All components visible except explicitly disabled
+- **Allowlist mode** (`only=True`): Only explicitly enabled components visible
+- **Tag-based filtering**: Enable/disable groups of components by tag
+
+---
+
+## Type-Safe Canonical Results
+
+v3.0 introduces type-safe result classes that provide explicit control over component responses while supporting MCP runtime metadata.
+
+### ToolResult
+
+`ToolResult` (`src/fastmcp/tools/tool.py:79`) provides structured tool responses:
+
+```python
+from fastmcp.tools import ToolResult
+
+@mcp.tool
+def process(data: str) -> ToolResult:
+    return ToolResult(
+        content=[TextContent(type="text", text="Done")],
+        structured_content={"status": "success", "count": 42},
+        meta={"processing_time_ms": 150}
+    )
+```
+
+Fields:
+- `content`: List of MCP ContentBlocks (text, images, etc.)
+- `structured_content`: Dict matching tool's output schema
+- `meta`: Runtime metadata passed to MCP as `_meta`
+
+### ResourceResult
+
+`ResourceResult` (`src/fastmcp/resources/resource.py:117`) provides structured resource responses:
+
+```python
+from fastmcp.resources import ResourceResult, ResourceContent
+
+@mcp.resource("data://items")
+def get_items() -> ResourceResult:
+    return ResourceResult(
+        contents=[
+            ResourceContent({"key": "value"}),  # auto-serialized to JSON
+            ResourceContent(b"binary data"),
+        ],
+        meta={"count": 2}
+    )
+```
+
+Accepts strings, bytes, or `list[ResourceContent]` for flexible content handling.
+
+### PromptResult
+
+`PromptResult` (`src/fastmcp/prompts/prompt.py:109`) provides structured prompt responses:
+
+```python
+from fastmcp.prompts import PromptResult, Message
+
+@mcp.prompt
+def conversation() -> PromptResult:
+    return PromptResult(
+        messages=[
+            Message("What's the weather?"),
+            Message("It's sunny today.", role="assistant"),
+        ],
+        meta={"generated_at": "2024-01-01"}
+    )
+```
+
+---
+
+## Background Tasks (SEP-1686)
+
+v3.0 implements MCP SEP-1686 for background task execution via Docket integration.
+
+**Configuration** (`src/fastmcp/server/tasks/config.py`):
+
+```python
+from fastmcp.server.tasks import TaskConfig
+
+@mcp.tool(task=TaskConfig(mode="required"))
+async def long_running_task():
+    # Must be executed as background task
+    ...
+
+@mcp.tool(task=TaskConfig(mode="optional"))
+async def flexible_task():
+    # Supports both sync and task execution
+    ...
+
+@mcp.tool(task=True)  # Shorthand for mode="optional"
+async def simple_task():
+    ...
+```
+
+Task modes:
+- `"forbidden"`: Component does not support task execution (default)
+- `"optional"`: Supports both synchronous and task execution
+- `"required"`: Must be executed as background task
+
+Requires Docket server for task scheduling and result polling.
+
+---
+
+## CLI Auto-Reload
+
+The `--reload` flag enables file watching with automatic server restarts for development.
+
+```bash
+# Watch for changes and restart
+fastmcp run server.py --reload
+
+# Watch specific directories
+fastmcp run server.py --reload --reload-dir ./src --reload-dir ./lib
+
+# Works with any transport
+fastmcp run server.py --reload --transport http --port 8080
+```
+
+Implementation (`src/fastmcp/cli/run.py`):
+- Uses `watchfiles` for efficient file monitoring
+- Runs server as subprocess for clean restarts
+- Stateless mode for seamless reconnection after restart
+- stdio: Full MCP features including elicitation
+- HTTP: Limited bidirectional features during reload
+
+Also available with `fastmcp dev`:
+```bash
+fastmcp dev server.py  # Includes --reload by default
+```
+
+---
+
+## Deprecated Features
+
+These emit deprecation warnings but continue to work.
+
+### Mount Prefix Parameter
+
+The `prefix` parameter for `mount()` renamed to `namespace`:
+
+```python
+# Deprecated
+main.mount(subserver, prefix="api")
+
+# New
+main.mount(subserver, namespace="api")
+```
+
+### Tag Filtering Init Parameters
+
+`FastMCP(include_tags=..., exclude_tags=...)` deprecated. Use `enable()`/`disable()` methods:
+
+```python
+# Deprecated
+mcp = FastMCP("server", exclude_tags={"internal"})
+
+# New
+mcp = FastMCP("server")
+mcp.disable(tags={"internal"})
+```
+
+### Tool Serializer Parameter
+
+The `tool_serializer` parameter on `FastMCP` is deprecated. Return `ToolResult` for explicit serialization control.
+
+---
+
+## Breaking Changes
+
+### Component Enable/Disable Moved to Server/Provider
+
+The `enabled` field and `enable()`/`disable()` methods removed from component objects:
+
+```python
+# v2.x
+tool = await server.get_tool("my_tool")
+tool.disable()
+
+# v3.0
+server.disable(keys=["tool:my_tool"])
+```
+
+### Component Lookup Methods
+
+Server lookup and listing methods have updated signatures:
+
+- Parameter names: `get_tool(name=...)`, `get_resource(uri=...)`, etc. (was `key`)
+- Return types: `get_tools()`, `get_resources()`, etc. return lists instead of dicts
+
+```python
+# v2.x
+tools = await server.get_tools()
+tool = tools["my_tool"]
+
+# v3.0
+tools = await server.get_tools()
+tool = next((t for t in tools if t.name == "my_tool"), None)
+```
+
+### Prompt Return Types
+
+Prompt functions now use `Message` instead of `mcp.types.PromptMessage`:
+
+```python
+# v2.x
+from mcp.types import PromptMessage, TextContent
+
+@mcp.prompt
+def my_prompt() -> PromptMessage:
+    return PromptMessage(role="user", content=TextContent(type="text", text="Hello"))
+
+# v3.0
+from fastmcp.prompts import Message
+
+@mcp.prompt
+def my_prompt() -> Message:
+    return Message("Hello")  # role defaults to "user"
+```
+
+### Auth Provider Environment Variables Removed
+
+Auth providers no longer auto-load from environment variables:
+
+```python
+# v2.x - auto-loaded from FASTMCP_SERVER_AUTH_GITHUB_*
+auth = GitHubProvider()
+
+# v3.0 - explicit configuration
+import os
+auth = GitHubProvider(
+    client_id=os.environ["GITHUB_CLIENT_ID"],
+    client_secret=os.environ["GITHUB_CLIENT_SECRET"],
+)
+```
+
+See `docs/development/v3-notes/auth-provider-env-vars.mdx` for rationale.
+
+### Server Banner Environment Variable
+
+`FASTMCP_SHOW_CLI_BANNER` → `FASTMCP_SHOW_SERVER_BANNER`
+
+Now applies to all server startup methods, not just the CLI.
