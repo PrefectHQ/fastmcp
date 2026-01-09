@@ -20,7 +20,10 @@
     "primary": "#2d00f7"
   },
   "contextual": {
-    "options": ["copy", "view"]
+    "options": [
+      "copy",
+      "view"
+    ]
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
   "errors": {
@@ -106,6 +109,7 @@
                 "pages": [
                   "servers/providers/overview",
                   "servers/providers/local",
+                  "servers/providers/filesystem",
                   "servers/providers/mounting",
                   "servers/providers/namespacing",
                   "servers/providers/proxy",
@@ -157,7 +161,10 @@
               {
                 "group": "Essentials",
                 "icon": "cube",
-                "pages": ["clients/client", "clients/transports"]
+                "pages": [
+                  "clients/client",
+                  "clients/transports"
+                ]
               },
               {
                 "group": "Core Operations",
@@ -184,7 +191,10 @@
               {
                 "group": "Authentication",
                 "icon": "user-shield",
-                "pages": ["clients/auth/oauth", "clients/auth/bearer"]
+                "pages": [
+                  "clients/auth/oauth",
+                  "clients/auth/bearer"
+                ]
               }
             ]
           },
@@ -194,7 +204,10 @@
               {
                 "group": "Providers",
                 "icon": "globe",
-                "pages": ["integrations/fastapi", "integrations/openapi"]
+                "pages": [
+                  "integrations/fastapi",
+                  "integrations/openapi"
+                ]
               },
               {
                 "group": "Authentication",
@@ -334,6 +347,15 @@
                   },
                   "python-sdk/fastmcp-client-tasks",
                   "python-sdk/fastmcp-client-transports"
+                ]
+              },
+              {
+                "group": "fastmcp.fs",
+                "pages": [
+                  "python-sdk/fastmcp-fs-__init__",
+                  "python-sdk/fastmcp-fs-decorators",
+                  "python-sdk/fastmcp-fs-discovery",
+                  "python-sdk/fastmcp-fs-provider"
                 ]
               },
               {
