@@ -157,6 +157,30 @@ This is useful for servers that need configuration files, database paths, API ke
 
 For more CLI features including development mode with the MCP Inspector, see the [CLI documentation](/patterns/cli).
 
+### Auto-Reload for Development
+
+During development, you can use the `--reload` flag to automatically restart your server when source files change:
+
+```bash
+fastmcp run server.py --reload
+```
+
+The server watches for changes to Python files in the current directory and restarts automatically when you save changes. This provides a fast feedback loop during development without manually stopping and starting the server.
+
+```bash
+# Watch specific directories for changes
+fastmcp run server.py --reload --reload-dir ./src --reload-dir ./lib
+
+# Combine with other options
+fastmcp run server.py --reload --transport http --port 8080
+```
+
+<Note>
+Auto-reload uses stateless mode to enable seamless restarts. For stdio transport, this is fully featured. For HTTP transport, some bidirectional features like elicitation are not available during reload mode.
+</Note>
+
+SSE transport does not support auto-reload due to session limitations. Use HTTP transport instead if you need both network access and auto-reload.
+
 ### Async Usage
 
 FastMCP servers are built on async Python, but the framework provides both synchronous and asynchronous APIs to fit your application's needs. The `run()` method we've been using is actually a synchronous wrapper around the async server implementation.

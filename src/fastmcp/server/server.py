@@ -2056,13 +2056,17 @@ class FastMCP(Generic[LifespanResultT]):
         )
 
     async def run_stdio_async(
-        self, show_banner: bool = True, log_level: str | None = None
+        self,
+        show_banner: bool = True,
+        log_level: str | None = None,
+        stateless: bool = False,
     ) -> None:
         """Run the server using stdio transport.
 
         Args:
             show_banner: Whether to display the server banner
             log_level: Log level for the server
+            stateless: Whether to run in stateless mode (no session initialization)
         """
         # Display server banner
         if show_banner:
@@ -2071,8 +2075,9 @@ class FastMCP(Generic[LifespanResultT]):
         with temporary_log_level(log_level):
             async with self._lifespan_manager():
                 async with stdio_server() as (read_stream, write_stream):
+                    mode = " (stateless)" if stateless else ""
                     logger.info(
-                        f"Starting MCP server {self.name!r} with transport 'stdio'"
+                        f"Starting MCP server {self.name!r} with transport 'stdio'{mode}"
                     )
 
                     # Build experimental capabilities
@@ -2087,6 +2092,7 @@ class FastMCP(Generic[LifespanResultT]):
                             ),
                             experimental_capabilities=experimental_capabilities,
                         ),
+                        stateless=stateless,
                     )
 
     async def run_http_async(
@@ -2101,6 +2107,7 @@ class FastMCP(Generic[LifespanResultT]):
         middleware: list[ASGIMiddleware] | None = None,
         json_response: bool | None = None,
         stateless_http: bool | None = None,
+        stateless: bool | None = None,
     ) -> None:
         """Run the server using HTTP transport.
 
@@ -2114,7 +2121,20 @@ class FastMCP(Generic[LifespanResultT]):
             middleware: A list of middleware to apply to the app
             json_response: Whether to use JSON response format (defaults to settings.json_response)
             stateless_http: Whether to use stateless HTTP (defaults to settings.stateless_http)
+            stateless: Alias for stateless_http for CLI consistency
         """
+        # Allow stateless as alias for stateless_http
+        if stateless is not None and stateless_http is None:
+            stateless_http = stateless
+
+        # Resolve from settings/env var if not explicitly set
+        if stateless_http is None:
+            stateless_http = self._deprecated_settings.stateless_http
+
+        # SSE doesn't support stateless mode
+        if stateless_http and transport == "sse":
+            raise ValueError("SSE transport does not support stateless mode")
+
         host = host or self._deprecated_settings.host
         port = port or self._deprecated_settings.port
         default_log_level_to_use = (
@@ -2149,8 +2169,9 @@ class FastMCP(Generic[LifespanResultT]):
                 config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
                 server = uvicorn.Server(config)
                 path = getattr(app.state, "path", "").lstrip("/")
+                mode = " (stateless)" if stateless_http else ""
                 logger.info(
-                    f"Starting MCP server {self.name!r} with transport {transport!r} on http://{host}:{port}/{path}"
+                    f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{host}:{port}/{path}"
                 )
 
                 await server.serve()

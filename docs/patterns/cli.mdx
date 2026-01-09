@@ -47,6 +47,8 @@ By default, this command runs the server directly in your current Python environ
 | Path | `--path` | Path to bind to when using http transport (default: `/mcp/` or `/sse/` for SSE) |
 | Log Level | `--log-level`, `-l` | Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
 | No Banner | `--no-banner` | Disable the startup banner display |
+| Auto-Reload | `--reload` / `--no-reload` | Enable auto-reload on file changes (development mode) |
+| Reload Directories | `--reload-dir` | Directories to watch for changes (can be used multiple times) |
 | No Environment | `--skip-env` | Skip environment setup with uv (use when already in a uv environment) |
 | Python Version | `--python` | Python version to use (e.g., 3.10, 3.11) |
 | Additional Packages | `--with` | Additional packages to install (can be used multiple times) |
@@ -208,13 +210,13 @@ This will run all the servers defined in the file.
 
 ## `fastmcp dev`
 
-Run a MCP server with the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) for testing.
+Run a MCP server with the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) for testing. Auto-reload is enabled by default, so your server automatically restarts when you save changes to source files.
 
 ```bash
 fastmcp dev server.py
 ```
 
-<Tip> 
+<Tip>
 This command always runs your server via `uv run` subprocess (never your local environment) to work with the MCP Inspector. Dependencies can be:
 - Specified using `--with` and/or `--with-editable` options
 - Defined in a `fastmcp.json` configuration file
@@ -249,6 +251,8 @@ This command does not support HTTP testing. To test a server over Streamable HTT
 | Inspector Version | `--inspector-version` | Version of the MCP Inspector to use |
 | UI Port | `--ui-port` | Port for the MCP Inspector UI |
 | Server Port | `--server-port` | Port for the MCP Inspector Proxy server |
+| Auto-Reload | `--reload` / `--no-reload` | Enable/disable auto-reload on file changes (enabled by default) |
+| Reload Directories | `--reload-dir` | Directories to watch for changes (can be used multiple times) |
 | Python Version | `--python` | Python version to use (e.g., 3.10, 3.11) |
 | Project Directory | `--project` | Run the command within the given project directory |
 | Requirements File | `--with-requirements` | Requirements file to install dependencies from |

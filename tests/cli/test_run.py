@@ -600,3 +600,29 @@ mcp = fastmcp.FastMCP("TestServer")
 
             # Verify prepare was NOT called
             prepare_mock.assert_not_called()
+
+
+class TestReloadFunctionality:
+    """Test reload functionality."""
+
+    def test_python_file_filter_accepts_py_files(self):
+        """Test that Python file filter accepts .py files."""
+        from watchfiles import Change
+
+        from fastmcp.cli.run import _python_file_filter
+
+        assert _python_file_filter(Change.modified, "/path/to/file.py") is True
+        assert _python_file_filter(Change.added, "server.py") is True
+        assert _python_file_filter(Change.deleted, "/some/dir/module.py") is True
+
+    def test_python_file_filter_rejects_non_py_files(self):
+        """Test that Python file filter rejects non-.py files."""
+        from watchfiles import Change
+
+        from fastmcp.cli.run import _python_file_filter
+
+        assert _python_file_filter(Change.modified, "/path/to/file.txt") is False
+        assert _python_file_filter(Change.modified, "/path/to/file.js") is False
+        assert _python_file_filter(Change.modified, "/path/to/file.pyc") is False
+        assert _python_file_filter(Change.modified, "/path/to/.py") is True  # Edge case
+        assert _python_file_filter(Change.modified, "Dockerfile") is False

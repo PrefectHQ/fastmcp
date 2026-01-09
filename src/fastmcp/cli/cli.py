@@ -181,6 +181,21 @@ async def dev(
             help="Run the command within the given project directory",
         ),
     ] = None,
+    reload: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--reload",
+            help="Enable auto-reload on file changes (enabled by default)",
+            negative="--no-reload",
+        ),
+    ] = True,
+    reload_dir: Annotated[
+        list[Path] | None,
+        cyclopts.Parameter(
+            "--reload-dir",
+            help="Directories to watch for changes (default: current directory)",
+        ),
+    ] = None,
 ) -> None:
     """Run an MCP server with the MCP Inspector for development.
 
@@ -244,10 +259,18 @@ async def dev(
         if inspector_version:
             inspector_cmd += f"@{inspector_version}"
 
+        # Build the fastmcp run command
+        fastmcp_cmd = ["fastmcp", "run", server_spec, "--no-banner"]
+
+        # Add reload flags if enabled - the server will handle reloading
+        if reload:
+            fastmcp_cmd.append("--reload")
+            if reload_dir:
+                for dir_path in reload_dir:
+                    fastmcp_cmd.extend(["--reload-dir", str(dir_path)])
+
         # Use the environment from config (already has CLI overrides applied)
-        uv_cmd = config.environment.build_command(
-            ["fastmcp", "run", server_spec, "--no-banner"]
-        )
+        uv_cmd = config.environment.build_command(fastmcp_cmd)
 
         # Set marker to prevent infinite loops when subprocess calls FastMCP
         env = dict(os.environ.items()) | env_vars | {"FASTMCP_UV_SPAWNED": "1"}
@@ -363,6 +386,28 @@ async def run(
             help="Skip environment configuration (for internal use when already in a uv environment)",
         ),
     ] = False,
+    reload: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--reload",
+            negative="--no-reload",
+            help="Enable auto-reload on file changes (development mode)",
+        ),
+    ] = False,
+    reload_dir: Annotated[
+        list[Path] | None,
+        cyclopts.Parameter(
+            "--reload-dir",
+            help="Directories to watch for changes (default: current directory)",
+        ),
+    ] = None,
+    stateless: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--stateless",
+            help="Run in stateless mode (no session, used internally for reload)",
+        ),
+    ] = False,
 ) -> None:
     """Run an MCP server or connect to a remote one.
 
@@ -428,6 +473,57 @@ async def run(
             "server_args": list(final_server_args) if final_server_args else [],
         },
     )
+
+    # Handle reload mode
+    if reload:
+        # SSE is incompatible with reload (no stateless mode exists)
+        if final_transport == "sse":
+            logger.warning(
+                "--reload is not supported with SSE transport (sessions are lost on restart). "
+                "Use streamable-http transport instead, or use --no-reload. "
+                "Running without reload."
+            )
+            # Fall through to normal execution
+        else:
+            # Build command for subprocess (with --no-reload to prevent infinite spawning)
+            reload_cmd = ["fastmcp", "run", server_spec]
+            if final_transport:
+                reload_cmd.extend(["--transport", final_transport])
+            if final_transport != "stdio":
+                if final_host:
+                    reload_cmd.extend(["--host", final_host])
+                if final_port:
+                    reload_cmd.extend(["--port", str(final_port)])
+                if final_path:
+                    reload_cmd.extend(["--path", final_path])
+            if final_log_level:
+                reload_cmd.extend(["--log-level", final_log_level])
+            if final_no_banner:
+                reload_cmd.append("--no-banner")
+            reload_cmd.append("--no-reload")  # Prevent infinite spawning
+            reload_cmd.append("--stateless")  # Stateless mode for reload compatibility
+
+            # If environment setup is needed, wrap with uv
+            test_cmd = ["test"]
+            needs_uv = (
+                config.environment.build_command(test_cmd) != test_cmd and not skip_env
+            )
+            if needs_uv:
+                # Add --skip-env to prevent nested uv runs (child would spawn another uv)
+                reload_cmd.append("--skip-env")
+
+            if final_server_args:
+                reload_cmd.append("--")
+                reload_cmd.extend(final_server_args)
+
+            if needs_uv:
+                reload_cmd = config.environment.build_command(reload_cmd)
+
+            is_stdio = final_transport in ("stdio", None)
+            await run_module.run_with_reload(
+                reload_cmd, reload_dirs=reload_dir, is_stdio=is_stdio
+            )
+            return
 
     # Check if we need to use uv run (but skip if we're already in uv or user said to skip)
     # We check if the environment would modify the command
@@ -495,6 +591,7 @@ async def run(
                 server_args=list(final_server_args) if final_server_args else [],
                 show_banner=not final_no_banner,
                 skip_source=skip_source,
+                stateless=stateless,
             )
         except Exception as e:
             logger.exception(
