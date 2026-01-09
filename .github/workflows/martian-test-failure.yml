@@ -163,6 +163,9 @@ jobs:
           }
           EOF
 
+      - name: Clean up stale Claude locks
+        run: rm -rf ~/.claude/.locks ~/.local/state/claude/locks || true
+
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1

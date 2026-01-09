@@ -56,6 +56,9 @@ jobs:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
 
+      - name: Clean up stale Claude locks
+        run: rm -rf ~/.claude/.locks ~/.local/state/claude/locks || true
+
       # Marvin Assistant
       - name: Run Marvin
         uses: anthropics/claude-code-action@v1

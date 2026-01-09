@@ -155,6 +155,9 @@ jobs:
           }
           EOF
 
+      - name: Clean up stale Claude locks
+        run: rm -rf ~/.claude/.locks ~/.local/state/claude/locks || true
+
       - name: Run Martian for Issue Triage
         uses: anthropics/claude-code-action@v1
         with:
