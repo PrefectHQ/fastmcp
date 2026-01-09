@@ -674,8 +674,8 @@ class OAuthProxy(OAuthProvider):
             service_documentation_url: Optional service documentation URL
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
-                If None (default), only localhost redirect URIs are allowed.
-                If empty list, all redirect URIs are allowed (not recommended for production).
+                If None (default), all redirect URIs are allowed (for DCR compatibility).
+                If empty list, no redirect URIs are allowed.
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
             valid_scopes: List of all the possible valid scopes for a client.
                 These are advertised to clients through the `/.well-known` endpoints. Defaults to `required_scopes` if not provided.

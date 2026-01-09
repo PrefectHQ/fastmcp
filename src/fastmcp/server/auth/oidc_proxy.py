@@ -249,8 +249,8 @@ class OIDCProxy(OAuthProxy):
             redirect_path: Redirect path configured in upstream OAuth app (defaults to "/auth/callback")
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
-                If None (default), only localhost redirect URIs are allowed.
-                If empty list, all redirect URIs are allowed (not recommended for production).
+                If None (default), all redirect URIs are allowed (for DCR compatibility).
+                If empty list, no redirect URIs are allowed.
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
                 If None, a DiskStore will be created in the data directory (derived from `platformdirs`). The
