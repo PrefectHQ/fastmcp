@@ -617,6 +617,36 @@ stats = middleware.statistics()
 print(f"Total cache operations: {stats}")
 ```
 
+### Ping Middleware
+
+<VersionBadge version="3.0.0" />
+
+For long-lived connections, servers can send periodic pings to keep connections alive and prevent clients from dropping the connection due to inactivity. FastMCP provides ping middleware at `fastmcp.server.middleware.ping`.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware import PingMiddleware
+
+mcp = FastMCP("MyServer")
+mcp.add_middleware(PingMiddleware(interval_ms=5000))
+```
+
+The middleware starts a background ping task on the first message from each client session. Pings continue at the configured interval until the session ends. When the session closes, the ping task is automatically cancelled and cleaned up.
+
+Configure the ping interval based on your client's timeout settings:
+
+```python
+# Ping every 30 seconds (default)
+mcp.add_middleware(PingMiddleware())
+
+# Ping every 5 seconds for clients with short timeouts
+mcp.add_middleware(PingMiddleware(interval_ms=5000))
+```
+
+<Note>
+Ping middleware is most useful for stateful HTTP connections where clients maintain long-lived sessions. For stateless connections, pings have no effect since each request is independent.
+</Note>
+
 ### Logging Middleware
 
 Request and response logging is crucial for debugging, monitoring, and understanding usage patterns in your MCP server. FastMCP provides comprehensive logging middleware at `fastmcp.server.middleware.logging`. 
