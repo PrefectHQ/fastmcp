@@ -28,7 +28,10 @@ from pydantic import (
 )
 from typing_extensions import Self
 
-from fastmcp.server.dependencies import without_injected_parameters
+from fastmcp.server.dependencies import (
+    transform_context_annotations,
+    without_injected_parameters,
+)
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import get_fn_name
@@ -443,6 +446,9 @@ class FunctionResource(Resource):
         else:
             task_config = task
         task_config.validate_function(fn, func_name)
+
+        # Transform Context type annotations to Depends() for unified DI
+        fn = transform_context_annotations(fn)
 
         # Wrap fn to handle dependency resolution internally
         wrapped_fn = without_injected_parameters(fn)

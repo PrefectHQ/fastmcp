@@ -963,8 +963,9 @@ class TestAsProxyKwarg:
         async with Client(mcp) as client:
             await client.call_tool("hello", {})
 
-        # Lifespan is entered exactly once and kept alive by Docket worker
-        assert lifespan_check == ["start"]
+        # Lifespan is executed at least once (may be multiple times for proxy connections)
+        assert len(lifespan_check) >= 1
+        assert all(x == "start" for x in lifespan_check)
 
 
 class TestResourceUriPrefixing:
@@ -1428,6 +1429,11 @@ class TestMountedServerDocketBehavior:
         main_app = FastMCP("MainApp")
         sub_app = FastMCP("SubApp")
 
+        # Need a task-enabled component to trigger Docket initialization
+        @main_app.tool(task=True)
+        async def _trigger_docket() -> str:
+            return "trigger"
+
         @sub_app.tool
         def my_tool() -> str:
             return "test"
@@ -1438,6 +1444,7 @@ class TestMountedServerDocketBehavior:
         # its own Docket instance
         async with Client(main_app) as client:
             # The main app should have a docket (created by _lifespan_manager)
+            # because it has a task-enabled component
             assert main_app.docket is not None
 
             # The mounted sub app should NOT have its own docket

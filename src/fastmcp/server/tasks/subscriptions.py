@@ -2,6 +2,8 @@
 
 Subscribes to Docket execution state changes and sends notifications/tasks/status
 to clients when their tasks change state.
+
+This module requires fastmcp[tasks] (pydocket). It is only imported when docket is available.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from typing import TYPE_CHECKING
 from docket.execution import ExecutionState
 from mcp.types import TaskStatusNotification, TaskStatusNotificationParams
 
+from fastmcp.server.tasks.keys import parse_task_key
 from fastmcp.server.tasks.requests import DOCKET_TO_MCP_STATE
 from fastmcp.utilities.logging import get_logger
 
@@ -99,11 +102,10 @@ async def _send_status_notification(
         poll_interval_ms: Poll interval in milliseconds
     """
     # Map Docket state to MCP status
-    mcp_status = DOCKET_TO_MCP_STATE.get(state, "failed")
+    state_map = DOCKET_TO_MCP_STATE
+    mcp_status = state_map.get(state, "failed")
 
     # Extract session_id from task_key for Redis lookup
-    from fastmcp.server.tasks.keys import parse_task_key
-
     key_parts = parse_task_key(task_key)
     session_id = key_parts["session_id"]
 
@@ -174,11 +176,10 @@ async def _send_progress_notification(
         return
 
     # Map Docket state to MCP status
-    mcp_status = DOCKET_TO_MCP_STATE.get(execution.state, "failed")
+    state_map = DOCKET_TO_MCP_STATE
+    mcp_status = state_map.get(execution.state, "failed")
 
     # Extract session_id from task_key for Redis lookup
-    from fastmcp.server.tasks.keys import parse_task_key
-
     key_parts = parse_task_key(task_key)
     session_id = key_parts["session_id"]
 

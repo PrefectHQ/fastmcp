@@ -32,7 +32,10 @@ from pydantic import BaseModel, Field, PydanticSchemaGenerationError, model_vali
 from typing_extensions import TypeVar
 
 import fastmcp
-from fastmcp.server.dependencies import without_injected_parameters
+from fastmcp.server.dependencies import (
+    transform_context_annotations,
+    without_injected_parameters,
+)
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
@@ -610,6 +613,9 @@ class ParsedFunction:
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
             fn = fn.__func__
+
+        # Transform Context type annotations to Depends() for unified DI
+        fn = transform_context_annotations(fn)
 
         # Handle injected parameters (Context, Docket dependencies)
         wrapper_fn = without_injected_parameters(fn)

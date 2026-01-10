@@ -191,6 +191,10 @@ fastmcp tasks worker server.py
 Additional workers only work with Redis/Valkey backends. The in-memory backend is single-process only.
 </Note>
 
+<Warning>
+Task-enabled components must be defined at server startup to be registered with all workers. Components added dynamically after the server starts will not be available for background execution.
+</Warning>
+
 ## Progress Reporting
 
 The `Progress` dependency lets you report progress back to clients. Inject it as a parameter with a default value, and FastMCP will provide the active progress reporter.

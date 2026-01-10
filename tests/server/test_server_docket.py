@@ -14,9 +14,31 @@ from fastmcp.server.dependencies import get_context
 HUZZAH = "huzzah!"
 
 
+async def test_docket_not_initialized_without_task_components():
+    """Docket is only initialized when task-enabled components exist."""
+    mcp = FastMCP("test-server")
+
+    @mcp.tool()
+    def regular_tool() -> str:
+        return "no docket needed"
+
+    async with Client(mcp) as client:
+        # Docket should not be initialized
+        assert mcp._docket is None
+
+        # Regular tools still work
+        result = await client.call_tool("regular_tool", {})
+        assert result.data == "no docket needed"
+
+
 async def test_current_docket():
     """CurrentDocket dependency provides access to Docket instance."""
     mcp = FastMCP("test-server")
+
+    # Need a task-enabled component to trigger Docket initialization
+    @mcp.tool(task=True)
+    async def _trigger_docket() -> str:
+        return "trigger"
 
     @mcp.tool()
     def check_docket(docket: Docket = CurrentDocket()) -> str:
@@ -31,6 +53,11 @@ async def test_current_docket():
 async def test_current_worker():
     """CurrentWorker dependency provides access to Worker instance."""
     mcp = FastMCP("test-server")
+
+    # Need a task-enabled component to trigger Docket initialization
+    @mcp.tool(task=True)
+    async def _trigger_docket() -> str:
+        return "trigger"
 
     @mcp.tool()
     def check_worker(
@@ -50,6 +77,11 @@ async def test_worker_executes_background_tasks():
     """Verify that the Docket Worker is running and executes tasks."""
     task_completed = asyncio.Event()
     mcp = FastMCP("test-server")
+
+    # Need a task-enabled component to trigger Docket initialization
+    @mcp.tool(task=True)
+    async def _trigger_docket() -> str:
+        return "trigger"
 
     @mcp.tool()
     async def schedule_work(
@@ -79,6 +111,11 @@ async def test_current_docket_in_resource():
     """CurrentDocket works in resources."""
     mcp = FastMCP("test-server")
 
+    # Need a task-enabled component to trigger Docket initialization
+    @mcp.tool(task=True)
+    async def _trigger_docket() -> str:
+        return "trigger"
+
     @mcp.resource("docket://info")
     def get_docket_info(docket: Docket = CurrentDocket()) -> str:
         assert isinstance(docket, Docket)
@@ -92,6 +129,11 @@ async def test_current_docket_in_resource():
 async def test_current_docket_in_prompt():
     """CurrentDocket works in prompts."""
     mcp = FastMCP("test-server")
+
+    # Need a task-enabled component to trigger Docket initialization
+    @mcp.tool(task=True)
+    async def _trigger_docket() -> str:
+        return "trigger"
 
     @mcp.prompt()
     def task_prompt(task_type: str, docket: Docket = CurrentDocket()) -> str:
@@ -107,6 +149,11 @@ async def test_current_docket_in_resource_template():
     """CurrentDocket works in resource templates."""
     mcp = FastMCP("test-server")
 
+    # Need a task-enabled component to trigger Docket initialization
+    @mcp.tool(task=True)
+    async def _trigger_docket() -> str:
+        return "trigger"
+
     @mcp.resource("docket://tasks/{task_id}")
     def get_task_status(task_id: str, docket: Docket = CurrentDocket()) -> str:
         assert isinstance(docket, Docket)
@@ -121,6 +168,11 @@ async def test_concurrent_calls_maintain_isolation():
     """Multiple concurrent calls each get the same Docket instance."""
     mcp = FastMCP("test-server")
     docket_ids = []
+
+    # Need a task-enabled component to trigger Docket initialization
+    @mcp.tool(task=True)
+    async def _trigger_docket() -> str:
+        return "trigger"
 
     @mcp.tool()
     def capture_docket_id(call_num: int, docket: Docket = CurrentDocket()) -> str:
@@ -154,6 +206,11 @@ async def test_user_lifespan_still_works_with_docket():
         yield {"custom_data": "test_value"}
 
     mcp = FastMCP("test-server", lifespan=custom_lifespan)
+
+    # Need a task-enabled component to trigger Docket initialization
+    @mcp.tool(task=True)
+    async def _trigger_docket() -> str:
+        return "trigger"
 
     @mcp.tool()
     def check_both(docket: Docket = CurrentDocket()) -> str:

@@ -22,7 +22,10 @@ from pydantic import (
 )
 
 from fastmcp.resources.resource import Resource, ResourceResult
-from fastmcp.server.dependencies import without_injected_parameters
+from fastmcp.server.dependencies import (
+    transform_context_annotations,
+    without_injected_parameters,
+)
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
@@ -534,6 +537,9 @@ class FunctionResourceTemplate(ResourceTemplate):
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
             fn = fn.__func__
+
+        # Transform Context type annotations to Depends() for unified DI
+        fn = transform_context_annotations(fn)
 
         wrapper_fn = without_injected_parameters(fn)
         type_adapter = get_cached_typeadapter(wrapper_fn)

@@ -27,7 +27,10 @@ from mcp.types import PromptArgument as SDKPromptArgument
 from pydantic import Field
 
 from fastmcp.exceptions import PromptError
-from fastmcp.server.dependencies import without_injected_parameters
+from fastmcp.server.dependencies import (
+    transform_context_annotations,
+    without_injected_parameters,
+)
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
@@ -441,6 +444,9 @@ class FunctionPrompt(Prompt):
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
             fn = fn.__func__  # type: ignore[assignment]
+
+        # Transform Context type annotations to Depends() for unified DI
+        fn = transform_context_annotations(fn)
 
         # Wrap fn to handle dependency resolution internally
         wrapped_fn = without_injected_parameters(fn)

@@ -7,6 +7,7 @@ handle task-augmented execution as specified in SEP-1686.
 from __future__ import annotations
 
 import inspect
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
@@ -49,6 +50,11 @@ class TaskConfig:
       Client may request task augmentation or call normally.
     - "required": Component requires task execution. Clients must request task
       augmentation; server returns -32601 if they don't.
+
+    Important:
+        Task-enabled components must be available at server startup to be
+        registered with all Docket workers. Components added dynamically after
+        startup will not be registered for background execution.
 
     Example:
         ```python
@@ -93,18 +99,29 @@ class TaskConfig:
     def validate_function(self, fn: Callable[..., Any], name: str) -> None:
         """Validate that function is compatible with this task config.
 
-        Task execution requires async functions. Raises ValueError if mode
-        is "optional" or "required" but function is synchronous.
+        Task execution requires:
+        1. fastmcp[tasks] to be installed (pydocket)
+        2. Async functions
+
+        Raises ImportError if mode is "optional" or "required" but pydocket
+        is not installed. Raises ValueError if function is synchronous.
 
         Args:
             fn: The function to validate (handles callable classes and staticmethods).
             name: Name for error messages.
 
         Raises:
+            ImportError: If task execution is enabled but pydocket not installed.
             ValueError: If task execution is enabled but function is sync.
         """
         if not self.supports_tasks():
             return
+
+        # Check that docket is available for task execution
+        # Lazy import to avoid circular: dependencies.py → http.py → tasks/__init__.py → config.py
+        from fastmcp.server.dependencies import require_docket
+
+        require_docket(f"`task=True` on function '{name}'")
 
         # Unwrap callable classes and staticmethods
         fn_to_check = fn
@@ -117,4 +134,19 @@ class TaskConfig:
             raise ValueError(
                 f"'{name}' uses a sync function but has task execution enabled. "
                 "Background tasks require async functions."
+            )
+
+        # Warn if function uses Context - it won't be available in workers
+        from fastmcp.server.context import Context
+        from fastmcp.utilities.types import find_kwarg_by_type
+
+        context_kwarg = find_kwarg_by_type(fn_to_check, Context)
+        if context_kwarg:
+            warnings.warn(
+                f"'{name}' uses Context but has task execution enabled. "
+                "Context is not available in background task workers because "
+                "there is no active MCP session. Consider using Docket dependencies "
+                "like Progress() instead for worker-compatible functionality.",
+                UserWarning,
+                stacklevel=4,
             )
