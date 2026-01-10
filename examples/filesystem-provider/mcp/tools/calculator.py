@@ -1,6 +1,6 @@
 """Math tools with custom metadata."""
 
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 
 @tool(

@@ -1,6 +1,6 @@
 """Assistant prompts."""
 
-from fastmcp.fs import prompt
+from fastmcp.prompts import prompt
 
 
 @prompt

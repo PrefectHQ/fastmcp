@@ -351,15 +351,6 @@
                 ]
               },
               {
-                "group": "fastmcp.fs",
-                "pages": [
-                  "python-sdk/fastmcp-fs-__init__",
-                  "python-sdk/fastmcp-fs-decorators",
-                  "python-sdk/fastmcp-fs-discovery",
-                  "python-sdk/fastmcp-fs-provider"
-                ]
-              },
-              {
                 "group": "fastmcp.prompts",
                 "pages": [
                   "python-sdk/fastmcp-prompts-__init__",

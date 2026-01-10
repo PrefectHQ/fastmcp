@@ -403,7 +403,7 @@ class TestResourceDecorator:
     async def test_resource_decorator_classmethod_error(self):
         mcp = FastMCP()
 
-        with pytest.raises(ValueError, match="To decorate a classmethod"):
+        with pytest.raises(TypeError, match="classmethod"):
 
             class MyClass:
                 @mcp.resource("resource://data")

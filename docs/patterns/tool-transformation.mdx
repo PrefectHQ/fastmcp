@@ -28,16 +28,15 @@ Transformation is also powerful for **environment-aware tools**. You can dynamic
 
 The primary way to create a transformed tool is with the `Tool.from_tool()` class method. At its simplest, you can use it to change a tool's top-level metadata like its `name`, `description`, or `tags`.
 
-In the following simple example, we take a generic `search` tool and adjust its name and description to help an LLM client better understand its purpose.
+In the following example, we take a generic `search` tool and adjust its name and description to help an LLM client better understand its purpose.
 
-```python {13-21}
+```python {1, 6, 11-19, 22}
+from fastmcp.tools import tool, Tool
 from fastmcp import FastMCP
-from fastmcp.tools import Tool
 
-mcp = FastMCP()
-
-# The original, generic tool
-@mcp.tool
+# Create a tool without registering it using the standalone @tool decorator
+# This creates a Tool object that can be transformed before registration
+@tool
 def search(query: str, category: str = "all") -> list[dict]:
     """Searches for items in the database."""
     return database.search(query, category)
@@ -47,39 +46,25 @@ product_search_tool = Tool.from_tool(
     search,
     name="find_products",
     description="""
-        Search for products in the e-commerce catalog. 
-        Use this when customers ask about finding specific items, 
+        Search for products in the e-commerce catalog.
+        Use this when customers ask about finding specific items,
         checking availability, or browsing product categories.
         """,
 )
 
+# Only register the transformed version
+mcp = FastMCP()
 mcp.add_tool(product_search_tool)
 ```
 
 <Tip>
-When you transform a tool, the original tool remains registered on the server. To avoid confusing an LLM with two similar tools, you can disable the original one:
-
-```python
-from fastmcp import FastMCP
-from fastmcp.tools import Tool
-
-mcp = FastMCP()
-
-# The original, generic tool
-@mcp.tool
-def search(query: str, category: str = "all") -> list[dict]:
-    ...
-
-# Create a more domain-specific version
-product_search_tool = Tool.from_tool(search, ...)
-mcp.add_tool(product_search_tool)
-
-# Disable the original tool
-search.disable()
-```
+The standalone `@tool` decorator (from `fastmcp.tools`) creates a Tool object without registering it to any server. This is the recommended approach for tool transformation because:
+- You only register the tools you want exposed
+- No need to disable or remove the original
+- Cleaner separation between tool creation and registration
 </Tip>
 
-Now, clients see a tool named `find_products` with a clear, domain-specific purpose and relevant tags, even though it still uses the original generic `search` function's logic.
+Now, clients see a tool named `find_products` with a clear, domain-specific purpose, even though it still uses the original generic `search` function's logic.
 
 ### Parameters
 

@@ -16,7 +16,7 @@ Dev mode (re-scan files on every request):
 from pathlib import Path
 
 from fastmcp import FastMCP
-from fastmcp.fs import FileSystemProvider
+from fastmcp.server.providers import FileSystemProvider
 
 # The provider scans all .py files in the directory recursively.
 # Functions decorated with @tool, @resource, or @prompt are registered.

@@ -1,32 +1,43 @@
 """FileSystemProvider for filesystem-based component discovery.
 
 FileSystemProvider scans a directory for Python files, imports them, and
-registers any functions decorated with @tool, @resource, or @prompt.
+registers any Tool, Resource, ResourceTemplate, or Prompt objects found.
+
+Components are created using the standalone decorators from fastmcp.tools,
+fastmcp.resources, and fastmcp.prompts:
 
 Example:
     ```python
-    from fastmcp import FastMCP
-    from fastmcp.fs import FileSystemProvider
+    # In mcp/tools.py
+    from fastmcp.tools import tool
 
-    mcp = FastMCP("MyServer", providers=[FileSystemProvider("mcp/")])
+    @tool
+    def greet(name: str) -> str:
+        return f"Hello, {name}!"
+
+    # In main.py
+    from pathlib import Path
+
+    from fastmcp import FastMCP
+    from fastmcp.server.providers import FileSystemProvider
+
+    mcp = FastMCP("MyServer", providers=[FileSystemProvider(Path(__file__).parent / "mcp")])
     ```
 """
 
 from __future__ import annotations
 
 import asyncio
-import inspect
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
-from fastmcp.fs.decorators import PromptMeta, ResourceMeta, ToolMeta
-from fastmcp.fs.discovery import discover_and_import
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
+from fastmcp.server.providers.filesystem_discovery import discover_and_import
 from fastmcp.server.providers.local_provider import LocalProvider
 from fastmcp.tools.tool import Tool
+from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -35,8 +46,12 @@ logger = get_logger(__name__)
 class FileSystemProvider(LocalProvider):
     """Provider that discovers components from the filesystem.
 
-    Scans a directory for Python files and registers functions decorated
-    with @tool, @resource, or @prompt from fastmcp.fs.
+    Scans a directory for Python files and registers any Tool, Resource,
+    ResourceTemplate, or Prompt objects found. Components are created using
+    the standalone decorators:
+    - @tool from fastmcp.tools
+    - @resource from fastmcp.resources
+    - @prompt from fastmcp.prompts
 
     Args:
         root: Root directory to scan. Defaults to current directory.
@@ -45,14 +60,24 @@ class FileSystemProvider(LocalProvider):
 
     Example:
         ```python
-        from fastmcp import FastMCP
-        from fastmcp.fs import FileSystemProvider
+        # In mcp/tools.py
+        from fastmcp.tools import tool
 
-        # Basic usage
-        mcp = FastMCP("MyServer", providers=[FileSystemProvider("mcp/")])
+        @tool
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        # In main.py
+        from pathlib import Path
+
+        from fastmcp import FastMCP
+        from fastmcp.server.providers import FileSystemProvider
+
+        # Path relative to this file
+        mcp = FastMCP("MyServer", providers=[FileSystemProvider(Path(__file__).parent / "mcp")])
 
         # Dev mode - re-scan on every request
-        mcp = FastMCP("MyServer", providers=[FileSystemProvider("mcp/", reload=True)])
+        mcp = FastMCP("MyServer", providers=[FileSystemProvider(Path(__file__).parent / "mcp", reload=True)])
         ```
     """
 
@@ -97,16 +122,18 @@ class FileSystemProvider(LocalProvider):
                 self._warned_files[file_path] = current_mtime
 
         # Clear warnings for files that now import successfully
-        successful_files = {fp for fp, _, _ in result.components}
+        successful_files = {fp for fp, _ in result.components}
         for fp in successful_files:
             self._warned_files.pop(fp, None)
 
-        for file_path, func, meta in result.components:
+        for file_path, component in result.components:
             try:
-                self._register_component(func, meta)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to register {func.__name__} from {file_path}: {e}"
+                self._register_component(component)
+            except Exception:
+                logger.exception(
+                    "Failed to register %s from %s",
+                    getattr(component, "name", repr(component)),
+                    file_path,
                 )
 
         self._loaded = True
@@ -114,88 +141,18 @@ class FileSystemProvider(LocalProvider):
             f"FileSystemProvider loaded {len(self._components)} components from {self._root}"
         )
 
-    def _register_component(
-        self, func: Any, meta: ToolMeta | ResourceMeta | PromptMeta
-    ) -> None:
-        """Register a single component based on its metadata type."""
-        if isinstance(meta, ToolMeta):
-            self._register_tool(func, meta)
-        elif isinstance(meta, ResourceMeta):
-            self._register_resource(func, meta)
-        elif isinstance(meta, PromptMeta):
-            self._register_prompt(func, meta)
-
-    def _register_tool(self, func: Any, meta: ToolMeta) -> None:
-        """Register a tool from a decorated function."""
-        tool = Tool.from_function(
-            fn=func,
-            name=meta.name,
-            title=meta.title,
-            description=meta.description,
-            icons=meta.icons,
-            tags=meta.tags,
-            output_schema=meta.output_schema,
-            annotations=meta.annotations,
-            meta=meta.meta,
-        )
-        self.add_tool(tool)
-
-    def _register_resource(self, func: Any, meta: ResourceMeta) -> None:
-        """Register a resource or resource template from a decorated function."""
-        uri = meta.uri
-
-        # Check if this should be a template
-        has_uri_params = "{" in uri and "}" in uri
-
-        # Check for function parameters (excluding injected ones)
-        from fastmcp.server.dependencies import without_injected_parameters
-
-        wrapper_fn = without_injected_parameters(func)
-        has_func_params = bool(inspect.signature(wrapper_fn).parameters)
-
-        if has_uri_params or has_func_params:
-            # Register as template
-            template = ResourceTemplate.from_function(
-                fn=func,
-                uri_template=uri,
-                name=meta.name,
-                title=meta.title,
-                description=meta.description,
-                icons=meta.icons,
-                mime_type=meta.mime_type,
-                tags=meta.tags,
-                annotations=meta.annotations,
-                meta=meta.meta,
-            )
-            self.add_template(template)
+    def _register_component(self, component: FastMCPComponent) -> None:
+        """Register a single component based on its type."""
+        if isinstance(component, Tool):
+            self.add_tool(component)
+        elif isinstance(component, ResourceTemplate):
+            self.add_template(component)
+        elif isinstance(component, Resource):
+            self.add_resource(component)
+        elif isinstance(component, Prompt):
+            self.add_prompt(component)
         else:
-            # Register as static resource
-            resource = Resource.from_function(
-                fn=func,
-                uri=uri,
-                name=meta.name,
-                title=meta.title,
-                description=meta.description,
-                icons=meta.icons,
-                mime_type=meta.mime_type,
-                tags=meta.tags,
-                annotations=meta.annotations,
-                meta=meta.meta,
-            )
-            self.add_resource(resource)
-
-    def _register_prompt(self, func: Any, meta: PromptMeta) -> None:
-        """Register a prompt from a decorated function."""
-        prompt = Prompt.from_function(
-            fn=func,
-            name=meta.name,
-            title=meta.title,
-            description=meta.description,
-            icons=meta.icons,
-            tags=meta.tags,
-            meta=meta.meta,
-        )
-        self.add_prompt(prompt)
+            logger.debug("Ignoring unknown component type: %r", type(component))
 
     async def _ensure_loaded(self) -> None:
         """Ensure components are loaded, reloading if in reload mode.

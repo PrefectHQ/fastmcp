@@ -2,7 +2,7 @@
 
 import json
 
-from fastmcp.fs import resource
+from fastmcp.resources import resource
 
 
 # Static resource - no parameters in URI

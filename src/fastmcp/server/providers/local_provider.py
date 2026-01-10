@@ -35,7 +35,9 @@ from mcp.types import Annotations, AnyFunction, ToolAnnotations
 
 import fastmcp
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt
+from fastmcp.prompts.prompt import prompt as standalone_prompt
 from fastmcp.resources.resource import Resource
+from fastmcp.resources.resource import resource as standalone_resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.tasks.config import TaskConfig
@@ -382,6 +384,10 @@ class LocalProvider(Provider):
         serializer: ToolResultSerializerType | None = None,  # Deprecated
     ) -> Callable[[AnyFunction], FunctionTool]: ...
 
+    # NOTE: This method mirrors fastmcp.tools.tool() but adds registration,
+    # the `enabled` param, and supports deprecated params (serializer, exclude_args).
+    # When deprecated params are removed, this should delegate to the standalone
+    # decorator to reduce duplication.
     def tool(
         self,
         name_or_fn: str | AnyFunction | None = None,
@@ -455,7 +461,7 @@ class LocalProvider(Provider):
             annotations = ToolAnnotations(**annotations)
 
         if isinstance(name_or_fn, classmethod):
-            raise ValueError(
+            raise TypeError(
                 inspect.cleandoc(
                     """
                     To decorate a classmethod, first define the method and then call
@@ -579,83 +585,35 @@ class LocalProvider(Provider):
                 return f"Weather for {city}"
             ```
         """
-        if isinstance(annotations, dict):
-            annotations = Annotations(**annotations)
+        # Resolve task parameter - default to False for standalone usage
+        supports_task: bool | TaskConfig = task if task is not None else False
 
-        # Check if user passed function directly instead of calling decorator
-        if inspect.isroutine(uri):
-            raise TypeError(
-                "The @resource decorator was used incorrectly. "
-                "Did you forget to call it? Use @resource('uri') instead of @resource"
-            )
+        # Get the standalone decorator
+        create_resource = standalone_resource(
+            uri,
+            name=name,
+            title=title,
+            description=description,
+            icons=icons,
+            mime_type=mime_type,
+            tags=tags,
+            annotations=annotations,
+            meta=meta,
+            task=supports_task,
+        )
 
         def decorator(fn: AnyFunction) -> Resource | ResourceTemplate:
-            if isinstance(fn, classmethod):
-                raise ValueError(
-                    inspect.cleandoc(
-                        """
-                        To decorate a classmethod, first define the method and then call
-                        resource() directly on the method instead of using it as a
-                        decorator. See https://gofastmcp.com/patterns/decorating-methods
-                        for examples and more information.
-                        """
-                    )
-                )
-
-            # Resolve task parameter - default to False for standalone usage
-            supports_task: bool | TaskConfig = task if task is not None else False
-
-            # Check if this should be a template
-            has_uri_params = "{" in uri and "}" in uri
-            # Use wrapper to check for user-facing parameters
-            from fastmcp.server.dependencies import without_injected_parameters
-
-            wrapper_fn = without_injected_parameters(fn)
-            has_func_params = bool(inspect.signature(wrapper_fn).parameters)
-
-            if has_uri_params or has_func_params:
-                template = ResourceTemplate.from_function(
-                    fn=fn,
-                    uri_template=uri,
-                    name=name,
-                    title=title,
-                    description=description,
-                    icons=icons,
-                    mime_type=mime_type,
-                    tags=tags,
-                    annotations=annotations,
-                    meta=meta,
-                    task=supports_task,
-                )
-                self.add_template(template)
-                # If disabled, add to blocklist
-                if not enabled:
-                    self.disable(keys=[template.key])
-                return template
-            elif not has_uri_params and not has_func_params:
-                resource_obj = Resource.from_function(
-                    fn=fn,
-                    uri=uri,
-                    name=name,
-                    title=title,
-                    description=description,
-                    icons=icons,
-                    mime_type=mime_type,
-                    tags=tags,
-                    annotations=annotations,
-                    meta=meta,
-                    task=supports_task,
-                )
-                self.add_resource(resource_obj)
-                # If disabled, add to blocklist
-                if not enabled:
-                    self.disable(keys=[resource_obj.key])
-                return resource_obj
+            # Delegate to standalone decorator for object creation
+            obj = create_resource(fn)
+            # Register with this provider
+            if isinstance(obj, ResourceTemplate):
+                self.add_template(obj)
             else:
-                raise ValueError(
-                    "Invalid resource or template definition due to a "
-                    "mismatch between URI parameters and function parameters."
-                )
+                self.add_resource(obj)
+            # Handle enabled flag
+            if not enabled:
+                self.disable(keys=[obj.key])
+            return obj
 
         return decorator
 
@@ -742,70 +700,39 @@ class LocalProvider(Provider):
                 return [{"role": "user", "content": data}]
             ```
         """
-        if isinstance(name_or_fn, classmethod):
-            raise ValueError(
-                inspect.cleandoc(
-                    """
-                    To decorate a classmethod, first define the method and then call
-                    prompt() directly on the method instead of using it as a
-                    decorator. See https://gofastmcp.com/patterns/decorating-methods
-                    for examples and more information.
-                    """
-                )
-            )
 
-        # Determine the actual name and function based on the calling pattern
-        if inspect.isroutine(name_or_fn):
-            # Case 1: @prompt (without parens) - function passed directly
-            # Case 2: direct call like prompt(fn, name="something")
-            fn = name_or_fn
-            prompt_name = name  # Use keyword name if provided, otherwise None
-
-            # Resolve task parameter - default to False for standalone usage
-            supports_task: bool | TaskConfig = task if task is not None else False
-
-            # Register the prompt immediately
-            prompt_obj = Prompt.from_function(
-                fn=fn,
-                name=prompt_name,
-                title=title,
-                description=description,
-                icons=icons,
-                tags=tags,
-                meta=meta,
-                task=supports_task,
-            )
+        def register(prompt_obj: FunctionPrompt) -> FunctionPrompt:
+            """Register the prompt and handle enabled flag."""
             self.add_prompt(prompt_obj)
-            # If disabled, add to blocklist
             if not enabled:
                 self.disable(keys=[prompt_obj.key])
             return prompt_obj
 
-        elif isinstance(name_or_fn, str):
-            # Case 3: @prompt("custom_name") - name passed as first argument
-            if name is not None:
-                raise TypeError(
-                    "Cannot specify both a name as first argument and as keyword argument. "
-                    f"Use either @prompt('{name_or_fn}') or @prompt(name='{name}'), not both."
-                )
-            prompt_name = name_or_fn
-        elif name_or_fn is None:
-            # Case 4: @prompt() or @prompt(name="something") - use keyword name
-            prompt_name = name
-        else:
-            raise TypeError(
-                f"First argument to @prompt must be a function, string, or None, got {type(name_or_fn)}"
-            )
+        # Resolve task parameter - default to False for standalone usage
+        supports_task: bool | TaskConfig = task if task is not None else False
 
-        # Return partial for cases where we need to wait for the function
-        return partial(
-            self.prompt,
-            name=prompt_name,
+        # Delegate to standalone decorator for object creation
+        # Type ignore: standalone_prompt has overloads for specific types, but we pass
+        # through the union type. Runtime behavior is correct.
+        result = standalone_prompt(
+            name_or_fn,  # type: ignore[arg-type]
+            name=name,
             title=title,
             description=description,
             icons=icons,
             tags=tags,
-            enabled=enabled,
             meta=meta,
-            task=task,
+            task=supports_task,
         )
+
+        # If standalone returned a FunctionPrompt directly (@prompt without parens),
+        # register it and return
+        if isinstance(result, FunctionPrompt):
+            return register(result)
+
+        # Otherwise, standalone returned a decorator/partial - wrap it to register after creation
+        def decorator(fn: AnyFunction) -> FunctionPrompt:
+            prompt_obj = result(fn)
+            return register(prompt_obj)
+
+        return decorator

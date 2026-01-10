@@ -12,6 +12,8 @@ import mcp.types
 if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution
+
+    from fastmcp.resources.template import ResourceTemplate
 import pydantic
 import pydantic_core
 from mcp.types import Annotations, Icon
@@ -484,3 +486,136 @@ class FunctionResource(Resource):
         if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])
+
+
+# Type alias for any function that can be decorated
+AnyFunction = Callable[..., Any]
+
+
+def resource(
+    uri: str,
+    *,
+    name: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    icons: list[Icon] | None = None,
+    mime_type: str | None = None,
+    tags: set[str] | None = None,
+    annotations: Annotations | dict[str, Any] | None = None,
+    meta: dict[str, Any] | None = None,
+    task: bool | TaskConfig | None = None,
+) -> Callable[[AnyFunction], Resource | ResourceTemplate]:
+    """Standalone decorator to create a resource without registering it to a server.
+
+    This decorator creates a Resource or ResourceTemplate object from a function.
+    Unlike @server.resource(), this does NOT register the resource with any server -
+    you must explicitly add it using server.add_resource() or server.add_template().
+
+    If the URI contains parameters (e.g. "resource://{param}") or the function
+    has parameters, it will create a ResourceTemplate instead of a Resource.
+
+    This is useful for:
+    - Creating resources that will be modified before registration
+    - Defining resources in modules that are discovered by FileSystemProvider
+    - Creating reusable resource definitions
+
+    Args:
+        uri: URI for the resource (e.g. "resource://my-resource" or "resource://{param}")
+        name: Optional name for the resource
+        title: Optional title for the resource
+        description: Optional description of the resource
+        icons: Optional icons for the resource
+        mime_type: Optional MIME type for the resource
+        tags: Optional set of tags for categorizing the resource
+        annotations: Optional annotations about the resource's behavior
+        meta: Optional meta information about the resource
+        task: Optional task configuration for background execution (default False)
+
+    Returns:
+        A decorator function that returns a Resource or ResourceTemplate.
+
+    Example:
+        ```python
+        from fastmcp.resources import resource
+        from fastmcp import FastMCP
+
+        @resource("data://config")
+        def get_config() -> str:
+            return '{"setting": "value"}'
+
+        @resource("data://{city}/weather")
+        def get_weather(city: str) -> str:
+            return f"Weather for {city}"
+
+        # Resources are not registered yet - add them explicitly
+        mcp = FastMCP()
+        mcp.add_resource(get_config)
+        mcp.add_template(get_weather)
+        ```
+    """
+    if isinstance(annotations, dict):
+        annotations = Annotations(**annotations)
+
+    # Check if user passed function directly instead of calling decorator
+    if inspect.isroutine(uri):
+        raise TypeError(
+            "The @resource decorator was used incorrectly. "
+            "Did you forget to call it? Use @resource('uri') instead of @resource"
+        )
+
+    def decorator(fn: AnyFunction) -> Resource | ResourceTemplate:
+        if isinstance(fn, classmethod):
+            raise TypeError(
+                inspect.cleandoc(
+                    """
+                    To decorate a classmethod, first define the method and then call
+                    resource() directly on the method instead of using it as a
+                    decorator. See https://gofastmcp.com/patterns/decorating-methods
+                    for examples and more information.
+                    """
+                )
+            )
+
+        # Default to False for standalone usage (no server to inherit from)
+        supports_task: bool | TaskConfig = task if task is not None else False
+
+        # Check if this should be a template
+        has_uri_params = "{" in uri and "}" in uri
+        # Use wrapper to check for user-facing parameters
+        from fastmcp.server.dependencies import without_injected_parameters
+
+        wrapper_fn = without_injected_parameters(fn)
+        has_func_params = bool(inspect.signature(wrapper_fn).parameters)
+
+        if has_uri_params or has_func_params:
+            from fastmcp.resources.template import ResourceTemplate
+
+            return ResourceTemplate.from_function(
+                fn=fn,
+                uri_template=uri,
+                name=name,
+                title=title,
+                description=description,
+                icons=icons,
+                mime_type=mime_type,
+                tags=tags,
+                annotations=annotations,
+                meta=meta,
+                task=supports_task,
+            )
+        else:
+            return Resource.from_function(
+                fn=fn,
+                uri=uri,
+                name=name,
+                title=title,
+                description=description,
+                icons=icons,
+                mime_type=mime_type,
+                tags=tags,
+                annotations=annotations,
+                meta=meta,
+                task=supports_task,
+            )
+
+    return decorator

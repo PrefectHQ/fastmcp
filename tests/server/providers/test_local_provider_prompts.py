@@ -178,7 +178,7 @@ class TestPromptDecorator:
     async def test_prompt_decorator_classmethod_error(self):
         mcp = FastMCP()
 
-        with pytest.raises(ValueError, match="To decorate a classmethod"):
+        with pytest.raises(TypeError, match="classmethod"):
 
             class MyClass:
                 @mcp.prompt

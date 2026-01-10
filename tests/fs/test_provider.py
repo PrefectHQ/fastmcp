@@ -1,11 +1,11 @@
-"""Tests for fastmcp.fs FileSystemProvider."""
+"""Tests for FileSystemProvider."""
 
 import time
 from pathlib import Path
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.fs import FileSystemProvider
+from fastmcp.server.providers import FileSystemProvider
 
 
 class TestFileSystemProvider:
@@ -22,7 +22,7 @@ class TestFileSystemProvider:
         tools_dir.mkdir()
         (tools_dir / "greet.py").write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def greet(name: str) -> str:
@@ -40,7 +40,7 @@ def greet(name: str) -> str:
         """Provider should discover @resource decorated functions."""
         (tmp_path / "config.py").write_text(
             """\
-from fastmcp.fs import resource
+from fastmcp.resources import resource
 
 @resource("config://app")
 def get_config() -> dict:
@@ -56,7 +56,7 @@ def get_config() -> dict:
         """Provider should discover resource templates."""
         (tmp_path / "users.py").write_text(
             """\
-from fastmcp.fs import resource
+from fastmcp.resources import resource
 
 @resource("users://{user_id}/profile")
 def get_profile(user_id: str) -> dict:
@@ -72,7 +72,7 @@ def get_profile(user_id: str) -> dict:
         """Provider should discover @prompt decorated functions."""
         (tmp_path / "analyze.py").write_text(
             """\
-from fastmcp.fs import prompt
+from fastmcp.prompts import prompt
 
 @prompt
 def analyze(topic: str) -> list:
@@ -88,7 +88,8 @@ def analyze(topic: str) -> list:
         """Provider should discover multiple components in one file."""
         (tmp_path / "multi.py").write_text(
             """\
-from fastmcp.fs import tool, resource, prompt
+from fastmcp.tools import tool
+from fastmcp.resources import resource
 
 @tool
 def tool1() -> str:
@@ -119,7 +120,7 @@ SOME_CONSTANT = 42
         )
         (tmp_path / "tool.py").write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def my_tool() -> str:
@@ -139,7 +140,7 @@ class TestFileSystemProviderReloadMode:
         """With reload=False, components are cached at init."""
         (tmp_path / "tool.py").write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def original() -> str:
@@ -153,7 +154,7 @@ def original() -> str:
         # Add another file - should NOT be picked up
         (tmp_path / "tool2.py").write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def added() -> str:
@@ -168,7 +169,7 @@ def added() -> str:
         """With reload=True, components are rescanned on each request."""
         (tmp_path / "tool.py").write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def original() -> str:
@@ -185,7 +186,7 @@ def original() -> str:
         # Add another file - should be picked up on next _ensure_loaded
         (tmp_path / "tool2.py").write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def added() -> str:
@@ -252,7 +253,7 @@ def added() -> str:
         time.sleep(0.01)
         bad_file.write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def my_tool() -> str:
@@ -284,7 +285,7 @@ class TestFileSystemProviderIntegration:
         """FileSystemProvider should work with FastMCP server."""
         (tmp_path / "greet.py").write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def greet(name: str) -> str:
@@ -310,7 +311,7 @@ def greet(name: str) -> str:
         """FileSystemProvider should work with resources."""
         (tmp_path / "config.py").write_text(
             """\
-from fastmcp.fs import resource
+from fastmcp.resources import resource
 
 @resource("config://app")
 def get_config() -> str:
@@ -336,7 +337,7 @@ def get_config() -> str:
         """FileSystemProvider should work with resource templates."""
         (tmp_path / "users.py").write_text(
             """\
-from fastmcp.fs import resource
+from fastmcp.resources import resource
 
 @resource("users://{user_id}/profile")
 def get_profile(user_id: str) -> str:
@@ -361,7 +362,7 @@ def get_profile(user_id: str) -> str:
         """FileSystemProvider should work with prompts."""
         (tmp_path / "analyze.py").write_text(
             """\
-from fastmcp.fs import prompt
+from fastmcp.prompts import prompt
 
 @prompt
 def analyze(topic: str) -> str:
@@ -390,7 +391,7 @@ def analyze(topic: str) -> str:
         tools.mkdir()
         (tools / "greet.py").write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def greet(name: str) -> str:
@@ -402,7 +403,7 @@ def greet(name: str) -> str:
         payments.mkdir()
         (payments / "charge.py").write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def charge(amount: float) -> str:

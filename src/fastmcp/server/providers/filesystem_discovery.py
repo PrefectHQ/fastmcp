@@ -3,7 +3,7 @@
 This module provides functions to:
 1. Discover Python files in a directory tree
 2. Import modules (as packages if __init__.py exists, else directly)
-3. Extract decorated functions from imported modules
+3. Extract decorated components (Tool, Resource, Prompt objects) from imported modules
 """
 
 from __future__ import annotations
@@ -13,12 +13,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
-from typing import Any
 
-from fastmcp.fs.decorators import (
-    FSMeta,
-    get_fs_meta,
-)
+from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -28,7 +24,8 @@ logger = get_logger(__name__)
 class DiscoveryResult:
     """Result of filesystem discovery."""
 
-    components: list[tuple[Path, Any, FSMeta]] = field(default_factory=list)
+    # Components are real objects (Tool, Resource, ResourceTemplate, Prompt)
+    components: list[tuple[Path, FastMCPComponent]] = field(default_factory=list)
     failed_files: dict[Path, str] = field(default_factory=dict)  # path -> error message
 
 
@@ -175,19 +172,26 @@ def import_module_from_file(file_path: Path) -> ModuleType:
         return module
 
 
-def extract_components(module: ModuleType) -> list[tuple[Any, FSMeta]]:
-    """Extract all decorated functions from a module.
+def extract_components(module: ModuleType) -> list[FastMCPComponent]:
+    """Extract all MCP components from a module.
 
-    Scans all module attributes for functions that have been decorated
-    with @tool, @resource, or @prompt.
+    Scans all module attributes for instances of Tool, Resource,
+    ResourceTemplate, or Prompt objects created by standalone decorators.
 
     Args:
         module: The imported module to scan.
 
     Returns:
-        List of (function, metadata) tuples for each decorated function.
+        List of component objects (Tool, Resource, ResourceTemplate, Prompt).
     """
-    components: list[tuple[Any, FSMeta]] = []
+    # Import here to avoid circular imports
+    from fastmcp.prompts.prompt import Prompt
+    from fastmcp.resources.resource import Resource
+    from fastmcp.resources.template import ResourceTemplate
+    from fastmcp.tools.tool import Tool
+
+    component_types = (Tool, Resource, ResourceTemplate, Prompt)
+    components: list[FastMCPComponent] = []
 
     for name in dir(module):
         # Skip private/magic attributes
@@ -199,10 +203,9 @@ def extract_components(module: ModuleType) -> list[tuple[Any, FSMeta]]:
         except AttributeError:
             continue
 
-        # Check if this object has our marker
-        meta = get_fs_meta(obj)
-        if meta is not None:
-            components.append((obj, meta))
+        # Check if this object is a component type
+        if isinstance(obj, component_types):
+            components.append(obj)
 
     return components
 
@@ -221,7 +224,7 @@ def discover_and_import(root: Path) -> DiscoveryResult:
     Note:
         Files that fail to import are tracked in failed_files, not logged.
         The caller is responsible for logging/handling failures.
-        Files with no decorated functions are silently skipped.
+        Files with no components are silently skipped.
     """
     result = DiscoveryResult()
 
@@ -236,7 +239,7 @@ def discover_and_import(root: Path) -> DiscoveryResult:
             continue
 
         components = extract_components(module)
-        for func, meta in components:
-            result.components.append((file_path, func, meta))
+        for component in components:
+            result.components.append((file_path, component))
 
     return result

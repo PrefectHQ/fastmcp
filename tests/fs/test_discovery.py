@@ -1,14 +1,15 @@
-"""Tests for fastmcp.fs discovery module."""
+"""Tests for filesystem discovery module."""
 
 from pathlib import Path
 
-from fastmcp.fs.decorators import ToolMeta
-from fastmcp.fs.discovery import (
+from fastmcp.resources.template import FunctionResourceTemplate
+from fastmcp.server.providers.filesystem_discovery import (
     discover_and_import,
     discover_files,
     extract_components,
     import_module_from_file,
 )
+from fastmcp.tools import FunctionTool
 
 
 class TestDiscoverFiles:
@@ -173,7 +174,7 @@ class TestExtractComponents:
     """Tests for extract_components function."""
 
     def test_extract_no_components(self, tmp_path: Path):
-        """Should return empty list for module with no decorated functions."""
+        """Should return empty list for module with no components."""
         py_file = tmp_path / "plain.py"
         py_file.write_text(
             """\
@@ -189,11 +190,11 @@ SOME_VAR = 42
         assert components == []
 
     def test_extract_tool_component(self, tmp_path: Path):
-        """Should extract @tool decorated functions."""
+        """Should extract Tool objects."""
         py_file = tmp_path / "tools.py"
         py_file.write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def greet(name: str) -> str:
@@ -205,16 +206,18 @@ def greet(name: str) -> str:
         components = extract_components(module)
 
         assert len(components) == 1
-        func, meta = components[0]
-        assert func.__name__ == "greet"
-        assert isinstance(meta, ToolMeta)
+        component = components[0]
+        assert isinstance(component, FunctionTool)
+        assert component.name == "greet"
 
     def test_extract_multiple_components(self, tmp_path: Path):
-        """Should extract multiple decorated functions."""
+        """Should extract multiple component types."""
         py_file = tmp_path / "multi.py"
         py_file.write_text(
             """\
-from fastmcp.fs import tool, resource, prompt
+from fastmcp.tools import tool
+from fastmcp.resources import resource
+from fastmcp.prompts import prompt
 
 @tool
 def greet(name: str) -> str:
@@ -225,8 +228,8 @@ def get_config() -> dict:
     return {}
 
 @prompt
-def analyze(topic: str) -> list:
-    return []
+def analyze(topic: str) -> str:
+    return f"Analyze: {topic}"
 """
         )
 
@@ -234,21 +237,22 @@ def analyze(topic: str) -> list:
         components = extract_components(module)
 
         assert len(components) == 3
-        names = {func.__name__ for func, _ in components}
-        assert names == {"greet", "get_config", "analyze"}
+        types = {type(c).__name__ for c in components}
+        assert types == {"FunctionTool", "FunctionResource", "FunctionPrompt"}
 
-    def test_extract_skips_private_functions(self, tmp_path: Path):
-        """Should skip private functions even if decorated."""
+    def test_extract_skips_private_components(self, tmp_path: Path):
+        """Should skip private components (those starting with _)."""
         py_file = tmp_path / "private.py"
         py_file.write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def public_tool() -> str:
     return "public"
 
-@tool
+# The module attribute starts with _, so it's skipped during discovery
+@tool("private_tool_name")
 def _private_tool() -> str:
     return "private"
 """
@@ -257,10 +261,31 @@ def _private_tool() -> str:
         module = import_module_from_file(py_file)
         components = extract_components(module)
 
-        # Only public tool should be found (private starts with _)
+        # Only public_tool should be found (_private_tool starts with _, so skipped)
         assert len(components) == 1
-        func, _ = components[0]
-        assert func.__name__ == "public_tool"
+        component = components[0]
+        assert component.name == "public_tool"
+
+    def test_extract_resource_template(self, tmp_path: Path):
+        """Should extract ResourceTemplate objects."""
+        py_file = tmp_path / "templates.py"
+        py_file.write_text(
+            """\
+from fastmcp.resources import resource
+
+@resource("users://{user_id}/profile")
+def get_profile(user_id: str) -> dict:
+    return {"id": user_id}
+"""
+        )
+
+        module = import_module_from_file(py_file)
+        components = extract_components(module)
+
+        assert len(components) == 1
+        component = components[0]
+        assert isinstance(component, FunctionResourceTemplate)
+        assert component.uri_template == "users://{user_id}/profile"
 
 
 class TestDiscoverAndImport:
@@ -278,7 +303,7 @@ class TestDiscoverAndImport:
         tools_dir.mkdir()
         (tools_dir / "greet.py").write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def greet(name: str) -> str:
@@ -289,16 +314,16 @@ def greet(name: str) -> str:
         result = discover_and_import(tmp_path)
 
         assert len(result.components) == 1
-        file_path, func, meta = result.components[0]
+        file_path, component = result.components[0]
         assert file_path.name == "greet.py"
-        assert func.__name__ == "greet"
-        assert isinstance(meta, ToolMeta)
+        assert isinstance(component, FunctionTool)
+        assert component.name == "greet"
 
     def test_discover_and_import_skips_bad_imports(self, tmp_path: Path):
         """Should skip files that fail to import and track them."""
         (tmp_path / "good.py").write_text(
             """\
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def good_tool() -> str:
@@ -318,8 +343,8 @@ def bad_function():
 
         # Only good.py should be imported
         assert len(result.components) == 1
-        _, func, _ = result.components[0]
-        assert func.__name__ == "good_tool"
+        _, component = result.components[0]
+        assert component.name == "good_tool"
 
         # bad.py should be in failed_files
         assert len(result.failed_files) == 1

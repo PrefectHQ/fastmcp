@@ -5,6 +5,7 @@ from __future__ import annotations as _annotations
 import inspect
 import json
 from collections.abc import Callable
+from functools import partial
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 
 import pydantic
@@ -608,3 +609,165 @@ class FunctionPrompt(Prompt):
         if task_key:
             kwargs["key"] = task_key
         return await docket.add(lookup_key, **kwargs)(**(arguments or {}))
+
+
+# Type alias for any function that can be decorated
+AnyFunction = Callable[..., Any]
+
+
+@overload
+def prompt(fn: AnyFunction) -> FunctionPrompt: ...
+
+
+@overload
+def prompt(
+    name_or_fn: str,
+    *,
+    title: str | None = None,
+    description: str | None = None,
+    icons: list[Icon] | None = None,
+    tags: set[str] | None = None,
+    meta: dict[str, Any] | None = None,
+    task: bool | TaskConfig | None = None,
+) -> Callable[[AnyFunction], FunctionPrompt]: ...
+
+
+@overload
+def prompt(
+    name_or_fn: None = None,
+    *,
+    name: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    icons: list[Icon] | None = None,
+    tags: set[str] | None = None,
+    meta: dict[str, Any] | None = None,
+    task: bool | TaskConfig | None = None,
+) -> Callable[[AnyFunction], FunctionPrompt]: ...
+
+
+def prompt(
+    name_or_fn: str | AnyFunction | None = None,
+    *,
+    name: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    icons: list[Icon] | None = None,
+    tags: set[str] | None = None,
+    meta: dict[str, Any] | None = None,
+    task: bool | TaskConfig | None = None,
+) -> (
+    Callable[[AnyFunction], FunctionPrompt]
+    | FunctionPrompt
+    | partial[Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt]
+):
+    """Standalone decorator to create a prompt without registering it to a server.
+
+    This decorator creates a FunctionPrompt object from a function. Unlike
+    @server.prompt(), this does NOT register the prompt with any server - you must
+    explicitly add it using server.add_prompt().
+
+    This is useful for:
+    - Creating prompts that will be modified before registration
+    - Defining prompts in modules that are discovered by FileSystemProvider
+    - Creating reusable prompt definitions
+
+    This decorator supports multiple calling patterns:
+    - @prompt (without parentheses)
+    - @prompt() (with empty parentheses)
+    - @prompt("custom_name") (with name as first argument)
+    - @prompt(name="custom_name") (with name as keyword argument)
+
+    Args:
+        name_or_fn: Either a function (when used as @prompt), a string name, or None
+        name: Optional name for the prompt (keyword-only, alternative to name_or_fn)
+        title: Optional title for the prompt
+        description: Optional description of what the prompt does
+        icons: Optional icons for the prompt
+        tags: Optional set of tags for categorizing the prompt
+        meta: Optional meta information about the prompt
+        task: Optional task configuration for background execution (default False)
+
+    Returns:
+        A FunctionPrompt when decorating a function, or a decorator function when
+        called with parameters.
+
+    Example:
+        ```python
+        from fastmcp.prompts import prompt
+        from fastmcp import FastMCP
+
+        @prompt
+        def analyze(topic: str) -> str:
+            return f"Please analyze: {topic}"
+
+        @prompt("custom_prompt")
+        def my_prompt(data: str) -> str:
+            return f"Process this data: {data}"
+
+        # Prompts are not registered yet - add them explicitly
+        mcp = FastMCP()
+        mcp.add_prompt(analyze)
+        mcp.add_prompt(my_prompt)
+        ```
+    """
+    if isinstance(name_or_fn, classmethod):
+        raise TypeError(
+            inspect.cleandoc(
+                """
+                To decorate a classmethod, first define the method and then call
+                prompt() directly on the method instead of using it as a
+                decorator. See https://gofastmcp.com/patterns/decorating-methods
+                for examples and more information.
+                """
+            )
+        )
+
+    # Determine the actual name and function based on the calling pattern
+    if inspect.isroutine(name_or_fn):
+        # Case 1: @prompt (without parens) - function passed directly
+        fn = name_or_fn
+        prompt_name = name  # Use keyword name if provided, otherwise None
+
+        # Default to False for standalone usage (no server to inherit from)
+        supports_task: bool | TaskConfig = task if task is not None else False
+
+        # Create the prompt object without registration
+        return Prompt.from_function(
+            fn=fn,
+            name=prompt_name,
+            title=title,
+            description=description,
+            icons=icons,
+            tags=tags,
+            meta=meta,
+            task=supports_task,
+        )
+
+    elif isinstance(name_or_fn, str):
+        # Case 2: @prompt("custom_name") - name passed as first argument
+        if name is not None:
+            raise TypeError(
+                "Cannot specify both a name as first argument and as keyword argument. "
+                f"Use either @prompt('{name_or_fn}') or @prompt(name='{name}'), not both."
+            )
+        prompt_name = name_or_fn
+    elif name_or_fn is None:
+        # Case 3: @prompt() or @prompt(name="something") - use keyword name
+        prompt_name = name
+    else:
+        raise TypeError(
+            f"First argument to @prompt must be a function, string, or None, got {type(name_or_fn)}"
+        )
+
+    # Return partial for cases where we need to wait for the function
+    return partial(
+        prompt,
+        name=prompt_name,
+        title=title,
+        description=description,
+        icons=icons,
+        tags=tags,
+        meta=meta,
+        task=task,
+    )

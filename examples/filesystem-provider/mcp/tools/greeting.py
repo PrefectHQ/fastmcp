@@ -1,6 +1,6 @@
 """Greeting tools - multiple tools in one file."""
 
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 
 @tool

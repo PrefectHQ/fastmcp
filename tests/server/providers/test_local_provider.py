@@ -294,10 +294,16 @@ class TestLocalProviderInterface:
 
 
 class TestLocalProviderDecorators:
-    """Tests for LocalProvider decorator methods."""
+    """Tests for LocalProvider decorator registration.
 
-    def test_tool_decorator_bare(self):
-        """Test @provider.tool without parentheses."""
+    Note: Decorator calling patterns and metadata are tested in the standalone
+    decorator tests (tests/tools/test_standalone_decorator.py, etc.). These tests
+    focus on LocalProvider-specific behavior: registration into _components,
+    the enabled flag, and round-trip execution via Client.
+    """
+
+    def test_tool_decorator_registers(self):
+        """Tool decorator should register in _components."""
         provider = LocalProvider()
 
         @provider.tool
@@ -307,18 +313,8 @@ class TestLocalProviderDecorators:
         assert "tool:my_tool" in provider._components
         assert provider._components["tool:my_tool"].name == "my_tool"
 
-    def test_tool_decorator_with_parens(self):
-        """Test @provider.tool() with empty parentheses."""
-        provider = LocalProvider()
-
-        @provider.tool()
-        def my_tool(x: int) -> int:
-            return x * 2
-
-        assert "tool:my_tool" in provider._components
-
-    def test_tool_decorator_with_name_kwarg(self):
-        """Test @provider.tool(name='custom')."""
+    def test_tool_decorator_with_custom_name_registers(self):
+        """Tool with custom name should register under that name."""
         provider = LocalProvider()
 
         @provider.tool(name="custom_name")
@@ -328,18 +324,8 @@ class TestLocalProviderDecorators:
         assert "tool:custom_name" in provider._components
         assert "tool:my_tool" not in provider._components
 
-    def test_tool_decorator_with_description(self):
-        """Test @provider.tool(description='...')."""
-        provider = LocalProvider()
-
-        @provider.tool(description="Custom description")
-        def my_tool(x: int) -> int:
-            return x * 2
-
-        assert provider._components["tool:my_tool"].description == "Custom description"
-
     def test_tool_direct_call(self):
-        """Test provider.tool(fn, name='...')."""
+        """provider.tool(fn) should register the function."""
         provider = LocalProvider()
 
         def my_tool(x: int) -> int:
@@ -349,8 +335,37 @@ class TestLocalProviderDecorators:
 
         assert "tool:direct_tool" in provider._components
 
-    async def test_tool_decorator_execution(self):
-        """Test that decorated tools execute correctly."""
+    def test_tool_enabled_false(self):
+        """Tool with enabled=False should be disabled."""
+        provider = LocalProvider()
+
+        @provider.tool(enabled=False)
+        def disabled_tool() -> str:
+            return "should be disabled"
+
+        assert "tool:disabled_tool" in provider._components
+        tool = provider._components["tool:disabled_tool"]
+        assert not provider._is_component_enabled(tool)
+
+    async def test_tool_enabled_false_not_listed(self):
+        """Disabled tool should not appear in list_tools."""
+        provider = LocalProvider()
+
+        @provider.tool(enabled=False)
+        def disabled_tool() -> str:
+            return "should be disabled"
+
+        @provider.tool
+        def enabled_tool() -> str:
+            return "should be enabled"
+
+        tools = await provider.list_tools()
+        names = {t.name for t in tools}
+        assert "enabled_tool" in names
+        assert "disabled_tool" not in names
+
+    async def test_tool_roundtrip(self):
+        """Tool should execute correctly via Client."""
         provider = LocalProvider()
 
         @provider.tool
@@ -363,8 +378,8 @@ class TestLocalProviderDecorators:
             result = await client.call_tool("add", {"a": 2, "b": 3})
             assert result.data == 5
 
-    def test_resource_decorator(self):
-        """Test @provider.resource decorator."""
+    def test_resource_decorator_registers(self):
+        """Resource decorator should register in _components."""
         provider = LocalProvider()
 
         @provider.resource("resource://test")
@@ -373,8 +388,8 @@ class TestLocalProviderDecorators:
 
         assert "resource:resource://test" in provider._components
 
-    def test_resource_decorator_with_name(self):
-        """Test @provider.resource with custom name."""
+    def test_resource_with_custom_name_registers(self):
+        """Resource with custom name should register with that name."""
         provider = LocalProvider()
 
         @provider.resource("resource://test", name="custom_name")
@@ -383,8 +398,66 @@ class TestLocalProviderDecorators:
 
         assert provider._components["resource:resource://test"].name == "custom_name"
 
-    async def test_resource_decorator_execution(self):
-        """Test that decorated resources execute correctly."""
+    def test_resource_enabled_false(self):
+        """Resource with enabled=False should be disabled."""
+        provider = LocalProvider()
+
+        @provider.resource("resource://test", enabled=False)
+        def disabled_resource() -> str:
+            return "should be disabled"
+
+        assert "resource:resource://test" in provider._components
+        resource = provider._components["resource:resource://test"]
+        assert not provider._is_component_enabled(resource)
+
+    async def test_resource_enabled_false_not_listed(self):
+        """Disabled resource should not appear in list_resources."""
+        provider = LocalProvider()
+
+        @provider.resource("resource://disabled", enabled=False)
+        def disabled_resource() -> str:
+            return "should be disabled"
+
+        @provider.resource("resource://enabled")
+        def enabled_resource() -> str:
+            return "should be enabled"
+
+        resources = await provider.list_resources()
+        uris = {str(r.uri) for r in resources}
+        assert "resource://enabled" in uris
+        assert "resource://disabled" not in uris
+
+    def test_template_enabled_false(self):
+        """Template with enabled=False should be disabled."""
+        provider = LocalProvider()
+
+        @provider.resource("data://{id}", enabled=False)
+        def disabled_template(id: str) -> str:
+            return f"Data {id}"
+
+        assert "template:data://{id}" in provider._components
+        template = provider._components["template:data://{id}"]
+        assert not provider._is_component_enabled(template)
+
+    async def test_template_enabled_false_not_listed(self):
+        """Disabled template should not appear in list_resource_templates."""
+        provider = LocalProvider()
+
+        @provider.resource("data://{id}", enabled=False)
+        def disabled_template(id: str) -> str:
+            return f"Data {id}"
+
+        @provider.resource("items://{id}")
+        def enabled_template(id: str) -> str:
+            return f"Item {id}"
+
+        templates = await provider.list_resource_templates()
+        uris = {t.uri_template for t in templates}
+        assert "items://{id}" in uris
+        assert "data://{id}" not in uris
+
+    async def test_resource_roundtrip(self):
+        """Resource should execute correctly via Client."""
         provider = LocalProvider()
 
         @provider.resource("resource://greeting")
@@ -397,8 +470,8 @@ class TestLocalProviderDecorators:
             result = await client.read_resource("resource://greeting")
             assert "Hello, World!" in str(result)
 
-    def test_prompt_decorator_bare(self):
-        """Test @provider.prompt without parentheses."""
+    def test_prompt_decorator_registers(self):
+        """Prompt decorator should register in _components."""
         provider = LocalProvider()
 
         @provider.prompt
@@ -407,18 +480,8 @@ class TestLocalProviderDecorators:
 
         assert "prompt:my_prompt" in provider._components
 
-    def test_prompt_decorator_with_parens(self):
-        """Test @provider.prompt() with empty parentheses."""
-        provider = LocalProvider()
-
-        @provider.prompt()
-        def my_prompt() -> str:
-            return "A prompt"
-
-        assert "prompt:my_prompt" in provider._components
-
-    def test_prompt_decorator_with_name(self):
-        """Test @provider.prompt(name='custom')."""
+    def test_prompt_with_custom_name_registers(self):
+        """Prompt with custom name should register under that name."""
         provider = LocalProvider()
 
         @provider.prompt(name="custom_prompt")
@@ -427,6 +490,49 @@ class TestLocalProviderDecorators:
 
         assert "prompt:custom_prompt" in provider._components
         assert "prompt:my_prompt" not in provider._components
+
+    def test_prompt_enabled_false(self):
+        """Prompt with enabled=False should be disabled."""
+        provider = LocalProvider()
+
+        @provider.prompt(enabled=False)
+        def disabled_prompt() -> str:
+            return "should be disabled"
+
+        assert "prompt:disabled_prompt" in provider._components
+        prompt = provider._components["prompt:disabled_prompt"]
+        assert not provider._is_component_enabled(prompt)
+
+    async def test_prompt_enabled_false_not_listed(self):
+        """Disabled prompt should not appear in list_prompts."""
+        provider = LocalProvider()
+
+        @provider.prompt(enabled=False)
+        def disabled_prompt() -> str:
+            return "should be disabled"
+
+        @provider.prompt
+        def enabled_prompt() -> str:
+            return "should be enabled"
+
+        prompts = await provider.list_prompts()
+        names = {p.name for p in prompts}
+        assert "enabled_prompt" in names
+        assert "disabled_prompt" not in names
+
+    async def test_prompt_roundtrip(self):
+        """Prompt should execute correctly via Client."""
+        provider = LocalProvider()
+
+        @provider.prompt
+        def greeting(name: str) -> str:
+            return f"Hello, {name}!"
+
+        server = FastMCP("Test", providers=[provider])
+
+        async with Client(server) as client:
+            result = await client.get_prompt("greeting", {"name": "World"})
+            assert "Hello, World!" in str(result)
 
 
 class TestLocalProviderToolTransformations:

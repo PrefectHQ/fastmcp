@@ -15,7 +15,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 Traditional FastMCP servers require coordination between files. Either your tool files import the server to call `@server.tool()`, or your server file imports all the tool modules. Both approaches create coupling that some developers prefer to avoid.
 
-`FileSystemProvider` eliminates this coordination. Each file is self-contained—it uses decorators from `fastmcp.fs` that don't require access to a server instance. The provider discovers these files at startup, so you can add new tools without modifying your server file.
+`FileSystemProvider` eliminates this coordination. Each file is self-contained—it uses standalone decorators (`@tool`, `@resource`, `@prompt`) that don't require access to a server instance. The provider discovers these files at startup, so you can add new tools without modifying your server file.
 
 This is a convention some teams prefer, not necessarily better for all projects. The tradeoffs:
 
@@ -25,20 +25,22 @@ This is a convention some teams prefer, not necessarily better for all projects.
 
 ## Quick Start
 
-Create a provider pointing to your components directory, then pass it to your server.
+Create a provider pointing to your components directory, then pass it to your server. Use `Path(__file__).parent` to make the path relative to your server file.
 
 ```python
-from fastmcp import FastMCP
-from fastmcp.fs import FileSystemProvider
+from pathlib import Path
 
-mcp = FastMCP("MyServer", providers=[FileSystemProvider("mcp/")])
+from fastmcp import FastMCP
+from fastmcp.server.providers import FileSystemProvider
+
+mcp = FastMCP("MyServer", providers=[FileSystemProvider(Path(__file__).parent / "mcp")])
 ```
 
 In your `mcp/` directory, create Python files with decorated functions.
 
 ```python
 # mcp/tools/greet.py
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def greet(name: str) -> str:
@@ -50,14 +52,14 @@ When the server starts, `FileSystemProvider` scans the directory, imports all Py
 
 ## Decorators
 
-The `fastmcp.fs` module provides three decorators that mark functions for discovery: `@tool`, `@resource`, and `@prompt`. These support the full syntax of standard FastMCP decorators—all the same parameters work identically.
+FastMCP provides standalone decorators that mark functions for discovery: `@tool` from `fastmcp.tools`, `@resource` from `fastmcp.resources`, and `@prompt` from `fastmcp.prompts`. These support the full syntax of server-bound decorators—all the same parameters work identically.
 
 ### @tool
 
 Mark a function as a tool. The function name becomes the tool name by default.
 
 ```python
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool
 def calculate_sum(a: float, b: float) -> float:
@@ -68,7 +70,7 @@ def calculate_sum(a: float, b: float) -> float:
 Customize the tool with optional parameters.
 
 ```python
-from fastmcp.fs import tool
+from fastmcp.tools import tool
 
 @tool(
     name="add-numbers",
@@ -86,7 +88,7 @@ The decorator supports all standard tool options: `name`, `title`, `description`
 Mark a function as a resource. Unlike `@tool`, the `@resource` decorator requires a URI argument.
 
 ```python
-from fastmcp.fs import resource
+from fastmcp.resources import resource
 
 @resource("config://app")
 def get_app_config() -> str:
@@ -97,7 +99,7 @@ def get_app_config() -> str:
 URIs with template parameters create resource templates. The provider automatically detects whether to register a static resource or a template based on whether the URI contains `{parameters}` or the function has arguments.
 
 ```python
-from fastmcp.fs import resource
+from fastmcp.resources import resource
 
 @resource("users://{user_id}/profile")
 def get_user_profile(user_id: str) -> str:
@@ -112,7 +114,7 @@ The decorator supports: `uri` (required), `name`, `title`, `description`, `icons
 Mark a function as a prompt template.
 
 ```python
-from fastmcp.fs import prompt
+from fastmcp.prompts import prompt
 
 @prompt
 def code_review(code: str, language: str = "python") -> str:
@@ -121,7 +123,7 @@ def code_review(code: str, language: str = "python") -> str:
 ```
 
 ```python
-from fastmcp.fs import prompt
+from fastmcp.prompts import prompt
 
 @prompt(name="explain-concept", tags={"education"})
 def explain(topic: str) -> str:
@@ -190,9 +192,11 @@ Without `__init__.py`, files are imported directly using `importlib.util.spec_fr
 During development, you may want changes to component files to take effect without restarting the server. Enable reload mode to re-scan the directory on every request.
 
 ```python
-from fastmcp.fs import FileSystemProvider
+from pathlib import Path
 
-provider = FileSystemProvider("mcp/", reload=True)
+from fastmcp.server.providers import FileSystemProvider
+
+provider = FileSystemProvider(Path(__file__).parent / "mcp", reload=True)
 ```
 
 With `reload=True`, the provider:
@@ -238,7 +242,7 @@ The server entry point is minimal.
 from pathlib import Path
 
 from fastmcp import FastMCP
-from fastmcp.fs import FileSystemProvider
+from fastmcp.server.providers import FileSystemProvider
 
 provider = FileSystemProvider(
     root=Path(__file__).parent / "mcp",

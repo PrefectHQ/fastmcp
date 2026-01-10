@@ -4,6 +4,7 @@ import inspect
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -764,3 +765,180 @@ def _convert_to_content(
         ]
     # If none of the items are ContentBlocks, aggregate all items into a single TextContent
     return [TextContent(type="text", text=_serialize_with_fallback(result, serializer))]
+
+
+# Type alias for any function that can be decorated
+AnyFunction = Callable[..., Any]
+
+
+@overload
+def tool(fn: AnyFunction) -> FunctionTool: ...
+
+
+@overload
+def tool(
+    name_or_fn: str,
+    *,
+    title: str | None = None,
+    description: str | None = None,
+    icons: list[mcp.types.Icon] | None = None,
+    tags: set[str] | None = None,
+    output_schema: dict[str, Any] | NotSetT | None = NotSet,
+    annotations: ToolAnnotations | dict[str, Any] | None = None,
+    meta: dict[str, Any] | None = None,
+    task: bool | TaskConfig | None = None,
+) -> Callable[[AnyFunction], FunctionTool]: ...
+
+
+@overload
+def tool(
+    name_or_fn: None = None,
+    *,
+    name: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    icons: list[mcp.types.Icon] | None = None,
+    tags: set[str] | None = None,
+    output_schema: dict[str, Any] | NotSetT | None = NotSet,
+    annotations: ToolAnnotations | dict[str, Any] | None = None,
+    meta: dict[str, Any] | None = None,
+    task: bool | TaskConfig | None = None,
+) -> Callable[[AnyFunction], FunctionTool]: ...
+
+
+def tool(
+    name_or_fn: str | AnyFunction | None = None,
+    *,
+    name: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    icons: list[mcp.types.Icon] | None = None,
+    tags: set[str] | None = None,
+    output_schema: dict[str, Any] | NotSetT | None = NotSet,
+    annotations: ToolAnnotations | dict[str, Any] | None = None,
+    meta: dict[str, Any] | None = None,
+    task: bool | TaskConfig | None = None,
+) -> (
+    Callable[[AnyFunction], FunctionTool]
+    | FunctionTool
+    | partial[Callable[[AnyFunction], FunctionTool] | FunctionTool]
+):
+    """Standalone decorator to create a tool without registering it to a server.
+
+    This decorator creates a FunctionTool object from a function. Unlike
+    @server.tool(), this does NOT register the tool with any server - you must
+    explicitly add it using server.add_tool().
+
+    This is useful for:
+    - Creating tools that will be transformed before registration
+    - Defining tools in modules that are discovered by FileSystemProvider
+    - Creating reusable tool definitions
+
+    This decorator supports multiple calling patterns:
+    - @tool (without parentheses)
+    - @tool() (with empty parentheses)
+    - @tool("custom_name") (with name as first argument)
+    - @tool(name="custom_name") (with name as keyword argument)
+
+    Args:
+        name_or_fn: Either a function (when used as @tool), a string name, or None
+        name: Optional name for the tool (keyword-only, alternative to name_or_fn)
+        title: Optional title for the tool
+        description: Optional description of what the tool does
+        icons: Optional icons for the tool
+        tags: Optional set of tags for categorizing the tool
+        output_schema: Optional JSON schema for the tool's output
+        annotations: Optional annotations about the tool's behavior
+        meta: Optional meta information about the tool
+        task: Optional task configuration for background execution (default False)
+
+    Returns:
+        A FunctionTool when decorating a function, or a decorator function when
+        called with parameters.
+
+    Example:
+        ```python
+        from fastmcp.tools import tool
+        from fastmcp import FastMCP
+
+        @tool
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        @tool("search_products")
+        def search(query: str) -> list[dict]:
+            return database.search(query)
+
+        # Tools are not registered yet - add them explicitly
+        mcp = FastMCP()
+        mcp.add_tool(greet)
+        mcp.add_tool(search)
+        ```
+    """
+    if isinstance(annotations, dict):
+        annotations = ToolAnnotations(**annotations)
+
+    if isinstance(name_or_fn, classmethod):
+        raise TypeError(
+            inspect.cleandoc(
+                """
+                To decorate a classmethod, first define the method and then call
+                tool() directly on the method instead of using it as a
+                decorator. See https://gofastmcp.com/patterns/decorating-methods
+                for examples and more information.
+                """
+            )
+        )
+
+    # Determine the actual name and function based on the calling pattern
+    if inspect.isroutine(name_or_fn):
+        # Case 1: @tool (without parens) - function passed directly
+        fn = name_or_fn
+        tool_name = name  # Use keyword name if provided, otherwise None
+
+        # Default to False for standalone usage (no server to inherit from)
+        supports_task: bool | TaskConfig = task if task is not None else False
+
+        # Create the tool object without registration
+        return Tool.from_function(
+            fn,
+            name=tool_name,
+            title=title,
+            description=description,
+            icons=icons,
+            tags=tags,
+            output_schema=output_schema,
+            annotations=annotations,
+            meta=meta,
+            task=supports_task,
+        )
+
+    elif isinstance(name_or_fn, str):
+        # Case 2: @tool("custom_name") - name passed as first argument
+        if name is not None:
+            raise TypeError(
+                "Cannot specify both a name as first argument and as keyword argument. "
+                f"Use either @tool('{name_or_fn}') or @tool(name='{name}'), not both."
+            )
+        tool_name = name_or_fn
+    elif name_or_fn is None:
+        # Case 3: @tool() or @tool(name="something") - use keyword name
+        tool_name = name
+    else:
+        raise TypeError(
+            f"First argument to @tool must be a function, string, or None, got {type(name_or_fn)}"
+        )
+
+    # Return partial for cases where we need to wait for the function
+    return partial(
+        tool,
+        name=tool_name,
+        title=title,
+        description=description,
+        icons=icons,
+        tags=tags,
+        output_schema=output_schema,
+        annotations=annotations,
+        meta=meta,
+        task=task,
+    )
