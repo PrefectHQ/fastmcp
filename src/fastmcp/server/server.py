@@ -2283,7 +2283,7 @@ class FastMCP(Generic[LifespanResultT]):
             namespace: Optional namespace to use for the mounted server's objects. If None,
                 the server's objects are accessible with their original names.
             as_proxy: Deprecated. Mounted servers now always have their lifespan and
-                middleware invoked. To create a proxy server, use FastMCP.as_proxy()
+                middleware invoked. To create a proxy server, use create_proxy()
                 explicitly before mounting.
             tool_names: Optional mapping of original tool names to custom names. Use this
                 to override namespaced names. Keys are the original tool names from the
@@ -2310,7 +2310,7 @@ class FastMCP(Generic[LifespanResultT]):
             warnings.warn(
                 "as_proxy is deprecated and will be removed in a future version. "
                 "Mounted servers now always have their lifespan and middleware invoked. "
-                "To create a proxy server, use FastMCP.as_proxy() explicitly.",
+                "To create a proxy server, use create_proxy() explicitly.",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -2549,48 +2549,24 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> FastMCPProxy:
         """Create a FastMCP proxy server for the given backend.
 
+        .. deprecated::
+            Use :func:`fastmcp.server.create_proxy` instead.
+            This method will be removed in a future version.
+
         The `backend` argument can be either an existing `fastmcp.client.Client`
         instance or any value accepted as the `transport` argument of
         `fastmcp.client.Client`. This mirrors the convenience of the
         `fastmcp.client.Client` constructor.
         """
-        from fastmcp.client.client import Client
-        from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
-
-        if isinstance(backend, Client):
-            client = backend
-            # Session strategy based on client connection state:
-            # - Connected clients: reuse existing session for all requests
-            # - Disconnected clients: create fresh sessions per request for isolation
-            if client.is_connected():
-                proxy_logger = get_logger(__name__)
-                proxy_logger.info(
-                    "Proxy detected connected client - reusing existing session for all requests. "
-                    "This may cause context mixing in concurrent scenarios."
-                )
-
-                # Reuse sessions - return the same client instance
-                def reuse_client_factory():
-                    return client
-
-                client_factory = reuse_client_factory
-            else:
-                # Fresh sessions per request
-                def fresh_client_factory():
-                    return client.new()
-
-                client_factory = fresh_client_factory
-        else:
-            # backend is not a Client, so it's compatible with ProxyClient.__init__
-            base_client = ProxyClient(cast(Any, backend))
-
-            # Fresh client created from transport - use fresh sessions per request
-            def proxy_client_factory():
-                return base_client.new()
-
-            client_factory = proxy_client_factory
-
-        return FastMCPProxy(client_factory=client_factory, **settings)
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "FastMCP.as_proxy() is deprecated. Use create_proxy() from "
+                "fastmcp.server instead: `from fastmcp.server import create_proxy`",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        # Call the module-level create_proxy function directly
+        return create_proxy(backend, **settings)
 
     @classmethod
     def generate_name(cls, name: str | None = None) -> str:
@@ -2600,3 +2576,60 @@ class FastMCP(Generic[LifespanResultT]):
             return f"{class_name}-{secrets.token_hex(2)}"
         else:
             return f"{class_name}-{name}-{secrets.token_hex(2)}"
+
+
+# -----------------------------------------------------------------------------
+# Module-level Factory Functions
+# -----------------------------------------------------------------------------
+
+
+def create_proxy(
+    target: (
+        Client[ClientTransportT]
+        | ClientTransport
+        | FastMCP[Any]
+        | FastMCP1Server
+        | AnyUrl
+        | Path
+        | MCPConfig
+        | dict[str, Any]
+        | str
+    ),
+    **settings: Any,
+) -> FastMCPProxy:
+    """Create a FastMCP proxy server for the given target.
+
+    This is the recommended way to create a proxy server. For lower-level control,
+    use `FastMCPProxy` or `ProxyProvider` directly from `fastmcp.server.providers.proxy`.
+
+    Args:
+        target: The backend to proxy to. Can be:
+            - A Client instance (connected or disconnected)
+            - A ClientTransport
+            - A FastMCP server instance
+            - A URL string or AnyUrl
+            - A Path to a server script
+            - An MCPConfig or dict
+        **settings: Additional settings passed to FastMCPProxy (name, etc.)
+
+    Returns:
+        A FastMCPProxy server that proxies to the target.
+
+    Example:
+        ```python
+        from fastmcp.server import create_proxy
+
+        # Create a proxy to a remote server
+        proxy = create_proxy("http://remote-server/mcp")
+
+        # Create a proxy to another FastMCP server
+        proxy = create_proxy(other_server)
+        ```
+    """
+    from fastmcp.server.providers.proxy import (
+        FastMCPProxy,
+        _create_client_factory,
+    )
+
+    client_factory = _create_client_factory(target)
+    return FastMCPProxy(client_factory=client_factory, **settings)

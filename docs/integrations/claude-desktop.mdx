@@ -263,11 +263,11 @@ Users on Claude Pro, Max, Team, and Enterprise plans have first-class remote ser
 Create a proxy server that connects to a remote HTTP server:
 
 ```python proxy_server.py
-from fastmcp import FastMCP
+from fastmcp.server import create_proxy
 
 # Create a proxy to a remote server
-proxy = FastMCP.as_proxy(
-    "https://example.com/mcp/sse", 
+proxy = create_proxy(
+    "https://example.com/mcp/sse",
     name="Remote Server Proxy"
 )
 
@@ -280,8 +280,9 @@ if __name__ == "__main__":
 For authenticated remote servers, create an authenticated client following the guidance in the [client auth documentation](/clients/auth/bearer) and pass it to the proxy:
 
 ```python auth_proxy_server.py {7}
-from fastmcp import FastMCP, Client
+from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
+from fastmcp.server import create_proxy
 
 # Create authenticated client
 client = Client(
@@ -290,7 +291,7 @@ client = Client(
 )
 
 # Create proxy using the authenticated client
-proxy = FastMCP.as_proxy(client, name="Authenticated Proxy")
+proxy = create_proxy(client, name="Authenticated Proxy")
 
 if __name__ == "__main__":
     proxy.run()

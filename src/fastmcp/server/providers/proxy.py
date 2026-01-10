@@ -53,6 +53,8 @@ from fastmcp.utilities.logging import get_logger
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from fastmcp.client.transports import ClientTransport
+
 logger = get_logger(__name__)
 
 # Type alias for client factory functions
@@ -575,6 +577,59 @@ class ProxyProvider(Provider):
 
 
 # -----------------------------------------------------------------------------
+# Factory Functions
+# -----------------------------------------------------------------------------
+
+
+def _create_client_factory(
+    target: (
+        Client[ClientTransportT]
+        | ClientTransport
+        | FastMCP[Any]
+        | FastMCP1Server
+        | AnyUrl
+        | Path
+        | MCPConfig
+        | dict[str, Any]
+        | str
+    ),
+) -> ClientFactoryT:
+    """Create a client factory from the given target.
+
+    Internal helper that handles the session strategy based on the target type:
+    - Connected Client: reuses existing session (with warning about context mixing)
+    - Disconnected Client: creates fresh sessions per request
+    - Other targets: creates ProxyClient and fresh sessions per request
+    """
+    if isinstance(target, Client):
+        client = target
+        if client.is_connected():
+            logger.info(
+                "Proxy detected connected client - reusing existing session for all requests. "
+                "This may cause context mixing in concurrent scenarios."
+            )
+
+            def reuse_client_factory() -> Client:
+                return client
+
+            return reuse_client_factory
+        else:
+
+            def fresh_client_factory() -> Client:
+                return client.new()
+
+            return fresh_client_factory
+    else:
+        # target is not a Client, so it's compatible with ProxyClient.__init__
+        base_client = ProxyClient(cast(Any, target))
+
+        def proxy_client_factory() -> Client:
+            return base_client.new()
+
+        return proxy_client_factory
+
+
+# -----------------------------------------------------------------------------
 # FastMCPProxy - Convenience Wrapper
 # -----------------------------------------------------------------------------
 
@@ -587,14 +642,14 @@ class FastMCPProxy(FastMCP):
 
     Example:
         ```python
-        from fastmcp import FastMCP
+        from fastmcp.server import create_proxy
         from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 
-        # Create a proxy server
-        proxy = FastMCPProxy(client_factory=lambda: ProxyClient("http://localhost:8000/mcp"))
+        # Create a proxy server using create_proxy (recommended)
+        proxy = create_proxy("http://localhost:8000/mcp")
 
-        # Or use the convenience method
-        proxy = FastMCP.as_proxy("http://localhost:8000/mcp")
+        # Or use FastMCPProxy directly with explicit client factory
+        proxy = FastMCPProxy(client_factory=lambda: ProxyClient("http://localhost:8000/mcp"))
         ```
     """
 
@@ -607,7 +662,7 @@ class FastMCPProxy(FastMCP):
         """Initialize the proxy server.
 
         FastMCPProxy requires explicit session management via client_factory.
-        Use FastMCP.as_proxy() for convenience with automatic session strategy.
+        Use create_proxy() for convenience with automatic session strategy.
 
         Args:
             client_factory: A callable that returns a Client instance when called.

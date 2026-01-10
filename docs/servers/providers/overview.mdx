@@ -37,7 +37,7 @@ FastMCP includes providers for common patterns:
 |----------|--------------|----------------|
 | `LocalProvider` | Stores components you define in code | `@mcp.tool`, `mcp.add_tool()` |
 | `FastMCPProvider` | Wraps another FastMCP server | `mcp.mount(server)` |
-| `ProxyProvider` | Connects to remote MCP servers | `FastMCP.as_proxy(client)` |
+| `ProxyProvider` | Connects to remote MCP servers | `create_proxy(client)` |
 | `TransformingProvider` | Adds prefixes to avoid name collisions | `mcp.mount(server, namespace="api")` |
 
 Most users only interact with `LocalProvider` (through decorators) and occasionally mount or proxy other servers. The provider abstraction stays invisible until you need it.

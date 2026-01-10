@@ -47,6 +47,77 @@ main.mount(weather_server)
 # Now main has access to get_forecast and data://cities
 ```
 
+## Mounting External Servers
+
+Mount remote HTTP servers or subprocess-based MCP servers using `create_proxy()`:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server import create_proxy
+
+mcp = FastMCP("Orchestrator")
+
+# Mount a remote HTTP server (URLs work directly)
+mcp.mount(create_proxy("http://api.example.com/mcp"), namespace="api")
+
+# Mount local Python scripts (file paths work directly)
+mcp.mount(create_proxy("./my_server.py"), namespace="local")
+```
+
+### Mounting npm/uvx Packages
+
+For npm packages or Python tools, use the config dict format:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server import create_proxy
+
+mcp = FastMCP("Orchestrator")
+
+# Mount npm package via config
+github_config = {
+    "mcpServers": {
+        "default": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"]
+        }
+    }
+}
+mcp.mount(create_proxy(github_config), namespace="github")
+
+# Mount Python tool via config
+sqlite_config = {
+    "mcpServers": {
+        "default": {
+            "command": "uvx",
+            "args": ["mcp-server-sqlite", "--db", "data.db"]
+        }
+    }
+}
+mcp.mount(create_proxy(sqlite_config), namespace="db")
+```
+
+Or use explicit transport classes:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server import create_proxy
+from fastmcp.client.transports import NpxStdioTransport, UvxStdioTransport
+
+mcp = FastMCP("Orchestrator")
+
+mcp.mount(
+    create_proxy(NpxStdioTransport(package="@modelcontextprotocol/server-github")),
+    namespace="github"
+)
+mcp.mount(
+    create_proxy(UvxStdioTransport(tool_name="mcp-server-sqlite", tool_args=["--db", "data.db"])),
+    namespace="db"
+)
+```
+
+For advanced configuration, see [Proxying](/servers/providers/proxy).
+
 ## Namespacing
 
 <VersionBadge version="3.0.0" />
@@ -145,17 +216,15 @@ main.mount(subserver, namespace="api")
 
 ### Proxy Mounting
 
-The parent server treats the mounted server as a separate entity:
+<Warning>
+The `as_proxy` parameter is deprecated. Mounted servers now always have their lifespan and middleware invoked. To create a proxy server explicitly, use `create_proxy()` from `fastmcp.server`.
+</Warning>
 
-```python
-main.mount(subserver, namespace="api", as_proxy=True)
-```
+Previously, the parent server could treat the mounted server as a separate entity with its own lifecycle. This behavior is now the default for all mounted servers:
 
 - Full client lifecycle events on mounted server
 - Mounted server's lifespan is executed
 - Communication via in-memory Client transport
-
-FastMCP automatically uses proxy mounting when the mounted server has a custom lifespan. Override with `as_proxy=True` or `as_proxy=False`.
 
 ## Tag Filtering
 

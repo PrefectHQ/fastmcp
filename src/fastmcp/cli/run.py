@@ -12,7 +12,7 @@ from typing import Any, Literal
 from mcp.server.fastmcp import FastMCP as FastMCP1x
 from watchfiles import Change, awatch
 
-from fastmcp.server.server import FastMCP
+from fastmcp.server.server import FastMCP, create_proxy
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config import (
     MCPServerConfig,
@@ -45,7 +45,7 @@ def create_client_server(url: str) -> Any:
         import fastmcp
 
         client = fastmcp.Client(url)
-        server = fastmcp.FastMCP.as_proxy(client)
+        server = create_proxy(client)
         return server
     except Exception as e:
         logger.error(f"Failed to create client for URL {url}: {e}")
@@ -54,12 +54,10 @@ def create_client_server(url: str) -> Any:
 
 def create_mcp_config_server(mcp_config_path: Path) -> FastMCP[None]:
     """Create a FastMCP server from a MCPConfig."""
-    from fastmcp import FastMCP
-
     with mcp_config_path.open() as src:
         mcp_config = json.load(src)
 
-    server = FastMCP.as_proxy(mcp_config)
+    server = create_proxy(mcp_config)
     return server
 
 

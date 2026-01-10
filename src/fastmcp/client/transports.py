@@ -43,7 +43,7 @@ from fastmcp.mcp_config import (
     infer_transport_type_from_url,
 )
 from fastmcp.server.dependencies import get_http_headers
-from fastmcp.server.server import FastMCP
+from fastmcp.server.server import FastMCP, create_proxy
 from fastmcp.server.tasks.capabilities import get_task_capabilities
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
@@ -1035,9 +1035,9 @@ class MCPConfigTransport(ClientTransport):
             transport = config.to_transport()
 
         client = ProxyClient(transport=transport, timeout=timeout)
-        proxy = FastMCP.as_proxy(
+        proxy = create_proxy(
+            client,
             name=f"Proxy-{name}",
-            backend=client,
             tool_transformations=tool_transforms,
             include_tags=include_tags,
             exclude_tags=exclude_tags,

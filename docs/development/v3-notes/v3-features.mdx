@@ -46,13 +46,13 @@ server2 = FastMCP("Server2", providers=[provider])
 
 ### ProxyProvider
 
-`ProxyProvider` (`src/fastmcp/server/providers/proxy.py`) proxies components from remote MCP servers via a client factory. Used by `FastMCP.as_proxy()` and `FastMCP.mount()` for remote server integration.
+`ProxyProvider` (`src/fastmcp/server/providers/proxy.py`) proxies components from remote MCP servers via a client factory. Used by `create_proxy()` and `FastMCP.mount()` for remote server integration.
 
 ```python
-from fastmcp import FastMCP
+from fastmcp.server import create_proxy
 
 # Create proxy to remote server
-server = FastMCP.as_proxy("http://remote-server/mcp")
+server = create_proxy("http://remote-server/mcp")
 ```
 
 ### OpenAPIProvider

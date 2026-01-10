@@ -14,7 +14,11 @@ from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import ResourceContent, ResourceResult
-from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
+from fastmcp.server import create_proxy
+from fastmcp.server.providers.proxy import (
+    FastMCPProxy,
+    ProxyClient,
+)
 from fastmcp.tools.tool import ToolResult
 from fastmcp.tools.tool_transform import (
     ToolTransformConfig,
@@ -131,44 +135,74 @@ def fastmcp_server():
 @pytest.fixture
 async def proxy_server(fastmcp_server):
     """Fixture that creates a FastMCP proxy server."""
-    return FastMCP.as_proxy(ProxyClient(transport=FastMCPTransport(fastmcp_server)))
+    return create_proxy(ProxyClient(transport=FastMCPTransport(fastmcp_server)))
 
 
-async def test_create_proxy(fastmcp_server):
-    """Test that the proxy server properly forwards requests to the original server."""
-    # Create a client
+async def test_create_proxy_with_client(fastmcp_server):
+    """Test create_proxy with a Client."""
     client = ProxyClient(transport=FastMCPTransport(fastmcp_server))
-
-    server = FastMCPProxy.as_proxy(client)
+    server = create_proxy(client)
 
     assert isinstance(server, FastMCPProxy)
     assert isinstance(server, FastMCP)
     assert server.name.startswith("FastMCPProxy-")
 
 
-async def test_as_proxy_with_server(fastmcp_server):
-    """FastMCP.as_proxy should accept a FastMCP instance."""
-    proxy = FastMCP.as_proxy(fastmcp_server)
+async def test_create_proxy_with_server(fastmcp_server):
+    """create_proxy should accept a FastMCP instance."""
+    proxy = create_proxy(fastmcp_server)
     async with Client(proxy) as client:
         result = await client.call_tool("greet", {"name": "Test"})
         assert result.data == "Hello, Test!"
 
 
-async def test_as_proxy_with_transport(fastmcp_server):
-    """FastMCP.as_proxy should accept a ClientTransport."""
-    proxy = FastMCP.as_proxy(FastMCPTransport(fastmcp_server))
+async def test_create_proxy_with_transport(fastmcp_server):
+    """create_proxy should accept a ClientTransport."""
+    proxy = create_proxy(FastMCPTransport(fastmcp_server))
     async with Client(proxy) as client:
         result = await client.call_tool("greet", {"name": "Test"})
         assert result.data == "Hello, Test!"
 
 
-def test_as_proxy_with_url():
-    """FastMCP.as_proxy should accept a URL without connecting."""
-    proxy = FastMCP.as_proxy("http://example.com/mcp/")
+def test_create_proxy_with_url():
+    """create_proxy should accept a URL without connecting."""
+    proxy = create_proxy("http://example.com/mcp/")
     assert isinstance(proxy, FastMCPProxy)
     client = cast(Client, proxy.client_factory())
     assert isinstance(client.transport, StreamableHttpTransport)
     assert client.transport.url == "http://example.com/mcp/"
+
+
+# --- Deprecated as_proxy tests (verify backwards compatibility) ---
+
+
+async def test_as_proxy_deprecated_with_server(fastmcp_server):
+    """FastMCP.as_proxy should work but emit deprecation warning."""
+    import warnings
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        proxy = FastMCP.as_proxy(fastmcp_server)
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert "create_proxy" in str(w[0].message)
+
+    async with Client(proxy) as client:
+        result = await client.call_tool("greet", {"name": "Test"})
+        assert result.data == "Hello, Test!"
+
+
+def test_as_proxy_deprecated_with_url():
+    """FastMCP.as_proxy should work but emit deprecation warning."""
+    import warnings
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        proxy = FastMCP.as_proxy("http://example.com/mcp/")
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+
+    assert isinstance(proxy, FastMCPProxy)
 
 
 async def test_proxy_with_async_client_factory():
