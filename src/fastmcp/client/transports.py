@@ -119,45 +119,6 @@ class ClientTransport(abc.ABC):
             raise ValueError("This transport does not support auth")
 
 
-class WSTransport(ClientTransport):
-    """Transport implementation that connects to an MCP server via WebSockets."""
-
-    def __init__(self, url: str | AnyUrl):
-        # we never really used this transport, so it can be removed at any time
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "WSTransport is a deprecated MCP transport and will be removed in a future version. Use StreamableHttpTransport instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        if isinstance(url, AnyUrl):
-            url = str(url)
-        if not isinstance(url, str) or not url.startswith("ws"):
-            raise ValueError("Invalid WebSocket URL provided.")
-        self.url = url
-
-    @contextlib.asynccontextmanager
-    async def connect_session(
-        self, **session_kwargs: Unpack[SessionKwargs]
-    ) -> AsyncIterator[ClientSession]:
-        try:
-            from mcp.client.websocket import websocket_client
-        except ImportError as e:
-            raise ImportError(
-                "The websocket transport is not available. Please install fastmcp[websockets] or install the websockets package manually."
-            ) from e
-
-        async with websocket_client(self.url) as transport:
-            read_stream, write_stream = transport
-            async with ClientSession(
-                read_stream, write_stream, **session_kwargs
-            ) as session:
-                yield session
-
-    def __repr__(self) -> str:
-        return f"<WebSocketTransport(url='{self.url}')>"
-
-
 class SSETransport(ClientTransport):
     """Transport implementation that connects to an MCP server via Server-Sent Events."""
 

@@ -1,18 +1,17 @@
+from .auth import OAuth, BearerAuth
 from .client import Client
 from .transports import (
     ClientTransport,
-    WSTransport,
+    FastMCPTransport,
+    NodeStdioTransport,
+    NpxStdioTransport,
+    PythonStdioTransport,
     SSETransport,
     StdioTransport,
-    PythonStdioTransport,
-    NodeStdioTransport,
-    UvxStdioTransport,
-    UvStdioTransport,
-    NpxStdioTransport,
-    FastMCPTransport,
     StreamableHttpTransport,
+    UvStdioTransport,
+    UvxStdioTransport,
 )
-from .auth import OAuth, BearerAuth
 
 __all__ = [
     "BearerAuth",
@@ -28,5 +27,4 @@ __all__ = [
     "StreamableHttpTransport",
     "UvStdioTransport",
     "UvxStdioTransport",
-    "WSTransport",
 ]
