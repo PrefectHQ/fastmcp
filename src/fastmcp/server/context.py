@@ -248,6 +248,29 @@ class Context:
         except LookupError:
             return None
 
+    @property
+    def lifespan_context(self) -> dict[str, Any]:
+        """Access the server's lifespan context.
+
+        Returns the context dict yielded by the server's lifespan function.
+        Returns an empty dict if no lifespan was configured or if the MCP
+        session is not yet established.
+
+        Example:
+        ```python
+        @server.tool
+        def my_tool(ctx: Context) -> str:
+            db = ctx.lifespan_context.get("db")
+            if db:
+                return db.query("SELECT 1")
+            return "No database connection"
+        ```
+        """
+        rc = self.request_context
+        if rc is None:
+            return {}
+        return rc.lifespan_context
+
     async def report_progress(
         self, progress: float, total: float | None = None, message: str | None = None
     ) -> None:

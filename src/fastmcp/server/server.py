@@ -76,6 +76,7 @@ from fastmcp.server.http import (
     create_sse_app,
     create_streamable_http_app,
 )
+from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.providers import LocalProvider, Provider
@@ -203,7 +204,7 @@ class FastMCP(Generic[LifespanResultT]):
         auth: AuthProvider | None = None,
         middleware: Sequence[Middleware] | None = None,
         providers: Sequence[Provider] | None = None,
-        lifespan: LifespanCallable | None = None,
+        lifespan: LifespanCallable | Lifespan | None = None,
         mask_error_details: bool | None = None,
         tools: Sequence[Tool | Callable[..., Any]] | None = None,
         tool_transformations: Mapping[str, ToolTransformConfig] | None = None,
@@ -281,7 +282,11 @@ class FastMCP(Generic[LifespanResultT]):
             )
         self._tool_serializer: Callable[[Any], str] | None = tool_serializer
 
-        self._lifespan: LifespanCallable[LifespanResultT] = lifespan or default_lifespan
+        # Handle Lifespan instances (they're callable) or regular lifespan functions
+        if lifespan is not None:
+            self._lifespan: LifespanCallable[LifespanResultT] = lifespan
+        else:
+            self._lifespan = cast(LifespanCallable[LifespanResultT], default_lifespan)
         self._lifespan_result: LifespanResultT | None = None
         self._lifespan_result_set: bool = False
         self._started: asyncio.Event = asyncio.Event()

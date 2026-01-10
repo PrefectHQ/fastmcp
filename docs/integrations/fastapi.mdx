@@ -410,41 +410,31 @@ If you need CORS on your own FastAPI routes, use the sub-app pattern: mount your
 
 ### Combining Lifespans
 
-If your FastAPI app already has a lifespan (for database connections, startup tasks, etc.), you can't simply replace it with the MCP lifespan. Instead, you need to create a new lifespan function that manages both contexts. This ensures that both your app's initialization logic and the MCP server's session manager run properly:
+If your FastAPI app already has a lifespan (for database connections, startup tasks, etc.), you can't simply replace it with the MCP lifespan. Use `combine_lifespans` to run both:
 
 ```python
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastmcp import FastMCP
+from fastmcp.utilities.lifespan import combine_lifespans
+from contextlib import asynccontextmanager
 
 # Your existing lifespan
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
-    # Startup
     print("Starting up the app...")
-    # Initialize database, cache, etc.
     yield
-    # Shutdown
     print("Shutting down the app...")
 
 # Create MCP server
 mcp = FastMCP("Tools")
-mcp_app = mcp.http_app(path='/mcp')
+mcp_app = mcp.http_app()
 
 # Combine both lifespans
-@asynccontextmanager
-async def combined_lifespan(app: FastAPI):
-    # Run both lifespans
-    async with app_lifespan(app):
-        async with mcp_app.lifespan(app):
-            yield
-
-# Use the combined lifespan
-app = FastAPI(lifespan=combined_lifespan)
-app.mount("/mcp", mcp_app)
+app = FastAPI(lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan))
+app.mount("/mcp", mcp_app)  # MCP endpoint at /mcp
 ```
 
-This pattern ensures both your app's initialization logic and the MCP server's session manager are properly managed. The key is using nested `async with` statements - the inner context (MCP) will be initialized after the outer context (your app), and cleaned up before it. This maintains the correct initialization and cleanup order for all your resources.
+`combine_lifespans` enters lifespans in order and exits in reverse order.
 
 ### Performance Tips
 

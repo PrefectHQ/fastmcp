@@ -124,6 +124,7 @@
                   "servers/context",
                   "servers/elicitation",
                   "servers/icons",
+                  "servers/lifespan",
                   "servers/logging",
                   "servers/middleware",
                   "servers/progress",

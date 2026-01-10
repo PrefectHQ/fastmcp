@@ -60,8 +60,8 @@ The `FastMCP` constructor accepts several arguments:
   Authentication provider for securing HTTP-based transports. See [Authentication](/servers/auth/authentication) for configuration options
 </ParamField>
 
-<ParamField body="lifespan" type="AsyncContextManager | None">
-  An async context manager function for server startup and shutdown logic
+<ParamField body="lifespan" type="Lifespan | AsyncContextManager | None">
+  Server-level setup and teardown logic. See [Lifespans](/servers/lifespan) for composable lifespans
 </ParamField>
 
 <ParamField body="tools" type="list[Tool | Callable] | None">
