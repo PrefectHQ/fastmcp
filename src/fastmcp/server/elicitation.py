@@ -94,7 +94,7 @@ class ElicitationJsonSchema(GenerateJsonSchema):
     def enum_schema(self, schema: core_schema.EnumSchema) -> JsonSchemaValue:
         """Generate inline enum schema.
 
-        Always generates enum pattern: {"enum": [value, ...]}
+        Always generates enum pattern: `{"enum": [value, ...]}`
         Titled enums are handled separately via dict-based syntax in ctx.elicit().
         """
         # Get the base schema from parent - always use simple enum pattern
@@ -134,12 +134,12 @@ def parse_elicit_response_type(response_type: Any) -> ElicitConfig:
 
     Supports multiple syntaxes:
     - None: Empty object schema, expect empty response
-    - dict: {"low": {"title": "..."}} -> single-select titled enum
+    - dict: `{"low": {"title": "..."}}` -> single-select titled enum
     - list patterns:
-        - [["a", "b"]] -> multi-select untitled
-        - [{"low": {...}}] -> multi-select titled
-        - ["a", "b"] -> single-select untitled
-    - list[X] type annotation: multi-select with type
+        - `[["a", "b"]]` -> multi-select untitled
+        - `[{"low": {...}}]` -> multi-select titled
+        - `["a", "b"]` -> single-select untitled
+    - `list[X]` type annotation: multi-select with type
     - Scalar types (bool, int, float, str, Literal, Enum): single value
     - Other types (dataclass, BaseModel): use directly
     """

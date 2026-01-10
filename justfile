@@ -14,6 +14,10 @@ typecheck:
 docs:
     cd docs && npx --yes mint@latest dev
 
+# Check for broken links in documentation
+docs-broken-links:
+    cd docs && npx --yes mint@latest install && npx --yes mint@latest broken-links
+
 # Generate API reference documentation for all modules
 api-ref-all:
     uvx --with-editable . --refresh-package mdxify mdxify@latest --all --root-module fastmcp --anchor-name "Python SDK" --exclude fastmcp.contrib

@@ -1,7 +1,7 @@
 """Task key management for SEP-1686 background tasks.
 
 Task keys encode security scoping and metadata in the Docket key format:
-    {session_id}:{client_task_id}:{task_type}:{component_identifier}
+    `{session_id}:{client_task_id}:{task_type}:{component_identifier}`
 
 This format provides:
 - Session-based security scoping (prevents cross-session access)
@@ -20,7 +20,7 @@ def build_task_key(
 ) -> str:
     """Build Docket task key with embedded metadata.
 
-    Format: {session_id}:{client_task_id}:{task_type}:{component_identifier}
+    Format: `{session_id}:{client_task_id}:{task_type}:{component_identifier}`
 
     The component_identifier is URI-encoded to handle special characters (colons, slashes, etc.).
 
@@ -55,12 +55,10 @@ def parse_task_key(task_key: str) -> dict[str, str]:
 
     Examples:
         >>> parse_task_key("session123:task456:tool:my_tool")
-        {'session_id': 'session123', 'client_task_id': 'task456',
-         'task_type': 'tool', 'component_identifier': 'my_tool'}
+        `{'session_id': 'session123', 'client_task_id': 'task456', 'task_type': 'tool', 'component_identifier': 'my_tool'}`
 
         >>> parse_task_key("session123:task456:resource:file%3A%2F%2Fdata.txt")
-        {'session_id': 'session123', 'client_task_id': 'task456',
-         'task_type': 'resource', 'component_identifier': 'file://data.txt'}
+        `{'session_id': 'session123', 'client_task_id': 'task456', 'task_type': 'resource', 'component_identifier': 'file://data.txt'}`
     """
     parts = task_key.split(":", 3)
     if len(parts) != 4:
