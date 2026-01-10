@@ -1110,9 +1110,8 @@ class TestInferTransport:
         }
         transport = infer_transport(config)
         assert isinstance(transport, MCPConfigTransport)
-        assert isinstance(transport.transport, FastMCPTransport)
-        # 3 providers: LocalProvider (always first) + 2 mounted MCP servers
-        assert len(cast(FastMCP, transport.transport.server)._providers) == 3
+        # Multi-server configs create composite server at connect time
+        assert len(transport.config.mcpServers) == 2
 
     def test_infer_fastmcp_server(self, fastmcp_server):
         """FastMCP server instances should infer to FastMCPTransport."""
