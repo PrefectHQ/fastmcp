@@ -29,6 +29,7 @@ from fastmcp.utilities.inspect import (
 )
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config import MCPServerConfig
+from fastmcp.utilities.version_check import check_for_newer_version
 
 logger = get_logger("cli")
 console = Console()
@@ -120,6 +121,14 @@ def version(
         console.print("[green]✓[/green] Version information copied to clipboard")
     else:
         console.print(g)
+
+        # Check for updates (not included in --copy output)
+        if newer_version := check_for_newer_version():
+            console.print()
+            console.print(
+                f"[bold]🎉 FastMCP update available:[/bold] [green]{newer_version}[/green]"
+            )
+            console.print("[dim]Run: pip install --upgrade fastmcp[/dim]")
 
 
 @app.command

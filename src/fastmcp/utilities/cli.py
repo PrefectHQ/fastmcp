@@ -17,6 +17,7 @@ from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config import MCPServerConfig
 from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 from fastmcp.utilities.types import get_cached_typeadapter
+from fastmcp.utilities.version_check import check_for_newer_version
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -200,6 +201,9 @@ LOGO_ASCII_4 = (
 def log_server_banner(server: FastMCP[Any]) -> None:
     """Creates and logs a formatted banner with server information and logo."""
 
+    # Check for updates (non-blocking, fails silently)
+    newer_version = check_for_newer_version()
+
     # Create the logo text
     # Use Text with no_wrap and markup disabled to preserve ANSI escape codes
     logo_text = Text.from_ansi(LOGO_ASCII_4, no_wrap=True)
@@ -231,8 +235,10 @@ def log_server_banner(server: FastMCP[Any]) -> None:
 
     # v3 notice banner (shown below main panel)
     v3_line1 = Text("✨ FastMCP 3.0 is coming!", style="bold")
-    v3_line2 = Text(
-        "Pin fastmcp<3 in production, then upgrade when you're ready.", style="dim"
+    v3_line2 = Text.assemble(
+        ("Pin ", "dim"),
+        ("`fastmcp < 3`", "dim bold"),
+        (" in production, then upgrade when you're ready.", "dim"),
     )
     v3_notice = Panel(
         Group(Align.center(v3_line1), Align.center(v3_line2)),
@@ -250,5 +256,26 @@ def log_server_banner(server: FastMCP[Any]) -> None:
     )
 
     console = Console(stderr=True)
-    # Center both panels
-    console.print(Group("\n", Align.center(panel), Align.center(v3_notice), "\n"))
+
+    # Build output elements
+    output_elements: list[Align | Panel | str] = ["\n", Align.center(panel)]
+    output_elements.append(Align.center(v3_notice))
+
+    # Add update notice if a newer version is available (shown last for visibility)
+    if newer_version:
+        update_line1 = Text.assemble(
+            ("🎉 Update available: ", "bold"),
+            (newer_version, "bold green"),
+        )
+        update_line2 = Text("Run: pip install --upgrade fastmcp", style="dim")
+        update_notice = Panel(
+            Group(Align.center(update_line1), Align.center(update_line2)),
+            border_style="blue",
+            padding=(0, 2),
+            width=80,
+        )
+        output_elements.append(Align.center(update_notice))
+
+    output_elements.append("\n")
+
+    console.print(Group(*output_elements))

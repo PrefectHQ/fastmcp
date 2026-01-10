@@ -333,3 +333,18 @@ class Settings(BaseSettings):
             ),
         ),
     ] = True
+
+    check_for_updates: Annotated[
+        Literal["stable", "prerelease", "off"],
+        Field(
+            description=inspect.cleandoc(
+                """
+                Controls update checking when displaying the CLI banner.
+                - "stable": Check for stable releases only (default)
+                - "prerelease": Also check for pre-release versions (alpha, beta, rc)
+                - "off": Disable update checking entirely
+                Set via FASTMCP_CHECK_FOR_UPDATES environment variable.
+                """
+            ),
+        ),
+    ] = "stable"
