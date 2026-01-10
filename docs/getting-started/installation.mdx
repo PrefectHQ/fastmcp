@@ -85,7 +85,19 @@ fastmcp==2.11.0  # Good
 fastmcp>=2.11.0  # Bad - will install breaking changes
 ```
 
-See the full [versioning and release policy](/development/releases#versioning-policy) for details on our public API, deprecation practices, and breaking change philosophy. 
+See the full [versioning and release policy](/development/releases#versioning-policy) for details on our public API, deprecation practices, and breaking change philosophy.
+
+### Looking Ahead: FastMCP 4.0
+
+The MCP Python SDK v2 is expected in early 2026 and will include breaking changes. When released, FastMCP will incorporate these upstream changes in a new major version (FastMCP 4.0).
+
+To avoid unexpected breaking changes, we recommend pinning your dependency with an upper bound:
+
+```
+fastmcp>=3.0,<4
+```
+
+We'll provide migration guidance when FastMCP 4.0 is released. 
 
 ## Contributing to FastMCP
 
