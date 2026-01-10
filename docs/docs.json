@@ -417,6 +417,7 @@
                   "python-sdk/fastmcp-server-elicitation",
                   "python-sdk/fastmcp-server-event_store",
                   "python-sdk/fastmcp-server-http",
+                  "python-sdk/fastmcp-server-lifespan",
                   "python-sdk/fastmcp-server-low_level",
                   {
                     "group": "middleware",
@@ -506,8 +507,8 @@
                   "python-sdk/fastmcp-utilities-inspect",
                   "python-sdk/fastmcp-utilities-json_schema",
                   "python-sdk/fastmcp-utilities-json_schema_type",
+                  "python-sdk/fastmcp-utilities-lifespan",
                   "python-sdk/fastmcp-utilities-logging",
-                  "python-sdk/fastmcp-utilities-mcp_config",
                   {
                     "group": "mcp_server_config",
                     "pages": [

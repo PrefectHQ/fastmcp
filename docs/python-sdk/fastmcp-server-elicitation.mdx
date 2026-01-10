@@ -18,12 +18,12 @@ Parse response_type into schema and handling configuration.
 
 Supports multiple syntaxes:
 - None: Empty object schema, expect empty response
-- dict: {"low": {"title": "..."}} -> single-select titled enum
+- dict: `{"low": {"title": "..."}}` -> single-select titled enum
 - list patterns:
-    - [["a", "b"]] -> multi-select untitled
-    - [{"low": {...}}] -> multi-select titled
-    - ["a", "b"] -> single-select untitled
-- list\[X] type annotation: multi-select with type
+    - `[["a", "b"]]` -> multi-select untitled
+    - `[{"low": {...}}]` -> multi-select titled
+    - `["a", "b"]` -> single-select untitled
+- `list[X]` type annotation: multi-select with type
 - Scalar types (bool, int, float, str, Literal, Enum): single value
 - Other types (dataclass, BaseModel): use directly
 
@@ -45,7 +45,7 @@ Handle an accepted elicitation response.
 - AcceptedElicitation with the extracted/validated data
 
 
-### `get_elicitation_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L318" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_elicitation_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L322" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_elicitation_schema(response_type: type[T]) -> dict[str, Any]
@@ -58,7 +58,7 @@ Get the schema for an elicitation response.
 - `response_type`: The type of the response
 
 
-### `validate_elicitation_json_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L337" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `validate_elicitation_json_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L341" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_elicitation_json_schema(schema: dict[str, Any]) -> None
@@ -121,7 +121,7 @@ enum_schema(self, schema: core_schema.EnumSchema) -> JsonSchemaValue
 
 Generate inline enum schema.
 
-Always generates enum pattern: {"enum": [value, ...]}
+Always generates enum pattern: `{"enum": [value, ...]}`
 Titled enums are handled separately via dict-based syntax in ctx.elicit().
 
 

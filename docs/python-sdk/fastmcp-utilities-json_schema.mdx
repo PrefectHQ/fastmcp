@@ -7,7 +7,35 @@ sidebarTitle: json_schema
 
 ## Functions
 
-### `resolve_root_ref` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/json_schema.py#L7" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `dereference_refs` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/json_schema.py#L9" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+dereference_refs(schema: dict[str, Any]) -> dict[str, Any]
+```
+
+
+Resolve all $ref references in a JSON schema by inlining definitions.
+
+This function resolves $ref references that point to $defs, replacing them
+with the actual definition content while preserving sibling keywords (like
+description, default, examples) that Pydantic places alongside $ref.
+
+This is necessary because some MCP clients (e.g., VS Code Copilot) don't
+properly handle $ref in tool input schemas.
+
+For self-referencing/circular schemas where full dereferencing is not possible,
+this function falls back to resolving only the root-level $ref while preserving
+$defs for nested references.
+
+**Args:**
+- `schema`: JSON schema dict that may contain $ref references
+
+**Returns:**
+- A new schema dict with $ref resolved where possible and $defs removed
+- when no longer needed
+
+
+### `resolve_root_ref` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/json_schema.py#L131" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]
@@ -29,19 +57,23 @@ the referenced definition while preserving $defs for nested references.
 - if no resolution is needed
 
 
-### `compress_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/json_schema.py#L240" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `compress_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/json_schema.py#L364" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-compress_schema(schema: dict, prune_params: list[str] | None = None, prune_defs: bool = True, prune_additional_properties: bool = True, prune_titles: bool = False) -> dict
+compress_schema(schema: dict[str, Any], prune_params: list[str] | None = None, prune_additional_properties: bool = True, prune_titles: bool = False) -> dict[str, Any]
 ```
 
 
-Remove the given parameters from the schema.
+Compress and optimize a JSON schema for MCP compatibility.
+
+This function dereferences all $ref entries (inlining definitions) to ensure
+compatibility with MCP clients that don't properly handle $ref in schemas
+(e.g., VS Code Copilot). It also applies various optimizations to reduce
+schema size.
 
 **Args:**
 - `schema`: The schema to compress
 - `prune_params`: List of parameter names to remove from properties
-- `prune_defs`: Whether to remove unused definitions
 - `prune_additional_properties`: Whether to remove additionalProperties\: false
 - `prune_titles`: Whether to remove title fields from the schema
 

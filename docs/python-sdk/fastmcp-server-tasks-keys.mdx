@@ -9,7 +9,7 @@ sidebarTitle: keys
 Task key management for SEP-1686 background tasks.
 
 Task keys encode security scoping and metadata in the Docket key format:
-    {session_id}:{client_task_id}:{task_type}:{component_identifier}
+    `{session_id}:{client_task_id}:{task_type}:{component_identifier}`
 
 This format provides:
 - Session-based security scoping (prevents cross-session access)
@@ -28,7 +28,7 @@ build_task_key(session_id: str, client_task_id: str, task_type: str, component_i
 
 Build Docket task key with embedded metadata.
 
-Format: {session_id}:{client_task_id}:{task_type}:{component_identifier}
+Format: `{session_id}:{client_task_id}:{task_type}:{component_identifier}`
 
 The component_identifier is URI-encoded to handle special characters (colons, slashes, etc.).
 
@@ -67,14 +67,12 @@ Parse Docket task key to extract metadata.
 **Examples:**
 
 >>> parse_task_key("session123:task456:tool:my_tool")
-{'session_id': 'session123', 'client_task_id': 'task456',
- 'task_type': 'tool', 'component_identifier': 'my_tool'}
+`{'session_id': 'session123', 'client_task_id': 'task456', 'task_type': 'tool', 'component_identifier': 'my_tool'}`
 >>> parse_task_key("session123:task456:resource:file%3A%2F%2Fdata.txt")
-{'session_id': 'session123', 'client_task_id': 'task456',
- 'task_type': 'resource', 'component_identifier': 'file://data.txt'}
+`{'session_id': 'session123', 'client_task_id': 'task456', 'task_type': 'resource', 'component_identifier': 'file://data.txt'}`
 
 
-### `get_client_task_id_from_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L80" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_client_task_id_from_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_client_task_id_from_key(task_key: str) -> str

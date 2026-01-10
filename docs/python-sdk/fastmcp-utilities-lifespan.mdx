@@ -1,0 +1,36 @@
+---
+title: lifespan
+sidebarTitle: lifespan
+---
+
+# `fastmcp.utilities.lifespan`
+
+
+Lifespan utilities for combining async context manager lifespans.
+
+## Functions
+
+### `combine_lifespans` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/lifespan.py#L12" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+combine_lifespans(*lifespans: Callable[[AppT], AbstractAsyncContextManager[dict[str, Any] | None]]) -> Callable[[AppT], AbstractAsyncContextManager[dict[str, Any]]]
+```
+
+
+Combine multiple lifespans into a single lifespan.
+
+Useful when mounting FastMCP into FastAPI and you need to run
+both your app's lifespan and the MCP server's lifespan.
+
+Works with both FastAPI-style lifespans (yield None) and FastMCP-style
+lifespans (yield dict). Results are merged; later lifespans override
+earlier ones on key conflicts.
+
+Lifespans are entered in order and exited in reverse order (LIFO).
+
+**Args:**
+- `*lifespans`: Lifespan context manager factories to combine.
+
+**Returns:**
+- A combined lifespan context manager factory.
+
