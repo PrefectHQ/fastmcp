@@ -25,81 +25,30 @@ uv run pytest -n auto                # Run full test suite
 
 ## Repository Structure
 
-| Path               | Purpose                                                                             |
-| ------------------ | ----------------------------------------------------------------------------------- |
-| `src/fastmcp/`     | Library source code (Python ≥ 3.10)                                                 |
-| `├─server/`        | Server implementation, `FastMCP`, auth, networking                                  |
-| `│  ├─auth/`       | Authentication providers (Google, GitHub, Azure, AWS, WorkOS, Auth0, JWT, and more) |
-| `│  └─middleware/` | Error handling, logging, rate limiting                                              |
-| `├─client/`        | High-level client SDK + transports                                                  |
-| `│  └─auth/`       | Client authentication (Bearer, OAuth)                                               |
-| `├─tools/`         | Tool implementations + `ToolManager`                                                |
-| `├─resources/`     | Resources, templates + `ResourceManager`                                            |
-| `├─prompts/`       | Prompt templates + `PromptManager`                                                  |
-| `├─cli/`           | FastMCP CLI commands (`run`, `dev`, `install`)                                      |
-| `├─contrib/`       | Community contributions (bulk caller, mixins)                                       |
-| `├─experimental/`  | Experimental features (sampling handlers)                                           |
-| `└─utilities/`     | Shared utilities (logging, JSON schema, HTTP)                                       |
-| `tests/`           | Comprehensive pytest suite with markers                                             |
-| `docs/`            | Mintlify documentation (published to gofastmcp.com)                                 |
-| `examples/`        | Runnable demo servers (echo, smart_home, atproto)                                   |
+| Path              | Purpose                                |
+| ----------------- | -------------------------------------- |
+| `src/fastmcp/`    | Library source code                    |
+| `├─server/`       | Server implementation                  |
+| `│ ├─auth/`       | Authentication providers               |
+| `│ └─middleware/` | Error handling, logging, rate limiting |
+| `├─client/`       | Client SDK                             |
+| `│ └─auth/`       | Client authentication                  |
+| `├─tools/`        | Tool definitions                       |
+| `├─resources/`    | Resources and resource templates       |
+| `├─prompts/`      | Prompt templates                       |
+| `├─cli/`          | CLI commands                           |
+| `└─utilities/`    | Shared utilities                       |
+| `tests/`          | Pytest suite                           |
+| `docs/`           | Mintlify docs (gofastmcp.com)          |
 
 ## Core MCP Objects
 
 When modifying MCP functionality, changes typically need to be applied across all object types:
 
-- **Tools** (`src/tools/` + `ToolManager`)
-- **Resources** (`src/resources/` + `ResourceManager`)
-- **Resource Templates** (`src/resources/` + `ResourceManager`)
-- **Prompts** (`src/prompts/` + `PromptManager`)
-
-## Writing Style
-
-- Be brief and to the point. Do not regurgitate information that can easily be gleaned from the code, except to guide the reader to where the code is located.
-- **NEVER** use "This isn't..." or "not just..." constructions. State what something IS directly. Avoid defensive writing patterns like:
-  - "This isn't X, it's Y" or "Not just X, but Y" → Just say "This is Y"
-  - "Not just about X" → State the actual purpose
-  - "We're not doing X, we're doing Y" → Just explain what you're doing
-  - Any variation of explaining what something isn't before what it is
-
-## Testing Best Practices
-
-### Testing Standards
-
-- Every test: atomic, self-contained, single functionality
-- Use parameterization for multiple examples of same functionality
-- Use separate tests for different functionality pieces
-- **ALWAYS** Put imports at the top of the file, not in the test body
-- **NEVER** add `@pytest.mark.asyncio` to tests - `asyncio_mode = "auto"` is set globally
-- **ALWAYS** run pytest after significant changes
-
-### Inline Snapshots
-
-FastMCP uses `inline-snapshot` for testing complex data structures. On first run with empty `snapshot()`, pytest will auto-populate the expected value when running `pytest --inline-snapshot=create`. To update snapshots after intentional changes, run `pytest --inline-snapshot=fix`. This is particularly useful for testing JSON schemas and API responses.
-
-### Always Use In-Memory Transport
-
-Pass FastMCP servers directly to clients for testing:
-
-```python
-mcp = FastMCP("TestServer")
-
-@mcp.tool
-def greet(name: str) -> str:
-    return f"Hello, {name}!"
-
-# Direct connection - no network complexity
-async with Client(mcp) as client:
-    result = await client.call_tool("greet", {"name": "World"})
-```
-
-Only use HTTP transport when explicitly testing network features:
-
-```python
-# Network testing only
-async with Client(transport=StreamableHttpTransport(server_url)) as client:
-    result = await client.ping()
-```
+- **Tools** (`src/tools/`)
+- **Resources** (`src/resources/`)
+- **Resource Templates** (`src/resources/`)
+- **Prompts** (`src/prompts/`)
 
 ## Development Rules
 
@@ -159,119 +108,8 @@ async with Client(transport=StreamableHttpTransport(server_url)) as client:
 - **Content:** User-focused sections, motivate features (why) before mechanics (how)
 - **Style:** Prose over code comments for important information
 
-## Code Review Guidelines
-
-### Philosophy
-
-Code review is about maintaining a healthy codebase while helping contributors succeed. The burden of proof is on the PR to demonstrate it adds value in the intended way. Your job is to help it get there through actionable feedback.
-
-**Critical**: A perfectly written PR that adds unwanted functionality must still be rejected. The code must advance the codebase in the intended direction, not just be well-written. When rejecting, provide clear guidance on how to align with project goals.
-
-Be friendly and welcoming while maintaining high standards. Call out what works well - this reinforces good patterns. When code needs improvement, be specific about why and how to fix it. Remember that PRs serve as documentation for future developers.
-
-### Focus On
-
-- **Does this advance the codebase in the intended direction?** (Even perfect code for unwanted features should be rejected)
-- **API design and naming clarity** - Identify confusing patterns (e.g., parameter values that contradict defaults) or non-idiomatic code (mutable defaults, etc.). Contributed code will need to be maintained indefinitely, and by someone other than the author (unless the author is a maintainer).
-- **Suggest specific improvements**, not generic "add more tests" comments
-- **Think about API ergonomics and learning curve** from a user perspective
-
-### For Agent Reviewers
-
-- **Read the full context**: Always examine related files, tests, and documentation before reviewing
-- **Check against established patterns**: Look for consistency with existing codebase conventions
-- **Verify functionality claims**: Don't just read code - understand what it actually does
-- **Consider edge cases**: Think through error conditions and boundary scenarios
-
-### Avoid
-
-- Generic feedback without specifics
-- Hypothetical problems unlikely to occur
-- Nitpicking organizational choices without strong reason
-- Summarizing what the PR already describes
-- Star ratings or excessive emojis
-- Bikeshedding style preferences when functionality is correct
-- Requesting changes without suggesting solutions
-- Focusing on personal coding style over project conventions
-
-### Tone
-
-- Acknowledge good decisions ("This API design is clean")
-- Be direct but respectful
-- Explain impact ("This will confuse users because...")
-- Remember: Someone else maintains this code forever
-
-### Decision Framework
-
-Before approving, ask yourself:
-
-1. Does this PR achieve its stated purpose?
-2. Is that purpose aligned with where the codebase should go?
-3. Would I be comfortable maintaining this code?
-4. Have I actually understood what it does, not just what it claims?
-5. Does this change introduce technical debt?
-
-If something needs work, your review should help it get there through specific, actionable feedback. If it's solving the wrong problem, say so clearly.
-
-### Review Comment Examples
-
-**Good Review Comments:**
-
-❌ "Add more tests"  
-✅ "The `handle_timeout` method needs tests for the edge case where timeout=0"
-
-❌ "This API is confusing"  
-✅ "The parameter name `data` is ambiguous - consider `message_content` to match the MCP specification"
-
-❌ "This could be better"  
-✅ "This approach works but creates a circular dependency. Consider moving the validation to `utils/validators.py`"
-
-### Review Checklist
-
-Before approving, verify:
-
-- [ ] All required development workflow steps completed (uv sync, prek, pytest)
-- [ ] Changes align with repository patterns and conventions
-- [ ] API changes are documented and backwards-compatible where possible
-- [ ] Error handling follows project patterns (specific exception types)
-- [ ] Tests cover new functionality and edge cases
-
-## Key Tools & Commands
-
-### Environment Setup
-
-```bash
-git clone <repo>
-cd fastmcp
-uv sync                    # Installs all deps including dev tools
-```
-
-### Validation Commands (Run Frequently)
-
-- **Linting**: `uv run ruff check` (or with `--fix`)
-- **Type Checking**: `uv run ty check`
-- **All Checks**: `uv run prek run --all-files`
-
-### Testing
-
-- **Standard**: `uv run pytest -n auto`
-- **Integration**: `uv run pytest -n auto -m "integration"`
-- **Excluding markers**: `uv run pytest -n auto -m "not integration and not client_process"`
-
-### CLI Usage
-
-- **Run server**: `uv run fastmcp run server.py`
-- **Inspect server**: `uv run fastmcp inspect server.py`
-
 ## Critical Patterns
 
-### Error Handling
-
 - Never use bare `except` - be specific with exception types
-
-### Build Issues (Common Solutions)
-
-1. **Dependencies**: Always `uv sync` first
-2. **Prek fails**: Run `uv run prek run --all-files` to see failures
-3. **Type errors**: Use `uv run ty check` directly, check `pyproject.toml` config
-4. **Test timeouts**: Default 5s - optimize or mark as integration tests
+- Always `uv sync` first when debugging build issues
+- Default test timeout is 5s - optimize or mark as integration tests
