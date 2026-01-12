@@ -4,6 +4,58 @@ icon: "list-check"
 rss: true
 ---
 
+<Update label="v2.14.3" description="2026-01-12">
+
+**[v2.14.3: Time After Timeout](https://github.com/jlowin/fastmcp/releases/tag/v2.14.3)**
+
+Sometimes five seconds just isn't enough. This release fixes an HTTP transport bug that was cutting connections short, along with OAuth and Redis fixes, better ASGI support, and CLI update notifications so you never miss a beat.
+
+## What's Changed
+### Enhancements 🔧
+* Add debug logging for OAuth token expiry diagnostics by [@jlowin](https://github.com/jlowin) in [#2789](https://github.com/jlowin/fastmcp/pull/2789)
+* Add CLI update notifications by [@jlowin](https://github.com/jlowin) in [#2839](https://github.com/jlowin/fastmcp/pull/2839)
+* Use pip instead of uv pip in upgrade instructions by [@jlowin](https://github.com/jlowin) in [#2841](https://github.com/jlowin/fastmcp/pull/2841)
+### Fixes 🐞
+* Backport OAuth token storage TTL fix to release/2.x by [@jlowin](https://github.com/jlowin) in [#2798](https://github.com/jlowin/fastmcp/pull/2798)
+* Prefix Redis keys with docket name for ACL isolation (2.x backport) by [@chrisguidry](https://github.com/chrisguidry) in [#2812](https://github.com/jlowin/fastmcp/pull/2812)
+* Fix ContextVar propagation for ASGI-mounted servers with tasks by [@chrisguidry](https://github.com/chrisguidry) in [#2843](https://github.com/jlowin/fastmcp/pull/2843)
+* Fix HTTP transport timeout defaulting to 5 seconds by [@jlowin](https://github.com/jlowin) in [#2848](https://github.com/jlowin/fastmcp/pull/2848)
+
+**Full Changelog**: [v2.14.2...v2.14.3](https://github.com/jlowin/fastmcp/compare/v2.14.2...v2.14.3)
+
+</Update>
+
+<Update label="v2.14.2" description="2025-12-31">
+
+**[v2.14.2: Port Authority](https://github.com/jlowin/fastmcp/releases/tag/v2.14.2)**
+
+FastMCP 2.14.2 brings a wave of community contributions safely into the 2.x line. A variety of important fixes backported from 3.0 work improve OpenAPI 3.1 compatibility, MCP spec compliance for output schemas and elicitation, and correct a subtle base_url fallback issue. The CLI now gently reminds you that FastMCP 3.0 is on the horizon.
+
+## What's Changed
+### Enhancements 🔧
+* Pin MCP under 2.x by [@jlowin](https://github.com/jlowin) in [#2709](https://github.com/jlowin/fastmcp/pull/2709)
+* Add auth_route parameter to SupabaseProvider by [@EloiZalczer](https://github.com/EloiZalczer) in [#2760](https://github.com/jlowin/fastmcp/pull/2760)
+* Update CLI banner with FastMCP 3.0 notice by [@jlowin](https://github.com/jlowin) in [#2765](https://github.com/jlowin/fastmcp/pull/2765)
+### Fixes 🐞
+* Let FastMCPError propagate unchanged from managers by [@jlowin](https://github.com/jlowin) in [#2697](https://github.com/jlowin/fastmcp/pull/2697)
+* Fix test cleanup for uvicorn 0.39+ context isolation by [@jlowin](https://github.com/jlowin) in [#2696](https://github.com/jlowin/fastmcp/pull/2696)
+* Bump pydocket to 0.16.3 to fix worker cleanup race condition by [@chrisguidry](https://github.com/chrisguidry) in [#2700](https://github.com/jlowin/fastmcp/pull/2700)
+* Fix Prefect website URL in docs footer by [@mgoldsborough](https://github.com/mgoldsborough) in [#2705](https://github.com/jlowin/fastmcp/pull/2705)
+* Fix: resolve root-level $ref in outputSchema for MCP spec compliance by [@majiayu000](https://github.com/majiayu000) in [#2727](https://github.com/jlowin/fastmcp/pull/2727)
+* Fix OAuth Proxy resource parameter validation by [@jlowin](https://github.com/jlowin) in [#2763](https://github.com/jlowin/fastmcp/pull/2763)
+* Fix openapi_version check to include 3.1 by [@deeleeramone](https://github.com/deeleeramone) in [#2769](https://github.com/jlowin/fastmcp/pull/2769)
+* Fix titled enum elicitation schema to comply with MCP spec by [@jlowin](https://github.com/jlowin) in [#2774](https://github.com/jlowin/fastmcp/pull/2774)
+* Fix base_url fallback when url is not set by [@bhbs](https://github.com/bhbs) in [#2782](https://github.com/jlowin/fastmcp/pull/2782)
+* Lazy import DiskStore to avoid sqlite3 dependency on import by [@jlowin](https://github.com/jlowin) in [#2785](https://github.com/jlowin/fastmcp/pull/2785)
+### Docs 📚
+* Add v3 breaking changes notice to README and docs by [@jlowin](https://github.com/jlowin) in [#2713](https://github.com/jlowin/fastmcp/pull/2713)
+* Add changelog entries for v2.13.1 through v2.14.1 by [@jlowin](https://github.com/jlowin) in [#2724](https://github.com/jlowin/fastmcp/pull/2724)
+* conference to 2.x branch by [@aaazzam](https://github.com/aaazzam) in [#2787](https://github.com/jlowin/fastmcp/pull/2787)
+
+**Full Changelog**: [v2.14.1...v2.14.2](https://github.com/jlowin/fastmcp/compare/v2.14.1...v2.14.2)
+
+</Update>
+
 <Update label="v2.14.1" description="2025-12-15">
 
 **[v2.14.1: 'Tis a Gift to Be Sample](https://github.com/jlowin/fastmcp/releases/tag/v2.14.1)**

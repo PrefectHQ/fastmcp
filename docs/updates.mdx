@@ -5,6 +5,34 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 2.14.3" description="January 12, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP 2.14.3: Time After Timeout"
+href="https://github.com/jlowin/fastmcp/releases/tag/v2.14.3"
+cta="Read the release notes"
+>
+Sometimes five seconds just isn't enough. This release fixes an HTTP transport bug that was cutting connections short, along with OAuth and Redis fixes, better ASGI support, and CLI update notifications so you never miss a beat.
+
+⏱️ **HTTP transport timeout fix** restores MCP's 30-second default connect timeout, which was incorrectly defaulting to 5 seconds.
+
+🔧 **Infrastructure fixes** including OAuth token storage TTL, Redis key prefixing for ACL isolation, and ContextVar propagation for ASGI-mounted servers with background tasks.
+</Card>
+</Update>
+
+<Update label="FastMCP 2.14.2" description="December 31, 2025" tags={["Releases"]}>
+<Card
+title="FastMCP 2.14.2: Port Authority"
+href="https://github.com/jlowin/fastmcp/releases/tag/v2.14.2"
+cta="Read the release notes"
+>
+A wave of community contributions arrives safely in the 2.x line. Important backports from 3.0 improve OpenAPI 3.1 compatibility, MCP spec compliance for output schemas and elicitation, and correct a subtle base_url fallback issue.
+
+🔧 **OpenAPI 3.1 support** fixes version detection to properly handle 3.1 specs alongside 3.0.
+
+📋 **MCP spec compliance** for root-level `$ref` resolution in output schemas and titled enum elicitation schemas.
+</Card>
+</Update>
+
 <Update label="FastMCP 2.14.1" description="December 15, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.14.1: 'Tis a Gift to Be Sample"
