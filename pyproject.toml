@@ -77,6 +77,7 @@ dev = [
     "ruff>=0.12.8",
     "ty>=0.0.7",
     "prek>=0.2.12",
+    "loq>=0.1.0a3",
 ]
 
 [project.scripts]

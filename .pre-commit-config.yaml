@@ -33,6 +33,12 @@ repos:
         pass_filenames: false
         require_serial: true
 
+      - id: loq
+        name: loq (file size limits)
+        entry: uv run loq
+        language: system
+        pass_filenames: false
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:

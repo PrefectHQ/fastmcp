@@ -9,6 +9,7 @@ wheels/
 *.egg
 MANIFEST
 .pytest_cache/
+.loq_cache
 .coverage
 htmlcov/
 .tox/
