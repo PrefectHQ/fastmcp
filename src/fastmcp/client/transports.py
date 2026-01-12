@@ -25,7 +25,7 @@ from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server.fastmcp import FastMCP as FastMCP1Server
-from mcp.shared._httpx_utils import McpHttpClientFactory
+from mcp.shared._httpx_utils import McpHttpClientFactory, create_mcp_http_client
 from mcp.shared.memory import create_client_server_memory_streams
 from pydantic import AnyUrl
 from typing_extensions import TypedDict, Unpack
@@ -208,6 +208,19 @@ class StreamableHttpTransport(ClientTransport):
         sse_read_timeout: datetime.timedelta | float | int | None = None,
         httpx_client_factory: McpHttpClientFactory | None = None,
     ):
+        """Initialize a Streamable HTTP transport.
+
+        Args:
+            url: The MCP server endpoint URL.
+            headers: Optional headers to include in requests.
+            auth: Authentication method - httpx.Auth, "oauth" for OAuth flow,
+                or a bearer token string.
+            sse_read_timeout: Deprecated. Use read_timeout_seconds in session_kwargs.
+            httpx_client_factory: Optional factory for creating httpx.AsyncClient.
+                If provided, must accept keyword arguments: headers, auth,
+                follow_redirects, and optionally timeout. Using **kwargs is
+                recommended to ensure forward compatibility.
+        """
         if isinstance(url, AnyUrl):
             url = str(url)
         if not isinstance(url, str) or not url.startswith("http"):
@@ -253,25 +266,31 @@ class StreamableHttpTransport(ClientTransport):
         # need to be forwarded to the remote server.
         headers = get_http_headers() | self.headers
 
-        # Build httpx client configuration
-        httpx_client_kwargs: dict[str, Any] = {
-            "headers": headers,
-            "auth": self.auth,
-            "follow_redirects": True,
-        }
-
-        # Configure timeout if provided (convert timedelta to seconds for httpx)
+        # Configure timeout if provided, preserving MCP's 30s connect default
+        timeout: httpx.Timeout | None = None
         if session_kwargs.get("read_timeout_seconds") is not None:
             read_timeout_seconds = cast(
                 datetime.timedelta, session_kwargs.get("read_timeout_seconds")
             )
-            httpx_client_kwargs["timeout"] = read_timeout_seconds.total_seconds()
+            timeout = httpx.Timeout(30.0, read=read_timeout_seconds.total_seconds())
 
-        # Create httpx client from factory or use default
+        # Create httpx client from factory or use default with MCP-appropriate timeouts
+        # create_mcp_http_client uses 30s connect/5min read timeout by default,
+        # and always enables follow_redirects
         if self.httpx_client_factory is not None:
-            http_client = self.httpx_client_factory(**httpx_client_kwargs)
+            # Factory clients get the full kwargs for backwards compatibility
+            http_client = self.httpx_client_factory(
+                headers=headers,
+                auth=self.auth,
+                follow_redirects=True,  # type: ignore[call-arg]
+                **({"timeout": timeout} if timeout else {}),
+            )
         else:
-            http_client = httpx.AsyncClient(**httpx_client_kwargs)
+            http_client = create_mcp_http_client(
+                headers=headers,
+                timeout=timeout,
+                auth=self.auth,
+            )
 
         # Ensure httpx client is closed after use
         async with (

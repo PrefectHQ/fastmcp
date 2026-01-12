@@ -296,7 +296,7 @@ max_lines = 713
 
 [[rules]]
 path = "src/fastmcp/client/transports.py"
-max_lines = 1186
+max_lines = 1205
 
 [[rules]]
 path = "docs/docs.json"
