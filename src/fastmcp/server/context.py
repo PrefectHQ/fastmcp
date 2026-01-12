@@ -185,9 +185,23 @@ class Context:
         self._tokens.append(token)
 
         # Set current server for dependency injection (use weakref to avoid reference cycles)
-        from fastmcp.server.dependencies import _current_server
+        from fastmcp.server.dependencies import (
+            _current_docket,
+            _current_server,
+            _current_worker,
+        )
 
         self._server_token = _current_server.set(weakref.ref(self.fastmcp))
+
+        # Set docket/worker from server instance for this request's context.
+        # This ensures ContextVars work even in ASGI environments (Lambda, FastAPI mount)
+        # where lifespan ContextVars don't propagate to request handlers.
+        server = self.fastmcp
+        if server._docket is not None:
+            self._docket_token = _current_docket.set(server._docket)
+
+        if server._worker is not None:
+            self._worker_token = _current_worker.set(server._worker)
 
         # Start background notification flusher
         self._exit_stack = AsyncExitStack()
@@ -207,10 +221,20 @@ class Context:
         if self._exit_stack is not None:
             await self._exit_stack.aclose()
 
-        # Reset server token
-        if hasattr(self, "_server_token"):
-            from fastmcp.server.dependencies import _current_server
+        # Reset server/docket/worker tokens
+        from fastmcp.server.dependencies import (
+            _current_docket,
+            _current_server,
+            _current_worker,
+        )
 
+        if hasattr(self, "_worker_token"):
+            _current_worker.reset(self._worker_token)
+            delattr(self, "_worker_token")
+        if hasattr(self, "_docket_token"):
+            _current_docket.reset(self._docket_token)
+            delattr(self, "_docket_token")
+        if hasattr(self, "_server_token"):
             _current_server.reset(self._server_token)
             delattr(self, "_server_token")
 

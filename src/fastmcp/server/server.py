@@ -245,8 +245,9 @@ class FastMCP(Generic[LifespanResultT]):
         # Resolve server default for background task support
         self._support_tasks_by_default: bool = tasks if tasks is not None else False
 
-        # Docket instance (set during lifespan for cross-task access)
+        # Docket and Worker instances (set during lifespan for cross-task access)
         self._docket = None
+        self._worker = None
 
         self._additional_http_routes: list[BaseRoute] = []
 
@@ -538,6 +539,8 @@ class FastMCP(Generic[LifespanResultT]):
 
                     # Create and start Worker
                     async with Worker(docket, **worker_kwargs) as worker:  # type: ignore[arg-type]
+                        # Store on server instance for cross-context access
+                        self._worker = worker
                         # Set Worker in ContextVar so CurrentWorker can access it
                         worker_token = _current_worker.set(worker)
                         try:
@@ -550,6 +553,7 @@ class FastMCP(Generic[LifespanResultT]):
                                     await worker_task
                         finally:
                             _current_worker.reset(worker_token)
+                            self._worker = None
                 finally:
                     # Reset ContextVar
                     _current_docket.reset(docket_token)
