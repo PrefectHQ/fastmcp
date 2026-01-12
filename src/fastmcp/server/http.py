@@ -85,7 +85,7 @@ def set_http_request(request: Request) -> Generator[Request, None, None]:
 
 class RequestContextMiddleware:
     """
-    Middleware that stores each request in a ContextVar
+    Middleware that stores each request in a ContextVar and sets transport type.
     """
 
     def __init__(self, app):
@@ -93,8 +93,17 @@ class RequestContextMiddleware:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
-            with set_http_request(Request(scope)):
-                await self.app(scope, receive, send)
+            from fastmcp.server.context import reset_transport, set_transport
+
+            # Get transport type from app state (set during app creation)
+            transport_type = getattr(scope["app"].state, "transport_type", None)
+            transport_token = set_transport(transport_type) if transport_type else None
+            try:
+                with set_http_request(Request(scope)):
+                    await self.app(scope, receive, send)
+            finally:
+                if transport_token is not None:
+                    reset_transport(transport_token)
         else:
             await self.app(scope, receive, send)
 
@@ -255,6 +264,7 @@ def create_sse_app(
     # Store the FastMCP server instance on the Starlette app state
     app.state.fastmcp_server = server
     app.state.path = sse_path
+    app.state.transport_type = "sse"
 
     return app
 
@@ -366,7 +376,7 @@ def create_streamable_http_app(
     )
     # Store the FastMCP server instance on the Starlette app state
     app.state.fastmcp_server = server
-
     app.state.path = streamable_http_path
+    app.state.transport_type = "streamable-http"
 
     return app

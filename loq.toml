@@ -60,7 +60,7 @@ max_lines = 590
 
 [[rules]]
 path = "src/fastmcp/server/context.py"
-max_lines = 1246
+max_lines = 1272
 
 [[rules]]
 path = "tests/test_mcp_config.py"
@@ -288,7 +288,7 @@ max_lines = 1019
 
 [[rules]]
 path = "src/fastmcp/server/server.py"
-max_lines = 2676
+max_lines = 2682
 
 [[rules]]
 path = "tests/deprecated/test_import_server.py"
@@ -312,7 +312,7 @@ max_lines = 1584
 
 [[rules]]
 path = "docs/servers/context.mdx"
-max_lines = 623
+max_lines = 648
 
 [[rules]]
 path = "src/fastmcp/resources/resource.py"

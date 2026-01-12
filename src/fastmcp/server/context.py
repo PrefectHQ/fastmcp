@@ -77,6 +77,23 @@ ToolChoiceOption = Literal["auto", "required", "none"]
 
 _current_context: ContextVar[Context | None] = ContextVar("context", default=None)  # type: ignore[assignment]
 
+TransportType = Literal["stdio", "sse", "streamable-http"]
+_current_transport: ContextVar[TransportType | None] = ContextVar(
+    "transport", default=None
+)
+
+
+def set_transport(
+    transport: TransportType,
+) -> Token[TransportType | None]:
+    """Set the current transport type. Returns token for reset."""
+    return _current_transport.set(transport)
+
+
+def reset_transport(token: Token[TransportType | None]) -> None:
+    """Reset transport to previous value."""
+    _current_transport.reset(token)
+
 
 @dataclass
 class LogData:
@@ -400,6 +417,15 @@ class Context:
             logger_name=logger_name,
             related_request_id=self.request_id,
         )
+
+    @property
+    def transport(self) -> TransportType | None:
+        """Get the current transport type.
+
+        Returns the transport type used to run this server: "stdio", "sse",
+        or "streamable-http". Returns None if called outside of a server context.
+        """
+        return _current_transport.get()
 
     @property
     def client_id(self) -> str | None:

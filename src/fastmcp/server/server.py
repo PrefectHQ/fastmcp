@@ -2114,32 +2114,38 @@ class FastMCP(Generic[LifespanResultT]):
             log_level: Log level for the server
             stateless: Whether to run in stateless mode (no session initialization)
         """
+        from fastmcp.server.context import reset_transport, set_transport
+
         # Display server banner
         if show_banner:
             log_server_banner(server=self)
 
-        with temporary_log_level(log_level):
-            async with self._lifespan_manager():
-                async with stdio_server() as (read_stream, write_stream):
-                    mode = " (stateless)" if stateless else ""
-                    logger.info(
-                        f"Starting MCP server {self.name!r} with transport 'stdio'{mode}"
-                    )
+        token = set_transport("stdio")
+        try:
+            with temporary_log_level(log_level):
+                async with self._lifespan_manager():
+                    async with stdio_server() as (read_stream, write_stream):
+                        mode = " (stateless)" if stateless else ""
+                        logger.info(
+                            f"Starting MCP server {self.name!r} with transport 'stdio'{mode}"
+                        )
 
-                    # Build experimental capabilities
-                    experimental_capabilities = get_task_capabilities()
+                        # Build experimental capabilities
+                        experimental_capabilities = get_task_capabilities()
 
-                    await self._mcp_server.run(
-                        read_stream,
-                        write_stream,
-                        self._mcp_server.create_initialization_options(
-                            notification_options=NotificationOptions(
-                                tools_changed=True
+                        await self._mcp_server.run(
+                            read_stream,
+                            write_stream,
+                            self._mcp_server.create_initialization_options(
+                                notification_options=NotificationOptions(
+                                    tools_changed=True
+                                ),
+                                experimental_capabilities=experimental_capabilities,
                             ),
-                            experimental_capabilities=experimental_capabilities,
-                        ),
-                        stateless=stateless,
-                    )
+                            stateless=stateless,
+                        )
+        finally:
+            reset_transport(token)
 
     async def run_http_async(
         self,
