@@ -15,7 +15,7 @@ from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
 
 import fastmcp
-from fastmcp.tools.function_tool import ParsedFunction
+from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.tools.tool import Tool, ToolResult, _convert_to_content
 from fastmcp.utilities.components import _convert_set_default_none
 from fastmcp.utilities.json_schema import compress_schema
@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 
 
 # Context variable to store current transformed tool
-_current_tool: ContextVar[TransformedTool | None] = ContextVar(  # type: ignore[assignment]
+_current_tool: ContextVar[TransformedTool | None] = ContextVar(
     "_current_tool", default=None
 )
 

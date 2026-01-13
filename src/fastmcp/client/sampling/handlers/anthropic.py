@@ -198,7 +198,7 @@ class AnthropicSamplingHandler:
                     anthropic_messages.append(
                         MessageParam(
                             role=message.role,
-                            content=content_blocks,  # type: ignore[arg-type]
+                            content=content_blocks,
                         )
                     )
                 continue
@@ -310,7 +310,7 @@ class AnthropicSamplingHandler:
                 ToolParam(
                     name=tool.name,
                     description=tool.description or "",
-                    input_schema=input_schema,  # type: ignore[arg-type]
+                    input_schema=input_schema,
                 )
             )
         return anthropic_tools

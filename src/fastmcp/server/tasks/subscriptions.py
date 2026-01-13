@@ -62,7 +62,7 @@ async def subscribe_to_task_updates(
                     task_id=task_id,
                     task_key=task_key,
                     docket=docket,
-                    state=event["state"],  # type: ignore[typeddict-item]
+                    state=event["state"],
                     poll_interval_ms=poll_interval_ms,
                 )
             elif event["type"] == "progress":

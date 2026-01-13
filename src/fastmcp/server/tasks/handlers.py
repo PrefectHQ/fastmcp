@@ -132,7 +132,7 @@ async def submit_to_docket(
 
     # Start subscription in session's task group (persists for connection lifetime)
     if hasattr(ctx.session, "_subscription_task_group"):
-        tg = ctx.session._subscription_task_group  # type: ignore[attr-defined]
+        tg = ctx.session._subscription_task_group
         if tg:
             tg.start_soon(  # type: ignore[union-attr]
                 subscribe_to_task_updates,

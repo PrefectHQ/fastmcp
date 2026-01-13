@@ -117,7 +117,7 @@ class ContextManagerLifespan(Lifespan):
 
     def __init__(self, fn: LifespanContextManagerFn) -> None:
         """Initialize with a context manager factory function."""
-        self._fn = fn  # type: ignore[assignment]
+        self._fn = fn
 
     @asynccontextmanager
     async def __call__(self, server: FastMCP[Any]) -> AsyncIterator[dict[str, Any]]:

@@ -480,7 +480,7 @@ def replace_type(type_, type_map: dict[type, type]):
     new_args = tuple(replace_type(arg, type_map) for arg in args)
 
     if origin is UnionType:
-        return Union[new_args]  # type: ignore # noqa: UP007
+        return Union[new_args]  # noqa: UP007
     else:
         return origin[new_args]
 

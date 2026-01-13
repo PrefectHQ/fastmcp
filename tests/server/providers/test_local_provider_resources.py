@@ -438,7 +438,7 @@ class TestResourceDecorator:
         mcp = FastMCP()
 
         class MyClass:
-            @mcp.resource("resource://data")  # type: ignore[misc]
+            @mcp.resource("resource://data")
             @staticmethod
             def get_data() -> str:
                 return "Static Hello, world!"

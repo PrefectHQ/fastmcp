@@ -1,3 +1,4 @@
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -48,7 +49,7 @@ class TestSessionId:
         mock_headers = {"mcp-session-id": "test-session-123"}
 
         token = request_ctx.set(
-            RequestContext(  # type: ignore[arg-type]
+            RequestContext(
                 request_id=0,
                 meta=None,
                 session=MagicMock(wraps={}),
@@ -69,7 +70,7 @@ class TestSessionId:
         from mcp.shared.context import RequestContext
 
         token = request_ctx.set(
-            RequestContext(  # type: ignore[arg-type]
+            RequestContext(
                 request_id=0,
                 meta=None,
                 session=MagicMock(wraps={}),
@@ -146,9 +147,9 @@ class TestContextMeta:
         mock_meta = MockMeta()
 
         token = request_ctx.set(
-            RequestContext(  # type: ignore[arg-type]
+            RequestContext(
                 request_id=0,
-                meta=mock_meta,  # type: ignore[arg-type]
+                meta=cast(Any, mock_meta),  # Mock object for testing
                 session=MagicMock(wraps={}),
                 lifespan_context=MagicMock(),
             )
@@ -169,7 +170,7 @@ class TestContextMeta:
         from mcp.shared.context import RequestContext
 
         token = request_ctx.set(
-            RequestContext(  # type: ignore[arg-type]
+            RequestContext(
                 request_id=0,
                 meta=None,
                 session=MagicMock(wraps={}),

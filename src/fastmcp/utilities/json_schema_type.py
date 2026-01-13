@@ -47,6 +47,7 @@ from typing import (
     ForwardRef,
     Literal,
     Union,
+    cast,
 )
 
 from pydantic import (
@@ -171,14 +172,15 @@ def json_schema_to_type(
         if not schema.get("properties") and schema.get("additionalProperties"):
             additional_props = schema["additionalProperties"]
             if additional_props is True:
-                return dict[str, Any]  # type: ignore - additionalProperties: true means dict[str, Any]
+                return dict[str, Any]
             else:
                 # Handle typed dictionaries like dict[str, str]
                 value_type = _schema_to_type(additional_props, schemas=schema)
-                return dict[str, value_type]  # type: ignore
+                # value_type might be ForwardRef or type - cast to Any for dynamic type construction
+                return cast(type[Any], dict[str, value_type])  # type: ignore[valid-type]
         # If no properties and no additionalProperties, default to dict[str, Any] for safety
         elif not schema.get("properties") and not schema.get("additionalProperties"):
-            return dict[str, Any]  # type: ignore
+            return dict[str, Any]
         # If has properties AND additionalProperties is True, use Pydantic BaseModel
         elif schema.get("properties") and schema.get("additionalProperties") is True:
             return _create_pydantic_model(schema, name, schemas=schema)
@@ -265,13 +267,13 @@ def _create_array_type(
     if isinstance(items, list):
         # Handle positional item schemas
         item_types = [_schema_to_type(s, schemas) for s in items]
-        combined = Union[tuple(item_types)]  # type: ignore[arg-type] # noqa: UP007
+        combined = Union[tuple(item_types)]  # noqa: UP007
         base = list[combined]  # type: ignore[valid-type]
     else:
         # Handle single item schema
         item_type = _schema_to_type(items, schemas)
         base_class = set if schema.get("uniqueItems") else list
-        base = base_class[item_type]  # type: ignore[misc]
+        base = base_class[item_type]
 
     constraints = {
         k: v
@@ -295,17 +297,17 @@ def _get_from_type_handler(
     """Get the appropriate type handler for the schema."""
 
     type_handlers: dict[str, Callable[..., Any]] = {  # TODO
-        "string": lambda s: _create_string_type(s),  # type: ignore
-        "integer": lambda s: _create_numeric_type(int, s),  # type: ignore
-        "number": lambda s: _create_numeric_type(float, s),  # type: ignore
-        "boolean": lambda _: bool,  # type: ignore
-        "null": lambda _: type(None),  # type: ignore
-        "array": lambda s: _create_array_type(s, schemas),  # type: ignore
+        "string": lambda s: _create_string_type(s),
+        "integer": lambda s: _create_numeric_type(int, s),
+        "number": lambda s: _create_numeric_type(float, s),
+        "boolean": lambda _: bool,
+        "null": lambda _: type(None),
+        "array": lambda s: _create_array_type(s, schemas),
         "object": lambda s: (
             _create_pydantic_model(s, s.get("title"), schemas)
             if s.get("properties") and s.get("additionalProperties") is True
             else _create_dataclass(s, s.get("title"), schemas)
-        ),  # type: ignore
+        ),
     }
     return type_handlers.get(schema.get("type", None), _return_Any)
 
@@ -326,7 +328,7 @@ def _schema_to_type(
         ref = schema["$ref"]
         # Handle self-reference
         if ref == "#":
-            return ForwardRef(schema.get("title", "Root"))  # type: ignore[return-value]
+            return ForwardRef(schema.get("title", "Root"))
         return _schema_to_type(_resolve_ref(ref, schemas), schemas)
 
     if "const" in schema:
@@ -348,7 +350,7 @@ def _schema_to_type(
                 # This is a dict type, handle it directly
                 additional_props = subschema["additionalProperties"]
                 if additional_props is True:
-                    types.append(dict[str, Any])  # type: ignore
+                    types.append(dict[str, Any])
                 else:
                     value_type = _schema_to_type(additional_props, schemas)
                     types.append(dict[str, value_type])  # type: ignore
@@ -374,7 +376,7 @@ def _schema_to_type(
 
     schema_type = schema.get("type")
     if not schema_type:
-        return Any  # type: ignore[return-value]
+        return Any
 
     if isinstance(schema_type, list):
         # Create a copy of the schema for each type, but keep all constraints

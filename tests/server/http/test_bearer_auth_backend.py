@@ -140,7 +140,7 @@ class TestBearerAuthBackendWithMockVerifier:
             expires_at=None,
         )
         mock_verifier = MockTokenVerifier(return_value=mock_access_token)
-        backend = BearerAuthBackend(mock_verifier)  # type: ignore[arg-type]
+        backend = BearerAuthBackend(mock_verifier)
 
         scope = {
             "type": "http",
@@ -162,7 +162,7 @@ class TestBearerAuthBackendWithMockVerifier:
     async def test_backend_handles_verify_token_none_result(self):
         """Test that BearerAuthBackend handles None result from verify_token."""
         mock_verifier = MockTokenVerifier(return_value=None)
-        backend = BearerAuthBackend(mock_verifier)  # type: ignore[arg-type]
+        backend = BearerAuthBackend(mock_verifier)
 
         scope = {
             "type": "http",

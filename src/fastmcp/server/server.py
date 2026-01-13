@@ -566,7 +566,7 @@ class FastMCP(Generic[LifespanResultT]):
                         worker_kwargs["name"] = settings.docket.worker_name
 
                     # Create and start Worker
-                    async with Worker(docket, **worker_kwargs) as worker:  # type: ignore[arg-type]
+                    async with Worker(docket, **worker_kwargs) as worker:
                         # Store on server instance for cross-context access
                         self._worker = worker
                         # Set Worker in ContextVar so CurrentWorker can access it

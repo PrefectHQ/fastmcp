@@ -159,7 +159,7 @@ class FunctionPrompt(Prompt):
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
-            fn = fn.__func__  # type: ignore[assignment]
+            fn = fn.__func__
 
         # Transform Context type annotations to Depends() for unified DI
         fn = transform_context_annotations(fn)
@@ -310,7 +310,7 @@ class FunctionPrompt(Prompt):
         """
         if not self.task_config.supports_tasks():
             return
-        docket.register(self.fn, names=[self.key])  # type: ignore[arg-type]
+        docket.register(self.fn, names=[self.key])
 
     async def add_to_docket(  # type: ignore[override]
         self,
@@ -418,7 +418,7 @@ def prompt(
             auth=auth,
         )
         target = fn.__func__ if hasattr(fn, "__func__") else fn
-        target.__fastmcp__ = metadata  # type: ignore[attr-defined]
+        target.__fastmcp__ = metadata
         return fn
 
     def decorator(fn: F, prompt_name: str | None) -> F:

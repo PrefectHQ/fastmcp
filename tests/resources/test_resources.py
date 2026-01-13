@@ -93,7 +93,7 @@ class TestResourceValidation:
         class ConcreteResource(Resource):
             pass
 
-        resource = ConcreteResource(uri=AnyUrl("test://test"), name="test")  # type: ignore
+        resource = ConcreteResource(uri=AnyUrl("test://test"), name="test")
         with pytest.raises(NotImplementedError, match="Subclasses must implement read"):
             await resource.read()
 

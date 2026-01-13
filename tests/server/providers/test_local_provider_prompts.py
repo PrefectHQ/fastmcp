@@ -293,7 +293,7 @@ class TestPromptDecorator:
         mcp = FastMCP()
 
         class MyClass:
-            @mcp.prompt  # type: ignore[misc]
+            @mcp.prompt
             @staticmethod
             def test_prompt() -> str:
                 return "Static Hello, world!"

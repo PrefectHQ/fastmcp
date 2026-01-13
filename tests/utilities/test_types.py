@@ -1,6 +1,6 @@
 import base64
 import os
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import pytest
 from mcp.types import BlobResourceContents, TextResourceContents
@@ -98,7 +98,7 @@ class TestIsClassMemberOfType:
 
     def test_none_is_not_member(self):
         """Test that None is not a member of any class."""
-        assert not is_class_member_of_type(None, BaseClass)  # type: ignore
+        assert not is_class_member_of_type(None, BaseClass)
 
     def test_generic_type_is_not_member(self):
         """Test that generic types are not members based on their parameter types."""
@@ -121,7 +121,7 @@ class TestIsSubclassSafe:
 
     def test_none_type_handled_safely(self):
         """Test that None type is handled safely without raising TypeError."""
-        assert not issubclass_safe(None, BaseClass)  # type: ignore
+        assert not issubclass_safe(cast(Any, None), BaseClass)
 
 
 class TestImage:

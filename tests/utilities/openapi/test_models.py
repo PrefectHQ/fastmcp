@@ -55,7 +55,7 @@ class TestParameterInfo:
         """Test that all valid parameter locations are accepted."""
         param = ParameterInfo(
             name="test",
-            location=location,  # type: ignore
+            location=location,
             required=False,
             schema={"type": "string"},
         )
@@ -290,7 +290,7 @@ class TestHTTPRoute:
         """Test that all valid HTTP methods are accepted."""
         route = HTTPRoute(
             path="/test",
-            method=method,  # type: ignore
+            method=method,
             operation_id="test",
         )
         assert route.method == method

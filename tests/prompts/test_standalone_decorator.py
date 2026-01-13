@@ -106,7 +106,7 @@ class TestPromptDecorator:
         with pytest.raises(TypeError, match="classmethod"):
 
             class MyClass:
-                @prompt  # type: ignore[arg-type]
+                @prompt
                 @classmethod
                 def my_prompt(cls, topic: str) -> str:
                     return f"Analyze: {topic}"

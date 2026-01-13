@@ -86,7 +86,7 @@ class ProxyTool(Tool):
             # First time name is being changed, preserve original for backend calls
             update = {**update, "_backend_name": self.name}
             kwargs["update"] = update
-        return super().model_copy(**kwargs)  # type: ignore[return-value]
+        return super().model_copy(**kwargs)
 
     @classmethod
     def from_mcp_tool(
@@ -180,7 +180,7 @@ class ProxyResource(Resource):
             # First time uri is being changed, preserve original for backend calls
             update = {**update, "_backend_uri": str(self.uri)}
             kwargs["update"] = update
-        return super().model_copy(**kwargs)  # type: ignore[return-value]
+        return super().model_copy(**kwargs)
 
     @classmethod
     def from_mcp_resource(
@@ -266,7 +266,7 @@ class ProxyTemplate(ResourceTemplate):
             # First time uri_template is being changed, preserve original for backend
             update = {**update, "_backend_uri_template": self.uri_template}
             kwargs["update"] = update
-        return super().model_copy(**kwargs)  # type: ignore[return-value]
+        return super().model_copy(**kwargs)
 
     @classmethod
     def from_mcp_template(  # type: ignore[override]
@@ -375,7 +375,7 @@ class ProxyPrompt(Prompt):
             # First time name is being changed, preserve original for backend calls
             update = {**update, "_backend_name": self.name}
             kwargs["update"] = update
-        return super().model_copy(**kwargs)  # type: ignore[return-value]
+        return super().model_copy(**kwargs)
 
     @classmethod
     def from_mcp_prompt(
@@ -693,7 +693,7 @@ async def default_proxy_sampling_handler(
         role="assistant",
         model="fastmcp-client",
         # TODO(ty): remove when ty supports isinstance exclusion narrowing
-        content=content,  # type: ignore[arg-type]
+        content=content,
     )
 
 

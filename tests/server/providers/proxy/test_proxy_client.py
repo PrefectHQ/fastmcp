@@ -88,7 +88,7 @@ async def proxy_server(fastmcp_server: FastMCP):
     """
     A proxy server that forwards interactions with the proxy client to the given fastmcp server.
     """
-    return FastMCP.as_proxy(ProxyClient(fastmcp_server))  # type: ignore
+    return FastMCP.as_proxy(ProxyClient(fastmcp_server))
 
 
 class TestProxyClient:
@@ -377,7 +377,7 @@ class TestProxyClient:
             else:
                 return f"Elicitation {result.action}"
 
-        proxy_server = FastMCP.as_proxy(ProxyClient(fastmcp_server))  # type: ignore
+        proxy_server = FastMCP.as_proxy(ProxyClient(fastmcp_server))
 
         # Test that elicitation works correctly through the proxy
         async def elicitation_handler(

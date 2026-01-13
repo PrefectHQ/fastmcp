@@ -113,7 +113,7 @@ class ClientTransport(abc.ABC):
             A mcp.ClientSession instance.
         """
         raise NotImplementedError
-        yield  # type: ignore
+        yield
 
     def __repr__(self) -> str:
         # Basic representation for subclasses

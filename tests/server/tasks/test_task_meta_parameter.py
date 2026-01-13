@@ -152,7 +152,7 @@ class TrackingMiddleware(Middleware):
     ) -> ToolResult:
         if context.method:
             self._calls.append(context.method)
-        return await call_next(context)  # type: ignore[return-value]
+        return await call_next(context)
 
 
 class TestTaskMetaMiddleware:

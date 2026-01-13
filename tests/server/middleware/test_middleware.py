@@ -565,8 +565,10 @@ class TestApplyMiddlewareParameter:
 
         result = await server.render_prompt("greet", {"name": "World"})
 
-        assert len(result.messages) == 1  # type: ignore[union-attr]
-        assert result.messages[0].content.text == "Hello, World!"  # type: ignore[union-attr]
+        assert len(result.messages) == 1
+        # content is TextContent | EmbeddedResource, but we know it's TextContent from the test
+        assert isinstance(result.messages[0].content, mcp.types.TextContent)
+        assert result.messages[0].content.text == "Hello, World!"
         assert recording.assert_called(hook="on_get_prompt", times=1)
 
     async def test_render_prompt_with_run_middleware_false(self):
@@ -584,8 +586,10 @@ class TestApplyMiddlewareParameter:
             "greet", {"name": "World"}, run_middleware=False
         )
 
-        assert len(result.messages) == 1  # type: ignore[union-attr]
-        assert result.messages[0].content.text == "Hello, World!"  # type: ignore[union-attr]
+        assert len(result.messages) == 1
+        # content is TextContent | EmbeddedResource, but we know it's TextContent from the test
+        assert isinstance(result.messages[0].content, mcp.types.TextContent)
+        assert result.messages[0].content.text == "Hello, World!"
         # Middleware should not have been called
         assert len(recording.calls) == 0
 

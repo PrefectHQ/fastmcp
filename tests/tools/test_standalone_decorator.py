@@ -106,7 +106,7 @@ class TestToolDecorator:
         with pytest.raises(TypeError, match="classmethod"):
 
             class MyClass:
-                @tool  # type: ignore[arg-type]
+                @tool
                 @classmethod
                 def my_method(cls) -> str:
                     return "hello"

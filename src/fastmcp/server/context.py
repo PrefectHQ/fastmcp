@@ -75,7 +75,7 @@ ResultT = TypeVar("ResultT", default=str)
 # Simplified tool choice type - just the mode string instead of the full MCP object
 ToolChoiceOption = Literal["auto", "required", "none"]
 
-_current_context: ContextVar[Context | None] = ContextVar("context", default=None)  # type: ignore[assignment]
+_current_context: ContextVar[Context | None] = ContextVar("context", default=None)
 
 TransportType = Literal["stdio", "sse", "streamable-http"]
 _current_transport: ContextVar[TransportType | None] = ContextVar(
@@ -961,7 +961,7 @@ class Context:
                                             ],
                                             isError=True,
                                         )
-                                    ],  # type: ignore[arg-type]
+                                    ],
                                 )
                             )
 

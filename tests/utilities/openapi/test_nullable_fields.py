@@ -122,10 +122,20 @@ class TestHandleNullableFields:
 
     def test_non_dict_input_unchanged(self):
         """Test that non-dict inputs are returned unchanged."""
-        assert convert_openapi_schema_to_json_schema("string", "3.0.0") == "string"  # type: ignore[arg-type]
-        assert convert_openapi_schema_to_json_schema(123, "3.0.0") == 123  # type: ignore[arg-type]
-        assert convert_openapi_schema_to_json_schema(None, "3.0.0") is None  # type: ignore[arg-type]
-        assert convert_openapi_schema_to_json_schema([1, 2, 3], "3.0.0") == [1, 2, 3]  # type: ignore[arg-type]
+        # These tests intentionally pass invalid types to check edge case handling
+        from typing import Any, cast
+
+        assert (
+            convert_openapi_schema_to_json_schema(cast(Any, "string"), "3.0.0")
+            == "string"
+        )
+        assert convert_openapi_schema_to_json_schema(cast(Any, 123), "3.0.0") == 123
+        assert convert_openapi_schema_to_json_schema(cast(Any, None), "3.0.0") is None
+        assert convert_openapi_schema_to_json_schema(cast(Any, [1, 2, 3]), "3.0.0") == [
+            1,
+            2,
+            3,
+        ]
 
     def test_performance_optimization_no_copy_when_unchanged(self):
         """Test that schemas without nullable fields return the same object (no copy)."""

@@ -216,7 +216,7 @@ class MCPServerConfig(BaseModel):
 
         """
         if isinstance(v, dict):
-            return Deployment(**v)  # type: ignore[arg-type]
+            return Deployment(**v)
         return cast(Deployment, v)  # type: ignore[return-value]
 
     @classmethod
@@ -301,9 +301,9 @@ class MCPServerConfig(BaseModel):
         if any([transport, host, port, path, log_level, env, cwd, args]):
             # Convert streamable-http to http for backward compatibility
             if transport == "streamable-http":
-                transport = "http"  # type: ignore[assignment]
+                transport = "http"
             deployment = Deployment(
-                transport=transport,  # type: ignore[arg-type]
+                transport=transport,
                 host=host,
                 port=port,
                 path=path,

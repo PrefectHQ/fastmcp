@@ -296,7 +296,7 @@ class Client(Generic[ClientTransportT]):
             "list_roots_callback": None,
             "logging_callback": create_log_callback(log_handler),
             "message_handler": message_handler or TaskNotificationHandler(self),
-            "read_timeout_seconds": timeout,  # ty: ignore[invalid-argument-type]
+            "read_timeout_seconds": timeout,
             "client_info": client_info,
         }
 
@@ -999,7 +999,7 @@ class Client(Generic[ClientTransportT]):
         wrapped_result = await self._await_with_session_monitoring(
             self.session.send_request(
                 request=request,  # type: ignore[arg-type]
-                result_type=TaskResponseUnion,  # type: ignore[arg-type]
+                result_type=TaskResponseUnion,
             )
         )
         raw_result = wrapped_result.root
@@ -1228,7 +1228,7 @@ class Client(Generic[ClientTransportT]):
         wrapped_result = await self._await_with_session_monitoring(
             self.session.send_request(
                 request=request,  # type: ignore[arg-type]
-                result_type=TaskResponseUnion,  # type: ignore[arg-type]
+                result_type=TaskResponseUnion,
             )
         )
         raw_result = wrapped_result.root
@@ -1383,7 +1383,7 @@ class Client(Generic[ClientTransportT]):
             self.session.call_tool(
                 name=name,
                 arguments=arguments,
-                read_timeout_seconds=timeout,  # ty: ignore[invalid-argument-type]
+                read_timeout_seconds=timeout,
                 progress_callback=progress_handler or self._progress_handler,
                 meta=meta,
             )
@@ -1564,7 +1564,7 @@ class Client(Generic[ClientTransportT]):
         wrapped_result = await self._await_with_session_monitoring(
             self.session.send_request(
                 request=request,  # type: ignore[arg-type]
-                result_type=TaskResponseUnion,  # type: ignore[arg-type]
+                result_type=TaskResponseUnion,
             )
         )
         raw_result = wrapped_result.root
@@ -1606,7 +1606,7 @@ class Client(Generic[ClientTransportT]):
         return await self._await_with_session_monitoring(
             self.session.send_request(
                 request=request,  # type: ignore[arg-type]
-                result_type=GetTaskResult,  # type: ignore[arg-type]
+                result_type=GetTaskResult,
             )
         )
 
@@ -1633,7 +1633,7 @@ class Client(Generic[ClientTransportT]):
         result = await self._await_with_session_monitoring(
             self.session.send_request(
                 request=request,  # type: ignore[arg-type]
-                result_type=GetTaskPayloadResult,  # type: ignore[arg-type]
+                result_type=GetTaskPayloadResult,
             )
         )
         # Return as dict for compatibility with Task class parsing

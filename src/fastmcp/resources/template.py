@@ -93,7 +93,7 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
         for name in query_param_names:
             if name in parsed_query:
                 # Take first value if multiple provided
-                params[name] = parsed_query[name][0]  # type: ignore[index]
+                params[name] = parsed_query[name][0]
 
     return params
 

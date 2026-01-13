@@ -450,7 +450,7 @@ class TestToolFromFunctionOutputSchema:
         ],
     )
     async def test_simple_return_annotation(self, annotation):
-        def func() -> annotation:  # type: ignore
+        def func() -> annotation:
             return 1
 
         tool = Tool.from_function(func)
@@ -484,7 +484,7 @@ class TestToolFromFunctionOutputSchema:
         ],
     )
     async def test_complex_return_annotation(self, annotation):
-        def func() -> annotation:  # type: ignore
+        def func() -> annotation:
             return 1
 
         tool = Tool.from_function(func)
@@ -524,7 +524,7 @@ class TestToolFromFunctionOutputSchema:
         ],
     )
     async def test_converted_return_annotation(self, annotation, expected):
-        def func() -> annotation:  # type: ignore
+        def func() -> annotation:
             return 1
 
         tool = Tool.from_function(func)

@@ -368,7 +368,7 @@ class OpenAISamplingHandler:
                 # Skip non-function tool calls
                 if not hasattr(tool_call, "function"):
                     continue
-                func = tool_call.function  # type: ignore[union-attr]
+                func = tool_call.function
                 # Parse the arguments JSON string
                 try:
                     arguments = json.loads(func.arguments)  # type: ignore[union-attr]

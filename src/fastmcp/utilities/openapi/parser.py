@@ -1,6 +1,6 @@
 """OpenAPI parsing logic for converting OpenAPI specs to HTTPRoute objects."""
 
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 
 from openapi_pydantic import (
     OpenAPI,
@@ -146,9 +146,9 @@ class OpenAPIParser(
     def _convert_to_parameter_location(self, param_in: str) -> ParameterLocation:
         """Convert string parameter location to our ParameterLocation type."""
         if param_in in ["path", "query", "header", "cookie"]:
-            return param_in  # type: ignore[return-value]  # Safe cast since we checked values
+            return cast(ParameterLocation, param_in)
         logger.warning(f"Unknown parameter location: {param_in}, defaulting to 'query'")
-        return "query"  # type: ignore[return-value]  # Safe cast to default value
+        return cast(ParameterLocation, "query")
 
     def _resolve_ref(self, item: Any) -> Any:
         """Resolves a reference to its target definition."""

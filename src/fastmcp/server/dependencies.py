@@ -230,7 +230,7 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     # inspect.signature(bound_method) automatically removes the first param
     if inspect.ismethod(fn):
         # Get the original __func__ signature which includes 'self'
-        func_sig = inspect.signature(fn.__func__)  # type: ignore[union-attr]
+        func_sig = inspect.signature(fn.__func__)
         # Insert 'self' at the beginning of our new params
         self_param = next(iter(func_sig.parameters.values()))  # Should be 'self'
         new_sig = func_sig.replace(parameters=[self_param, *new_params])
@@ -261,8 +261,8 @@ def _clear_signature_caches(fn: Callable[..., Any]) -> None:
 
     # Also clear for __func__ if it's a method
     if inspect.ismethod(fn):
-        _signature_cache.pop(fn.__func__, None)  # type: ignore[union-attr]
-        _parameter_cache.pop(fn.__func__, None)  # type: ignore[union-attr]
+        _signature_cache.pop(fn.__func__, None)
+        _parameter_cache.pop(fn.__func__, None)
 
     # Try to clear docket caches if docket is installed
     if is_docket_available():
@@ -273,8 +273,8 @@ def _clear_signature_caches(fn: Callable[..., Any]) -> None:
             docket_sig_cache.pop(fn, None)
             docket_param_cache.pop(fn, None)
             if inspect.ismethod(fn):
-                docket_sig_cache.pop(fn.__func__, None)  # type: ignore[union-attr]
-                docket_param_cache.pop(fn.__func__, None)  # type: ignore[union-attr]
+                docket_sig_cache.pop(fn.__func__, None)
+                docket_param_cache.pop(fn.__func__, None)
         except (ImportError, AttributeError):
             pass  # Cache access not available in this docket version
 

@@ -515,7 +515,7 @@ class TestNotificationAPI:
         async with Client(server, message_handler=recording_message_handler) as client:
             recording_message_handler.reset()
             result = await client.call_tool("trigger_and_wait", {})
-            tool_finished = datetime.fromisoformat(result.data)  # type: ignore[arg-type]
+            tool_finished = datetime.fromisoformat(result.data)
 
             # Notification should have been received at least 1.5s before tool finished
             # (proves background flusher sent it, not final flush)

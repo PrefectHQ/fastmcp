@@ -275,7 +275,7 @@ class JWTVerifier(TokenVerifier):
             for key_data in jwks_data.get("keys", []):
                 key_kid = key_data.get("kid")
                 jwk = JsonWebKey.import_key(key_data)
-                public_key = jwk.get_public_key()  # type: ignore
+                public_key = jwk.get_public_key()
 
                 if key_kid:
                     self._jwks_cache[key_kid] = public_key

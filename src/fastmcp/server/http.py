@@ -62,7 +62,7 @@ class StreamableHTTPASGIApp:
                 raise
 
 
-_current_http_request: ContextVar[Request | None] = ContextVar(  # type: ignore[assignment]
+_current_http_request: ContextVar[Request | None] = ContextVar(
     "http_request",
     default=None,
 )
@@ -224,7 +224,7 @@ def create_sse_app(
     else:
         # No auth required
         async def sse_endpoint(request: Request) -> Response:
-            return await handle_sse(request.scope, request.receive, request._send)  # type: ignore[reportPrivateUsage]
+            return await handle_sse(request.scope, request.receive, request._send)
 
         server_routes.append(
             Route(

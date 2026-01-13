@@ -6,6 +6,7 @@ CurrentFastMCP(), and Depends() should be resolved in the worker context.
 """
 
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 import pytest
 
@@ -252,7 +253,7 @@ async def test_dependency_errors_propagate_to_task_failure():
 
     @mcp.tool(task=True)
     async def tool_with_failing_dep(
-        value: str, dep: str = Depends(failing_dependency)
+        value: str, dep: str = cast(Any, Depends(failing_dependency))
     ) -> str:
         return f"Got: {dep}"
 
