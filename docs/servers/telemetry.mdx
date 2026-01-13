@@ -1,11 +1,11 @@
 ---
 title: OpenTelemetry
 sidebarTitle: Telemetry
-description: Native OpenTelemetry instrumentation for tracing and metrics.
+description: Native OpenTelemetry instrumentation for distributed tracing.
 icon: chart-line
 ---
 
-FastMCP includes native OpenTelemetry instrumentation for observability. Traces and metrics are automatically generated for all MCP operations, providing visibility into server behavior, request latencies, and provider delegation chains.
+FastMCP includes native OpenTelemetry instrumentation for observability. Traces are automatically generated for all MCP operations, providing visibility into server behavior, request handling, and provider delegation chains.
 
 ## How It Works
 
@@ -18,37 +18,36 @@ FastMCP uses the OpenTelemetry API (not the SDK) for instrumentation. This means
 
 ## Enabling Telemetry
 
-To collect telemetry data, install the OpenTelemetry SDK and configure an exporter:
+The easiest way to export traces is using `opentelemetry-instrument`, which configures the SDK automatically:
 
 ```bash
-pip install opentelemetry-sdk opentelemetry-exporter-otlp
+pip install opentelemetry-distro opentelemetry-exporter-otlp
+opentelemetry-bootstrap -a install
 ```
 
-Then configure the SDK before starting your server:
+Then run your server with tracing enabled:
 
-```python
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-
-# Configure the SDK with OTLP exporter
-provider = TracerProvider()
-processor = BatchSpanProcessor(OTLPSpanExporter())
-provider.add_span_processor(processor)
-trace.set_tracer_provider(provider)
-
-# Now start your FastMCP server
-from fastmcp import FastMCP
-
-mcp = FastMCP("my-server")
-
-@mcp.tool()
-def greet(name: str) -> str:
-    return f"Hello, {name}!"
-
-# Traces will now be exported to your OTLP collector
+```bash
+opentelemetry-instrument \
+  --service_name my-fastmcp-server \
+  --exporter_otlp_endpoint http://localhost:4317 \
+  fastmcp run server.py
 ```
+
+Or configure via environment variables:
+
+```bash
+export OTEL_SERVICE_NAME=my-fastmcp-server
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+
+opentelemetry-instrument fastmcp run server.py
+```
+
+This works with any OTLP-compatible backend (Jaeger, Zipkin, Grafana Tempo, Datadog, etc.) and requires no changes to your FastMCP code.
+
+<Card title="OpenTelemetry Python Documentation" icon="book" href="https://opentelemetry.io/docs/languages/python/">
+  Learn more about the OpenTelemetry Python SDK, auto-instrumentation, and available exporters.
+</Card>
 
 ## Tracing
 
@@ -72,26 +71,32 @@ Each span includes these attributes:
 | `rpc.service` | Server name |
 | `rpc.method` | MCP method (e.g., `tools/call`, `resources/read`) |
 | `fastmcp.server.name` | Server name |
-| `fastmcp.component.type` | Component type (`tool`, `resource`, `prompt`) |
+| `fastmcp.component.type` | Component type (`tool`, `resource`, `resource_template`, `prompt`) |
 | `fastmcp.component.key` | Full component key |
 
-### Provider Spans
+### Provider Attributes
 
-When using mounted servers or proxy providers, additional spans show the delegation chain:
+Server spans include provider information via `fastmcp.provider.type`:
 
-| Span Name | Description |
-|-----------|-------------|
-| `delegate {name}` | FastMCPProvider delegation to child server |
-| `proxy tool {name}` | ProxyProvider remote tool call |
-| `proxy resource {uri}` | ProxyProvider remote resource read |
-| `proxy prompt {name}` | ProxyProvider remote prompt get |
+| Provider | Description |
+|----------|-------------|
+| `LocalProvider` | Components registered directly on the server |
+| `FastMCPProvider` | Components from mounted FastMCP servers |
+| `ProxyProvider` | Components proxied from remote MCP servers |
 
-Provider spans include:
+For mounted servers (FastMCPProvider), an additional `delegate {name}` span shows the delegation:
 
 | Attribute | Description |
 |-----------|-------------|
-| `fastmcp.provider.type` | Provider class name (e.g., `FastMCPProvider`, `ProxyProvider`) |
-| `fastmcp.component.key` | Backend component identifier |
+| `fastmcp.delegate.original_name` | Original tool/prompt name before namespacing |
+| `fastmcp.delegate.original_uri` | Original resource URI before namespacing |
+
+For proxy providers, backend identifiers are included:
+
+| Attribute | Description |
+|-----------|-------------|
+| `fastmcp.proxy.backend_name` | Remote tool/prompt name |
+| `fastmcp.proxy.backend_uri` | Remote resource URI |
 
 ### Client Spans
 
@@ -107,121 +112,65 @@ Client spans include `rpc.method` to indicate the MCP protocol method being call
 
 ### Span Hierarchy
 
-Spans form a hierarchy showing the request flow:
+Spans form a hierarchy showing the request flow. For mounted servers:
 
 ```
-tool weather_forecast (server)
-  └── delegate get_weather (FastMCPProvider)
-        └── tool get_weather (child server)
+tool weather_forecast (CLIENT)
+  └── tool weather_forecast (SERVER, provider=FastMCPProvider)
+        └── delegate get_weather (INTERNAL)
+              └── tool get_weather (SERVER, provider=LocalProvider)
 ```
 
-For proxy providers, the hierarchy shows remote calls:
+For proxy providers connecting to remote servers:
 
 ```
-tool remote_search (server)
-  └── proxy tool search (ProxyProvider)
+tool remote_search (CLIENT)
+  └── tool remote_search (SERVER, provider=ProxyProvider)
+        └── [remote server spans via trace context propagation]
 ```
 
-## Metrics
+## Programmatic Configuration
 
-FastMCP records metrics for request counts, durations, and active tasks.
-
-### Available Metrics
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `fastmcp.requests` | Counter | Total MCP requests by method and status |
-| `fastmcp.request.duration` | Histogram | Request duration in milliseconds |
-| `fastmcp.provider.duration` | Histogram | Provider query duration in milliseconds |
-| `fastmcp.tasks.active` | UpDownCounter | Number of active background tasks |
-
-### Metric Dimensions
-
-**`fastmcp.requests`**
-- `method`: MCP method (e.g., `tools/call`)
-- `status`: Request status (`success` or `error`)
-
-**`fastmcp.request.duration`**
-- `method`: MCP method
-
-**`fastmcp.provider.duration`**
-- `provider_type`: Provider class name
-
-## Example: Jaeger Setup
-
-Here's a complete example using Jaeger for trace visualization:
+For more control, configure the SDK in your Python code before importing FastMCP:
 
 ```python
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
-from fastmcp import FastMCP
-
-# Configure Jaeger exporter
-jaeger_exporter = JaegerExporter(
-    agent_host_name="localhost",
-    agent_port=6831,
-)
-
+# Configure the SDK with OTLP exporter
 provider = TracerProvider()
-provider.add_span_processor(BatchSpanProcessor(jaeger_exporter))
+processor = BatchSpanProcessor(OTLPSpanExporter(endpoint="http://localhost:4317"))
+provider.add_span_processor(processor)
 trace.set_tracer_provider(provider)
 
-# Create server with tools
-mcp = FastMCP("demo-server")
+# Now import and use FastMCP - traces will be exported automatically
+from fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
 
 @mcp.tool()
-def calculate(expression: str) -> float:
-    """Evaluate a math expression."""
-    return eval(expression)
-
-@mcp.tool()
-def fetch_data(url: str) -> str:
-    """Fetch data from a URL."""
-    import httpx
-    return httpx.get(url).text
-
-if __name__ == "__main__":
-    mcp.run()
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
 ```
 
-View traces at http://localhost:16686 after running Jaeger:
+<Tip>
+The SDK must be configured **before** importing FastMCP to ensure the tracer provider is set when FastMCP initializes.
+</Tip>
+
+### Local Development with Jaeger
+
+For local trace visualization, run Jaeger:
 
 ```bash
 docker run -d --name jaeger \
   -p 16686:16686 \
-  -p 6831:6831/udp \
+  -p 4317:4317 \
   jaegertracing/all-in-one:latest
 ```
 
-## Example: Prometheus Metrics
-
-For metrics collection with Prometheus:
-
-```python
-from opentelemetry import metrics
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.exporter.prometheus import PrometheusMetricReader
-
-from fastmcp import FastMCP
-
-# Configure Prometheus exporter
-reader = PrometheusMetricReader()
-provider = MeterProvider(metric_readers=[reader])
-metrics.set_meter_provider(provider)
-
-# Create server
-mcp = FastMCP("metrics-demo")
-
-@mcp.tool()
-def process(data: str) -> str:
-    return data.upper()
-
-# Metrics available at /metrics endpoint (requires prometheus-client)
-```
+Then view traces at http://localhost:16686
 
 ## Custom Spans
 
@@ -274,6 +223,8 @@ FastMCP uses OpenTelemetry semantic conventions where applicable:
 | `rpc.service` | Server name |
 | `rpc.method` | MCP protocol method |
 | `error.type` | Exception class name (on errors) |
+| `enduser.id` | Client ID from access token (when authenticated) |
+| `enduser.scope` | Space-separated OAuth scopes (when authenticated) |
 
 ### FastMCP Custom Attributes
 
@@ -282,13 +233,19 @@ All custom attributes use the `fastmcp.` prefix:
 | Attribute | Description |
 |-----------|-------------|
 | `fastmcp.server.name` | Server name |
-| `fastmcp.component.type` | `tool`, `resource`, `prompt`, or `template` |
-| `fastmcp.component.key` | Full component identifier |
-| `fastmcp.provider.type` | Provider class name |
-| `fastmcp.provider.name` | Provider instance name |
-| `fastmcp.task.id` | Background task identifier |
-| `fastmcp.task.mode` | Task execution mode |
+| `fastmcp.component.type` | `tool`, `resource`, `prompt`, or `resource_template` |
+| `fastmcp.component.key` | Full component identifier (e.g., `tool:greet`) |
+| `fastmcp.provider.type` | Provider class (`LocalProvider`, `FastMCPProvider`, `ProxyProvider`) |
 | `fastmcp.session.id` | Client session identifier |
+
+Provider-specific attributes for delegation context:
+
+| Attribute | Description |
+|-----------|-------------|
+| `fastmcp.delegate.original_name` | Original tool/prompt name before namespacing |
+| `fastmcp.delegate.original_uri` | Original resource URI before namespacing |
+| `fastmcp.proxy.backend_name` | Remote server tool/prompt name |
+| `fastmcp.proxy.backend_uri` | Remote server resource URI |
 
 ## Testing with Telemetry
 
