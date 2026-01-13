@@ -51,6 +51,10 @@ from fastmcp.utilities.types import (
     replace_type,
 )
 
+# Runtime type alias for auth checks to avoid circular imports with authorization.py
+# AuthCheck is Callable[[AuthContext], bool] but we use Any to avoid the import
+AuthCheckCallable: TypeAlias = Callable[[Any], bool]
+
 if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution
@@ -166,6 +170,10 @@ class Tool(FastMCPComponent):
             description="Deprecated. Return ToolResult from your tools for full control over serialization."
         ),
     ] = None
+    auth: Annotated[
+        AuthCheckCallable | list[AuthCheckCallable] | None,
+        Field(description="Authorization checks for this tool", exclude=True),
+    ] = None
 
     @model_validator(mode="after")
     def _validate_tool_name(self) -> Tool:
@@ -215,6 +223,7 @@ class Tool(FastMCPComponent):
         serializer: ToolResultSerializerType | None = None,  # Deprecated
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
         return FunctionTool.from_function(
@@ -230,6 +239,7 @@ class Tool(FastMCPComponent):
             serializer=serializer,
             meta=meta,
             task=task,
+            auth=auth,
         )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
@@ -438,6 +448,7 @@ class FunctionTool(Tool):
         serializer: ToolResultSerializerType | None = None,  # Deprecated
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
         if serializer is not None and fastmcp.settings.deprecation_warnings:
@@ -500,6 +511,7 @@ class FunctionTool(Tool):
             serializer=serializer,
             meta=meta,
             task_config=task_config,
+            auth=auth,
         )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
@@ -793,6 +805,7 @@ def tool(
     annotations: ToolAnnotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
+    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
 ) -> Callable[[AnyFunction], FunctionTool]: ...
 
 
@@ -809,6 +822,7 @@ def tool(
     annotations: ToolAnnotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
+    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
 ) -> Callable[[AnyFunction], FunctionTool]: ...
 
 
@@ -824,6 +838,7 @@ def tool(
     annotations: ToolAnnotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
+    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
 ) -> (
     Callable[[AnyFunction], FunctionTool]
     | FunctionTool
@@ -917,6 +932,7 @@ def tool(
             annotations=annotations,
             meta=meta,
             task=supports_task,
+            auth=auth,
         )
 
     elif isinstance(name_or_fn, str):
@@ -947,4 +963,5 @@ def tool(
         annotations=annotations,
         meta=meta,
         task=task,
+        auth=auth,
     )

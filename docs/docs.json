@@ -120,7 +120,7 @@
                 "group": "Features",
                 "icon": "stars",
                 "pages": [
-                  "servers/tasks",
+                  "servers/authorization",
                   "servers/context",
                   "servers/elicitation",
                   "servers/icons",
@@ -129,7 +129,8 @@
                   "servers/middleware",
                   "servers/progress",
                   "servers/sampling",
-                  "servers/storage-backends"
+                  "servers/storage-backends",
+                  "servers/tasks"
                 ]
               },
               {

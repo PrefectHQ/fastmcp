@@ -302,6 +302,8 @@ async def my_tool(ctx: Context) -> None:
 
 ### Transport
 
+<VersionBadge version="3.0.0" />
+
 The `ctx.transport` property indicates which transport is being used to run the server. This is useful when your tool needs to behave differently depending on whether the server is running over STDIO, SSE, or Streamable HTTP. For example, you might want to return shorter responses over STDIO or adjust timeout behavior based on transport characteristics.
 
 The transport type is set once when the server starts and remains constant for the server's lifetime. It returns `None` when called outside of a server context (for example, in unit tests or when running code outside of an MCP request).

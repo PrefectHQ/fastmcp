@@ -1,3 +1,4 @@
+from .authorization import AuthMiddleware
 from .middleware import (
     CallNext,
     Middleware,
@@ -6,6 +7,7 @@ from .middleware import (
 from .ping import PingMiddleware
 
 __all__ = [
+    "AuthMiddleware",
     "CallNext",
     "Middleware",
     "MiddlewareContext",

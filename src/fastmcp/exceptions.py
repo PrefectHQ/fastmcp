@@ -37,3 +37,7 @@ class NotFoundError(Exception):
 
 class DisabledError(Exception):
     """Object is disabled."""
+
+
+class AuthorizationError(FastMCPError):
+    """Error when authorization check fails."""

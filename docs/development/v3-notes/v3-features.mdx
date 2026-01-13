@@ -267,6 +267,59 @@ fastmcp dev server.py  # Includes --reload by default
 
 ---
 
+## Component Authorization
+
+v3.0 introduces callable-based authorization for tools, resources, and prompts (`src/fastmcp/server/auth/authorization.py`).
+
+**Component-level auth**:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth import require_auth, require_scopes
+
+mcp = FastMCP()
+
+@mcp.tool(auth=require_auth)
+def protected_tool(): ...
+
+@mcp.resource("data://secret", auth=require_scopes("read"))
+def secret_data(): ...
+
+@mcp.prompt(auth=require_scopes("admin"))
+def admin_prompt(): ...
+```
+
+**Server-wide auth via middleware**:
+
+```python
+from fastmcp.server.middleware import AuthMiddleware
+from fastmcp.server.auth import require_auth, restrict_tag
+
+# Require auth for all components
+mcp = FastMCP(middleware=[AuthMiddleware(auth=require_auth)])
+
+# Tag-based restrictions
+mcp = FastMCP(middleware=[
+    AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"]))
+])
+```
+
+Built-in checks:
+- `require_auth`: Requires any valid token
+- `require_scopes(*scopes)`: Requires specific OAuth scopes
+- `restrict_tag(tag, scopes)`: Requires scopes only for tagged components
+
+Custom checks receive `AuthContext` with `token` and `component`:
+
+```python
+def custom_check(ctx: AuthContext) -> bool:
+    return ctx.token is not None and "admin" in ctx.token.scopes
+```
+
+STDIO transport bypasses all auth checks (no OAuth concept).
+
+---
+
 ## Deprecated Features
 
 These emit deprecation warnings but continue to work.

@@ -32,6 +32,7 @@ from fastmcp.server.dependencies import (
     without_injected_parameters,
 )
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
+from fastmcp.tools.tool import AuthCheckCallable
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -200,6 +201,9 @@ class Prompt(FastMCPComponent):
     arguments: list[PromptArgument] | None = Field(
         default=None, description="Arguments that can be passed to the prompt"
     )
+    auth: AuthCheckCallable | list[AuthCheckCallable] | None = Field(
+        default=None, description="Authorization checks for this prompt", exclude=True
+    )
 
     def to_mcp_prompt(
         self,
@@ -238,6 +242,7 @@ class Prompt(FastMCPComponent):
         tags: set[str] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -255,6 +260,7 @@ class Prompt(FastMCPComponent):
             tags=tags,
             meta=meta,
             task=task,
+            auth=auth,
         )
 
     async def render(
@@ -406,6 +412,7 @@ class FunctionPrompt(Prompt):
         tags: set[str] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -504,6 +511,7 @@ class FunctionPrompt(Prompt):
             fn=wrapped_fn,
             meta=meta,
             task_config=task_config,
+            auth=auth,
         )
 
     def _convert_string_arguments(self, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -635,6 +643,7 @@ def prompt(
     tags: set[str] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
+    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
 ) -> Callable[[AnyFunction], FunctionPrompt]: ...
 
 
@@ -649,6 +658,7 @@ def prompt(
     tags: set[str] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
+    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
 ) -> Callable[[AnyFunction], FunctionPrompt]: ...
 
 
@@ -662,6 +672,7 @@ def prompt(
     tags: set[str] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
+    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
 ) -> (
     Callable[[AnyFunction], FunctionPrompt]
     | FunctionPrompt
@@ -693,6 +704,7 @@ def prompt(
         tags: Optional set of tags for categorizing the prompt
         meta: Optional meta information about the prompt
         task: Optional task configuration for background execution (default False)
+        auth: Optional authorization checks for the prompt
 
     Returns:
         A FunctionPrompt when decorating a function, or a decorator function when
@@ -748,6 +760,7 @@ def prompt(
             tags=tags,
             meta=meta,
             task=supports_task,
+            auth=auth,
         )
 
     elif isinstance(name_or_fn, str):
@@ -776,4 +789,5 @@ def prompt(
         tags=tags,
         meta=meta,
         task=task,
+        auth=auth,
     )

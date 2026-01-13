@@ -723,6 +723,7 @@ dev = [
     { name = "inline-snapshot", extra = ["dirty-equals"] },
     { name = "ipython", version = "8.37.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "ipython", version = "9.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "loq" },
     { name = "pdbpp" },
     { name = "prek" },
     { name = "psutil" },
@@ -774,6 +775,7 @@ dev = [
     { name = "fastmcp", extras = ["anthropic", "openai", "tasks"] },
     { name = "inline-snapshot", extras = ["dirty-equals"], specifier = ">=0.27.2" },
     { name = "ipython", specifier = ">=8.12.3" },
+    { name = "loq", specifier = ">=0.1.0a3" },
     { name = "pdbpp", specifier = ">=0.11.7" },
     { name = "prek", specifier = ">=0.2.12" },
     { name = "psutil", specifier = ">=7.0.0" },
@@ -1173,6 +1175,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/43/4b/674af6ef2f97d56f0ab5153bf0bfa28ccb6c3ed4d1babf4305449668807b/keyring-25.7.0.tar.gz", hash = "sha256:fe01bd85eb3f8fb3dd0405defdeac9a5b4f6f0439edbb3149577f244a2e8245b", size = 63516, upload-time = "2025-11-16T16:26:09.482Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/db/e655086b7f3a705df045bf0933bdd9c2f79bb3c97bfef1384598bb79a217/keyring-25.7.0-py3-none-any.whl", hash = "sha256:be4a0b195f149690c166e850609a477c532ddbfbaed96a404d4e43f8d5e2689f", size = 39160, upload-time = "2025-11-16T16:26:08.402Z" },
+]
+
+[[package]]
+name = "loq"
+version = "0.1.0a3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/87/2d/911c0ca3175aa30358eb0b1dd4789e3695292db63dc50da34be0d8aa001a/loq-0.1.0a3.tar.gz", hash = "sha256:8f34ed32eed79d3257fc6c6e2ffc4970795bae0fbd7dee95cdb027d351a87839", size = 49278, upload-time = "2026-01-12T05:13:34.14Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/7c/d028a1041caef85844b7a68926138daedac6ab4aa720f6cb8c77a30dcb49/loq-0.1.0a3-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:e65cb220446f1a2fad5c0e3e0c97715204652cb3896b35bb50967745d1f74ade", size = 1285120, upload-time = "2026-01-12T05:13:29.418Z" },
+    { url = "https://files.pythonhosted.org/packages/91/49/cfa207080940c9d447ca4633d7a25790d50e936de29d154dcc1941c45e54/loq-0.1.0a3-py3-none-macosx_11_0_arm64.whl", hash = "sha256:20afc0638df897312ea33f064cd8d05ee437c77ff6fca890ac33d41cc5fe9dbd", size = 1212512, upload-time = "2026-01-12T05:13:26.353Z" },
+    { url = "https://files.pythonhosted.org/packages/80/d9/68f2418009771b764fc6fcbd379892464c7d96cf668ea570f8b3d6e93806/loq-0.1.0a3-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:efb606799326bdba9e0931ae6664076eb24ea9ce29f540ec62071f3da7d89753", size = 1232624, upload-time = "2026-01-12T05:13:30.431Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/27/10e195de9e4e843fed4a098f4a7b3e2b78a0218d317adb3ea83b341fa8e9/loq-0.1.0a3-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:63a146821abc50f9166fdec83a92330ddec81d78fc02d0956cf00957fc02f4e6", size = 1324994, upload-time = "2026-01-12T05:13:27.895Z" },
+    { url = "https://files.pythonhosted.org/packages/98/09/76677afb5f9d380a89cf59489f03cdb7c1c6318d1c81c6fc3073cce93893/loq-0.1.0a3-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:afc46f65303b9ff64ae0e517f4834cf0e5b97cd5b375cbfd66dadf267f94f725", size = 1272635, upload-time = "2026-01-12T05:13:23.759Z" },
+    { url = "https://files.pythonhosted.org/packages/65/77/fda09acd73fc44f6a7cfa9851dd8d8fdab0829311b9c7fa1f1af30b3affa/loq-0.1.0a3-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:3e5501abcbab67d14e6c71a6c010609430a9495a888e10047d5542ffd46acd65", size = 1389293, upload-time = "2026-01-12T05:13:32.655Z" },
+    { url = "https://files.pythonhosted.org/packages/39/68/2dbb5e29e0333f036b92b09f6b54bbd8e68b51b780051f01e15c307b6ab1/loq-0.1.0a3-py3-none-win_amd64.whl", hash = "sha256:51cd849b94f09d211bb842809cce4172ee0904092be2643bdb9629001745f3b9", size = 1283650, upload-time = "2026-01-12T05:13:25.042Z" },
 ]
 
 [[package]]

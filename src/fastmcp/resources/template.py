@@ -27,6 +27,7 @@ from fastmcp.server.dependencies import (
     without_injected_parameters,
 )
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
+from fastmcp.tools.tool import AuthCheckCallable
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import get_cached_typeadapter
@@ -114,6 +115,11 @@ class ResourceTemplate(FastMCPComponent):
     annotations: Annotations | None = Field(
         default=None, description="Optional annotations about the resource's behavior"
     )
+    auth: AuthCheckCallable | list[AuthCheckCallable] | None = Field(
+        default=None,
+        description="Authorization checks for this resource template",
+        exclude=True,
+    )
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(uri_template={self.uri_template!r}, name={self.name!r}, description={self.description!r}, tags={self.tags})"
@@ -131,6 +137,7 @@ class ResourceTemplate(FastMCPComponent):
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionResourceTemplate:
         return FunctionResourceTemplate.from_function(
             fn=fn,
@@ -144,6 +151,7 @@ class ResourceTemplate(FastMCPComponent):
             annotations=annotations,
             meta=meta,
             task=task,
+            auth=auth,
         )
 
     @field_validator("mime_type", mode="before")
@@ -370,6 +378,7 @@ class FunctionResourceTemplate(ResourceTemplate):
             mime_type=self.mime_type,
             tags=self.tags,
             task=self.task_config,
+            auth=self.auth,
         )
 
     async def read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult:
@@ -452,6 +461,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionResourceTemplate:
         """Create a template from a function."""
 
@@ -562,4 +572,5 @@ class FunctionResourceTemplate(ResourceTemplate):
             annotations=annotations,
             meta=meta,
             task_config=task_config,
+            auth=auth,
         )

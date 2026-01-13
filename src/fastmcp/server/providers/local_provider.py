@@ -41,7 +41,7 @@ from fastmcp.resources.resource import resource as standalone_resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.tools.tool import FunctionTool, Tool
+from fastmcp.tools.tool import AuthCheckCallable, FunctionTool, Tool
 from fastmcp.tools.tool_transform import (
     ToolTransformConfig,
     apply_transformations_to_tools,
@@ -363,6 +363,7 @@ class LocalProvider(Provider):
         enabled: bool = True,
         task: bool | TaskConfig | None = None,
         serializer: ToolResultSerializerType | None = None,  # Deprecated
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionTool: ...
 
     @overload
@@ -382,6 +383,7 @@ class LocalProvider(Provider):
         enabled: bool = True,
         task: bool | TaskConfig | None = None,
         serializer: ToolResultSerializerType | None = None,  # Deprecated
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> Callable[[AnyFunction], FunctionTool]: ...
 
     # NOTE: This method mirrors fastmcp.tools.tool() but adds registration,
@@ -404,6 +406,7 @@ class LocalProvider(Provider):
         enabled: bool = True,
         task: bool | TaskConfig | None = None,
         serializer: ToolResultSerializerType | None = None,  # Deprecated
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> (
         Callable[[AnyFunction], FunctionTool]
         | FunctionTool
@@ -496,6 +499,7 @@ class LocalProvider(Provider):
                 meta=meta,
                 serializer=serializer,
                 task=supports_task,
+                auth=auth,
             )
             self.add_tool(tool_obj)
             # If disabled, add to blocklist
@@ -534,6 +538,7 @@ class LocalProvider(Provider):
             enabled=enabled,
             task=task,
             serializer=serializer,
+            auth=auth,
         )
 
     def resource(
@@ -550,6 +555,7 @@ class LocalProvider(Provider):
         annotations: Annotations | dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> Callable[[AnyFunction], Resource | ResourceTemplate]:
         """Decorator to register a function as a resource.
 
@@ -568,6 +574,7 @@ class LocalProvider(Provider):
             annotations: Optional annotations about the resource's behavior
             meta: Optional meta information about the resource
             task: Optional task configuration for background execution
+            auth: Optional authorization checks for the resource
 
         Returns:
             A decorator function.
@@ -600,6 +607,7 @@ class LocalProvider(Provider):
             annotations=annotations,
             meta=meta,
             task=supports_task,
+            auth=auth,
         )
 
         def decorator(fn: AnyFunction) -> Resource | ResourceTemplate:
@@ -630,6 +638,7 @@ class LocalProvider(Provider):
         enabled: bool = True,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionPrompt: ...
 
     @overload
@@ -645,6 +654,7 @@ class LocalProvider(Provider):
         enabled: bool = True,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> Callable[[AnyFunction], FunctionPrompt]: ...
 
     def prompt(
@@ -659,6 +669,7 @@ class LocalProvider(Provider):
         enabled: bool = True,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> (
         Callable[[AnyFunction], FunctionPrompt]
         | FunctionPrompt
@@ -683,6 +694,7 @@ class LocalProvider(Provider):
             enabled: Whether the prompt is enabled (default True). If False, adds to blocklist.
             meta: Optional meta information about the prompt
             task: Optional task configuration for background execution
+            auth: Optional authorization checks for the prompt
 
         Returns:
             The registered FunctionPrompt or a decorator function.
@@ -723,6 +735,7 @@ class LocalProvider(Provider):
             tags=tags,
             meta=meta,
             task=supports_task,
+            auth=auth,
         )
 
         # If standalone returned a FunctionPrompt directly (@prompt without parens),

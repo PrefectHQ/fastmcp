@@ -33,6 +33,7 @@ from fastmcp.server.dependencies import (
     without_injected_parameters,
 )
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
+from fastmcp.tools.tool import AuthCheckCallable
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import get_fn_name
 
@@ -229,6 +230,10 @@ class Resource(FastMCPComponent):
         Annotations | None,
         Field(description="Optional annotations about the resource's behavior"),
     ] = None
+    auth: Annotated[
+        AuthCheckCallable | list[AuthCheckCallable] | None,
+        Field(description="Authorization checks for this resource", exclude=True),
+    ] = None
 
     @staticmethod
     def from_function(
@@ -243,6 +248,7 @@ class Resource(FastMCPComponent):
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionResource:
         return FunctionResource.from_function(
             fn=fn,
@@ -256,6 +262,7 @@ class Resource(FastMCPComponent):
             annotations=annotations,
             meta=meta,
             task=task,
+            auth=auth,
         )
 
     @field_validator("mime_type", mode="before")
@@ -431,6 +438,7 @@ class FunctionResource(Resource):
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionResource:
         """Create a FunctionResource from a function."""
         if isinstance(uri, str):
@@ -465,6 +473,7 @@ class FunctionResource(Resource):
             annotations=annotations,
             meta=meta,
             task_config=task_config,
+            auth=auth,
         )
 
     async def read(
@@ -510,6 +519,7 @@ def resource(
     annotations: Annotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
+    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
 ) -> Callable[[AnyFunction], Resource | ResourceTemplate]:
     """Standalone decorator to create a resource without registering it to a server.
 
@@ -536,6 +546,7 @@ def resource(
         annotations: Optional annotations about the resource's behavior
         meta: Optional meta information about the resource
         task: Optional task configuration for background execution (default False)
+        auth: Optional authorization checks for the resource
 
     Returns:
         A decorator function that returns a Resource or ResourceTemplate.
@@ -608,6 +619,7 @@ def resource(
                 annotations=annotations,
                 meta=meta,
                 task=supports_task,
+                auth=auth,
             )
         else:
             return Resource.from_function(
@@ -622,6 +634,7 @@ def resource(
                 annotations=annotations,
                 meta=meta,
                 task=supports_task,
+                auth=auth,
             )
 
     return decorator
