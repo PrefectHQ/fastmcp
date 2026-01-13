@@ -5,6 +5,8 @@ description: Learn how to run your FastMCP server locally for development and te
 icon: circle-play
 ---
 
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
 FastMCP servers can be run in different ways depending on your needs. This guide focuses on running servers locally for development and testing. For production deployment to a URL, see the [HTTP Deployment](/deployment/http) guide.
 
 ## The `run()` Method
@@ -158,6 +160,8 @@ This is useful for servers that need configuration files, database paths, API ke
 For more CLI features including development mode with the MCP Inspector, see the [CLI documentation](/patterns/cli).
 
 ### Auto-Reload for Development
+
+<VersionBadge version="3.0.0" />
 
 During development, you can use the `--reload` flag to automatically restart your server when source files change:
 
