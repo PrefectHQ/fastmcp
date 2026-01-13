@@ -1,11 +1,24 @@
 """Async utilities for FastMCP."""
 
-from collections.abc import Awaitable
-from typing import Literal, TypeVar, overload
+import functools
+from collections.abc import Awaitable, Callable
+from typing import Any, Literal, TypeVar, overload
 
 import anyio
+from anyio.to_thread import run_sync as run_sync_in_threadpool
 
 T = TypeVar("T")
+
+
+async def call_sync_fn_in_threadpool(
+    fn: Callable[..., Any], *args: Any, **kwargs: Any
+) -> Any:
+    """Call a sync function in a threadpool to avoid blocking the event loop.
+
+    Uses anyio.to_thread.run_sync which properly propagates contextvars,
+    making this safe for functions that depend on context (like dependency injection).
+    """
+    return await run_sync_in_threadpool(functools.partial(fn, *args, **kwargs))
 
 
 @overload

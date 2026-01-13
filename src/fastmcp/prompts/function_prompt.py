@@ -30,6 +30,7 @@ from fastmcp.server.dependencies import (
 )
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.tool import AuthCheckCallable
+from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
@@ -293,9 +294,14 @@ class FunctionPrompt(Prompt):
 
             # self.fn is wrapped by without_injected_parameters which handles
             # dependency resolution internally
-            result = self.fn(**kwargs)
-            if inspect.isawaitable(result):
-                result = await result
+            if inspect.iscoroutinefunction(self.fn):
+                result = await self.fn(**kwargs)
+            else:
+                # Run sync functions in threadpool to avoid blocking the event loop
+                result = await call_sync_fn_in_threadpool(self.fn, **kwargs)
+                # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
+                if inspect.isawaitable(result):
+                    result = await result
 
             return self.convert_result(result)
         except Exception as e:

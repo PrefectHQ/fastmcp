@@ -270,7 +270,9 @@ For full documentation on the Context object and all its capabilities, see the [
 
 ### Async Resources
 
-Use `async def` for resource functions that perform I/O operations (e.g., reading from a database or network) to avoid blocking the server.
+FastMCP supports both `async def` and regular `def` resource functions. Synchronous functions automatically run in a threadpool to avoid blocking the event loop.
+
+For I/O-bound operations, async functions are more efficient:
 
 ```python
 import aiofiles

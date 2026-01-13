@@ -352,10 +352,10 @@ See [Local Provider](/servers/providers/local#visibility-control) for the comple
 
 ### Async Prompts
 
-FastMCP seamlessly supports both standard (`def`) and asynchronous (`async def`) functions as prompts.
+FastMCP supports both standard (`def`) and asynchronous (`async def`) functions as prompts. Synchronous functions automatically run in a threadpool to avoid blocking the event loop.
 
 ```python
-# Synchronous prompt
+# Synchronous prompt (runs in threadpool)
 @mcp.prompt
 def simple_question(question: str) -> str:
     """Generates a simple question to ask the LLM."""
@@ -372,7 +372,7 @@ async def data_based_prompt(data_id: str) -> str:
             return f"Analyze this data: {data['content']}"
 ```
 
-Use `async def` when your prompt function performs I/O operations like network requests, database queries, file I/O, or external service calls.
+Use `async def` when your prompt function performs I/O operations like network requests or database queries, since async is more efficient than threadpool dispatch.
 
 ### Accessing MCP Context
 

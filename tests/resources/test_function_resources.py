@@ -276,3 +276,59 @@ class TestResourceContentToMcp:
         mcp_content = rc.to_mcp_resource_contents("resource://test")
 
         assert mcp_content.meta is None
+
+
+class TestFunctionResourceCallable:
+    """Test FunctionResource with callable objects."""
+
+    async def test_callable_object_sync(self):
+        """Test that callable objects with sync __call__ work."""
+
+        class MyResource:
+            def __init__(self, value: str):
+                self.value = value
+
+            def __call__(self) -> str:
+                return f"value: {self.value}"
+
+        resource = FunctionResource.from_function(MyResource("test"), uri="fn://test")
+        result = await resource.read()
+        assert result == "value: test"
+
+    async def test_callable_object_async(self):
+        """Test that callable objects with async __call__ work."""
+
+        class AsyncResource:
+            def __init__(self, value: str):
+                self.value = value
+
+            async def __call__(self) -> str:
+                return f"async value: {self.value}"
+
+        resource = FunctionResource.from_function(
+            AsyncResource("test"), uri="fn://test"
+        )
+        result = await resource.read()
+        assert result == "async value: test"
+
+    async def test_sync_resource_runs_concurrently(self):
+        """Test that sync resources run in threadpool and don't block each other."""
+        import asyncio
+        import threading
+
+        num_calls = 3
+        barrier = threading.Barrier(num_calls, timeout=0.5)
+
+        def concurrent_resource() -> str:
+            barrier.wait()
+            return "done"
+
+        resource = FunctionResource.from_function(concurrent_resource, uri="fn://test")
+
+        # Run concurrent reads - will raise BrokenBarrierError if not concurrent
+        results = await asyncio.gather(
+            resource.read(),
+            resource.read(),
+            resource.read(),
+        )
+        assert results == ["done", "done", "done"]

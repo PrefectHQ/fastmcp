@@ -21,9 +21,7 @@ from mcp.types import Icon, ToolAnnotations, ToolExecution
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
-from fastmcp.server.dependencies import (
-    without_injected_parameters,
-)
+from fastmcp.server.dependencies import without_injected_parameters
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
 from fastmcp.tools.tool import (
@@ -32,6 +30,7 @@ from fastmcp.tools.tool import (
     ToolResult,
     ToolResultSerializerType,
 )
+from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
 from fastmcp.utilities.types import (
     NotSet,
     NotSetT,
@@ -237,9 +236,18 @@ class FunctionTool(Tool):
         """Run the tool with arguments."""
         wrapper_fn = without_injected_parameters(self.fn)
         type_adapter = get_cached_typeadapter(wrapper_fn)
-        result = type_adapter.validate_python(arguments)
-        if inspect.isawaitable(result):
-            result = await result
+
+        if inspect.iscoroutinefunction(wrapper_fn):
+            # Async function: validate_python returns a coroutine
+            result = await type_adapter.validate_python(arguments)
+        else:
+            # Sync function: run in threadpool to avoid blocking the event loop
+            result = await call_sync_fn_in_threadpool(
+                type_adapter.validate_python, arguments
+            )
+            # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
+            if inspect.isawaitable(result):
+                result = await result
 
         return self.convert_result(result)
 

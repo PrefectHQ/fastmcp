@@ -550,3 +550,57 @@ class TestPromptResult:
         assert len(mcp_result.messages) == 2
         assert mcp_result.description == "Test"
         assert mcp_result.meta == {"key": "value"}
+
+
+class TestPromptCallableAndConcurrency:
+    """Test prompts with callable objects and concurrent execution."""
+
+    async def test_callable_object_sync(self):
+        """Test that callable objects with sync __call__ work."""
+
+        class MyPrompt:
+            def __init__(self, greeting: str):
+                self.greeting = greeting
+
+            def __call__(self) -> str:
+                return f"{self.greeting}, world!"
+
+        prompt = Prompt.from_function(MyPrompt("Hello"))
+        result = await prompt.render()
+        assert result.messages == [Message("Hello, world!")]
+
+    async def test_callable_object_async(self):
+        """Test that callable objects with async __call__ work."""
+
+        class AsyncPrompt:
+            def __init__(self, greeting: str):
+                self.greeting = greeting
+
+            async def __call__(self) -> str:
+                return f"async {self.greeting}!"
+
+        prompt = Prompt.from_function(AsyncPrompt("Hello"))
+        result = await prompt.render()
+        assert result.messages == [Message("async Hello!")]
+
+    async def test_sync_prompt_runs_concurrently(self):
+        """Test that sync prompts run in threadpool and don't block each other."""
+        import asyncio
+        import threading
+
+        num_calls = 3
+        barrier = threading.Barrier(num_calls, timeout=0.5)
+
+        def concurrent_prompt() -> str:
+            barrier.wait()
+            return "done"
+
+        prompt = Prompt.from_function(concurrent_prompt)
+
+        # Run concurrent renders - will raise BrokenBarrierError if not concurrent
+        results = await asyncio.gather(
+            prompt.render(),
+            prompt.render(),
+            prompt.render(),
+        )
+        assert all(r.messages == [Message("done")] for r in results)

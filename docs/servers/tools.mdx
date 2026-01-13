@@ -140,56 +140,22 @@ mcp.add_tool(calc.multiply)  # Registers with correct schema (only 'x', not 'sel
 
 ### Async Support
 
-FastMCP is an async-first framework that seamlessly supports both asynchronous (`async def`) and synchronous (`def`) functions as tools. Async tools are preferred for I/O-bound operations to keep your server responsive.
+FastMCP supports both asynchronous (`async def`) and synchronous (`def`) functions as tools. Synchronous tools automatically run in a threadpool to avoid blocking the event loop, so multiple tool calls can execute concurrently even if individual tools perform blocking operations.
 
-While synchronous tools work seamlessly in FastMCP, they can block the event loop during execution. For CPU-intensive or potentially blocking synchronous operations, consider alternative strategies. One approach is to use `anyio` (which FastMCP already uses internally) to wrap them as async functions, for example:
-
-```python {1, 13}
-import anyio
+```python
 from fastmcp import FastMCP
+import time
 
 mcp = FastMCP()
-
-def cpu_intensive_task(data: str) -> str:
-    # Some heavy computation that could block the event loop
-    return processed_data
 
 @mcp.tool
-async def wrapped_cpu_task(data: str) -> str:
-    """CPU-intensive task wrapped to prevent blocking."""
-    return await anyio.to_thread.run_sync(cpu_intensive_task, data)
+def slow_tool(x: int) -> int:
+    """This sync function won't block other concurrent requests."""
+    time.sleep(2)  # Runs in threadpool, not on the event loop
+    return x * 2
 ```
 
-Alternative approaches include using `asyncio.get_event_loop().run_in_executor()` or other threading techniques to manage blocking operations without impacting server responsiveness. For example, here's a recipe for using the `asyncer` library (not included in FastMCP) to create a decorator that wraps synchronous functions, courtesy of [@hsheth2](https://github.com/jlowin/fastmcp/issues/864#issuecomment-3103678258):
-
-<CodeGroup>
-```python Decorator Recipe
-import asyncer
-import functools
-from typing import Callable, ParamSpec, TypeVar, Awaitable
-
-_P = ParamSpec("_P")
-_R = TypeVar("_R")
-
-def make_async_background(fn: Callable[_P, _R]) -> Callable[_P, Awaitable[_R]]:
-    @functools.wraps(fn)
-    async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-        return await asyncer.asyncify(fn)(*args, **kwargs)
-
-    return wrapper
-```
-
-```python Using the Decorator {6}
-from fastmcp import FastMCP
-
-mcp = FastMCP()
-
-@mcp.tool()
-@make_async_background
-def my_tool() -> None:
-    time.sleep(5)
-```
-</CodeGroup>
+For I/O-bound operations like network requests or database queries, async tools are still preferred since they're more efficient than threadpool dispatch. Use sync tools when working with synchronous libraries or for simple operations where the threading overhead doesn't matter.
 
 ## Arguments
 
