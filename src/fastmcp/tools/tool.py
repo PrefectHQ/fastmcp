@@ -1,18 +1,13 @@
 from __future__ import annotations
 
-import inspect
 import warnings
 from collections.abc import Callable
-from dataclasses import dataclass
-from functools import partial
 from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
     ClassVar,
-    Generic,
     TypeAlias,
-    get_type_hints,
     overload,
 )
 
@@ -28,17 +23,10 @@ from mcp.types import (
     ToolExecution,
 )
 from mcp.types import Tool as MCPTool
-from pydantic import BaseModel, Field, PydanticSchemaGenerationError, model_validator
-from typing_extensions import TypeVar
+from pydantic import BaseModel, Field, model_validator
 
-import fastmcp
-from fastmcp.server.dependencies import (
-    transform_context_annotations,
-    without_injected_parameters,
-)
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
-from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     Audio,
@@ -46,9 +34,6 @@ from fastmcp.utilities.types import (
     Image,
     NotSet,
     NotSetT,
-    create_function_without_params,
-    get_cached_typeadapter,
-    replace_type,
 )
 
 # Runtime type alias for auth checks to avoid circular imports with authorization.py
@@ -59,22 +44,12 @@ if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution
 
+    from fastmcp.tools.function_tool import FunctionTool
     from fastmcp.tools.tool_transform import ArgTransform, TransformedTool
 
+# Re-export from function_tool module
+
 logger = get_logger(__name__)
-
-T = TypeVar("T", default=Any)
-
-
-@dataclass
-class _WrappedResult(Generic[T]):
-    """Generic wrapper for non-object return types."""
-
-    result: T
-
-
-class _UnserializableType:
-    pass
 
 
 ToolResultSerializerType: TypeAlias = Callable[[Any], str]
@@ -209,9 +184,11 @@ class Tool(FastMCPComponent):
             ),
         )
 
-    @staticmethod
+    @classmethod
     def from_function(
+        cls,
         fn: Callable[..., Any],
+        *,
         name: str | None = None,
         title: str | None = None,
         description: str | None = None,
@@ -226,6 +203,8 @@ class Tool(FastMCPComponent):
         auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
+        from fastmcp.tools.function_tool import FunctionTool
+
         return FunctionTool.from_function(
             fn=fn,
             name=name,
@@ -408,316 +387,6 @@ class Tool(FastMCPComponent):
         )
 
 
-class FunctionTool(Tool):
-    fn: Callable[..., Any]
-
-    def to_mcp_tool(
-        self,
-        *,
-        include_fastmcp_meta: bool | None = None,
-        **overrides: Any,
-    ) -> MCPTool:
-        """Convert the FastMCP tool to an MCP tool.
-
-        Extends the base implementation to add task execution mode if enabled.
-        """
-        # Get base MCP tool from parent
-        mcp_tool = super().to_mcp_tool(
-            include_fastmcp_meta=include_fastmcp_meta, **overrides
-        )
-
-        # Add task execution mode per SEP-1686
-        # Only set execution if not overridden and task execution is supported
-        if self.task_config.supports_tasks() and "execution" not in overrides:
-            mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
-
-        return mcp_tool
-
-    @classmethod
-    def from_function(
-        cls,
-        fn: Callable[..., Any],
-        name: str | None = None,
-        title: str | None = None,
-        description: str | None = None,
-        icons: list[Icon] | None = None,
-        tags: set[str] | None = None,
-        annotations: ToolAnnotations | None = None,
-        exclude_args: list[str] | None = None,
-        output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: ToolResultSerializerType | None = None,  # Deprecated
-        meta: dict[str, Any] | None = None,
-        task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
-    ) -> FunctionTool:
-        """Create a Tool from a function."""
-        if serializer is not None and fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The `serializer` parameter is deprecated. "
-                "Return ToolResult from your tools for full control over serialization. "
-                "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        if exclude_args and fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The `exclude_args` parameter is deprecated as of FastMCP 2.14. "
-                "Use dependency injection with `Depends()` instead for better lifecycle management. "
-                "See https://gofastmcp.com/servers/dependencies for examples.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
-        parsed_fn = ParsedFunction.from_function(fn, exclude_args=exclude_args)
-        func_name = name or parsed_fn.name
-
-        if func_name == "<lambda>":
-            raise ValueError("You must provide a name for lambda functions")
-
-        # Normalize task to TaskConfig and validate
-        if task is None:
-            task_config = TaskConfig(mode="forbidden")
-        elif isinstance(task, bool):
-            task_config = TaskConfig.from_bool(task)
-        else:
-            task_config = task
-        task_config.validate_function(fn, func_name)
-
-        if isinstance(output_schema, NotSetT):
-            final_output_schema = parsed_fn.output_schema
-        else:
-            # At this point output_schema is not NotSetT, so it must be dict | None
-            final_output_schema = output_schema
-        # Note: explicit schemas (dict) are used as-is without auto-wrapping
-
-        # Validate that explicit schemas are object type for structured content
-        # (resolving $ref references for self-referencing types)
-        if final_output_schema is not None and isinstance(final_output_schema, dict):
-            if not _is_object_schema(final_output_schema):
-                raise ValueError(
-                    f"Output schemas must represent object types due to MCP spec limitations. Received: {final_output_schema!r}"
-                )
-
-        return cls(
-            fn=parsed_fn.fn,
-            name=name or parsed_fn.name,
-            title=title,
-            description=description or parsed_fn.description,
-            icons=icons,
-            parameters=parsed_fn.input_schema,
-            output_schema=final_output_schema,
-            annotations=annotations,
-            tags=tags or set(),
-            serializer=serializer,
-            meta=meta,
-            task_config=task_config,
-            auth=auth,
-        )
-
-    async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        """Run the tool with arguments."""
-        wrapper_fn = without_injected_parameters(self.fn)
-        type_adapter = get_cached_typeadapter(wrapper_fn)
-        result = type_adapter.validate_python(arguments)
-        if inspect.isawaitable(result):
-            result = await result
-
-        return self.convert_result(result)
-
-    def register_with_docket(self, docket: Docket) -> None:
-        """Register this tool with docket for background execution.
-
-        FunctionTool registers the underlying function, which has the user's
-        Depends parameters for docket to resolve.
-        """
-        if not self.task_config.supports_tasks():
-            return
-        docket.register(self.fn, names=[self.key])
-
-    async def add_to_docket(  # type: ignore[override]
-        self,
-        docket: Docket,
-        arguments: dict[str, Any],
-        *,
-        fn_key: str | None = None,
-        task_key: str | None = None,
-        **kwargs: Any,
-    ) -> Execution:
-        """Schedule this tool for background execution via docket.
-
-        FunctionTool splats the arguments dict since .fn expects **kwargs.
-
-        Args:
-            docket: The Docket instance
-            arguments: Tool arguments
-            fn_key: Function lookup key in Docket registry (defaults to self.key)
-            task_key: Redis storage key for the result
-            **kwargs: Additional kwargs passed to docket.add()
-        """
-        lookup_key = fn_key or self.key
-        if task_key:
-            kwargs["key"] = task_key
-        return await docket.add(lookup_key, **kwargs)(**arguments)
-
-
-def _is_object_schema(schema: dict[str, Any]) -> bool:
-    """Check if a JSON schema represents an object type."""
-    # Direct object type
-    if schema.get("type") == "object":
-        return True
-
-    # Schema with properties but no explicit type is treated as object
-    if "properties" in schema:
-        return True
-
-    # Self-referencing types use $ref pointing to $defs
-    # The referenced type is always an object in our use case
-    return "$ref" in schema and "$defs" in schema
-
-
-@dataclass
-class ParsedFunction:
-    fn: Callable[..., Any]
-    name: str
-    description: str | None
-    input_schema: dict[str, Any]
-    output_schema: dict[str, Any] | None
-
-    @classmethod
-    def from_function(
-        cls,
-        fn: Callable[..., Any],
-        exclude_args: list[str] | None = None,
-        validate: bool = True,
-        wrap_non_object_output_schema: bool = True,
-    ) -> ParsedFunction:
-        if validate:
-            sig = inspect.signature(fn)
-            # Reject functions with *args or **kwargs
-            for param in sig.parameters.values():
-                if param.kind == inspect.Parameter.VAR_POSITIONAL:
-                    raise ValueError("Functions with *args are not supported as tools")
-                if param.kind == inspect.Parameter.VAR_KEYWORD:
-                    raise ValueError(
-                        "Functions with **kwargs are not supported as tools"
-                    )
-
-            # Reject exclude_args that don't exist in the function or don't have a default value
-            if exclude_args:
-                for arg_name in exclude_args:
-                    if arg_name not in sig.parameters:
-                        raise ValueError(
-                            f"Parameter '{arg_name}' in exclude_args does not exist in function."
-                        )
-                    param = sig.parameters[arg_name]
-                    if param.default == inspect.Parameter.empty:
-                        raise ValueError(
-                            f"Parameter '{arg_name}' in exclude_args must have a default value."
-                        )
-
-        # collect name and doc before we potentially modify the function
-        fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
-        fn_doc = inspect.getdoc(fn)
-
-        # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn):
-            fn = fn.__call__
-        # if the fn is a staticmethod, we need to work with the underlying function
-        if isinstance(fn, staticmethod):
-            fn = fn.__func__
-
-        # Transform Context type annotations to Depends() for unified DI
-        fn = transform_context_annotations(fn)
-
-        # Handle injected parameters (Context, Docket dependencies)
-        wrapper_fn = without_injected_parameters(fn)
-
-        # Also handle exclude_args with non-serializable types (issue #2431)
-        # This must happen before Pydantic tries to serialize the parameters
-        if exclude_args:
-            wrapper_fn = create_function_without_params(wrapper_fn, list(exclude_args))
-
-        input_type_adapter = get_cached_typeadapter(wrapper_fn)
-        input_schema = input_type_adapter.json_schema()
-
-        # Compress and handle exclude_args
-        prune_params = list(exclude_args) if exclude_args else None
-        input_schema = compress_schema(
-            input_schema, prune_params=prune_params, prune_titles=True
-        )
-
-        output_schema = None
-        # Get the return annotation from the signature
-        sig = inspect.signature(fn)
-        output_type = sig.return_annotation
-
-        # If the annotation is a string (from __future__ annotations), resolve it
-        if isinstance(output_type, str):
-            try:
-                # Use get_type_hints to resolve the return type
-                # include_extras=True preserves Annotated metadata
-                type_hints = get_type_hints(fn, include_extras=True)
-                output_type = type_hints.get("return", output_type)
-            except Exception:
-                # If resolution fails, keep the string annotation
-                pass
-
-        if output_type not in (inspect._empty, None, Any, ...):
-            # there are a variety of types that we don't want to attempt to
-            # serialize because they are either used by FastMCP internally,
-            # or are MCP content types that explicitly don't form structured
-            # content. By replacing them with an explicitly unserializable type,
-            # we ensure that no output schema is automatically generated.
-            clean_output_type = replace_type(
-                output_type,
-                dict.fromkeys(  # type: ignore[arg-type]
-                    (
-                        Image,
-                        Audio,
-                        File,
-                        ToolResult,
-                        mcp.types.TextContent,
-                        mcp.types.ImageContent,
-                        mcp.types.AudioContent,
-                        mcp.types.ResourceLink,
-                        mcp.types.EmbeddedResource,
-                    ),
-                    _UnserializableType,
-                ),
-            )
-
-            try:
-                type_adapter = get_cached_typeadapter(clean_output_type)
-                base_schema = type_adapter.json_schema(mode="serialization")
-
-                # Generate schema for wrapped type if it's non-object
-                # because MCP requires that output schemas are objects
-                # Check if schema is an object type, resolving $ref references
-                # (self-referencing types use $ref at root level)
-                if wrap_non_object_output_schema and not _is_object_schema(base_schema):
-                    # Use the wrapped result schema directly
-                    wrapped_type = _WrappedResult[clean_output_type]
-                    wrapped_adapter = get_cached_typeadapter(wrapped_type)
-                    output_schema = wrapped_adapter.json_schema(mode="serialization")
-                    output_schema["x-fastmcp-wrap-result"] = True
-                else:
-                    output_schema = base_schema
-
-                output_schema = compress_schema(output_schema, prune_titles=True)
-
-            except PydanticSchemaGenerationError as e:
-                if "_UnserializableType" not in str(e):
-                    logger.debug(f"Unable to generate schema for type {output_type!r}")
-
-        return cls(
-            fn=fn,
-            name=fn_name,
-            description=fn_doc,
-            input_schema=input_schema,
-            output_schema=output_schema or None,
-        )
-
-
 def _serialize_with_fallback(
     result: Any, serializer: ToolResultSerializerType | None = None
 ) -> str:
@@ -785,183 +454,29 @@ def _convert_to_content(
     return [TextContent(type="text", text=_serialize_with_fallback(result, serializer))]
 
 
-# Type alias for any function that can be decorated
-AnyFunction = Callable[..., Any]
+__all__ = ["Tool", "ToolResult"]
 
 
-@overload
-def tool(fn: AnyFunction) -> FunctionTool: ...
+def __getattr__(name: str) -> Any:
+    """Deprecated re-exports for backwards compatibility."""
+    deprecated_exports = {
+        "FunctionTool": "FunctionTool",
+        "ParsedFunction": "ParsedFunction",
+        "tool": "tool",
+    }
 
+    if name in deprecated_exports:
+        import fastmcp
 
-@overload
-def tool(
-    name_or_fn: str,
-    *,
-    title: str | None = None,
-    description: str | None = None,
-    icons: list[mcp.types.Icon] | None = None,
-    tags: set[str] | None = None,
-    output_schema: dict[str, Any] | NotSetT | None = NotSet,
-    annotations: ToolAnnotations | dict[str, Any] | None = None,
-    meta: dict[str, Any] | None = None,
-    task: bool | TaskConfig | None = None,
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
-) -> Callable[[AnyFunction], FunctionTool]: ...
-
-
-@overload
-def tool(
-    name_or_fn: None = None,
-    *,
-    name: str | None = None,
-    title: str | None = None,
-    description: str | None = None,
-    icons: list[mcp.types.Icon] | None = None,
-    tags: set[str] | None = None,
-    output_schema: dict[str, Any] | NotSetT | None = NotSet,
-    annotations: ToolAnnotations | dict[str, Any] | None = None,
-    meta: dict[str, Any] | None = None,
-    task: bool | TaskConfig | None = None,
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
-) -> Callable[[AnyFunction], FunctionTool]: ...
-
-
-def tool(
-    name_or_fn: str | AnyFunction | None = None,
-    *,
-    name: str | None = None,
-    title: str | None = None,
-    description: str | None = None,
-    icons: list[mcp.types.Icon] | None = None,
-    tags: set[str] | None = None,
-    output_schema: dict[str, Any] | NotSetT | None = NotSet,
-    annotations: ToolAnnotations | dict[str, Any] | None = None,
-    meta: dict[str, Any] | None = None,
-    task: bool | TaskConfig | None = None,
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
-) -> (
-    Callable[[AnyFunction], FunctionTool]
-    | FunctionTool
-    | partial[Callable[[AnyFunction], FunctionTool] | FunctionTool]
-):
-    """Standalone decorator to create a tool without registering it to a server.
-
-    This decorator creates a FunctionTool object from a function. Unlike
-    @server.tool(), this does NOT register the tool with any server - you must
-    explicitly add it using server.add_tool().
-
-    This is useful for:
-    - Creating tools that will be transformed before registration
-    - Defining tools in modules that are discovered by FileSystemProvider
-    - Creating reusable tool definitions
-
-    This decorator supports multiple calling patterns:
-    - @tool (without parentheses)
-    - @tool() (with empty parentheses)
-    - @tool("custom_name") (with name as first argument)
-    - @tool(name="custom_name") (with name as keyword argument)
-
-    Args:
-        name_or_fn: Either a function (when used as @tool), a string name, or None
-        name: Optional name for the tool (keyword-only, alternative to name_or_fn)
-        title: Optional title for the tool
-        description: Optional description of what the tool does
-        icons: Optional icons for the tool
-        tags: Optional set of tags for categorizing the tool
-        output_schema: Optional JSON schema for the tool's output
-        annotations: Optional annotations about the tool's behavior
-        meta: Optional meta information about the tool
-        task: Optional task configuration for background execution (default False)
-
-    Returns:
-        A FunctionTool when decorating a function, or a decorator function when
-        called with parameters.
-
-    Example:
-        ```python
-        from fastmcp.tools import tool
-        from fastmcp import FastMCP
-
-        @tool
-        def greet(name: str) -> str:
-            return f"Hello, {name}!"
-
-        @tool("search_products")
-        def search(query: str) -> list[dict]:
-            return database.search(query)
-
-        # Tools are not registered yet - add them explicitly
-        mcp = FastMCP()
-        mcp.add_tool(greet)
-        mcp.add_tool(search)
-        ```
-    """
-    if isinstance(annotations, dict):
-        annotations = ToolAnnotations(**annotations)
-
-    if isinstance(name_or_fn, classmethod):
-        raise TypeError(
-            inspect.cleandoc(
-                """
-                To decorate a classmethod, first define the method and then call
-                tool() directly on the method instead of using it as a
-                decorator. See https://gofastmcp.com/patterns/decorating-methods
-                for examples and more information.
-                """
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                f"Importing {name} from fastmcp.tools.tool is deprecated. "
+                f"Import from fastmcp.tools.function_tool instead.",
+                DeprecationWarning,
+                stacklevel=2,
             )
-        )
+        from fastmcp.tools import function_tool
 
-    # Determine the actual name and function based on the calling pattern
-    if inspect.isroutine(name_or_fn):
-        # Case 1: @tool (without parens) - function passed directly
-        fn = name_or_fn
-        tool_name = name  # Use keyword name if provided, otherwise None
+        return getattr(function_tool, name)
 
-        # Default to False for standalone usage (no server to inherit from)
-        supports_task: bool | TaskConfig = task if task is not None else False
-
-        # Create the tool object without registration
-        return Tool.from_function(
-            fn,
-            name=tool_name,
-            title=title,
-            description=description,
-            icons=icons,
-            tags=tags,
-            output_schema=output_schema,
-            annotations=annotations,
-            meta=meta,
-            task=supports_task,
-            auth=auth,
-        )
-
-    elif isinstance(name_or_fn, str):
-        # Case 2: @tool("custom_name") - name passed as first argument
-        if name is not None:
-            raise TypeError(
-                "Cannot specify both a name as first argument and as keyword argument. "
-                f"Use either @tool('{name_or_fn}') or @tool(name='{name}'), not both."
-            )
-        tool_name = name_or_fn
-    elif name_or_fn is None:
-        # Case 3: @tool() or @tool(name="something") - use keyword name
-        tool_name = name
-    else:
-        raise TypeError(
-            f"First argument to @tool must be a function, string, or None, got {type(name_or_fn)}"
-        )
-
-    # Return partial for cases where we need to wait for the function
-    return partial(
-        tool,
-        name=tool_name,
-        title=title,
-        description=description,
-        icons=icons,
-        tags=tags,
-        output_schema=output_schema,
-        annotations=annotations,
-        meta=meta,
-        task=task,
-        auth=auth,
-    )
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

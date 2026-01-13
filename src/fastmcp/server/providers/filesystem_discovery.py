@@ -176,7 +176,8 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
     """Extract all MCP components from a module.
 
     Scans all module attributes for instances of Tool, Resource,
-    ResourceTemplate, or Prompt objects created by standalone decorators.
+    ResourceTemplate, or Prompt objects created by standalone decorators,
+    or functions decorated with @tool/@resource/@prompt that have __fastmcp__ metadata.
 
     Args:
         module: The imported module to scan.
@@ -185,9 +186,16 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
         List of component objects (Tool, Resource, ResourceTemplate, Prompt).
     """
     # Import here to avoid circular imports
+    import inspect
+
+    from fastmcp.decorators import get_fastmcp_meta
+    from fastmcp.prompts.function_prompt import PromptMeta
     from fastmcp.prompts.prompt import Prompt
+    from fastmcp.resources.function_resource import ResourceMeta
     from fastmcp.resources.resource import Resource
     from fastmcp.resources.template import ResourceTemplate
+    from fastmcp.server.dependencies import without_injected_parameters
+    from fastmcp.tools.function_tool import ToolMeta
     from fastmcp.tools.tool import Tool
 
     component_types = (Tool, Resource, ResourceTemplate, Prompt)
@@ -206,6 +214,80 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
         # Check if this object is a component type
         if isinstance(obj, component_types):
             components.append(obj)
+            continue
+
+        # Check for functions with __fastmcp__ metadata
+        meta = get_fastmcp_meta(obj)
+        if meta is not None:
+            if isinstance(meta, ToolMeta):
+                resolved_task = meta.task if meta.task is not None else False
+                tool = Tool.from_function(
+                    obj,
+                    name=meta.name,
+                    title=meta.title,
+                    description=meta.description,
+                    icons=meta.icons,
+                    tags=meta.tags,
+                    output_schema=meta.output_schema,
+                    annotations=meta.annotations,
+                    meta=meta.meta,
+                    task=resolved_task,
+                    exclude_args=meta.exclude_args,
+                    serializer=meta.serializer,
+                    auth=meta.auth,
+                )
+                components.append(tool)
+            elif isinstance(meta, ResourceMeta):
+                resolved_task = meta.task if meta.task is not None else False
+                has_uri_params = "{" in meta.uri and "}" in meta.uri
+                wrapper_fn = without_injected_parameters(obj)
+                has_func_params = bool(inspect.signature(wrapper_fn).parameters)
+
+                if has_uri_params or has_func_params:
+                    resource = ResourceTemplate.from_function(
+                        fn=obj,
+                        uri_template=meta.uri,
+                        name=meta.name,
+                        title=meta.title,
+                        description=meta.description,
+                        icons=meta.icons,
+                        mime_type=meta.mime_type,
+                        tags=meta.tags,
+                        annotations=meta.annotations,
+                        meta=meta.meta,
+                        task=resolved_task,
+                        auth=meta.auth,
+                    )
+                else:
+                    resource = Resource.from_function(
+                        fn=obj,
+                        uri=meta.uri,
+                        name=meta.name,
+                        title=meta.title,
+                        description=meta.description,
+                        icons=meta.icons,
+                        mime_type=meta.mime_type,
+                        tags=meta.tags,
+                        annotations=meta.annotations,
+                        meta=meta.meta,
+                        task=resolved_task,
+                        auth=meta.auth,
+                    )
+                components.append(resource)
+            elif isinstance(meta, PromptMeta):
+                resolved_task = meta.task if meta.task is not None else False
+                prompt = Prompt.from_function(
+                    obj,
+                    name=meta.name,
+                    title=meta.title,
+                    description=meta.description,
+                    icons=meta.icons,
+                    tags=meta.tags,
+                    meta=meta.meta,
+                    task=resolved_task,
+                    auth=meta.auth,
+                )
+                components.append(prompt)
 
     return components
 

@@ -793,6 +793,10 @@ class TestToolOutputSchema:
         assert result.structured_content is None
 
     async def test_manual_structured_content(self):
+        from typing import cast
+
+        from fastmcp.tools.function_tool import DecoratedTool
+
         mcp = FastMCP()
 
         @mcp.tool
@@ -801,7 +805,12 @@ class TestToolOutputSchema:
                 content="Hello, world!", structured_content={"message": "Hello, world!"}
             )
 
-        assert f.output_schema is None
+        # In new decorator mode, check metadata instead of attributes
+        from fastmcp.utilities.types import NotSet
+
+        decorated = cast(DecoratedTool, f)
+        assert hasattr(f, "__fastmcp__")
+        assert decorated.__fastmcp__.output_schema is NotSet
 
         result = await mcp.call_tool("f", {})
         assert isinstance(result.content, list)
@@ -1312,7 +1321,9 @@ class TestToolDecorator:
 
     async def test_tool_direct_function_call(self):
         """Test that tools can be registered via direct function call."""
-        from fastmcp.tools import FunctionTool
+        from typing import cast
+
+        from fastmcp.tools.function_tool import DecoratedTool
 
         mcp = FastMCP()
 
@@ -1322,11 +1333,16 @@ class TestToolDecorator:
 
         result_fn = mcp.tool(standalone_function, name="direct_call_tool")
 
-        assert isinstance(result_fn, FunctionTool)
+        # In new decorator mode, returns the function with metadata
+        decorated = cast(DecoratedTool, result_fn)
+        assert hasattr(result_fn, "__fastmcp__")
+        assert decorated.__fastmcp__.name == "direct_call_tool"
+        assert result_fn is standalone_function
 
         tools = await mcp.get_tools()
         tool = next(t for t in tools if t.name == "direct_call_tool")
-        assert tool is result_fn
+        # Tool is registered separately, not same object as decorated function
+        assert tool.name == "direct_call_tool"
 
         result = await mcp.call_tool("direct_call_tool", {"x": 5, "y": 3})
         assert result.structured_content == {"result": 8}

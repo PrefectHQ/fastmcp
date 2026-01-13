@@ -264,7 +264,6 @@
             "group": "Patterns",
             "pages": [
               "patterns/tool-transformation",
-              "patterns/decorating-methods",
               "patterns/cli",
               "patterns/contrib",
               "patterns/testing"

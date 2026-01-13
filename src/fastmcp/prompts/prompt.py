@@ -2,10 +2,8 @@
 
 from __future__ import annotations as _annotations
 
-import inspect
-import json
+import warnings
 from collections.abc import Callable
-from functools import partial
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 
 import pydantic
@@ -14,6 +12,8 @@ import pydantic_core
 if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution
+
+    from fastmcp.prompts.function_prompt import FunctionPrompt
 import mcp.types
 from mcp import GetPromptResult
 from mcp.types import (
@@ -26,19 +26,12 @@ from mcp.types import Prompt as SDKPrompt
 from mcp.types import PromptArgument as SDKPromptArgument
 from pydantic import Field
 
-from fastmcp.exceptions import PromptError
-from fastmcp.server.dependencies import (
-    transform_context_annotations,
-    without_injected_parameters,
-)
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.tools.tool import AuthCheckCallable
 from fastmcp.utilities.components import FastMCPComponent
-from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     FastMCPBaseModel,
-    get_cached_typeadapter,
 )
 
 logger = get_logger(__name__)
@@ -232,9 +225,11 @@ class Prompt(FastMCPComponent):
             ),
         )
 
-    @staticmethod
+    @classmethod
     def from_function(
+        cls,
         fn: Callable[..., Any],
+        *,
         name: str | None = None,
         title: str | None = None,
         description: str | None = None,
@@ -251,6 +246,8 @@ class Prompt(FastMCPComponent):
         - list[Message | str]: converted to list[Message]
         - PromptResult: used directly
         """
+        from fastmcp.prompts.function_prompt import FunctionPrompt
+
         return FunctionPrompt.from_function(
             fn=fn,
             name=name,
@@ -396,398 +393,33 @@ class Prompt(FastMCPComponent):
         return await docket.add(lookup_key, **kwargs)(arguments)
 
 
-class FunctionPrompt(Prompt):
-    """A prompt that is a function."""
-
-    fn: Callable[..., Any]
-
-    @classmethod
-    def from_function(
-        cls,
-        fn: Callable[..., Any],
-        name: str | None = None,
-        title: str | None = None,
-        description: str | None = None,
-        icons: list[Icon] | None = None,
-        tags: set[str] | None = None,
-        meta: dict[str, Any] | None = None,
-        task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
-    ) -> FunctionPrompt:
-        """Create a Prompt from a function.
-
-        The function can return:
-        - str: wrapped as single user Message
-        - list[Message | str]: converted to list[Message]
-        - PromptResult: used directly
-        """
-
-        func_name = name or getattr(fn, "__name__", None) or fn.__class__.__name__
-
-        if func_name == "<lambda>":
-            raise ValueError("You must provide a name for lambda functions")
-            # Reject functions with *args or **kwargs
-        sig = inspect.signature(fn)
-        for param in sig.parameters.values():
-            if param.kind == inspect.Parameter.VAR_POSITIONAL:
-                raise ValueError("Functions with *args are not supported as prompts")
-            if param.kind == inspect.Parameter.VAR_KEYWORD:
-                raise ValueError("Functions with **kwargs are not supported as prompts")
-
-        description = description or inspect.getdoc(fn)
-
-        # Normalize task to TaskConfig and validate
-        if task is None:
-            task_config = TaskConfig(mode="forbidden")
-        elif isinstance(task, bool):
-            task_config = TaskConfig.from_bool(task)
-        else:
-            task_config = task
-        task_config.validate_function(fn, func_name)
-
-        # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn):
-            fn = fn.__call__
-        # if the fn is a staticmethod, we need to work with the underlying function
-        if isinstance(fn, staticmethod):
-            fn = fn.__func__  # type: ignore[assignment]
-
-        # Transform Context type annotations to Depends() for unified DI
-        fn = transform_context_annotations(fn)
-
-        # Wrap fn to handle dependency resolution internally
-        wrapped_fn = without_injected_parameters(fn)
-        type_adapter = get_cached_typeadapter(wrapped_fn)
-        parameters = type_adapter.json_schema()
-        parameters = compress_schema(parameters, prune_titles=True)
-
-        # Convert parameters to PromptArguments
-        arguments: list[PromptArgument] = []
-        if "properties" in parameters:
-            for param_name, param in parameters["properties"].items():
-                arg_description = param.get("description")
-
-                # For non-string parameters, append JSON schema info to help users
-                # understand the expected format when passing as strings (MCP requirement)
-                if param_name in sig.parameters:
-                    sig_param = sig.parameters[param_name]
-                    if (
-                        sig_param.annotation != inspect.Parameter.empty
-                        and sig_param.annotation is not str
-                    ):
-                        # Get the JSON schema for this specific parameter type
-                        try:
-                            param_adapter = get_cached_typeadapter(sig_param.annotation)
-                            param_schema = param_adapter.json_schema()
-
-                            # Create compact schema representation
-                            schema_str = json.dumps(param_schema, separators=(",", ":"))
-
-                            # Append schema info to description
-                            schema_note = f"Provide as a JSON string matching the following schema: {schema_str}"
-                            if arg_description:
-                                arg_description = f"{arg_description}\n\n{schema_note}"
-                            else:
-                                arg_description = schema_note
-                        except Exception:
-                            # If schema generation fails, skip enhancement
-                            pass
-
-                arguments.append(
-                    PromptArgument(
-                        name=param_name,
-                        description=arg_description,
-                        required=param_name in parameters.get("required", []),
-                    )
-                )
-
-        return cls(
-            name=func_name,
-            title=title,
-            description=description,
-            icons=icons,
-            arguments=arguments,
-            tags=tags or set(),
-            fn=wrapped_fn,
-            meta=meta,
-            task_config=task_config,
-            auth=auth,
-        )
-
-    def _convert_string_arguments(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """Convert string arguments to expected types based on function signature."""
-        from fastmcp.server.dependencies import without_injected_parameters
-
-        wrapper_fn = without_injected_parameters(self.fn)
-        sig = inspect.signature(wrapper_fn)
-        converted_kwargs = {}
-
-        for param_name, param_value in kwargs.items():
-            if param_name in sig.parameters:
-                param = sig.parameters[param_name]
-
-                # If parameter has no annotation or annotation is str, pass as-is
-                if (
-                    param.annotation == inspect.Parameter.empty
-                    or param.annotation is str
-                ) or not isinstance(param_value, str):
-                    converted_kwargs[param_name] = param_value
-                else:
-                    # Try to convert string argument using type adapter
-                    try:
-                        adapter = get_cached_typeadapter(param.annotation)
-                        # Try JSON parsing first for complex types
-                        try:
-                            converted_kwargs[param_name] = adapter.validate_json(
-                                param_value
-                            )
-                        except (ValueError, TypeError, pydantic_core.ValidationError):
-                            # Fallback to direct validation
-                            converted_kwargs[param_name] = adapter.validate_python(
-                                param_value
-                            )
-                    except (ValueError, TypeError, pydantic_core.ValidationError) as e:
-                        # If conversion fails, provide informative error
-                        raise PromptError(
-                            f"Could not convert argument '{param_name}' with value '{param_value}' "
-                            f"to expected type {param.annotation}. Error: {e}"
-                        ) from e
-            else:
-                # Parameter not in function signature, pass as-is
-                converted_kwargs[param_name] = param_value
-
-        return converted_kwargs
-
-    async def render(
-        self,
-        arguments: dict[str, Any] | None = None,
-    ) -> PromptResult:
-        """Render the prompt with arguments."""
-        # Validate required arguments
-        if self.arguments:
-            required = {arg.name for arg in self.arguments if arg.required}
-            provided = set(arguments or {})
-            missing = required - provided
-            if missing:
-                raise ValueError(f"Missing required arguments: {missing}")
-
-        try:
-            # Prepare arguments
-            kwargs = arguments.copy() if arguments else {}
-
-            # Convert string arguments to expected types BEFORE validation
-            kwargs = self._convert_string_arguments(kwargs)
-
-            # self.fn is wrapped by without_injected_parameters which handles
-            # dependency resolution internally
-            result = self.fn(**kwargs)
-            if inspect.isawaitable(result):
-                result = await result
-
-            return self.convert_result(result)
-        except Exception as e:
-            logger.exception(f"Error rendering prompt {self.name}")
-            raise PromptError(f"Error rendering prompt {self.name}.") from e
-
-    def register_with_docket(self, docket: Docket) -> None:
-        """Register this prompt with docket for background execution.
-
-        FunctionPrompt registers the underlying function, which has the user's
-        Depends parameters for docket to resolve.
-        """
-        if not self.task_config.supports_tasks():
-            return
-        docket.register(self.fn, names=[self.key])  # type: ignore[arg-type]
-
-    async def add_to_docket(  # type: ignore[override]
-        self,
-        docket: Docket,
-        arguments: dict[str, Any] | None,
-        *,
-        fn_key: str | None = None,
-        task_key: str | None = None,
-        **kwargs: Any,
-    ) -> Execution:
-        """Schedule this prompt for background execution via docket.
-
-        FunctionPrompt splats the arguments dict since .fn expects **kwargs.
-
-        Args:
-            docket: The Docket instance
-            arguments: Prompt arguments
-            fn_key: Function lookup key in Docket registry (defaults to self.key)
-            task_key: Redis storage key for the result
-            **kwargs: Additional kwargs passed to docket.add()
-        """
-        lookup_key = fn_key or self.key
-        if task_key:
-            kwargs["key"] = task_key
-        return await docket.add(lookup_key, **kwargs)(**(arguments or {}))
+__all__ = [
+    "Message",
+    "Prompt",
+    "PromptArgument",
+    "PromptResult",
+]
 
 
-# Type alias for any function that can be decorated
-AnyFunction = Callable[..., Any]
+def __getattr__(name: str) -> Any:
+    """Deprecated re-exports for backwards compatibility."""
+    deprecated_exports = {
+        "FunctionPrompt": "FunctionPrompt",
+        "prompt": "prompt",
+    }
 
+    if name in deprecated_exports:
+        import fastmcp
 
-@overload
-def prompt(fn: AnyFunction) -> FunctionPrompt: ...
-
-
-@overload
-def prompt(
-    name_or_fn: str,
-    *,
-    title: str | None = None,
-    description: str | None = None,
-    icons: list[Icon] | None = None,
-    tags: set[str] | None = None,
-    meta: dict[str, Any] | None = None,
-    task: bool | TaskConfig | None = None,
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
-) -> Callable[[AnyFunction], FunctionPrompt]: ...
-
-
-@overload
-def prompt(
-    name_or_fn: None = None,
-    *,
-    name: str | None = None,
-    title: str | None = None,
-    description: str | None = None,
-    icons: list[Icon] | None = None,
-    tags: set[str] | None = None,
-    meta: dict[str, Any] | None = None,
-    task: bool | TaskConfig | None = None,
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
-) -> Callable[[AnyFunction], FunctionPrompt]: ...
-
-
-def prompt(
-    name_or_fn: str | AnyFunction | None = None,
-    *,
-    name: str | None = None,
-    title: str | None = None,
-    description: str | None = None,
-    icons: list[Icon] | None = None,
-    tags: set[str] | None = None,
-    meta: dict[str, Any] | None = None,
-    task: bool | TaskConfig | None = None,
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
-) -> (
-    Callable[[AnyFunction], FunctionPrompt]
-    | FunctionPrompt
-    | partial[Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt]
-):
-    """Standalone decorator to create a prompt without registering it to a server.
-
-    This decorator creates a FunctionPrompt object from a function. Unlike
-    @server.prompt(), this does NOT register the prompt with any server - you must
-    explicitly add it using server.add_prompt().
-
-    This is useful for:
-    - Creating prompts that will be modified before registration
-    - Defining prompts in modules that are discovered by FileSystemProvider
-    - Creating reusable prompt definitions
-
-    This decorator supports multiple calling patterns:
-    - @prompt (without parentheses)
-    - @prompt() (with empty parentheses)
-    - @prompt("custom_name") (with name as first argument)
-    - @prompt(name="custom_name") (with name as keyword argument)
-
-    Args:
-        name_or_fn: Either a function (when used as @prompt), a string name, or None
-        name: Optional name for the prompt (keyword-only, alternative to name_or_fn)
-        title: Optional title for the prompt
-        description: Optional description of what the prompt does
-        icons: Optional icons for the prompt
-        tags: Optional set of tags for categorizing the prompt
-        meta: Optional meta information about the prompt
-        task: Optional task configuration for background execution (default False)
-        auth: Optional authorization checks for the prompt
-
-    Returns:
-        A FunctionPrompt when decorating a function, or a decorator function when
-        called with parameters.
-
-    Example:
-        ```python
-        from fastmcp.prompts import prompt
-        from fastmcp import FastMCP
-
-        @prompt
-        def analyze(topic: str) -> str:
-            return f"Please analyze: {topic}"
-
-        @prompt("custom_prompt")
-        def my_prompt(data: str) -> str:
-            return f"Process this data: {data}"
-
-        # Prompts are not registered yet - add them explicitly
-        mcp = FastMCP()
-        mcp.add_prompt(analyze)
-        mcp.add_prompt(my_prompt)
-        ```
-    """
-    if isinstance(name_or_fn, classmethod):
-        raise TypeError(
-            inspect.cleandoc(
-                """
-                To decorate a classmethod, first define the method and then call
-                prompt() directly on the method instead of using it as a
-                decorator. See https://gofastmcp.com/patterns/decorating-methods
-                for examples and more information.
-                """
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                f"Importing {name} from fastmcp.prompts.prompt is deprecated. "
+                f"Import from fastmcp.prompts.function_prompt instead.",
+                DeprecationWarning,
+                stacklevel=2,
             )
-        )
+        from fastmcp.prompts import function_prompt
 
-    # Determine the actual name and function based on the calling pattern
-    if inspect.isroutine(name_or_fn):
-        # Case 1: @prompt (without parens) - function passed directly
-        fn = name_or_fn
-        prompt_name = name  # Use keyword name if provided, otherwise None
+        return getattr(function_prompt, name)
 
-        # Default to False for standalone usage (no server to inherit from)
-        supports_task: bool | TaskConfig = task if task is not None else False
-
-        # Create the prompt object without registration
-        return Prompt.from_function(
-            fn=fn,
-            name=prompt_name,
-            title=title,
-            description=description,
-            icons=icons,
-            tags=tags,
-            meta=meta,
-            task=supports_task,
-            auth=auth,
-        )
-
-    elif isinstance(name_or_fn, str):
-        # Case 2: @prompt("custom_name") - name passed as first argument
-        if name is not None:
-            raise TypeError(
-                "Cannot specify both a name as first argument and as keyword argument. "
-                f"Use either @prompt('{name_or_fn}') or @prompt(name='{name}'), not both."
-            )
-        prompt_name = name_or_fn
-    elif name_or_fn is None:
-        # Case 3: @prompt() or @prompt(name="something") - use keyword name
-        prompt_name = name
-    else:
-        raise TypeError(
-            f"First argument to @prompt must be a function, string, or None, got {type(name_or_fn)}"
-        )
-
-    # Return partial for cases where we need to wait for the function
-    return partial(
-        prompt,
-        name=prompt_name,
-        title=title,
-        description=description,
-        icons=icons,
-        tags=tags,
-        meta=meta,
-        task=task,
-        auth=auth,
-    )
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

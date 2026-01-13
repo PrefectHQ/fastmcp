@@ -14,6 +14,45 @@ This guide provides migration instructions for breaking changes and major update
 
 The deprecated `WSTransport` client transport has been removed. Use `StreamableHttpTransport` instead.
 
+### Decorators Return Functions
+
+<Warning>
+**Breaking Change:** Decorators now return your original function instead of a component object. Code that treats the decorated function as a `FunctionTool`, `FunctionResource`, or `FunctionPrompt` will break.
+</Warning>
+
+Decorators (`@tool`, `@resource`, `@prompt`) now return the original function instead of transforming it into a component object:
+
+<CodeGroup>
+```python Before
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+isinstance(greet, FunctionTool)  # True
+greet.name                       # "greet"
+```
+
+```python After
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+isinstance(greet, FunctionTool)  # False - it's your function now
+greet("World")                   # "Hello, World!" - still callable
+```
+</CodeGroup>
+
+**Why this changed:** Functions staying as functions means they're directly callable for testing, work naturally with instance methods, and match how Flask/FastAPI decorators behave.
+
+**For v2 compatibility:**
+
+```python
+import fastmcp
+fastmcp.settings.decorator_mode = "object"
+```
+
+Or set the environment variable `FASTMCP_DECORATOR_MODE=object`.
+
 ### Provider Architecture
 
 FastMCP v3 introduces a unified provider architecture for sourcing components. All tools, resources, and prompts now flow through providers:

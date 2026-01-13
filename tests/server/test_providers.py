@@ -7,8 +7,10 @@ import pytest
 from mcp.types import AnyUrl, TextContent
 
 from fastmcp import FastMCP
-from fastmcp.prompts.prompt import FunctionPrompt, Prompt
-from fastmcp.resources.resource import FunctionResource, Resource
+from fastmcp.prompts.function_prompt import FunctionPrompt
+from fastmcp.prompts.prompt import Prompt
+from fastmcp.resources.function_resource import FunctionResource
+from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.server.providers import Provider
 from fastmcp.tools.tool import Tool, ToolResult

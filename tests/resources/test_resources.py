@@ -4,7 +4,7 @@ from pydantic import AnyUrl, BaseModel
 
 from fastmcp import Client, FastMCP
 from fastmcp.resources import Resource, ResourceContent, ResourceResult
-from fastmcp.resources.resource import FunctionResource
+from fastmcp.resources.function_resource import FunctionResource
 
 
 class TestResourceValidation:

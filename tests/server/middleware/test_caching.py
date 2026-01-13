@@ -21,7 +21,8 @@ from pydantic import AnyUrl, BaseModel
 from fastmcp import Context, FastMCP
 from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client.transports import FastMCPTransport
-from fastmcp.prompts.prompt import FunctionPrompt, Message, Prompt
+from fastmcp.prompts.function_prompt import FunctionPrompt
+from fastmcp.prompts.prompt import Message, Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.server.middleware.caching import (
     CachableToolResult,

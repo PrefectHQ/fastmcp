@@ -116,6 +116,27 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 </ParamField>
 </Card>
 
+### Using with Methods
+
+The `@mcp.tool` decorator registers tools immediately, which doesn't work with instance or class methods (you'd see `self` or `cls` as required parameters). For methods, use the standalone `@tool` decorator to attach metadata, then register the bound method:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.tools import tool
+
+class Calculator:
+    def __init__(self, multiplier: int):
+        self.multiplier = multiplier
+
+    @tool()
+    def multiply(self, x: int) -> int:
+        """Multiply x by the instance multiplier."""
+        return x * self.multiplier
+
+calc = Calculator(multiplier=3)
+mcp = FastMCP()
+mcp.add_tool(calc.multiply)  # Registers with correct schema (only 'x', not 'self')
+```
 
 ### Async Support
 

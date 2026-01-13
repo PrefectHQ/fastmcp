@@ -238,6 +238,38 @@ Requires Docket server for task scheduling and result polling.
 
 ---
 
+## Decorators Return Functions
+
+v3.0 changes what decorators (`@tool`, `@resource`, `@prompt`) return. Decorators now return the original function unchanged, rather than transforming it into a component object.
+
+**v3 behavior (default):**
+```python
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+# greet is still your function - call it directly
+greet("World")  # "Hello, World!"
+```
+
+**Why this matters:**
+- Functions stay callable - useful for testing and reuse
+- Instance methods just work: `mcp.add_tool(obj.method)`
+- Matches how Flask, FastAPI, and Typer decorators behave
+
+**For v2 compatibility:**
+
+```python
+import fastmcp
+
+# v2 behavior: decorators return FunctionTool/FunctionResource/FunctionPrompt objects
+fastmcp.settings.decorator_mode = "object"
+```
+
+Environment variable: `FASTMCP_DECORATOR_MODE=object`
+
+---
+
 ## CLI Auto-Reload
 
 The `--reload` flag enables file watching with automatic server restarts for development.
@@ -360,6 +392,30 @@ The `tool_serializer` parameter on `FastMCP` is deprecated. Return `ToolResult` 
 ### WSTransport Removed
 
 The deprecated `WSTransport` client transport has been removed. Use `StreamableHttpTransport` instead.
+
+### Decorators Return Functions
+
+Decorators (`@tool`, `@resource`, `@prompt`) now return the original function instead of component objects. Code that treats the decorated function as a `FunctionTool`, `FunctionResource`, or `FunctionPrompt` will break.
+
+```python
+# v2.x
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+isinstance(greet, FunctionTool)  # True
+
+# v3.0
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+isinstance(greet, FunctionTool)  # False
+callable(greet)                  # True - it's still your function
+greet("World")                   # "Hello, World!"
+```
+
+Set `FASTMCP_DECORATOR_MODE=object` or `fastmcp.settings.decorator_mode = "object"` for v2 behavior.
 
 ### Component Enable/Disable Moved to Server/Provider
 

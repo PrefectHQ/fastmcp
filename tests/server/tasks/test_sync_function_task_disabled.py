@@ -8,9 +8,9 @@ ValueError when task=True is used with a sync function.
 import pytest
 
 from fastmcp import FastMCP
-from fastmcp.prompts.prompt import FunctionPrompt
-from fastmcp.resources.resource import FunctionResource
-from fastmcp.tools.tool import FunctionTool
+from fastmcp.prompts.function_prompt import FunctionPrompt
+from fastmcp.resources.function_resource import FunctionResource
+from fastmcp.tools.function_tool import FunctionTool
 
 
 async def test_sync_tool_with_explicit_task_true_raises():

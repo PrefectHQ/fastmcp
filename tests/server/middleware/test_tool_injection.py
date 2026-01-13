@@ -16,7 +16,8 @@ from fastmcp.server.middleware.tool_injection import (
     ResourceToolMiddleware,
     ToolInjectionMiddleware,
 )
-from fastmcp.tools.tool import FunctionTool, Tool
+from fastmcp.tools.function_tool import FunctionTool
+from fastmcp.tools.tool import Tool
 
 
 def multiply_fn(a: int, b: int) -> int:

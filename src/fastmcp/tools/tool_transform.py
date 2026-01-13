@@ -15,7 +15,8 @@ from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
 
 import fastmcp
-from fastmcp.tools.tool import ParsedFunction, Tool, ToolResult, _convert_to_content
+from fastmcp.tools.function_tool import ParsedFunction
+from fastmcp.tools.tool import Tool, ToolResult, _convert_to_content
 from fastmcp.utilities.components import _convert_set_default_none
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger

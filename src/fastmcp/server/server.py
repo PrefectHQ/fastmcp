@@ -66,7 +66,8 @@ from fastmcp.exceptions import (
 )
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
-from fastmcp.prompts.prompt import FunctionPrompt, PromptResult
+from fastmcp.prompts.function_prompt import FunctionPrompt
+from fastmcp.prompts.prompt import PromptResult
 from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthContext, AuthProvider, run_auth_checks
@@ -85,7 +86,8 @@ from fastmcp.server.tasks.capabilities import get_task_capabilities
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.settings import Settings
-from fastmcp.tools.tool import AuthCheckCallable, FunctionTool, Tool, ToolResult
+from fastmcp.tools.function_tool import FunctionTool
+from fastmcp.tools.tool import AuthCheckCallable, Tool, ToolResult
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.cli import log_server_banner
@@ -1806,14 +1808,14 @@ class FastMCP(Generic[LifespanResultT]):
         except NotFoundError:
             raise
 
-    def add_tool(self, tool: Tool) -> Tool:
+    def add_tool(self, tool: Tool | Callable[..., Any]) -> Tool:
         """Add a tool to the server.
 
         The tool function can optionally request a Context object by adding a parameter
         with the Context type annotation. See the @tool decorator for examples.
 
         Args:
-            tool: The Tool instance to register
+            tool: The Tool instance or @tool-decorated function to register
 
         Returns:
             The tool instance that was added to the server.
@@ -1967,11 +1969,13 @@ class FastMCP(Generic[LifespanResultT]):
 
         return result
 
-    def add_resource(self, resource: Resource) -> Resource:
+    def add_resource(
+        self, resource: Resource | Callable[..., Any]
+    ) -> Resource | ResourceTemplate:
         """Add a resource to the server.
 
         Args:
-            resource: A Resource instance to add
+            resource: A Resource instance or @resource-decorated function to add
 
         Returns:
             The resource instance that was added to the server.
@@ -2003,7 +2007,7 @@ class FastMCP(Generic[LifespanResultT]):
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
-    ) -> Callable[[AnyFunction], Resource | ResourceTemplate]:
+    ) -> Callable[[AnyFunction], Resource | ResourceTemplate | AnyFunction]:
         """Decorator to register a function as a resource.
 
         The function will be called when the resource is read to generate its content.
@@ -2070,16 +2074,16 @@ class FastMCP(Generic[LifespanResultT]):
             auth=auth,
         )
 
-        def decorator(fn: AnyFunction) -> Resource | ResourceTemplate:
+        def decorator(fn: AnyFunction) -> Resource | ResourceTemplate | AnyFunction:
             return inner_decorator(fn)
 
         return decorator
 
-    def add_prompt(self, prompt: Prompt) -> Prompt:
+    def add_prompt(self, prompt: Prompt | Callable[..., Any]) -> Prompt:
         """Add a prompt to the server.
 
         Args:
-            prompt: A Prompt instance to add
+            prompt: A Prompt instance or @prompt-decorated function to add
 
         Returns:
             The prompt instance that was added to the server.

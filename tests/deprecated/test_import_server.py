@@ -5,7 +5,8 @@ from mcp.types import TextContent, TextResourceContents
 
 from fastmcp.client.client import Client
 from fastmcp.server.server import FastMCP
-from fastmcp.tools.tool import FunctionTool, Tool
+from fastmcp.tools.function_tool import FunctionTool
+from fastmcp.tools.tool import Tool
 from tests.conftest import get_fn_name
 
 

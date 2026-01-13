@@ -9,7 +9,7 @@ from typing import Any
 from mcp.types import Tool as SDKTool
 from pydantic import ConfigDict
 
-from fastmcp.tools.tool import ParsedFunction
+from fastmcp.tools.function_tool import ParsedFunction
 from fastmcp.utilities.types import FastMCPBaseModel
 
 

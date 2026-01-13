@@ -10,7 +10,7 @@ from mcp.types import TextContent
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.exceptions import NotFoundError
-from fastmcp.prompts.prompt import FunctionPrompt, Prompt
+from fastmcp.prompts.prompt import Prompt
 
 
 class TestPromptContext:
@@ -247,6 +247,10 @@ class TestPromptDecorator:
 
     async def test_prompt_direct_function_call(self):
         """Test that prompts can be registered via direct function call."""
+        from typing import cast
+
+        from fastmcp.prompts.function_prompt import DecoratedPrompt
+
         mcp = FastMCP()
 
         def standalone_function() -> str:
@@ -255,11 +259,16 @@ class TestPromptDecorator:
 
         result_fn = mcp.prompt(standalone_function, name="direct_call_prompt")
 
-        assert isinstance(result_fn, FunctionPrompt)
+        # In new decorator mode, returns the function with metadata
+        decorated = cast(DecoratedPrompt, result_fn)
+        assert hasattr(result_fn, "__fastmcp__")
+        assert decorated.__fastmcp__.name == "direct_call_prompt"
+        assert result_fn is standalone_function
 
         prompts = await mcp.get_prompts()
         prompt = next(p for p in prompts if p.name == "direct_call_prompt")
-        assert prompt is result_fn
+        # Prompt is registered separately, not same object as decorated function
+        assert prompt.name == "direct_call_prompt"
 
         result = await mcp.render_prompt("direct_call_prompt")
         assert len(result.messages) == 1

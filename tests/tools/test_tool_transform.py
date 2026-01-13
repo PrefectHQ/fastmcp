@@ -13,7 +13,8 @@ from fastmcp import FastMCP
 from fastmcp.client.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import Tool, forward, forward_raw
-from fastmcp.tools.tool import FunctionTool, ToolResult
+from fastmcp.tools.function_tool import FunctionTool
+from fastmcp.tools.tool import ToolResult
 from fastmcp.tools.tool_transform import (
     ArgTransform,
     ToolTransformConfig,
@@ -1052,7 +1053,10 @@ class TestEnableDisable:
         def add(x: int, y: int = 10) -> int:
             return x + y
 
-        new_add = Tool.from_tool(add, name="new_add")
+        # Get the registered Tool object from the server
+        add_tool = await mcp._local_provider.get_component("tool:add")
+        assert isinstance(add_tool, Tool)
+        new_add = Tool.from_tool(add_tool, name="new_add")
         mcp.add_tool(new_add)
 
         # Disable original tool, but new_add should still work
@@ -1076,7 +1080,10 @@ class TestEnableDisable:
         def add(x: int, y: int = 10) -> int:
             return x + y
 
-        new_add = Tool.from_tool(add, name="new_add")
+        # Get the registered Tool object from the server
+        add_tool = await mcp._local_provider.get_component("tool:add")
+        assert isinstance(add_tool, Tool)
+        new_add = Tool.from_tool(add_tool, name="new_add")
         mcp.add_tool(new_add)
 
         # Disable both tools via server

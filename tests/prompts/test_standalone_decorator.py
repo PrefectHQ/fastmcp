@@ -1,39 +1,47 @@
 """Tests for the standalone @prompt decorator.
 
-The @prompt decorator creates FunctionPrompt objects without registering them
-to a server. Objects can be added explicitly via server.add_prompt() or
+The @prompt decorator attaches metadata to functions without registering them
+to a server. Functions can be added explicitly via server.add_prompt() or
 discovered by FileSystemProvider.
 """
+
+from typing import cast
 
 import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.prompts import FunctionPrompt, prompt
+from fastmcp.prompts import prompt
+from fastmcp.prompts.function_prompt import DecoratedPrompt, PromptMeta
 
 
 class TestPromptDecorator:
     """Tests for the @prompt decorator."""
 
     def test_prompt_without_parens(self):
-        """@prompt without parentheses should create a FunctionPrompt."""
+        """@prompt without parentheses should attach metadata."""
 
         @prompt
         def analyze(topic: str) -> str:
             return f"Analyze: {topic}"
 
-        assert isinstance(analyze, FunctionPrompt)
-        assert analyze.name == "analyze"
+        decorated = cast(DecoratedPrompt, analyze)
+        assert callable(analyze)
+        assert hasattr(analyze, "__fastmcp__")
+        assert isinstance(decorated.__fastmcp__, PromptMeta)
+        assert decorated.__fastmcp__.name is None  # Uses function name by default
 
     def test_prompt_with_empty_parens(self):
-        """@prompt() with empty parentheses should create a FunctionPrompt."""
+        """@prompt() with empty parentheses should attach metadata."""
 
         @prompt()
         def analyze(topic: str) -> str:
             return f"Analyze: {topic}"
 
-        assert isinstance(analyze, FunctionPrompt)
-        assert analyze.name == "analyze"
+        decorated = cast(DecoratedPrompt, analyze)
+        assert callable(analyze)
+        assert hasattr(analyze, "__fastmcp__")
+        assert isinstance(decorated.__fastmcp__, PromptMeta)
 
     def test_prompt_with_name_arg(self):
         """@prompt("name") with name as first arg should work."""
@@ -42,8 +50,10 @@ class TestPromptDecorator:
         def analyze(topic: str) -> str:
             return f"Analyze: {topic}"
 
-        assert isinstance(analyze, FunctionPrompt)
-        assert analyze.name == "custom-analyze"
+        decorated = cast(DecoratedPrompt, analyze)
+        assert callable(analyze)
+        assert hasattr(analyze, "__fastmcp__")
+        assert decorated.__fastmcp__.name == "custom-analyze"
 
     def test_prompt_with_name_kwarg(self):
         """@prompt(name="name") with keyword arg should work."""
@@ -52,8 +62,10 @@ class TestPromptDecorator:
         def analyze(topic: str) -> str:
             return f"Analyze: {topic}"
 
-        assert isinstance(analyze, FunctionPrompt)
-        assert analyze.name == "custom-analyze"
+        decorated = cast(DecoratedPrompt, analyze)
+        assert callable(analyze)
+        assert hasattr(analyze, "__fastmcp__")
+        assert decorated.__fastmcp__.name == "custom-analyze"
 
     def test_prompt_with_all_metadata(self):
         """@prompt with all metadata should store it all."""
@@ -62,29 +74,32 @@ class TestPromptDecorator:
             name="custom-analyze",
             title="Analysis Prompt",
             description="Analyzes topics",
-            tags={"analysis"},
+            tags={"analysis", "demo"},
             meta={"custom": "value"},
         )
         def analyze(topic: str) -> str:
             return f"Analyze: {topic}"
 
-        assert isinstance(analyze, FunctionPrompt)
-        assert analyze.name == "custom-analyze"
-        assert analyze.title == "Analysis Prompt"
-        assert analyze.description == "Analyzes topics"
-        assert analyze.tags == {"analysis"}
-        assert analyze.meta == {"custom": "value"}
+        decorated = cast(DecoratedPrompt, analyze)
+        assert callable(analyze)
+        assert hasattr(analyze, "__fastmcp__")
+        assert decorated.__fastmcp__.name == "custom-analyze"
+        assert decorated.__fastmcp__.title == "Analysis Prompt"
+        assert decorated.__fastmcp__.description == "Analyzes topics"
+        assert decorated.__fastmcp__.tags == {"analysis", "demo"}
+        assert decorated.__fastmcp__.meta == {"custom": "value"}
 
-    async def test_prompt_can_be_rendered(self):
-        """Prompt created by @prompt should be renderable."""
+    async def test_prompt_function_still_callable(self):
+        """Decorated function should still be directly callable."""
 
         @prompt
         def analyze(topic: str) -> str:
             """Analyze a topic."""
-            return f"Analyze: {topic}"
+            return f"Please analyze: {topic}"
 
-        result = await analyze.render({"topic": "Python"})
-        assert result.messages[0].content.text == "Analyze: Python"  # type: ignore[union-attr]
+        # The function is still callable even though it has metadata
+        result = cast(DecoratedPrompt, analyze)("Python")
+        assert result == "Please analyze: Python"
 
     def test_prompt_rejects_classmethod_decorator(self):
         """@prompt should reject classmethod-decorated functions."""
@@ -93,12 +108,12 @@ class TestPromptDecorator:
             class MyClass:
                 @prompt  # type: ignore[arg-type]
                 @classmethod
-                def my_prompt(cls) -> str:
-                    return "hello"
+                def my_prompt(cls, topic: str) -> str:
+                    return f"Analyze: {topic}"
 
     def test_prompt_with_both_name_args_raises(self):
         """@prompt should raise if both positional and keyword name are given."""
-        with pytest.raises(TypeError, match="Cannot specify both"):
+        with pytest.raises(TypeError, match="Cannot specify.*both.*argument.*keyword"):
 
             @prompt("name1", name="name2")  # type: ignore[call-overload]
             def my_prompt() -> str:
@@ -119,5 +134,5 @@ class TestPromptDecorator:
             prompts = await client.list_prompts()
             assert any(p.name == "analyze" for p in prompts)
 
-            result = await client.get_prompt("analyze", {"topic": "Python"})
-            assert "Python" in str(result)
+            result = await client.get_prompt("analyze", {"topic": "FastMCP"})
+            assert "FastMCP" in str(result)
