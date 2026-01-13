@@ -1,118 +1,118 @@
-"""Tests for VisibilityFilter class."""
+"""Tests for Visibility transform class."""
 
+from fastmcp.server.transforms import Visibility
 from fastmcp.tools.tool import Tool
-from fastmcp.utilities.visibility import VisibilityFilter
 
 
-class TestVisibilityFilterBasics:
-    """Test basic VisibilityFilter functionality."""
+class TestVisibilityBasics:
+    """Test basic Visibility functionality."""
 
     def test_default_all_enabled(self):
         """By default, all components are enabled."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={})
-        assert vf.is_enabled(tool) is True
+        assert v.is_enabled(tool) is True
 
     def test_disable_by_key(self):
         """Disabling by key hides the component."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={})
-        vf.disable(keys=["tool:test"])
-        assert vf.is_enabled(tool) is False
+        v.disable(keys=["tool:test"])
+        assert v.is_enabled(tool) is False
 
     def test_disable_by_tag(self):
         """Disabling by tag hides components with that tag."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={}, tags={"internal"})
-        vf.disable(tags={"internal"})
-        assert vf.is_enabled(tool) is False
+        v.disable(tags={"internal"})
+        assert v.is_enabled(tool) is False
 
     def test_disable_tag_no_match(self):
         """Disabling a tag doesn't affect components without it."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={}, tags={"public"})
-        vf.disable(tags={"internal"})
-        assert vf.is_enabled(tool) is True
+        v.disable(tags={"internal"})
+        assert v.is_enabled(tool) is True
 
     def test_enable_removes_from_blocklist(self):
         """Enable removes keys/tags from blocklist."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={})
-        vf.disable(keys=["tool:test"])
-        assert vf.is_enabled(tool) is False
-        vf.enable(keys=["tool:test"])
-        assert vf.is_enabled(tool) is True
+        v.disable(keys=["tool:test"])
+        assert v.is_enabled(tool) is False
+        v.enable(keys=["tool:test"])
+        assert v.is_enabled(tool) is True
 
 
-class TestVisibilityFilterAllowlist:
+class TestVisibilityAllowlist:
     """Test allowlist mode (only=True)."""
 
     def test_only_mode_hides_by_default(self):
         """With only=True, non-matching components are hidden."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={})
-        vf.enable(keys=["tool:other"], only=True)
-        assert vf.is_enabled(tool) is False
+        v.enable(keys=["tool:other"], only=True)
+        assert v.is_enabled(tool) is False
 
     def test_only_mode_shows_matching_key(self):
         """With only=True, matching keys are shown."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={})
-        vf.enable(keys=["tool:test"], only=True)
-        assert vf.is_enabled(tool) is True
+        v.enable(keys=["tool:test"], only=True)
+        assert v.is_enabled(tool) is True
 
     def test_only_mode_shows_matching_tag(self):
         """With only=True, matching tags are shown."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={}, tags={"public"})
-        vf.enable(tags={"public"}, only=True)
-        assert vf.is_enabled(tool) is True
+        v.enable(tags={"public"}, only=True)
+        assert v.is_enabled(tool) is True
 
     def test_only_mode_tag_no_match(self):
         """With only=True, non-matching tags are hidden."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={}, tags={"internal"})
-        vf.enable(tags={"public"}, only=True)
-        assert vf.is_enabled(tool) is False
+        v.enable(tags={"public"}, only=True)
+        assert v.is_enabled(tool) is False
 
 
-class TestVisibilityFilterPrecedence:
+class TestVisibilityPrecedence:
     """Test blocklist takes precedence over allowlist."""
 
     def test_blocklist_wins_over_allowlist_key(self):
         """Blocklist key beats allowlist key."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={})
-        vf.enable(keys=["tool:test"], only=True)
-        vf.disable(keys=["tool:test"])
-        assert vf.is_enabled(tool) is False
+        v.enable(keys=["tool:test"], only=True)
+        v.disable(keys=["tool:test"])
+        assert v.is_enabled(tool) is False
 
     def test_blocklist_wins_over_allowlist_tag(self):
         """Blocklist tag beats allowlist tag."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={}, tags={"public", "deprecated"})
-        vf.enable(tags={"public"}, only=True)
-        vf.disable(tags={"deprecated"})
-        assert vf.is_enabled(tool) is False
+        v.enable(tags={"public"}, only=True)
+        v.disable(tags={"deprecated"})
+        assert v.is_enabled(tool) is False
 
 
-class TestVisibilityFilterReset:
+class TestVisibilityReset:
     """Test reset functionality."""
 
     def test_reset_clears_all_filters(self):
         """Reset returns to default state."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={})
-        vf.disable(keys=["tool:test"])
-        assert vf.is_enabled(tool) is False
-        vf.reset()
-        assert vf.is_enabled(tool) is True
+        v.disable(keys=["tool:test"])
+        assert v.is_enabled(tool) is False
+        v.reset()
+        assert v.is_enabled(tool) is True
 
     def test_reset_clears_allowlist_mode(self):
         """Reset clears allowlist mode."""
-        vf = VisibilityFilter()
+        v = Visibility()
         tool = Tool(name="test", parameters={})
-        vf.enable(keys=["tool:other"], only=True)
-        assert vf.is_enabled(tool) is False
-        vf.reset()
-        assert vf.is_enabled(tool) is True
+        v.enable(keys=["tool:other"], only=True)
+        assert v.is_enabled(tool) is False
+        v.reset()
+        assert v.is_enabled(tool) is True

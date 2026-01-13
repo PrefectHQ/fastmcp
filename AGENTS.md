@@ -111,5 +111,6 @@ When modifying MCP functionality, changes typically need to be applied across al
 ## Critical Patterns
 
 - Never use bare `except` - be specific with exception types
+- File sizes enforced by [loq](https://github.com/jlowin/loq). Edit `loq.toml` to raise limits; `loq baseline` to ratchet down.
 - Always `uv sync` first when debugging build issues
 - Default test timeout is 5s - optimize or mark as integration tests

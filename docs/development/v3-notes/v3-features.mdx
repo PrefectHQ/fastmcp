@@ -24,7 +24,7 @@ class Provider:
 Providers support:
 - **Lifecycle management**: `async def lifespan()` for setup/teardown
 - **Visibility control**: `enable()` / `disable()` with keys, tags, and allowlist mode
-- **Transformation chaining**: `provider.with_transforms(namespace=..., tool_renames=...)`
+- **Transform stacking**: `provider.add_transform(Namespace(...))`, `provider.add_transform(ToolTransform(...))`
 
 ### LocalProvider
 
@@ -82,6 +82,7 @@ Features:
 ```python
 from fastmcp import FastMCP
 from fastmcp.server.providers import FastMCPProvider
+from fastmcp.server.transforms import Namespace
 
 main = FastMCP("Main")
 sub = FastMCP("Sub")
@@ -91,34 +92,67 @@ def greet(name: str) -> str:
     return f"Hello, {name}!"
 
 # Mount with namespace
-main.add_provider(FastMCPProvider(sub).with_namespace("sub"))
+provider = FastMCPProvider(sub)
+provider.add_transform(Namespace("sub"))
+main.add_provider(provider)
 # Tool accessible as "sub_greet"
 ```
 
-### TransformingProvider
+### Transforms
 
-`TransformingProvider` (`src/fastmcp/server/providers/transforming.py`) wraps any provider to apply namespace prefixes and tool renames. Usually accessed via `provider.with_transforms()`.
+Transforms modify components (tools, resources, prompts) as they flow from providers to clients. They use a middleware pattern where each transform receives a `call_next` callable to continue the chain.
+
+**Built-in transforms** (`src/fastmcp/server/transforms/`):
+
+- `Namespace` - adds prefixes to names (`tool` → `api_tool`) and path segments to URIs (`data://x` → `data://api/x`)
+- `ToolTransform` - modifies tool schemas (rename, description, tags, argument transforms)
+- `Visibility` - filters components by key or tag (backs `enable()`/`disable()` API)
 
 ```python
-provider = SomeProvider().with_transforms(
-    namespace="api",
-    tool_renames={"verbose_tool_name": "short"}
-)
+from fastmcp.server.transforms import Namespace, ToolTransform
+from fastmcp.tools.tool_transform import ToolTransformConfig
+
+provider = SomeProvider()
+provider.add_transform(Namespace("api"))
+provider.add_transform(ToolTransform({
+    "api_verbose_tool_name": ToolTransformConfig(name="short")
+}))
 
 # Stacking composes transformations
-provider = (
-    SomeProvider()
-    .with_transforms(namespace="api")
-    .with_transforms(tool_renames={"api_foo": "bar"})
-)
-# "foo" → "api_foo" → "bar"
+# "foo" → "api_foo" (namespace) → "short" (rename)
 ```
+
+**Custom transforms** subclass `Transform` and override needed methods:
+
+```python
+from collections.abc import Sequence
+from fastmcp.server.transforms import Transform, ListToolsNext, GetToolNext
+from fastmcp.tools import Tool
+
+class TagFilter(Transform):
+    def __init__(self, required_tags: set[str]):
+        self.required_tags = required_tags
+
+    async def list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]:
+        tools = await call_next()  # Get tools from downstream
+        return [t for t in tools if t.tags & self.required_tags]
+
+    async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:
+        tool = await call_next(name)
+        return tool if tool and tool.tags & self.required_tags else None
+```
+
+Transforms apply at two levels:
+- **Provider-level**: `provider.add_transform()` - affects only that provider's components
+- **Server-level**: `server.add_transform()` - affects all components from all providers
+
+Documentation: `docs/servers/providers/transforms.mdx`, `docs/servers/visibility.mdx`
 
 ---
 
 ## Visibility System
 
-Components can be dynamically enabled/disabled at runtime using the visibility system (`src/fastmcp/utilities/visibility.py`).
+Components can be dynamically enabled/disabled at runtime using the visibility system (`src/fastmcp/server/transforms/visibility.py`).
 
 ```python
 mcp = FastMCP("Server")
@@ -384,6 +418,19 @@ mcp.disable(tags={"internal"})
 ### Tool Serializer Parameter
 
 The `tool_serializer` parameter on `FastMCP` is deprecated. Return `ToolResult` for explicit serialization control.
+
+### Tool Transformation Methods
+
+`add_tool_transformation()`, `remove_tool_transformation()`, and `tool_transformations` constructor parameter are deprecated. Use `add_transform(ToolTransform({...}))` instead:
+
+```python
+# Deprecated
+mcp.add_tool_transformation("name", config)
+
+# New
+from fastmcp.server.transforms import ToolTransform
+mcp.add_transform(ToolTransform({"name": config}))
+```
 
 ---
 

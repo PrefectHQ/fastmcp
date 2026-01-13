@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import TYPE_CHECKING, Any, overload
 
 import mcp.types
@@ -114,18 +115,19 @@ class FastMCPProviderTool(Tool):
             self._original_name, arguments, task_meta=task_meta
         )
 
-    async def run(
-        self, arguments: dict[str, Any]
-    ) -> ToolResult | mcp.types.CreateTaskResult:  # type: ignore[override]
-        """Not implemented - use _run() which delegates to child server.
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
+        """Delegate to child server's call_tool() without task_meta.
 
-        FastMCPProviderTool._run() handles all execution by delegating
-        to the child server's call_tool() with task_meta.
+        This is called when the tool is used within a TransformedTool
+        forwarding function or other contexts where task_meta is not available.
         """
-        raise NotImplementedError(
-            "FastMCPProviderTool.run() should not be called directly. "
-            "Use _run() which delegates to the child server's call_tool()."
-        )
+        result = await self._server.call_tool(self._original_name, arguments)
+        # Result from call_tool should always be ToolResult when no task_meta
+        if isinstance(result, mcp.types.CreateTaskResult):
+            raise RuntimeError(
+                "Unexpected CreateTaskResult from call_tool without task_meta"
+            )
+        return result
 
 
 class FastMCPProviderResource(Resource):
@@ -243,18 +245,19 @@ class FastMCPProviderPrompt(Prompt):
             self._original_name, arguments, task_meta=task_meta
         )
 
-    async def render(
-        self, arguments: dict[str, Any] | None = None
-    ) -> PromptResult | mcp.types.CreateTaskResult:  # type: ignore[override]
-        """Not implemented - use _render() which delegates to child server.
+    async def render(self, arguments: dict[str, Any] | None = None) -> PromptResult:
+        """Delegate to child server's render_prompt() without task_meta.
 
-        FastMCPProviderPrompt._render() handles all execution by delegating
-        to the child server's render_prompt() with task_meta.
+        This is called when the prompt is used within a transformed context
+        or other contexts where task_meta is not available.
         """
-        raise NotImplementedError(
-            "FastMCPProviderPrompt.render() should not be called directly. "
-            "Use _render() which delegates to the child server's render_prompt()."
-        )
+        result = await self._server.render_prompt(self._original_name, arguments)
+        # Result from render_prompt should always be PromptResult when no task_meta
+        if isinstance(result, mcp.types.CreateTaskResult):
+            raise RuntimeError(
+                "Unexpected CreateTaskResult from render_prompt without task_meta"
+            )
+        return result
 
 
 class FastMCPProviderResourceTemplate(ResourceTemplate):
@@ -411,7 +414,10 @@ class FastMCPProvider(Provider):
         main.add_provider(FastMCPProvider(sub))
 
         # Or with namespace
-        main.add_provider(FastMCPProvider(sub).with_namespace("sub"))
+        from fastmcp.server.transforms import Namespace
+        provider = FastMCPProvider(sub)
+        provider.add_transform(Namespace("sub"))
+        main.add_provider(provider)
         ```
 
     Note:
@@ -515,16 +521,54 @@ class FastMCPProvider(Provider):
         """Return task-eligible components from the mounted server.
 
         Returns the child's ACTUAL components (not wrapped) so their actual
-        functions get registered with Docket. TransformingProvider.get_tasks()
-        handles namespace transformation of keys.
-
-        Iterates through all providers in the wrapped server (including its
-        LocalProvider) to collect task-eligible components.
+        functions get registered with Docket. Uses _source_get_tasks() to get
+        components with child server's transforms applied, then applies this
+        provider's transforms for correct registration keys.
         """
-        components: list[FastMCPComponent] = []
-        for provider in self.server._providers:
-            components.extend(await provider.get_tasks())
-        return components
+        # Get tasks with child server's transforms already applied
+        components = list(await self.server._source_get_tasks())
+
+        # Separate by type for this provider's transform application
+        tools = [c for c in components if isinstance(c, Tool)]
+        resources = [c for c in components if isinstance(c, Resource)]
+        templates = [c for c in components if isinstance(c, ResourceTemplate)]
+        prompts = [c for c in components if isinstance(c, Prompt)]
+
+        # Apply this provider's transforms using call_next pattern
+
+        async def tools_base() -> Sequence[Tool]:
+            return tools
+
+        async def resources_base() -> Sequence[Resource]:
+            return resources
+
+        async def templates_base() -> Sequence[ResourceTemplate]:
+            return templates
+
+        async def prompts_base() -> Sequence[Prompt]:
+            return prompts
+
+        tools_chain = tools_base
+        resources_chain = resources_base
+        templates_chain = templates_base
+        prompts_chain = prompts_base
+
+        for transform in self._transforms:
+            tools_chain = partial(transform.list_tools, call_next=tools_chain)
+            resources_chain = partial(
+                transform.list_resources, call_next=resources_chain
+            )
+            templates_chain = partial(
+                transform.list_resource_templates, call_next=templates_chain
+            )
+            prompts_chain = partial(transform.list_prompts, call_next=prompts_chain)
+
+        return [
+            *await tools_chain(),
+            *await resources_chain(),
+            *await templates_chain(),
+            *await prompts_chain(),
+        ]
 
     # -------------------------------------------------------------------------
     # Lifecycle methods

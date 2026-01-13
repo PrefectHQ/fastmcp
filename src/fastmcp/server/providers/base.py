@@ -30,14 +30,19 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from functools import partial
+from typing import TYPE_CHECKING, cast
 
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
+from fastmcp.server.transforms.visibility import Visibility
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.components import FastMCPComponent
-from fastmcp.utilities.visibility import VisibilityFilter
+
+if TYPE_CHECKING:
+    from fastmcp.server.transforms import Transform
 
 
 class Provider:
@@ -59,78 +64,150 @@ class Provider:
     """
 
     def __init__(self) -> None:
-        self._visibility = VisibilityFilter()
+        # Visibility is the first (innermost) transform - closest to the base provider
+        self._visibility = Visibility()
+        self._transforms: list[Transform] = [self._visibility]
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}()"
 
-    def with_transforms(
-        self,
-        *,
-        namespace: str | None = None,
-        tool_renames: dict[str, str] | None = None,
-    ) -> Provider:
-        """Apply transformations to this provider's components.
+    def add_transform(self, transform: Transform) -> None:
+        """Add a transform to this provider.
 
-        Returns a TransformingProvider that wraps this provider and applies
-        the specified transformations. Can be chained - each call creates a
-        new wrapper that composes with the previous.
+        Transforms modify components (tools, resources, prompts) as they flow
+        through the provider. They're applied in order - first added is innermost.
 
         Args:
-            namespace: Prefix for tools/prompts ("namespace_name"), path segment
-                for resources ("protocol://namespace/path").
-            tool_renames: Map of original_name → final_name. Tools in this map
-                use the specified name instead of namespace prefixing.
-
-        Returns:
-            A TransformingProvider wrapping this provider.
+            transform: The transform to add.
 
         Example:
             ```python
-            # Apply namespace to all components
-            provider = MyProvider().with_transforms(namespace="db")
-            # Tool "greet" becomes "db_greet"
-            # Resource "resource://data" becomes "resource://db/data"
+            from fastmcp.server.transforms import Namespace
 
-            # Rename specific tools (bypasses namespace for those tools)
-            provider = MyProvider().with_transforms(
-                namespace="api",
-                tool_renames={"verbose_tool_name": "short"}
-            )
-            # "verbose_tool_name" → "short" (explicit rename)
-            # "other_tool" → "api_other_tool" (namespace applied)
-
-            # Stacking composes transformations
-            provider = (
-                MyProvider()
-                .with_transforms(namespace="api")
-                .with_transforms(tool_renames={"api_foo": "bar"})
-            )
-            # "foo" → "api_foo" (inner) → "bar" (outer)
+            provider = MyProvider()
+            provider.add_transform(Namespace("api"))
+            # Tools become "api_toolname"
             ```
         """
-        from fastmcp.server.providers.transforming import TransformingProvider
+        self._transforms.append(transform)
 
-        return TransformingProvider(
-            self, namespace=namespace, tool_renames=tool_renames
-        )
+    # -------------------------------------------------------------------------
+    # Internal transform chain building
+    # -------------------------------------------------------------------------
 
-    def with_namespace(self, namespace: str) -> Provider:
-        """Shorthand for with_transforms(namespace=...).
+    async def _list_tools(self) -> Sequence[Tool]:
+        """List tools with all transforms applied.
 
-        Args:
-            namespace: The namespace to apply.
+        Builds a middleware chain: base → transforms (in order).
+        Each transform wraps the previous via call_next.
 
         Returns:
-            A TransformingProvider wrapping this provider.
-
-        Example:
-            ```python
-            provider = MyProvider().with_namespace("db")
-            # Equivalent to: MyProvider().with_transforms(namespace="db")
-            ```
+            Transformed sequence of tools.
         """
-        return self.with_transforms(namespace=namespace)
+
+        async def base() -> Sequence[Tool]:
+            return await self.list_tools()
+
+        chain = base
+        for transform in self._transforms:
+            chain = partial(transform.list_tools, call_next=chain)
+
+        return await chain()
+
+    async def _get_tool(self, name: str) -> Tool | None:
+        """Get tool by transformed name with all transforms applied.
+
+        Args:
+            name: The transformed tool name to look up.
+
+        Returns:
+            The tool if found and enabled, None otherwise.
+        """
+
+        async def base(n: str) -> Tool | None:
+            return await self.get_tool(n)
+
+        chain = base
+        for transform in self._transforms:
+            chain = partial(transform.get_tool, call_next=chain)
+
+        return await chain(name)
+
+    async def _list_resources(self) -> Sequence[Resource]:
+        """List resources with all transforms applied."""
+
+        async def base() -> Sequence[Resource]:
+            return await self.list_resources()
+
+        chain = base
+        for transform in self._transforms:
+            chain = partial(transform.list_resources, call_next=chain)
+
+        return await chain()
+
+    async def _get_resource(self, uri: str) -> Resource | None:
+        """Get resource by transformed URI with all transforms applied."""
+
+        async def base(u: str) -> Resource | None:
+            return await self.get_resource(u)
+
+        chain = base
+        for transform in self._transforms:
+            chain = partial(transform.get_resource, call_next=chain)
+
+        return await chain(uri)
+
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
+        """List resource templates with all transforms applied."""
+
+        async def base() -> Sequence[ResourceTemplate]:
+            return await self.list_resource_templates()
+
+        chain = base
+        for transform in self._transforms:
+            chain = partial(transform.list_resource_templates, call_next=chain)
+
+        return await chain()
+
+    async def _get_resource_template(self, uri: str) -> ResourceTemplate | None:
+        """Get resource template by transformed URI with all transforms applied."""
+
+        async def base(u: str) -> ResourceTemplate | None:
+            return await self.get_resource_template(u)
+
+        chain = base
+        for transform in self._transforms:
+            chain = partial(transform.get_resource_template, call_next=chain)
+
+        return await chain(uri)
+
+    async def _list_prompts(self) -> Sequence[Prompt]:
+        """List prompts with all transforms applied."""
+
+        async def base() -> Sequence[Prompt]:
+            return await self.list_prompts()
+
+        chain = base
+        for transform in self._transforms:
+            chain = partial(transform.list_prompts, call_next=chain)
+
+        return await chain()
+
+    async def _get_prompt(self, name: str) -> Prompt | None:
+        """Get prompt by transformed name with all transforms applied."""
+
+        async def base(n: str) -> Prompt | None:
+            return await self.get_prompt(n)
+
+        chain = base
+        for transform in self._transforms:
+            chain = partial(transform.get_prompt, call_next=chain)
+
+        return await chain(name)
+
+    # -------------------------------------------------------------------------
+    # Public list/get methods (override these to provide components)
+    # -------------------------------------------------------------------------
 
     async def list_tools(self) -> Sequence[Tool]:
         """Return all available tools.
@@ -212,31 +289,6 @@ class Provider:
         prompts = await self.list_prompts()
         return next((p for p in prompts if p.name == name), None)
 
-    async def get_component(
-        self, key: str
-    ) -> Tool | Resource | ResourceTemplate | Prompt | None:
-        """Get a component by its prefixed key.
-
-        Args:
-            key: The prefixed key (e.g., "tool:name", "resource:uri", "template:uri").
-
-        Returns:
-            The component if found, or None to continue searching other providers.
-        """
-        # Default implementation: fetch all component types in parallel
-        # Exceptions propagate since return_exceptions=False
-        results = await gather(
-            self.list_tools(),
-            self.list_resources(),
-            self.list_resource_templates(),
-            self.list_prompts(),
-        )
-        for components in results:
-            for component in components:  # type: ignore[union-attr]
-                if component.key == key:
-                    return component
-        return None
-
     # -------------------------------------------------------------------------
     # Task registration
     # -------------------------------------------------------------------------
@@ -245,22 +297,68 @@ class Provider:
         """Return components that should be registered as background tasks.
 
         Override to customize which components are task-eligible.
-        Default calls list_* methods and filters for components
-        with task_config.mode != 'forbidden'.
+        Default calls list_* methods, applies provider transforms, and filters
+        for components with task_config.mode != 'forbidden'.
 
         Used by the server during startup to register functions with Docket.
         """
         # Fetch all component types in parallel
-        tools, resources, templates, prompts = await gather(
+        results = await gather(
             self.list_tools(),
             self.list_resources(),
             self.list_resource_templates(),
             self.list_prompts(),
         )
+        tools = cast(Sequence[Tool], results[0])
+        resources = cast(Sequence[Resource], results[1])
+        templates = cast(Sequence[ResourceTemplate], results[2])
+        prompts = cast(Sequence[Prompt], results[3])
+
+        # Apply provider's own transforms to components using the chain pattern
+        # For tasks, we need the fully-transformed names, so use the list_ chain
+        # Note: We build mini-chains for each component type
+
+        async def tools_base() -> Sequence[Tool]:
+            return tools
+
+        async def resources_base() -> Sequence[Resource]:
+            return resources
+
+        async def templates_base() -> Sequence[ResourceTemplate]:
+            return templates
+
+        async def prompts_base() -> Sequence[Prompt]:
+            return prompts
+
+        # Apply transforms in order (first is innermost)
+        tools_chain = tools_base
+        resources_chain = resources_base
+        templates_chain = templates_base
+        prompts_chain = prompts_base
+
+        for transform in self._transforms:
+            tools_chain = partial(transform.list_tools, call_next=tools_chain)
+            resources_chain = partial(
+                transform.list_resources, call_next=resources_chain
+            )
+            templates_chain = partial(
+                transform.list_resource_templates, call_next=templates_chain
+            )
+            prompts_chain = partial(transform.list_prompts, call_next=prompts_chain)
+
+        transformed_tools = await tools_chain()
+        transformed_resources = await resources_chain()
+        transformed_templates = await templates_chain()
+        transformed_prompts = await prompts_chain()
 
         return [
             c
-            for c in [*tools, *resources, *templates, *prompts]
+            for c in [
+                *transformed_tools,
+                *transformed_resources,
+                *transformed_templates,
+                *transformed_prompts,
+            ]
             if c.task_config.supports_tasks()
         ]
 

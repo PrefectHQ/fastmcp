@@ -109,10 +109,15 @@ class _TransformingMCPServerMixin(FastMCPBaseModel):
         wrapped_mcp_server = create_proxy(
             client,
             name=server_name,
-            tool_transformations=self.tools,
             include_tags=self.include_tags,
             exclude_tags=self.exclude_tags,
         )
+
+        # Apply tool transforms if configured
+        if self.tools:
+            from fastmcp.server.transforms import ToolTransform
+
+            wrapped_mcp_server.add_transform(ToolTransform(self.tools))
 
         return wrapped_mcp_server, transport
 

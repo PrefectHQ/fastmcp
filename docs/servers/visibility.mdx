@@ -1,0 +1,315 @@
+---
+title: Visibility
+sidebarTitle: Visibility
+description: Control which components are visible to clients
+icon: eye
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.0.0" />
+
+Visibility control lets you dynamically show or hide components from clients. A disabled tool disappears from listings and cannot be called. This enables runtime access control, feature flags, and context-aware component exposure.
+
+## Enable and Disable
+
+Every FastMCP server provides `enable()` and `disable()` methods for controlling component visibility.
+
+### Disabling Components
+
+The `disable()` method adds components to a blocklist. Blocked components are hidden from all client queries.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("Server")
+
+@mcp.tool(tags={"admin"})
+def delete_everything() -> str:
+    """Delete all data."""
+    return "Deleted"
+
+@mcp.tool(tags={"admin"})
+def reset_system() -> str:
+    """Reset the system."""
+    return "Reset"
+
+@mcp.tool
+def get_status() -> str:
+    """Get system status."""
+    return "OK"
+
+# Hide admin tools
+mcp.disable(tags={"admin"})
+
+# Clients only see: get_status
+```
+
+### Enabling Components
+
+The `enable()` method removes components from the blocklist, making them visible again.
+
+```python
+# Re-enable admin tools
+mcp.enable(tags={"admin"})
+
+# Clients now see all three tools
+```
+
+## Keys and Tags
+
+Visibility filtering works with two identifiers: keys (for specific components) and tags (for groups).
+
+### Component Keys
+
+Every component has a unique key in the format `{type}:{identifier}`.
+
+| Component | Key Format | Example |
+|-----------|------------|---------|
+| Tool | `tool:{name}` | `tool:delete_everything` |
+| Resource | `resource:{uri}` | `resource:data://config` |
+| Template | `template:{uri}` | `template:file://{path}` |
+| Prompt | `prompt:{name}` | `prompt:analyze` |
+
+Use keys to target specific components.
+
+```python
+# Disable a specific tool
+mcp.disable(keys=["tool:delete_everything"])
+
+# Disable multiple specific components
+mcp.disable(keys=["tool:reset_system", "resource:data://secrets"])
+```
+
+### Tags
+
+Tags group components for bulk operations. Define tags when creating components, then filter by them.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("Server")
+
+@mcp.tool(tags={"public", "read"})
+def get_data() -> str:
+    return "data"
+
+@mcp.tool(tags={"admin", "write"})
+def set_data(value: str) -> str:
+    return f"Set: {value}"
+
+@mcp.tool(tags={"admin", "dangerous"})
+def delete_data() -> str:
+    return "Deleted"
+
+# Disable all admin tools
+mcp.disable(tags={"admin"})
+
+# Disable all dangerous tools (some overlap with admin)
+mcp.disable(tags={"dangerous"})
+```
+
+A component is hidden if it has **any** of the disabled tags. The component doesn't need all the tags; one match is enough.
+
+### Combining Keys and Tags
+
+You can specify both keys and tags in a single call. The filters combine additively.
+
+```python
+# Disable specific tools AND all dangerous-tagged components
+mcp.disable(keys=["tool:debug_info"], tags={"dangerous"})
+```
+
+## Allowlist Mode
+
+By default, visibility uses blocklist mode: everything is visible unless explicitly disabled. The `only=True` parameter switches to allowlist mode, where **only** specified components are visible.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("Server")
+
+@mcp.tool(tags={"safe"})
+def read_only_operation() -> str:
+    return "Read"
+
+@mcp.tool(tags={"safe"})
+def list_items() -> list[str]:
+    return ["a", "b", "c"]
+
+@mcp.tool(tags={"dangerous"})
+def delete_all() -> str:
+    return "Deleted"
+
+@mcp.tool
+def untagged_tool() -> str:
+    return "Untagged"
+
+# Only show safe tools - everything else is hidden
+mcp.enable(tags={"safe"}, only=True)
+
+# Clients see: read_only_operation, list_items
+# Hidden: delete_all, untagged_tool
+```
+
+Allowlist mode is useful for restrictive environments where you want to explicitly opt-in components rather than opt-out.
+
+### Allowlist Behavior
+
+When you call `enable(only=True)`:
+
+1. Default visibility switches to "hidden"
+2. Previous allowlists are cleared
+3. Only specified keys/tags become visible
+
+```python
+# Start fresh - only show these specific tools
+mcp.enable(keys=["tool:safe_read", "tool:safe_write"], only=True)
+
+# Later, switch to a different allowlist
+mcp.enable(tags={"production"}, only=True)
+```
+
+### Blocklist Precedence
+
+Even in allowlist mode, the blocklist takes precedence. A component that's both allowlisted and blocklisted remains hidden.
+
+```python
+mcp.enable(tags={"api"}, only=True)  # Allow all api-tagged
+mcp.disable(keys=["tool:api_admin"])  # But block this specific one
+
+# api_admin is hidden despite having the "api" tag
+```
+
+This lets you create broad allowlists with specific exceptions.
+
+## Server vs Provider Visibility
+
+Visibility operates at two levels: the server and individual providers.
+
+### Server-Level Visibility
+
+Server visibility applies to all components from all providers. When you call `mcp.enable()` or `mcp.disable()`, you're filtering the final view that clients see.
+
+```python
+from fastmcp import FastMCP
+
+main = FastMCP("Main")
+main.mount(sub_server, namespace="api")
+
+@main.tool(tags={"internal"})
+def local_debug() -> str:
+    return "Debug"
+
+# Hide internal tools from ALL sources
+main.disable(tags={"internal"})
+```
+
+### Provider-Level Visibility
+
+Each provider maintains its own visibility state. Provider visibility filters components before they reach the server.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers import LocalProvider
+
+# Create provider with visibility control
+admin_tools = LocalProvider()
+
+@admin_tools.tool(tags={"admin"})
+def admin_action() -> str:
+    return "Admin"
+
+@admin_tools.tool
+def regular_action() -> str:
+    return "Regular"
+
+# Filter at provider level
+admin_tools.disable(tags={"admin"})
+
+# Server receives only regular_action
+mcp = FastMCP("Server", providers=[admin_tools])
+```
+
+Provider-level visibility is useful when different servers should see different subsets of the same provider's components.
+
+### Layered Filtering
+
+When both server and provider have visibility rules, they stack. A component must pass both filters to be visible.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers import LocalProvider
+
+provider = LocalProvider()
+
+@provider.tool(tags={"feature", "beta"})
+def new_feature() -> str:
+    return "New"
+
+# Provider allows feature-tagged
+provider.enable(tags={"feature"}, only=True)
+
+# Server blocks beta-tagged
+mcp = FastMCP("Server", providers=[provider])
+mcp.disable(tags={"beta"})
+
+# new_feature is hidden (blocked at server level)
+```
+
+## Dynamic Visibility
+
+Visibility changes take effect immediately. You can adjust visibility during request handling based on context.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server import Context
+
+mcp = FastMCP("Server")
+
+@mcp.tool(tags={"admin"})
+def admin_action() -> str:
+    return "Admin action performed"
+
+@mcp.tool
+def check_permissions(ctx: Context) -> str:
+    """Check if admin tools should be available."""
+    user = ctx.request_context.get_user()
+
+    if user and user.is_admin:
+        mcp.enable(tags={"admin"})
+        return "Admin tools enabled"
+    else:
+        mcp.disable(tags={"admin"})
+        return "Admin tools disabled"
+```
+
+<Warning>
+Dynamic visibility affects all connected clients. For per-user visibility, consider using separate server instances or implementing authorization in the tools themselves.
+</Warning>
+
+## Client Notifications
+
+When visibility changes, FastMCP automatically notifies connected clients. Clients supporting the MCP notification protocol receive `list_changed` events and can refresh their component lists.
+
+This happens automatically. You don't need to trigger notifications manually.
+
+```python
+# This automatically notifies clients
+mcp.disable(tags={"maintenance"})
+
+# Clients receive: tools/list_changed, resources/list_changed, etc.
+```
+
+## Filtering Logic
+
+Understanding the filtering logic helps when debugging visibility issues.
+
+The rules evaluate in this order:
+
+1. **Blocklist by key**: If the component's key is in `_disabled_keys`, it's hidden
+2. **Blocklist by tag**: If any of the component's tags are in `_disabled_tags`, it's hidden
+3. **Allowlist check**: If default visibility is off (allowlist mode) and the component isn't in the allowlist, it's hidden
+4. **Default**: Otherwise, the component is visible
+
+The blocklist always wins over the allowlist. A component that matches both is hidden.

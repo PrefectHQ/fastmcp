@@ -21,6 +21,7 @@ class SimpleProvider(Provider):
     """Minimal provider that returns custom components from list methods."""
 
     def __init__(self, tools: list[Tool] | None = None):
+        super().__init__()
         self._tools = tools or []
 
     async def list_tools(self) -> list[Tool]:

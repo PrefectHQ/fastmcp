@@ -7,12 +7,49 @@ from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.providers import FastMCPProvider, Provider, TransformingProvider
+from fastmcp.server.providers import FastMCPProvider, Provider
 from fastmcp.server.server import FastMCP
+from fastmcp.server.transforms import Namespace
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _reverse_through_transforms(
+    provider: Provider,
+    key: str,
+    component_type: str,
+) -> str | None:
+    """Reverse a key through provider's transforms.
+
+    Iterates through transforms in reverse order (outer to inner) and
+    reverses the key transformation.
+
+    Args:
+        provider: The provider with transforms.
+        key: The transformed key.
+        component_type: Either "tool", "prompt", or "resource".
+
+    Returns:
+        The original key if transformations can be reversed, None otherwise.
+    """
+    current_key = key
+    # Iterate transforms in reverse (outer first)
+    for transform in reversed(provider._transforms):
+        if isinstance(transform, Namespace):
+            # Namespace transform - try to reverse
+            if component_type in ("tool", "prompt"):
+                original = transform._reverse_name(current_key)
+            else:
+                original = transform._reverse_uri(current_key)
+            if original is None:
+                return None
+            current_key = original
+        # Other transform types don't transform keys in ways we need to reverse
+        # for enable/disable operations (ToolTransform renames tools but
+        # the original name is what we need)
+    return current_key
 
 
 def _get_mounted_server_and_key(
@@ -31,23 +68,15 @@ def _get_mounted_server_and_key(
         Tuple of (server, original_key) if the key matches this provider,
         or None if it doesn't.
     """
-    if isinstance(provider, TransformingProvider):
-        # TransformingProvider - reverse the transformation
-        if component_type == "resource":
-            original = provider._reverse_resource_uri(key)
-        elif component_type == "prompt":
-            original = provider._reverse_prompt_name(key)
+    if isinstance(provider, FastMCPProvider):
+        # FastMCPProvider with layers - reverse through layers
+        if provider._transforms:
+            original = _reverse_through_transforms(provider, key, component_type)
+            if original is not None:
+                return provider.server, original
         else:
-            original = provider._reverse_tool_name(key)
-
-        if original is not None:
-            # Recursively check the wrapped provider
-            return _get_mounted_server_and_key(
-                provider._wrapped, original, component_type
-            )
-    elif isinstance(provider, FastMCPProvider):
-        # Direct FastMCPProvider - no transformation, key is used directly
-        return provider.server, key
+            # Direct FastMCPProvider - no transformation
+            return provider.server, key
 
     return None
 
@@ -77,7 +106,7 @@ class ComponentService:
                 raise NotFoundError(f"Unknown tool: {name!r}")
             return tool
 
-        # 2. Check mounted servers via FastMCPProvider/TransformingProvider
+        # 2. Check mounted servers via FastMCPProvider
         for provider in self._server._providers:
             result = _get_mounted_server_and_key(provider, name, "tool")
             if result is not None:
@@ -107,7 +136,7 @@ class ComponentService:
             self._server.disable(keys=[key])
             return tool
 
-        # 2. Check mounted servers via FastMCPProvider/TransformingProvider
+        # 2. Check mounted servers via FastMCPProvider
         for provider in self._server._providers:
             result = _get_mounted_server_and_key(provider, name, "tool")
             if result is not None:
@@ -139,7 +168,7 @@ class ComponentService:
             self._server.enable(keys=[key])
             return component  # type: ignore[return-value]
 
-        # 2. Check mounted servers via FastMCPProvider/TransformingProvider
+        # 2. Check mounted servers via FastMCPProvider
         for provider in self._server._providers:
             result = _get_mounted_server_and_key(provider, uri, "resource")
             if result is not None:
@@ -173,7 +202,7 @@ class ComponentService:
             self._server.disable(keys=[key])
             return component  # type: ignore[return-value]
 
-        # 2. Check mounted servers via FastMCPProvider/TransformingProvider
+        # 2. Check mounted servers via FastMCPProvider
         for provider in self._server._providers:
             result = _get_mounted_server_and_key(provider, uri, "resource")
             if result is not None:
@@ -205,7 +234,7 @@ class ComponentService:
                 raise NotFoundError(f"Unknown prompt: {name}")
             return prompt
 
-        # 2. Check mounted servers via FastMCPProvider/TransformingProvider
+        # 2. Check mounted servers via FastMCPProvider
         for provider in self._server._providers:
             result = _get_mounted_server_and_key(provider, name, "prompt")
             if result is not None:
@@ -235,7 +264,7 @@ class ComponentService:
             self._server.disable(keys=[key])
             return prompt
 
-        # 2. Check mounted servers via FastMCPProvider/TransformingProvider
+        # 2. Check mounted servers via FastMCPProvider
         for provider in self._server._providers:
             result = _get_mounted_server_and_key(provider, name, "prompt")
             if result is not None:

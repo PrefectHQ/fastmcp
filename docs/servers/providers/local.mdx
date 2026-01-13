@@ -106,83 +106,27 @@ mcp = FastMCP("MyServer", on_duplicate="warn")
 
 <VersionBadge version="3.0.0" />
 
-You can enable or disable components at runtime. Disabled components don't appear in listings and can't be called.
-
-### Disabling Components
-
-Use `disable()` to hide components:
+Components can be dynamically enabled or disabled at runtime. Disabled components don't appear in listings and can't be called.
 
 ```python
-# Disable by key
-mcp.disable(keys=["tool:admin_action"])
-
-# Disable by tag
-mcp.disable(tags={"internal"})
-
-# Disable multiple
-mcp.disable(keys=["tool:debug"], tags={"deprecated"})
-```
-
-### Enabling Components
-
-Use `enable()` to re-enable disabled components:
-
-```python
-# Re-enable by key
-mcp.enable(keys=["tool:admin_action"])
-
-# Re-enable by tag
-mcp.enable(tags={"internal"})
-```
-
-### Allowlist Mode
-
-Use `only=True` to switch to allowlist mode, where **only** the specified components are visible:
-
-```python
-# Only show public tools
-mcp.enable(tags={"public"}, only=True)
-
-# Only show specific tools
-mcp.enable(keys=["tool:safe_tool", "tool:read_only"], only=True)
-```
-
-### Component Keys
-
-Keys follow the format `{type}:{identifier}`:
-
-| Component Type | Key Format | Example |
-|----------------|------------|---------|
-| Tool | `tool:{name}` | `tool:greet` |
-| Resource | `resource:{uri}` | `resource:data://config` |
-| Template | `template:{uri}` | `template:data://{id}` |
-| Prompt | `prompt:{name}` | `prompt:analyze` |
-
-### Using Tags
-
-Add tags when defining components to enable group-based visibility control:
-
-```python
-@mcp.tool(tags={"admin", "dangerous"})
+@mcp.tool(tags={"admin"})
 def delete_all() -> str:
     """Delete everything."""
     return "Deleted"
 
-@mcp.tool(tags={"public", "safe"})
+@mcp.tool
 def get_status() -> str:
     """Get system status."""
     return "OK"
 
-# Hide all admin tools
+# Hide admin tools
 mcp.disable(tags={"admin"})
 
-# Or only show safe tools
-mcp.enable(tags={"safe"}, only=True)
+# Or only show specific tools
+mcp.enable(keys=["tool:get_status"], only=True)
 ```
 
-### Automatic Notifications
-
-When you enable or disable components, FastMCP automatically sends `list_changed` notifications to connected clients. Clients that support notifications will refresh their component lists automatically.
+See [Visibility](/servers/visibility) for the full documentation on keys, tags, allowlist mode, and provider-level visibility.
 
 ## Standalone LocalProvider
 
@@ -213,26 +157,4 @@ This is useful for:
 - Testing components in isolation
 - Building reusable component libraries
 
-## Provider-Level Visibility
-
-Visibility can be controlled at the provider level as well:
-
-```python
-from fastmcp.server.providers import LocalProvider
-
-provider = LocalProvider()
-
-@provider.tool(tags={"internal"})
-def internal_tool() -> str:
-    return "Internal"
-
-# Disable at provider level
-provider.disable(tags={"internal"})
-
-# This affects all servers using this provider
-mcp = FastMCP("Server", providers=[provider])
-```
-
-<Note>
-When a component is disabled at the provider level, it's hidden from all servers using that provider. Server-level visibility adds another layer of filtering on top of provider-level visibility.
-</Note>
+Standalone providers also support visibility control with `enable()` and `disable()`. See [Visibility](/servers/visibility) for details.

@@ -20,10 +20,7 @@
     "primary": "#2d00f7"
   },
   "contextual": {
-    "options": [
-      "copy",
-      "view"
-    ]
+    "options": ["copy", "view"]
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
   "errors": {
@@ -108,10 +105,10 @@
                 "icon": "layer-group",
                 "pages": [
                   "servers/providers/overview",
+                  "servers/providers/transforms",
                   "servers/providers/local",
                   "servers/providers/filesystem",
                   "servers/providers/mounting",
-                  "servers/providers/namespacing",
                   "servers/providers/proxy",
                   "servers/providers/custom"
                 ]
@@ -130,7 +127,8 @@
                   "servers/progress",
                   "servers/sampling",
                   "servers/storage-backends",
-                  "servers/tasks"
+                  "servers/tasks",
+                  "servers/visibility"
                 ]
               },
               {
@@ -163,10 +161,7 @@
               {
                 "group": "Essentials",
                 "icon": "cube",
-                "pages": [
-                  "clients/client",
-                  "clients/transports"
-                ]
+                "pages": ["clients/client", "clients/transports"]
               },
               {
                 "group": "Core Operations",
@@ -193,10 +188,7 @@
               {
                 "group": "Authentication",
                 "icon": "user-shield",
-                "pages": [
-                  "clients/auth/oauth",
-                  "clients/auth/bearer"
-                ]
+                "pages": ["clients/auth/oauth", "clients/auth/bearer"]
               }
             ]
           },
@@ -206,10 +198,7 @@
               {
                 "group": "Providers",
                 "icon": "globe",
-                "pages": [
-                  "integrations/fastapi",
-                  "integrations/openapi"
-                ]
+                "pages": ["integrations/fastapi", "integrations/openapi"]
               },
               {
                 "group": "Authentication",
@@ -263,7 +252,7 @@
           {
             "group": "Patterns",
             "pages": [
-              "patterns/tool-transformation",
+              "patterns/decorating-methods",
               "patterns/cli",
               "patterns/contrib",
               "patterns/testing"
@@ -571,6 +560,14 @@
     {
       "destination": "/servers/providers/mounting",
       "source": "/servers/composition"
+    },
+    {
+      "destination": "/servers/providers/transforms",
+      "source": "/servers/providers/namespacing"
+    },
+    {
+      "destination": "/servers/providers/transforms",
+      "source": "/patterns/tool-transformation"
     }
   ],
   "search": {

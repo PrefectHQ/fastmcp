@@ -104,7 +104,6 @@ class FileSystemProvider(LocalProvider):
         # Clear existing components if reloading
         if self._loaded:
             self._components.clear()
-            self._tool_transformations.clear()
 
         result = discover_and_import(self._root)
 

@@ -218,17 +218,6 @@ class TestAbstractCollectionTypes:
         assert mcp.name == "test"
         assert isinstance(mcp.middleware, list)  # Should be converted to list
 
-    async def test_fastmcp_init_with_readonly_mapping(self):
-        """Test FastMCP accepts read-only mappings."""
-        from types import MappingProxyType
-
-        # Test with read-only mapping
-        mcp = FastMCP(
-            "test2",
-            tool_transformations=MappingProxyType({}),  # Read-only mapping
-        )
-        assert mcp is not None
-
     async def test_fastmcp_works_with_abstract_types(self):
         """Test that abstract types work end-to-end with a client."""
 

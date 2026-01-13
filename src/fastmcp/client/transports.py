@@ -1057,10 +1057,13 @@ class MCPConfigTransport(ClientTransport):
         proxy = create_proxy(
             client,
             name=f"Proxy-{name}",
-            tool_transformations=tool_transforms,
             include_tags=include_tags,
             exclude_tags=exclude_tags,
         )
+        if tool_transforms:
+            from fastmcp.server.transforms import ToolTransform
+
+            proxy.add_transform(ToolTransform(tool_transforms))
         return transport, proxy
 
     async def close(self):

@@ -60,9 +60,34 @@ FastMCP v3 introduces a unified provider architecture for sourcing components. A
 - **LocalProvider** stores decorator-registered components (`@mcp.tool`, etc.)
 - **FastMCPProvider** wraps another FastMCP server for composition
 - **ProxyProvider** connects to remote MCP servers
-- **TransformingProvider** adds namespacing and renaming
+- **Transforms** modify components as they flow through using a middleware `call_next` pattern
 
-See [Providers](/servers/providers/overview) for the complete documentation.
+See [Providers](/servers/providers/overview) and [Transforms](/servers/providers/transforms) for documentation.
+
+### Tool Transformation API
+
+`FastMCP.add_tool_transformation()` and the `tool_transformations` constructor parameter are deprecated. Use `add_transform()` with `ToolTransform` instead:
+
+<CodeGroup>
+```python Before
+mcp = FastMCP("server", tool_transformations={
+    "verbose_name": ToolTransformConfig(name="short")
+})
+mcp.add_tool_transformation("verbose_name", ToolTransformConfig(name="short"))
+```
+
+```python After
+from fastmcp.server.transforms import ToolTransform
+from fastmcp.tools.tool_transform import ToolTransformConfig
+
+mcp = FastMCP("server")
+mcp.add_transform(ToolTransform({
+    "verbose_name": ToolTransformConfig(name="short")
+}))
+```
+</CodeGroup>
+
+`remove_tool_transformation()` is deprecated with no replacement - transforms are immutable once added. Use `server.disable(keys=[...])` to hide tools dynamically.
 
 ### Mount Namespace Parameter
 

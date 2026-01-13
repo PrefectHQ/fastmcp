@@ -43,10 +43,6 @@ from fastmcp.server.providers.base import Provider
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool import AuthCheckCallable, Tool
-from fastmcp.tools.tool_transform import (
-    ToolTransformConfig,
-    apply_transformations_to_tools,
-)
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
@@ -113,7 +109,6 @@ class LocalProvider(Provider):
         self._on_duplicate = on_duplicate
         # Unified component storage - keyed by prefixed key (e.g., "tool:name", "resource:uri")
         self._components: dict[str, FastMCPComponent] = {}
-        self._tool_transformations: dict[str, ToolTransformConfig] = {}
 
     def _send_list_changed_notification(self, component: FastMCPComponent) -> None:
         """Send a list changed notification for the component type."""
@@ -322,57 +317,27 @@ class LocalProvider(Provider):
         self._remove_component(Prompt.make_key(name))
 
     # =========================================================================
-    # Tool transformation methods
-    # =========================================================================
-
-    def add_tool_transformation(
-        self, tool_name: str, transformation: ToolTransformConfig
-    ) -> None:
-        """Add a tool transformation.
-
-        Args:
-            tool_name: The name of the tool to transform.
-            transformation: The transformation configuration.
-        """
-        self._tool_transformations[tool_name] = transformation
-
-    def get_tool_transformation(self, tool_name: str) -> ToolTransformConfig | None:
-        """Get a tool transformation.
-
-        Args:
-            tool_name: The name of the tool.
-
-        Returns:
-            The transformation config, or None if not found.
-        """
-        return self._tool_transformations.get(tool_name)
-
-    def remove_tool_transformation(self, tool_name: str) -> None:
-        """Remove a tool transformation.
-
-        Args:
-            tool_name: The name of the tool.
-        """
-        if tool_name in self._tool_transformations:
-            del self._tool_transformations[tool_name]
-
-    # =========================================================================
     # Provider interface implementation
     # =========================================================================
 
     async def list_tools(self) -> Sequence[Tool]:
-        """Return all visible tools with transformations applied."""
-        tools = {k: v for k, v in self._components.items() if isinstance(v, Tool)}
-        transformed = apply_transformations_to_tools(
-            tools=tools,
-            transformations=self._tool_transformations,
-        )
-        return [t for t in transformed.values() if self._is_component_enabled(t)]
+        """Return all visible tools."""
+        return [
+            v
+            for v in self._components.values()
+            if isinstance(v, Tool) and self._is_component_enabled(v)
+        ]
 
     async def get_tool(self, name: str) -> Tool | None:
-        """Get a tool by name, with transformations applied."""
-        tools = await self.list_tools()
-        return next((t for t in tools if t.name == name), None)
+        """Get a tool by name."""
+        tool = self._get_component(Tool.make_key(name))
+        if (
+            tool is not None
+            and isinstance(tool, Tool)
+            and self._is_component_enabled(tool)
+        ):
+            return tool
+        return None
 
     async def list_resources(self) -> Sequence[Resource]:
         """Return all visible resources."""

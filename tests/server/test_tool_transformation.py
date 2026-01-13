@@ -1,9 +1,10 @@
 from fastmcp import FastMCP
+from fastmcp.server.transforms import ToolTransform
 from fastmcp.tools.tool_transform import ToolTransformConfig
 
 
-async def test_tool_transformation_in_tool_manager():
-    """Test that tool transformations are applied in the tool manager."""
+async def test_tool_transformation_via_layer():
+    """Test that tool transformations work via add_transform(ToolTransform(...))."""
     mcp = FastMCP("Test Server")
 
     @mcp.tool()
@@ -11,7 +12,9 @@ async def test_tool_transformation_in_tool_manager():
         """Echo back the message provided."""
         return message
 
-    mcp.add_tool_transformation("echo", ToolTransformConfig(name="echo_transformed"))
+    mcp.add_transform(
+        ToolTransform({"echo": ToolTransformConfig(name="echo_transformed")})
+    )
 
     tools = await mcp.get_tools()
     assert len(tools) == 1
@@ -21,22 +24,29 @@ async def test_tool_transformation_in_tool_manager():
 
 
 async def test_transformed_tool_filtering():
-    """Test that tool transformations are applied in the tool manager."""
-    mcp = FastMCP("Test Server", include_tags={"enabled_tools"})
+    """Test that tool transformations add tags that affect filtering."""
+    mcp = FastMCP("Test Server")
 
     @mcp.tool()
     def echo(message: str) -> str:
         """Echo back the message provided."""
         return message
 
-    tools = await mcp.get_tools(run_middleware=True)
-    assert len(tools) == 0
-
-    mcp.add_tool_transformation(
-        "echo", ToolTransformConfig(name="echo_transformed", tags={"enabled_tools"})
+    # Add transformation that adds tags
+    mcp.add_transform(
+        ToolTransform(
+            {
+                "echo": ToolTransformConfig(
+                    name="echo_transformed", tags={"enabled_tools"}
+                )
+            }
+        )
     )
+    # Enable only tools with the enabled_tools tag
+    mcp.enable(tags={"enabled_tools"}, only=True)
 
     tools = await mcp.get_tools(run_middleware=True)
+    # With transformation applied, the tool now has the enabled_tools tag
     assert len(tools) == 1
 
 
@@ -54,9 +64,10 @@ async def test_transformed_tool_structured_output_without_annotation():
         """A tool without return type annotation."""
         return {"result": "processed", "input": message}
 
-    # Create a transformed tool
-    mcp.add_tool_transformation(
-        "tool_without_annotation", ToolTransformConfig(name="transformed_tool")
+    mcp.add_transform(
+        ToolTransform(
+            {"tool_without_annotation": ToolTransformConfig(name="transformed_tool")}
+        )
     )
 
     # Test with client to verify structured output is populated
@@ -66,3 +77,44 @@ async def test_transformed_tool_structured_output_without_annotation():
         # Structured output should be populated even without return annotation
         assert result.data is not None
         assert result.data == {"result": "processed", "input": "test"}
+
+
+async def test_layer_based_transforms():
+    """Test that ToolTransform layer works after tool registration."""
+    mcp = FastMCP("Test Server")
+
+    @mcp.tool()
+    def my_tool() -> str:
+        return "hello"
+
+    # Add transform after tool registration
+    mcp.add_transform(
+        ToolTransform({"my_tool": ToolTransformConfig(name="renamed_tool")})
+    )
+
+    tools = await mcp.get_tools()
+    assert len(tools) == 1
+    assert tools[0].name == "renamed_tool"
+
+
+async def test_server_level_transforms_apply_to_mounted_servers():
+    """Test that server-level transforms apply to tools from mounted servers."""
+    main = FastMCP("Main")
+    sub = FastMCP("Sub")
+
+    @sub.tool()
+    def sub_tool() -> str:
+        return "hello from sub"
+
+    main.mount(sub)
+
+    # Add transform for the mounted tool at server level
+    main.add_transform(
+        ToolTransform({"sub_tool": ToolTransformConfig(name="renamed_sub_tool")})
+    )
+
+    tools = await main.get_tools()
+    tool_names = [t.name for t in tools]
+
+    assert "renamed_sub_tool" in tool_names
+    assert "sub_tool" not in tool_names

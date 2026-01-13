@@ -1,0 +1,405 @@
+---
+title: Transforms
+sidebarTitle: Transforms
+description: Modify components as they flow through your server
+icon: wand-magic-sparkles
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.0.0" />
+
+Transforms modify components as they flow from providers to clients. When a client asks "what tools do you have?", the request passes through each transform in the chain. Each transform can modify the components before passing them along.
+
+## Mental Model
+
+Think of transforms as filters in a pipeline. Components flow from providers through transforms to reach clients:
+
+```
+Provider → [Transform A] → [Transform B] → Client
+```
+
+When listing components, transforms see the original components and can modify them. When getting a specific component by name, transforms work in reverse: mapping the client's requested name back to the original, then transforming the result.
+
+Each transform uses a middleware-style pattern with `call_next`. The transform receives a function that invokes the next stage in the chain. The transform can call `call_next()` to get components from downstream, then modify the results before returning them.
+
+## Namespace
+
+The `Namespace` transform prefixes all component names, preventing conflicts when composing multiple servers.
+
+Tools and prompts receive an underscore-separated prefix. Resources and templates receive a path-segment prefix in their URIs.
+
+| Component | Original | With `Namespace("api")` |
+|-----------|----------|-------------------------|
+| Tool | `my_tool` | `api_my_tool` |
+| Prompt | `my_prompt` | `api_my_prompt` |
+| Resource | `data://info` | `data://api/info` |
+| Template | `data://{id}` | `data://api/{id}` |
+
+The most common use is through the `mount()` method's `namespace` parameter.
+
+```python
+from fastmcp import FastMCP
+
+weather = FastMCP("Weather")
+calendar = FastMCP("Calendar")
+
+@weather.tool
+def get_data() -> str:
+    return "Weather data"
+
+@calendar.tool
+def get_data() -> str:
+    return "Calendar data"
+
+# Without namespacing, these would conflict
+main = FastMCP("Main")
+main.mount(weather, namespace="weather")
+main.mount(calendar, namespace="calendar")
+
+# Clients see: weather_get_data, calendar_get_data
+```
+
+You can also apply namespacing directly using the `Namespace` transform.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms import Namespace
+
+mcp = FastMCP("Server")
+
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+# Namespace all components
+mcp.add_transform(Namespace("api"))
+
+# Tool is now: api_greet
+```
+
+## Tool Transformation
+
+Tool transformation lets you modify tool schemas - renaming tools, changing descriptions, adjusting tags, and reshaping argument schemas. FastMCP provides two mechanisms that share the same configuration options but differ in timing.
+
+**Deferred transformation** with `ToolTransform` applies modifications when tools flow through a transform chain. Use this for tools from mounted servers, proxies, or other providers where you don't control the source directly.
+
+**Immediate transformation** with `Tool.from_tool()` creates a modified tool object right away. Use this when you have direct access to a tool and want to transform it before registration.
+
+### ToolTransform
+
+The `ToolTransform` class is a transform that modifies tools as they flow through a provider. Provide a dictionary mapping original tool names to their transformation configuration.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms import ToolTransform
+from fastmcp.tools.tool_transform import ToolTransformConfig
+
+mcp = FastMCP("Server")
+
+@mcp.tool
+def verbose_internal_data_fetcher(query: str) -> str:
+    """Fetches data from the internal database."""
+    return f"Results for: {query}"
+
+# Rename the tool to something simpler
+mcp.add_transform(ToolTransform({
+    "verbose_internal_data_fetcher": ToolTransformConfig(
+        name="search",
+        description="Search the database.",
+    )
+}))
+
+# Clients see "search" with the cleaner description
+```
+
+`ToolTransform` is useful when you want to modify tools from mounted or proxied servers without changing the original source.
+
+### Tool.from_tool()
+
+Use `Tool.from_tool()` when you have the tool object and want to create a transformed version for registration.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.tools import Tool, tool
+from fastmcp.tools.tool_transform import ArgTransform
+
+# Create a tool without registering it
+@tool
+def search(q: str, limit: int = 10) -> list[str]:
+    """Search for items."""
+    return [f"Result {i} for {q}" for i in range(limit)]
+
+# Transform it before registration
+better_search = Tool.from_tool(
+    search,
+    name="find_items",
+    description="Find items matching your search query.",
+    transform_args={
+        "q": ArgTransform(
+            name="query",
+            description="The search terms to look for.",
+        ),
+    },
+)
+
+mcp = FastMCP("Server")
+mcp.add_tool(better_search)
+```
+
+The standalone `@tool` decorator (from `fastmcp.tools`) creates a Tool object without registering it to any server. This separates creation from registration, letting you transform tools before deciding where they go.
+
+### Modification Options
+
+Both mechanisms support the same modifications.
+
+**Tool-level options:**
+
+| Option | Description |
+|--------|-------------|
+| `name` | New name for the tool |
+| `description` | New description |
+| `title` | Human-readable title |
+| `tags` | Set of tags for categorization |
+| `annotations` | MCP ToolAnnotations |
+| `meta` | Custom metadata dictionary |
+
+**Argument-level options** (via `ArgTransform` or `ArgTransformConfig`):
+
+| Option | Description |
+|--------|-------------|
+| `name` | Rename the argument |
+| `description` | New description for the argument |
+| `default` | New default value |
+| `default_factory` | Callable that generates a default (requires `hide=True`) |
+| `hide` | Remove from client-visible schema |
+| `required` | Make an optional argument required |
+| `type` | Change the argument's type |
+| `examples` | Example values for the argument |
+
+### Hiding Arguments
+
+Hide arguments to simplify the interface or inject values the client shouldn't control.
+
+```python
+from fastmcp.tools.tool_transform import ArgTransform
+
+# Hide with a constant value
+transform_args = {
+    "api_key": ArgTransform(hide=True, default="secret-key"),
+}
+
+# Hide with a dynamic value
+import uuid
+transform_args = {
+    "request_id": ArgTransform(hide=True, default_factory=lambda: str(uuid.uuid4())),
+}
+```
+
+Hidden arguments disappear from the tool's schema. The client never sees them, but the underlying function receives the configured value.
+
+<Warning>
+`default_factory` requires `hide=True`. Visible arguments need static defaults that can be represented in JSON Schema.
+</Warning>
+
+### Renaming Arguments
+
+Rename arguments to make them more intuitive for LLMs or match your API conventions.
+
+```python
+from fastmcp.tools import Tool, tool
+from fastmcp.tools.tool_transform import ArgTransform
+
+@tool
+def search(q: str, n: int = 10) -> list[str]:
+    """Search for items."""
+    return []
+
+better_search = Tool.from_tool(
+    search,
+    transform_args={
+        "q": ArgTransform(name="query", description="Search terms"),
+        "n": ArgTransform(name="max_results", description="Maximum results to return"),
+    },
+)
+```
+
+### Custom Transform Functions
+
+For advanced scenarios, provide a `transform_fn` that intercepts tool execution. The function can validate inputs, modify outputs, or add custom logic while still calling the original tool via `forward()`.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.tools import Tool, tool
+from fastmcp.tools.tool_transform import forward, ArgTransform
+
+@tool
+def divide(a: float, b: float) -> float:
+    """Divide a by b."""
+    return a / b
+
+async def safe_divide(numerator: float, denominator: float) -> float:
+    if denominator == 0:
+        raise ValueError("Cannot divide by zero")
+    return await forward(numerator=numerator, denominator=denominator)
+
+safe_division = Tool.from_tool(
+    divide,
+    name="safe_divide",
+    transform_fn=safe_divide,
+    transform_args={
+        "a": ArgTransform(name="numerator"),
+        "b": ArgTransform(name="denominator"),
+    },
+)
+
+mcp = FastMCP("Server")
+mcp.add_tool(safe_division)
+```
+
+The `forward()` function handles argument mapping automatically. Call it with the transformed argument names, and it maps them back to the original function's parameters.
+
+For direct access to the original function without mapping, use `forward_raw()` with the original parameter names.
+
+## Server vs Provider Transforms
+
+Transforms can be added at two levels, each serving different purposes.
+
+### Provider-Level Transforms
+
+Provider transforms apply to components from a specific provider. They run first, modifying components before they reach the server level.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers import FastMCPProvider
+from fastmcp.server.transforms import Namespace, ToolTransform
+from fastmcp.tools.tool_transform import ToolTransformConfig
+
+sub_server = FastMCP("Sub")
+
+@sub_server.tool
+def process(data: str) -> str:
+    return f"Processed: {data}"
+
+# Create provider and add transforms
+provider = FastMCPProvider(sub_server)
+provider.add_transform(Namespace("api"))
+provider.add_transform(ToolTransform({
+    "api_process": ToolTransformConfig(description="Process data through the API"),
+}))
+
+main = FastMCP("Main", providers=[provider])
+# Tool is now: api_process with updated description
+```
+
+When using `mount()`, the returned provider reference lets you add transforms directly.
+
+```python
+main = FastMCP("Main")
+mount = main.mount(sub_server, namespace="api")
+mount.add_transform(ToolTransform({...}))
+```
+
+### Server-Level Transforms
+
+Server transforms apply to all components from all providers. They run after provider transforms, seeing the already-transformed names.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms import Namespace
+
+mcp = FastMCP("Server")
+
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+mcp.add_transform(Namespace("v1"))
+
+# All tools become v1_toolname
+```
+
+Server-level transforms are useful for API versioning or applying consistent naming across your entire server.
+
+### Transform Order
+
+Transforms stack in the order they're added. The first transform added is innermost (closest to the provider), and subsequent transforms wrap it.
+
+```python
+from fastmcp.server.providers import FastMCPProvider
+from fastmcp.server.transforms import Namespace, ToolTransform
+from fastmcp.tools.tool_transform import ToolTransformConfig
+
+provider = FastMCPProvider(server)
+provider.add_transform(Namespace("api"))           # Applied first
+provider.add_transform(ToolTransform({             # Sees namespaced names
+    "api_verbose_name": ToolTransformConfig(name="short"),
+}))
+
+# Flow: "verbose_name" -> "api_verbose_name" -> "short"
+```
+
+When a client requests "short", the transforms reverse the mapping: ToolTransform maps "short" to "api_verbose_name", then Namespace strips the prefix to find "verbose_name" in the provider.
+
+## Custom Transforms
+
+Create custom transforms by subclassing `Transform` and overriding the methods you need.
+
+```python
+from collections.abc import Sequence
+from fastmcp.server.transforms import Transform, ListToolsNext, GetToolNext
+from fastmcp.tools.tool import Tool
+
+class TagFilter(Transform):
+    """Filter tools to only those with specific tags."""
+
+    def __init__(self, required_tags: set[str]):
+        self.required_tags = required_tags
+
+    async def list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]:
+        tools = await call_next()
+        return [t for t in tools if t.tags & self.required_tags]
+
+    async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:
+        tool = await call_next(name)
+        if tool and tool.tags & self.required_tags:
+            return tool
+        return None
+```
+
+The `Transform` base class provides default implementations that pass through unchanged. Override only the methods relevant to your transform.
+
+Each component type has two methods:
+
+| Method | Purpose |
+|--------|---------|
+| `list_tools(call_next)` | Transform the list of all tools |
+| `get_tool(name, call_next)` | Transform lookup by name |
+| `list_resources(call_next)` | Transform the list of all resources |
+| `get_resource(uri, call_next)` | Transform lookup by URI |
+| `list_resource_templates(call_next)` | Transform the list of all templates |
+| `get_resource_template(uri, call_next)` | Transform template lookup by URI |
+| `list_prompts(call_next)` | Transform the list of all prompts |
+| `get_prompt(name, call_next)` | Transform lookup by name |
+
+For get methods that change names, you must implement the reverse mapping. When a client requests "new_name", your transform maps it back to "original_name" before calling `call_next()`.
+
+```python
+class PrefixTransform(Transform):
+    def __init__(self, prefix: str):
+        self.prefix = prefix
+
+    async def list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]:
+        tools = await call_next()
+        return [t.model_copy(update={"name": f"{self.prefix}_{t.name}"}) for t in tools]
+
+    async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:
+        # Reverse the prefix to find the original
+        if not name.startswith(f"{self.prefix}_"):
+            return None
+        original = name[len(self.prefix) + 1:]
+        tool = await call_next(original)
+        if tool:
+            return tool.model_copy(update={"name": name})
+        return None
+```

@@ -9,8 +9,9 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, SSETransport
 from fastmcp.exceptions import NotFoundError
-from fastmcp.server.providers import FastMCPProvider, TransformingProvider
+from fastmcp.server.providers import FastMCPProvider
 from fastmcp.server.providers.proxy import FastMCPProxy
+from fastmcp.server.transforms import Namespace
 from fastmcp.tools.tool import Tool
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.tests import caplog_for_fastmcp
@@ -303,16 +304,18 @@ class TestMultipleServerMount:
                 prompt_names = [prompt.name for prompt in prompts]
                 assert "working_working_prompt" in prompt_names
 
-        # Verify that errors were logged for the unreachable provider
-        error_messages = [
-            record.message for record in caplog.records if record.levelname == "ERROR"
+        # Verify that errors were logged for the unreachable provider (at DEBUG level)
+        debug_messages = [
+            record.message for record in caplog.records if record.levelname == "DEBUG"
         ]
-        assert any("Error listing tools from provider" in msg for msg in error_messages)
         assert any(
-            "Error listing resources from provider" in msg for msg in error_messages
+            "Error during list_tools from provider" in msg for msg in debug_messages
         )
         assert any(
-            "Error listing prompts from provider" in msg for msg in error_messages
+            "Error during list_resources from provider" in msg for msg in debug_messages
+        )
+        assert any(
+            "Error during list_prompts from provider" in msg for msg in debug_messages
         )
 
 
@@ -833,10 +836,11 @@ class TestAsProxyKwarg:
         mcp.mount(sub, "sub")
         # Index 1 because LocalProvider is at index 0
         provider = mcp._providers[1]
-        # With namespace, we get TransformingProvider wrapping FastMCPProvider
-        assert isinstance(provider, TransformingProvider)
-        assert isinstance(provider._wrapped, FastMCPProvider)
-        assert provider._wrapped.server is sub
+        # With namespace, we get FastMCPProvider with a Namespace layer
+        assert isinstance(provider, FastMCPProvider)
+        assert len(provider._transforms) == 2  # Visibility + Namespace
+        assert isinstance(provider._transforms[1], Namespace)
+        assert provider.server is sub
 
     async def test_as_proxy_false(self):
         mcp = FastMCP("Main")
@@ -846,10 +850,11 @@ class TestAsProxyKwarg:
 
         # Index 1 because LocalProvider is at index 0
         provider = mcp._providers[1]
-        # With namespace, we get TransformingProvider wrapping FastMCPProvider
-        assert isinstance(provider, TransformingProvider)
-        assert isinstance(provider._wrapped, FastMCPProvider)
-        assert provider._wrapped.server is sub
+        # With namespace, we get FastMCPProvider with a Namespace layer
+        assert isinstance(provider, FastMCPProvider)
+        assert len(provider._transforms) == 2  # Visibility + Namespace
+        assert isinstance(provider._transforms[1], Namespace)
+        assert provider.server is sub
 
     async def test_as_proxy_true(self):
         mcp = FastMCP("Main")
@@ -859,11 +864,12 @@ class TestAsProxyKwarg:
 
         # Index 1 because LocalProvider is at index 0
         provider = mcp._providers[1]
-        # With namespace, we get TransformingProvider wrapping FastMCPProvider
-        assert isinstance(provider, TransformingProvider)
-        assert isinstance(provider._wrapped, FastMCPProvider)
-        assert provider._wrapped.server is not sub
-        assert isinstance(provider._wrapped.server, FastMCPProxy)
+        # With namespace, we get FastMCPProvider with a Namespace layer
+        assert isinstance(provider, FastMCPProvider)
+        assert len(provider._transforms) == 2  # Visibility + Namespace
+        assert isinstance(provider._transforms[1], Namespace)
+        assert provider.server is not sub
+        assert isinstance(provider.server, FastMCPProxy)
 
     async def test_lifespan_server_mounted_directly(self):
         """Test that servers with lifespan are mounted directly (not auto-proxied).
@@ -884,9 +890,10 @@ class TestAsProxyKwarg:
         # Server should be mounted directly without auto-proxying
         # Index 1 because LocalProvider is at index 0
         provider = mcp._providers[1]
-        assert isinstance(provider, TransformingProvider)
-        assert isinstance(provider._wrapped, FastMCPProvider)
-        assert provider._wrapped.server is sub
+        assert isinstance(provider, FastMCPProvider)
+        assert len(provider._transforms) == 2  # Visibility + Namespace
+        assert isinstance(provider._transforms[1], Namespace)
+        assert provider.server is sub
 
     async def test_as_proxy_ignored_for_proxy_mounts_default(self):
         mcp = FastMCP("Main")
@@ -897,9 +904,10 @@ class TestAsProxyKwarg:
 
         # Index 1 because LocalProvider is at index 0
         provider = mcp._providers[1]
-        assert isinstance(provider, TransformingProvider)
-        assert isinstance(provider._wrapped, FastMCPProvider)
-        assert provider._wrapped.server is sub_proxy
+        assert isinstance(provider, FastMCPProvider)
+        assert len(provider._transforms) == 2  # Visibility + Namespace
+        assert isinstance(provider._transforms[1], Namespace)
+        assert provider.server is sub_proxy
 
     async def test_as_proxy_ignored_for_proxy_mounts_false(self):
         mcp = FastMCP("Main")
@@ -910,9 +918,10 @@ class TestAsProxyKwarg:
 
         # Index 1 because LocalProvider is at index 0
         provider = mcp._providers[1]
-        assert isinstance(provider, TransformingProvider)
-        assert isinstance(provider._wrapped, FastMCPProvider)
-        assert provider._wrapped.server is sub_proxy
+        assert isinstance(provider, FastMCPProvider)
+        assert len(provider._transforms) == 2  # Visibility + Namespace
+        assert isinstance(provider._transforms[1], Namespace)
+        assert provider.server is sub_proxy
 
     async def test_as_proxy_ignored_for_proxy_mounts_true(self):
         mcp = FastMCP("Main")
@@ -923,9 +932,10 @@ class TestAsProxyKwarg:
 
         # Index 1 because LocalProvider is at index 0
         provider = mcp._providers[1]
-        assert isinstance(provider, TransformingProvider)
-        assert isinstance(provider._wrapped, FastMCPProvider)
-        assert provider._wrapped.server is sub_proxy
+        assert isinstance(provider, FastMCPProvider)
+        assert len(provider._transforms) == 2  # Visibility + Namespace
+        assert isinstance(provider._transforms[1], Namespace)
+        assert provider.server is sub_proxy
 
     async def test_as_proxy_mounts_still_have_live_link(self):
         mcp = FastMCP("Main")
@@ -1158,19 +1168,21 @@ class TestCustomRouteForwarding:
         assert len(main_server._providers) == 2
         # LocalProvider is at index 0, mounted provider at index 1
         provider1 = main_server._providers[1]
-        assert isinstance(provider1, TransformingProvider)
-        assert isinstance(provider1._wrapped, FastMCPProvider)
-        assert provider1._wrapped.server == sub_server1
-        assert provider1.namespace == "sub1"
+        assert isinstance(provider1, FastMCPProvider)
+        assert len(provider1._transforms) == 2  # Visibility + Namespace
+        assert isinstance(provider1._transforms[1], Namespace)
+        assert provider1.server == sub_server1
+        assert provider1._transforms[1]._prefix == "sub1"
 
         # Mount second server
         main_server.mount(sub_server2, "sub2")
         assert len(main_server._providers) == 3
         provider2 = main_server._providers[2]
-        assert isinstance(provider2, TransformingProvider)
-        assert isinstance(provider2._wrapped, FastMCPProvider)
-        assert provider2._wrapped.server == sub_server2
-        assert provider2.namespace == "sub2"
+        assert isinstance(provider2, FastMCPProvider)
+        assert len(provider2._transforms) == 2  # Visibility + Namespace
+        assert isinstance(provider2._transforms[1], Namespace)
+        assert provider2.server == sub_server2
+        assert provider2._transforms[1]._prefix == "sub2"
 
     async def test_multiple_routes_same_server(self):
         """Test that multiple custom routes from same server are all included."""
@@ -1334,11 +1346,11 @@ class TestToolNameOverrides:
     """Test tool and prompt name overrides in mount() (issue #2596)."""
 
     async def test_tool_names_override_via_transforms(self):
-        """Test that tool_names renames tools via TransformingProvider.
+        """Test that tool_names renames tools via ToolTransform layer.
 
-        With TransformingProvider, tool_renames are applied to the original name
-        and bypass namespace prefixing. Both server introspection and client-facing
-        API show the transformed names consistently.
+        Tool renames are applied via ToolTransform and bypass namespace prefixing.
+        Both server introspection and client-facing API show the transformed names
+        consistently.
         """
         sub = FastMCP("Sub")
 

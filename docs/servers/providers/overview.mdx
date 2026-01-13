@@ -38,9 +38,21 @@ FastMCP includes providers for common patterns:
 | `LocalProvider` | Stores components you define in code | `@mcp.tool`, `mcp.add_tool()` |
 | `FastMCPProvider` | Wraps another FastMCP server | `mcp.mount(server)` |
 | `ProxyProvider` | Connects to remote MCP servers | `create_proxy(client)` |
-| `TransformingProvider` | Adds prefixes to avoid name collisions | `mcp.mount(server, namespace="api")` |
 
 Most users only interact with `LocalProvider` (through decorators) and occasionally mount or proxy other servers. The provider abstraction stays invisible until you need it.
+
+## Transforms
+
+[Transforms](/servers/providers/transforms) modify components as they flow from providers to clients. Each transform sits in a chain, intercepting queries and modifying results before passing them along.
+
+| Transform | Purpose |
+|-----------|---------|
+| `Namespace` | Prefixes names to avoid conflicts |
+| `ToolTransform` | Modifies tool schemas (rename, description, arguments) |
+
+The most common use is namespacing mounted servers to prevent name collisions. When you call `mount(server, namespace="api")`, FastMCP creates a `Namespace` transform automatically.
+
+Transforms can be added to individual providers (affecting just that source) or to the server itself (affecting all components). See [Transforms](/servers/providers/transforms) for the full picture.
 
 ## Provider Order
 
@@ -55,13 +67,14 @@ When a client requests a tool, FastMCP queries providers in registration order. 
 **Learn about providers when** you want to:
 - [Mount another server](/servers/providers/mounting) into yours
 - [Proxy a remote server](/servers/providers/proxy) through yours
-- [Control visibility](/servers/providers/local#visibility-control) of components
+- [Control visibility](/servers/visibility) of components
 - [Build dynamic sources](/servers/providers/custom) like database-backed tools
 
 ## Next Steps
 
-- [Local](/servers/providers/local) - How decorators and visibility control work
+- [Local](/servers/providers/local) - How decorators work
 - [Mounting](/servers/providers/mounting) - Compose servers together
 - [Proxying](/servers/providers/proxy) - Connect to remote servers
-- [Namespacing](/servers/providers/namespacing) - Avoid name collisions
+- [Transforms](/servers/providers/transforms) - Namespace, rename, and modify components
+- [Visibility](/servers/visibility) - Control which components clients can see
 - [Custom](/servers/providers/custom) - Build your own providers
