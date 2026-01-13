@@ -121,6 +121,10 @@ class ClientTransport(abc.ABC):
     async def close(self):  # noqa: B027
         """Close the transport."""
 
+    def get_session_id(self) -> str | None:
+        """Get the session ID for this transport, if available."""
+        return None
+
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
         if auth is not None:
             raise ValueError("This transport does not support auth")

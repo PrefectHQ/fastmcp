@@ -315,6 +315,12 @@ class ResourceTemplate(FastMCPComponent):
             kwargs["key"] = task_key
         return await docket.add(lookup_key, **kwargs)(params)
 
+    def get_span_attributes(self) -> dict[str, Any]:
+        return super().get_span_attributes() | {
+            "fastmcp.component.type": "resource_template",
+            "fastmcp.provider.type": "LocalProvider",
+        }
+
 
 class FunctionResourceTemplate(ResourceTemplate):
     """A template for dynamically creating resources."""

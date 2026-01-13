@@ -84,6 +84,7 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
+from fastmcp.server.telemetry import server_span
 from fastmcp.server.transforms import (
     Namespace,
     ToolTransform,
@@ -158,6 +159,7 @@ Transport = Literal["stdio", "http", "sse", "streamable-http"]
 
 # Compiled URI parsing regex to split a URI into protocol and path components
 URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
+
 
 LifespanCallable = Callable[
     ["FastMCP[LifespanResultT]"], AbstractAsyncContextManager[LifespanResultT]
@@ -1470,23 +1472,26 @@ class FastMCP(Generic[LifespanResultT]):
                 )
 
             # Core logic: find and execute tool (providers queried in parallel)
-            tool = await self.get_tool(name)
-            # Set fn_key for background task routing
-            if task_meta is not None and task_meta.fn_key is None:
-                task_meta = replace(task_meta, fn_key=tool.key)
-            try:
-                return await tool._run(arguments or {}, task_meta=task_meta)
-            except FastMCPError:
-                logger.exception(f"Error calling tool {name!r}")
-                raise
-            except (ValidationError, PydanticValidationError):
-                logger.exception(f"Error validating tool {name!r}")
-                raise
-            except Exception as e:
-                logger.exception(f"Error calling tool {name!r}")
-                if self._mask_error_details:
-                    raise ToolError(f"Error calling tool {name!r}") from e
-                raise ToolError(f"Error calling tool {name!r}: {e}") from e
+            with server_span(
+                f"tool {name}", "tools/call", self.name, "tool", name
+            ) as span:
+                tool = await self.get_tool(name)
+                span.set_attributes(tool.get_span_attributes())
+                if task_meta is not None and task_meta.fn_key is None:
+                    task_meta = replace(task_meta, fn_key=tool.key)
+                try:
+                    return await tool._run(arguments or {}, task_meta=task_meta)
+                except FastMCPError:
+                    logger.exception(f"Error calling tool {name!r}")
+                    raise
+                except (ValidationError, PydanticValidationError):
+                    logger.exception(f"Error validating tool {name!r}")
+                    raise
+                except Exception as e:
+                    logger.exception(f"Error calling tool {name!r}")
+                    if self._mask_error_details:
+                        raise ToolError(f"Error calling tool {name!r}") from e
+                    raise ToolError(f"Error calling tool {name!r}: {e}") from e
 
     @overload
     async def read_resource(
@@ -1561,44 +1566,47 @@ class FastMCP(Generic[LifespanResultT]):
                 )
 
             # Core logic: find and read resource (providers queried in parallel)
-            # Try concrete resources first
-            try:
-                resource = await self.get_resource(uri)
-                # Set fn_key for background task routing
-                if task_meta is not None and task_meta.fn_key is None:
-                    task_meta = replace(task_meta, fn_key=resource.key)
-                return await resource._read(task_meta=task_meta)
-            except NotFoundError:
-                pass  # Fall through to try templates
-            except (FastMCPError, McpError):
-                logger.exception(f"Error reading resource {uri!r}")
-                raise
-            except Exception as e:
-                logger.exception(f"Error reading resource {uri!r}")
-                if self._mask_error_details:
-                    raise ResourceError(f"Error reading resource {uri!r}") from e
-                raise ResourceError(f"Error reading resource {uri!r}: {e}") from e
+            with server_span(
+                f"resource {uri}", "resources/read", self.name, "resource", uri
+            ) as span:
+                # Try concrete resources first
+                try:
+                    resource = await self.get_resource(uri)
+                    span.set_attributes(resource.get_span_attributes())
+                    if task_meta is not None and task_meta.fn_key is None:
+                        task_meta = replace(task_meta, fn_key=resource.key)
+                    return await resource._read(task_meta=task_meta)
+                except NotFoundError:
+                    pass  # Fall through to try templates
+                except (FastMCPError, McpError):
+                    logger.exception(f"Error reading resource {uri!r}")
+                    raise
+                except Exception as e:
+                    logger.exception(f"Error reading resource {uri!r}")
+                    if self._mask_error_details:
+                        raise ResourceError(f"Error reading resource {uri!r}") from e
+                    raise ResourceError(f"Error reading resource {uri!r}: {e}") from e
 
-            # Try templates
-            try:
-                template = await self.get_resource_template(uri)
-            except NotFoundError:
-                raise NotFoundError(f"Unknown resource: {uri!r}") from None
-            params = template.matches(uri)
-            assert params is not None  # get_resource_template already verified match
-            # Set fn_key for background task routing
-            if task_meta is not None and task_meta.fn_key is None:
-                task_meta = replace(task_meta, fn_key=template.key)
-            try:
-                return await template._read(uri, params, task_meta=task_meta)
-            except (FastMCPError, McpError):
-                logger.exception(f"Error reading resource {uri!r}")
-                raise
-            except Exception as e:
-                logger.exception(f"Error reading resource {uri!r}")
-                if self._mask_error_details:
-                    raise ResourceError(f"Error reading resource {uri!r}") from e
-                raise ResourceError(f"Error reading resource {uri!r}: {e}") from e
+                # Try templates
+                try:
+                    template = await self.get_resource_template(uri)
+                except NotFoundError:
+                    raise NotFoundError(f"Unknown resource: {uri!r}") from None
+                span.set_attributes(template.get_span_attributes())
+                params = template.matches(uri)
+                assert params is not None
+                if task_meta is not None and task_meta.fn_key is None:
+                    task_meta = replace(task_meta, fn_key=template.key)
+                try:
+                    return await template._read(uri, params, task_meta=task_meta)
+                except (FastMCPError, McpError):
+                    logger.exception(f"Error reading resource {uri!r}")
+                    raise
+                except Exception as e:
+                    logger.exception(f"Error reading resource {uri!r}")
+                    if self._mask_error_details:
+                        raise ResourceError(f"Error reading resource {uri!r}") from e
+                    raise ResourceError(f"Error reading resource {uri!r}: {e}") from e
 
     @overload
     async def render_prompt(
@@ -1672,20 +1680,23 @@ class FastMCP(Generic[LifespanResultT]):
                 )
 
             # Core logic: find and render prompt (providers queried in parallel)
-            prompt = await self.get_prompt(name)
-            # Set fn_key for background task routing
-            if task_meta is not None and task_meta.fn_key is None:
-                task_meta = replace(task_meta, fn_key=prompt.key)
-            try:
-                return await prompt._render(arguments, task_meta=task_meta)
-            except (FastMCPError, McpError):
-                logger.exception(f"Error rendering prompt {name!r}")
-                raise
-            except Exception as e:
-                logger.exception(f"Error rendering prompt {name!r}")
-                if self._mask_error_details:
-                    raise PromptError(f"Error rendering prompt {name!r}") from e
-                raise PromptError(f"Error rendering prompt {name!r}: {e}") from e
+            with server_span(
+                f"prompt {name}", "prompts/get", self.name, "prompt", name
+            ) as span:
+                prompt = await self.get_prompt(name)
+                span.set_attributes(prompt.get_span_attributes())
+                if task_meta is not None and task_meta.fn_key is None:
+                    task_meta = replace(task_meta, fn_key=prompt.key)
+                try:
+                    return await prompt._render(arguments, task_meta=task_meta)
+                except (FastMCPError, McpError):
+                    logger.exception(f"Error rendering prompt {name!r}")
+                    raise
+                except Exception as e:
+                    logger.exception(f"Error rendering prompt {name!r}")
+                    if self._mask_error_details:
+                        raise PromptError(f"Error rendering prompt {name!r}") from e
+                    raise PromptError(f"Error rendering prompt {name!r}: {e}") from e
 
     def custom_route(
         self,
