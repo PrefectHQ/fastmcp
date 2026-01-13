@@ -159,9 +159,28 @@ def greet(name: str) -> str:
 The SDK must be configured **before** importing FastMCP to ensure the tracer provider is set when FastMCP initializes.
 </Tip>
 
-### Local Development with Jaeger
+### Local Development
 
-For local trace visualization, run Jaeger:
+For quick local trace visualization, [otel-desktop-viewer](https://github.com/CtrlSpice/otel-desktop-viewer) is a lightweight single-binary tool:
+
+```bash
+# macOS
+brew install nico-barbas/brew/otel-desktop-viewer
+
+# Or download from GitHub releases
+```
+
+Run it alongside your server:
+
+```bash
+# Terminal 1: Start the viewer (UI at http://localhost:8000, OTLP on :4317)
+otel-desktop-viewer
+
+# Terminal 2: Run your server with tracing
+opentelemetry-instrument fastmcp run server.py
+```
+
+For more features, use [Jaeger](https://www.jaegertracing.io/):
 
 ```bash
 docker run -d --name jaeger \
