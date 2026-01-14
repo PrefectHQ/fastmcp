@@ -565,8 +565,10 @@ async def test_multi_client_with_logging(tmp_path: Path, caplog):
         assert len(MESSAGES) == 1
         assert MESSAGES[0].data["msg"] == "test 42"
 
-        assert len(caplog.records) == 1
-        assert caplog.records[0].msg == "test 42"
+        # Filter to only our test logger (exclude OpenTelemetry internal logs)
+        test_records = [r for r in caplog.records if r.name == __name__]
+        assert len(test_records) == 1
+        assert test_records[0].msg == "test 42"
 
 
 async def test_multi_client_with_transforms(tmp_path: Path):

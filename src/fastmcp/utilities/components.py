@@ -182,3 +182,10 @@ class FastMCPComponent(FastMCPBaseModel):
         raise NotImplementedError(
             f"{self.__class__.__name__} does not implement add_to_docket()"
         )
+
+    def get_span_attributes(self) -> dict[str, Any]:
+        """Return span attributes for telemetry.
+
+        Subclasses should call super() and merge their specific attributes.
+        """
+        return {"fastmcp.component.key": self.key}

@@ -394,6 +394,12 @@ class Tool(FastMCPComponent):
             meta=meta,
         )
 
+    def get_span_attributes(self) -> dict[str, Any]:
+        return super().get_span_attributes() | {
+            "fastmcp.component.type": "tool",
+            "fastmcp.provider.type": "LocalProvider",
+        }
+
 
 def _serialize_with_fallback(
     result: Any, serializer: ToolResultSerializerType | None = None

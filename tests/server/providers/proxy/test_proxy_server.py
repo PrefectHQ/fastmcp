@@ -214,7 +214,9 @@ async def test_proxy_with_async_client_factory():
     proxy = FastMCPProxy(client_factory=async_factory)
     assert isinstance(proxy, FastMCPProxy)
     assert inspect.iscoroutinefunction(proxy.client_factory)
-    client = await proxy.client_factory()
+    client = proxy.client_factory()
+    if inspect.isawaitable(client):
+        client = await client
     assert isinstance(client, Client)
     assert isinstance(client.transport, StreamableHttpTransport)
     assert client.transport.url == "http://example.com/mcp/"

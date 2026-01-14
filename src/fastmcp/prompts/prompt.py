@@ -392,6 +392,12 @@ class Prompt(FastMCPComponent):
             kwargs["key"] = task_key
         return await docket.add(lookup_key, **kwargs)(arguments)
 
+    def get_span_attributes(self) -> dict[str, Any]:
+        return super().get_span_attributes() | {
+            "fastmcp.component.type": "prompt",
+            "fastmcp.provider.type": "LocalProvider",
+        }
+
 
 __all__ = [
     "Message",

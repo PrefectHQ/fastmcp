@@ -9,6 +9,7 @@ dependencies = [
     "httpx>=0.28.1",
     "mcp>=1.24.0,<2.0",
     "openapi-pydantic>=0.5.1",
+    "opentelemetry-api>=1.20.0",
     "platformdirs>=4.0.0",
     "rich>=13.9.4",
     "cyclopts>=4.0.0",
@@ -58,6 +59,7 @@ dev = [
     "fastmcp[anthropic,openai,tasks]",
     # add optional dependencies for fastmcp dev
     "fastapi>=0.115.12",
+    "opentelemetry-sdk>=1.20.0",
     "inline-snapshot[dirty-equals]>=0.27.2",
     "ipython>=8.12.3",
     "pdbpp>=0.11.7",
@@ -78,6 +80,7 @@ dev = [
     "ty>=0.0.7",
     "prek>=0.2.12",
     "loq>=0.1.0a3",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
 ]
 
 [project.scripts]

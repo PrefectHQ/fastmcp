@@ -24,6 +24,7 @@ from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.tasks.config import TaskMeta
+from fastmcp.server.telemetry import delegate_span
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.components import FastMCPComponent
 
@@ -111,9 +112,12 @@ class FastMCPProviderTool(Tool):
         backgrounding appropriately. fn_key is already set by the parent
         server before calling this method.
         """
-        return await self._server.call_tool(
-            self._original_name, arguments, task_meta=task_meta
-        )
+        with delegate_span(
+            self._original_name or "", "FastMCPProvider", self._original_name or ""
+        ):
+            return await self._server.call_tool(
+                self._original_name, arguments, task_meta=task_meta
+            )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Delegate to child server's call_tool() without task_meta.
@@ -128,6 +132,12 @@ class FastMCPProviderTool(Tool):
                 "Unexpected CreateTaskResult from call_tool without task_meta"
             )
         return result
+
+    def get_span_attributes(self) -> dict[str, Any]:
+        return super().get_span_attributes() | {
+            "fastmcp.provider.type": "FastMCPProvider",
+            "fastmcp.delegate.original_name": self._original_name,
+        }
 
 
 class FastMCPProviderResource(Resource):
@@ -180,7 +190,18 @@ class FastMCPProviderResource(Resource):
         backgrounding appropriately. fn_key is already set by the parent
         server before calling this method.
         """
-        return await self._server.read_resource(self._original_uri, task_meta=task_meta)
+        with delegate_span(
+            self._original_uri or "", "FastMCPProvider", self._original_uri or ""
+        ):
+            return await self._server.read_resource(
+                self._original_uri, task_meta=task_meta
+            )
+
+    def get_span_attributes(self) -> dict[str, Any]:
+        return super().get_span_attributes() | {
+            "fastmcp.provider.type": "FastMCPProvider",
+            "fastmcp.delegate.original_uri": self._original_uri,
+        }
 
 
 class FastMCPProviderPrompt(Prompt):
@@ -241,9 +262,12 @@ class FastMCPProviderPrompt(Prompt):
         backgrounding appropriately. fn_key is already set by the parent
         server before calling this method.
         """
-        return await self._server.render_prompt(
-            self._original_name, arguments, task_meta=task_meta
-        )
+        with delegate_span(
+            self._original_name or "", "FastMCPProvider", self._original_name or ""
+        ):
+            return await self._server.render_prompt(
+                self._original_name, arguments, task_meta=task_meta
+            )
 
     async def render(self, arguments: dict[str, Any] | None = None) -> PromptResult:
         """Delegate to child server's render_prompt() without task_meta.
@@ -258,6 +282,12 @@ class FastMCPProviderPrompt(Prompt):
                 "Unexpected CreateTaskResult from render_prompt without task_meta"
             )
         return result
+
+    def get_span_attributes(self) -> dict[str, Any]:
+        return super().get_span_attributes() | {
+            "fastmcp.provider.type": "FastMCPProvider",
+            "fastmcp.delegate.original_name": self._original_name,
+        }
 
 
 class FastMCPProviderResourceTemplate(ResourceTemplate):
@@ -339,7 +369,10 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         # Expand the original template with params to get internal URI
         original_uri = _expand_uri_template(self._original_uri_template or "", params)
 
-        return await self._server.read_resource(original_uri, task_meta=task_meta)
+        with delegate_span(
+            original_uri, "FastMCPProvider", self._original_uri_template or ""
+        ):
+            return await self._server.read_resource(original_uri, task_meta=task_meta)
 
     async def read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult:
         """Read the resource content for background task execution.
@@ -380,6 +413,12 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         if task_key:
             kwargs["key"] = task_key
         return await docket.add(lookup_key, **kwargs)(**params)
+
+    def get_span_attributes(self) -> dict[str, Any]:
+        return super().get_span_attributes() | {
+            "fastmcp.provider.type": "FastMCPProvider",
+            "fastmcp.delegate.original_uri_template": self._original_uri_template,
+        }
 
 
 # -----------------------------------------------------------------------------

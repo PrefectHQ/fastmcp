@@ -1,11 +1,15 @@
 import asyncio
 import socket
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
 import pytest
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fastmcp.utilities.tests import temporary_settings
 
@@ -81,3 +85,29 @@ def free_port_factory(worker_id):
                     return port
 
     return get_port
+
+
+@pytest.fixture(scope="session")
+def otel_trace_provider() -> Generator[
+    tuple[TracerProvider, InMemorySpanExporter], None, None
+]:
+    """Configure OTEL SDK with in-memory span exporter for testing.
+
+    Session-scoped because TracerProvider can only be set once per process.
+    """
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+    yield provider, exporter
+
+
+@pytest.fixture
+def trace_exporter(
+    otel_trace_provider: tuple[TracerProvider, InMemorySpanExporter],
+) -> Generator[InMemorySpanExporter, None, None]:
+    """Get the span exporter and clear it between tests."""
+    _, exporter = otel_trace_provider
+    exporter.clear()
+    yield exporter
+    exporter.clear()

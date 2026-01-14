@@ -409,6 +409,12 @@ class Resource(FastMCPComponent):
             kwargs["key"] = task_key
         return await docket.add(lookup_key, **kwargs)()
 
+    def get_span_attributes(self) -> dict[str, Any]:
+        return super().get_span_attributes() | {
+            "fastmcp.component.type": "resource",
+            "fastmcp.provider.type": "LocalProvider",
+        }
+
 
 __all__ = [
     "Resource",

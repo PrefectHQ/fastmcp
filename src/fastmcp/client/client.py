@@ -57,9 +57,11 @@ from fastmcp.client.tasks import (
     TaskNotificationHandler,
     ToolTask,
 )
+from fastmcp.client.telemetry import client_span
 from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.server import FastMCP
+from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.exceptions import get_catch_handlers
 from fastmcp.utilities.json_schema_type import json_schema_to_type
 from fastmcp.utilities.logging import get_logger
@@ -877,33 +879,42 @@ class Client(Generic[ClientTransportT]):
             RuntimeError: If called while the client is not connected.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        logger.debug(f"[{self.name}] called read_resource: {uri}")
+        uri_str = str(uri)
+        with client_span(
+            f"resource {uri_str}",
+            "resources/read",
+            uri_str,
+            session_id=self.transport.get_session_id(),
+        ):
+            logger.debug(f"[{self.name}] called read_resource: {uri}")
 
-        if isinstance(uri, str):
-            uri = AnyUrl(uri)  # Ensure AnyUrl
+            if isinstance(uri, str):
+                uri = AnyUrl(uri)  # Ensure AnyUrl
 
-        # If meta provided, use send_request for SEP-1686 task support
-        if meta:
-            task_dict = meta.get("modelcontextprotocol.io/task")
-            request = mcp.types.ReadResourceRequest(
-                params=mcp.types.ReadResourceRequestParams(
-                    uri=uri,
-                    task=mcp.types.TaskMetadata(**task_dict)
-                    if task_dict
-                    else None,  # SEP-1686: task as direct param (spec-compliant)
+            # Inject trace context into meta for propagation to server
+            propagated_meta = inject_trace_context(meta)
+
+            # If meta provided, use send_request for SEP-1686 task support
+            if propagated_meta:
+                task_dict = propagated_meta.get("modelcontextprotocol.io/task")
+                request = mcp.types.ReadResourceRequest(
+                    params=mcp.types.ReadResourceRequestParams(
+                        uri=uri,
+                        task=mcp.types.TaskMetadata(**task_dict) if task_dict else None,
+                        _meta=propagated_meta,  # ty: ignore[unknown-argument]
+                    )
                 )
-            )
-            result = await self._await_with_session_monitoring(
-                self.session.send_request(
-                    request=request,  # type: ignore[arg-type]
-                    result_type=mcp.types.ReadResourceResult,
+                result = await self._await_with_session_monitoring(
+                    self.session.send_request(
+                        request=request,  # type: ignore[arg-type]
+                        result_type=mcp.types.ReadResourceResult,
+                    )
                 )
-            )
-        else:
-            result = await self._await_with_session_monitoring(
-                self.session.read_resource(uri)
-            )
-        return result
+            else:
+                result = await self._await_with_session_monitoring(
+                    self.session.read_resource(uri)
+                )
+            return result
 
     @overload
     async def read_resource(
@@ -1089,44 +1100,52 @@ class Client(Generic[ClientTransportT]):
             RuntimeError: If called while the client is not connected.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        logger.debug(f"[{self.name}] called get_prompt: {name}")
+        with client_span(
+            f"prompt {name}",
+            "prompts/get",
+            name,
+            session_id=self.transport.get_session_id(),
+        ):
+            logger.debug(f"[{self.name}] called get_prompt: {name}")
 
-        # Serialize arguments for MCP protocol - convert non-string values to JSON
-        serialized_arguments: dict[str, str] | None = None
-        if arguments:
-            serialized_arguments = {}
-            for key, value in arguments.items():
-                if isinstance(value, str):
-                    serialized_arguments[key] = value
-                else:
-                    # Use pydantic_core.to_json for consistent serialization
-                    serialized_arguments[key] = pydantic_core.to_json(value).decode(
-                        "utf-8"
+            # Serialize arguments for MCP protocol - convert non-string values to JSON
+            serialized_arguments: dict[str, str] | None = None
+            if arguments:
+                serialized_arguments = {}
+                for key, value in arguments.items():
+                    if isinstance(value, str):
+                        serialized_arguments[key] = value
+                    else:
+                        # Use pydantic_core.to_json for consistent serialization
+                        serialized_arguments[key] = pydantic_core.to_json(value).decode(
+                            "utf-8"
+                        )
+
+            # Inject trace context into meta for propagation to server
+            propagated_meta = inject_trace_context(meta)
+
+            # If meta provided, use send_request for SEP-1686 task support
+            if propagated_meta:
+                task_dict = propagated_meta.get("modelcontextprotocol.io/task")
+                request = mcp.types.GetPromptRequest(
+                    params=mcp.types.GetPromptRequestParams(
+                        name=name,
+                        arguments=serialized_arguments,
+                        task=mcp.types.TaskMetadata(**task_dict) if task_dict else None,
+                        _meta=propagated_meta,  # ty: ignore[unknown-argument]
                     )
-
-        # If meta provided, use send_request for SEP-1686 task support
-        if meta:
-            task_dict = meta.get("modelcontextprotocol.io/task")
-            request = mcp.types.GetPromptRequest(
-                params=mcp.types.GetPromptRequestParams(
-                    name=name,
-                    arguments=serialized_arguments,
-                    task=mcp.types.TaskMetadata(**task_dict)
-                    if task_dict
-                    else None,  # SEP-1686: task as direct param (spec-compliant)
                 )
-            )
-            result = await self._await_with_session_monitoring(
-                self.session.send_request(
-                    request=request,  # type: ignore[arg-type]
-                    result_type=mcp.types.GetPromptResult,
+                result = await self._await_with_session_monitoring(
+                    self.session.send_request(
+                        request=request,  # type: ignore[arg-type]
+                        result_type=mcp.types.GetPromptResult,
+                    )
                 )
-            )
-        else:
-            result = await self._await_with_session_monitoring(
-                self.session.get_prompt(name=name, arguments=serialized_arguments)
-            )
-        return result
+            else:
+                result = await self._await_with_session_monitoring(
+                    self.session.get_prompt(name=name, arguments=serialized_arguments)
+                )
+            return result
 
     @overload
     async def get_prompt(
@@ -1373,22 +1392,31 @@ class Client(Generic[ClientTransportT]):
             RuntimeError: If called while the client is not connected.
             McpError: If the tool call requests results in a TimeoutError | JSONRPCError
         """
-        logger.debug(f"[{self.name}] called call_tool: {name}")
+        with client_span(
+            f"tool {name}",
+            "tools/call",
+            name,
+            session_id=self.transport.get_session_id(),
+        ):
+            logger.debug(f"[{self.name}] called call_tool: {name}")
 
-        # Convert timeout to timedelta if needed
-        if isinstance(timeout, int | float):
-            timeout = datetime.timedelta(seconds=float(timeout))
+            # Convert timeout to timedelta if needed
+            if isinstance(timeout, int | float):
+                timeout = datetime.timedelta(seconds=float(timeout))
 
-        result = await self._await_with_session_monitoring(
-            self.session.call_tool(
-                name=name,
-                arguments=arguments,
-                read_timeout_seconds=timeout,
-                progress_callback=progress_handler or self._progress_handler,
-                meta=meta,
+            # Inject trace context into meta for propagation to server
+            propagated_meta = inject_trace_context(meta)
+
+            result = await self._await_with_session_monitoring(
+                self.session.call_tool(
+                    name=name,
+                    arguments=arguments,
+                    read_timeout_seconds=timeout,
+                    progress_callback=progress_handler or self._progress_handler,
+                    meta=propagated_meta if propagated_meta else None,
+                )
             )
-        )
-        return result
+            return result
 
     async def _parse_call_tool_result(
         self, name: str, result: mcp.types.CallToolResult, raise_on_error: bool = False

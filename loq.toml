@@ -28,7 +28,7 @@ max_lines = 1899
 
 [[rules]]
 path = "tests/server/middleware/test_middleware.py"
-max_lines = 1066
+max_lines = 1250
 
 [[rules]]
 path = "src/fastmcp/server/context.py"
@@ -56,11 +56,11 @@ max_lines = 1056
 
 [[rules]]
 path = "src/fastmcp/server/server.py"
-max_lines = 2942
+max_lines = 3250
 
 [[rules]]
 path = "tests/tools/test_tool.py"
-max_lines = 1923
+max_lines = 2250
 
 [[rules]]
 path = "tests/client/test_elicitation.py"
@@ -68,7 +68,7 @@ max_lines = 1132
 
 [[rules]]
 path = "src/fastmcp/client/client.py"
-max_lines = 1722
+max_lines = 2000
 
 [[rules]]
 path = "tests/utilities/test_json_schema_type.py"
@@ -96,7 +96,7 @@ max_lines = 1101
 
 [[rules]]
 path = "docs/servers/tools.mdx"
-max_lines = 1040
+max_lines = 1200
 
 [[rules]]
 path = "docs/changelog.mdx"
