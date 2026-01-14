@@ -288,7 +288,7 @@ max_lines = 1019
 
 [[rules]]
 path = "src/fastmcp/server/server.py"
-max_lines = 3500
+max_lines = 3000
 
 [[rules]]
 path = "tests/deprecated/test_import_server.py"

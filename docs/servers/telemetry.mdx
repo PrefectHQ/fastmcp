@@ -231,6 +231,7 @@ For testing, use the in-memory exporter:
 
 ```python
 import pytest
+from collections.abc import Generator
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -239,7 +240,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from fastmcp import FastMCP
 
 @pytest.fixture
-def trace_exporter():
+def trace_exporter() -> Generator[InMemorySpanExporter, None, None]:
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
@@ -247,7 +248,7 @@ def trace_exporter():
     yield exporter
     exporter.clear()
 
-async def test_tool_creates_span(trace_exporter):
+async def test_tool_creates_span(trace_exporter: InMemorySpanExporter) -> None:
     mcp = FastMCP("test")
 
     @mcp.tool()

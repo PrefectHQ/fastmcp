@@ -19,7 +19,7 @@ import os
 import sys
 
 
-def main():
+def main() -> None:
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)
@@ -51,7 +51,7 @@ def main():
     # Now run fastmcp CLI
     from fastmcp.cli.cli import app
 
-    sys.argv = ["fastmcp", "run"] + sys.argv[1:]
+    sys.argv = ["fastmcp", "run", *sys.argv[1:]]
     app()
 
 

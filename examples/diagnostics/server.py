@@ -1,8 +1,8 @@
 """FastMCP Diagnostics Server - for testing tracing, errors, and observability."""
 
+import asyncio
 import os
 import subprocess
-import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -43,13 +43,16 @@ async def lifespan(server: FastMCP) -> AsyncIterator[None]:
         stderr=subprocess.PIPE,
     )
 
-    # Wait for server to be ready
-    for _ in range(50):
-        try:
-            httpx.get(f"http://localhost:{ECHO_SERVER_PORT}/sse", timeout=0.1)
-            break
-        except Exception:
-            time.sleep(0.1)
+    # Wait for server to be ready (async to avoid blocking event loop)
+    async with httpx.AsyncClient() as client:
+        for _ in range(50):
+            try:
+                await client.get(
+                    f"http://localhost:{ECHO_SERVER_PORT}/sse", timeout=0.1
+                )
+                break
+            except Exception:
+                await asyncio.sleep(0.1)
 
     # Mount proxy to the running echo server
     echo_proxy = create_proxy(ECHO_SERVER_URL, name="Echo Proxy")
@@ -59,7 +62,11 @@ async def lifespan(server: FastMCP) -> AsyncIterator[None]:
         yield
     finally:
         proc.terminate()
-        proc.wait(timeout=5)
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
 
 mcp = FastMCP("Diagnostics Server", lifespan=lifespan)
