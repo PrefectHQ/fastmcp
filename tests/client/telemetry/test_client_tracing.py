@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind, StatusCode
@@ -474,3 +476,136 @@ class TestClientErrorTracing:
 
         # Server span should have ERROR status
         assert server_span.status.status_code == StatusCode.ERROR
+
+
+class TestSessionIdOnSpans:
+    """Tests for session ID capture on client and server spans.
+
+    Session IDs are only available with HTTP transport (StreamableHttp).
+    """
+
+    @pytest.fixture
+    async def http_server_url(self) -> AsyncGenerator[str, None]:
+        """Start an HTTP server and return its URL."""
+        from fastmcp.utilities.tests import run_server_async
+
+        server = FastMCP("session-test-server")
+
+        @server.tool()
+        def echo(message: str) -> str:
+            return message
+
+        async with run_server_async(server) as url:
+            yield url
+
+    async def test_client_span_includes_session_id(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        http_server_url: str,
+    ):
+        """Client span should include session ID when using HTTP transport."""
+        from fastmcp.client.transports import StreamableHttpTransport
+
+        transport = StreamableHttpTransport(http_server_url)
+        client = Client(transport=transport)
+        async with client:
+            await client.call_tool("echo", {"message": "test"})
+
+        spans = trace_exporter.get_finished_spans()
+
+        # Find client-side span
+        client_span = next(
+            (
+                s
+                for s in spans
+                if s.name == "tool echo"
+                and s.attributes is not None
+                and "fastmcp.server.name" not in s.attributes
+            ),
+            None,
+        )
+
+        assert client_span is not None, "Client should create a span"
+        assert "fastmcp.session.id" in client_span.attributes
+        assert client_span.attributes["fastmcp.session.id"] is not None
+
+    async def test_server_span_includes_session_id(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        http_server_url: str,
+    ):
+        """Server span should include session ID when called via HTTP."""
+        from fastmcp.client.transports import StreamableHttpTransport
+
+        transport = StreamableHttpTransport(http_server_url)
+        client = Client(transport=transport)
+        async with client:
+            await client.call_tool("echo", {"message": "test"})
+
+        spans = trace_exporter.get_finished_spans()
+
+        # Find server-side span
+        server_span = next(
+            (
+                s
+                for s in spans
+                if s.name == "tool echo"
+                and s.attributes is not None
+                and "fastmcp.server.name" in s.attributes
+            ),
+            None,
+        )
+
+        assert server_span is not None, "Server should create a span"
+        assert "fastmcp.session.id" in server_span.attributes
+        assert server_span.attributes["fastmcp.session.id"] is not None
+
+    async def test_client_and_server_share_same_session_id(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        http_server_url: str,
+    ):
+        """Client and server spans should have the same session ID."""
+        from fastmcp.client.transports import StreamableHttpTransport
+
+        transport = StreamableHttpTransport(http_server_url)
+        client = Client(transport=transport)
+        async with client:
+            await client.call_tool("echo", {"message": "test"})
+
+        spans = trace_exporter.get_finished_spans()
+
+        # Find both spans
+        client_span = next(
+            (
+                s
+                for s in spans
+                if s.name == "tool echo"
+                and s.attributes is not None
+                and "fastmcp.server.name" not in s.attributes
+            ),
+            None,
+        )
+        server_span = next(
+            (
+                s
+                for s in spans
+                if s.name == "tool echo"
+                and s.attributes is not None
+                and "fastmcp.server.name" in s.attributes
+            ),
+            None,
+        )
+
+        assert client_span is not None
+        assert server_span is not None
+
+        # Both should have session IDs and they should match
+        client_session = client_span.attributes.get("fastmcp.session.id")
+        server_session = server_span.attributes.get("fastmcp.session.id")
+
+        assert client_session is not None, "Client span should have session ID"
+        assert server_session is not None, "Server span should have session ID"
+        assert client_session == server_session, (
+            "Client and server should share the same session ID"
+        )
