@@ -2382,16 +2382,16 @@ class FastMCP(Generic[LifespanResultT]):
                             f"Starting MCP server {self.name!r} with transport 'stdio'{mode}"
                         )
 
-                    await self._mcp_server.run(
-                        read_stream,
-                        write_stream,
-                        self._mcp_server.create_initialization_options(
-                            notification_options=NotificationOptions(
-                                tools_changed=True
+                        await self._mcp_server.run(
+                            read_stream,
+                            write_stream,
+                            self._mcp_server.create_initialization_options(
+                                notification_options=NotificationOptions(
+                                    tools_changed=True
+                                ),
                             ),
-                        ),
-                        stateless=stateless,
-                    )
+                            stateless=stateless,
+                        )
         finally:
             reset_transport(token)
 
