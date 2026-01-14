@@ -98,6 +98,7 @@ def delegate_span(
     """Create an INTERNAL span for provider delegation.
 
     Used by FastMCPProvider when delegating to mounted servers.
+    Automatically records any exception on the span and sets error status.
     """
     tracer = get_tracer()
     with tracer.start_as_current_span(f"delegate {name}") as span:
@@ -107,7 +108,12 @@ def delegate_span(
                 "fastmcp.component.key": component_key,
             }
         )
-        yield span
+        try:
+            yield span
+        except Exception as e:
+            span.record_exception(e)
+            span.set_status(Status(StatusCode.ERROR))
+            raise
 
 
 __all__ = [

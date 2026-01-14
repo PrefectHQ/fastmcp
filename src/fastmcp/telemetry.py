@@ -24,9 +24,8 @@ Example usage with SDK:
 from typing import Any
 
 from opentelemetry import context as otel_context
-from opentelemetry import propagate
+from opentelemetry import propagate, trace
 from opentelemetry.context import Context
-from opentelemetry.metrics import get_meter as otel_get_meter
 from opentelemetry.trace import Span, Status, StatusCode, Tracer
 from opentelemetry.trace import get_tracer as otel_get_tracer
 
@@ -48,26 +47,17 @@ def get_tracer(version: str | None = None) -> Tracer:
     return otel_get_tracer(INSTRUMENTATION_NAME, version)
 
 
-def get_meter(version: str | None = None):
-    """Get the FastMCP meter for recording metrics.
-
-    Args:
-        version: Optional version string for the instrumentation
-
-    Returns:
-        A meter instance. Returns a no-op meter if no SDK is configured.
-    """
-    return otel_get_meter(INSTRUMENTATION_NAME, version or "")
-
-
-def inject_trace_context(meta: dict[str, Any] | None = None) -> dict[str, Any]:
+def inject_trace_context(
+    meta: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     """Inject current trace context into a meta dict for MCP request propagation.
 
     Args:
         meta: Optional existing meta dict to merge with trace context
 
     Returns:
-        A new dict containing the original meta (if any) plus trace context keys
+        A new dict containing the original meta (if any) plus trace context keys,
+        or None if no trace context to inject and meta was None
     """
     carrier: dict[str, str] = {}
     propagate.inject(carrier)
@@ -80,7 +70,7 @@ def inject_trace_context(meta: dict[str, Any] | None = None) -> dict[str, Any]:
 
     if trace_meta:
         return {**(meta or {}), **trace_meta}
-    return meta or {}
+    return meta
 
 
 def record_span_error(span: Span, exception: BaseException) -> None:
@@ -92,13 +82,21 @@ def record_span_error(span: Span, exception: BaseException) -> None:
 def extract_trace_context(meta: dict[str, Any] | None) -> Context:
     """Extract trace context from an MCP request meta dict.
 
+    If already in a valid trace (e.g., from HTTP propagation), the existing
+    trace context is preserved and meta is not used.
+
     Args:
         meta: The meta dict from an MCP request (ctx.request_context.meta)
 
     Returns:
         An OpenTelemetry Context with the extracted trace context,
-        or the current context if no trace context found
+        or the current context if no trace context found or already in a trace
     """
+    # Don't override existing trace context (e.g., from HTTP propagation)
+    current_span = trace.get_current_span()
+    if current_span.get_span_context().is_valid:
+        return otel_context.get_current()
+
     if not meta:
         return otel_context.get_current()
 
@@ -118,7 +116,6 @@ __all__ = [
     "TRACE_PARENT_KEY",
     "TRACE_STATE_KEY",
     "extract_trace_context",
-    "get_meter",
     "get_tracer",
     "inject_trace_context",
     "record_span_error",
