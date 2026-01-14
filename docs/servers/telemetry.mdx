@@ -5,11 +5,11 @@ description: Native OpenTelemetry instrumentation for distributed tracing.
 icon: chart-line
 ---
 
-FastMCP includes native OpenTelemetry instrumentation for observability. Traces are automatically generated for all MCP operations, providing visibility into server behavior, request handling, and provider delegation chains.
+FastMCP includes native OpenTelemetry instrumentation for observability. Traces are automatically generated for tool, prompt, resource, and resource template operations, providing visibility into server behavior, request handling, and provider delegation chains.
 
 ## How It Works
 
-FastMCP uses the OpenTelemetry API (not the SDK) for instrumentation. This means:
+FastMCP uses the OpenTelemetry API for instrumentation. This means:
 
 - **Zero configuration required** - Instrumentation is always active
 - **No overhead when unused** - Without an SDK, all operations are no-ops
@@ -55,7 +55,7 @@ FastMCP creates spans for all MCP operations, providing end-to-end visibility in
 
 ### Server Spans
 
-The server creates spans for core MCP operations:
+The server creates spans for each operation:
 
 | Span Name | Description |
 |-----------|-------------|
@@ -63,52 +63,11 @@ The server creates spans for core MCP operations:
 | `resource {uri}` | Resource read (e.g., `resource config://database`) |
 | `prompt {name}` | Prompt render (e.g., `prompt greeting`) |
 
-Each span includes these attributes:
-
-| Attribute | Description |
-|-----------|-------------|
-| `rpc.system` | Always `"mcp"` |
-| `rpc.service` | Server name |
-| `rpc.method` | MCP method (e.g., `tools/call`, `resources/read`) |
-| `fastmcp.server.name` | Server name |
-| `fastmcp.component.type` | Component type (`tool`, `resource`, `resource_template`, `prompt`) |
-| `fastmcp.component.key` | Full component key |
-
-### Provider Attributes
-
-Server spans include provider information via `fastmcp.provider.type`:
-
-| Provider | Description |
-|----------|-------------|
-| `LocalProvider` | Components registered directly on the server |
-| `FastMCPProvider` | Components from mounted FastMCP servers |
-| `ProxyProvider` | Components proxied from remote MCP servers |
-
-For mounted servers (FastMCPProvider), an additional `delegate {name}` span shows the delegation:
-
-| Attribute | Description |
-|-----------|-------------|
-| `fastmcp.delegate.original_name` | Original tool/prompt name before namespacing |
-| `fastmcp.delegate.original_uri` | Original resource URI before namespacing |
-
-For proxy providers, backend identifiers are included:
-
-| Attribute | Description |
-|-----------|-------------|
-| `fastmcp.proxy.backend_name` | Remote tool/prompt name |
-| `fastmcp.proxy.backend_uri` | Remote resource URI |
+For mounted servers, an additional `delegate {name}` span shows the delegation to the child server.
 
 ### Client Spans
 
-The FastMCP client also creates spans for outgoing requests:
-
-| Span Name | Description |
-|-----------|-------------|
-| `tool {name}` | Client tool call |
-| `resource {uri}` | Client resource read |
-| `prompt {name}` | Client prompt get |
-
-Client spans include `rpc.method` to indicate the MCP protocol method being called.
+The FastMCP client creates spans for outgoing requests with the same naming pattern (`tool {name}`, `resource {uri}`, `prompt {name}`).
 
 ### Span Hierarchy
 
