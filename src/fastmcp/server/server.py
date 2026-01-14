@@ -83,7 +83,6 @@ from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.aggregate import AggregateProvider
-from fastmcp.server.tasks.capabilities import get_task_capabilities
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.server.transforms import (
     Namespace,
@@ -2383,20 +2382,16 @@ class FastMCP(Generic[LifespanResultT]):
                             f"Starting MCP server {self.name!r} with transport 'stdio'{mode}"
                         )
 
-                        # Build experimental capabilities
-                        experimental_capabilities = get_task_capabilities()
-
-                        await self._mcp_server.run(
-                            read_stream,
-                            write_stream,
-                            self._mcp_server.create_initialization_options(
-                                notification_options=NotificationOptions(
-                                    tools_changed=True
-                                ),
-                                experimental_capabilities=experimental_capabilities,
+                    await self._mcp_server.run(
+                        read_stream,
+                        write_stream,
+                        self._mcp_server.create_initialization_options(
+                            notification_options=NotificationOptions(
+                                tools_changed=True
                             ),
-                            stateless=stateless,
-                        )
+                        ),
+                        stateless=stateless,
+                    )
         finally:
             reset_transport(token)
 

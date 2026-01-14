@@ -21,7 +21,6 @@ from starlette.types import Lifespan, Receive, Scope, Send
 
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
-from fastmcp.server.tasks.capabilities import get_task_capabilities
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -169,15 +168,10 @@ def create_sse_app(
     # Create handler for SSE connections
     async def handle_sse(scope: Scope, receive: Receive, send: Send) -> Response:
         async with sse.connect_sse(scope, receive, send) as streams:
-            # Build experimental capabilities
-            experimental_capabilities = get_task_capabilities()
-
             await server._mcp_server.run(
                 streams[0],
                 streams[1],
-                server._mcp_server.create_initialization_options(
-                    experimental_capabilities=experimental_capabilities
-                ),
+                server._mcp_server.create_initialization_options(),
             )
         return Response()
 

@@ -11,7 +11,7 @@ from fastmcp.server.tasks import get_task_capabilities
 
 
 async def test_capabilities_include_tasks():
-    """Server capabilities always include tasks."""
+    """Server capabilities always include tasks in first-class field (SEP-1686)."""
     mcp = FastMCP("capability-test")
 
     @mcp.tool()
@@ -22,11 +22,11 @@ async def test_capabilities_include_tasks():
         # Get server initialization result which includes capabilities
         init_result = client.initialize_result
 
-        # Verify tasks capability is present
-        assert init_result.capabilities.experimental is not None
-        assert "tasks" in init_result.capabilities.experimental
-        tasks_cap = init_result.capabilities.experimental["tasks"]
-        assert tasks_cap == get_task_capabilities()["tasks"]
+        # Verify tasks capability is present as a first-class field (not experimental)
+        assert init_result.capabilities.tasks is not None
+        assert init_result.capabilities.tasks == get_task_capabilities()
+        # Verify it's NOT in experimental
+        assert "tasks" not in (init_result.capabilities.experimental or {})
 
 
 async def test_client_uses_task_capable_session():

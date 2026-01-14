@@ -165,6 +165,31 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
             **kwargs,
         )
 
+    def get_capabilities(
+        self,
+        notification_options: NotificationOptions,
+        experimental_capabilities: dict[str, dict[str, Any]],
+    ) -> mcp.types.ServerCapabilities:
+        """Override to set capabilities.tasks as a first-class field per SEP-1686.
+
+        This ensures task capabilities appear in capabilities.tasks instead of
+        capabilities.experimental.tasks, which is required by the MCP spec and
+        enables proper task detection by clients like VS Code Copilot 1.107+.
+        """
+        from fastmcp.server.tasks.capabilities import get_task_capabilities
+
+        # Get base capabilities from SDK (pass empty dict for experimental)
+        # since we'll set tasks as a first-class field instead
+        capabilities = super().get_capabilities(
+            notification_options,
+            experimental_capabilities or {},
+        )
+
+        # Set tasks as a first-class field (not experimental) per SEP-1686
+        capabilities.tasks = get_task_capabilities()
+
+        return capabilities
+
     async def run(
         self,
         read_stream: MemoryObjectReceiveStream[SessionMessage | Exception],
