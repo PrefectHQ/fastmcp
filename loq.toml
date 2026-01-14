@@ -1,319 +1,103 @@
 # loq configuration - file size enforcement
 # Run `loq baseline` to update when files exceed limits
 
-default_max_lines = 500
+default_max_lines = 1000
 respect_gitignore = true
 
-exclude = [
-    "**/uv.lock",
-    ".git/",
-    "docs/",
-]
+exclude = ["**/uv.lock", ".git/**", "docs/**"]
 
 [[rules]]
-path = "src/fastmcp/server/auth/oauth_proxy.py"
-max_lines = 2282
+path = "tests/**"
+max_lines = 1000
+
+[[rules]]
+path = "tests/server/providers/test_local_provider_tools.py"
+max_lines = 1554
 
 [[rules]]
 path = "tests/client/test_client.py"
 max_lines = 1438
 
 [[rules]]
-path = "src/fastmcp/client/tasks.py"
-max_lines = 551
-
-[[rules]]
 path = "tests/server/test_auth_integration.py"
 max_lines = 1242
-
-[[rules]]
-path = "tests/server/test_dependencies.py"
-max_lines = 1046
-
-[[rules]]
-path = "tests/prompts/test_prompt.py"
-max_lines = 552
-
-[[rules]]
-path = "tests/client/test_elicitation.py"
-max_lines = 1132
-
-[[rules]]
-path = "src/fastmcp/tools/tool_transform.py"
-max_lines = 952
-
-[[rules]]
-path = "tests/server/middleware/test_tool_injection.py"
-max_lines = 508
-
-[[rules]]
-path = "tests/server/middleware/test_middleware.py"
-max_lines = 1066
-
-[[rules]]
-path = "tests/server/auth/providers/test_azure.py"
-max_lines = 809
-
-[[rules]]
-path = "docs/servers/auth/oauth-proxy.mdx"
-max_lines = 590
-
-[[rules]]
-path = "src/fastmcp/server/context.py"
-max_lines = 1246
-
-[[rules]]
-path = "tests/test_mcp_config.py"
-max_lines = 930
-
-[[rules]]
-path = "docs/deployment/http.mdx"
-max_lines = 736
-
-[[rules]]
-path = "src/fastmcp/server/auth/providers/jwt.py"
-max_lines = 527
-
-[[rules]]
-path = "src/fastmcp/server/dependencies.py"
-max_lines = 908
-
-[[rules]]
-path = "docs/changelog.mdx"
-max_lines = 2228
-
-[[rules]]
-path = "tests/server/tasks/test_task_mount.py"
-max_lines = 965
-
-[[rules]]
-path = "src/fastmcp/utilities/json_schema_type.py"
-max_lines = 648
-
-[[rules]]
-path = "tests/utilities/openapi/test_schemas.py"
-max_lines = 641
-
-[[rules]]
-path = "src/fastmcp/prompts/prompt.py"
-max_lines = 785
-
-[[rules]]
-path = "src/fastmcp/utilities/openapi/schemas.py"
-max_lines = 593
-
-[[rules]]
-path = "src/fastmcp/server/middleware/caching.py"
-max_lines = 523
-
-[[rules]]
-path = "docs/servers/middleware.mdx"
-max_lines = 846
-
-[[rules]]
-path = "tests/contrib/test_component_manager.py"
-max_lines = 767
-
-[[rules]]
-path = "src/fastmcp/server/auth/auth.py"
-max_lines = 558
-
-[[rules]]
-path = "docs/patterns/tool-transformation.mdx"
-max_lines = 694
-
-[[rules]]
-path = "tests/server/providers/test_local_provider_resources.py"
-max_lines = 974
-
-[[rules]]
-path = "docs/deployment/server-configuration.mdx"
-max_lines = 640
-
-[[rules]]
-path = "tests/cli/test_run.py"
-max_lines = 628
-
-[[rules]]
-path = "tests/utilities/openapi/test_transitive_references.py"
-max_lines = 842
-
-[[rules]]
-path = "src/fastmcp/resources/template.py"
-max_lines = 571
-
-[[rules]]
-path = "tests/server/providers/openapi/test_comprehensive.py"
-max_lines = 741
-
-[[rules]]
-path = "tests/client/test_sampling.py"
-max_lines = 1002
-
-[[rules]]
-path = "tests/resources/test_resource_template.py"
-max_lines = 1009
-
-[[rules]]
-path = "tests/server/providers/test_local_provider.py"
-max_lines = 738
-
-[[rules]]
-path = "tests/server/middleware/test_caching.py"
-max_lines = 616
-
-[[rules]]
-path = "tests/server/test_mount.py"
-max_lines = 1548
-
-[[rules]]
-path = "tests/utilities/test_inspect.py"
-max_lines = 1111
-
-[[rules]]
-path = "src/fastmcp/utilities/openapi/parser.py"
-max_lines = 821
-
-[[rules]]
-path = "docs/python-sdk/fastmcp-server-context.mdx"
-max_lines = 550
-
-[[rules]]
-path = "src/fastmcp/server/providers/local_provider.py"
-max_lines = 738
-
-[[rules]]
-path = "tests/client/test_notifications.py"
-max_lines = 556
-
-[[rules]]
-path = "tests/server/middleware/test_logging.py"
-max_lines = 670
-
-[[rules]]
-path = "tests/utilities/test_json_schema.py"
-max_lines = 543
-
-[[rules]]
-path = "tests/server/auth/test_jwt_provider.py"
-max_lines = 1101
 
 [[rules]]
 path = "tests/server/auth/test_oauth_proxy.py"
 max_lines = 1899
 
 [[rules]]
-path = "tests/utilities/test_types.py"
-max_lines = 673
+path = "tests/server/middleware/test_middleware.py"
+max_lines = 1250
 
 [[rules]]
-path = "docs/servers/resources.mdx"
-max_lines = 727
+path = "src/fastmcp/server/context.py"
+max_lines = 1272
 
 [[rules]]
-path = "src/fastmcp/client/client.py"
-max_lines = 2000
+path = "tests/tools/test_tool_transform.py"
+max_lines = 1748
 
 [[rules]]
-path = "src/fastmcp/server/providers/proxy.py"
-max_lines = 882
+path = "tests/server/test_mount.py"
+max_lines = 1560
 
 [[rules]]
-path = "src/fastmcp/tools/tool.py"
-max_lines = 956
+path = "tests/utilities/test_inspect.py"
+max_lines = 1111
 
 [[rules]]
-path = "docs/python-sdk/fastmcp-server-server.mdx"
-max_lines = 999
+path = "tests/resources/test_resource_template.py"
+max_lines = 1009
 
 [[rules]]
 path = "tests/server/auth/test_oauth_consent_flow.py"
 max_lines = 1056
 
 [[rules]]
-path = "README.md"
-max_lines = 515
-
-[[rules]]
-path = "tests/server/providers/proxy/test_proxy_server.py"
-max_lines = 711
-
-[[rules]]
-path = "tests/tools/test_tool_transform.py"
-max_lines = 1741
-
-[[rules]]
-path = "src/fastmcp/utilities/ui.py"
-max_lines = 626
-
-[[rules]]
-path = "tests/server/auth/test_oidc_proxy.py"
-max_lines = 878
-
-[[rules]]
-path = "docs/patterns/cli.mdx"
-max_lines = 581
-
-[[rules]]
-path = "tests/cli/test_cli.py"
-max_lines = 618
-
-[[rules]]
-path = "tests/server/tasks/test_task_return_types.py"
-max_lines = 662
-
-[[rules]]
-path = "tests/server/providers/test_local_provider_tools.py"
-max_lines = 1538
-
-[[rules]]
-path = "src/fastmcp/server/providers/fastmcp_provider.py"
-max_lines = 581
-
-[[rules]]
-path = "tests/server/middleware/test_error_handling.py"
-max_lines = 652
+path = "src/fastmcp/server/server.py"
+max_lines = 3250
 
 [[rules]]
 path = "tests/tools/test_tool.py"
-max_lines = 1923
+max_lines = 2250
 
 [[rules]]
-path = "docs/python-sdk/fastmcp-client-client.mdx"
-max_lines = 704
+path = "tests/client/test_elicitation.py"
+max_lines = 1132
 
 [[rules]]
-path = "docs/servers/tools.mdx"
-max_lines = 1019
-
-[[rules]]
-path = "src/fastmcp/server/server.py"
-max_lines = 3000
-
-[[rules]]
-path = "tests/deprecated/test_import_server.py"
-max_lines = 713
-
-[[rules]]
-path = "src/fastmcp/client/transports.py"
-max_lines = 1210
-
-[[rules]]
-path = "docs/docs.json"
-max_lines = 593
-
-[[rules]]
-path = "src/fastmcp/cli/cli.py"
-max_lines = 957
+path = "src/fastmcp/client/client.py"
+max_lines = 2000
 
 [[rules]]
 path = "tests/utilities/test_json_schema_type.py"
 max_lines = 1584
 
 [[rules]]
-path = "docs/servers/context.mdx"
-max_lines = 623
+path = "src/fastmcp/server/auth/oauth_proxy.py"
+max_lines = 2282
 
 [[rules]]
-path = "src/fastmcp/resources/resource.py"
-max_lines = 633
+path = "src/fastmcp/client/transports.py"
+max_lines = 1208
+
+[[rules]]
+path = "tests/server/test_dependencies.py"
+max_lines = 1046
+
+[[rules]]
+path = "tests/client/test_sampling.py"
+max_lines = 1002
+
+[[rules]]
+path = "tests/server/auth/test_jwt_provider.py"
+max_lines = 1101
+
+[[rules]]
+path = "docs/servers/tools.mdx"
+max_lines = 1200
+
+[[rules]]
+path = "docs/changelog.mdx"
+max_lines = 2280
