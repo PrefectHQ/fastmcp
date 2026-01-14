@@ -36,7 +36,7 @@ def get_task_capabilities() -> ServerTasksCapability | None:
         cancel=TasksCancelCapability(),
         requests=ServerTasksRequestsCapability(
             tools=TasksToolsCapability(call=TasksCallCapability()),
-            prompts={"get": {}},
-            resources={"read": {}},
+            prompts={"get": {}},  # type: ignore[call-arg]  # extra_data for forward compat
+            resources={"read": {}},  # type: ignore[call-arg]  # extra_data for forward compat
         ),
     )
