@@ -44,7 +44,6 @@ from fastmcp.mcp_config import (
 )
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP, create_proxy
-from fastmcp.server.tasks.capabilities import get_task_capabilities
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
@@ -882,16 +881,11 @@ class FastMCPTransport(ClientTransport):
                 anyio.create_task_group() as tg,
                 _enter_server_lifespan(server=self.server),
             ):
-                # Build experimental capabilities
-                experimental_capabilities = get_task_capabilities()
-
                 tg.start_soon(
                     lambda: self.server._mcp_server.run(
                         server_read,
                         server_write,
-                        self.server._mcp_server.create_initialization_options(
-                            experimental_capabilities=experimental_capabilities
-                        ),
+                        self.server._mcp_server.create_initialization_options(),
                         raise_exceptions=self.raise_exceptions,
                     )
                 )
