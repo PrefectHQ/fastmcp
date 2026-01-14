@@ -120,11 +120,11 @@ class ProxyTool(Tool):
             span.set_attribute("fastmcp.provider.type", "ProxyProvider")
             client = await self._get_client()
             async with client:
-                context = get_context()
+                ctx = context or get_context()
                 # Build meta dict from request context
                 meta: dict[str, Any] | None = None
-                if hasattr(context, "request_context"):
-                    req_ctx = context.request_context
+                if hasattr(ctx, "request_context"):
+                    req_ctx = ctx.request_context
                     # Start with existing meta if present
                     if hasattr(req_ctx, "meta") and req_ctx.meta:
                         meta = dict(req_ctx.meta)

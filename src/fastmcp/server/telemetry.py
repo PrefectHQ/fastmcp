@@ -4,6 +4,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 
 from mcp.server.lowlevel.server import request_ctx
+from opentelemetry.context import Context
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from fastmcp.telemetry import extract_trace_context, get_tracer
@@ -33,14 +34,14 @@ def get_session_span_attributes() -> dict[str, str]:
     attrs: dict[str, str] = {}
     try:
         ctx = get_context()
-        if ctx.request_context is not None:
+        if ctx.request_context is not None and ctx.session_id is not None:
             attrs["fastmcp.session.id"] = ctx.session_id
     except RuntimeError:
         pass
     return attrs
 
 
-def _get_parent_trace_context():
+def _get_parent_trace_context() -> Context | None:
     """Get parent trace context from request meta for distributed tracing."""
     try:
         req_ctx = request_ctx.get()

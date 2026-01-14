@@ -244,9 +244,11 @@ def trace_exporter() -> Generator[InMemorySpanExporter, None, None]:
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
+    original_provider = trace.get_tracer_provider()
     trace.set_tracer_provider(provider)
     yield exporter
     exporter.clear()
+    trace.set_tracer_provider(original_provider)
 
 async def test_tool_creates_span(trace_exporter: InMemorySpanExporter) -> None:
     mcp = FastMCP("test")
