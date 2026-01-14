@@ -204,6 +204,7 @@ class LocalProvider(Provider):
                     task=resolved_task,
                     exclude_args=meta.exclude_args,
                     serializer=meta.serializer,
+                    timeout=meta.timeout,
                     auth=meta.auth,
                 )
             else:
@@ -434,6 +435,7 @@ class LocalProvider(Provider):
         enabled: bool = True,
         task: bool | TaskConfig | None = None,
         serializer: ToolResultSerializerType | None = None,  # Deprecated
+        timeout: float | None = None,
         auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionTool: ...
 
@@ -454,6 +456,7 @@ class LocalProvider(Provider):
         enabled: bool = True,
         task: bool | TaskConfig | None = None,
         serializer: ToolResultSerializerType | None = None,  # Deprecated
+        timeout: float | None = None,
         auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> Callable[[AnyFunction], FunctionTool]: ...
 
@@ -477,6 +480,7 @@ class LocalProvider(Provider):
         enabled: bool = True,
         task: bool | TaskConfig | None = None,
         serializer: ToolResultSerializerType | None = None,  # Deprecated
+        timeout: float | None = None,
         auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> (
         Callable[[AnyFunction], FunctionTool]
@@ -579,6 +583,7 @@ class LocalProvider(Provider):
                     meta=meta,
                     serializer=serializer,
                     task=resolved_task,
+                    timeout=timeout,
                     auth=auth,
                 )
                 self._add_component(tool_obj)
@@ -600,6 +605,7 @@ class LocalProvider(Provider):
                     task=task,
                     exclude_args=exclude_args,
                     serializer=serializer,
+                    timeout=timeout,
                     auth=auth,
                 )
                 target = fn.__func__ if hasattr(fn, "__func__") else fn
@@ -643,6 +649,7 @@ class LocalProvider(Provider):
             enabled=enabled,
             task=task,
             serializer=serializer,
+            timeout=timeout,
             auth=auth,
         )
 

@@ -111,8 +111,14 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 
 <ParamField body="meta" type="dict[str, Any] | None">
   <VersionBadge version="2.11.0" />
-  
+
   Optional meta information about the tool. This data is passed through to the MCP client as the `meta` field of the client-side tool object and can be used for custom metadata, versioning, or other application-specific purposes.
+</ParamField>
+
+<ParamField body="timeout" type="float | None">
+  <VersionBadge version="3.0.0" />
+
+  Execution timeout in seconds. If the tool takes longer than this to complete, an MCP error is returned to the client. See [Timeouts](#timeouts) for details.
 </ParamField>
 </Card>
 
@@ -766,6 +772,58 @@ def divide(a: float, b: float) -> float:
 ```
 
 When `mask_error_details=True`, only error messages from `ToolError` will include details, other exceptions will be converted to a generic message.
+
+## Timeouts
+
+<VersionBadge version="3.0.0" />
+
+Tools can specify a `timeout` parameter to limit how long execution can take. When the timeout is exceeded, the client receives an MCP error and the tool stops processing. This protects your server from unexpectedly slow operations that could block resources or leave clients waiting indefinitely.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP()
+
+@mcp.tool(timeout=30.0)
+async def fetch_data(url: str) -> dict:
+    """Fetch data with a 30-second timeout."""
+    # If this takes longer than 30 seconds,
+    # the client receives an MCP error
+    ...
+```
+
+Timeouts are specified in seconds as a float. When a tool exceeds its timeout, FastMCP returns an MCP error with code `-32000` and a message indicating which tool timed out and how long it ran. Both sync and async tools support timeouts—sync functions run in thread pools, so the timeout applies to the entire operation regardless of execution model.
+
+<Note>
+Tools must explicitly opt-in to timeouts. There is no server-level default timeout setting.
+</Note>
+
+### Timeouts vs Background Tasks
+
+Timeouts apply to **foreground execution**—when a tool runs directly in response to a client request. They protect your server from tools that unexpectedly hang due to network issues, resource contention, or other transient problems.
+
+<Warning>
+The `timeout` parameter does **not** apply to background tasks. When a tool runs as a background task (`task=True`), execution happens in a Docket worker where the FastMCP timeout is not enforced.
+
+For task timeouts, use Docket's `Timeout` dependency directly in your function signature:
+
+```python
+from datetime import timedelta
+from docket import Timeout
+
+@mcp.tool(task=True)
+async def long_running_task(
+    data: str,
+    timeout: Timeout = Timeout(timedelta(minutes=10))
+) -> str:
+    """Task with a 10-minute timeout enforced by Docket."""
+    ...
+```
+
+See the [Docket documentation](https://chrisguidry.github.io/docket/dependencies/#task-timeouts) for more on task timeouts and retries.
+</Warning>
+
+When a tool times out, FastMCP logs a warning suggesting task mode. For operations you know will be long-running, use `task=True` instead—background tasks offload work to distributed workers and let clients poll for progress.
 
 ## Visibility Control
 

@@ -149,6 +149,12 @@ class Tool(FastMCPComponent):
         AuthCheckCallable | list[AuthCheckCallable] | None,
         Field(description="Authorization checks for this tool", exclude=True),
     ] = None
+    timeout: Annotated[
+        float | None,
+        Field(
+            description="Execution timeout in seconds. If None, no timeout is applied."
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def _validate_tool_name(self) -> Tool:
@@ -200,6 +206,7 @@ class Tool(FastMCPComponent):
         serializer: ToolResultSerializerType | None = None,  # Deprecated
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
+        timeout: float | None = None,
         auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
@@ -218,6 +225,7 @@ class Tool(FastMCPComponent):
             serializer=serializer,
             meta=meta,
             task=task,
+            timeout=timeout,
             auth=auth,
         )
 
