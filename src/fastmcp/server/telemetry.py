@@ -35,7 +35,7 @@ def get_session_span_attributes() -> dict[str, str]:
     try:
         ctx = get_context()
         if ctx.request_context is not None and ctx.session_id is not None:
-            attrs["fastmcp.session.id"] = ctx.session_id
+            attrs["mcp.session.id"] = ctx.session_id
     except RuntimeError:
         pass
     return attrs
@@ -59,6 +59,7 @@ def server_span(
     server_name: str,
     component_type: str,
     component_key: str,
+    resource_uri: str | None = None,
 ) -> Generator[Span, None, None]:
     """Create a SERVER span with standard MCP attributes and auth context.
 
@@ -70,18 +71,23 @@ def server_span(
         context=_get_parent_trace_context(),
         kind=SpanKind.SERVER,
     ) as span:
-        span.set_attributes(
-            {
-                "rpc.system": "mcp",
-                "rpc.service": server_name,
-                "rpc.method": method,
-                "fastmcp.server.name": server_name,
-                "fastmcp.component.type": component_type,
-                "fastmcp.component.key": component_key,
-                **get_auth_span_attributes(),
-                **get_session_span_attributes(),
-            }
-        )
+        attrs: dict[str, str] = {
+            # RPC semantic conventions
+            "rpc.system": "mcp",
+            "rpc.service": server_name,
+            "rpc.method": method,
+            # MCP semantic conventions
+            "mcp.method.name": method,
+            # FastMCP-specific attributes
+            "fastmcp.server.name": server_name,
+            "fastmcp.component.type": component_type,
+            "fastmcp.component.key": component_key,
+            **get_auth_span_attributes(),
+            **get_session_span_attributes(),
+        }
+        if resource_uri is not None:
+            attrs["mcp.resource.uri"] = resource_uri
+        span.set_attributes(attrs)
         try:
             yield span
         except Exception as e:
