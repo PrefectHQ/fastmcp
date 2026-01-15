@@ -1473,7 +1473,7 @@ class FastMCP(Generic[LifespanResultT]):
 
             # Core logic: find and execute tool (providers queried in parallel)
             with server_span(
-                f"tool {name}", "tools/call", self.name, "tool", name
+                f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
                 tool = await self.get_tool(name)
                 span.set_attributes(tool.get_span_attributes())
@@ -1567,7 +1567,12 @@ class FastMCP(Generic[LifespanResultT]):
 
             # Core logic: find and read resource (providers queried in parallel)
             with server_span(
-                f"resource {uri}", "resources/read", self.name, "resource", uri
+                f"resources/read {uri}",
+                "resources/read",
+                self.name,
+                "resource",
+                uri,
+                resource_uri=uri,
             ) as span:
                 # Try concrete resources first
                 try:
@@ -1681,7 +1686,7 @@ class FastMCP(Generic[LifespanResultT]):
 
             # Core logic: find and render prompt (providers queried in parallel)
             with server_span(
-                f"prompt {name}", "prompts/get", self.name, "prompt", name
+                f"prompts/get {name}", "prompts/get", self.name, "prompt", name
             ) as span:
                 prompt = await self.get_prompt(name)
                 span.set_attributes(prompt.get_span_attributes())

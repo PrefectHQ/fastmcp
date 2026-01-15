@@ -30,8 +30,8 @@ class TestClientToolTracing:
         spans = trace_exporter.get_finished_spans()
         span_names = [s.name for s in spans]
 
-        # Client should create "tool greet" span
-        assert "tool greet" in span_names
+        # Client should create "tools/call greet" span
+        assert "tools/call greet" in span_names
 
     async def test_call_tool_span_attributes(
         self, trace_exporter: InMemorySpanExporter
@@ -53,15 +53,19 @@ class TestClientToolTracing:
             (
                 s
                 for s in spans
-                if s.name == "tool add"
+                if s.name == "tools/call add"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
             None,
         )
         assert client_span is not None
+        # Standard MCP semantic conventions
+        assert client_span.attributes["mcp.method.name"] == "tools/call"
+        # Standard RPC semantic conventions
         assert client_span.attributes["rpc.system"] == "mcp"
         assert client_span.attributes["rpc.method"] == "tools/call"
+        # FastMCP-specific attributes
         assert client_span.attributes["fastmcp.component.key"] == "add"
 
 
@@ -85,8 +89,8 @@ class TestClientResourceTracing:
         spans = trace_exporter.get_finished_spans()
         span_names = [s.name for s in spans]
 
-        # Client should create "resource data://config" span
-        assert "resource data://config" in span_names
+        # Client should create "resources/read data://config" span
+        assert "resources/read data://config" in span_names
 
     async def test_read_resource_span_attributes(
         self, trace_exporter: InMemorySpanExporter
@@ -108,15 +112,20 @@ class TestClientResourceTracing:
             (
                 s
                 for s in spans
-                if s.name.startswith("resource data://")
+                if s.name.startswith("resources/read data://")
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
             None,
         )
         assert client_span is not None
+        # Standard MCP semantic conventions
+        assert client_span.attributes["mcp.method.name"] == "resources/read"
+        assert "data://" in str(client_span.attributes["mcp.resource.uri"])
+        # Standard RPC semantic conventions
         assert client_span.attributes["rpc.system"] == "mcp"
         assert client_span.attributes["rpc.method"] == "resources/read"
+        # FastMCP-specific attributes
         # The URI may be normalized with trailing slash
         assert "data://" in str(client_span.attributes["fastmcp.component.key"])
 
@@ -139,8 +148,8 @@ class TestClientPromptTracing:
         spans = trace_exporter.get_finished_spans()
         span_names = [s.name for s in spans]
 
-        # Client should create "prompt greeting" span
-        assert "prompt greeting" in span_names
+        # Client should create "prompts/get greeting" span
+        assert "prompts/get greeting" in span_names
 
     async def test_get_prompt_span_attributes(
         self, trace_exporter: InMemorySpanExporter
@@ -162,15 +171,19 @@ class TestClientPromptTracing:
             (
                 s
                 for s in spans
-                if s.name == "prompt welcome"
+                if s.name == "prompts/get welcome"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
             None,
         )
         assert client_span is not None
+        # Standard MCP semantic conventions
+        assert client_span.attributes["mcp.method.name"] == "prompts/get"
+        # Standard RPC semantic conventions
         assert client_span.attributes["rpc.system"] == "mcp"
         assert client_span.attributes["rpc.method"] == "prompts/get"
+        # FastMCP-specific attributes
         assert client_span.attributes["fastmcp.component.key"] == "welcome"
 
 
@@ -198,7 +211,7 @@ class TestClientServerSpanHierarchy:
             (
                 s
                 for s in spans
-                if s.name == "tool echo"
+                if s.name == "tools/call echo"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
@@ -208,7 +221,7 @@ class TestClientServerSpanHierarchy:
             (
                 s
                 for s in spans
-                if s.name == "tool echo"
+                if s.name == "tools/call echo"
                 and s.attributes is not None
                 and "fastmcp.server.name" in s.attributes
             ),
@@ -248,7 +261,7 @@ class TestClientServerSpanHierarchy:
             (
                 s
                 for s in spans
-                if s.name == "tool add"
+                if s.name == "tools/call add"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
@@ -258,7 +271,7 @@ class TestClientServerSpanHierarchy:
             (
                 s
                 for s in spans
-                if s.name == "tool add"
+                if s.name == "tools/call add"
                 and s.attributes is not None
                 and "fastmcp.server.name" in s.attributes
             ),
@@ -315,7 +328,7 @@ class TestClientErrorTracing:
             (
                 s
                 for s in spans
-                if s.name == "tool failing_tool"
+                if s.name == "tools/call failing_tool"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
@@ -326,7 +339,7 @@ class TestClientErrorTracing:
             (
                 s
                 for s in spans
-                if s.name == "tool failing_tool"
+                if s.name == "tools/call failing_tool"
                 and s.attributes is not None
                 and "fastmcp.server.name" in s.attributes
             ),
@@ -362,7 +375,7 @@ class TestClientErrorTracing:
             (
                 s
                 for s in spans
-                if s.name.startswith("resource data://fail")
+                if s.name.startswith("resources/read data://fail")
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
@@ -373,7 +386,7 @@ class TestClientErrorTracing:
             (
                 s
                 for s in spans
-                if s.name.startswith("resource data://fail")
+                if s.name.startswith("resources/read data://fail")
                 and s.attributes is not None
                 and "fastmcp.server.name" in s.attributes
             ),
@@ -409,7 +422,7 @@ class TestClientErrorTracing:
             (
                 s
                 for s in spans
-                if s.name == "prompt failing_prompt"
+                if s.name == "prompts/get failing_prompt"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
@@ -420,7 +433,7 @@ class TestClientErrorTracing:
             (
                 s
                 for s in spans
-                if s.name == "prompt failing_prompt"
+                if s.name == "prompts/get failing_prompt"
                 and s.attributes is not None
                 and "fastmcp.server.name" in s.attributes
             ),
@@ -452,7 +465,7 @@ class TestClientErrorTracing:
             (
                 s
                 for s in spans
-                if s.name == "tool nonexistent"
+                if s.name == "tools/call nonexistent"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
@@ -463,7 +476,7 @@ class TestClientErrorTracing:
             (
                 s
                 for s in spans
-                if s.name == "tool nonexistent"
+                if s.name == "tools/call nonexistent"
                 and s.attributes is not None
                 and "fastmcp.server.name" in s.attributes
             ),
@@ -518,7 +531,7 @@ class TestSessionIdOnSpans:
             (
                 s
                 for s in spans
-                if s.name == "tool echo"
+                if s.name == "tools/call echo"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
@@ -526,8 +539,8 @@ class TestSessionIdOnSpans:
         )
 
         assert client_span is not None, "Client should create a span"
-        assert "fastmcp.session.id" in client_span.attributes
-        assert client_span.attributes["fastmcp.session.id"] is not None
+        assert "mcp.session.id" in client_span.attributes
+        assert client_span.attributes["mcp.session.id"] is not None
 
     async def test_server_span_includes_session_id(
         self,
@@ -549,7 +562,7 @@ class TestSessionIdOnSpans:
             (
                 s
                 for s in spans
-                if s.name == "tool echo"
+                if s.name == "tools/call echo"
                 and s.attributes is not None
                 and "fastmcp.server.name" in s.attributes
             ),
@@ -557,8 +570,8 @@ class TestSessionIdOnSpans:
         )
 
         assert server_span is not None, "Server should create a span"
-        assert "fastmcp.session.id" in server_span.attributes
-        assert server_span.attributes["fastmcp.session.id"] is not None
+        assert "mcp.session.id" in server_span.attributes
+        assert server_span.attributes["mcp.session.id"] is not None
 
     async def test_client_and_server_share_same_session_id(
         self,
@@ -580,7 +593,7 @@ class TestSessionIdOnSpans:
             (
                 s
                 for s in spans
-                if s.name == "tool echo"
+                if s.name == "tools/call echo"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
@@ -590,7 +603,7 @@ class TestSessionIdOnSpans:
             (
                 s
                 for s in spans
-                if s.name == "tool echo"
+                if s.name == "tools/call echo"
                 and s.attributes is not None
                 and "fastmcp.server.name" in s.attributes
             ),
@@ -601,8 +614,8 @@ class TestSessionIdOnSpans:
         assert server_span is not None
 
         # Both should have session IDs and they should match
-        client_session = client_span.attributes.get("fastmcp.session.id")
-        server_session = server_span.attributes.get("fastmcp.session.id")
+        client_session = client_span.attributes.get("mcp.session.id")
+        server_session = server_span.attributes.get("mcp.session.id")
 
         assert client_session is not None, "Client span should have session ID"
         assert server_session is not None, "Server span should have session ID"

@@ -32,12 +32,12 @@ class TestFastMCPProviderTracing:
         spans = trace_exporter.get_finished_spans()
         span_names = [s.name for s in spans]
 
-        # Parent server creates "tool child_child_tool"
-        assert "tool child_child_tool" in span_names
+        # Parent server creates "tools/call child_child_tool"
+        assert "tools/call child_child_tool" in span_names
         # FastMCPProvider creates "delegate child_tool"
         assert "delegate child_tool" in span_names
-        # Child server creates "tool child_tool"
-        assert "tool child_tool" in span_names
+        # Child server creates "tools/call child_tool"
+        assert "tools/call child_tool" in span_names
 
         # Verify delegate span has correct attributes
         delegate_span = next(s for s in spans if s.name == "delegate child_tool")
@@ -120,9 +120,9 @@ class TestProviderSpanHierarchy:
         spans = trace_exporter.get_finished_spans()
 
         # Find the spans
-        parent_span = next(s for s in spans if s.name == "tool ns_greet")
+        parent_span = next(s for s in spans if s.name == "tools/call ns_greet")
         delegate_span = next(s for s in spans if s.name == "delegate greet")
-        child_span = next(s for s in spans if s.name == "tool greet")
+        child_span = next(s for s in spans if s.name == "tools/call greet")
 
         # Verify parent-child relationships
         assert delegate_span.parent.span_id == parent_span.context.span_id

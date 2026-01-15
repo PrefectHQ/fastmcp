@@ -881,10 +881,11 @@ class Client(Generic[ClientTransportT]):
         """
         uri_str = str(uri)
         with client_span(
-            f"resource {uri_str}",
+            f"resources/read {uri_str}",
             "resources/read",
             uri_str,
             session_id=self.transport.get_session_id(),
+            resource_uri=uri_str,
         ):
             logger.debug(f"[{self.name}] called read_resource: {uri}")
 
@@ -1101,7 +1102,7 @@ class Client(Generic[ClientTransportT]):
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
         with client_span(
-            f"prompt {name}",
+            f"prompts/get {name}",
             "prompts/get",
             name,
             session_id=self.transport.get_session_id(),
@@ -1393,7 +1394,7 @@ class Client(Generic[ClientTransportT]):
             McpError: If the tool call requests results in a TimeoutError | JSONRPCError
         """
         with client_span(
-            f"tool {name}",
+            f"tools/call {name}",
             "tools/call",
             name,
             session_id=self.transport.get_session_id(),
