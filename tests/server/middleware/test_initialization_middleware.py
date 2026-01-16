@@ -12,7 +12,12 @@ from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 
 
 class InitializationMiddleware(Middleware):
-    """Middleware that captures initialization details."""
+    """Middleware that captures initialization details.
+
+    Note: Session state is NOT available during on_initialize because
+    the MCP session has not been established yet. Use instance variables
+    to store data that needs to persist across the session.
+    """
 
     def __init__(self):
         super().__init__()
@@ -25,7 +30,7 @@ class InitializationMiddleware(Middleware):
         context: MiddlewareContext[mt.InitializeRequest],
         call_next: CallNext[mt.InitializeRequest, None],
     ) -> None:
-        """Capture initialization details and store session data."""
+        """Capture initialization details."""
         self.initialized = True
 
         # Extract client info from the initialize params
@@ -34,13 +39,13 @@ class InitializationMiddleware(Middleware):
         ):
             self.client_info = context.message.params.clientInfo
 
-        # Store data in the context state for cross-request access
-        if context.fastmcp_context:
-            context.fastmcp_context.set_state("client_initialized", True)
-            if self.client_info:
-                context.fastmcp_context.set_state(
-                    "client_name", getattr(self.client_info, "name", "unknown")
-                )
+        # Store in instance for cross-request access
+        # (session state is not available during on_initialize)
+        self.session_data["client_initialized"] = True
+        if self.client_info:
+            self.session_data["client_name"] = getattr(
+                self.client_info, "name", "unknown"
+            )
 
         return await call_next(context)
 
@@ -194,41 +199,36 @@ async def test_multiple_middleware_initialization():
         assert detect_mw.tools_modified is True
 
 
-async def test_initialization_middleware_with_state_sharing():
-    """Test that state set during initialization is available in later requests."""
+async def test_session_state_persists_across_tool_calls():
+    """Test that session-scoped state persists across multiple tool calls.
+
+    Session state is only available after the session is established,
+    so it can't be set during on_initialize. This test shows state set
+    during one tool call is accessible in subsequent tool calls.
+    """
     server = FastMCP("TestServer")
 
     class StateTrackingMiddleware(Middleware):
         def __init__(self):
             super().__init__()
-            self.init_state = {}
-            self.tool_state = {}
-
-        async def on_initialize(
-            self,
-            context: MiddlewareContext[mt.InitializeRequest],
-            call_next: CallNext[mt.InitializeRequest, None],
-        ) -> None:
-            # Store some state during initialization
-            if context.fastmcp_context:
-                context.fastmcp_context.set_state("init_timestamp", "2024-01-01")
-                context.fastmcp_context.set_state("client_id", "test-123")
-                self.init_state["timestamp"] = "2024-01-01"
-                self.init_state["client_id"] = "test-123"
-
-            return await call_next(context)
+            self.call_count = 0
+            self.state_values = []
 
         async def on_call_tool(
             self,
             context: MiddlewareContext[mt.CallToolRequestParams],
             call_next: CallNext[mt.CallToolRequestParams, Any],
         ) -> Any:
-            # Try to access state from initialization
+            self.call_count += 1
+
             if context.fastmcp_context:
-                timestamp = context.fastmcp_context.get_state("init_timestamp")
-                client_id = context.fastmcp_context.get_state("client_id")
-                self.tool_state["timestamp"] = timestamp
-                self.tool_state["client_id"] = client_id
+                # Read existing state
+                counter = await context.fastmcp_context.get_state("call_counter")
+                self.state_values.append(counter)
+
+                # Increment and save
+                new_counter = (counter or 0) + 1
+                await context.fastmcp_context.set_state("call_counter", new_counter)
 
             return await call_next(context)
 
@@ -240,20 +240,23 @@ async def test_initialization_middleware_with_state_sharing():
         return "success"
 
     async with Client(server) as client:
-        # Initialization should have set state
-        assert middleware.init_state["timestamp"] == "2024-01-01"
-        assert middleware.init_state["client_id"] == "test-123"
-
-        # Call a tool - state should be accessible
+        # First call - state should be None initially
         result = await client.call_tool("test_tool", {})
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "success"
 
-        # State should have been accessible during tool call
-        # Note: State is request-scoped, so it won't persist across requests
-        # This test shows the pattern, but actual cross-request state would need
-        # external storage (Redis, DB, etc.)
-        # The middleware.tool_state might be None if state doesn't persist
+        # Second call - state should show previous value (1)
+        result = await client.call_tool("test_tool", {})
+        assert isinstance(result.content[0], TextContent)
+
+        # Third call - state should show previous value (2)
+        result = await client.call_tool("test_tool", {})
+        assert isinstance(result.content[0], TextContent)
+
+        # Verify state persisted across calls within the session
+        assert middleware.call_count == 3
+        # First call saw None, second saw 1, third saw 2
+        assert middleware.state_values == [None, 1, 2]
 
 
 async def test_middleware_can_access_initialize_result():
@@ -375,3 +378,55 @@ async def test_middleware_mcp_error_after_call_next():
         pass
 
     assert middleware.error_raised is True
+
+
+async def test_state_isolation_between_streamable_http_clients():
+    """Test that different HTTP clients have isolated session state.
+
+    Each client should have its own session ID and isolated state.
+    """
+    from fastmcp.client.transports import StreamableHttpTransport
+    from fastmcp.server.context import Context
+    from fastmcp.utilities.tests import run_server_async
+
+    server = FastMCP("TestServer")
+
+    @server.tool
+    async def store_and_read(value: str, ctx: Context) -> dict:
+        """Store a value and return session info."""
+        existing = await ctx.get_state("client_value")
+        await ctx.set_state("client_value", value)
+        return {
+            "existing": existing,
+            "stored": value,
+            "session_id": ctx.session_id,
+        }
+
+    async with run_server_async(server, transport="streamable-http") as url:
+        import json
+
+        # Client 1 stores its value
+        transport1 = StreamableHttpTransport(url=url)
+        async with Client(transport=transport1) as client1:
+            result1 = await client1.call_tool(
+                "store_and_read", {"value": "client1-value"}
+            )
+            data1 = json.loads(result1.content[0].text)
+            assert data1["existing"] is None
+            assert data1["stored"] == "client1-value"
+            session_id_1 = data1["session_id"]
+
+        # Client 2 should have completely isolated state
+        transport2 = StreamableHttpTransport(url=url)
+        async with Client(transport=transport2) as client2:
+            result2 = await client2.call_tool(
+                "store_and_read", {"value": "client2-value"}
+            )
+            data2 = json.loads(result2.content[0].text)
+            # Should NOT see client1's value
+            assert data2["existing"] is None
+            assert data2["stored"] == "client2-value"
+            session_id_2 = data2["session_id"]
+
+        # Session IDs should be different
+        assert session_id_1 != session_id_2

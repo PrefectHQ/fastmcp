@@ -30,6 +30,9 @@ import anyio
 import httpx
 import mcp.types
 import uvicorn
+from key_value.aio.adapters.pydantic import PydanticAdapter
+from key_value.aio.protocols import AsyncKeyValue
+from key_value.aio.stores.memory import MemoryStore
 from mcp.server.lowlevel.server import LifespanResultT, NotificationOptions
 from mcp.server.stdio import stdio_server
 from mcp.shared.exceptions import McpError
@@ -99,7 +102,7 @@ from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.cli import log_server_banner
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger, temporary_log_level
-from fastmcp.utilities.types import NotSet, NotSetT
+from fastmcp.utilities.types import FastMCPBaseModel, NotSet, NotSetT
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -220,6 +223,12 @@ def _lifespan_proxy(
     return wrap
 
 
+class StateValue(FastMCPBaseModel):
+    """Wrapper for stored context state values."""
+
+    value: Any
+
+
 class FastMCP(Generic[LifespanResultT]):
     def __init__(
         self,
@@ -242,6 +251,7 @@ class FastMCP(Generic[LifespanResultT]):
         on_duplicate: DuplicateBehavior | None = None,
         strict_input_validation: bool | None = None,
         tasks: bool | None = None,
+        session_state_store: AsyncKeyValue | None = None,
         # ---
         # --- DEPRECATED parameters ---
         # ---
@@ -277,6 +287,14 @@ class FastMCP(Generic[LifespanResultT]):
         self._worker = None
 
         self._additional_http_routes: list[BaseRoute] = []
+
+        # Session-scoped state store (shared across all requests)
+        self._state_storage: AsyncKeyValue = session_state_store or MemoryStore()
+        self._state_store: PydanticAdapter[StateValue] = PydanticAdapter[StateValue](
+            key_value=self._state_storage,
+            pydantic_model=StateValue,
+            default_collection="fastmcp_state",
+        )
 
         # Create LocalProvider for local components
         self._local_provider: LocalProvider = LocalProvider(

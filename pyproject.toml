@@ -172,6 +172,8 @@ extend-select = [
     "UP",  # flake8-unused-imports: Catches unused imports
 ]
 
+[tool.ruff.lint.isort]
+known-first-party = ["fastmcp"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "I001", "RUF013"]

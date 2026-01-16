@@ -22,7 +22,7 @@ The `Context` object provides a clean interface to access MCP features within yo
 - **Prompt Access**: List and retrieve prompts registered with the server
 - **LLM Sampling**: Request the client's LLM to generate text based on provided messages
 - **User Elicitation**: Request structured input from users during tool execution
-- **State Management**: Store and share data between middleware and the handler within a single request
+- **Session State**: Store data that persists across requests within an MCP session
 - **Request Information**: Access metadata about the current request
 - **Server Access**: When needed, access the underlying FastMCP server instance
 
@@ -209,55 +209,57 @@ messages = result.messages
 - **`ctx.list_prompts() -> list[MCPPrompt]`**: Returns list of all available prompts
 - **`ctx.get_prompt(name: str, arguments: dict[str, Any] | None = None) -> GetPromptResult`**: Get a specific prompt with optional arguments
 
-### State Management
+### Session State
 
-<VersionBadge version="2.11.0" />
+<VersionBadge version="3.0.0" />
 
-Store and share data between middleware and handlers within a single MCP request. Each MCP request (such as calling a tool, reading a resource, listing tools, or listing resources) receives its own context object with isolated state. Context state is particularly useful for passing information from [middleware](/servers/middleware) to your handlers.
+Store data that persists across multiple requests within the same MCP session. Session state is automatically keyed by the client's session, ensuring isolation between different clients.
 
-To store a value in the context state, use `ctx.set_state(key, value)`. To retrieve a value, use `ctx.get_state(key)`.
+```python
+from fastmcp import FastMCP, Context
 
-<Warning>
-Context state is scoped to a single MCP request. Each operation (tool call, resource read, list operation, etc.) receives a new context object. State set during one request will not be available in subsequent requests. For persistent data storage across requests, use external storage mechanisms like databases, files, or in-memory caches.
-</Warning>
-
-This simplified example shows how to use MCP middleware to store user info in the context state, and how to access that state in a tool:
-
-```python {7-8, 16-17}
-from fastmcp.server.middleware import Middleware, MiddlewareContext
-
-class UserAuthMiddleware(Middleware):
-    async def on_call_tool(self, context: MiddlewareContext, call_next):
-
-        # Middleware stores user info in context state
-        context.fastmcp_context.set_state("user_id", "user_123")
-        context.fastmcp_context.set_state("permissions", ["read", "write"])
-
-        return await call_next(context)
+mcp = FastMCP("stateful-app")
 
 @mcp.tool
-async def secure_operation(data: str, ctx: Context) -> str:
-    """Tool can access state set by middleware."""
+async def increment_counter(ctx: Context) -> int:
+    """Increment a counter that persists across tool calls."""
+    count = await ctx.get_state("counter") or 0
+    await ctx.set_state("counter", count + 1)
+    return count + 1
 
-    user_id = ctx.get_state("user_id")  # "user_123"
-    permissions = ctx.get_state("permissions")  # ["read", "write"]
-    
-    if "write" not in permissions:
-        return "Access denied"
-    
-    return f"Processing {data} for user {user_id}"
+@mcp.tool
+async def get_counter(ctx: Context) -> int:
+    """Get the current counter value."""
+    return await ctx.get_state("counter") or 0
 ```
 
+Each client session has its own isolated state—two different clients calling `increment_counter` will each have their own counter.
+
 **Method signatures:**
-- **`ctx.set_state(key: str, value: Any) -> None`**: Store a value in the context state
-- **`ctx.get_state(key: str) -> Any`**: Retrieve a value from the context state (returns None if not found)
+- **`await ctx.set_state(key: str, value: Any) -> None`**: Store a value in session state
+- **`await ctx.get_state(key: str) -> Any`**: Retrieve a value (returns None if not found)
+- **`await ctx.delete_state(key: str) -> None`**: Remove a value from session state
 
-**State Inheritance:**
-When a new context is created (nested contexts), it inherits a copy of its parent's state. This ensures that:
-- State set on a child context never affects the parent context
-- State set on a parent context after the child context is initialized is not propagated to the child context
+<Note>
+State methods are async and require `await`. State expires after 1 day to prevent unbounded memory growth.
+</Note>
 
-This makes state management predictable and prevents unexpected side effects between nested operations.
+#### Custom Storage Backends
+
+By default, session state uses an in-memory store suitable for single-server deployments. For distributed or serverless deployments, provide a custom storage backend:
+
+```python
+from key_value.aio.stores.redis import RedisStore
+
+# Use Redis for distributed state
+mcp = FastMCP("distributed-app", session_state_store=RedisStore(...))
+```
+
+Any backend compatible with the [py-key-value-aio](https://github.com/strawgate/py-key-value) `AsyncKeyValue` protocol works. See [Storage Backends](/servers/storage-backends) for more options including Redis, DynamoDB, and MongoDB.
+
+#### State During Initialization
+
+State set during `on_initialize` middleware persists to subsequent tool calls when using the same session object (STDIO, SSE, single-server HTTP). For distributed/serverless HTTP deployments where different machines handle init and tool calls, state is isolated by the `mcp-session-id` header.
 
 ### Change Notifications
 
@@ -345,7 +347,7 @@ async def request_info(ctx: Context) -> dict:
 
 - **`ctx.request_id -> str`**: Get the unique ID for the current MCP request
 - **`ctx.client_id -> str | None`**: Get the ID of the client making the request, if provided during initialization
-- **`ctx.session_id -> str | None`**: Get the MCP session ID for session-based data sharing (HTTP transports only)
+- **`ctx.session_id -> str`**: Get the MCP session ID for session-based data sharing. Raises `RuntimeError` if the MCP session is not yet established.
 
 #### Request Context Availability
 

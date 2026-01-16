@@ -150,6 +150,37 @@ Documentation: `docs/servers/providers/transforms.mdx`, `docs/servers/visibility
 
 ---
 
+## Session-Scoped State
+
+v3.0 changes context state from request-scoped to session-scoped. State now persists across multiple tool calls within the same MCP session.
+
+```python
+@mcp.tool
+async def increment_counter(ctx: Context) -> int:
+    count = await ctx.get_state("counter") or 0
+    await ctx.set_state("counter", count + 1)
+    return count + 1
+```
+
+State is automatically keyed by session ID, ensuring isolation between different clients. The implementation uses [pykeyvalue](https://github.com/strawgate/py-key-value) for pluggable storage backends:
+
+```python
+from key_value.aio.stores.redis import RedisStore
+
+# Use Redis for distributed deployments
+mcp = FastMCP("server", session_state_store=RedisStore(...))
+```
+
+**Key details:**
+- Methods are now async: `await ctx.get_state()`, `await ctx.set_state()`, `await ctx.delete_state()`
+- State expires after 1 day (TTL) to prevent unbounded memory growth
+- Works during `on_initialize` middleware when using the same session object
+- For distributed HTTP, session identity comes from the `mcp-session-id` header
+
+Documentation: `docs/servers/context.mdx`
+
+---
+
 ## Visibility System
 
 Components can be dynamically enabled/disabled at runtime using the visibility system ([#2708](https://github.com/jlowin/fastmcp/pull/2708)).
@@ -727,3 +758,19 @@ See `docs/development/v3-notes/auth-provider-env-vars.mdx` for rationale.
 `FASTMCP_SHOW_CLI_BANNER` → `FASTMCP_SHOW_SERVER_BANNER` ([#2771](https://github.com/jlowin/fastmcp/pull/2771))
 
 Now applies to all server startup methods, not just the CLI.
+
+### Context State Methods Are Async
+
+`ctx.set_state()` and `ctx.get_state()` are now async and session-scoped:
+
+```python
+# v2.x
+ctx.set_state("key", "value")
+value = ctx.get_state("key")
+
+# v3.0
+await ctx.set_state("key", "value")
+value = await ctx.get_state("key")
+```
+
+State now persists across requests within a session. See "Session-Scoped State" above.

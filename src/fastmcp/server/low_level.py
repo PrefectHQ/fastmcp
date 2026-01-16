@@ -96,7 +96,7 @@ class MiddlewareServerSession(ServerSession):
                 return None
 
             async with fastmcp.server.context.Context(
-                fastmcp=self.fastmcp
+                fastmcp=self.fastmcp, session=self
             ) as fastmcp_ctx:
                 # Create the middleware context.
                 mw_context = MiddlewareContext(

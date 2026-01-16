@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import json
 import logging
 import weakref
@@ -55,7 +54,7 @@ from fastmcp.server.sampling.run import (
 from fastmcp.server.sampling.run import (
     execute_tools as run_sampling_tools,
 )
-from fastmcp.server.server import FastMCP
+from fastmcp.server.server import FastMCP, StateValue
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import _clamp_logger, get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
@@ -156,29 +155,36 @@ class Context:
         request_id = ctx.request_id
         client_id = ctx.client_id
 
-        # Manage state across the request
-        ctx.set_state("key", "value")
-        value = ctx.get_state("key")
+        # Manage state across the session (persists across requests)
+        await ctx.set_state("key", "value")
+        value = await ctx.get_state("key")
 
         return str(x)
     ```
 
     State Management:
-    Context objects maintain a state dictionary that can be used to store and share
-    data across middleware and tool calls within a request. When a new context
-    is created (nested contexts), it inherits a copy of its parent's state, ensuring
-    that modifications in child contexts don't affect parent contexts.
+    Context provides session-scoped state that persists across requests within
+    the same MCP session. State is automatically keyed by session, ensuring
+    isolation between different clients.
+
+    State set during `on_initialize` middleware will persist to subsequent tool
+    calls when using the same session object (STDIO, SSE, single-server HTTP).
+    For distributed/serverless HTTP deployments where different machines handle
+    the init and tool calls, state is isolated by the mcp-session-id header.
 
     The context parameter name can be anything as long as it's annotated with Context.
     The context is optional - tools that don't need it can omit the parameter.
 
     """
 
-    def __init__(self, fastmcp: FastMCP):
+    # Default TTL for session state: 1 day in seconds
+    _STATE_TTL_SECONDS: int = 86400
+
+    def __init__(self, fastmcp: FastMCP, session: ServerSession | None = None):
         self._fastmcp: weakref.ref[FastMCP] = weakref.ref(fastmcp)
+        self._session: ServerSession | None = session  # For state ops during init
         self._tokens: list[Token] = []
         self._notification_queue: list[mcp.types.ServerNotificationType] = []
-        self._state: dict[str, Any] = {}
         self._exit_stack: AsyncExitStack | None = None
         self._cancel_scope: anyio.CancelScope | None = None
 
@@ -192,11 +198,6 @@ class Context:
 
     async def __aenter__(self) -> Context:
         """Enter the context manager and set this context as the current context."""
-        parent_context = _current_context.get(None)
-        if parent_context is not None:
-            # Inherit state from parent context
-            self._state = copy.deepcopy(parent_context._state)
-
         # Always set this context and save the token
         token = _current_context.set(self)
         self._tokens.append(token)
@@ -462,7 +463,7 @@ class Context:
             for other transports.
 
         Raises:
-            RuntimeError if MCP request context is not available.
+            RuntimeError if no session is available.
 
         Example:
             ```python
@@ -473,32 +474,37 @@ class Context:
                 return f"Data stored for session {session_id}"
             ```
         """
-        request_ctx = self.request_context
-        if request_ctx is None:
-            raise RuntimeError(
-                "session_id is not available because the MCP session has not been established yet. "
-                "Check `context.request_context` for None before accessing this attribute."
-            )
-        session = request_ctx.session
+        from uuid import uuid4
 
-        # Try to get the session ID from the session attributes
-        session_id = getattr(session, "_fastmcp_id", None)
+        # Get session from request context or _session (for on_initialize)
+        request_ctx = self.request_context
+        if request_ctx is not None:
+            session = request_ctx.session
+        elif self._session is not None:
+            session = self._session
+        else:
+            raise RuntimeError(
+                "session_id is not available because no session exists. "
+                "This typically means you're outside a request context."
+            )
+
+        # Check for cached session ID
+        session_id = getattr(session, "_fastmcp_state_prefix", None)
         if session_id is not None:
             return session_id
 
-        # Try to get the session ID from the http request headers
-        request = request_ctx.request
-        if request:
-            session_id = request.headers.get("mcp-session-id")
+        # For HTTP, try to get from header
+        if request_ctx is not None:
+            request = request_ctx.request
+            if request:
+                session_id = request.headers.get("mcp-session-id")
 
-        # Generate a session ID if it doesn't exist.
+        # For STDIO/SSE/in-memory, generate a UUID
         if session_id is None:
-            from uuid import uuid4
-
             session_id = str(uuid4())
 
-        # Save the session id to the session attributes
-        session._fastmcp_id = session_id  # type: ignore[attr-defined]
+        # Cache on session for consistency
+        session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]
         return session_id
 
     @property
@@ -1112,13 +1118,37 @@ class Context:
         else:
             raise ValueError(f"Unexpected elicitation action: {result.action}")
 
-    def set_state(self, key: str, value: Any) -> None:
-        """Set a value in the context state."""
-        self._state[key] = value
+    def _make_state_key(self, key: str) -> str:
+        """Create session-prefixed key for state storage."""
+        return f"{self.session_id}:{key}"
 
-    def get_state(self, key: str) -> Any:
-        """Get a value from the context state. Returns None if the key is not found."""
-        return self._state.get(key)
+    async def set_state(self, key: str, value: Any) -> None:
+        """Set a value in the session-scoped state store.
+
+        Values persist across requests within the same MCP session.
+        The key is automatically prefixed with the session identifier.
+        State expires after 1 day to prevent unbounded memory growth.
+        """
+        prefixed_key = self._make_state_key(key)
+        await self.fastmcp._state_store.put(
+            key=prefixed_key,
+            value=StateValue(value=value),
+            ttl=self._STATE_TTL_SECONDS,
+        )
+
+    async def get_state(self, key: str) -> Any:
+        """Get a value from the session-scoped state store.
+
+        Returns None if the key is not found.
+        """
+        prefixed_key = self._make_state_key(key)
+        result = await self.fastmcp._state_store.get(key=prefixed_key)
+        return result.value if result is not None else None
+
+    async def delete_state(self, key: str) -> None:
+        """Delete a value from the session-scoped state store."""
+        prefixed_key = self._make_state_key(key)
+        await self.fastmcp._state_store.delete(key=prefixed_key)
 
     async def _periodic_flush(self) -> None:
         """Background task that flushes the notification queue every second."""

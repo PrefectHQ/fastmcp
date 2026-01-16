@@ -274,6 +274,50 @@ The environment variable for controlling the server banner has been renamed:
 
 This change reflects that the setting now applies to all server startup methods, not just the CLI. The banner is now suppressed when running `python server.py` directly, not just when using `fastmcp run`.
 
+### Context State Methods Are Async
+
+<Warning>
+**Breaking Change:** `ctx.set_state()` and `ctx.get_state()` are now async methods. Synchronous calls will fail.
+</Warning>
+
+Context state has changed from request-scoped to session-scoped, persisting across multiple tool calls within the same MCP session. The methods are now async because they interact with a pluggable storage backend.
+
+<CodeGroup>
+```python Before
+@mcp.tool
+def my_tool(ctx: Context) -> str:
+    ctx.set_state("key", "value")
+    value = ctx.get_state("key")
+    return value
+```
+
+```python After
+@mcp.tool
+async def my_tool(ctx: Context) -> str:
+    await ctx.set_state("key", "value")
+    value = await ctx.get_state("key")
+    return value
+```
+</CodeGroup>
+
+**What changed:**
+- State now persists across requests within a session (not just within a single request)
+- Different clients have isolated state (keyed by session ID)
+- State expires after 1 day to prevent unbounded memory growth
+- New method: `await ctx.delete_state(key)`
+
+**Custom storage backends:**
+
+By default, state uses an in-memory store. For distributed deployments, provide a custom backend:
+
+```python
+from key_value.aio.stores.redis import RedisStore
+
+mcp = FastMCP("server", session_state_store=RedisStore(...))
+```
+
+See [Session State](/servers/context#session-state) for full documentation.
+
 ## v2.14.0
 
 ### OpenAPI Parser Promotion
