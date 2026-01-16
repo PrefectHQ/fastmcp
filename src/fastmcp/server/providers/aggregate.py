@@ -1,8 +1,19 @@
 """AggregateProvider for combining multiple providers into one.
 
-This module provides `AggregateProvider` which presents multiple providers
-as a single unified provider. Used internally by FastMCP for aggregating
-components from all providers.
+This module provides `AggregateProvider`, a utility class that presents
+multiple providers as a single unified provider. Useful when you want to
+combine custom providers without creating a full FastMCP server.
+
+Example:
+    ```python
+    from fastmcp.server.providers import AggregateProvider
+
+    # Combine multiple providers into one
+    combined = AggregateProvider([provider1, provider2, provider3])
+
+    # Use like any other provider
+    tools = await combined.list_tools()
+    ```
 """
 
 from __future__ import annotations
@@ -27,13 +38,17 @@ T = TypeVar("T")
 
 
 class AggregateProvider(Provider):
-    """Presents multiple providers as a single provider.
+    """Utility provider that combines multiple providers into one.
 
-    Components are aggregated from all providers. For get_* operations,
-    providers are queried in parallel and the first non-None result is returned.
+    Components are aggregated from all providers. For list operations, results
+    from all providers are combined. For get operations, providers are queried
+    in parallel and the first non-None result is returned.
 
-    Errors from individual providers are logged and skipped (graceful degradation).
-    This matches the behavior of FastMCP's original provider iteration.
+    Errors from individual providers are logged and skipped (graceful degradation),
+    allowing the aggregate to continue working even if one provider fails.
+
+    This is useful when you want to combine custom providers without creating
+    a full FastMCP server.
     """
 
     def __init__(self, providers: Sequence[Provider]) -> None:

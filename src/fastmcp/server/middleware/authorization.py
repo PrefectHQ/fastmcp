@@ -28,7 +28,7 @@ from collections.abc import Sequence
 
 import mcp.types as mt
 
-from fastmcp.exceptions import AuthorizationError, NotFoundError
+from fastmcp.exceptions import AuthorizationError
 from fastmcp.prompts.prompt import Prompt, PromptResult
 from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
@@ -136,7 +136,12 @@ class AuthMiddleware(Middleware):
                 f"Authorization failed for tool '{tool_name}': missing context"
             )
 
-        tool = await fastmcp.fastmcp.get_tool(tool_name)
+        # Use _get_tool to resolve transformed names from MCP protocol
+        tool = await fastmcp.fastmcp._get_tool(tool_name)
+        if tool is None:
+            raise AuthorizationError(
+                f"Authorization failed for tool '{tool_name}': tool not found"
+            )
 
         token = get_access_token()
         ctx = AuthContext(token=token, component=tool)
@@ -197,10 +202,14 @@ class AuthMiddleware(Middleware):
             )
 
         # Try concrete resource first, then template (for template-backed URIs)
-        try:
-            component = await fastmcp.fastmcp.get_resource(str(uri))
-        except NotFoundError:
-            component = await fastmcp.fastmcp.get_resource_template(str(uri))
+        # Use _get_* to resolve transformed URIs from MCP protocol
+        component = await fastmcp.fastmcp._get_resource(str(uri))
+        if component is None:
+            component = await fastmcp.fastmcp._get_resource_template(str(uri))
+        if component is None:
+            raise AuthorizationError(
+                f"Authorization failed for resource '{uri}': resource not found"
+            )
 
         token = get_access_token()
         ctx = AuthContext(token=token, component=component)
@@ -286,7 +295,12 @@ class AuthMiddleware(Middleware):
                 f"Authorization failed for prompt '{prompt_name}': missing context"
             )
 
-        prompt = await fastmcp.fastmcp.get_prompt(prompt_name)
+        # Use _get_prompt to resolve transformed names from MCP protocol
+        prompt = await fastmcp.fastmcp._get_prompt(prompt_name)
+        if prompt is None:
+            raise AuthorizationError(
+                f"Authorization failed for prompt '{prompt_name}': prompt not found"
+            )
 
         token = get_access_token()
         ctx = AuthContext(token=token, component=prompt)

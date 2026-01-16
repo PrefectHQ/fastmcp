@@ -480,9 +480,9 @@ class FastMCPProvider(Provider):
     async def list_tools(self) -> Sequence[Tool]:
         """List all tools from the mounted server as FastMCPProviderTools.
 
-        Calls the nested server's middleware to list tools, then wraps
-        each tool as a FastMCPProviderTool that delegates execution to the
-        nested server's middleware.
+        Runs the mounted server's middleware so filtering/transformation applies.
+        Wraps each tool as a FastMCPProviderTool that delegates execution to
+        the nested server's middleware.
         """
         raw_tools = await self.server.get_tools(run_middleware=True)
         return [FastMCPProviderTool.wrap(self.server, t) for t in raw_tools]
@@ -499,9 +499,9 @@ class FastMCPProvider(Provider):
     async def list_resources(self) -> Sequence[Resource]:
         """List all resources from the mounted server as FastMCPProviderResources.
 
-        Calls the nested server's middleware to list resources, then wraps
-        each resource as a FastMCPProviderResource that delegates reading to the
-        nested server's middleware.
+        Runs the mounted server's middleware so filtering/transformation applies.
+        Wraps each resource as a FastMCPProviderResource that delegates reading
+        to the nested server's middleware.
         """
         raw_resources = await self.server.get_resources(run_middleware=True)
         return [FastMCPProviderResource.wrap(self.server, r) for r in raw_resources]
@@ -518,6 +518,7 @@ class FastMCPProvider(Provider):
     async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List all resource templates from the mounted server.
 
+        Runs the mounted server's middleware so filtering/transformation applies.
         Returns FastMCPProviderResourceTemplate instances that create
         FastMCPProviderResources when materialized.
         """
@@ -541,6 +542,7 @@ class FastMCPProvider(Provider):
     async def list_prompts(self) -> Sequence[Prompt]:
         """List all prompts from the mounted server as FastMCPProviderPrompts.
 
+        Runs the mounted server's middleware so filtering/transformation applies.
         Returns FastMCPProviderPrompt instances that delegate rendering to the
         wrapped server's middleware.
         """
@@ -560,12 +562,12 @@ class FastMCPProvider(Provider):
         """Return task-eligible components from the mounted server.
 
         Returns the child's ACTUAL components (not wrapped) so their actual
-        functions get registered with Docket. Uses _source_get_tasks() to get
-        components with child server's transforms applied, then applies this
-        provider's transforms for correct registration keys.
+        functions get registered with Docket. Gets components with child
+        server's transforms applied, then applies this provider's transforms
+        for correct registration keys.
         """
         # Get tasks with child server's transforms already applied
-        components = list(await self.server._source_get_tasks())
+        components = list(await self.server.get_tasks())
 
         # Separate by type for this provider's transform application
         tools = [c for c in components if isinstance(c, Tool)]

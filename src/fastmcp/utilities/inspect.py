@@ -106,11 +106,11 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
     Returns:
         FastMCPInfo dataclass containing the extracted information
     """
-    # Get all components directly without middleware (auth, rate limiting, etc.)
-    tools_list = await mcp.get_tools(run_middleware=False)
-    prompts_list = await mcp.get_prompts(run_middleware=False)
-    resources_list = await mcp.get_resources(run_middleware=False)
-    templates_list = await mcp.get_resource_templates(run_middleware=False)
+    # Get all components
+    tools_list = await mcp.get_tools()
+    prompts_list = await mcp.get_prompts()
+    resources_list = await mcp.get_resources()
+    templates_list = await mcp.get_resource_templates()
 
     # Extract detailed tool information
     tool_infos = []
