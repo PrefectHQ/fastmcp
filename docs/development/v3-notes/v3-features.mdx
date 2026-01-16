@@ -6,7 +6,7 @@ This document tracks major features in FastMCP v3.0 for release notes preparatio
 
 ## Provider-Based Architecture
 
-v3.0 introduces a provider-based component system that replaces v2's static-only registration. Providers dynamically source tools, resources, templates, and prompts at runtime.
+v3.0 introduces a provider-based component system that replaces v2's static-only registration ([#2622](https://github.com/jlowin/fastmcp/pull/2622)). Providers dynamically source tools, resources, templates, and prompts at runtime.
 
 **Core abstraction** (`src/fastmcp/server/providers/base.py`):
 ```python
@@ -100,7 +100,7 @@ main.add_provider(provider)
 
 ### Transforms
 
-Transforms modify components (tools, resources, prompts) as they flow from providers to clients. They use a middleware pattern where each transform receives a `call_next` callable to continue the chain.
+Transforms modify components (tools, resources, prompts) as they flow from providers to clients ([#2836](https://github.com/jlowin/fastmcp/pull/2836)). They use a middleware pattern where each transform receives a `call_next` callable to continue the chain.
 
 **Built-in transforms** (`src/fastmcp/server/transforms/`):
 
@@ -152,7 +152,7 @@ Documentation: `docs/servers/providers/transforms.mdx`, `docs/servers/visibility
 
 ## Visibility System
 
-Components can be dynamically enabled/disabled at runtime using the visibility system (`src/fastmcp/server/transforms/visibility.py`).
+Components can be dynamically enabled/disabled at runtime using the visibility system ([#2708](https://github.com/jlowin/fastmcp/pull/2708)).
 
 ```python
 mcp = FastMCP("Server")
@@ -176,7 +176,7 @@ Works at both server and provider level. Supports:
 
 ## Type-Safe Canonical Results
 
-v3.0 introduces type-safe result classes that provide explicit control over component responses while supporting MCP runtime metadata.
+v3.0 introduces type-safe result classes that provide explicit control over component responses while supporting MCP runtime metadata: `ToolResult` ([#2736](https://github.com/jlowin/fastmcp/pull/2736)), `ResourceResult` ([#2734](https://github.com/jlowin/fastmcp/pull/2734)), and `PromptResult` ([#2738](https://github.com/jlowin/fastmcp/pull/2738)).
 
 ### ToolResult
 
@@ -274,7 +274,7 @@ Requires Docket server for task scheduling and result polling.
 
 ## Decorators Return Functions
 
-v3.0 changes what decorators (`@tool`, `@resource`, `@prompt`) return. Decorators now return the original function unchanged, rather than transforming it into a component object.
+v3.0 changes what decorators (`@tool`, `@resource`, `@prompt`) return ([#2856](https://github.com/jlowin/fastmcp/pull/2856)). Decorators now return the original function unchanged, rather than transforming it into a component object.
 
 **v3 behavior (default):**
 ```python
@@ -306,7 +306,7 @@ Environment variable: `FASTMCP_DECORATOR_MODE=object`
 
 ## CLI Auto-Reload
 
-The `--reload` flag enables file watching with automatic server restarts for development.
+The `--reload` flag enables file watching with automatic server restarts for development ([#2816](https://github.com/jlowin/fastmcp/pull/2816)).
 
 ```bash
 # Watch for changes and restart
@@ -335,7 +335,7 @@ fastmcp dev server.py  # Includes --reload by default
 
 ## Component Authorization
 
-v3.0 introduces callable-based authorization for tools, resources, and prompts (`src/fastmcp/server/auth/authorization.py`).
+v3.0 introduces callable-based authorization for tools, resources, and prompts ([#2855](https://github.com/jlowin/fastmcp/pull/2855)).
 
 **Component-level auth**:
 
@@ -383,6 +383,196 @@ def custom_check(ctx: AuthContext) -> bool:
 ```
 
 STDIO transport bypasses all auth checks (no OAuth concept).
+
+---
+
+## FileSystemProvider
+
+v3.0 introduces `FileSystemProvider`, a fundamentally different approach to organizing MCP servers. Instead of importing a server instance and decorating functions with `@server.tool`, you use standalone decorators in separate files and let the provider discover them.
+
+**The problem it solves**: Traditional servers require coordination between files—either tool files import the server (creating coupling) or the server imports all tool modules (creating a registry bottleneck). FileSystemProvider removes this coupling entirely.
+
+**Usage** ([#2823](https://github.com/jlowin/fastmcp/pull/2823)):
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers import FileSystemProvider
+
+# Scans mcp/ directory for decorated functions
+mcp = FastMCP("server", providers=[FileSystemProvider("mcp/")])
+```
+
+**Tool files are self-contained**:
+
+```python
+# mcp/tools/greet.py
+from fastmcp.tools import tool
+
+@tool
+def greet(name: str) -> str:
+    """Greet someone by name."""
+    return f"Hello, {name}!"
+```
+
+Features:
+- **Standalone decorators**: `@tool`, `@resource`, `@prompt` from `fastmcp.tools`, `fastmcp.resources`, `fastmcp.prompts` ([#2832](https://github.com/jlowin/fastmcp/pull/2832))
+- **Reload mode**: `FileSystemProvider("mcp/", reload=True)` re-scans on every request for development
+- **Package support**: Directories with `__init__.py` support relative imports
+- **Warning deduplication**: Broken imports warn once per file modification
+
+Documentation: [FileSystemProvider](/servers/providers/filesystem)
+
+---
+
+## OpenTelemetry Tracing
+
+v3.0 adds OpenTelemetry instrumentation for observability into server and client operations ([#2869](https://github.com/jlowin/fastmcp/pull/2869)).
+
+**Server spans**: Created for tool calls, resource reads, and prompt renders with attributes including component key, provider type, session ID, and auth context.
+
+**Client spans**: Wrap outgoing calls with W3C trace context propagation via request meta.
+
+```python
+# Tracing is passive - configure an OTel SDK to export spans
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+
+# Use fastmcp normally - spans export to your configured backend
+```
+
+Components provide their own span attributes through a `get_span_attributes()` method that subclasses override—this lets LocalProvider, FastMCPProvider, and ProxyProvider each include relevant context (original names, backend URIs, etc.).
+
+Documentation: [Telemetry](/servers/telemetry)
+
+---
+
+## Composable Lifespans
+
+Lifespans can be combined with the `|` operator for modular setup/teardown ([#2828](https://github.com/jlowin/fastmcp/pull/2828)):
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.lifespan import lifespan
+
+@lifespan
+async def db_lifespan(server):
+    db = await connect_db()
+    try:
+        yield {"db": db}
+    finally:
+        await db.close()
+
+@lifespan
+async def cache_lifespan(server):
+    cache = await connect_cache()
+    try:
+        yield {"cache": cache}
+    finally:
+        await cache.close()
+
+mcp = FastMCP("server", lifespan=db_lifespan | cache_lifespan)
+```
+
+Both enter lifespans in order and exit in reverse (LIFO). Context dicts are merged.
+
+Also adds `combine_lifespans()` utility for FastAPI integration:
+
+```python
+from fastmcp.utilities.lifespan import combine_lifespans
+
+app = FastAPI(lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan))
+```
+
+Documentation: [Lifespan](/servers/lifespan)
+
+---
+
+## Tool Timeout
+
+Tools can limit foreground execution time with a `timeout` parameter ([#2872](https://github.com/jlowin/fastmcp/pull/2872)):
+
+```python
+@mcp.tool(timeout=30.0)
+async def fetch_data(url: str) -> dict:
+    """Fetch with 30-second timeout."""
+    ...
+```
+
+When exceeded, clients receive MCP error code `-32000`. Both sync and async tools are supported—sync functions run in thread pools so the timeout applies regardless of execution model.
+
+Note: This timeout applies to foreground execution only. Background tasks (`task=True`) execute in Docket workers where this timeout isn't enforced.
+
+---
+
+## PingMiddleware
+
+Sends periodic server-to-client pings to keep long-lived connections alive ([#2838](https://github.com/jlowin/fastmcp/pull/2838)):
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware import PingMiddleware
+
+mcp = FastMCP("server")
+mcp.add_middleware(PingMiddleware(interval_ms=5000))
+```
+
+The middleware starts a background ping task on first message from each session, using the session's existing task group for automatic cleanup when the session ends.
+
+---
+
+## Context.transport Property
+
+Tools can detect which transport is active ([#2850](https://github.com/jlowin/fastmcp/pull/2850)):
+
+```python
+from fastmcp import FastMCP, Context
+
+mcp = FastMCP("example")
+
+@mcp.tool
+def my_tool(ctx: Context) -> str:
+    if ctx.transport == "stdio":
+        return "short response"
+    return "detailed response with more context"
+```
+
+Returns `Literal["stdio", "sse", "streamable-http"]` when running, or `None` outside a server context.
+
+---
+
+## Automatic Threadpool for Sync Functions
+
+Synchronous tools, resources, and prompts now automatically run in a threadpool, preventing event loop blocking during concurrent requests ([#2865](https://github.com/jlowin/fastmcp/pull/2865)):
+
+```python
+import time
+
+@mcp.tool
+def slow_tool():
+    time.sleep(10)  # No longer blocks other requests
+    return "done"
+```
+
+Three concurrent calls now execute in parallel (~10s) rather than sequentially (30s). Uses `anyio.to_thread.run_sync()` which properly propagates contextvars, so `Context` and `Depends` continue to work.
+
+---
+
+## CLI Update Notifications
+
+The CLI notifies users when a newer FastMCP version is available on PyPI ([#2840](https://github.com/jlowin/fastmcp/pull/2840)).
+
+**Setting**: `FASTMCP_CHECK_FOR_UPDATES`
+- `"stable"` - Check for stable releases (default)
+- `"prerelease"` - Include alpha/beta/rc versions
+- `"off"` - Disable
+
+12-hour cache, 2-second timeout, fails silently on network errors.
 
 ---
 
@@ -438,7 +628,7 @@ mcp.add_transform(ToolTransform({"name": config}))
 
 ### WSTransport Removed
 
-The deprecated `WSTransport` client transport has been removed. Use `StreamableHttpTransport` instead.
+The deprecated `WSTransport` client transport has been removed ([#2826](https://github.com/jlowin/fastmcp/pull/2826)). Use `StreamableHttpTransport` instead.
 
 ### Decorators Return Functions
 
@@ -516,7 +706,7 @@ def my_prompt() -> Message:
 
 ### Auth Provider Environment Variables Removed
 
-Auth providers no longer auto-load from environment variables:
+Auth providers no longer auto-load from environment variables ([#2752](https://github.com/jlowin/fastmcp/pull/2752)):
 
 ```python
 # v2.x - auto-loaded from FASTMCP_SERVER_AUTH_GITHUB_*
@@ -534,6 +724,6 @@ See `docs/development/v3-notes/auth-provider-env-vars.mdx` for rationale.
 
 ### Server Banner Environment Variable
 
-`FASTMCP_SHOW_CLI_BANNER` → `FASTMCP_SHOW_SERVER_BANNER`
+`FASTMCP_SHOW_CLI_BANNER` → `FASTMCP_SHOW_SERVER_BANNER` ([#2771](https://github.com/jlowin/fastmcp/pull/2771))
 
 Now applies to all server startup methods, not just the CLI.

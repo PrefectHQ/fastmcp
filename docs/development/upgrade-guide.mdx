@@ -89,6 +89,24 @@ mcp.add_transform(ToolTransform({
 
 `remove_tool_transformation()` is deprecated with no replacement - transforms are immutable once added. Use `server.disable(keys=[...])` to hide tools dynamically.
 
+### FastMCP.as_proxy() Deprecated
+
+The `FastMCP.as_proxy()` classmethod is deprecated. Use the `create_proxy()` function instead ([#2829](https://github.com/jlowin/fastmcp/pull/2829)):
+
+<CodeGroup>
+```python Before
+proxy = FastMCP.as_proxy("http://example.com/mcp")
+```
+
+```python After
+from fastmcp.server import create_proxy
+
+proxy = create_proxy("http://example.com/mcp")
+```
+</CodeGroup>
+
+`as_proxy()` continues to work but forwards to `create_proxy()`.
+
 ### Mount Namespace Parameter
 
 The `prefix` parameter for `mount()` has been renamed to `namespace`:
