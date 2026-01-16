@@ -171,7 +171,25 @@ verifier = IntrospectionTokenVerifier(
 mcp = FastMCP(name="Protected API", auth=verifier)
 ```
 
-The verifier authenticates to the introspection endpoint using HTTP Basic Auth with your client credentials. When a request arrives with a bearer token, FastMCP queries the introspection endpoint to determine if the token is active and has sufficient scopes.
+The verifier authenticates to the introspection endpoint using client credentials and queries it whenever a bearer token arrives. FastMCP checks whether the token is active and has sufficient scopes before allowing access.
+
+Two standard client authentication methods are supported, both defined in RFC 6749:
+
+- **`client_secret_basic`** (default): Sends credentials via HTTP Basic Auth header
+- **`client_secret_post`**: Sends credentials in the POST request body
+
+Most OAuth providers support both methods, though some may require one specifically. Configure the authentication method with the `client_auth_method` parameter:
+
+```python
+# Use POST body authentication instead of Basic Auth
+verifier = IntrospectionTokenVerifier(
+    introspection_url="https://auth.yourcompany.com/oauth/introspect",
+    client_id="mcp-resource-server",
+    client_secret="your-client-secret",
+    client_auth_method="client_secret_post",
+    required_scopes=["api:read", "api:write"]
+)
+```
 
 ## Development and Testing
 

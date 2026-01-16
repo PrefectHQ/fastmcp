@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import base64
 import time
-from typing import Any
+from typing import Any, Literal, get_args
 
 import httpx
 from pydantic import AnyHttpUrl, SecretStr
@@ -36,6 +36,8 @@ from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
+ClientAuthMethod = Literal["client_secret_basic", "client_secret_post"]
+
 
 class IntrospectionTokenVerifier(TokenVerifier):
     """
@@ -45,8 +47,11 @@ class IntrospectionTokenVerifier(TokenVerifier):
     endpoint. Unlike JWT verification which is stateless, token introspection requires
     a network call to the authorization server for each token validation.
 
-    The verifier authenticates to the introspection endpoint using HTTP Basic Auth
-    with the provided client_id and client_secret, as specified in RFC 7662.
+    The verifier authenticates to the introspection endpoint using either:
+    - HTTP Basic Auth (client_secret_basic, default): credentials in Authorization header
+    - POST body authentication (client_secret_post): credentials in request body
+
+    Both methods are specified in RFC 6749 (OAuth 2.0) and RFC 7662 (Token Introspection).
 
     Use this when:
     - Your authorization server issues opaque (non-JWT) tokens
@@ -71,6 +76,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
         introspection_url: str,
         client_id: str,
         client_secret: str | SecretStr,
+        client_auth_method: ClientAuthMethod = "client_secret_basic",
         timeout_seconds: int = 10,
         required_scopes: list[str] | None = None,
         base_url: AnyHttpUrl | str | None = None,
@@ -82,6 +88,8 @@ class IntrospectionTokenVerifier(TokenVerifier):
             introspection_url: URL of the OAuth 2.0 token introspection endpoint
             client_id: OAuth client ID for authenticating to the introspection endpoint
             client_secret: OAuth client secret for authenticating to the introspection endpoint
+            client_auth_method: Client authentication method. "client_secret_basic" (default)
+                uses HTTP Basic Auth header, "client_secret_post" sends credentials in POST body
             timeout_seconds: HTTP request timeout in seconds (default: 10)
             required_scopes: Required scopes for all tokens (optional)
             base_url: Base URL for TokenVerifier protocol
@@ -100,6 +108,17 @@ class IntrospectionTokenVerifier(TokenVerifier):
             if isinstance(client_secret, SecretStr)
             else client_secret
         )
+
+        # Validate client_auth_method to catch typos/invalid values early
+        valid_methods = get_args(ClientAuthMethod)
+        if client_auth_method not in valid_methods:
+            options = " or ".join(f"'{m}'" for m in valid_methods)
+            raise ValueError(
+                f"Invalid client_auth_method: {client_auth_method!r}. "
+                f"Must be {options}."
+            )
+        self.client_auth_method: ClientAuthMethod = client_auth_method
+
         self.timeout_seconds = timeout_seconds
         self.logger = get_logger(__name__)
 
@@ -137,7 +156,8 @@ class IntrospectionTokenVerifier(TokenVerifier):
         Verify a bearer token using OAuth 2.0 Token Introspection (RFC 7662).
 
         This method makes a POST request to the introspection endpoint with the token,
-        authenticated using HTTP Basic Auth with the client credentials.
+        authenticated using the configured client authentication method (client_secret_basic
+        or client_secret_post).
 
         Args:
             token: The opaque token string to validate
@@ -148,19 +168,29 @@ class IntrospectionTokenVerifier(TokenVerifier):
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 # Prepare introspection request per RFC 7662
-                auth_header = self._create_basic_auth_header()
+                # Build request data with token and token_type_hint
+                data = {
+                    "token": token,
+                    "token_type_hint": "access_token",
+                }
+
+                # Build headers
+                headers = {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json",
+                }
+
+                # Add client authentication based on method
+                if self.client_auth_method == "client_secret_basic":
+                    headers["Authorization"] = self._create_basic_auth_header()
+                elif self.client_auth_method == "client_secret_post":
+                    data["client_id"] = self.client_id
+                    data["client_secret"] = self.client_secret
 
                 response = await client.post(
                     self.introspection_url,
-                    data={
-                        "token": token,
-                        "token_type_hint": "access_token",
-                    },
-                    headers={
-                        "Authorization": auth_header,
-                        "Content-Type": "application/x-www-form-urlencoded",
-                        "Accept": "application/json",
-                    },
+                    data=data,
+                    headers=headers,
                 )
 
                 # Check for HTTP errors

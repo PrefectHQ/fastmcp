@@ -47,6 +47,7 @@ class TestIntrospectionTokenVerifier:
         assert verifier.client_id == "test-client"
         assert verifier.client_secret == "test-secret"
         assert verifier.timeout_seconds == 10
+        assert verifier.client_auth_method == "client_secret_basic"
 
     def test_initialization_requires_introspection_url(self):
         """Test that introspection_url is required."""
@@ -389,6 +390,137 @@ class TestIntrospectionTokenVerifier:
 
         assert access_token is not None
         assert access_token.client_id == "unknown"
+
+    def test_initialization_with_client_secret_post(self):
+        """Test verifier initialization with client_secret_post method."""
+        verifier = IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+            client_auth_method="client_secret_post",
+        )
+
+        assert verifier.client_auth_method == "client_secret_post"
+        assert verifier.introspection_url == "https://auth.example.com/oauth/introspect"
+        assert verifier.client_id == "test-client"
+        assert verifier.client_secret == "test-secret"
+
+    def test_initialization_defaults_to_client_secret_basic(self):
+        """Test that client_secret_basic is the default auth method."""
+        verifier = IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+        )
+
+        assert verifier.client_auth_method == "client_secret_basic"
+
+    def test_initialization_rejects_invalid_client_auth_method(self):
+        """Test that invalid client_auth_method values are rejected."""
+        # Test typo with trailing space
+        with pytest.raises(ValueError) as exc_info:
+            IntrospectionTokenVerifier(
+                introspection_url="https://auth.example.com/oauth/introspect",
+                client_id="test-client",
+                client_secret="test-secret",
+                client_auth_method="client_secret_basic ",  # ty: ignore[invalid-argument-type]
+            )
+        assert "Invalid client_auth_method" in str(exc_info.value)
+        assert "client_secret_basic " in str(exc_info.value)
+
+        # Test completely invalid value
+        with pytest.raises(ValueError) as exc_info:
+            IntrospectionTokenVerifier(
+                introspection_url="https://auth.example.com/oauth/introspect",
+                client_id="test-client",
+                client_secret="test-secret",
+                client_auth_method="basic",  # ty: ignore[invalid-argument-type]
+            )
+        assert "Invalid client_auth_method" in str(exc_info.value)
+        assert "basic" in str(exc_info.value)
+
+    async def test_client_secret_post_includes_credentials_in_body(
+        self, httpx_mock: HTTPXMock
+    ):
+        """Test that client_secret_post includes credentials in POST body."""
+        verifier = IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+            client_auth_method="client_secret_post",
+        )
+
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={"active": True, "client_id": "user-123"},
+        )
+
+        await verifier.verify_token("test-token")
+
+        # Verify request was made with credentials in body, not header
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert request.method == "POST"
+        assert "Authorization" not in request.headers
+        assert request.headers["Content-Type"] == "application/x-www-form-urlencoded"
+        assert request.headers["Accept"] == "application/json"
+
+        # Parse form data
+        body = request.content.decode("utf-8")
+        assert "token=test-token" in body
+        assert "token_type_hint=access_token" in body
+        assert "client_id=test-client" in body
+        assert "client_secret=test-secret" in body
+
+    async def test_client_secret_post_verification_success(self, httpx_mock: HTTPXMock):
+        """Test successful token verification with client_secret_post."""
+        verifier = IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+            client_auth_method="client_secret_post",
+        )
+
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={
+                "active": True,
+                "client_id": "user-123",
+                "scope": "read write",
+                "exp": int(time.time()) + 3600,
+            },
+        )
+
+        access_token = await verifier.verify_token("test-token")
+
+        assert access_token is not None
+        assert access_token.client_id == "user-123"
+        assert access_token.scopes == ["read", "write"]
+
+    async def test_client_secret_basic_still_works(
+        self, verifier: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
+    ):
+        """Test that client_secret_basic continues to work unchanged."""
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={"active": True, "client_id": "user-123"},
+        )
+
+        await verifier.verify_token("test-token")
+
+        # Verify request was made with Basic Auth header
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert "Authorization" in request.headers
+        assert request.headers["Authorization"].startswith("Basic ")
+
+        # Verify credentials are NOT in body
+        body = request.content.decode("utf-8")
+        assert "client_id=" not in body
+        assert "client_secret=" not in body
 
 
 class TestIntrospectionTokenVerifierIntegration:
