@@ -383,7 +383,7 @@ class OpenAPIProvider(Provider):
         """Return all resource templates created from the OpenAPI spec."""
         return list(self._templates.values())
 
-    async def get_resource_template(
+    async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get a resource template that matches the given URI."""

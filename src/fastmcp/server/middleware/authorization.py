@@ -204,7 +204,7 @@ class AuthMiddleware(Middleware):
         # Get resource/template (component auth is checked in get_*, raises if unauthorized)
         component = await fastmcp.fastmcp.get_resource(str(uri))
         if component is None:
-            component = await fastmcp.fastmcp._get_resource_template(str(uri))
+            component = await fastmcp.fastmcp.get_resource_template(str(uri))
         if component is None:
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': resource not found"

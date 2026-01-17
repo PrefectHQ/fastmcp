@@ -550,16 +550,16 @@ class FastMCPProvider(Provider):
             FastMCPProviderResourceTemplate.wrap(self.server, t) for t in raw_templates
         ]
 
-    async def get_resource_template(
+    async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get a resource template that matches the given URI.
 
         Passes the full VersionSpec to the nested server, which handles both
-        exact version matching and range filtering. Uses _get_resource_template
+        exact version matching and range filtering. Uses get_resource_template
         to ensure the nested server's transforms are applied.
         """
-        raw_template = await self.server._get_resource_template(uri, version)
+        raw_template = await self.server.get_resource_template(uri, version)
         if raw_template is None:
             return None
         return FastMCPProviderResourceTemplate.wrap(self.server, raw_template)

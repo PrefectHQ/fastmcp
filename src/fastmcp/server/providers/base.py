@@ -184,7 +184,7 @@ class Provider:
 
         return await chain()
 
-    async def _get_resource_template(
+    async def get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get resource template by transformed URI with all transforms applied.
@@ -197,7 +197,7 @@ class Provider:
         async def base(
             u: str, version: VersionSpec | None = None
         ) -> ResourceTemplate | None:
-            return await self.get_resource_template(u, version)
+            return await self._get_resource_template(u, version)
 
         chain = base
         for transform in self.transforms:
@@ -311,7 +311,7 @@ class Provider:
         """
         return []
 
-    async def get_resource_template(
+    async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get a resource template that matches the given URI.

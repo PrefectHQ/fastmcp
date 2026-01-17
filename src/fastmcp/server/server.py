@@ -1324,12 +1324,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
             return _dedupe_with_versions(authorized, lambda t: t.uri_template)
 
-    async def get_resource_template(
+    async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get a resource template by URI via aggregation from providers.
 
-        This is the raw lookup that Provider._get_resource_template() wraps with transforms.
+        This is the raw lookup that Provider.get_resource_template() wraps with transforms.
         Aggregates from all sub-providers and applies component-level auth.
 
         Args:
@@ -1341,7 +1341,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """
         # Aggregate from all sub-providers (each applies their own transforms)
         results = await gather(
-            *[p._get_resource_template(uri, version) for p in self._providers],
+            *[p.get_resource_template(uri, version) for p in self._providers],
             return_exceptions=True,
         )
 

@@ -187,7 +187,7 @@ class AggregateProvider(Provider):
         )
         return self._collect_list_results(results, "list_resource_templates")
 
-    async def get_resource_template(
+    async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get resource template by URI.
@@ -198,7 +198,7 @@ class AggregateProvider(Provider):
                 If specified, returns highest version matching the spec from any provider.
         """
         results = await gather(
-            *[p._get_resource_template(uri, version) for p in self._providers],
+            *[p.get_resource_template(uri, version) for p in self._providers],
             return_exceptions=True,
         )
         return self._get_highest_version_result(

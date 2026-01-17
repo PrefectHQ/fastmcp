@@ -558,7 +558,7 @@ class LocalProvider(Provider):
             if isinstance(v, ResourceTemplate) and self._is_component_enabled(v)
         ]
 
-    async def get_resource_template(
+    async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get a resource template that matches the given URI.
