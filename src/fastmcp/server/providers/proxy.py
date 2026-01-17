@@ -535,7 +535,7 @@ class ProxyProvider(Provider):
     # Resource methods
     # -------------------------------------------------------------------------
 
-    async def list_resources(self) -> Sequence[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         """List all resources from the remote server."""
         try:
             client = await self._get_client()

@@ -510,7 +510,7 @@ class FastMCPProvider(Provider):
     # Resource methods
     # -------------------------------------------------------------------------
 
-    async def list_resources(self) -> Sequence[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         """List all resources from the mounted server as FastMCPProviderResources.
 
         Runs the mounted server's middleware so filtering/transformation applies.

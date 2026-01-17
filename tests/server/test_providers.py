@@ -384,7 +384,7 @@ class TestProviderExecutionMethods:
         """Test that default read_resource uses get_resource and reads it."""
 
         class ResourceProvider(Provider):
-            async def list_resources(self) -> Sequence[Resource]:
+            async def _list_resources(self) -> Sequence[Resource]:
                 return [
                     FunctionResource(
                         uri=AnyUrl("test://data"),

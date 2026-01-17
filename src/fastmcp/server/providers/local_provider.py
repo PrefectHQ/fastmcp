@@ -520,7 +520,7 @@ class LocalProvider(Provider):
             return None
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
-    async def list_resources(self) -> Sequence[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         """Return all visible resources."""
         return [
             v

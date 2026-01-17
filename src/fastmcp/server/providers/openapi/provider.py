@@ -364,7 +364,7 @@ class OpenAPIProvider(Provider):
             return None
         return tool
 
-    async def list_resources(self) -> Sequence[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         """Return all resources created from the OpenAPI spec."""
         return list(self._resources.values())
 

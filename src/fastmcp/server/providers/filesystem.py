@@ -186,10 +186,10 @@ class FileSystemProvider(LocalProvider):
         await self._ensure_loaded()
         return await super()._get_tool(name, version)
 
-    async def list_resources(self) -> Sequence[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         """Return all resources, reloading if in reload mode."""
         await self._ensure_loaded()
-        return await super().list_resources()
+        return await super()._list_resources()
 
     async def get_resource(
         self, uri: str, version: VersionSpec | None = None

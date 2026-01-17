@@ -141,11 +141,11 @@ class Provider:
 
         return await chain(name, version=version)
 
-    async def _list_resources(self) -> Sequence[Resource]:
+    async def list_resources(self) -> Sequence[Resource]:
         """List resources with all transforms applied."""
 
         async def base() -> Sequence[Resource]:
-            return await self.list_resources()
+            return await self._list_resources()
 
         chain = base
         for transform in self.transforms:
@@ -272,7 +272,7 @@ class Provider:
             return None
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
-    async def list_resources(self) -> Sequence[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         """Return all available resources.
 
         Override to provide resources dynamically. Returns ALL versions of all resources.
@@ -381,7 +381,7 @@ class Provider:
         # Fetch all component types in parallel
         results = await gather(
             self._list_tools(),
-            self.list_resources(),
+            self._list_resources(),
             self.list_resource_templates(),
             self.list_prompts(),
         )
