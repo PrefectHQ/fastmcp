@@ -209,10 +209,10 @@ class AggregateProvider(Provider):
     # Prompts
     # -------------------------------------------------------------------------
 
-    async def list_prompts(self) -> Sequence[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """List all prompts from all providers (with transforms applied)."""
         results = await gather(
-            *[p._list_prompts() for p in self._providers],
+            *[p.list_prompts() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_prompts")

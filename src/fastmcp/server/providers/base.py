@@ -205,11 +205,11 @@ class Provider:
 
         return await chain(uri, version=version)
 
-    async def _list_prompts(self) -> Sequence[Prompt]:
+    async def list_prompts(self) -> Sequence[Prompt]:
         """List prompts with all transforms applied."""
 
         async def base() -> Sequence[Prompt]:
-            return await self.list_prompts()
+            return await self._list_prompts()
 
         chain = base
         for transform in self.transforms:
@@ -334,7 +334,7 @@ class Provider:
             return None
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
-    async def list_prompts(self) -> Sequence[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """Return all available prompts.
 
         Override to provide prompts dynamically. Returns ALL versions of all prompts.
@@ -357,7 +357,7 @@ class Provider:
         Returns:
             The Prompt if found, or None to continue searching other providers.
         """
-        prompts = await self.list_prompts()
+        prompts = await self._list_prompts()
         matching = [p for p in prompts if p.name == name]
         if version:
             matching = [p for p in matching if version.matches(p.version)]
@@ -383,7 +383,7 @@ class Provider:
             self._list_tools(),
             self._list_resources(),
             self._list_resource_templates(),
-            self.list_prompts(),
+            self._list_prompts(),
         )
         tools = cast(Sequence[Tool], results[0])
         resources = cast(Sequence[Resource], results[1])

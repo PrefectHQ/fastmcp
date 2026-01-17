@@ -583,7 +583,7 @@ class LocalProvider(Provider):
             return None
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
-    async def list_prompts(self) -> Sequence[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """Return all visible prompts."""
         return [
             v

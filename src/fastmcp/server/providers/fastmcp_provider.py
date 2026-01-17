@@ -568,7 +568,7 @@ class FastMCPProvider(Provider):
     # Prompt methods
     # -------------------------------------------------------------------------
 
-    async def list_prompts(self) -> Sequence[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """List all prompts from the mounted server as FastMCPProviderPrompts.
 
         Runs the mounted server's middleware so filtering/transformation applies.

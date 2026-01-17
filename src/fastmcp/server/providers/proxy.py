@@ -573,7 +573,7 @@ class ProxyProvider(Provider):
     # Prompt methods
     # -------------------------------------------------------------------------
 
-    async def list_prompts(self) -> Sequence[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """List all prompts from the remote server."""
         try:
             client = await self._get_client()

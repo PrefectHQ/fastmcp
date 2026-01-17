@@ -210,10 +210,10 @@ class FileSystemProvider(LocalProvider):
         await self._ensure_loaded()
         return await super()._get_resource_template(uri, version)
 
-    async def list_prompts(self) -> Sequence[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """Return all prompts, reloading if in reload mode."""
         await self._ensure_loaded()
-        return await super().list_prompts()
+        return await super()._list_prompts()
 
     async def get_prompt(
         self, name: str, version: VersionSpec | None = None

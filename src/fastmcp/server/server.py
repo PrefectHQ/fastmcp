@@ -895,10 +895,10 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         )
         return self._collect_list_results(results, "list_resource_templates")
 
-    async def list_prompts(self) -> Sequence[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """Aggregate prompts from all sub-providers."""
         results = await gather(
-            *[p._list_prompts() for p in self._providers],
+            *[p.list_prompts() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_prompts")
@@ -1402,7 +1402,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 )
 
             # Query through full transform chain (provider transforms + server transforms + visibility)
-            prompts = await self._list_prompts()
+            prompts = await self.list_prompts()
 
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
