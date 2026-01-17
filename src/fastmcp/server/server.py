@@ -1138,10 +1138,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             version: Version filter (None returns highest version).
 
         Returns:
-            The tool if found and authorized, None if not found.
-
-        Raises:
-            AuthorizationError: If component-level auth fails.
+            The tool if found and authorized, None if not found or unauthorized.
         """
 
         # Aggregate from all sub-providers (each applies their own transforms)
@@ -1168,12 +1165,15 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         tool: Tool = max(valid, key=version_sort_key)  # type: ignore[type-var]
 
-        # Component auth - raises if unauthorized
+        # Component auth - return None if unauthorized (consistent with list filtering)
         skip_auth, token = _get_auth_context()
         if not skip_auth and tool.auth is not None:
             ctx = AuthContext(token=token, component=tool)
-            if not run_auth_checks(tool.auth, ctx):
-                raise AuthorizationError(f"Unauthorized access to tool: {name!r}")
+            try:
+                if not run_auth_checks(tool.auth, ctx):
+                    return None
+            except AuthorizationError:
+                return None
 
         return tool
 
@@ -1236,10 +1236,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             version: Version filter (None returns highest version).
 
         Returns:
-            The resource if found and authorized, None if not found.
-
-        Raises:
-            AuthorizationError: If component-level auth fails.
+            The resource if found and authorized, None if not found or unauthorized.
         """
         # Aggregate from all sub-providers (each applies their own transforms)
         results = await gather(
@@ -1265,12 +1262,15 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         resource: Resource = max(valid, key=version_sort_key)  # type: ignore[type-var]
 
-        # Component auth - raises if unauthorized
+        # Component auth - return None if unauthorized (consistent with list filtering)
         skip_auth, token = _get_auth_context()
         if not skip_auth and resource.auth is not None:
             ctx = AuthContext(token=token, component=resource)
-            if not run_auth_checks(resource.auth, ctx):
-                raise AuthorizationError(f"Unauthorized access to resource: {uri!r}")
+            try:
+                if not run_auth_checks(resource.auth, ctx):
+                    return None
+            except AuthorizationError:
+                return None
 
         return resource
 
@@ -1337,10 +1337,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             version: Version filter (None returns highest version).
 
         Returns:
-            The template if found and authorized, None if not found.
-
-        Raises:
-            AuthorizationError: If component-level auth fails.
+            The template if found and authorized, None if not found or unauthorized.
         """
         # Aggregate from all sub-providers (each applies their own transforms)
         results = await gather(
@@ -1366,12 +1363,15 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         template: ResourceTemplate = max(valid, key=version_sort_key)  # type: ignore[type-var]
 
-        # Component auth - raises if unauthorized
+        # Component auth - return None if unauthorized (consistent with list filtering)
         skip_auth, token = _get_auth_context()
         if not skip_auth and template.auth is not None:
             ctx = AuthContext(token=token, component=template)
-            if not run_auth_checks(template.auth, ctx):
-                raise AuthorizationError(f"Unauthorized access to template: {uri!r}")
+            try:
+                if not run_auth_checks(template.auth, ctx):
+                    return None
+            except AuthorizationError:
+                return None
 
         return template
 
@@ -1434,10 +1434,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             version: Version filter (None returns highest version).
 
         Returns:
-            The prompt if found and authorized, None if not found.
-
-        Raises:
-            AuthorizationError: If component-level auth fails.
+            The prompt if found and authorized, None if not found or unauthorized.
         """
         # Aggregate from all sub-providers (each applies their own transforms)
         results = await gather(
@@ -1463,12 +1460,15 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         prompt: Prompt = max(valid, key=version_sort_key)  # type: ignore[type-var]
 
-        # Component auth - raises if unauthorized
+        # Component auth - return None if unauthorized (consistent with list filtering)
         skip_auth, token = _get_auth_context()
         if not skip_auth and prompt.auth is not None:
             ctx = AuthContext(token=token, component=prompt)
-            if not run_auth_checks(prompt.auth, ctx):
-                raise AuthorizationError(f"Unauthorized access to prompt: {name!r}")
+            try:
+                if not run_auth_checks(prompt.auth, ctx):
+                    return None
+            except AuthorizationError:
+                return None
 
         return prompt
 

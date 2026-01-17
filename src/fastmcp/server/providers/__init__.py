@@ -27,7 +27,6 @@ Example:
 
 from typing import TYPE_CHECKING
 
-from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
 from fastmcp.server.providers.filesystem import FileSystemProvider
@@ -38,7 +37,6 @@ if TYPE_CHECKING:
     from fastmcp.server.providers.proxy import ProxyProvider as ProxyProvider
 
 __all__ = [
-    "AggregateProvider",
     "FastMCPProvider",
     "FileSystemProvider",
     "LocalProvider",

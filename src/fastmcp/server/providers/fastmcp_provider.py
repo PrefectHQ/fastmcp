@@ -642,11 +642,16 @@ class FastMCPProvider(Provider):
             )
             prompts_chain = partial(transform.list_prompts, call_next=prompts_chain)
 
+        # Filter to only task-eligible components (same as base Provider)
         return [
-            *await tools_chain(),
-            *await resources_chain(),
-            *await templates_chain(),
-            *await prompts_chain(),
+            c
+            for c in [
+                *await tools_chain(),
+                *await resources_chain(),
+                *await templates_chain(),
+                *await prompts_chain(),
+            ]
+            if c.task_config.supports_tasks()
         ]
 
     # -------------------------------------------------------------------------
