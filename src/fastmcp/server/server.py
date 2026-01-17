@@ -867,14 +867,14 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     # Provider interface overrides (aggregate from sub-providers)
     # -------------------------------------------------------------------------
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """Aggregate tools from all sub-providers.
 
-        This is the Provider interface implementation. The inherited _list_tools()
+        This is the Provider interface implementation. The inherited list_tools()
         applies server-level transforms over this method.
         """
         results = await gather(
-            *[p._list_tools() for p in self._providers],
+            *[p.list_tools() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_tools")
@@ -1106,7 +1106,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 )
 
             # Query through full transform chain (provider transforms + server transforms + visibility)
-            tools = await self._list_tools()
+            tools = await self.list_tools()
 
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()

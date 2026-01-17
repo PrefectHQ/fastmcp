@@ -349,7 +349,7 @@ class OpenAPIProvider(Provider):
     # Provider interface
     # -------------------------------------------------------------------------
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """Return all tools created from the OpenAPI spec."""
         return list(self._tools.values())
 

@@ -621,12 +621,12 @@ class TestProviderToolTransformations:
         def my_tool(x: int) -> int:
             return x
 
-        # Add layer to provider (layers are applied by server, not list_tools)
+        # Add layer to provider (layers are applied by server, not _list_tools)
         layer = ToolTransform({"my_tool": ToolTransformConfig(name="renamed")})
         provider.add_transform(layer)
 
-        # Provider's list_tools returns raw tools (transforms applied when queried via chain)
-        original_tools = await provider.list_tools()
+        # Provider's _list_tools returns raw tools (transforms applied when queried via list_tools)
+        original_tools = await provider._list_tools()
         assert original_tools[0].name == "my_tool"
 
         # Transform modifies them when applied via call_next

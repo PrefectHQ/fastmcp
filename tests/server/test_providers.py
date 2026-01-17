@@ -48,7 +48,7 @@ class SimpleToolProvider(Provider):
         self.list_tools_call_count = 0
         self.get_tool_call_count = 0
 
-    async def list_tools(self) -> list[Tool]:
+    async def _list_tools(self) -> list[Tool]:
         self.list_tools_call_count += 1
         return self._tools
 
@@ -73,7 +73,7 @@ class ListOnlyProvider(Provider):
         self._tools = tools
         self.list_tools_call_count = 0
 
-    async def list_tools(self) -> list[Tool]:
+    async def _list_tools(self) -> list[Tool]:
         self.list_tools_call_count += 1
         return self._tools
 

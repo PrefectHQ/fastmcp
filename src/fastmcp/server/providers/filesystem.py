@@ -174,10 +174,10 @@ class FileSystemProvider(LocalProvider):
 
     # Override provider methods to support reload mode
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """Return all tools, reloading if in reload mode."""
         await self._ensure_loaded()
-        return await super().list_tools()
+        return await super()._list_tools()
 
     async def get_tool(
         self, name: str, version: VersionSpec | None = None

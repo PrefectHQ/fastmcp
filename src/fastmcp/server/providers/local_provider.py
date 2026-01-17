@@ -492,7 +492,7 @@ class LocalProvider(Provider):
     # Provider interface implementation
     # =========================================================================
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """Return all visible tools."""
         return [
             v

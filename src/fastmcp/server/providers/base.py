@@ -100,7 +100,7 @@ class Provider:
     # Internal transform chain building
     # -------------------------------------------------------------------------
 
-    async def _list_tools(self) -> Sequence[Tool]:
+    async def list_tools(self) -> Sequence[Tool]:
         """List tools with all transforms applied.
 
         Builds a middleware chain: base → transforms (in order).
@@ -111,7 +111,7 @@ class Provider:
         """
 
         async def base() -> Sequence[Tool]:
-            return await self.list_tools()
+            return await self._list_tools()
 
         chain = base
         for transform in self.transforms:
@@ -237,10 +237,10 @@ class Provider:
         return await chain(name, version=version)
 
     # -------------------------------------------------------------------------
-    # Public list/get methods (override these to provide components)
+    # Private list/get methods (override these to provide components)
     # -------------------------------------------------------------------------
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """Return all available tools.
 
         Override to provide tools dynamically. Returns ALL versions of all tools.
@@ -264,7 +264,7 @@ class Provider:
         Returns:
             The Tool if found, or None to continue searching other providers.
         """
-        tools = await self.list_tools()
+        tools = await self._list_tools()
         matching = [t for t in tools if t.name == name]
         if version:
             matching = [t for t in matching if version.matches(t.version)]
@@ -380,7 +380,7 @@ class Provider:
         """
         # Fetch all component types in parallel
         results = await gather(
-            self.list_tools(),
+            self._list_tools(),
             self.list_resources(),
             self.list_resource_templates(),
             self.list_prompts(),

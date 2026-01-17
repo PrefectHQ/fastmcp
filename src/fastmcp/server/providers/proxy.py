@@ -517,7 +517,7 @@ class ProxyProvider(Provider):
     # Tool methods
     # -------------------------------------------------------------------------
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """List all tools from the remote server."""
         try:
             client = await self._get_client()

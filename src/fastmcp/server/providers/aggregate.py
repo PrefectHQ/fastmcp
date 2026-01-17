@@ -123,10 +123,10 @@ class AggregateProvider(Provider):
     # Tools
     # -------------------------------------------------------------------------
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """List all tools from all providers (with transforms applied)."""
         results = await gather(
-            *[p._list_tools() for p in self._providers],
+            *[p.list_tools() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_tools")

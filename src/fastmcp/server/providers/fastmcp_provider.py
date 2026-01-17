@@ -482,7 +482,7 @@ class FastMCPProvider(Provider):
     # Tool methods
     # -------------------------------------------------------------------------
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """List all tools from the mounted server as FastMCPProviderTools.
 
         Runs the mounted server's middleware so filtering/transformation applies.
