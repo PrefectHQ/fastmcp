@@ -849,8 +849,6 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     # Tool Transforms
     # -------------------------------------------------------------------------
 
-    # Note: _get_all_transforms() is inherited from Provider
-
     def _collect_list_results(
         self, results: list[Sequence[Any] | BaseException], operation: str
     ) -> list[Any]:
@@ -942,7 +940,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         templates_chain = templates_base
         prompts_chain = prompts_base
 
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             tools_chain = partial(transform.list_tools, call_next=tools_chain)
             resources_chain = partial(
                 transform.list_resources, call_next=resources_chain
@@ -1084,10 +1082,6 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """
         self._visibility.disable(keys=keys, tags=tags)
 
-    def _is_component_enabled(self, component: FastMCPComponent) -> bool:
-        """Check if a component is enabled (not in blocklist, passes allowlist)."""
-        return self._visibility.is_enabled(component)
-
     async def get_tools(self, *, run_middleware: bool = False) -> list[Tool]:
         """Get all enabled tools from providers.
 
@@ -1191,7 +1185,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                             f"{self._providers[i]}: {result}"
                         )
                     continue
-                if result is not None and self._is_component_enabled(result):
+                if result is not None:
                     valid.append(result)
 
             if not valid:
@@ -1201,7 +1195,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         # Build transform chain: server transforms applied over aggregation
         chain = base
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             chain = partial(transform.get_tool, call_next=chain)
 
         return await chain(name, version=version)
@@ -1311,7 +1305,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                             f"{self._providers[i]}: {result}"
                         )
                     continue
-                if result is not None and self._is_component_enabled(result):
+                if result is not None:
                     valid.append(result)
 
             if not valid:
@@ -1321,7 +1315,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         # Build transform chain: server transforms applied over aggregation
         chain = base
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             chain = partial(transform.get_resource, call_next=chain)
 
         return await chain(uri, version=version)
@@ -1435,7 +1429,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                             f"{self._providers[i]}: {result}"
                         )
                     continue
-                if result is not None and self._is_component_enabled(result):
+                if result is not None:
                     valid.append(result)
 
             if not valid:
@@ -1445,7 +1439,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         # Build transform chain: server transforms applied over aggregation
         chain = base
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             chain = partial(transform.get_resource_template, call_next=chain)
 
         return await chain(uri, version=version)
@@ -1553,7 +1547,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                             f"{self._providers[i]}: {result}"
                         )
                     continue
-                if result is not None and self._is_component_enabled(result):
+                if result is not None:
                     valid.append(result)
 
             if not valid:
@@ -1563,36 +1557,10 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         # Build transform chain: server transforms applied over aggregation
         chain = base
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             chain = partial(transform.get_prompt, call_next=chain)
 
         return await chain(name, version=version)
-
-    async def get_component(
-        self, key: str
-    ) -> Tool | Resource | ResourceTemplate | Prompt | None:
-        """Get a component by its prefixed key.
-
-        Uses _get_* methods to apply server-level transforms (including namespace
-        resolution for mounted servers). Task keys use transformed names, so this
-        ensures proper resolution.
-
-        Args:
-            key: The prefixed key (e.g., "tool:name", "resource:uri", "template:uri").
-
-        Returns:
-            The component if found, None otherwise.
-        """
-        # Parse key and delegate to _get_* methods which apply server transforms
-        if key.startswith("tool:"):
-            return await self._get_tool(key[5:])
-        elif key.startswith("resource:"):
-            return await self._get_resource(key[9:])
-        elif key.startswith("template:"):
-            return await self._get_resource_template(key[9:])
-        elif key.startswith("prompt:"):
-            return await self._get_prompt(key[7:])
-        return None
 
     @overload
     async def call_tool(

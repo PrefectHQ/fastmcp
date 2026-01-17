@@ -838,9 +838,7 @@ class TestAsProxyKwarg:
         provider = mcp._providers[1]
         # With namespace, we get FastMCPProvider with a Namespace layer
         assert isinstance(provider, FastMCPProvider)
-        assert (
-            len(provider._transforms) == 1
-        )  # Just Namespace (Visibility is in _visibility)
+        assert len(provider._transforms) == 1  # Just Namespace
         assert isinstance(provider._transforms[0], Namespace)
         assert provider.server is sub
 
@@ -854,9 +852,7 @@ class TestAsProxyKwarg:
         provider = mcp._providers[1]
         # With namespace, we get FastMCPProvider with a Namespace layer
         assert isinstance(provider, FastMCPProvider)
-        assert (
-            len(provider._transforms) == 1
-        )  # Just Namespace (Visibility is in _visibility)
+        assert len(provider._transforms) == 1  # Just Namespace
         assert isinstance(provider._transforms[0], Namespace)
         assert provider.server is sub
 
@@ -870,9 +866,7 @@ class TestAsProxyKwarg:
         provider = mcp._providers[1]
         # With namespace, we get FastMCPProvider with a Namespace layer
         assert isinstance(provider, FastMCPProvider)
-        assert (
-            len(provider._transforms) == 1
-        )  # Just Namespace (Visibility is in _visibility)
+        assert len(provider._transforms) == 1  # Just Namespace
         assert isinstance(provider._transforms[0], Namespace)
         assert provider.server is not sub
         assert isinstance(provider.server, FastMCPProxy)
@@ -897,9 +891,7 @@ class TestAsProxyKwarg:
         # Index 1 because LocalProvider is at index 0
         provider = mcp._providers[1]
         assert isinstance(provider, FastMCPProvider)
-        assert (
-            len(provider._transforms) == 1
-        )  # Just Namespace (Visibility is in _visibility)
+        assert len(provider._transforms) == 1  # Just Namespace
         assert isinstance(provider._transforms[0], Namespace)
         assert provider.server is sub
 
@@ -913,9 +905,7 @@ class TestAsProxyKwarg:
         # Index 1 because LocalProvider is at index 0
         provider = mcp._providers[1]
         assert isinstance(provider, FastMCPProvider)
-        assert (
-            len(provider._transforms) == 1
-        )  # Just Namespace (Visibility is in _visibility)
+        assert len(provider._transforms) == 1  # Just Namespace
         assert isinstance(provider._transforms[0], Namespace)
         assert provider.server is sub_proxy
 
@@ -929,9 +919,7 @@ class TestAsProxyKwarg:
         # Index 1 because LocalProvider is at index 0
         provider = mcp._providers[1]
         assert isinstance(provider, FastMCPProvider)
-        assert (
-            len(provider._transforms) == 1
-        )  # Just Namespace (Visibility is in _visibility)
+        assert len(provider._transforms) == 1  # Just Namespace
         assert isinstance(provider._transforms[0], Namespace)
         assert provider.server is sub_proxy
 
@@ -945,9 +933,7 @@ class TestAsProxyKwarg:
         # Index 1 because LocalProvider is at index 0
         provider = mcp._providers[1]
         assert isinstance(provider, FastMCPProvider)
-        assert (
-            len(provider._transforms) == 1
-        )  # Just Namespace (Visibility is in _visibility)
+        assert len(provider._transforms) == 1  # Just Namespace
         assert isinstance(provider._transforms[0], Namespace)
         assert provider.server is sub_proxy
 
@@ -1183,9 +1169,7 @@ class TestCustomRouteForwarding:
         # LocalProvider is at index 0, mounted provider at index 1
         provider1 = main_server._providers[1]
         assert isinstance(provider1, FastMCPProvider)
-        assert (
-            len(provider1._transforms) == 1
-        )  # Just Namespace (Visibility is in _visibility)
+        assert len(provider1._transforms) == 1  # Just Namespace
         assert isinstance(provider1._transforms[0], Namespace)
         assert provider1.server == sub_server1
         assert provider1._transforms[0]._prefix == "sub1"
@@ -1195,9 +1179,7 @@ class TestCustomRouteForwarding:
         assert len(main_server._providers) == 3
         provider2 = main_server._providers[2]
         assert isinstance(provider2, FastMCPProvider)
-        assert (
-            len(provider2._transforms) == 1
-        )  # Just Namespace (Visibility is in _visibility)
+        assert len(provider2._transforms) == 1  # Just Namespace
         assert isinstance(provider2._transforms[0], Namespace)
         assert provider2.server == sub_server2
         assert provider2._transforms[0]._prefix == "sub2"

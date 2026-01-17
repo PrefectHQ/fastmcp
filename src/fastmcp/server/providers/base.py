@@ -65,17 +65,16 @@ class Provider:
     """
 
     def __init__(self) -> None:
-        # Visibility is kept separate from user transforms and applied last (outermost)
-        # so that enable/disable works with transformed names, not raw names
         self._visibility = Visibility()
         self._transforms: list[Transform] = []
 
-    def _get_all_transforms(self) -> list[Transform]:
-        """Get all transforms including visibility (applied last/outermost)."""
-        return [*self._transforms, self._visibility]
-
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}()"
+
+    @property
+    def transforms(self) -> list[Transform]:
+        """All transforms including visibility (applied last/outermost)."""
+        return [*self._transforms, self._visibility]
 
     def add_transform(self, transform: Transform) -> None:
         """Add a transform to this provider.
@@ -115,7 +114,7 @@ class Provider:
             return await self.list_tools()
 
         chain = base
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             chain = partial(transform.list_tools, call_next=chain)
 
         return await chain()
@@ -137,7 +136,7 @@ class Provider:
             return await self.get_tool(n, version)
 
         chain = base
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             chain = partial(transform.get_tool, call_next=chain)
 
         return await chain(name, version=version)
@@ -149,7 +148,7 @@ class Provider:
             return await self.list_resources()
 
         chain = base
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             chain = partial(transform.list_resources, call_next=chain)
 
         return await chain()
@@ -168,7 +167,7 @@ class Provider:
             return await self.get_resource(u, version)
 
         chain = base
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             chain = partial(transform.get_resource, call_next=chain)
 
         return await chain(uri, version=version)
@@ -180,7 +179,7 @@ class Provider:
             return await self.list_resource_templates()
 
         chain = base
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             chain = partial(transform.list_resource_templates, call_next=chain)
 
         return await chain()
@@ -201,7 +200,7 @@ class Provider:
             return await self.get_resource_template(u, version)
 
         chain = base
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             chain = partial(transform.get_resource_template, call_next=chain)
 
         return await chain(uri, version=version)
@@ -213,7 +212,7 @@ class Provider:
             return await self.list_prompts()
 
         chain = base
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             chain = partial(transform.list_prompts, call_next=chain)
 
         return await chain()
@@ -232,7 +231,7 @@ class Provider:
             return await self.get_prompt(n, version)
 
         chain = base
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             chain = partial(transform.get_prompt, call_next=chain)
 
         return await chain(name, version=version)
@@ -413,7 +412,7 @@ class Provider:
         templates_chain = templates_base
         prompts_chain = prompts_base
 
-        for transform in self._get_all_transforms():
+        for transform in self.transforms:
             tools_chain = partial(transform.list_tools, call_next=tools_chain)
             resources_chain = partial(
                 transform.list_resources, call_next=resources_chain

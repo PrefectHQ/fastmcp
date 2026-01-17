@@ -136,8 +136,8 @@ class AuthMiddleware(Middleware):
                 f"Authorization failed for tool '{tool_name}': missing context"
             )
 
-        # Use _get_tool to resolve transformed names from MCP protocol
-        tool = await fastmcp.fastmcp._get_tool(tool_name)
+        # Resolve tool (includes component-level auth check)
+        tool = await fastmcp.fastmcp.get_tool(tool_name)
         if tool is None:
             raise AuthorizationError(
                 f"Authorization failed for tool '{tool_name}': tool not found"
@@ -201,11 +201,10 @@ class AuthMiddleware(Middleware):
                 f"Authorization failed for resource '{uri}': missing context"
             )
 
-        # Try concrete resource first, then template (for template-backed URIs)
-        # Use _get_* to resolve transformed URIs from MCP protocol
-        component = await fastmcp.fastmcp._get_resource(str(uri))
+        # Try concrete resource first, then template (includes component-level auth check)
+        component = await fastmcp.fastmcp.get_resource(str(uri))
         if component is None:
-            component = await fastmcp.fastmcp._get_resource_template(str(uri))
+            component = await fastmcp.fastmcp.get_resource_template(str(uri))
         if component is None:
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': resource not found"
@@ -295,8 +294,8 @@ class AuthMiddleware(Middleware):
                 f"Authorization failed for prompt '{prompt_name}': missing context"
             )
 
-        # Use _get_prompt to resolve transformed names from MCP protocol
-        prompt = await fastmcp.fastmcp._get_prompt(prompt_name)
+        # Resolve prompt (includes component-level auth check)
+        prompt = await fastmcp.fastmcp.get_prompt(prompt_name)
         if prompt is None:
             raise AuthorizationError(
                 f"Authorization failed for prompt '{prompt_name}': prompt not found"
