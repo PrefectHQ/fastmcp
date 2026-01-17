@@ -24,7 +24,7 @@ from contextlib import (
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
 import anyio
 import httpx
@@ -102,7 +102,11 @@ from fastmcp.utilities.cli import log_server_banner
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger, temporary_log_level
 from fastmcp.utilities.types import FastMCPBaseModel, NotSet, NotSetT
-from fastmcp.utilities.versions import VersionSpec, version_sort_key
+from fastmcp.utilities.versions import (
+    VersionSpec,
+    parse_version_key,
+    version_sort_key,
+)
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -184,6 +188,54 @@ def _get_auth_context() -> tuple[bool, Any]:
     if is_stdio:
         return (True, None)
     return (False, get_access_token())
+
+
+C = TypeVar("C", bound="FastMCPComponent")
+
+
+def _dedupe_with_versions(
+    components: Sequence[C],
+    key_fn: Callable[[C], str],
+) -> list[C]:
+    """Deduplicate components by key, keeping highest version.
+
+    Groups components by key, selects the highest version from each group,
+    and injects available versions into meta if any component is versioned.
+
+    Args:
+        components: Sequence of components to deduplicate.
+        key_fn: Function to extract the grouping key from a component.
+
+    Returns:
+        Deduplicated list with versions injected into meta.
+    """
+    by_key: dict[str, list[C]] = {}
+    for c in components:
+        by_key.setdefault(key_fn(c), []).append(c)
+
+    result: list[C] = []
+    for versions in by_key.values():
+        highest: C = cast(C, max(versions, key=version_sort_key))
+        if any(c.version is not None for c in versions):
+            all_versions = sorted(
+                [c.version for c in versions if c.version is not None],
+                key=parse_version_key,
+                reverse=True,
+            )
+            meta = highest.meta or {}
+            highest = highest.model_copy(
+                update={
+                    "meta": {
+                        **meta,
+                        "fastmcp": {
+                            **meta.get("fastmcp", {}),
+                            "versions": all_versions,
+                        },
+                    }
+                }
+            )
+        result.append(highest)
+    return result
 
 
 @asynccontextmanager
@@ -1066,25 +1118,19 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
 
-            # Deduplicate by name (keeping highest version) and apply authorization checks
-            by_name: dict[str, Tool] = {}
+            # Filter by auth
+            authorized: list[Tool] = []
             for tool in tools:
-                # Check tool-level auth (skip for STDIO)
                 if not skip_auth and tool.auth is not None:
                     ctx = AuthContext(token=token, component=tool)
                     try:
                         if not run_auth_checks(tool.auth, ctx):
                             continue
                     except AuthorizationError:
-                        # Treat auth errors as denials in list operations
                         continue
-                # Keep highest version per name
-                existing = by_name.get(tool.name)
-                if existing is None or version_sort_key(tool) > version_sort_key(
-                    existing
-                ):
-                    by_name[tool.name] = tool
-            return list(by_name.values())
+                authorized.append(tool)
+
+            return _dedupe_with_versions(authorized, lambda t: t.name)
 
     async def get_tool(
         self, name: str, version: VersionSpec | str | None = None
@@ -1107,7 +1153,17 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             version_spec = version
 
         # Use _get_tool which applies server transforms
-        return await self._get_tool(name, version_spec)
+        tool = await self._get_tool(name, version_spec)
+        if tool is None:
+            return None
+
+        # Auth check
+        skip_auth, token = _get_auth_context()
+        if not skip_auth and tool.auth is not None:
+            ctx = AuthContext(token=token, component=tool)
+            if not run_auth_checks(tool.auth, ctx):
+                return None
+        return tool
 
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -1180,26 +1236,19 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
 
-            # Deduplicate by URI (keeping highest version) and apply authorization checks
-            by_uri: dict[str, Resource] = {}
+            # Filter by auth
+            authorized: list[Resource] = []
             for resource in resources:
-                # Check resource-level auth (skip for STDIO)
                 if not skip_auth and resource.auth is not None:
                     ctx = AuthContext(token=token, component=resource)
                     try:
                         if not run_auth_checks(resource.auth, ctx):
                             continue
                     except AuthorizationError:
-                        # Treat auth errors as denials in list operations
                         continue
-                # Keep highest version per URI
-                uri_str = str(resource.uri)
-                existing = by_uri.get(uri_str)
-                if existing is None or version_sort_key(resource) > version_sort_key(
-                    existing
-                ):
-                    by_uri[uri_str] = resource
-            return list(by_uri.values())
+                authorized.append(resource)
+
+            return _dedupe_with_versions(authorized, lambda r: str(r.uri))
 
     async def get_resource(
         self, uri: str, version: VersionSpec | str | None = None
@@ -1222,7 +1271,17 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             version_spec = version
 
         # Use _get_resource which applies server transforms
-        return await self._get_resource(uri, version_spec)
+        resource = await self._get_resource(uri, version_spec)
+        if resource is None:
+            return None
+
+        # Auth check
+        skip_auth, token = _get_auth_context()
+        if not skip_auth and resource.auth is not None:
+            ctx = AuthContext(token=token, component=resource)
+            if not run_auth_checks(resource.auth, ctx):
+                return None
+        return resource
 
     async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
@@ -1301,25 +1360,19 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
 
-            # Deduplicate by uri_template (keeping highest version) and apply authorization checks
-            by_uri_template: dict[str, ResourceTemplate] = {}
+            # Filter by auth
+            authorized: list[ResourceTemplate] = []
             for template in templates:
-                # Check template-level auth (skip for STDIO)
                 if not skip_auth and template.auth is not None:
                     ctx = AuthContext(token=token, component=template)
                     try:
                         if not run_auth_checks(template.auth, ctx):
                             continue
                     except AuthorizationError:
-                        # Treat auth errors as denials in list operations
                         continue
-                # Keep highest version per uri_template
-                existing = by_uri_template.get(template.uri_template)
-                if existing is None or version_sort_key(template) > version_sort_key(
-                    existing
-                ):
-                    by_uri_template[template.uri_template] = template
-            return list(by_uri_template.values())
+                authorized.append(template)
+
+            return _dedupe_with_versions(authorized, lambda t: t.uri_template)
 
     async def get_resource_template(
         self, uri: str, version: VersionSpec | str | None = None
@@ -1342,7 +1395,17 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             version_spec = version
 
         # Use _get_resource_template which applies server transforms
-        return await self._get_resource_template(uri, version_spec)
+        template = await self._get_resource_template(uri, version_spec)
+        if template is None:
+            return None
+
+        # Auth check
+        skip_auth, token = _get_auth_context()
+        if not skip_auth and template.auth is not None:
+            ctx = AuthContext(token=token, component=template)
+            if not run_auth_checks(template.auth, ctx):
+                return None
+        return template
 
     async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
@@ -1417,25 +1480,19 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
 
-            # Deduplicate by name (keeping highest version) and apply authorization checks
-            by_name: dict[str, Prompt] = {}
+            # Filter by auth
+            authorized: list[Prompt] = []
             for prompt in prompts:
-                # Check prompt-level auth (skip for STDIO)
                 if not skip_auth and prompt.auth is not None:
                     ctx = AuthContext(token=token, component=prompt)
                     try:
                         if not run_auth_checks(prompt.auth, ctx):
                             continue
                     except AuthorizationError:
-                        # Treat auth errors as denials in list operations
                         continue
-                # Keep highest version per name
-                existing = by_name.get(prompt.name)
-                if existing is None or version_sort_key(prompt) > version_sort_key(
-                    existing
-                ):
-                    by_name[prompt.name] = prompt
-            return list(by_name.values())
+                authorized.append(prompt)
+
+            return _dedupe_with_versions(authorized, lambda p: p.name)
 
     async def get_prompt(
         self, name: str, version: VersionSpec | str | None = None
@@ -1458,7 +1515,17 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             version_spec = version
 
         # Use _get_prompt which applies server transforms
-        return await self._get_prompt(name, version_spec)
+        prompt = await self._get_prompt(name, version_spec)
+        if prompt is None:
+            return None
+
+        # Auth check
+        skip_auth, token = _get_auth_context()
+        if not skip_auth and prompt.auth is not None:
+            ctx = AuthContext(token=token, component=prompt)
+            if not run_auth_checks(prompt.auth, ctx):
+                return None
+        return prompt
 
     async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
@@ -1533,6 +1600,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         name: str,
         arguments: dict[str, Any] | None = None,
         *,
+        version: str | None = None,
         run_middleware: bool = True,
         task_meta: None = None,
     ) -> ToolResult: ...
@@ -1543,6 +1611,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         name: str,
         arguments: dict[str, Any] | None = None,
         *,
+        version: str | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta,
     ) -> mcp.types.CreateTaskResult: ...
@@ -1552,6 +1621,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         name: str,
         arguments: dict[str, Any] | None = None,
         *,
+        version: str | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta | None = None,
     ) -> ToolResult | mcp.types.CreateTaskResult:
@@ -1562,6 +1632,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         Args:
             name: The tool name
             arguments: Tool arguments (optional)
+            version: Specific version to call. If None, calls highest version.
             run_middleware: If True (default), apply the middleware chain.
                 Set to False when called from middleware to avoid re-applying.
             task_meta: If provided, execute as a background task and return
@@ -1597,6 +1668,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                     call_next=lambda context: self.call_tool(
                         context.message.name,
                         context.message.arguments or {},
+                        version=version,
                         run_middleware=False,
                         task_meta=task_meta,
                     ),
@@ -1606,18 +1678,9 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             with server_span(
                 f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
-                # Use _get_tool() to apply server transforms including visibility
-                tool = await self._get_tool(name)
+                tool = await self.get_tool(name, version=version)
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")
-
-                # Check tool-level auth (skip for STDIO which has no auth concept)
-                skip_auth, token = _get_auth_context()
-                if not skip_auth and tool.auth is not None:
-                    auth_ctx = AuthContext(token=token, component=tool)
-                    if not run_auth_checks(tool.auth, auth_ctx):
-                        raise NotFoundError(f"Unknown tool: {name!r}")
-
                 span.set_attributes(tool.get_span_attributes())
                 if task_meta is not None and task_meta.fn_key is None:
                     task_meta = replace(task_meta, fn_key=tool.key)
@@ -1640,6 +1703,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         self,
         uri: str,
         *,
+        version: str | None = None,
         run_middleware: bool = True,
         task_meta: None = None,
     ) -> ResourceResult: ...
@@ -1649,6 +1713,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         self,
         uri: str,
         *,
+        version: str | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta,
     ) -> mcp.types.CreateTaskResult: ...
@@ -1657,6 +1722,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         self,
         uri: str,
         *,
+        version: str | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta | None = None,
     ) -> ResourceResult | mcp.types.CreateTaskResult:
@@ -1667,6 +1733,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         Args:
             uri: The resource URI
+            version: Specific version to read. If None, reads highest version.
             run_middleware: If True (default), apply the middleware chain.
                 Set to False when called from middleware to avoid re-applying.
             task_meta: If provided, execute as a background task and return
@@ -1702,6 +1769,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                     context=mw_context,
                     call_next=lambda context: self.read_resource(
                         str(context.message.uri),
+                        version=version,
                         run_middleware=False,
                         task_meta=task_meta,
                     ),
@@ -1716,24 +1784,13 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 uri,
                 resource_uri=uri,
             ) as span:
-                # Get auth context (skip_auth=True for STDIO which has no auth concept)
-                skip_auth, token = _get_auth_context()
-
-                # Try concrete resources first (use _get_resource for server transforms)
-                resource = await self._get_resource(uri)
+                # Try concrete resources first (auth checked in get_resource)
+                resource = await self.get_resource(uri, version=version)
                 if resource is not None:
-                    # Check resource-level auth - auth failure on concrete resource
-                    # does NOT fall back to templates (deny immediately)
-                    if not skip_auth and resource.auth is not None:
-                        auth_ctx = AuthContext(token=token, component=resource)
-                        if not run_auth_checks(resource.auth, auth_ctx):
-                            raise NotFoundError(f"Unknown resource: {uri!r}")
-
-                    # Resource found and authorized
+                    span.set_attributes(resource.get_span_attributes())
+                    if task_meta is not None and task_meta.fn_key is None:
+                        task_meta = replace(task_meta, fn_key=resource.key)
                     try:
-                        span.set_attributes(resource.get_span_attributes())
-                        if task_meta is not None and task_meta.fn_key is None:
-                            task_meta = replace(task_meta, fn_key=resource.key)
                         return await resource._read(task_meta=task_meta)
                     except (FastMCPError, McpError):
                         logger.exception(f"Error reading resource {uri!r}")
@@ -1748,17 +1805,14 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                             f"Error reading resource {uri!r}: {e}"
                         ) from e
 
-                # Try templates (use _get_resource_template for server transforms)
-                template = await self._get_resource_template(uri)
-                if template is not None:
-                    # Check template-level auth
-                    if not skip_auth and template.auth is not None:
-                        auth_ctx = AuthContext(token=token, component=template)
-                        if not run_auth_checks(template.auth, auth_ctx):
-                            template = None
-
+                # Try templates (auth checked in get_resource_template)
+                template = await self.get_resource_template(uri, version=version)
                 if template is None:
-                    raise NotFoundError(f"Unknown resource: {uri!r}")
+                    if version is None:
+                        raise NotFoundError(f"Unknown resource: {uri!r}")
+                    raise NotFoundError(
+                        f"Unknown resource: {uri!r} version {version!r}"
+                    )
                 span.set_attributes(template.get_span_attributes())
                 params = template.matches(uri)
                 assert params is not None
@@ -1781,6 +1835,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         name: str,
         arguments: dict[str, Any] | None = None,
         *,
+        version: str | None = None,
         run_middleware: bool = True,
         task_meta: None = None,
     ) -> PromptResult: ...
@@ -1791,6 +1846,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         name: str,
         arguments: dict[str, Any] | None = None,
         *,
+        version: str | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta,
     ) -> mcp.types.CreateTaskResult: ...
@@ -1800,6 +1856,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         name: str,
         arguments: dict[str, Any] | None = None,
         *,
+        version: str | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta | None = None,
     ) -> PromptResult | mcp.types.CreateTaskResult:
@@ -1811,6 +1868,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         Args:
             name: The prompt name
             arguments: Prompt arguments (optional)
+            version: Specific version to render. If None, renders highest version.
             run_middleware: If True (default), apply the middleware chain.
                 Set to False when called from middleware to avoid re-applying.
             task_meta: If provided, execute as a background task and return
@@ -1841,6 +1899,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                     call_next=lambda context: self.render_prompt(
                         context.message.name,
                         context.message.arguments,
+                        version=version,
                         run_middleware=False,
                         task_meta=task_meta,
                     ),
@@ -1850,18 +1909,9 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             with server_span(
                 f"prompts/get {name}", "prompts/get", self.name, "prompt", name
             ) as span:
-                # Use _get_prompt() to apply server transforms including visibility
-                prompt = await self._get_prompt(name)
+                prompt = await self.get_prompt(name, version=version)
                 if prompt is None:
                     raise NotFoundError(f"Unknown prompt: {name!r}")
-
-                # Check prompt-level auth (skip for STDIO which has no auth concept)
-                skip_auth, token = _get_auth_context()
-                if not skip_auth and prompt.auth is not None:
-                    auth_ctx = AuthContext(token=token, component=prompt)
-                    if not run_auth_checks(prompt.auth, auth_ctx):
-                        raise NotFoundError(f"Unknown prompt: {name!r}")
-
                 span.set_attributes(prompt.get_span_attributes())
                 if task_meta is not None and task_meta.fn_key is None:
                     task_meta = replace(task_meta, fn_key=prompt.key)
@@ -2048,11 +2098,17 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         )
 
         try:
-            # Extract SEP-1686 task metadata from request context.
+            # Extract version and task metadata from request context.
             # fn_key is set by call_tool() after finding the tool.
+            version: str | None = None
             task_meta: TaskMeta | None = None
             try:
                 ctx = self._mcp_server.request_context
+                # Extract version from request-level _meta.fastmcp.version
+                if ctx.meta:
+                    meta_dict = ctx.meta.model_dump(exclude_none=True)
+                    version = meta_dict.get("fastmcp", {}).get("version")
+                # Extract SEP-1686 task metadata
                 if ctx.experimental.is_task:
                     mcp_task_meta = ctx.experimental.task_metadata
                     task_meta_dict = mcp_task_meta.model_dump(exclude_none=True)
@@ -2060,7 +2116,9 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             except (AttributeError, LookupError):
                 pass
 
-            result = await self.call_tool(key, arguments, task_meta=task_meta)
+            result = await self.call_tool(
+                key, arguments, version=version, task_meta=task_meta
+            )
 
             if isinstance(result, mcp.types.CreateTaskResult):
                 return result
@@ -2089,11 +2147,17 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         logger.debug(f"[{self.name}] Handler called: read_resource %s", uri)
 
         try:
-            # Extract SEP-1686 task metadata from request context.
-            # fn_key is set by read_resource() after finding the resource/template.
+            # Extract version and task metadata from request context.
+            version: str | None = None
             task_meta: TaskMeta | None = None
             try:
                 ctx = self._mcp_server.request_context
+                # Extract version from _meta.fastmcp.version if provided
+                if ctx.meta:
+                    meta_dict = ctx.meta.model_dump(exclude_none=True)
+                    fastmcp_meta = meta_dict.get("fastmcp") or {}
+                    version = fastmcp_meta.get("version")
+                # Extract SEP-1686 task metadata
                 if ctx.experimental.is_task:
                     mcp_task_meta = ctx.experimental.task_metadata
                     task_meta_dict = mcp_task_meta.model_dump(exclude_none=True)
@@ -2101,7 +2165,9 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             except (AttributeError, LookupError):
                 pass
 
-            result = await self.read_resource(str(uri), task_meta=task_meta)
+            result = await self.read_resource(
+                str(uri), version=version, task_meta=task_meta
+            )
 
             if isinstance(result, mcp.types.CreateTaskResult):
                 return result
@@ -2132,11 +2198,17 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         )
 
         try:
-            # Extract SEP-1686 task metadata from request context.
+            # Extract version and task metadata from request context.
             # fn_key is set by render_prompt() after finding the prompt.
+            version: str | None = None
             task_meta: TaskMeta | None = None
             try:
                 ctx = self._mcp_server.request_context
+                # Extract version from request-level _meta.fastmcp.version
+                if ctx.meta:
+                    meta_dict = ctx.meta.model_dump(exclude_none=True)
+                    version = meta_dict.get("fastmcp", {}).get("version")
+                # Extract SEP-1686 task metadata
                 if ctx.experimental.is_task:
                     mcp_task_meta = ctx.experimental.task_metadata
                     task_meta_dict = mcp_task_meta.model_dump(exclude_none=True)
@@ -2144,7 +2216,9 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             except (AttributeError, LookupError):
                 pass
 
-            result = await self.render_prompt(name, arguments, task_meta=task_meta)
+            result = await self.render_prompt(
+                name, arguments, version=version, task_meta=task_meta
+            )
 
             if isinstance(result, mcp.types.CreateTaskResult):
                 return result

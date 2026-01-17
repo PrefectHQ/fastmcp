@@ -301,21 +301,17 @@ class TestToolLevelAuth:
         finally:
             auth_context_var.reset(tok)
 
-    async def test_get_tool_returns_tool_without_auth_check(self):
-        """get_tool() is the Provider interface and doesn't check auth.
-
-        Auth is checked in call_tool() during execution, not during lookup.
-        """
+    async def test_get_tool_returns_none_without_auth(self):
+        """get_tool() checks auth and returns None for unauthorized tools."""
         mcp = FastMCP()
 
         @mcp.tool(auth=require_auth)
         def protected_tool() -> str:
             return "protected"
 
-        # get_tool() returns the tool without checking auth
+        # get_tool() returns None for unauthorized tools
         tool = await mcp.get_tool("protected_tool")
-        assert tool is not None
-        assert tool.name == "protected_tool"
+        assert tool is None
 
     async def test_get_tool_returns_tool_with_auth(self):
         mcp = FastMCP()

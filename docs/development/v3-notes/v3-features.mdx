@@ -231,7 +231,18 @@ def add(x: int, y: int, z: int = 0) -> int:
 - Unversioned components sort lower than any versioned component
 - The `v` prefix is normalized (`v1.0` equals `1.0`)
 
-**Retrieving specific versions:**
+**Version visibility in meta:**
+
+List operations expose all available versions in the component's `meta` field:
+
+```python
+tools = await client.list_tools()
+# Each tool's meta includes:
+# - meta["fastmcp"]["version"]: the version of this component ("2.0")
+# - meta["fastmcp"]["versions"]: all available versions ["2.0", "1.0"]
+```
+
+**Retrieving and calling specific versions:**
 
 ```python
 # Get the highest version (default)
@@ -240,8 +251,35 @@ tool = await server.get_tool("add")
 # Get a specific version
 tool_v1 = await server.get_tool("add", version="1.0")
 
-# Get all versions
-all_versions = await server.get_tool_versions("add")
+# Call a specific version
+result = await server.call_tool("add", {"x": 1, "y": 2}, version="1.0")
+```
+
+**Client version requests:**
+
+The FastMCP client supports version selection:
+
+```python
+async with Client(server) as client:
+    # Call specific tool version
+    result = await client.call_tool("add", {"x": 1, "y": 2}, version="1.0")
+
+    # Get specific prompt version
+    prompt = await client.get_prompt("my_prompt", {"text": "..."}, version="2.0")
+```
+
+For generic MCP clients, pass version via `_meta` in arguments:
+
+```json
+{
+  "x": 1,
+  "y": 2,
+  "_meta": {
+    "fastmcp": {
+      "version": "1.0"
+    }
+  }
+}
 ```
 
 **VersionFilter transform:**

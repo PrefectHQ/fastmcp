@@ -157,9 +157,83 @@ def summarize(text: str, style: str = "concise") -> str:
     return f"Summarize in a {style} style: {text}"
 ```
 
-<Note>
-Clients always receive the highest version of each component. Versioning controls what the server exposes, not what clients request.
-</Note>
+### Version Discovery
+
+When clients list components, each versioned component includes metadata about all available versions. This lets clients discover what versions exist before deciding which to use. The `meta.fastmcp.versions` field contains all registered versions sorted from highest to lowest.
+
+```python
+from fastmcp import Client
+
+async with Client(server) as client:
+    tools = await client.list_tools()
+
+    for tool in tools:
+        if tool.meta:
+            fastmcp_meta = tool.meta.get("fastmcp", {})
+            # Current version being returned (highest by default)
+            print(f"Version: {fastmcp_meta.get('version')}")
+            # All available versions for this component
+            print(f"Available: {fastmcp_meta.get('versions')}")
+```
+
+For a tool with versions `"1.0"` and `"2.0"`, listing returns the `2.0` implementation with `meta.fastmcp.version` set to `"2.0"` and `meta.fastmcp.versions` set to `["2.0", "1.0"]`. Unversioned components omit these fields entirely.
+
+This discovery mechanism enables clients to make informed decisions about which version to request, support graceful degradation when newer versions introduce breaking changes, or display version information in developer tools.
+
+## Requesting Specific Versions
+
+By default, clients receive and invoke the highest version of each component. When you need a specific version, FastMCP provides two approaches: the FastMCP client API for Python applications, and the MCP protocol mechanism for any MCP-compatible client.
+
+### FastMCP Client
+
+The FastMCP client's `call_tool` and `get_prompt` methods accept an optional `version` parameter. When specified, the server executes that exact version instead of the highest.
+
+```python
+from fastmcp import Client
+
+async with Client(server) as client:
+    # Call the highest version (default behavior)
+    result = await client.call_tool("calculate", {"x": 1, "y": 2})
+
+    # Call a specific version
+    result_v1 = await client.call_tool("calculate", {"x": 1, "y": 2}, version="1.0")
+
+    # Get a specific prompt version
+    prompt = await client.get_prompt("summarize", {"text": "..."}, version="1.0")
+```
+
+If the requested version doesn't exist, the server raises a `NotFoundError`. This ensures you get exactly what you asked for rather than silently falling back to a different version.
+
+### MCP Protocol
+
+For generic MCP clients that don't have built-in version support, pass the version through the `_meta` field in arguments. FastMCP servers extract the version from `_meta.fastmcp.version` before processing.
+
+<CodeGroup>
+```json Tool Call Arguments
+{
+  "x": 1,
+  "y": 2,
+  "_meta": {
+    "fastmcp": {
+      "version": "1.0"
+    }
+  }
+}
+```
+
+```json Prompt Arguments
+{
+  "text": "Summarize this document...",
+  "_meta": {
+    "fastmcp": {
+      "version": "1.0"
+    }
+  }
+}
+```
+</CodeGroup>
+
+The `_meta` field is part of the MCP request params, not arguments, so your component implementation never sees it. This convention allows version selection to work across any MCP client without requiring protocol changes. The FastMCP client handles this automatically when you pass the `version` parameter.
 
 ## Version Comparison
 
