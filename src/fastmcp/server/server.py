@@ -1087,7 +1087,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     async def get_tool(
         self, name: str, version: VersionSpec | str | None = None
     ) -> Tool | None:
-        """Provider interface: aggregate tool lookup from all providers.
+        """Get a tool by name with all server transforms applied.
 
         Returns None if not found or if the tool is disabled via visibility settings.
 
@@ -1104,29 +1104,49 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         else:
             version_spec = version
 
-        # Query all providers in parallel for efficient lookup
-        results = await gather(
-            *[p._get_tool(name, version_spec) for p in self._providers],
-            return_exceptions=True,
-        )
+        # Use _get_tool which applies server transforms
+        return await self._get_tool(name, version_spec)
 
-        # Collect valid results, pick highest version
-        valid: list[Tool] = []
-        for i, result in enumerate(results):
-            if isinstance(result, BaseException):
-                if not isinstance(result, NotFoundError):
-                    logger.debug(
-                        f"Error during get_tool({name!r}) from provider "
-                        f"{self._providers[i]}: {result}"
-                    )
-                continue
-            if result is not None and self._is_component_enabled(result):
-                valid.append(result)
+    async def _get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
+        """Get tool with all transforms applied (server transforms + aggregation).
 
-        if not valid:
-            return None
+        Overrides Provider._get_tool to aggregate from providers after applying
+        server-level transforms.
+        """
 
-        return max(valid, key=version_sort_key)
+        async def base(n: str, *, version: VersionSpec | None = None) -> Tool | None:
+            # Aggregate from all sub-providers
+            results = await gather(
+                *[p._get_tool(n, version) for p in self._providers],
+                return_exceptions=True,
+            )
+
+            # Collect valid results, pick highest version
+            valid: list[Tool] = []
+            for i, result in enumerate(results):
+                if isinstance(result, BaseException):
+                    if not isinstance(result, NotFoundError):
+                        logger.debug(
+                            f"Error during get_tool({n!r}) from provider "
+                            f"{self._providers[i]}: {result}"
+                        )
+                    continue
+                if result is not None and self._is_component_enabled(result):
+                    valid.append(result)
+
+            if not valid:
+                return None
+
+            return max(valid, key=version_sort_key)
+
+        # Build transform chain: server transforms applied over aggregation
+        chain = base
+        for transform in self._get_all_transforms():
+            chain = partial(transform.get_tool, call_next=chain)
+
+        return await chain(name, version=version)
 
     async def get_resources(self, *, run_middleware: bool = False) -> list[Resource]:
         """Get all enabled resources from providers.
@@ -1182,7 +1202,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     async def get_resource(
         self, uri: str, version: VersionSpec | str | None = None
     ) -> Resource | None:
-        """Provider interface: aggregate resource lookup from all providers.
+        """Get a resource by URI with all server transforms applied.
 
         Returns None if not found or if the resource is disabled via visibility settings.
 
@@ -1199,29 +1219,49 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         else:
             version_spec = version
 
-        # Query all providers in parallel for efficient lookup
-        results = await gather(
-            *[p._get_resource(uri, version_spec) for p in self._providers],
-            return_exceptions=True,
-        )
+        # Use _get_resource which applies server transforms
+        return await self._get_resource(uri, version_spec)
 
-        # Collect valid results, pick highest version
-        valid: list[Resource] = []
-        for i, result in enumerate(results):
-            if isinstance(result, BaseException):
-                if not isinstance(result, NotFoundError):
-                    logger.debug(
-                        f"Error during get_resource({uri!r}) from provider "
-                        f"{self._providers[i]}: {result}"
-                    )
-                continue
-            if result is not None and self._is_component_enabled(result):
-                valid.append(result)
+    async def _get_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> Resource | None:
+        """Get resource with all transforms applied (server transforms + aggregation).
 
-        if not valid:
-            return None
+        Overrides Provider._get_resource to aggregate from providers after applying
+        server-level transforms.
+        """
 
-        return max(valid, key=version_sort_key)
+        async def base(u: str, *, version: VersionSpec | None = None) -> Resource | None:
+            # Aggregate from all sub-providers
+            results = await gather(
+                *[p._get_resource(u, version) for p in self._providers],
+                return_exceptions=True,
+            )
+
+            # Collect valid results, pick highest version
+            valid: list[Resource] = []
+            for i, result in enumerate(results):
+                if isinstance(result, BaseException):
+                    if not isinstance(result, NotFoundError):
+                        logger.debug(
+                            f"Error during get_resource({u!r}) from provider "
+                            f"{self._providers[i]}: {result}"
+                        )
+                    continue
+                if result is not None and self._is_component_enabled(result):
+                    valid.append(result)
+
+            if not valid:
+                return None
+
+            return max(valid, key=version_sort_key)
+
+        # Build transform chain: server transforms applied over aggregation
+        chain = base
+        for transform in self._get_all_transforms():
+            chain = partial(transform.get_resource, call_next=chain)
+
+        return await chain(uri, version=version)
 
     async def get_resource_templates(
         self, *, run_middleware: bool = False
@@ -1280,7 +1320,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     async def get_resource_template(
         self, uri: str, version: VersionSpec | str | None = None
     ) -> ResourceTemplate | None:
-        """Provider interface: aggregate template lookup from all providers.
+        """Get a resource template by URI with all server transforms applied.
 
         Returns None if not found or if the template is disabled via visibility settings.
 
@@ -1297,29 +1337,51 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         else:
             version_spec = version
 
-        # Query all providers in parallel for efficient lookup
-        results = await gather(
-            *[p._get_resource_template(uri, version_spec) for p in self._providers],
-            return_exceptions=True,
-        )
+        # Use _get_resource_template which applies server transforms
+        return await self._get_resource_template(uri, version_spec)
 
-        # Collect valid results, pick highest version
-        valid: list[ResourceTemplate] = []
-        for i, result in enumerate(results):
-            if isinstance(result, BaseException):
-                if not isinstance(result, NotFoundError):
-                    logger.debug(
-                        f"Error during get_resource_template({uri!r}) from provider "
-                        f"{self._providers[i]}: {result}"
-                    )
-                continue
-            if result is not None and self._is_component_enabled(result):
-                valid.append(result)
+    async def _get_resource_template(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> ResourceTemplate | None:
+        """Get resource template with all transforms applied.
 
-        if not valid:
-            return None
+        Overrides Provider._get_resource_template to aggregate from providers after
+        applying server-level transforms.
+        """
 
-        return max(valid, key=version_sort_key)
+        async def base(
+            u: str, *, version: VersionSpec | None = None
+        ) -> ResourceTemplate | None:
+            # Aggregate from all sub-providers
+            results = await gather(
+                *[p._get_resource_template(u, version) for p in self._providers],
+                return_exceptions=True,
+            )
+
+            # Collect valid results, pick highest version
+            valid: list[ResourceTemplate] = []
+            for i, result in enumerate(results):
+                if isinstance(result, BaseException):
+                    if not isinstance(result, NotFoundError):
+                        logger.debug(
+                            f"Error during get_resource_template({u!r}) from provider "
+                            f"{self._providers[i]}: {result}"
+                        )
+                    continue
+                if result is not None and self._is_component_enabled(result):
+                    valid.append(result)
+
+            if not valid:
+                return None
+
+            return max(valid, key=version_sort_key)
+
+        # Build transform chain: server transforms applied over aggregation
+        chain = base
+        for transform in self._get_all_transforms():
+            chain = partial(transform.get_resource_template, call_next=chain)
+
+        return await chain(uri, version=version)
 
     async def get_prompts(self, *, run_middleware: bool = False) -> list[Prompt]:
         """Get all enabled prompts from providers.
@@ -1374,7 +1436,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     async def get_prompt(
         self, name: str, version: VersionSpec | str | None = None
     ) -> Prompt | None:
-        """Provider interface: aggregate prompt lookup from all providers.
+        """Get a prompt by name with all server transforms applied.
 
         Returns None if not found or if the prompt is disabled via visibility settings.
 
@@ -1391,29 +1453,49 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         else:
             version_spec = version
 
-        # Query all providers in parallel for efficient lookup
-        results = await gather(
-            *[p._get_prompt(name, version_spec) for p in self._providers],
-            return_exceptions=True,
-        )
+        # Use _get_prompt which applies server transforms
+        return await self._get_prompt(name, version_spec)
 
-        # Collect valid results, pick highest version
-        valid: list[Prompt] = []
-        for i, result in enumerate(results):
-            if isinstance(result, BaseException):
-                if not isinstance(result, NotFoundError):
-                    logger.debug(
-                        f"Error during get_prompt({name!r}) from provider "
-                        f"{self._providers[i]}: {result}"
-                    )
-                continue
-            if result is not None and self._is_component_enabled(result):
-                valid.append(result)
+    async def _get_prompt(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Prompt | None:
+        """Get prompt with all transforms applied (server transforms + aggregation).
 
-        if not valid:
-            return None
+        Overrides Provider._get_prompt to aggregate from providers after applying
+        server-level transforms.
+        """
 
-        return max(valid, key=version_sort_key)
+        async def base(n: str, *, version: VersionSpec | None = None) -> Prompt | None:
+            # Aggregate from all sub-providers
+            results = await gather(
+                *[p._get_prompt(n, version) for p in self._providers],
+                return_exceptions=True,
+            )
+
+            # Collect valid results, pick highest version
+            valid: list[Prompt] = []
+            for i, result in enumerate(results):
+                if isinstance(result, BaseException):
+                    if not isinstance(result, NotFoundError):
+                        logger.debug(
+                            f"Error during get_prompt({n!r}) from provider "
+                            f"{self._providers[i]}: {result}"
+                        )
+                    continue
+                if result is not None and self._is_component_enabled(result):
+                    valid.append(result)
+
+            if not valid:
+                return None
+
+            return max(valid, key=version_sort_key)
+
+        # Build transform chain: server transforms applied over aggregation
+        chain = base
+        for transform in self._get_all_transforms():
+            chain = partial(transform.get_prompt, call_next=chain)
+
+        return await chain(name, version=version)
 
     async def get_component(
         self, key: str

@@ -501,9 +501,8 @@ class FastMCPProvider(Provider):
         Passes the full VersionSpec to the nested server, which handles both
         exact version matching and range filtering.
         """
-        try:
-            raw_tool = await self.server.get_tool(name, version)
-        except NotFoundError:
+        raw_tool = await self.server.get_tool(name, version)
+        if raw_tool is None:
             return None
         return FastMCPProviderTool.wrap(self.server, raw_tool)
 
@@ -529,9 +528,8 @@ class FastMCPProvider(Provider):
         Passes the full VersionSpec to the nested server, which handles both
         exact version matching and range filtering.
         """
-        try:
-            raw_resource = await self.server.get_resource(uri, version)
-        except NotFoundError:
+        raw_resource = await self.server.get_resource(uri, version)
+        if raw_resource is None:
             return None
         return FastMCPProviderResource.wrap(self.server, raw_resource)
 
@@ -559,9 +557,8 @@ class FastMCPProvider(Provider):
         Passes the full VersionSpec to the nested server, which handles both
         exact version matching and range filtering.
         """
-        try:
-            raw_template = await self.server.get_resource_template(uri, version)
-        except NotFoundError:
+        raw_template = await self.server.get_resource_template(uri, version)
+        if raw_template is None:
             return None
         return FastMCPProviderResourceTemplate.wrap(self.server, raw_template)
 
@@ -587,9 +584,8 @@ class FastMCPProvider(Provider):
         Passes the full VersionSpec to the nested server, which handles both
         exact version matching and range filtering.
         """
-        try:
-            raw_prompt = await self.server.get_prompt(name, version)
-        except NotFoundError:
+        raw_prompt = await self.server.get_prompt(name, version)
+        if raw_prompt is None:
             return None
         return FastMCPProviderPrompt.wrap(self.server, raw_prompt)
 

@@ -487,13 +487,8 @@ class TestVersionFilter:
         assert tool_v2 is not None
         assert tool_v2.version == "2.0"
 
-        # Cannot request version outside range
-        import pytest
-
-        from fastmcp.exceptions import NotFoundError
-
-        with pytest.raises(NotFoundError):
-            await mcp.get_tool("add", version="1.0")
+        # Cannot request version outside range - returns None
+        assert await mcp.get_tool("add", version="1.0") is None
 
     async def test_version_range(self):
         """VersionFilter(version_gte='2.0', version_lt='3.0') shows only v2.x."""
@@ -529,16 +524,9 @@ class TestVersionFilter:
         assert tool_v2 is not None
         assert tool_v2.version == "2.0"
 
-        # Versions outside range are not accessible
-        import pytest
-
-        from fastmcp.exceptions import NotFoundError
-
-        with pytest.raises(NotFoundError):
-            await mcp.get_tool("calc", version="1.0")
-
-        with pytest.raises(NotFoundError):
-            await mcp.get_tool("calc", version="3.0")
+        # Versions outside range are not accessible - return None
+        assert await mcp.get_tool("calc", version="1.0") is None
+        assert await mcp.get_tool("calc", version="3.0") is None
 
     async def test_unversioned_always_passes(self):
         """Unversioned components pass through any filter."""
@@ -602,9 +590,8 @@ class TestVersionFilter:
 
         mcp.add_transform(VersionFilter(version_lt="3.0"))
 
-        # Tool exists but is filtered out
-        with pytest.raises(NotFoundError):
-            await mcp.get_tool("only_v5")
+        # Tool exists but is filtered out - returns None
+        assert await mcp.get_tool("only_v5") is None
 
     async def test_must_specify_at_least_one(self):
         """VersionFilter() with no args raises ValueError."""
@@ -846,12 +833,7 @@ class TestMountedVersionFiltering:
         assert len(tools) == 0
 
         # get_tool should also return None (respects filter)
-        import pytest
-
-        from fastmcp.exceptions import NotFoundError
-
-        with pytest.raises(NotFoundError):
-            await parent.get_tool("child_high_version_tool")
+        assert await parent.get_tool("child_high_version_tool") is None
 
 
 class TestMountedRangeFiltering:
@@ -907,13 +889,9 @@ class TestMountedRangeFiltering:
         assert tool is not None
         assert tool.version == "1.0"
 
-        # Request version outside range should fail
-        import pytest
-
-        from fastmcp.exceptions import NotFoundError
-
-        with pytest.raises(NotFoundError):
-            await parent.get_tool("child_calc", version="3.0")
+        # Request version outside range should return None
+        result = await parent.get_tool("child_calc", version="3.0")
+        assert result is None
 
 
 class TestUnversionedExemption:
