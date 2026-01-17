@@ -84,8 +84,6 @@ class FunctionTool(Tool):
 
     def to_mcp_tool(
         self,
-        *,
-        include_fastmcp_meta: bool | None = None,
         **overrides: Any,
     ) -> mcp.types.Tool:
         """Convert the FastMCP tool to an MCP tool.
@@ -93,9 +91,7 @@ class FunctionTool(Tool):
         Extends the base implementation to add task execution mode if enabled.
         """
         # Get base MCP tool from parent
-        mcp_tool = super().to_mcp_tool(
-            include_fastmcp_meta=include_fastmcp_meta, **overrides
-        )
+        mcp_tool = super().to_mcp_tool(**overrides)
 
         # Add task execution mode per SEP-1686
         # Only set execution if not overridden and task execution is supported

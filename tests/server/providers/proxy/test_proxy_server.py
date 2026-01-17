@@ -234,7 +234,7 @@ class TestTools:
         tools = await proxy_server.get_tools()
         greet_tool = next(t for t in tools if t.name == "greet")
         assert greet_tool.title == "Greet"
-        assert greet_tool.meta == {"_fastmcp": {"tags": ["greet"]}}
+        assert greet_tool.meta == {"fastmcp": {"tags": ["greet"]}}
         assert greet_tool.icons == [Icon(src="https://example.com/greet-icon.png")]
 
     async def test_get_transformed_tools(self):
@@ -367,7 +367,7 @@ class TestResources:
         resources = await proxy_server.get_resources()
         wave_resource = next(r for r in resources if str(r.uri) == "resource://wave")
         assert wave_resource.title == "Wave"
-        assert wave_resource.meta == {"_fastmcp": {"tags": ["wave"]}}
+        assert wave_resource.meta == {"fastmcp": {"tags": ["wave"]}}
         assert wave_resource.icons == [Icon(src="https://example.com/wave-icon.png")]
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
@@ -481,7 +481,7 @@ class TestResourceTemplates:
             t for t in templates if t.uri_template == "data://user/{user_id}"
         )
         assert get_user_template.title == "User Template"
-        assert get_user_template.meta == {"_fastmcp": {"tags": ["users"]}}
+        assert get_user_template.meta == {"fastmcp": {"tags": ["users"]}}
         assert get_user_template.icons == [
             Icon(src="https://example.com/user-icon.png")
         ]
@@ -589,7 +589,7 @@ class TestPrompts:
         prompts = await proxy_server.get_prompts()
         welcome_prompt = next(p for p in prompts if p.name == "welcome")
         assert welcome_prompt.title == "Welcome"
-        assert welcome_prompt.meta == {"_fastmcp": {"tags": ["welcome"]}}
+        assert welcome_prompt.meta == {"fastmcp": {"tags": ["welcome"]}}
         assert welcome_prompt.icons == [
             Icon(src="https://example.com/welcome-icon.png")
         ]

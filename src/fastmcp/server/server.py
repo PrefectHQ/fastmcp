@@ -248,7 +248,6 @@ class FastMCP(Generic[LifespanResultT]):
         tool_serializer: ToolResultSerializerType | None = None,
         include_tags: Collection[str] | None = None,
         exclude_tags: Collection[str] | None = None,
-        include_fastmcp_meta: bool | None = None,
         on_duplicate: DuplicateBehavior | None = None,
         strict_input_validation: bool | None = None,
         tasks: bool | None = None,
@@ -404,12 +403,6 @@ class FastMCP(Generic[LifespanResultT]):
         self.sampling_handler: SamplingHandler | None = sampling_handler
         self.sampling_handler_behavior: Literal["always", "fallback"] = (
             sampling_handler_behavior or "fallback"
-        )
-
-        self.include_fastmcp_meta: bool = (
-            include_fastmcp_meta
-            if include_fastmcp_meta is not None
-            else fastmcp.settings.include_fastmcp_meta
         )
 
         self._handle_deprecated_settings(
@@ -1939,7 +1932,6 @@ class FastMCP(Generic[LifespanResultT]):
             return [
                 tool.to_mcp_tool(
                     name=tool.name,
-                    include_fastmcp_meta=self.include_fastmcp_meta,
                 )
                 for tool in tools
             ]
@@ -1956,7 +1948,6 @@ class FastMCP(Generic[LifespanResultT]):
             return [
                 resource.to_mcp_resource(
                     uri=str(resource.uri),
-                    include_fastmcp_meta=self.include_fastmcp_meta,
                 )
                 for resource in resources
             ]
@@ -1973,7 +1964,6 @@ class FastMCP(Generic[LifespanResultT]):
             return [
                 template.to_mcp_template(
                     uriTemplate=template.uri_template,
-                    include_fastmcp_meta=self.include_fastmcp_meta,
                 )
                 for template in templates
             ]
@@ -1990,7 +1980,6 @@ class FastMCP(Generic[LifespanResultT]):
             return [
                 prompt.to_mcp_prompt(
                     name=prompt.name,
-                    include_fastmcp_meta=self.include_fastmcp_meta,
                 )
                 for prompt in prompts
             ]

@@ -44,7 +44,7 @@ from fastmcp.server.providers.base import Provider
 from fastmcp.server.server import FastMCP
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.tool import Tool, ToolResult
-from fastmcp.utilities.components import FastMCPComponent
+from fastmcp.utilities.components import FastMCPComponent, get_fastmcp_metadata
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -104,7 +104,7 @@ class ProxyTool(Tool):
             output_schema=mcp_tool.outputSchema,
             icons=mcp_tool.icons,
             meta=mcp_tool.meta,
-            tags=(mcp_tool.meta or {}).get("_fastmcp", {}).get("tags", []),
+            tags=get_fastmcp_metadata(mcp_tool.meta).get("tags", []),
         )
 
     async def run(
@@ -211,7 +211,7 @@ class ProxyResource(Resource):
             mime_type=mcp_resource.mimeType or "text/plain",
             icons=mcp_resource.icons,
             meta=mcp_resource.meta,
-            tags=(mcp_resource.meta or {}).get("_fastmcp", {}).get("tags", []),
+            tags=get_fastmcp_metadata(mcp_resource.meta).get("tags", []),
             task_config=TaskConfig(mode="forbidden"),
         )
 
@@ -309,7 +309,7 @@ class ProxyTemplate(ResourceTemplate):
             icons=mcp_template.icons,
             parameters={},  # Remote templates don't have local parameters
             meta=mcp_template.meta,
-            tags=(mcp_template.meta or {}).get("_fastmcp", {}).get("tags", []),
+            tags=get_fastmcp_metadata(mcp_template.meta).get("tags", []),
             task_config=TaskConfig(mode="forbidden"),
         )
 
@@ -371,7 +371,7 @@ class ProxyTemplate(ResourceTemplate):
             ].mimeType,  # Use first item's mimeType for backward compatibility
             icons=self.icons,
             meta=self.meta,
-            tags=(self.meta or {}).get("_fastmcp", {}).get("tags", []),
+            tags=get_fastmcp_metadata(self.meta).get("tags", []),
             _cached_content=cached_content,
         )
 
@@ -429,7 +429,7 @@ class ProxyPrompt(Prompt):
             arguments=arguments,
             icons=mcp_prompt.icons,
             meta=mcp_prompt.meta,
-            tags=(mcp_prompt.meta or {}).get("_fastmcp", {}).get("tags", []),
+            tags=get_fastmcp_metadata(mcp_prompt.meta).get("tags", []),
             task_config=TaskConfig(mode="forbidden"),
         )
 

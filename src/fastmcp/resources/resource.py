@@ -357,8 +357,6 @@ class Resource(FastMCPComponent):
 
     def to_mcp_resource(
         self,
-        *,
-        include_fastmcp_meta: bool | None = None,
         **overrides: Any,
     ) -> SDKResource:
         """Convert the resource to an SDKResource."""
@@ -372,7 +370,7 @@ class Resource(FastMCPComponent):
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
-                "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
+                "_meta", self.get_meta()
             ),
         )
 
