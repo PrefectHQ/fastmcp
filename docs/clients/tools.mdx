@@ -99,6 +99,7 @@ async with client:
 **Parameters:**
 - `name`: The tool name (string)
 - `arguments`: Dictionary of arguments to pass to the tool (optional)
+- `version`: Specific tool version to call (optional, see [Version Selection](#version-selection) below)
 - `timeout`: Maximum execution time in seconds (optional, overrides client-level timeout)
 - `progress_handler`: Progress callback function (optional, overrides client-level handler)
 - `meta`: Dictionary of metadata to send with the request (optional, see below)
@@ -293,3 +294,47 @@ async with client:
 <Tip>
 For multi-server clients, tool names are automatically prefixed with the server name (e.g., `weather_get_forecast` for a tool named `get_forecast` on the `weather` server).
 </Tip>
+
+## Version Selection
+
+<VersionBadge version="3.0.0" />
+
+FastMCP servers can expose multiple versions of the same tool. By default, clients receive and call the highest version, but you can request a specific version when needed.
+
+### Discovering Versions
+
+When a server registers multiple versions of a tool, the `list_tools()` response includes version information in the metadata. The `meta.fastmcp.version` field shows which version is being returned, while `meta.fastmcp.versions` lists all available versions sorted from highest to lowest.
+
+```python
+async with client:
+    tools = await client.list_tools()
+
+    for tool in tools:
+        if tool.meta:
+            fastmcp_meta = tool.meta.get("fastmcp", {})
+            version = fastmcp_meta.get("version")
+            all_versions = fastmcp_meta.get("versions")
+            if all_versions:
+                print(f"{tool.name}: v{version} (available: {all_versions})")
+```
+
+Unversioned tools omit these metadata fields entirely.
+
+### Calling Specific Versions
+
+Pass the `version` parameter to `call_tool()` to execute a specific version instead of the highest.
+
+```python
+async with client:
+    # Call the highest version (default)
+    result = await client.call_tool("calculate", {"x": 1, "y": 2})
+
+    # Call version 1.0 specifically
+    result_v1 = await client.call_tool("calculate", {"x": 1, "y": 2}, version="1.0")
+```
+
+If the requested version doesn't exist, the server raises a `NotFoundError`. This ensures you get exactly what you asked for rather than silently falling back to a different version.
+
+<Note>
+Version selection is a FastMCP extension to the MCP protocol. See [Versioning](/servers/versioning#requesting-specific-versions) for details on how this works at the protocol level for non-FastMCP clients.
+</Note>

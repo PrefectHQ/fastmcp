@@ -81,8 +81,34 @@ async with client:
 ```
 
 <Note>
-The `meta` field is part of the standard MCP specification. FastMCP servers always include tags and other metadata within a `fastmcp` namespace (e.g., `meta.fastmcp.tags`) to avoid conflicts with user-defined metadata. Component versions are also included in the metadata when available (e.g., `meta.fastmcp.version`). Other MCP server implementations may not provide this metadata structure.
+The `meta` field is part of the standard MCP specification. FastMCP servers always include tags and other metadata within a `fastmcp` namespace (e.g., `meta.fastmcp.tags`) to avoid conflicts with user-defined metadata. For versioned resources, `meta.fastmcp.version` shows the current version and `meta.fastmcp.versions` lists all available versions. Other MCP server implementations may not provide this metadata structure.
 </Note>
+
+### Version Information
+
+<VersionBadge version="3.0.0" />
+
+When a server registers multiple versions of a resource, the metadata includes version information.
+
+```python
+async with client:
+    resources = await client.list_resources()
+
+    for resource in resources:
+        if resource.meta:
+            fastmcp_meta = resource.meta.get("fastmcp", {})
+            version = fastmcp_meta.get("version")
+            all_versions = fastmcp_meta.get("versions")
+            if all_versions:
+                print(f"{resource.uri}: v{version} (available: {all_versions})")
+```
+
+To read a specific version, use the `version` parameter:
+
+```python
+# Read a specific version
+content = await client.read_resource("data://config", version="1.0")
+```
 
 ## Reading Resources
 
