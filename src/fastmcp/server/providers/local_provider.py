@@ -550,7 +550,7 @@ class LocalProvider(Provider):
             return None
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Return all visible resource templates."""
         return [
             v

@@ -406,7 +406,7 @@ class TestProviderExecutionMethods:
         """Test that read_resource_template handles template-based resources."""
 
         class TemplateProvider(Provider):
-            async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+            async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
                 return [
                     FunctionResourceTemplate.from_function(
                         fn=lambda name: f"content of {name}",

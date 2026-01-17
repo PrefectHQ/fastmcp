@@ -198,10 +198,10 @@ class FileSystemProvider(LocalProvider):
         await self._ensure_loaded()
         return await super()._get_resource(uri, version)
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Return all resource templates, reloading if in reload mode."""
         await self._ensure_loaded()
-        return await super().list_resource_templates()
+        return await super()._list_resource_templates()
 
     async def get_resource_template(
         self, uri: str, version: VersionSpec | None = None

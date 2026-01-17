@@ -887,10 +887,10 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         )
         return self._collect_list_results(results, "list_resources")
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Aggregate resource templates from all sub-providers."""
         results = await gather(
-            *[p._list_resource_templates() for p in self._providers],
+            *[p.list_resource_templates() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_resource_templates")
@@ -1305,7 +1305,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 )
 
             # Query through full transform chain (provider transforms + server transforms + visibility)
-            templates = await self._list_resource_templates()
+            templates = await self.list_resource_templates()
 
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
@@ -1686,8 +1686,8 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                             f"Error reading resource {uri!r}: {e}"
                         ) from e
 
-                # Try templates (transforms + auth via _get_resource_template)
-                template = await self._get_resource_template(uri, version=version)
+                # Try templates (transforms + auth via get_resource_template)
+                template = await self.get_resource_template(uri, version=version)
                 if template is None:
                     if version is None:
                         raise NotFoundError(f"Unknown resource: {uri!r}")

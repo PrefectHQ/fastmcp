@@ -179,10 +179,10 @@ class AggregateProvider(Provider):
     # Resource Templates
     # -------------------------------------------------------------------------
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List all resource templates from all providers (with transforms applied)."""
         results = await gather(
-            *[p._list_resource_templates() for p in self._providers],
+            *[p.list_resource_templates() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_resource_templates")

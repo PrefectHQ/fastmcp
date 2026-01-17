@@ -379,7 +379,7 @@ class OpenAPIProvider(Provider):
             return None
         return resource
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Return all resource templates created from the OpenAPI spec."""
         return list(self._templates.values())
 

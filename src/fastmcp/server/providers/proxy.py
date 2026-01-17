@@ -554,7 +554,7 @@ class ProxyProvider(Provider):
     # Resource template methods
     # -------------------------------------------------------------------------
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List all resource templates from the remote server."""
         try:
             client = await self._get_client()

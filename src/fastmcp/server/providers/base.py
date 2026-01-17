@@ -172,11 +172,11 @@ class Provider:
 
         return await chain(uri, version=version)
 
-    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List resource templates with all transforms applied."""
 
         async def base() -> Sequence[ResourceTemplate]:
-            return await self.list_resource_templates()
+            return await self._list_resource_templates()
 
         chain = base
         for transform in self.transforms:
@@ -303,7 +303,7 @@ class Provider:
             return None
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Return all available resource templates.
 
         Override to provide resource templates dynamically. Returns ALL versions.
@@ -326,7 +326,7 @@ class Provider:
         Returns:
             The ResourceTemplate if a matching one is found, or None to continue searching.
         """
-        templates = await self.list_resource_templates()
+        templates = await self._list_resource_templates()
         matching = [t for t in templates if t.matches(uri) is not None]
         if version:
             matching = [t for t in matching if version.matches(t.version)]
@@ -382,7 +382,7 @@ class Provider:
         results = await gather(
             self._list_tools(),
             self._list_resources(),
-            self.list_resource_templates(),
+            self._list_resource_templates(),
             self.list_prompts(),
         )
         tools = cast(Sequence[Tool], results[0])

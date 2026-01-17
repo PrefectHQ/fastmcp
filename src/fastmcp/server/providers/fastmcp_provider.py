@@ -538,7 +538,7 @@ class FastMCPProvider(Provider):
     # Resource template methods
     # -------------------------------------------------------------------------
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List all resource templates from the mounted server.
 
         Runs the mounted server's middleware so filtering/transformation applies.
