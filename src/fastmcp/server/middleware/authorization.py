@@ -295,7 +295,7 @@ class AuthMiddleware(Middleware):
             )
 
         # Get prompt (component auth is checked in get_prompt, raises if unauthorized)
-        prompt = await fastmcp.fastmcp._get_prompt(prompt_name)
+        prompt = await fastmcp.fastmcp.get_prompt(prompt_name)
         if prompt is None:
             raise AuthorizationError(
                 f"Authorization failed for prompt '{prompt_name}': prompt not found"

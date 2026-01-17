@@ -217,7 +217,7 @@ class AggregateProvider(Provider):
         )
         return self._collect_list_results(results, "list_prompts")
 
-    async def get_prompt(
+    async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
         """Get prompt by name.
@@ -228,7 +228,7 @@ class AggregateProvider(Provider):
                 If specified, returns highest version matching the spec from any provider.
         """
         results = await gather(
-            *[p._get_prompt(name, version) for p in self._providers],
+            *[p.get_prompt(name, version) for p in self._providers],
             return_exceptions=True,
         )
         return self._get_highest_version_result(results, f"get_prompt({name!r})")  # type: ignore[return-value]

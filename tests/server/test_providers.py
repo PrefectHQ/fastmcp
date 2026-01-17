@@ -428,7 +428,7 @@ class TestProviderExecutionMethods:
         """Test that default render_prompt uses get_prompt and renders it."""
 
         class PromptProvider(Provider):
-            async def list_prompts(self) -> Sequence[Prompt]:
+            async def _list_prompts(self) -> Sequence[Prompt]:
                 return [
                     FunctionPrompt.from_function(
                         fn=lambda name: f"Hello, {name}!",

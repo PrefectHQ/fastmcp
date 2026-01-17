@@ -217,7 +217,7 @@ class Provider:
 
         return await chain()
 
-    async def _get_prompt(
+    async def get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
         """Get prompt by transformed name with all transforms applied.
@@ -228,7 +228,7 @@ class Provider:
         """
 
         async def base(n: str, version: VersionSpec | None = None) -> Prompt | None:
-            return await self.get_prompt(n, version)
+            return await self._get_prompt(n, version)
 
         chain = base
         for transform in self.transforms:
@@ -342,12 +342,12 @@ class Provider:
         """
         return []
 
-    async def get_prompt(
+    async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
         """Get a specific prompt by name.
 
-        Default implementation filters list_prompts() and picks the highest version
+        Default implementation filters _list_prompts() and picks the highest version
         matching the spec.
 
         Args:

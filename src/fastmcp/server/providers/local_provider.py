@@ -591,7 +591,7 @@ class LocalProvider(Provider):
             if isinstance(v, Prompt) and self._is_component_enabled(v)
         ]
 
-    async def get_prompt(
+    async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
         """Get a prompt by name.

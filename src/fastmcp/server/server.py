@@ -1421,12 +1421,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
             return _dedupe_with_versions(authorized, lambda p: p.name)
 
-    async def get_prompt(
+    async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
         """Get a prompt by name via aggregation from providers.
 
-        This is the raw lookup that Provider._get_prompt() wraps with transforms.
+        This is the raw lookup that Provider.get_prompt() wraps with transforms.
         Aggregates from all sub-providers and applies component-level auth.
 
         Args:
@@ -1438,7 +1438,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """
         # Aggregate from all sub-providers (each applies their own transforms)
         results = await gather(
-            *[p._get_prompt(name, version) for p in self._providers],
+            *[p.get_prompt(name, version) for p in self._providers],
             return_exceptions=True,
         )
 
@@ -1791,7 +1791,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             with server_span(
                 f"prompts/get {name}", "prompts/get", self.name, "prompt", name
             ) as span:
-                prompt = await self._get_prompt(name, version=version)
+                prompt = await self.get_prompt(name, version=version)
                 if prompt is None:
                     raise NotFoundError(f"Unknown prompt: {name!r}")
                 span.set_attributes(prompt.get_span_attributes())

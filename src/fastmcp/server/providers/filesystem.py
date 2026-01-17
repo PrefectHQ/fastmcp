@@ -215,12 +215,12 @@ class FileSystemProvider(LocalProvider):
         await self._ensure_loaded()
         return await super()._list_prompts()
 
-    async def get_prompt(
+    async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
         """Get a prompt by name, reloading if in reload mode."""
         await self._ensure_loaded()
-        return await super().get_prompt(name, version)
+        return await super()._get_prompt(name, version)
 
     def __repr__(self) -> str:
         return f"FileSystemProvider(root={self._root!r}, reload={self._reload})"

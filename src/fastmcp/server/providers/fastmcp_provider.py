@@ -578,16 +578,16 @@ class FastMCPProvider(Provider):
         raw_prompts = await self.server.get_prompts(run_middleware=True)
         return [FastMCPProviderPrompt.wrap(self.server, p) for p in raw_prompts]
 
-    async def get_prompt(
+    async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
         """Get a prompt by name as a FastMCPProviderPrompt.
 
         Passes the full VersionSpec to the nested server, which handles both
-        exact version matching and range filtering. Uses _get_prompt to ensure
+        exact version matching and range filtering. Uses get_prompt to ensure
         the nested server's transforms are applied.
         """
-        raw_prompt = await self.server._get_prompt(name, version)
+        raw_prompt = await self.server.get_prompt(name, version)
         if raw_prompt is None:
             return None
         return FastMCPProviderPrompt.wrap(self.server, raw_prompt)
