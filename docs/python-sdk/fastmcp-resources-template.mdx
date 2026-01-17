@@ -129,7 +129,7 @@ to_mcp_template(self, **overrides: Any) -> SDKResourceTemplate
 Convert the resource template to an SDKResourceTemplate.
 
 
-#### `from_mcp_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L274" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_mcp_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L272" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_mcp_template(cls, mcp_template: SDKResourceTemplate) -> ResourceTemplate
@@ -138,7 +138,7 @@ from_mcp_template(cls, mcp_template: SDKResourceTemplate) -> ResourceTemplate
 Creates a FastMCP ResourceTemplate from a raw MCP ResourceTemplate object.
 
 
-#### `key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L287" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L285" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 key(self) -> str
@@ -147,7 +147,7 @@ key(self) -> str
 The globally unique lookup key for this template.
 
 
-#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L292" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L290" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_with_docket(self, docket: Docket) -> None
@@ -156,7 +156,7 @@ register_with_docket(self, docket: Docket) -> None
 Register this template with docket for background execution.
 
 
-#### `add_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L296" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_to_docket(self, docket: Docket, params: dict[str, Any], **kwargs: Any) -> Execution
@@ -172,13 +172,13 @@ Schedule this template for background execution via docket.
 - `**kwargs`: Additional kwargs passed to docket.add()
 
 
-#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L321" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L319" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]
 ```
 
-### `FunctionResourceTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L328" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FunctionResourceTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L326" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A template for dynamically creating resources.
@@ -186,7 +186,7 @@ A template for dynamically creating resources.
 
 **Methods:**
 
-#### `create_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L374" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `create_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L372" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_resource(self, uri: str, params: dict[str, Any]) -> Resource
@@ -195,7 +195,7 @@ create_resource(self, uri: str, params: dict[str, Any]) -> Resource
 Create a resource from the template with the given parameters.
 
 
-#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L393" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L391" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
@@ -204,7 +204,7 @@ read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
 Read the resource content.
 
 
-#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L424" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L422" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_with_docket(self, docket: Docket) -> None
@@ -216,7 +216,7 @@ FunctionResourceTemplate registers the underlying function, which has the
 user's Depends parameters for docket to resolve.
 
 
-#### `add_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L434" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L432" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_to_docket(self, docket: Docket, params: dict[str, Any], **kwargs: Any) -> Execution
@@ -234,7 +234,7 @@ FunctionResourceTemplate splats the params dict since .fn expects **kwargs.
 - `**kwargs`: Additional kwargs passed to docket.add()
 
 
-#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L460" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L458" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any], uri_template: str, name: str | None = None, version: str | int | None = None, title: str | None = None, description: str | None = None, icons: list[Icon] | None = None, mime_type: str | None = None, tags: set[str] | None = None, annotations: Annotations | None = None, meta: dict[str, Any] | None = None, task: bool | TaskConfig | None = None, auth: AuthCheckCallable | list[AuthCheckCallable] | None = None) -> FunctionResourceTemplate

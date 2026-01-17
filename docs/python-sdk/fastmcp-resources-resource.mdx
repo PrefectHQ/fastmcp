@@ -133,7 +133,7 @@ to_mcp_resource(self, **overrides: Any) -> SDKResource
 Convert the resource to an SDKResource.
 
 
-#### `key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource.py#L383" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource.py#L381" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 key(self) -> str
@@ -142,7 +142,7 @@ key(self) -> str
 The globally unique lookup key for this resource.
 
 
-#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource.py#L388" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource.py#L386" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_with_docket(self, docket: Docket) -> None
@@ -151,7 +151,7 @@ register_with_docket(self, docket: Docket) -> None
 Register this resource with docket for background execution.
 
 
-#### `add_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource.py#L394" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource.py#L392" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_to_docket(self, docket: Docket, **kwargs: Any) -> Execution
@@ -166,7 +166,7 @@ Schedule this resource for background execution via docket.
 - `**kwargs`: Additional kwargs passed to docket.add()
 
 
-#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource.py#L415" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource.py#L413" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]
