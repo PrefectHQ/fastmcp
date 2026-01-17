@@ -1177,7 +1177,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return tool
 
-    # get_tool is inherited from Provider - wraps _get_tool() with transforms
+    # get_tool() is inherited from Provider - wraps _get_tool() with transforms
 
     async def get_resources(self, *, run_middleware: bool = False) -> list[Resource]:
         """Get all enabled resources from providers.
@@ -1274,7 +1274,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return resource
 
-    # _get_resource is inherited from Provider - wraps get_resource() with transforms
+    # get_resource() is inherited from Provider - wraps _get_resource() with transforms
 
     async def get_resource_templates(
         self, *, run_middleware: bool = False
@@ -1375,7 +1375,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return template
 
-    # _get_resource_template is inherited from Provider - wraps get_resource_template() with transforms
+    # get_resource_template() is inherited from Provider - wraps _get_resource_template() with transforms
 
     async def get_prompts(self, *, run_middleware: bool = False) -> list[Prompt]:
         """Get all enabled prompts from providers.
@@ -1472,7 +1472,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return prompt
 
-    # _get_prompt is inherited from Provider - wraps get_prompt() with transforms
+    # get_prompt() is inherited from Provider - wraps _get_prompt() with transforms
 
     @overload
     async def call_tool(
