@@ -28,7 +28,7 @@ Supports multiple syntaxes:
 - Other types (dataclass, BaseModel): use directly
 
 
-### `handle_elicit_accept` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L263" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `handle_elicit_accept` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L265" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 handle_elicit_accept(config: ElicitConfig, content: Any) -> AcceptedElicitation[Any]
@@ -45,7 +45,7 @@ Handle an accepted elicitation response.
 - AcceptedElicitation with the extracted/validated data
 
 
-### `get_elicitation_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L322" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_elicitation_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L324" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_elicitation_schema(response_type: type[T]) -> dict[str, Any]
@@ -58,7 +58,7 @@ Get the schema for an elicitation response.
 - `response_type`: The type of the response
 
 
-### `validate_elicitation_json_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L341" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `validate_elicitation_json_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L343" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_elicitation_json_schema(schema: dict[str, Any]) -> None

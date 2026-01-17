@@ -43,7 +43,20 @@ Get the FastMCP instance.
 create_initialization_options(self, notification_options: NotificationOptions | None = None, experimental_capabilities: dict[str, dict[str, Any]] | None = None, **kwargs: Any) -> InitializationOptions
 ```
 
-#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_capabilities` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_capabilities(self, notification_options: NotificationOptions, experimental_capabilities: dict[str, dict[str, Any]]) -> mcp.types.ServerCapabilities
+```
+
+Override to set capabilities.tasks as a first-class field per SEP-1686.
+
+This ensures task capabilities appear in capabilities.tasks instead of
+capabilities.experimental.tasks, which is required by the MCP spec and
+enables proper task detection by clients like VS Code Copilot 1.107+.
+
+
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L193" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, read_stream: MemoryObjectReceiveStream[SessionMessage | Exception], write_stream: MemoryObjectSendStream[SessionMessage], initialization_options: InitializationOptions, raise_exceptions: bool = False, stateless: bool = False)
@@ -52,7 +65,7 @@ run(self, read_stream: MemoryObjectReceiveStream[SessionMessage | Exception], wr
 Overrides the run method to use the MiddlewareServerSession.
 
 
-#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L229" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource(self) -> Callable[[Callable[[AnyUrl], Awaitable[mcp.types.ReadResourceResult | mcp.types.CreateTaskResult]]], Callable[[AnyUrl], Awaitable[mcp.types.ReadResourceResult | mcp.types.CreateTaskResult]]]
@@ -67,7 +80,7 @@ This decorator can be removed once the MCP SDK adds native CreateTaskResult supp
 for resources.
 
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L248" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L273" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self) -> Callable[[Callable[[str, dict[str, Any] | None], Awaitable[mcp.types.GetPromptResult | mcp.types.CreateTaskResult]]], Callable[[str, dict[str, Any] | None], Awaitable[mcp.types.GetPromptResult | mcp.types.CreateTaskResult]]]

@@ -1,0 +1,139 @@
+---
+title: aggregate
+sidebarTitle: aggregate
+---
+
+# `fastmcp.server.providers.aggregate`
+
+
+AggregateProvider for combining multiple providers into one.
+
+This module provides `AggregateProvider` which presents multiple providers
+as a single unified provider. Used internally by FastMCP for aggregating
+components from all providers.
+
+
+## Classes
+
+### `AggregateProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L30" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Presents multiple providers as a single provider.
+
+Components are aggregated from all providers. For get_* operations,
+providers are queried in parallel and the highest version is returned.
+
+Errors from individual providers are logged and skipped (graceful degradation).
+
+
+**Methods:**
+
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self) -> Sequence[Tool]
+```
+
+List all tools from all providers (with transforms applied).
+
+
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L120" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None
+```
+
+Get tool by name.
+
+**Args:**
+- `name`: The tool name.
+- `version`: If None, returns highest version across all providers.
+If specified, returns highest version matching the spec from any provider.
+
+
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L140" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resources(self) -> Sequence[Resource]
+```
+
+List all resources from all providers (with transforms applied).
+
+
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L148" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource(self, uri: str, version: VersionSpec | None = None) -> Resource | None
+```
+
+Get resource by URI.
+
+**Args:**
+- `uri`: The resource URI.
+- `version`: If None, returns highest version across all providers.
+If specified, returns highest version matching the spec from any provider.
+
+
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resource_templates(self) -> Sequence[ResourceTemplate]
+```
+
+List all resource templates from all providers (with transforms applied).
+
+
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource_template(self, uri: str, version: VersionSpec | None = None) -> ResourceTemplate | None
+```
+
+Get resource template by URI.
+
+**Args:**
+- `uri`: The template URI to match.
+- `version`: If None, returns highest version across all providers.
+If specified, returns highest version matching the spec from any provider.
+
+
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_prompts(self) -> Sequence[Prompt]
+```
+
+List all prompts from all providers (with transforms applied).
+
+
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L206" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(self, name: str, version: VersionSpec | None = None) -> Prompt | None
+```
+
+Get prompt by name.
+
+**Args:**
+- `name`: The prompt name.
+- `version`: If None, returns highest version across all providers.
+If specified, returns highest version matching the spec from any provider.
+
+
+#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L226" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tasks(self) -> Sequence[FastMCPComponent]
+```
+
+Get all task-eligible components from all providers.
+
+
+#### `lifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+lifespan(self) -> AsyncIterator[None]
+```
+
+Combine lifespans of all providers.
+

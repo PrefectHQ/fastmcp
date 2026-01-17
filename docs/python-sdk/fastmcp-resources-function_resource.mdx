@@ -1,0 +1,93 @@
+---
+title: function_resource
+sidebarTitle: function_resource
+---
+
+# `fastmcp.resources.function_resource`
+
+
+Standalone @resource decorator for FastMCP.
+
+## Functions
+
+### `resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L230" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+resource(uri: str) -> Callable[[F], F]
+```
+
+
+Standalone decorator to mark a function as an MCP resource.
+
+Returns the original function with metadata attached. Register with a server
+using mcp.add_resource().
+
+
+## Classes
+
+### `DecoratedResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Protocol for functions decorated with @resource.
+
+
+### `ResourceMeta` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Metadata attached to functions by the @resource decorator.
+
+
+### `FunctionResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A resource that defers data loading by wrapping a function.
+
+The function is only called when the resource is read, allowing for lazy loading
+of potentially expensive data. This is particularly useful when listing resources,
+as the function won't be called until the resource is actually accessed.
+
+The function can return:
+- str for text content (default)
+- bytes for binary content
+- other types will be converted to JSON
+
+
+**Methods:**
+
+#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+from_function(cls, fn: Callable[..., Any], uri: str | AnyUrl | None = None) -> FunctionResource
+```
+
+Create a FunctionResource from a function.
+
+**Args:**
+- `fn`: The function to wrap
+- `uri`: The URI for the resource (required if metadata not provided)
+- `metadata`: ResourceMeta object with all configuration. If provided,
+individual parameters must not be passed.
+- `name, title, etc.`: Individual parameters for backwards compatibility.
+Cannot be used together with metadata parameter.
+
+
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read(self) -> str | bytes | ResourceResult
+```
+
+Read the resource by calling the wrapped function.
+
+
+#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L219" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+register_with_docket(self, docket: Docket) -> None
+```
+
+Register this resource with docket for background execution.
+
+FunctionResource registers the underlying function, which has the user's
+Depends parameters for docket to resolve.
+

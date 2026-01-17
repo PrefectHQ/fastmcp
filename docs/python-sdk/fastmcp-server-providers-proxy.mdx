@@ -15,7 +15,7 @@ classes that forward execution to remote servers.
 
 ## Functions
 
-### `default_proxy_roots_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L687" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_proxy_roots_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L713" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_proxy_roots_handler(context: RequestContext[ClientSession, LifespanContextT]) -> RootsList
@@ -25,7 +25,7 @@ default_proxy_roots_handler(context: RequestContext[ClientSession, LifespanConte
 Forward list roots request from remote server to proxy's connected clients.
 
 
-### `default_proxy_sampling_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L695" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_proxy_sampling_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L721" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_proxy_sampling_handler(messages: list[mcp.types.SamplingMessage], params: mcp.types.CreateMessageRequestParams, context: RequestContext[ClientSession, LifespanContextT]) -> mcp.types.CreateMessageResult
@@ -35,7 +35,7 @@ default_proxy_sampling_handler(messages: list[mcp.types.SamplingMessage], params
 Forward sampling request from remote server to proxy's connected clients.
 
 
-### `default_proxy_elicitation_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L718" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_proxy_elicitation_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L744" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_proxy_elicitation_handler(message: str, response_type: type, params: mcp.types.ElicitRequestParams, context: RequestContext[ClientSession, LifespanContextT]) -> ElicitResult
@@ -45,7 +45,7 @@ default_proxy_elicitation_handler(message: str, response_type: type, params: mcp
 Forward elicitation request from remote server to proxy's connected clients.
 
 
-### `default_proxy_log_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L740" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_proxy_log_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L766" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_proxy_log_handler(message: LogMessage) -> None
@@ -55,7 +55,7 @@ default_proxy_log_handler(message: LogMessage) -> None
 Forward log notification from remote server to proxy's connected clients.
 
 
-### `default_proxy_progress_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L748" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_proxy_progress_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L774" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_proxy_progress_handler(progress: float, total: float | None, message: str | None) -> None
@@ -67,7 +67,7 @@ Forward progress notification from remote server to proxy's connected clients.
 
 ## Classes
 
-### `ProxyTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L69" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ProxyTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L66" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A Tool that represents and executes a tool on a remote server.
@@ -75,7 +75,7 @@ A Tool that represents and executes a tool on a remote server.
 
 **Methods:**
 
-#### `model_copy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `model_copy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L83" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 model_copy(self, **kwargs: Any) -> ProxyTool
@@ -84,7 +84,7 @@ model_copy(self, **kwargs: Any) -> ProxyTool
 Override to preserve _backend_name when name changes.
 
 
-#### `from_mcp_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_mcp_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_mcp_tool(cls, client_factory: ClientFactoryT, mcp_tool: mcp.types.Tool) -> ProxyTool
@@ -93,7 +93,7 @@ from_mcp_tool(cls, client_factory: ClientFactoryT, mcp_tool: mcp.types.Tool) -> 
 Factory method to create a ProxyTool from a raw MCP tool schema.
 
 
-#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L113" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, arguments: dict[str, Any], context: Context | None = None) -> ToolResult
@@ -102,7 +102,13 @@ run(self, arguments: dict[str, Any], context: Context | None = None) -> ToolResu
 Executes the tool by making a call through the client.
 
 
-### `ProxyResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L155" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L156" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `ProxyResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L163" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A Resource that represents and reads a resource from a remote server.
@@ -110,7 +116,7 @@ A Resource that represents and reads a resource from a remote server.
 
 **Methods:**
 
-#### `model_copy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L180" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `model_copy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L188" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 model_copy(self, **kwargs: Any) -> ProxyResource
@@ -119,7 +125,7 @@ model_copy(self, **kwargs: Any) -> ProxyResource
 Override to preserve _backend_uri when uri changes.
 
 
-#### `from_mcp_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L190" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_mcp_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_mcp_resource(cls, client_factory: ClientFactoryT, mcp_resource: mcp.types.Resource) -> ProxyResource
@@ -128,7 +134,7 @@ from_mcp_resource(cls, client_factory: ClientFactoryT, mcp_resource: mcp.types.R
 Factory method to create a ProxyResource from a raw MCP resource schema.
 
 
-#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L210" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L218" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read(self) -> ResourceResult
@@ -137,7 +143,13 @@ read(self) -> ResourceResult
 Read the resource content from the remote server.
 
 
-### `ProxyTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L249" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L263" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `ProxyTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L270" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A ResourceTemplate that represents and creates resources from a remote server template.
@@ -145,7 +157,7 @@ A ResourceTemplate that represents and creates resources from a remote server te
 
 **Methods:**
 
-#### `model_copy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L266" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `model_copy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L287" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 model_copy(self, **kwargs: Any) -> ProxyTemplate
@@ -154,7 +166,7 @@ model_copy(self, **kwargs: Any) -> ProxyTemplate
 Override to preserve _backend_uri_template when uri_template changes.
 
 
-#### `from_mcp_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L276" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_mcp_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L297" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_mcp_template(cls, client_factory: ClientFactoryT, mcp_template: mcp.types.ResourceTemplate) -> ProxyTemplate
@@ -163,7 +175,7 @@ from_mcp_template(cls, client_factory: ClientFactoryT, mcp_template: mcp.types.R
 Factory method to create a ProxyTemplate from a raw MCP template schema.
 
 
-#### `create_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L295" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `create_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L316" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_resource(self, uri: str, params: dict[str, Any], context: Context | None = None) -> ProxyResource
@@ -172,7 +184,13 @@ create_resource(self, uri: str, params: dict[str, Any], context: Context | None 
 Create a resource from the template by calling the remote server.
 
 
-### `ProxyPrompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L358" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L378" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `ProxyPrompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L385" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A Prompt that represents and renders a prompt from a remote server.
@@ -180,7 +198,7 @@ A Prompt that represents and renders a prompt from a remote server.
 
 **Methods:**
 
-#### `model_copy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L375" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `model_copy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L402" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 model_copy(self, **kwargs: Any) -> ProxyPrompt
@@ -189,7 +207,7 @@ model_copy(self, **kwargs: Any) -> ProxyPrompt
 Override to preserve _backend_name when name changes.
 
 
-#### `from_mcp_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L385" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_mcp_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L412" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_mcp_prompt(cls, client_factory: ClientFactoryT, mcp_prompt: mcp.types.Prompt) -> ProxyPrompt
@@ -198,7 +216,7 @@ from_mcp_prompt(cls, client_factory: ClientFactoryT, mcp_prompt: mcp.types.Promp
 Factory method to create a ProxyPrompt from a raw MCP prompt schema.
 
 
-#### `render` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L409" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `render` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L436" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 render(self, arguments: dict[str, Any]) -> PromptResult
@@ -207,7 +225,13 @@ render(self, arguments: dict[str, Any]) -> PromptResult
 Render the prompt by making a call through the client.
 
 
-### `ProxyProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L430" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L458" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `ProxyProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L470" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Provider that proxies to a remote MCP server via a client factory.
@@ -221,7 +245,7 @@ because tasks cannot be executed through a proxy.
 
 **Methods:**
 
-#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L484" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L520" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools(self) -> Sequence[Tool]
@@ -230,7 +254,7 @@ list_tools(self) -> Sequence[Tool]
 List all tools from the remote server.
 
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L509" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L538" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resources(self) -> Sequence[Resource]
@@ -239,7 +263,7 @@ list_resources(self) -> Sequence[Resource]
 List all resources from the remote server.
 
 
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L528" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L557" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resource_templates(self) -> Sequence[ResourceTemplate]
@@ -248,7 +272,7 @@ list_resource_templates(self) -> Sequence[ResourceTemplate]
 List all resource templates from the remote server.
 
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L547" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L576" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts(self) -> Sequence[Prompt]
@@ -257,7 +281,7 @@ list_prompts(self) -> Sequence[Prompt]
 List all prompts from the remote server.
 
 
-#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L566" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L595" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tasks(self) -> Sequence[FastMCPComponent]
@@ -270,7 +294,7 @@ server lifespan initialization, which would open the client before any
 context is set. All Proxy* components have task_config.mode="forbidden".
 
 
-### `FastMCPProxy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L637" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPProxy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L666" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A FastMCP server that acts as a proxy to a remote MCP-compliant server.
@@ -279,7 +303,7 @@ This is a convenience wrapper that creates a FastMCP server with a
 ProxyProvider. For more control, use FastMCP with add_provider(ProxyProvider(...)).
 
 
-### `ProxyClient` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L758" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ProxyClient` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L784" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A proxy client that forwards advanced interactions between a remote MCP server and the proxy's connected clients.
@@ -287,7 +311,7 @@ A proxy client that forwards advanced interactions between a remote MCP server a
 Supports forwarding roots, sampling, elicitation, logging, and progress.
 
 
-### `StatefulProxyClient` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L795" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `StatefulProxyClient` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L821" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A proxy client that provides a stateful client factory for the proxy server.
@@ -301,7 +325,7 @@ Note that it is essential to ensure that the proxy server itself is also statefu
 
 **Methods:**
 
-#### `clear` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L815" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `clear` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L841" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 clear(self)
@@ -310,7 +334,7 @@ clear(self)
 Clear all cached clients and force disconnect them.
 
 
-#### `new_stateful` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L821" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `new_stateful` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L847" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 new_stateful(self) -> Client[ClientTransportT]

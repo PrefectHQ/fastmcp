@@ -5,9 +5,139 @@ sidebarTitle: dependencies
 
 # `fastmcp.server.dependencies`
 
+
+Dependency injection for FastMCP.
+
+DI features (Depends, CurrentContext, CurrentFastMCP) work without pydocket
+using a vendored DI engine. Only task-related dependencies (CurrentDocket,
+CurrentWorker) and background task execution require fastmcp[tasks].
+
+
 ## Functions
 
-### `without_injected_parameters` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `is_docket_available` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_docket_available() -> bool
+```
+
+
+Check if pydocket is installed.
+
+
+### `require_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+require_docket(feature: str) -> None
+```
+
+
+Raise ImportError with install instructions if docket not available.
+
+**Args:**
+- `feature`: Description of what requires docket (e.g., "`task=True`",
+     "CurrentDocket()"). Will be included in the error message.
+
+
+### `transform_context_annotations` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]
+```
+
+
+Transform ctx: Context into ctx: Context = CurrentContext().
+
+Transforms ALL params typed as Context to use Docket's DI system,
+unless they already have a Dependency-based default (like CurrentContext()).
+
+This unifies the legacy type annotation DI with Docket's Depends() system,
+allowing both patterns to work through a single resolution path.
+
+Note: Only POSITIONAL_OR_KEYWORD parameters are reordered (params with defaults
+after those without). KEYWORD_ONLY parameters keep their position since Python
+allows them to have defaults in any order.
+
+**Args:**
+- `fn`: Function to transform
+
+**Returns:**
+- Function with modified signature (same function object, updated __signature__)
+
+
+### `get_context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L283" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_context() -> Context
+```
+
+
+Get the current FastMCP Context instance directly.
+
+
+### `get_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L293" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_server() -> FastMCP
+```
+
+
+Get the current FastMCP server instance directly.
+
+**Returns:**
+- The active FastMCP server
+
+**Raises:**
+- `RuntimeError`: If no server in context
+
+
+### `get_http_request` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L311" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_http_request() -> Request
+```
+
+
+Get the current HTTP request.
+
+Tries MCP SDK's request_ctx first, then falls back to FastMCP's HTTP context.
+
+
+### `get_http_headers` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L331" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_http_headers(include_all: bool = False) -> dict[str, str]
+```
+
+
+Extract headers from the current HTTP request if available.
+
+Never raises an exception, even if there is no active HTTP request (in which case
+an empty dict is returned).
+
+By default, strips problematic headers like `content-length` that cause issues
+if forwarded to downstream clients. If `include_all` is True, all headers are returned.
+
+
+### `get_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L376" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_access_token() -> AccessToken | None
+```
+
+
+Get the FastMCP access token from the current context.
+
+This function first tries to get the token from the current HTTP request's scope,
+which is more reliable for long-lived connections where the SDK's auth_context_var
+may become stale after token refresh. Falls back to the SDK's context var if no
+request is available.
+
+**Returns:**
+- The access token if an authenticated user is available, None otherwise.
+
+
+### `without_injected_parameters` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L434" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]
@@ -21,6 +151,10 @@ making it safe to use with Pydantic TypeAdapter for schema generation and
 validation. The wrapper internally handles all dependency resolution and
 Context injection when called.
 
+Handles:
+- Legacy Context injection (always works)
+- Depends() injection (always works - uses docket or vendored DI engine)
+
 **Args:**
 - `fn`: Original function with Context and/or dependencies
 
@@ -28,23 +162,25 @@ Context injection when called.
 - Async wrapper function without injected parameters
 
 
-### `resolve_dependencies` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resolve_dependencies` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L575" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_dependencies(fn: Callable[..., Any], arguments: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]
 ```
 
 
-Resolve dependencies and inject Context for a FastMCP function.
+Resolve dependencies for a FastMCP function.
 
 This function:
 1. Filters out any dependency parameter names from user arguments (security)
-2. Resolves Docket dependencies
-3. Injects Context if needed
-4. Merges everything together
+2. Resolves Depends() parameters via the DI system
 
 The filtering prevents external callers from overriding injected parameters by
 providing values for dependency parameter names. This is a security feature.
+
+Note: Context injection is handled via transform_context_annotations() which
+converts `ctx: Context` to `ctx: Context = Depends(get_context)` at registration
+time, so all injection goes through the unified DI system.
 
 **Args:**
 - `fn`: The function to resolve dependencies for
@@ -52,13 +188,7 @@ providing values for dependency parameter names. This is a security feature.
       which will be filtered out)
 
 
-### `get_context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L260" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_context() -> Context
-```
-
-### `CurrentContext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L276" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentContext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L632" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentContext() -> Context
@@ -77,7 +207,7 @@ current MCP operation (tool/resource/prompt call).
 - `RuntimeError`: If no active context found (during resolution)
 
 
-### `CurrentDocket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L316" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentDocket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L675" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentDocket() -> Docket
@@ -94,9 +224,10 @@ automatically creates for background task scheduling.
 
 **Raises:**
 - `RuntimeError`: If not within a FastMCP server context
+- `ImportError`: If fastmcp[tasks] not installed
 
 
-### `CurrentWorker` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L355" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentWorker` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L720" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentWorker() -> Worker
@@ -113,12 +244,13 @@ automatically creates for background task processing.
 
 **Raises:**
 - `RuntimeError`: If not within a FastMCP server context
+- `ImportError`: If fastmcp[tasks] not installed
 
 
-### `CurrentFastMCP` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L468" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentFastMCP` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L762" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-CurrentFastMCP()
+CurrentFastMCP() -> FastMCP
 ```
 
 
@@ -133,95 +265,47 @@ This dependency provides access to the active FastMCP server.
 - `RuntimeError`: If no server in context (during resolution)
 
 
-### `get_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L493" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_server()
-```
-
-
-Get the current FastMCP server instance directly.
-
-**Returns:**
-- The active FastMCP server
-
-**Raises:**
-- `RuntimeError`: If no server in context
-
-
-### `get_http_request` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L512" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_http_request() -> Request
-```
-
-### `get_http_headers` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L528" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_http_headers(include_all: bool = False) -> dict[str, str]
-```
-
-
-Extract headers from the current HTTP request if available.
-
-Never raises an exception, even if there is no active HTTP request (in which case
-an empty dict is returned).
-
-By default, strips problematic headers like `content-length` that cause issues if forwarded to downstream clients.
-If `include_all` is True, all headers are returned.
-
-
-### `get_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L574" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_access_token() -> AccessToken | None
-```
-
-
-Get the FastMCP access token from the current context.
-
-This function first tries to get the token from the current HTTP request's scope,
-which is more reliable for long-lived connections where the SDK's auth_context_var
-may become stale after token refresh. Falls back to the SDK's context var if no
-request is available.
-
-**Returns:**
-- The access token if an authenticated user is available, None otherwise.
-
-
 ## Classes
 
-### `InMemoryProgress` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L379" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ProgressLike` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L791" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
-In-memory progress tracker for immediate tool execution.
+Protocol for progress tracking interface.
 
-Provides the same interface as Progress but stores state in memory
-instead of Redis. Useful for testing and immediate execution where
-progress doesn't need to be observable across processes.
+Defines the common interface between InMemoryProgress (server context)
+and Docket's Progress (worker context).
 
 
 **Methods:**
 
-#### `current` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L397" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `current` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L799" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 current(self) -> int | None
 ```
 
-#### `total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L401" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+Current progress value.
+
+
+#### `total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L804" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 total(self) -> int
 ```
 
-#### `message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L405" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+Total/target progress value.
+
+
+#### `message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L809" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 message(self) -> str | None
 ```
 
-#### `set_total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L408" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+Current progress message.
+
+
+#### `set_total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L813" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_total(self, total: int) -> None
@@ -230,7 +314,7 @@ set_total(self, total: int) -> None
 Set the total/target value for progress tracking.
 
 
-#### `increment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L414" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `increment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L817" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 increment(self, amount: int = 1) -> None
@@ -239,7 +323,7 @@ increment(self, amount: int = 1) -> None
 Atomically increment the current progress value.
 
 
-#### `set_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L423" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L821" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_message(self, message: str | None) -> None
@@ -248,15 +332,74 @@ set_message(self, message: str | None) -> None
 Update the progress status message.
 
 
-### `Progress` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L428" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `InMemoryProgress` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L826" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+In-memory progress tracker for immediate tool execution.
+
+Provides the same interface as Docket's Progress but stores state in memory
+instead of Redis. Useful for testing and immediate execution where
+progress doesn't need to be observable across processes.
+
+
+**Methods:**
+
+#### `current` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L846" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+current(self) -> int | None
+```
+
+#### `total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L850" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+total(self) -> int
+```
+
+#### `message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L854" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+message(self) -> str | None
+```
+
+#### `set_total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L857" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_total(self, total: int) -> None
+```
+
+Set the total/target value for progress tracking.
+
+
+#### `increment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L863" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+increment(self, amount: int = 1) -> None
+```
+
+Atomically increment the current progress value.
+
+
+#### `set_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L872" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_message(self, message: str | None) -> None
+```
+
+Update the progress status message.
+
+
+### `Progress` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L877" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 FastMCP Progress dependency that works in both server and worker contexts.
 
-Extends Docket's Progress to handle two execution modes:
-- In Docket worker: Uses the execution's progress (standard Docket behavior)
-- In FastMCP server: Uses in-memory progress (not observable remotely)
+Handles three execution modes:
+- In Docket worker: Uses the execution's progress (observable via Redis)
+- In FastMCP server with Docket: Falls back to in-memory progress
+- In FastMCP server without Docket: Uses in-memory progress
 
 This allows tools to use Progress() regardless of whether they're called
-immediately or as background tasks.
+immediately or as background tasks, and regardless of whether pydocket
+is installed.
 

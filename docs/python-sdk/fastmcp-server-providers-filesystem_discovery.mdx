@@ -1,0 +1,104 @@
+---
+title: filesystem_discovery
+sidebarTitle: filesystem_discovery
+---
+
+# `fastmcp.server.providers.filesystem_discovery`
+
+
+File discovery and module import utilities for filesystem-based routing.
+
+This module provides functions to:
+1. Discover Python files in a directory tree
+2. Import modules (as packages if __init__.py exists, else directly)
+3. Extract decorated components (Tool, Resource, Prompt objects) from imported modules
+
+
+## Functions
+
+### `discover_files` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+discover_files(root: Path) -> list[Path]
+```
+
+
+Recursively discover all Python files under a directory.
+
+Excludes __init__.py files (they're for package structure, not components).
+
+**Args:**
+- `root`: Root directory to scan.
+
+**Returns:**
+- List of .py file paths, sorted for deterministic order.
+
+
+### `import_module_from_file` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L109" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+import_module_from_file(file_path: Path) -> ModuleType
+```
+
+
+Import a Python file as a module.
+
+If the file is part of a package (directory has __init__.py), imports
+it as a proper package member (relative imports work). Otherwise,
+imports directly using spec_from_file_location.
+
+**Args:**
+- `file_path`: Path to the Python file.
+
+**Returns:**
+- The imported module.
+
+**Raises:**
+- `ImportError`: If the module cannot be imported.
+
+
+### `extract_components` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L175" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+extract_components(module: ModuleType) -> list[FastMCPComponent]
+```
+
+
+Extract all MCP components from a module.
+
+Scans all module attributes for instances of Tool, Resource,
+ResourceTemplate, or Prompt objects created by standalone decorators,
+or functions decorated with @tool/@resource/@prompt that have __fastmcp__ metadata.
+
+**Args:**
+- `module`: The imported module to scan.
+
+**Returns:**
+- List of component objects (Tool, Resource, ResourceTemplate, Prompt).
+
+
+### `discover_and_import` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L295" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+discover_and_import(root: Path) -> DiscoveryResult
+```
+
+
+Discover files, import modules, and extract components.
+
+This is the main entry point for filesystem-based discovery.
+
+**Args:**
+- `root`: Root directory to scan.
+
+**Returns:**
+- DiscoveryResult with components and any failed files.
+
+
+## Classes
+
+### `DiscoveryResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L24" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Result of filesystem discovery.
+

@@ -12,3 +12,7 @@ This module re-exports dependency injection symbols from Docket and FastMCP
 to provide a clean, centralized import location for all dependency-related
 functionality.
 
+DI features (Depends, CurrentContext, CurrentFastMCP) work without pydocket
+using a vendored DI engine. Only task-related dependencies (CurrentDocket,
+CurrentWorker) and background task execution require fastmcp[tasks].
+

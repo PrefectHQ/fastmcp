@@ -31,7 +31,7 @@ Example:
 
 ## Classes
 
-### `IntrospectionTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/introspection.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `IntrospectionTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/introspection.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth 2.0 Token Introspection verifier (RFC 7662).
@@ -40,8 +40,11 @@ This verifier validates opaque tokens by calling an OAuth 2.0 token introspectio
 endpoint. Unlike JWT verification which is stateless, token introspection requires
 a network call to the authorization server for each token validation.
 
-The verifier authenticates to the introspection endpoint using HTTP Basic Auth
-with the provided client_id and client_secret, as specified in RFC 7662.
+The verifier authenticates to the introspection endpoint using either:
+- HTTP Basic Auth (client_secret_basic, default): credentials in Authorization header
+- POST body authentication (client_secret_post): credentials in request body
+
+Both methods are specified in RFC 6749 (OAuth 2.0) and RFC 7662 (Token Introspection).
 
 Use this when:
 - Your authorization server issues opaque (non-JWT) tokens
@@ -52,7 +55,7 @@ Use this when:
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/introspection.py#L135" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/introspection.py#L154" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -61,7 +64,8 @@ verify_token(self, token: str) -> AccessToken | None
 Verify a bearer token using OAuth 2.0 Token Introspection (RFC 7662).
 
 This method makes a POST request to the introspection endpoint with the token,
-authenticated using HTTP Basic Auth with the client credentials.
+authenticated using the configured client authentication method (client_secret_basic
+or client_secret_post).
 
 **Args:**
 - `token`: The opaque token string to validate
