@@ -464,8 +464,8 @@ class TestPromptTags:
 
     async def test_read_prompt_excludes_tags(self):
         mcp = self.create_server(exclude_tags={"a"})
-        # _get_prompt applies visibility transform (tag filtering)
-        prompt = await mcp._get_prompt("prompt_1")
+        # get_prompt applies visibility transform (tag filtering)
+        prompt = await mcp.get_prompt("prompt_1")
         assert prompt is None
 
         prompt = await mcp.get_prompt("prompt_2")
