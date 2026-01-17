@@ -500,7 +500,7 @@ class LocalProvider(Provider):
             if isinstance(v, Tool) and self._is_component_enabled(v)
         ]
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name.

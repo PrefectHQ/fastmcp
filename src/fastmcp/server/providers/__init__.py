@@ -17,7 +17,7 @@ Example:
             rows = await self.db.fetch("SELECT * FROM tools")
             return [self._make_tool(row) for row in rows]
 
-        async def get_tool(self, name: str) -> Tool | None:
+        async def _get_tool(self, name: str) -> Tool | None:
             row = await self.db.fetchone("SELECT * FROM tools WHERE name = ?", name)
             return self._make_tool(row) if row else None
 

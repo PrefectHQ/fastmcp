@@ -137,7 +137,7 @@ class AuthMiddleware(Middleware):
             )
 
         # Get tool (component auth is checked in get_tool, raises if unauthorized)
-        tool = await fastmcp.fastmcp._get_tool(tool_name)
+        tool = await fastmcp.fastmcp.get_tool(tool_name)
         if tool is None:
             raise AuthorizationError(
                 f"Authorization failed for tool '{tool_name}': tool not found"

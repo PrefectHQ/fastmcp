@@ -119,7 +119,7 @@ class Provider:
 
         return await chain()
 
-    async def _get_tool(
+    async def get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get tool by transformed name with all transforms applied.
@@ -133,7 +133,7 @@ class Provider:
         """
 
         async def base(n: str, version: VersionSpec | None = None) -> Tool | None:
-            return await self.get_tool(n, version)
+            return await self._get_tool(n, version)
 
         chain = base
         for transform in self.transforms:
@@ -248,12 +248,12 @@ class Provider:
         """
         return []
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a specific tool by name.
 
-        Default implementation filters list_tools() and picks the highest version
+        Default implementation filters _list_tools() and picks the highest version
         that matches the spec.
 
         Args:

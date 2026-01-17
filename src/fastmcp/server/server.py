@@ -1125,12 +1125,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
             return _dedupe_with_versions(authorized, lambda t: t.name)
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name via aggregation from providers.
 
-        This is the raw lookup that Provider._get_tool() wraps with transforms.
+        This is the raw lookup that Provider.get_tool() wraps with transforms.
         Aggregates from all sub-providers and applies component-level auth.
 
         Args:
@@ -1143,7 +1143,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         # Aggregate from all sub-providers (each applies their own transforms)
         results = await gather(
-            *[p._get_tool(name, version) for p in self._providers],
+            *[p.get_tool(name, version) for p in self._providers],
             return_exceptions=True,
         )
 
@@ -1177,7 +1177,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return tool
 
-    # _get_tool is inherited from Provider - wraps get_tool() with transforms
+    # get_tool is inherited from Provider - wraps _get_tool() with transforms
 
     async def get_resources(self, *, run_middleware: bool = False) -> list[Resource]:
         """Get all enabled resources from providers.
@@ -1559,7 +1559,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             with server_span(
                 f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
-                tool = await self._get_tool(name, version=version)
+                tool = await self.get_tool(name, version=version)
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")
                 span.set_attributes(tool.get_span_attributes())

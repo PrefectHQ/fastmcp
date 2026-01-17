@@ -492,16 +492,16 @@ class FastMCPProvider(Provider):
         raw_tools = await self.server.get_tools(run_middleware=True)
         return [FastMCPProviderTool.wrap(self.server, t) for t in raw_tools]
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name as a FastMCPProviderTool.
 
         Passes the full VersionSpec to the nested server, which handles both
-        exact version matching and range filtering. Uses _get_tool to ensure
+        exact version matching and range filtering. Uses get_tool to ensure
         the nested server's transforms are applied.
         """
-        raw_tool = await self.server._get_tool(name, version)
+        raw_tool = await self.server.get_tool(name, version)
         if raw_tool is None:
             return None
         return FastMCPProviderTool.wrap(self.server, raw_tool)

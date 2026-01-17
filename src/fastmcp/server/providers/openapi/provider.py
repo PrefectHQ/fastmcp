@@ -353,7 +353,7 @@ class OpenAPIProvider(Provider):
         """Return all tools created from the OpenAPI spec."""
         return list(self._tools.values())
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name."""

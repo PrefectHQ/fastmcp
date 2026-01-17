@@ -578,7 +578,7 @@ class TestProviderToolTransformations:
 
         # Get tool through layer with call_next
         async def get_tool(name: str, version=None):
-            return await provider.get_tool(name, version)
+            return await provider._get_tool(name, version)
 
         tool = await layer.get_tool("transformed_tool", get_tool)
         assert tool is not None
@@ -604,7 +604,7 @@ class TestProviderToolTransformations:
         )
 
         async def get_tool(name: str, version=None):
-            return await provider.get_tool(name, version)
+            return await provider._get_tool(name, version)
 
         tool = await layer.get_tool("my_tool", get_tool)
         assert tool is not None

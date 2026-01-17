@@ -52,7 +52,7 @@ class SimpleToolProvider(Provider):
         self.list_tools_call_count += 1
         return self._tools
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         self.get_tool_call_count += 1

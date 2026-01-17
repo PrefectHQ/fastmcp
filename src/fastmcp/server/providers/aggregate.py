@@ -131,7 +131,7 @@ class AggregateProvider(Provider):
         )
         return self._collect_list_results(results, "list_tools")
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get tool by name.
@@ -142,7 +142,7 @@ class AggregateProvider(Provider):
                 If specified, returns highest version matching the spec from any provider.
         """
         results = await gather(
-            *[p._get_tool(name, version) for p in self._providers],
+            *[p.get_tool(name, version) for p in self._providers],
             return_exceptions=True,
         )
         return self._get_highest_version_result(results, f"get_tool({name!r})")  # type: ignore[return-value]

@@ -159,7 +159,7 @@ class TestTransformReverseLookup:
 
         # Create call_next that delegates to provider
         async def get_tool(name: str, version=None):
-            return await provider.get_tool(name, version)
+            return await provider._get_tool(name, version)
 
         tool = await layer.get_tool("ns_my_tool", get_tool)
 
@@ -178,7 +178,7 @@ class TestTransformReverseLookup:
         layer = ToolTransform({"original": ToolTransformConfig(name="renamed")})
 
         async def get_tool(name: str, version=None):
-            return await provider.get_tool(name, version)
+            return await provider._get_tool(name, version)
 
         tool = await layer.get_tool("renamed", get_tool)
 
@@ -216,7 +216,7 @@ class TestTransformReverseLookup:
         layer = Namespace("ns")
 
         async def get_tool(name: str, version=None):
-            return await provider.get_tool(name, version)
+            return await provider._get_tool(name, version)
 
         # Wrong namespace prefix
         assert await layer.get_tool("wrong_my_tool", get_tool) is None
