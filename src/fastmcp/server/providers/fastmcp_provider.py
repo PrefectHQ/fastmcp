@@ -498,9 +498,10 @@ class FastMCPProvider(Provider):
         """Get a tool by name as a FastMCPProviderTool.
 
         Passes the full VersionSpec to the nested server, which handles both
-        exact version matching and range filtering.
+        exact version matching and range filtering. Uses _get_tool to ensure
+        the nested server's transforms are applied.
         """
-        raw_tool = await self.server.get_tool(name, version)
+        raw_tool = await self.server._get_tool(name, version)
         if raw_tool is None:
             return None
         return FastMCPProviderTool.wrap(self.server, raw_tool)
@@ -525,9 +526,10 @@ class FastMCPProvider(Provider):
         """Get a concrete resource by URI as a FastMCPProviderResource.
 
         Passes the full VersionSpec to the nested server, which handles both
-        exact version matching and range filtering.
+        exact version matching and range filtering. Uses _get_resource to ensure
+        the nested server's transforms are applied.
         """
-        raw_resource = await self.server.get_resource(uri, version)
+        raw_resource = await self.server._get_resource(uri, version)
         if raw_resource is None:
             return None
         return FastMCPProviderResource.wrap(self.server, raw_resource)
@@ -554,9 +556,10 @@ class FastMCPProvider(Provider):
         """Get a resource template that matches the given URI.
 
         Passes the full VersionSpec to the nested server, which handles both
-        exact version matching and range filtering.
+        exact version matching and range filtering. Uses _get_resource_template
+        to ensure the nested server's transforms are applied.
         """
-        raw_template = await self.server.get_resource_template(uri, version)
+        raw_template = await self.server._get_resource_template(uri, version)
         if raw_template is None:
             return None
         return FastMCPProviderResourceTemplate.wrap(self.server, raw_template)
@@ -581,9 +584,10 @@ class FastMCPProvider(Provider):
         """Get a prompt by name as a FastMCPProviderPrompt.
 
         Passes the full VersionSpec to the nested server, which handles both
-        exact version matching and range filtering.
+        exact version matching and range filtering. Uses _get_prompt to ensure
+        the nested server's transforms are applied.
         """
-        raw_prompt = await self.server.get_prompt(name, version)
+        raw_prompt = await self.server._get_prompt(name, version)
         if raw_prompt is None:
             return None
         return FastMCPProviderPrompt.wrap(self.server, raw_prompt)

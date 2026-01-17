@@ -1982,14 +1982,14 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         try:
             # Extract version and task metadata from request context.
             # fn_key is set by call_tool() after finding the tool.
-            version: str | None = None
+            version_str: str | None = None
             task_meta: TaskMeta | None = None
             try:
                 ctx = self._mcp_server.request_context
                 # Extract version from request-level _meta.fastmcp.version
                 if ctx.meta:
                     meta_dict = ctx.meta.model_dump(exclude_none=True)
-                    version = meta_dict.get("fastmcp", {}).get("version")
+                    version_str = meta_dict.get("fastmcp", {}).get("version")
                 # Extract SEP-1686 task metadata
                 if ctx.experimental.is_task:
                     mcp_task_meta = ctx.experimental.task_metadata
@@ -1998,6 +1998,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             except (AttributeError, LookupError):
                 pass
 
+            version = VersionSpec(eq=version_str) if version_str else None
             result = await self.call_tool(
                 key, arguments, version=version, task_meta=task_meta
             )
@@ -2030,7 +2031,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         try:
             # Extract version and task metadata from request context.
-            version: str | None = None
+            version_str: str | None = None
             task_meta: TaskMeta | None = None
             try:
                 ctx = self._mcp_server.request_context
@@ -2038,7 +2039,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 if ctx.meta:
                     meta_dict = ctx.meta.model_dump(exclude_none=True)
                     fastmcp_meta = meta_dict.get("fastmcp") or {}
-                    version = fastmcp_meta.get("version")
+                    version_str = fastmcp_meta.get("version")
                 # Extract SEP-1686 task metadata
                 if ctx.experimental.is_task:
                     mcp_task_meta = ctx.experimental.task_metadata
@@ -2047,6 +2048,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             except (AttributeError, LookupError):
                 pass
 
+            version = VersionSpec(eq=version_str) if version_str else None
             result = await self.read_resource(
                 str(uri), version=version, task_meta=task_meta
             )
@@ -2082,14 +2084,14 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         try:
             # Extract version and task metadata from request context.
             # fn_key is set by render_prompt() after finding the prompt.
-            version: str | None = None
+            version_str: str | None = None
             task_meta: TaskMeta | None = None
             try:
                 ctx = self._mcp_server.request_context
                 # Extract version from request-level _meta.fastmcp.version
                 if ctx.meta:
                     meta_dict = ctx.meta.model_dump(exclude_none=True)
-                    version = meta_dict.get("fastmcp", {}).get("version")
+                    version_str = meta_dict.get("fastmcp", {}).get("version")
                 # Extract SEP-1686 task metadata
                 if ctx.experimental.is_task:
                     mcp_task_meta = ctx.experimental.task_metadata
@@ -2098,6 +2100,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             except (AttributeError, LookupError):
                 pass
 
+            version = VersionSpec(eq=version_str) if version_str else None
             result = await self.render_prompt(
                 name, arguments, version=version, task_meta=task_meta
             )
