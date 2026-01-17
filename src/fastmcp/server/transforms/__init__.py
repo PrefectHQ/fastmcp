@@ -21,7 +21,9 @@ Example:
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
+
+from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
     from fastmcp.prompts.prompt import Prompt
@@ -30,17 +32,44 @@ if TYPE_CHECKING:
     from fastmcp.tools.tool import Tool
 
 # Type aliases for call_next signatures
+# List methods are simple callables
 ListToolsNext = Callable[[], Awaitable[Sequence["Tool"]]]
-GetToolNext = Callable[[str], Awaitable["Tool | None"]]
-
 ListResourcesNext = Callable[[], Awaitable[Sequence["Resource"]]]
-GetResourceNext = Callable[[str], Awaitable["Resource | None"]]
-
 ListResourceTemplatesNext = Callable[[], Awaitable[Sequence["ResourceTemplate"]]]
-GetResourceTemplateNext = Callable[[str], Awaitable["ResourceTemplate | None"]]
-
 ListPromptsNext = Callable[[], Awaitable[Sequence["Prompt"]]]
-GetPromptNext = Callable[[str], Awaitable["Prompt | None"]]
+
+
+# Get methods use Protocol to express keyword-only version parameter
+class GetToolNext(Protocol):
+    """Protocol for get_tool call_next functions."""
+
+    def __call__(
+        self, name: str, *, version: VersionSpec | None = None
+    ) -> Awaitable[Tool | None]: ...
+
+
+class GetResourceNext(Protocol):
+    """Protocol for get_resource call_next functions."""
+
+    def __call__(
+        self, uri: str, *, version: VersionSpec | None = None
+    ) -> Awaitable[Resource | None]: ...
+
+
+class GetResourceTemplateNext(Protocol):
+    """Protocol for get_resource_template call_next functions."""
+
+    def __call__(
+        self, uri: str, *, version: VersionSpec | None = None
+    ) -> Awaitable[ResourceTemplate | None]: ...
+
+
+class GetPromptNext(Protocol):
+    """Protocol for get_prompt call_next functions."""
+
+    def __call__(
+        self, name: str, *, version: VersionSpec | None = None
+    ) -> Awaitable[Prompt | None]: ...
 
 
 class Transform:
@@ -60,9 +89,9 @@ class Transform:
                 tools = await call_next()  # Get tools from downstream
                 return [transform(t) for t in tools]  # Transform them
 
-            async def get_tool(self, name, call_next):
+            async def get_tool(self, name, call_next, *, version=None):
                 original = self.reverse_name(name)  # Map to original name
-                tool = await call_next(original)  # Get from downstream
+                tool = await call_next(original, version=version)  # Get from downstream
                 return transform(tool) if tool else None
         ```
     """
@@ -85,17 +114,20 @@ class Transform:
         """
         return await call_next()
 
-    async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
         """Get a tool by name.
 
         Args:
             name: The requested tool name (may be transformed).
             call_next: Callable to get tool from downstream.
+            version: Optional version filter to apply.
 
         Returns:
             The tool if found, None otherwise.
         """
-        return await call_next(name)
+        return await call_next(name, version=version)
 
     # -------------------------------------------------------------------------
     # Resources
@@ -113,18 +145,23 @@ class Transform:
         return await call_next()
 
     async def get_resource(
-        self, uri: str, call_next: GetResourceNext
+        self,
+        uri: str,
+        call_next: GetResourceNext,
+        *,
+        version: VersionSpec | None = None,
     ) -> Resource | None:
         """Get a resource by URI.
 
         Args:
             uri: The requested resource URI (may be transformed).
             call_next: Callable to get resource from downstream.
+            version: Optional version filter to apply.
 
         Returns:
             The resource if found, None otherwise.
         """
-        return await call_next(uri)
+        return await call_next(uri, version=version)
 
     # -------------------------------------------------------------------------
     # Resource Templates
@@ -144,18 +181,23 @@ class Transform:
         return await call_next()
 
     async def get_resource_template(
-        self, uri: str, call_next: GetResourceTemplateNext
+        self,
+        uri: str,
+        call_next: GetResourceTemplateNext,
+        *,
+        version: VersionSpec | None = None,
     ) -> ResourceTemplate | None:
         """Get a resource template by URI.
 
         Args:
             uri: The requested template URI (may be transformed).
             call_next: Callable to get template from downstream.
+            version: Optional version filter to apply.
 
         Returns:
             The resource template if found, None otherwise.
         """
-        return await call_next(uri)
+        return await call_next(uri, version=version)
 
     # -------------------------------------------------------------------------
     # Prompts
@@ -172,22 +214,26 @@ class Transform:
         """
         return await call_next()
 
-    async def get_prompt(self, name: str, call_next: GetPromptNext) -> Prompt | None:
+    async def get_prompt(
+        self, name: str, call_next: GetPromptNext, *, version: VersionSpec | None = None
+    ) -> Prompt | None:
         """Get a prompt by name.
 
         Args:
             name: The requested prompt name (may be transformed).
             call_next: Callable to get prompt from downstream.
+            version: Optional version filter to apply.
 
         Returns:
             The prompt if found, None otherwise.
         """
-        return await call_next(name)
+        return await call_next(name, version=version)
 
 
 # Re-export built-in transforms (must be after Transform class to avoid circular imports)
 from fastmcp.server.transforms.namespace import Namespace  # noqa: E402
 from fastmcp.server.transforms.tool_transform import ToolTransform  # noqa: E402
+from fastmcp.server.transforms.version_filter import VersionFilter  # noqa: E402
 from fastmcp.server.transforms.visibility import Visibility  # noqa: E402
 
 __all__ = [
@@ -202,5 +248,7 @@ __all__ = [
     "Namespace",
     "ToolTransform",
     "Transform",
+    "VersionFilter",
+    "VersionSpec",
     "Visibility",
 ]

@@ -1,0 +1,85 @@
+---
+title: version_filter
+sidebarTitle: version_filter
+---
+
+# `fastmcp.server.transforms.version_filter`
+
+
+Version filter transform for filtering components by version range.
+
+## Classes
+
+### `VersionFilter` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Filters components by version range.
+
+When applied to a provider or server, only components within the version
+range are visible. Within that filtered set, the highest version of each
+component is exposed to clients (standard deduplication behavior).
+
+Parameters mirror comparison operators for clarity:
+
+    # Versions &lt; 3.0 (v1 and v2)
+    server.add_transform(VersionFilter(version_lt="3.0"))
+
+    # Versions &gt;= 2.0 and < 3.0 (only v2.x)
+    server.add_transform(VersionFilter(version_gte="2.0", version_lt="3.0"))
+
+Works with any version string - PEP 440 (1.0, 2.0) or dates (2025-01-01).
+
+**Args:**
+- `version_gte`: Versions >= this value pass through.
+- `version_lt`: Versions < this value pass through.
+
+
+**Methods:**
+
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]
+```
+
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L80" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
+```
+
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]
+```
+
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource(self, uri: str, call_next: GetResourceNext) -> Resource | None
+```
+
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resource_templates(self, call_next: ListResourceTemplatesNext) -> Sequence[ResourceTemplate]
+```
+
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource_template(self, uri: str, call_next: GetResourceTemplateNext) -> ResourceTemplate | None
+```
+
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]
+```
+
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L129" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(self, name: str, call_next: GetPromptNext) -> Prompt | None
+```

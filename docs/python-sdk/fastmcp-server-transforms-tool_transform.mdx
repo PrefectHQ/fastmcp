@@ -1,0 +1,40 @@
+---
+title: tool_transform
+sidebarTitle: tool_transform
+---
+
+# `fastmcp.server.transforms.tool_transform`
+
+
+Transform for applying tool transformations.
+
+## Classes
+
+### `ToolTransform` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/tool_transform.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Applies tool transformations to modify tool schemas.
+
+Wraps ToolTransformConfig to apply argument renames, schema changes,
+hidden arguments, and other transformations at the transform level.
+
+
+**Methods:**
+
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/tool_transform.py#L64" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]
+```
+
+Apply transforms to matching tools.
+
+
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/tool_transform.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
+```
+
+Get tool by transformed name.
+

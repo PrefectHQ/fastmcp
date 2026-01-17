@@ -94,13 +94,20 @@ class ComponentService:
             name: The name of the tool to enable
 
         Returns:
-            The tool that was enabled
+            The tool that was enabled (highest version)
         """
         logger.debug("Enabling tool: %s", name)
 
-        # 1. Check local tools first. The server will have already applied its filter.
-        if Tool.make_key(name) in self._server._local_provider._components:
-            self._server.enable(keys=[Tool.make_key(name)])
+        # 1. Check local tools first - find ALL versions of this tool
+        # Keys are "tool:name@" (unversioned) or "tool:name@version" (versioned)
+        key_prefix = f"{Tool.make_key(name)}@"
+        matching_keys = [
+            k
+            for k in self._server._local_provider._components
+            if k == key_prefix or k.startswith(key_prefix)
+        ]
+        if matching_keys:
+            self._server.enable(keys=matching_keys)
             tool = await self._server.get_tool(name)
             if tool is None:
                 raise NotFoundError(f"Unknown tool: {name!r}")
@@ -123,17 +130,24 @@ class ComponentService:
             name: The name of the tool to disable
 
         Returns:
-            The tool that was disabled
+            The tool that was disabled (highest version)
         """
         logger.debug("Disabling tool: %s", name)
 
-        # 1. Check local tools first. The server will have already applied its filter.
-        key = Tool.make_key(name)
-        if key in self._server._local_provider._components:
-            tool = self._server._local_provider._components[key]
-            if not isinstance(tool, Tool):
+        # 1. Check local tools first - find ALL versions of this tool
+        # Keys are "tool:name@" (unversioned) or "tool:name@version" (versioned)
+        key_prefix = f"{Tool.make_key(name)}@"
+        matching_keys = [
+            k
+            for k in self._server._local_provider._components
+            if k == key_prefix or k.startswith(key_prefix)
+        ]
+        if matching_keys:
+            # Get the highest version tool to return
+            tool = await self._server.get_tool(name)
+            if tool is None or not isinstance(tool, Tool):
                 raise NotFoundError(f"Unknown tool: {name!r}")
-            self._server.disable(keys=[key])
+            self._server.disable(keys=matching_keys)
             return tool
 
         # 2. Check mounted servers via FastMCPProvider
@@ -153,20 +167,32 @@ class ComponentService:
             uri: The URI of the resource to enable
 
         Returns:
-            The resource that was enabled
+            The resource that was enabled (highest version)
         """
         logger.debug("Enabling resource: %s", uri)
 
-        # 1. Check local components first (try resource, then template)
-        resource_key = Resource.make_key(uri)
-        template_key = ResourceTemplate.make_key(uri)
-        component = self._server._local_provider._get_component(
-            resource_key
-        ) or self._server._local_provider._get_component(template_key)
-        if component is not None:
-            key = resource_key if isinstance(component, Resource) else template_key
-            self._server.enable(keys=[key])
-            return component  # type: ignore[return-value]
+        # 1. Check local components first - find ALL versions
+        # Keys are "resource:uri@" or "resource:uri@version" (and same for template)
+        resource_prefix = f"{Resource.make_key(uri)}@"
+        template_prefix = f"{ResourceTemplate.make_key(uri)}@"
+        resource_keys = [
+            k
+            for k in self._server._local_provider._components
+            if k == resource_prefix or k.startswith(resource_prefix)
+        ]
+        template_keys = [
+            k
+            for k in self._server._local_provider._components
+            if k == template_prefix or k.startswith(template_prefix)
+        ]
+        if resource_keys:
+            self._server.enable(keys=resource_keys)
+            resource = await self._server.get_resource(uri)
+            return resource
+        if template_keys:
+            self._server.enable(keys=template_keys)
+            template = await self._server.get_resource_template(uri)
+            return template
 
         # 2. Check mounted servers via FastMCPProvider
         for provider in self._server._providers:
@@ -187,20 +213,34 @@ class ComponentService:
             uri: The URI of the resource to disable
 
         Returns:
-            The resource that was disabled
+            The resource that was disabled (highest version)
         """
         logger.debug("Disabling resource: %s", uri)
 
-        # 1. Check local components first (try resource, then template)
-        resource_key = Resource.make_key(uri)
-        template_key = ResourceTemplate.make_key(uri)
-        component = self._server._local_provider._get_component(
-            resource_key
-        ) or self._server._local_provider._get_component(template_key)
-        if component is not None:
-            key = resource_key if isinstance(component, Resource) else template_key
-            self._server.disable(keys=[key])
-            return component  # type: ignore[return-value]
+        # 1. Check local components first - find ALL versions
+        # Keys are "resource:uri@" or "resource:uri@version" (and same for template)
+        resource_prefix = f"{Resource.make_key(uri)}@"
+        template_prefix = f"{ResourceTemplate.make_key(uri)}@"
+        resource_keys = [
+            k
+            for k in self._server._local_provider._components
+            if k == resource_prefix or k.startswith(resource_prefix)
+        ]
+        template_keys = [
+            k
+            for k in self._server._local_provider._components
+            if k == template_prefix or k.startswith(template_prefix)
+        ]
+        if resource_keys:
+            # Get the highest version to return before disabling
+            resource = await self._server.get_resource(uri)
+            self._server.disable(keys=resource_keys)
+            return resource
+        if template_keys:
+            # Get the highest version to return before disabling
+            template = await self._server.get_resource_template(uri)
+            self._server.disable(keys=template_keys)
+            return template
 
         # 2. Check mounted servers via FastMCPProvider
         for provider in self._server._providers:
@@ -221,14 +261,20 @@ class ComponentService:
             name: The name of the prompt to enable
 
         Returns:
-            The prompt that was enabled
+            The prompt that was enabled (highest version)
         """
         logger.debug("Enabling prompt: %s", name)
 
-        # 1. Check local prompts first. The server will have already applied its filter.
-        key = Prompt.make_key(name)
-        if key in self._server._local_provider._components:
-            self._server.enable(keys=[key])
+        # 1. Check local prompts first - find ALL versions of this prompt
+        # Keys are "prompt:name@" (unversioned) or "prompt:name@version" (versioned)
+        key_prefix = f"{Prompt.make_key(name)}@"
+        matching_keys = [
+            k
+            for k in self._server._local_provider._components
+            if k == key_prefix or k.startswith(key_prefix)
+        ]
+        if matching_keys:
+            self._server.enable(keys=matching_keys)
             prompt = await self._server.get_prompt(name)
             if prompt is None:
                 raise NotFoundError(f"Unknown prompt: {name}")
@@ -251,17 +297,24 @@ class ComponentService:
             name: The name of the prompt to disable
 
         Returns:
-            The prompt that was disabled
+            The prompt that was disabled (highest version)
         """
         logger.debug("Disabling prompt: %s", name)
 
-        # 1. Check local prompts first. The server will have already applied its filter.
-        key = Prompt.make_key(name)
-        if key in self._server._local_provider._components:
-            prompt = self._server._local_provider._components[key]
-            if not isinstance(prompt, Prompt):
+        # 1. Check local prompts first - find ALL versions of this prompt
+        # Keys are "prompt:name@" (unversioned) or "prompt:name@version" (versioned)
+        key_prefix = f"{Prompt.make_key(name)}@"
+        matching_keys = [
+            k
+            for k in self._server._local_provider._components
+            if k == key_prefix or k.startswith(key_prefix)
+        ]
+        if matching_keys:
+            # Get the highest version prompt to return
+            prompt = await self._server.get_prompt(name)
+            if prompt is None or not isinstance(prompt, Prompt):
                 raise NotFoundError(f"Unknown prompt: {name}")
-            self._server.disable(keys=[key])
+            self._server.disable(keys=matching_keys)
             return prompt
 
         # 2. Check mounted servers via FastMCPProvider

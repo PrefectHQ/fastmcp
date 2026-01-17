@@ -47,43 +47,61 @@ like `_tool_serializer` and `_support_tasks_by_default` are injected.
 
 **Methods:**
 
-#### `add_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L184" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L251" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-add_tool(self, tool: Tool) -> Tool
+add_tool(self, tool: Tool | Callable[..., Any]) -> Tool
 ```
 
 Add a tool to this provider's storage.
 
+Accepts either a Tool object or a decorated function with __fastmcp__ metadata.
 
-#### `remove_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L188" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+#### `remove_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L284" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-remove_tool(self, name: str) -> None
+remove_tool(self, name: str, version: str | None = None) -> None
 ```
 
-Remove a tool from this provider's storage.
+Remove tool(s) from this provider's storage.
+
+**Args:**
+- `name`: The tool name.
+- `version`: If None, removes ALL versions. If specified, removes only that version.
+
+**Raises:**
+- `KeyError`: If no matching tool is found.
 
 
-#### `add_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L192" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L312" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-add_resource(self, resource: Resource) -> Resource
+add_resource(self, resource: Resource | ResourceTemplate | Callable[..., Any]) -> Resource | ResourceTemplate
 ```
 
 Add a resource to this provider's storage.
 
+Accepts either a Resource/ResourceTemplate object or a decorated function with __fastmcp__ metadata.
 
-#### `remove_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+#### `remove_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L370" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-remove_resource(self, uri: str) -> None
+remove_resource(self, uri: str, version: str | None = None) -> None
 ```
 
-Remove a resource from this provider's storage.
+Remove resource(s) from this provider's storage.
+
+**Args:**
+- `uri`: The resource URI.
+- `version`: If None, removes ALL versions. If specified, removes only that version.
+
+**Raises:**
+- `KeyError`: If no matching resource is found.
 
 
-#### `add_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L398" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_template(self, template: ResourceTemplate) -> ResourceTemplate
@@ -92,92 +110,72 @@ add_template(self, template: ResourceTemplate) -> ResourceTemplate
 Add a resource template to this provider's storage.
 
 
-#### `remove_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `remove_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L402" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-remove_template(self, uri_template: str) -> None
+remove_template(self, uri_template: str, version: str | None = None) -> None
 ```
 
-Remove a resource template from this provider's storage.
+Remove resource template(s) from this provider's storage.
+
+**Args:**
+- `uri_template`: The template URI pattern.
+- `version`: If None, removes ALL versions. If specified, removes only that version.
+
+**Raises:**
+- `KeyError`: If no matching template is found.
 
 
-#### `add_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L208" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L432" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-add_prompt(self, prompt: Prompt) -> Prompt
+add_prompt(self, prompt: Prompt | Callable[..., Any]) -> Prompt
 ```
 
 Add a prompt to this provider's storage.
 
-
-#### `remove_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L212" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-remove_prompt(self, name: str) -> None
-```
-
-Remove a prompt from this provider's storage.
+Accepts either a Prompt object or a decorated function with __fastmcp__ metadata.
 
 
-#### `add_tool_transformation` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L220" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `remove_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L463" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-add_tool_transformation(self, tool_name: str, transformation: ToolTransformConfig) -> None
+remove_prompt(self, name: str, version: str | None = None) -> None
 ```
 
-Add a tool transformation.
+Remove prompt(s) from this provider's storage.
 
 **Args:**
-- `tool_name`: The name of the tool to transform.
-- `transformation`: The transformation configuration.
+- `name`: The prompt name.
+- `version`: If None, removes ALL versions. If specified, removes only that version.
+
+**Raises:**
+- `KeyError`: If no matching prompt is found.
 
 
-#### `get_tool_transformation` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L231" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_tool_transformation(self, tool_name: str) -> ToolTransformConfig | None
-```
-
-Get a tool transformation.
-
-**Args:**
-- `tool_name`: The name of the tool.
-
-**Returns:**
-- The transformation config, or None if not found.
-
-
-#### `remove_tool_transformation` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L242" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-remove_tool_transformation(self, tool_name: str) -> None
-```
-
-Remove a tool transformation.
-
-**Args:**
-- `tool_name`: The name of the tool.
-
-
-#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L255" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L495" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools(self) -> Sequence[Tool]
 ```
 
-Return all visible tools with transformations applied.
+Return all visible tools.
 
 
-#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L264" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L503" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-get_tool(self, name: str) -> Tool | None
+get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None
 ```
 
-Get a tool by name, with transformations applied.
+Get a tool by name.
+
+**Args:**
+- `name`: The tool name.
+- `version`: Optional version filter. If None, returns highest version.
 
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L269" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L523" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resources(self) -> Sequence[Resource]
@@ -186,16 +184,20 @@ list_resources(self) -> Sequence[Resource]
 Return all visible resources.
 
 
-#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L277" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L531" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-get_resource(self, uri: str) -> Resource | None
+get_resource(self, uri: str, version: VersionSpec | None = None) -> Resource | None
 ```
 
-Get a resource by URI if visible.
+Get a resource by URI.
+
+**Args:**
+- `uri`: The resource URI.
+- `version`: Optional version filter. If None, returns highest version.
 
 
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L284" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L553" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resource_templates(self) -> Sequence[ResourceTemplate]
@@ -204,16 +206,20 @@ list_resource_templates(self) -> Sequence[ResourceTemplate]
 Return all visible resource templates.
 
 
-#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L292" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L561" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-get_resource_template(self, uri: str) -> ResourceTemplate | None
+get_resource_template(self, uri: str, version: VersionSpec | None = None) -> ResourceTemplate | None
 ```
 
-Get a resource template that matches the given URI if visible.
+Get a resource template that matches the given URI.
+
+**Args:**
+- `uri`: The URI to match against templates.
+- `version`: Optional version filter. If None, returns highest version.
 
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L303" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L586" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts(self) -> Sequence[Prompt]
@@ -222,27 +228,20 @@ list_prompts(self) -> Sequence[Prompt]
 Return all visible prompts.
 
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L311" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L594" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-get_prompt(self, name: str) -> Prompt | None
+get_prompt(self, name: str, version: VersionSpec | None = None) -> Prompt | None
 ```
 
-Get a prompt by name if visible.
+Get a prompt by name.
+
+**Args:**
+- `name`: The prompt name.
+- `version`: Optional version filter. If None, returns highest version.
 
 
-#### `get_component` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L318" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_component(self, key: str) -> Tool | Resource | ResourceTemplate | Prompt | None
-```
-
-Get a component by its prefixed key.
-
-Efficient O(1) lookup in the unified components dict.
-
-
-#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L334" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L620" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tasks(self) -> Sequence[FastMCPComponent]
@@ -255,19 +254,19 @@ This includes both FunctionTool/Resource/Prompt instances created via
 decorators and custom Tool/Resource/Prompt subclasses.
 
 
-#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L348" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L634" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: AnyFunction) -> FunctionTool
 ```
 
-#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L367" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L656" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: str | None = None) -> Callable[[AnyFunction], FunctionTool]
 ```
 
-#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L385" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L681" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionTool] | FunctionTool | partial[Callable[[AnyFunction], FunctionTool] | FunctionTool]
@@ -301,10 +300,10 @@ This decorator supports multiple calling patterns:
 - The registered FunctionTool or a decorator function.
 
 
-#### `resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L533" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L874" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-resource(self, uri: str) -> Callable[[AnyFunction], Resource | ResourceTemplate]
+resource(self, uri: str) -> Callable[[AnyFunction], Resource | ResourceTemplate | AnyFunction]
 ```
 
 Decorator to register a function as a resource.
@@ -324,24 +323,25 @@ has parameters, it will be registered as a template resource.
 - `annotations`: Optional annotations about the resource's behavior
 - `meta`: Optional meta information about the resource
 - `task`: Optional task configuration for background execution
+- `auth`: Optional authorization checks for the resource
 
 **Returns:**
 - A decorator function.
 
 
-#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L663" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L1011" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(self, name_or_fn: AnyFunction) -> FunctionPrompt
 ```
 
-#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L678" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L1028" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(self, name_or_fn: str | None = None) -> Callable[[AnyFunction], FunctionPrompt]
 ```
 
-#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L692" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider.py#L1044" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(self, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt | partial[Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt]
@@ -366,6 +366,7 @@ This decorator supports multiple calling patterns:
 - `enabled`: Whether the prompt is enabled (default True). If False, adds to blocklist.
 - `meta`: Optional meta information about the prompt
 - `task`: Optional task configuration for background execution
+- `auth`: Optional authorization checks for the prompt
 
 **Returns:**
 - The registered FunctionPrompt or a decorator function.

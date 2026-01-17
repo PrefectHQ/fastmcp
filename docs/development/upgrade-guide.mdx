@@ -8,6 +8,68 @@ tag: NEW
 
 This guide provides migration instructions for breaking changes and major updates when upgrading between FastMCP versions.
 
+## FastMCP Metadata Namespace Change
+
+### Metadata Namespace Renamed
+
+The FastMCP metadata namespace has been renamed from `_fastmcp` to `fastmcp` (underscore prefix removed). All metadata is now always included in component responses.
+
+**What changed:**
+- Metadata namespace: `meta._fastmcp` → `meta.fastmcp`
+- The `include_fastmcp_meta` setting and parameter have been removed
+- Component version is now included in metadata when available (`meta.fastmcp.version`)
+
+**Migration steps:**
+
+1. **Update metadata access patterns:**
+   <CodeGroup>
+   ```python Before
+   tags = tool.meta.get("_fastmcp", {}).get("tags", [])
+   ```
+   
+   ```python After
+   tags = tool.meta.get("fastmcp", {}).get("tags", [])
+   ```
+   </CodeGroup>
+
+2. **Remove `include_fastmcp_meta` parameter:**
+   <CodeGroup>
+   ```python Before
+   mcp = FastMCP(include_fastmcp_meta=False)
+   ```
+   
+   ```python After
+   # Parameter removed - metadata is always included
+   mcp = FastMCP()
+   ```
+   </CodeGroup>
+
+3. **Remove `include_fastmcp_meta` from component serialization:**
+   <CodeGroup>
+   ```python Before
+   mcp_tool = tool.to_mcp_tool(include_fastmcp_meta=True)
+   ```
+   
+   ```python After
+   mcp_tool = tool.to_mcp_tool()
+   ```
+   </CodeGroup>
+
+4. **Access component version from metadata:**
+   <CodeGroup>
+   ```python Before
+   # Version was not available in metadata
+   ```
+   
+   ```python After
+   version = tool.meta.get("fastmcp", {}).get("version")
+   if version:
+       print(f"Tool version: {version}")
+   ```
+   </CodeGroup>
+
+**Why this changed:** The underscore prefix was removed to make the namespace more discoverable and consistent with standard naming conventions. Making metadata always included simplifies the API and ensures consistent behavior across all FastMCP servers.
+
 ## v3.0.0
 
 ### WSTransport Removed
@@ -133,8 +195,8 @@ tool.enable()
 ```
 
 ```python After
-server.disable(keys=["tool:my_tool"])
-server.enable(keys=["tool:my_tool"])
+server.disable(keys=["tool:my_tool@"])
+server.enable(keys=["tool:my_tool@"])
 ```
 </CodeGroup>
 

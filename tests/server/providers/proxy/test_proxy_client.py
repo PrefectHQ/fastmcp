@@ -99,7 +99,7 @@ class TestProxyClient:
         async with Client(proxy_server) as client:
             tools = await client.list_tools()
             echo_tool = next(t for t in tools if t.name == "echo")
-            assert echo_tool.meta == {"_fastmcp": {"tags": ["echo"]}}
+            assert echo_tool.meta == {"fastmcp": {"tags": ["echo"]}}
 
     async def test_forward_error_response(self, proxy_server: FastMCP):
         """

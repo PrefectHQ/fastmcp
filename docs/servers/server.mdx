@@ -95,11 +95,6 @@ The `FastMCP` constructor accepts several arguments:
   Controls how tool input parameters are validated. When `False` (default), FastMCP uses Pydantic's flexible validation that coerces compatible inputs (e.g., `"10"` → `10` for int parameters). When `True`, uses the MCP SDK's JSON Schema validation to validate inputs against the exact schema before passing them to your function, rejecting any type mismatches. The default mode improves compatibility with LLM clients while maintaining type safety. See [Input Validation Modes](/servers/tools#input-validation-modes) for details
 </ParamField>
 
-<ParamField body="include_fastmcp_meta" type="bool" default="True">
-  <VersionBadge version="2.11.0" />
-
-  Whether to include FastMCP metadata in component responses. When `True`, component tags and other FastMCP-specific metadata are included in the `_fastmcp` namespace within each component's `meta` field. When `False`, this metadata is omitted, resulting in cleaner integration with external systems. Can be overridden globally via `FASTMCP_INCLUDE_FASTMCP_META` environment variable
-</ParamField>
 </Card>
 ## Components
 
@@ -344,7 +339,6 @@ mcp = FastMCP(
     on_duplicate_tools="error",                  # Handle duplicate registrations
     on_duplicate_resources="warn",
     on_duplicate_prompts="replace",
-    include_fastmcp_meta=False,                  # Disable FastMCP metadata for cleaner integration
 )
 ```
 
@@ -359,14 +353,12 @@ import fastmcp
 print(fastmcp.settings.log_level)        # Default: "INFO"
 print(fastmcp.settings.mask_error_details)  # Default: False
 print(fastmcp.settings.strict_input_validation)  # Default: False
-print(fastmcp.settings.include_fastmcp_meta)   # Default: True
 ```
 
 Common global settings include:
 - **`log_level`**: Logging level ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"), set with `FASTMCP_LOG_LEVEL`
 - **`mask_error_details`**: Whether to hide detailed error information from clients, set with `FASTMCP_MASK_ERROR_DETAILS`
 - **`strict_input_validation`**: Controls tool input validation mode (default: False for flexible coercion), set with `FASTMCP_STRICT_INPUT_VALIDATION`. See [Input Validation Modes](/servers/tools#input-validation-modes)
-- **`include_fastmcp_meta`**: Whether to include FastMCP metadata in component responses (default: True), set with `FASTMCP_INCLUDE_FASTMCP_META`
 - **`env_file`**: Path to the environment file to load settings from (default: ".env"), set with `FASTMCP_ENV_FILE`. Useful when your project uses a `.env` file with syntax incompatible with python-dotenv
 
 ### Transport-Specific Configuration
@@ -399,6 +391,5 @@ Global FastMCP settings can be configured via environment variables (prefixed wi
 export FASTMCP_LOG_LEVEL=DEBUG
 export FASTMCP_MASK_ERROR_DETAILS=True
 export FASTMCP_STRICT_INPUT_VALIDATION=False
-export FASTMCP_INCLUDE_FASTMCP_META=False
 ```
 

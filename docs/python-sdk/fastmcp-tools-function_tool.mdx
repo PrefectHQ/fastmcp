@@ -1,0 +1,108 @@
+---
+title: function_tool
+sidebarTitle: function_tool
+---
+
+# `fastmcp.tools.function_tool`
+
+
+Standalone @tool decorator for FastMCP.
+
+## Functions
+
+### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L368" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tool(name_or_fn: str | Callable[..., Any] | None = None) -> Any
+```
+
+
+Standalone decorator to mark a function as an MCP tool.
+
+Returns the original function with metadata attached. Register with a server
+using mcp.add_tool().
+
+
+## Classes
+
+### `DecoratedTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L53" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Protocol for functions decorated with @tool.
+
+
+### `ToolMeta` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L62" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Metadata attached to functions by the @tool decorator.
+
+
+### `FunctionTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L82" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+**Methods:**
+
+#### `to_mcp_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+to_mcp_tool(self, **overrides: Any) -> mcp.types.Tool
+```
+
+Convert the FastMCP tool to an MCP tool.
+
+Extends the base implementation to add task execution mode if enabled.
+
+
+#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L104" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+from_function(cls, fn: Callable[..., Any]) -> FunctionTool
+```
+
+Create a FunctionTool from a function.
+
+**Args:**
+- `fn`: The function to wrap
+- `metadata`: ToolMeta object with all configuration. If provided,
+individual parameters must not be passed.
+- `name, title, etc.`: Individual parameters for backwards compatibility.
+Cannot be used together with metadata parameter.
+
+
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L246" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run(self, arguments: dict[str, Any]) -> ToolResult
+```
+
+Run the tool with arguments.
+
+
+#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L291" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+register_with_docket(self, docket: Docket) -> None
+```
+
+Register this tool with docket for background execution.
+
+FunctionTool registers the underlying function, which has the user's
+Depends parameters for docket to resolve.
+
+
+#### `add_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L301" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_to_docket(self, docket: Docket, arguments: dict[str, Any], **kwargs: Any) -> Execution
+```
+
+Schedule this tool for background execution via docket.
+
+FunctionTool splats the arguments dict since .fn expects **kwargs.
+
+**Args:**
+- `docket`: The Docket instance
+- `arguments`: Tool arguments
+- `fn_key`: Function lookup key in Docket registry (defaults to self.key)
+- `task_key`: Redis storage key for the result
+- `**kwargs`: Additional kwargs passed to docket.add()
+

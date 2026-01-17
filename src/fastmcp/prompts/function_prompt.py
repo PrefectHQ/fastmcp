@@ -59,6 +59,7 @@ class PromptMeta:
 
     type: Literal["prompt"] = field(default="prompt", init=False)
     name: str | None = None
+    version: str | int | None = None
     title: str | None = None
     description: str | None = None
     icons: list[Icon] | None = None
@@ -81,6 +82,7 @@ class FunctionPrompt(Prompt):
         metadata: PromptMeta | None = None,
         # Keep individual params for backwards compat
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[Icon] | None = None,
@@ -106,7 +108,7 @@ class FunctionPrompt(Prompt):
         # Check mutual exclusion
         individual_params_provided = any(
             x is not None
-            for x in [name, title, description, icons, tags, meta, task, auth]
+            for x in [name, version, title, description, icons, tags, meta, task, auth]
         )
 
         if metadata is not None and individual_params_provided:
@@ -119,6 +121,7 @@ class FunctionPrompt(Prompt):
         if metadata is None:
             metadata = PromptMeta(
                 name=name,
+                version=version,
                 title=title,
                 description=description,
                 icons=icons,
@@ -217,6 +220,7 @@ class FunctionPrompt(Prompt):
 
         return cls(
             name=func_name,
+            version=str(metadata.version) if metadata.version is not None else None,
             title=metadata.title,
             description=description,
             icons=metadata.icons,
@@ -350,6 +354,7 @@ def prompt(fn: F) -> F: ...
 def prompt(
     name_or_fn: str,
     *,
+    version: str | int | None = None,
     title: str | None = None,
     description: str | None = None,
     icons: list[Icon] | None = None,
@@ -363,6 +368,7 @@ def prompt(
     name_or_fn: None = None,
     *,
     name: str | None = None,
+    version: str | int | None = None,
     title: str | None = None,
     description: str | None = None,
     icons: list[Icon] | None = None,
@@ -377,6 +383,7 @@ def prompt(
     name_or_fn: str | Callable[..., Any] | None = None,
     *,
     name: str | None = None,
+    version: str | int | None = None,
     title: str | None = None,
     description: str | None = None,
     icons: list[Icon] | None = None,
@@ -402,6 +409,7 @@ def prompt(
         # Create metadata first, then pass it
         prompt_meta = PromptMeta(
             name=prompt_name,
+            version=version,
             title=title,
             description=description,
             icons=icons,
@@ -415,6 +423,7 @@ def prompt(
     def attach_metadata(fn: F, prompt_name: str | None) -> F:
         metadata = PromptMeta(
             name=prompt_name,
+            version=version,
             title=title,
             description=description,
             icons=icons,

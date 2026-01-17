@@ -1,0 +1,32 @@
+---
+title: ping
+sidebarTitle: ping
+---
+
+# `fastmcp.server.middleware.ping`
+
+
+Ping middleware for keeping client connections alive.
+
+## Classes
+
+### `PingMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/ping.py#L10" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Middleware that sends periodic pings to keep client connections alive.
+
+Starts a background ping task on first message from each session. The task
+sends server-to-client pings at the configured interval until the session
+ends.
+
+
+**Methods:**
+
+#### `on_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/ping.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_message(self, context: MiddlewareContext, call_next: CallNext) -> Any
+```
+
+Start ping task on first message from a session.
+

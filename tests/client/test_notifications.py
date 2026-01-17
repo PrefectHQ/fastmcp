@@ -91,7 +91,7 @@ def notification_test_server(recording_message_handler):
         """Enable the target tool."""
         # Find and enable the target tool
         try:
-            ctx.fastmcp.enable(keys=["tool:target_tool"])
+            ctx.fastmcp.enable(keys=["tool:target_tool@"])
             return "Target tool enabled"
         except Exception:
             return "Target tool not found"
@@ -102,7 +102,7 @@ def notification_test_server(recording_message_handler):
         """Disable the target tool."""
         # Find and disable the target tool
         try:
-            ctx.fastmcp.disable(keys=["tool:target_tool"])
+            ctx.fastmcp.disable(keys=["tool:target_tool@"])
             return "Target tool disabled"
         except Exception:
             return "Target tool not found"
@@ -219,7 +219,7 @@ def resource_notification_test_server(recording_message_handler):
     def enable_target_resource(ctx: Context) -> str:
         """Enable the target resource."""
         try:
-            ctx.fastmcp.enable(keys=["resource:resource://target"])
+            ctx.fastmcp.enable(keys=["resource:resource://target@"])
             return "Target resource enabled"
         except Exception:
             return "Target resource not found"
@@ -229,7 +229,7 @@ def resource_notification_test_server(recording_message_handler):
     def disable_target_resource(ctx: Context) -> str:
         """Disable the target resource."""
         try:
-            ctx.fastmcp.disable(keys=["resource:resource://target"])
+            ctx.fastmcp.disable(keys=["resource:resource://target@"])
             return "Target resource disabled"
         except Exception:
             return "Target resource not found"
@@ -302,7 +302,7 @@ def prompt_notification_test_server(recording_message_handler):
     def enable_target_prompt(ctx: Context) -> str:
         """Enable the target prompt."""
         try:
-            ctx.fastmcp.enable(keys=["prompt:target_prompt"])
+            ctx.fastmcp.enable(keys=["prompt:target_prompt@"])
             return "Target prompt enabled"
         except Exception:
             return "Target prompt not found"
@@ -312,7 +312,7 @@ def prompt_notification_test_server(recording_message_handler):
     def disable_target_prompt(ctx: Context) -> str:
         """Disable the target prompt."""
         try:
-            ctx.fastmcp.disable(keys=["prompt:target_prompt"])
+            ctx.fastmcp.disable(keys=["prompt:target_prompt@"])
             return "Target prompt disabled"
         except Exception:
             return "Target prompt not found"

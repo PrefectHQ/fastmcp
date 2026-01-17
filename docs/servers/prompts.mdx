@@ -111,6 +111,12 @@ def data_analysis_prompt(
 
   Optional meta information about the prompt. This data is passed through to the MCP client as the `meta` field of the client-side prompt object and can be used for custom metadata, versioning, or other application-specific purposes.
 </ParamField>
+
+<ParamField body="version" type="str | int | None">
+  <VersionBadge version="3.0.0" />
+
+  Optional version identifier for this prompt. See [Versioning](/servers/versioning) for details.
+</ParamField>
 </Card>
 
 #### Using with Methods
@@ -444,4 +450,10 @@ The duplicate behavior options are:
 -   `"warn"` (default): Logs a warning, and the new prompt replaces the old one.
 -   `"error"`: Raises a `ValueError`, preventing the duplicate registration.
 -   `"replace"`: Silently replaces the existing prompt with the new one.
--   `"ignore"`: Keeps the original prompt and ignores the new registration attempt. 
+-   `"ignore"`: Keeps the original prompt and ignores the new registration attempt.
+
+## Versioning
+
+<VersionBadge version="3.0.0" />
+
+Prompts support versioning, allowing you to maintain multiple implementations under the same name while clients automatically receive the highest version. See [Versioning](/servers/versioning) for complete documentation on version comparison, retrieval, and migration patterns.

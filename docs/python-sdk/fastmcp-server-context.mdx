@@ -7,7 +7,27 @@ sidebarTitle: context
 
 ## Functions
 
-### `set_context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `set_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_transport(transport: TransportType) -> Token[TransportType | None]
+```
+
+
+Set the current transport type. Returns token for reset.
+
+
+### `reset_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L92" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+reset_transport(token: Token[TransportType | None]) -> None
+```
+
+
+Reset transport to previous value.
+
+
+### `set_context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L122" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_context(context: Context) -> Generator[Context, None, None]
@@ -15,7 +35,7 @@ set_context(context: Context) -> Generator[Context, None, None]
 
 ## Classes
 
-### `LogData` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L82" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `LogData` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Data object for passing log arguments to client-side handlers.
@@ -24,7 +44,7 @@ This provides an interface to match the Python standard library logging,
 for compatibility with structured logging.
 
 
-### `Context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L115" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L131" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Context object providing access to MCP capabilities.
@@ -53,18 +73,22 @@ async def my_tool(x: int, ctx: Context) -> str:
     request_id = ctx.request_id
     client_id = ctx.client_id
 
-    # Manage state across the request
-    ctx.set_state("key", "value")
-    value = ctx.get_state("key")
+    # Manage state across the session (persists across requests)
+    await ctx.set_state("key", "value")
+    value = await ctx.get_state("key")
 
     return str(x)
 ```
 
 State Management:
-Context objects maintain a state dictionary that can be used to store and share
-data across middleware and tool calls within a request. When a new context
-is created (nested contexts), it inherits a copy of its parent's state, ensuring
-that modifications in child contexts don't affect parent contexts.
+Context provides session-scoped state that persists across requests within
+the same MCP session. State is automatically keyed by session, ensuring
+isolation between different clients.
+
+State set during `on_initialize` middleware will persist to subsequent tool
+calls when using the same session object (STDIO, SSE, single-server HTTP).
+For distributed/serverless HTTP deployments where different machines handle
+the init and tool calls, state is isolated by the mcp-session-id header.
 
 The context parameter name can be anything as long as it's annotated with Context.
 The context is optional - tools that don't need it can omit the parameter.
@@ -72,7 +96,7 @@ The context is optional - tools that don't need it can omit the parameter.
 
 **Methods:**
 
-#### `fastmcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L169" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `fastmcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L192" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 fastmcp(self) -> FastMCP
@@ -81,7 +105,7 @@ fastmcp(self) -> FastMCP
 Get the FastMCP instance.
 
 
-#### `request_context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L223" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `request_context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L265" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 request_context(self) -> RequestContext[ServerSession, Any, Request] | None
@@ -110,7 +134,7 @@ async def on_request(self, context, call_next):
 ```
 
 
-#### `lifespan_context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L252" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `lifespan_context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L294" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 lifespan_context(self) -> dict[str, Any]
@@ -133,7 +157,7 @@ def my_tool(ctx: Context) -> str:
 ```
 
 
-#### `report_progress` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L274" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `report_progress` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L316" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 report_progress(self, progress: float, total: float | None = None, message: str | None = None) -> None
@@ -146,7 +170,7 @@ Report progress for the current operation.
 - `total`: Optional total value e.g. 100
 
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L301" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L343" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resources(self) -> list[SDKResource]
@@ -158,7 +182,7 @@ List all available resources from the server.
 - List of Resource objects available on the server
 
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L309" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L351" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts(self) -> list[SDKPrompt]
@@ -170,7 +194,7 @@ List all available prompts from the server.
 - List of Prompt objects available on the server
 
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L317" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L359" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, arguments: dict[str, Any] | None = None) -> GetPromptResult
@@ -186,7 +210,7 @@ Get a prompt by name with optional arguments.
 - The prompt result
 
 
-#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L336" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L378" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource(self, uri: str | AnyUrl) -> ResourceResult
@@ -201,7 +225,7 @@ Read a resource by URI.
 - ResourceResult with contents
 
 
-#### `log` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L352" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `log` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L394" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 log(self, message: str, level: LoggingLevel | None = None, logger_name: str | None = None, extra: Mapping[str, Any] | None = None) -> None
@@ -219,7 +243,19 @@ Messages sent to Clients are also logged to the `fastmcp.server.context.to_clien
 - `extra`: Optional mapping for additional arguments
 
 
-#### `client_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L381" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L423" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+transport(self) -> TransportType | None
+```
+
+Get the current transport type.
+
+Returns the transport type used to run this server: "stdio", "sse",
+or "streamable-http". Returns None if called outside of a server context.
+
+
+#### `client_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L432" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 client_id(self) -> str | None
@@ -228,7 +264,7 @@ client_id(self) -> str | None
 Get the client ID if available.
 
 
-#### `request_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L390" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `request_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L441" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 request_id(self) -> str
@@ -239,7 +275,7 @@ Get the unique ID for this request.
 Raises RuntimeError if MCP request context is not available.
 
 
-#### `session_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L403" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `session_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L454" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 session_id(self) -> str
@@ -256,7 +292,7 @@ the same client session.
 - for other transports.
 
 
-#### `session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L455" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L511" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 session(self) -> ServerSession
@@ -267,7 +303,7 @@ Access to the underlying session for advanced usage.
 Raises RuntimeError if MCP request context is not available.
 
 
-#### `debug` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L468" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `debug` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L524" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 debug(self, message: str, logger_name: str | None = None, extra: Mapping[str, Any] | None = None) -> None
@@ -278,7 +314,7 @@ Send a `DEBUG`-level message to the connected MCP Client.
 Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`.
 
 
-#### `info` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L484" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `info` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L540" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 info(self, message: str, logger_name: str | None = None, extra: Mapping[str, Any] | None = None) -> None
@@ -289,7 +325,7 @@ Send a `INFO`-level message to the connected MCP Client.
 Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`.
 
 
-#### `warning` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L500" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `warning` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L556" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 warning(self, message: str, logger_name: str | None = None, extra: Mapping[str, Any] | None = None) -> None
@@ -300,7 +336,7 @@ Send a `WARNING`-level message to the connected MCP Client.
 Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`.
 
 
-#### `error` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L516" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `error` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L572" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 error(self, message: str, logger_name: str | None = None, extra: Mapping[str, Any] | None = None) -> None
@@ -311,7 +347,7 @@ Send a `ERROR`-level message to the connected MCP Client.
 Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`.
 
 
-#### `list_roots` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L532" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_roots` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L588" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_roots(self) -> list[Root]
@@ -320,7 +356,7 @@ list_roots(self) -> list[Root]
 List the roots available to the server, as indicated by the client.
 
 
-#### `send_notification` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L537" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `send_notification` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L593" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 send_notification(self, notification: mcp.types.ServerNotificationType) -> None
@@ -336,7 +372,7 @@ for the background flusher.
 - `notification`: An MCP notification instance (e.g., ToolListChangedNotification())
 
 
-#### `send_notification_sync` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L551" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `send_notification_sync` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L607" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 send_notification_sync(self, notification: mcp.types.ServerNotificationType) -> None
@@ -351,7 +387,7 @@ sent within ~1 second by the background flusher.
 - `notification`: An MCP notification instance (e.g., ToolListChangedNotification())
 
 
-#### `close_sse_stream` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L564" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `close_sse_stream` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L620" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 close_sse_stream(self) -> None
@@ -369,7 +405,7 @@ Instead of holding a connection open for minutes, you can periodically close
 and let the client reconnect.
 
 
-#### `sample_step` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L603" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `sample_step` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L659" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 sample_step(self, messages: str | Sequence[str | SamplingMessage]) -> SampleStep
@@ -406,7 +442,7 @@ Tools can raise ToolError to bypass masking.
 - - .text: The text content (if any)
 
 
-#### `sample` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L756" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `sample` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L812" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 sample(self, messages: str | Sequence[str | SamplingMessage]) -> SamplingResult[ResultT]
@@ -415,7 +451,7 @@ sample(self, messages: str | Sequence[str | SamplingMessage]) -> SamplingResult[
 Overload: With result_type, returns SamplingResult[ResultT].
 
 
-#### `sample` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L771" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `sample` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L827" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 sample(self, messages: str | Sequence[str | SamplingMessage]) -> SamplingResult[str]
@@ -424,7 +460,7 @@ sample(self, messages: str | Sequence[str | SamplingMessage]) -> SamplingResult[
 Overload: Without result_type, returns SamplingResult[str].
 
 
-#### `sample` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L785" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `sample` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L841" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 sample(self, messages: str | Sequence[str | SamplingMessage]) -> SamplingResult[ResultT] | SamplingResult[str]
@@ -466,43 +502,43 @@ Tools can raise ToolError to bypass masking.
 - - .history: All messages exchanged during sampling
 
 
-#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L942" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L998" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: None) -> AcceptedElicitation[dict[str, Any]] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L954" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1010" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: type[T]) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L964" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1020" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: list[str]) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L974" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1030" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: dict[str, dict[str, str]]) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L984" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1040" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: list[list[str]]) -> AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L996" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1052" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: list[dict[str, dict[str, str]]]) -> AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1008" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1064" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: type[T] | list[str] | dict[str, dict[str, str]] | list[list[str]] | list[dict[str, dict[str, str]]] | None = None) -> AcceptedElicitation[T] | AcceptedElicitation[dict[str, Any]] | AcceptedElicitation[str] | AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
@@ -531,20 +567,35 @@ type or dataclass or BaseModel. If it is a primitive type, an
 object schema with a single "value" field will be generated.
 
 
-#### `set_state` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1065" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_state` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_state(self, key: str, value: Any) -> None
 ```
 
-Set a value in the context state.
+Set a value in the session-scoped state store.
+
+Values persist across requests within the same MCP session.
+The key is automatically prefixed with the session identifier.
+State expires after 1 day to prevent unbounded memory growth.
 
 
-#### `get_state` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1069" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_state` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1139" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_state(self, key: str) -> Any
 ```
 
-Get a value from the context state. Returns None if the key is not found.
+Get a value from the session-scoped state store.
+
+Returns None if the key is not found.
+
+
+#### `delete_state` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1148" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete_state(self, key: str) -> None
+```
+
+Delete a value from the session-scoped state store.
 

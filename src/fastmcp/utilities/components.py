@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, TypedDict
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, TypedDict, cast
 
 from mcp.types import Icon
 from pydantic import BeforeValidator, Field
 from typing_extensions import Self, TypeVar
 
-import fastmcp
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.types import FastMCPBaseModel
 
@@ -20,6 +19,18 @@ T = TypeVar("T", default=Any)
 
 class FastMCPMeta(TypedDict, total=False):
     tags: list[str]
+    version: str
+
+
+def get_fastmcp_metadata(meta: dict[str, Any] | None) -> FastMCPMeta:
+    """Extract FastMCP metadata from a component's meta dict.
+
+    Handles both the current `fastmcp` namespace and the legacy `_fastmcp`
+    namespace for compatibility with older FastMCP servers.
+    """
+    if not meta:
+        return {}
+    return cast(FastMCPMeta, meta.get("fastmcp") or meta.get("_fastmcp") or {})
 
 
 def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
@@ -29,6 +40,21 @@ def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
     if isinstance(maybe_set, set):
         return maybe_set
     return set(maybe_set)
+
+
+def _coerce_version(v: str | int | None) -> str | None:
+    """Coerce version to string, accepting int or str.
+
+    Raises ValueError if version contains '@' (used as key delimiter).
+    """
+    if v is None:
+        return None
+    version = str(v)
+    if "@" in version:
+        raise ValueError(
+            f"Version string cannot contain '@' (used as key delimiter): {version!r}"
+        )
+    return version
 
 
 class FastMCPComponent(FastMCPBaseModel):
@@ -51,6 +77,11 @@ class FastMCPComponent(FastMCPBaseModel):
 
     name: str = Field(
         description="The name of the component.",
+    )
+    version: Annotated[str | None, BeforeValidator(_coerce_version)] = Field(
+        default=None,
+        description="Optional version identifier for this component. "
+        "Multiple versions of the same component (same name) can coexist.",
     )
     title: str | None = Field(
         default=None,
@@ -94,36 +125,39 @@ class FastMCPComponent(FastMCPBaseModel):
     def key(self) -> str:
         """The globally unique lookup key for this component.
 
-        Format: "{key_prefix}:{identifier}" e.g. "tool:my_tool", "resource:file://x.txt"
+        Format: "{key_prefix}:{identifier}@{version}" or "{key_prefix}:{identifier}@"
+        e.g. "tool:my_tool@v2", "tool:my_tool@", "resource:file://x.txt@"
+
+        The @ suffix is ALWAYS present to enable unambiguous parsing of keys
+        (URIs may contain @ characters, so we always include the delimiter).
 
         Subclasses should override this to use their specific identifier.
         Base implementation uses name.
         """
-        return self.make_key(self.name)
+        base_key = self.make_key(self.name)
+        return f"{base_key}@{self.version or ''}"
 
-    def get_meta(
-        self, include_fastmcp_meta: bool | None = None
-    ) -> dict[str, Any] | None:
+    def get_meta(self) -> dict[str, Any]:
+        """Get the meta information about the component.
+
+        Returns a dict that always includes a `fastmcp` key containing:
+        - `tags`: sorted list of component tags
+        - `version`: component version (only if set)
         """
-        Get the meta information about the component.
-
-        If include_fastmcp_meta is True, a `_fastmcp` key will be added to the
-        meta, containing a `tags` field with the tags of the component.
-        """
-
-        if include_fastmcp_meta is None:
-            include_fastmcp_meta = fastmcp.settings.include_fastmcp_meta
-
         meta = self.meta or {}
 
-        if include_fastmcp_meta:
-            fastmcp_meta = FastMCPMeta(tags=sorted(self.tags))
-            # overwrite any existing _fastmcp meta with keys from the new one
-            if upstream_meta := meta.get("_fastmcp"):
-                fastmcp_meta = upstream_meta | fastmcp_meta
-            meta["_fastmcp"] = fastmcp_meta
+        fastmcp_meta: FastMCPMeta = {"tags": sorted(self.tags)}
+        if self.version is not None:
+            fastmcp_meta["version"] = self.version
 
-        return meta or None
+        # overwrite any existing fastmcp meta with keys from the new one
+        if (upstream_meta := meta.get("fastmcp")) is not None:
+            if not isinstance(upstream_meta, dict):
+                raise TypeError("meta['fastmcp'] must be a dict")
+            fastmcp_meta = upstream_meta | fastmcp_meta
+        meta["fastmcp"] = fastmcp_meta
+
+        return meta
 
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
@@ -133,7 +167,17 @@ class FastMCPComponent(FastMCPBaseModel):
         return self.model_dump() == other.model_dump()
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self.name!r}, title={self.title!r}, description={self.description!r}, tags={self.tags})"
+        parts = [f"name={self.name!r}"]
+        if self.version:
+            parts.append(f"version={self.version!r}")
+        parts.extend(
+            [
+                f"title={self.title!r}",
+                f"description={self.description!r}",
+                f"tags={self.tags}",
+            ]
+        )
+        return f"{self.__class__.__name__}({', '.join(parts)})"
 
     def enable(self) -> None:
         """Removed in 3.0. Use server.enable(keys=[...]) instead."""

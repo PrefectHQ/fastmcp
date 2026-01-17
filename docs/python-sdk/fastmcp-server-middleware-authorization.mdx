@@ -1,0 +1,116 @@
+---
+title: authorization
+sidebarTitle: authorization
+---
+
+# `fastmcp.server.middleware.authorization`
+
+
+Authorization middleware for FastMCP.
+
+This module provides middleware-based authorization using callable auth checks.
+AuthMiddleware applies auth checks globally to all components on the server.
+
+Example:
+    ```python
+    from fastmcp import FastMCP
+    from fastmcp.server.auth import require_auth, require_scopes, restrict_tag
+    from fastmcp.server.middleware import AuthMiddleware
+
+    # Require auth for all components
+    mcp = FastMCP(middleware=[
+        AuthMiddleware(auth=require_auth)
+    ])
+
+    # Tag-based: components tagged "admin" require "admin" scope
+    mcp = FastMCP(middleware=[
+        AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"]))
+    ])
+    ```
+
+
+## Classes
+
+### `AuthMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/authorization.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Global authorization middleware using callable checks.
+
+This middleware applies auth checks to all components (tools, resources,
+prompts) on the server. It uses the same callable API as component-level
+auth checks.
+
+The middleware:
+- Filters tools/resources/prompts from list responses based on auth checks
+- Checks auth before tool execution, resource read, and prompt render
+- Skips all auth checks for STDIO transport (no OAuth concept)
+
+**Args:**
+- `auth`: A single auth check function or list of check functions.
+All checks must pass for authorization to succeed (AND logic).
+
+
+**Methods:**
+
+#### `on_list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/authorization.py#L88" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_list_tools(self, context: MiddlewareContext[mt.ListToolsRequest], call_next: CallNext[mt.ListToolsRequest, Sequence[Tool]]) -> Sequence[Tool]
+```
+
+Filter tools/list response based on auth checks.
+
+
+#### `on_call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/authorization.py#L113" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_call_tool(self, context: MiddlewareContext[mt.CallToolRequestParams], call_next: CallNext[mt.CallToolRequestParams, ToolResult]) -> ToolResult
+```
+
+Check auth before tool execution.
+
+
+#### `on_list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/authorization.py#L151" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_list_resources(self, context: MiddlewareContext[mt.ListResourcesRequest], call_next: CallNext[mt.ListResourcesRequest, Sequence[Resource]]) -> Sequence[Resource]
+```
+
+Filter resources/list response based on auth checks.
+
+
+#### `on_read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/authorization.py#L175" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_read_resource(self, context: MiddlewareContext[mt.ReadResourceRequestParams], call_next: CallNext[mt.ReadResourceRequestParams, ResourceResult]) -> ResourceResult
+```
+
+Check auth before resource read.
+
+
+#### `on_list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/authorization.py#L215" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_list_resource_templates(self, context: MiddlewareContext[mt.ListResourceTemplatesRequest], call_next: CallNext[mt.ListResourceTemplatesRequest, Sequence[ResourceTemplate]]) -> Sequence[ResourceTemplate]
+```
+
+Filter resource templates/list response based on auth checks.
+
+
+#### `on_list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/authorization.py#L241" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_list_prompts(self, context: MiddlewareContext[mt.ListPromptsRequest], call_next: CallNext[mt.ListPromptsRequest, Sequence[Prompt]]) -> Sequence[Prompt]
+```
+
+Filter prompts/list response based on auth checks.
+
+
+#### `on_get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/authorization.py#L265" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_get_prompt(self, context: MiddlewareContext[mt.GetPromptRequestParams], call_next: CallNext[mt.GetPromptRequestParams, PromptResult]) -> PromptResult
+```
+
+Check auth before prompt render.
+

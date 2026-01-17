@@ -1,0 +1,128 @@
+---
+title: filesystem
+sidebarTitle: filesystem
+---
+
+# `fastmcp.server.providers.filesystem`
+
+
+FileSystemProvider for filesystem-based component discovery.
+
+FileSystemProvider scans a directory for Python files, imports them, and
+registers any Tool, Resource, ResourceTemplate, or Prompt objects found.
+
+Components are created using the standalone decorators from fastmcp.tools,
+fastmcp.resources, and fastmcp.prompts:
+
+Example:
+    ```python
+    # In mcp/tools.py
+    from fastmcp.tools import tool
+
+    @tool
+    def greet(name: str) -> str:
+        return f"Hello, {name}!"
+
+    # In main.py
+    from pathlib import Path
+
+    from fastmcp import FastMCP
+    from fastmcp.server.providers import FileSystemProvider
+
+    mcp = FastMCP("MyServer", providers=[FileSystemProvider(Path(__file__).parent / "mcp")])
+    ```
+
+
+## Classes
+
+### `FileSystemProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Provider that discovers components from the filesystem.
+
+Scans a directory for Python files and registers any Tool, Resource,
+ResourceTemplate, or Prompt objects found. Components are created using
+the standalone decorators:
+- @tool from fastmcp.tools
+- @resource from fastmcp.resources
+- @prompt from fastmcp.prompts
+
+**Args:**
+- `root`: Root directory to scan. Defaults to current directory.
+- `reload`: If True, re-scan files on every request (dev mode).
+Defaults to False (scan once at init, cache results).
+
+
+**Methods:**
+
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self) -> Sequence[Tool]
+```
+
+Return all tools, reloading if in reload mode.
+
+
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem.py#L182" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None
+```
+
+Get a tool by name, reloading if in reload mode.
+
+
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem.py#L189" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resources(self) -> Sequence[Resource]
+```
+
+Return all resources, reloading if in reload mode.
+
+
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem.py#L194" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource(self, uri: str, version: VersionSpec | None = None) -> Resource | None
+```
+
+Get a resource by URI, reloading if in reload mode.
+
+
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem.py#L201" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resource_templates(self) -> Sequence[ResourceTemplate]
+```
+
+Return all resource templates, reloading if in reload mode.
+
+
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem.py#L206" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource_template(self, uri: str, version: VersionSpec | None = None) -> ResourceTemplate | None
+```
+
+Get a resource template, reloading if in reload mode.
+
+
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_prompts(self) -> Sequence[Prompt]
+```
+
+Return all prompts, reloading if in reload mode.
+
+
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem.py#L218" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(self, name: str, version: VersionSpec | None = None) -> Prompt | None
+```
+
+Get a prompt by name, reloading if in reload mode.
+

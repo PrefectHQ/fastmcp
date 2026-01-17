@@ -10,7 +10,7 @@ OpenAPIProvider for creating MCP components from OpenAPI specifications.
 
 ## Classes
 
-### `OpenAPIProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `OpenAPIProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L48" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Provider that creates MCP components from an OpenAPI specification.
@@ -21,7 +21,7 @@ spec. Each component makes HTTP calls to the described API endpoints.
 
 **Methods:**
 
-#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L351" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L352" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools(self) -> Sequence[Tool]
@@ -30,16 +30,16 @@ list_tools(self) -> Sequence[Tool]
 Return all tools created from the OpenAPI spec.
 
 
-#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L355" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L356" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-get_tool(self, name: str) -> Tool | None
+get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None
 ```
 
 Get a tool by name.
 
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L359" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L367" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resources(self) -> Sequence[Resource]
@@ -48,16 +48,16 @@ list_resources(self) -> Sequence[Resource]
 Return all resources created from the OpenAPI spec.
 
 
-#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L363" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L371" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-get_resource(self, uri: str) -> Resource | None
+get_resource(self, uri: str, version: VersionSpec | None = None) -> Resource | None
 ```
 
 Get a resource by URI.
 
 
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L367" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L382" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resource_templates(self) -> Sequence[ResourceTemplate]
@@ -66,16 +66,16 @@ list_resource_templates(self) -> Sequence[ResourceTemplate]
 Return all resource templates created from the OpenAPI spec.
 
 
-#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L371" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L386" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-get_resource_template(self, uri: str) -> ResourceTemplate | None
+get_resource_template(self, uri: str, version: VersionSpec | None = None) -> ResourceTemplate | None
 ```
 
 Get a resource template that matches the given URI.
 
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L378" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L399" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts(self) -> Sequence[Prompt]
@@ -84,7 +84,7 @@ list_prompts(self) -> Sequence[Prompt]
 Return empty list - OpenAPI doesn't create prompts.
 
 
-#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L382" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/provider.py#L403" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tasks(self) -> Sequence[FastMCPComponent]

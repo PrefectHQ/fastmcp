@@ -1,0 +1,95 @@
+---
+title: telemetry
+sidebarTitle: telemetry
+---
+
+# `fastmcp.telemetry`
+
+
+OpenTelemetry instrumentation for FastMCP.
+
+This module provides native OpenTelemetry integration for FastMCP servers and clients.
+It uses only the opentelemetry-api package, so telemetry is a no-op unless the user
+installs an OpenTelemetry SDK and configures exporters.
+
+Example usage with SDK:
+    ```python
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+
+    # Configure the SDK (user responsibility)
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+    trace.set_tracer_provider(provider)
+
+    # Now FastMCP will emit traces
+    from fastmcp import FastMCP
+    mcp = FastMCP("my-server")
+    ```
+
+
+## Functions
+
+### `get_tracer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/telemetry.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tracer(version: str | None = None) -> Tracer
+```
+
+
+Get the FastMCP tracer for creating spans.
+
+**Args:**
+- `version`: Optional version string for the instrumentation
+
+**Returns:**
+- A tracer instance. Returns a no-op tracer if no SDK is configured.
+
+
+### `inject_trace_context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/telemetry.py#L50" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+inject_trace_context(meta: dict[str, Any] | None = None) -> dict[str, Any] | None
+```
+
+
+Inject current trace context into a meta dict for MCP request propagation.
+
+**Args:**
+- `meta`: Optional existing meta dict to merge with trace context
+
+**Returns:**
+- A new dict containing the original meta (if any) plus trace context keys,
+- or None if no trace context to inject and meta was None
+
+
+### `record_span_error` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/telemetry.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+record_span_error(span: Span, exception: BaseException) -> None
+```
+
+
+Record an exception on a span and set error status.
+
+
+### `extract_trace_context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/telemetry.py#L82" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+extract_trace_context(meta: dict[str, Any] | None) -> Context
+```
+
+
+Extract trace context from an MCP request meta dict.
+
+If already in a valid trace (e.g., from HTTP propagation), the existing
+trace context is preserved and meta is not used.
+
+**Args:**
+- `meta`: The meta dict from an MCP request (ctx.request_context.meta)
+
+**Returns:**
+- An OpenTelemetry Context with the extracted trace context,
+- or the current context if no trace context found or already in a trace
+

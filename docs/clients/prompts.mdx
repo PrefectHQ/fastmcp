@@ -27,7 +27,7 @@ async with client:
             print(f"Arguments: {[arg.name for arg in prompt.arguments]}")
         # Access tags and other metadata
         if prompt.meta:
-            fastmcp_meta = prompt.meta.get('_fastmcp', {})
+            fastmcp_meta = prompt.meta.get('fastmcp', {})
             print(f"Tags: {fastmcp_meta.get('tags', [])}")
 ```
 
@@ -45,15 +45,15 @@ async with client:
     analysis_prompts = [
         prompt for prompt in prompts 
         if prompt.meta and
-           prompt.meta.get('_fastmcp', {}) and
-           'analysis' in prompt.meta.get('_fastmcp', {}).get('tags', [])
+           prompt.meta.get('fastmcp', {}) and
+           'analysis' in prompt.meta.get('fastmcp', {}).get('tags', [])
     ]
     
     print(f"Found {len(analysis_prompts)} analysis prompts")
 ```
 
 <Note>
-The `meta` field is part of the standard MCP specification. FastMCP servers include tags and other metadata within a `_fastmcp` namespace (e.g., `meta._fastmcp.tags`) to avoid conflicts with user-defined metadata. This behavior can be controlled with the server's `include_fastmcp_meta` setting - when disabled, the `_fastmcp` namespace won't be included. Other MCP server implementations may not provide this metadata structure.
+The `meta` field is part of the standard MCP specification. FastMCP servers always include tags and other metadata within a `fastmcp` namespace (e.g., `meta.fastmcp.tags`) to avoid conflicts with user-defined metadata. Component versions are also included in the metadata when available (e.g., `meta.fastmcp.version`). Other MCP server implementations may not provide this metadata structure.
 </Note>
 
 ## Using Prompts

@@ -20,7 +20,10 @@
     "primary": "#2d00f7"
   },
   "contextual": {
-    "options": ["copy", "view"]
+    "options": [
+      "copy",
+      "view"
+    ]
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
   "errors": {
@@ -129,6 +132,7 @@
                   "servers/storage-backends",
                   "servers/tasks",
                   "servers/telemetry",
+                  "servers/versioning",
                   "servers/visibility"
                 ]
               },
@@ -162,7 +166,10 @@
               {
                 "group": "Essentials",
                 "icon": "cube",
-                "pages": ["clients/client", "clients/transports"]
+                "pages": [
+                  "clients/client",
+                  "clients/transports"
+                ]
               },
               {
                 "group": "Core Operations",
@@ -189,7 +196,10 @@
               {
                 "group": "Authentication",
                 "icon": "user-shield",
-                "pages": ["clients/auth/oauth", "clients/auth/bearer"]
+                "pages": [
+                  "clients/auth/oauth",
+                  "clients/auth/bearer"
+                ]
               }
             ]
           },
@@ -199,7 +209,10 @@
               {
                 "group": "Providers",
                 "icon": "globe",
-                "pages": ["integrations/fastapi", "integrations/openapi"]
+                "pages": [
+                  "integrations/fastapi",
+                  "integrations/openapi"
+                ]
               },
               {
                 "group": "Authentication",
@@ -278,10 +291,12 @@
             "anchor": "Python SDK",
             "icon": "python",
             "pages": [
+              "python-sdk/fastmcp-decorators",
               "python-sdk/fastmcp-dependencies",
               "python-sdk/fastmcp-exceptions",
               "python-sdk/fastmcp-mcp_config",
               "python-sdk/fastmcp-settings",
+              "python-sdk/fastmcp-telemetry",
               {
                 "group": "fastmcp.cli",
                 "pages": [
@@ -337,6 +352,7 @@
                     ]
                   },
                   "python-sdk/fastmcp-client-tasks",
+                  "python-sdk/fastmcp-client-telemetry",
                   "python-sdk/fastmcp-client-transports"
                 ]
               },
@@ -344,6 +360,7 @@
                 "group": "fastmcp.prompts",
                 "pages": [
                   "python-sdk/fastmcp-prompts-__init__",
+                  "python-sdk/fastmcp-prompts-function_prompt",
                   "python-sdk/fastmcp-prompts-prompt"
                 ]
               },
@@ -351,6 +368,7 @@
                 "group": "fastmcp.resources",
                 "pages": [
                   "python-sdk/fastmcp-resources-__init__",
+                  "python-sdk/fastmcp-resources-function_resource",
                   "python-sdk/fastmcp-resources-resource",
                   "python-sdk/fastmcp-resources-template",
                   "python-sdk/fastmcp-resources-types"
@@ -365,6 +383,7 @@
                     "pages": [
                       "python-sdk/fastmcp-server-auth-__init__",
                       "python-sdk/fastmcp-server-auth-auth",
+                      "python-sdk/fastmcp-server-auth-authorization",
                       "python-sdk/fastmcp-server-auth-jwt_issuer",
                       "python-sdk/fastmcp-server-auth-middleware",
                       "python-sdk/fastmcp-server-auth-oauth_proxy",
@@ -404,10 +423,12 @@
                     "group": "middleware",
                     "pages": [
                       "python-sdk/fastmcp-server-middleware-__init__",
+                      "python-sdk/fastmcp-server-middleware-authorization",
                       "python-sdk/fastmcp-server-middleware-caching",
                       "python-sdk/fastmcp-server-middleware-error_handling",
                       "python-sdk/fastmcp-server-middleware-logging",
                       "python-sdk/fastmcp-server-middleware-middleware",
+                      "python-sdk/fastmcp-server-middleware-ping",
                       "python-sdk/fastmcp-server-middleware-rate_limiting",
                       "python-sdk/fastmcp-server-middleware-timing",
                       "python-sdk/fastmcp-server-middleware-tool_injection"
@@ -426,8 +447,11 @@
                     "group": "providers",
                     "pages": [
                       "python-sdk/fastmcp-server-providers-__init__",
+                      "python-sdk/fastmcp-server-providers-aggregate",
                       "python-sdk/fastmcp-server-providers-base",
                       "python-sdk/fastmcp-server-providers-fastmcp_provider",
+                      "python-sdk/fastmcp-server-providers-filesystem",
+                      "python-sdk/fastmcp-server-providers-filesystem_discovery",
                       "python-sdk/fastmcp-server-providers-local_provider",
                       {
                         "group": "openapi",
@@ -438,8 +462,7 @@
                           "python-sdk/fastmcp-server-providers-openapi-routing"
                         ]
                       },
-                      "python-sdk/fastmcp-server-providers-proxy",
-                      "python-sdk/fastmcp-server-providers-transforming"
+                      "python-sdk/fastmcp-server-providers-proxy"
                     ]
                   },
                   "python-sdk/fastmcp-server-proxy",
@@ -464,6 +487,17 @@
                       "python-sdk/fastmcp-server-tasks-routing",
                       "python-sdk/fastmcp-server-tasks-subscriptions"
                     ]
+                  },
+                  "python-sdk/fastmcp-server-telemetry",
+                  {
+                    "group": "transforms",
+                    "pages": [
+                      "python-sdk/fastmcp-server-transforms-__init__",
+                      "python-sdk/fastmcp-server-transforms-namespace",
+                      "python-sdk/fastmcp-server-transforms-tool_transform",
+                      "python-sdk/fastmcp-server-transforms-version_filter",
+                      "python-sdk/fastmcp-server-transforms-visibility"
+                    ]
                   }
                 ]
               },
@@ -471,6 +505,8 @@
                 "group": "fastmcp.tools",
                 "pages": [
                   "python-sdk/fastmcp-tools-__init__",
+                  "python-sdk/fastmcp-tools-function_parsing",
+                  "python-sdk/fastmcp-tools-function_tool",
                   "python-sdk/fastmcp-tools-tool",
                   "python-sdk/fastmcp-tools-tool_transform"
                 ]
@@ -534,7 +570,8 @@
                   "python-sdk/fastmcp-utilities-tests",
                   "python-sdk/fastmcp-utilities-types",
                   "python-sdk/fastmcp-utilities-ui",
-                  "python-sdk/fastmcp-utilities-visibility"
+                  "python-sdk/fastmcp-utilities-version_check",
+                  "python-sdk/fastmcp-utilities-versions"
                 ]
               }
             ]

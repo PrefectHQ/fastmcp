@@ -82,42 +82,54 @@ class TestFastMCPComponent:
         assert component.meta == meta
 
     def test_key_property_without_custom_key(self, basic_component):
-        """Test that key property returns name when no custom key is set."""
-        assert basic_component.key == "test_component"
-
-    def test_get_meta_without_fastmcp_meta(self, basic_component):
-        """Test get_meta without including fastmcp meta."""
-        basic_component.meta = {"custom": "data"}
-        result = basic_component.get_meta(include_fastmcp_meta=False)
-        assert result == {"custom": "data"}
-        assert "_fastmcp" not in result
+        """Test that key property returns name@version when no custom key is set."""
+        # Base component has no KEY_PREFIX, so key is just "name@version" (or "name@" for unversioned)
+        assert basic_component.key == "test_component@"
 
     def test_get_meta_with_fastmcp_meta(self, basic_component):
-        """Test get_meta including fastmcp meta."""
+        """Test get_meta always includes fastmcp meta."""
         basic_component.meta = {"custom": "data"}
         basic_component.tags = {"tag2", "tag1"}  # Unordered to test sorting
-        result = basic_component.get_meta(include_fastmcp_meta=True)
+        result = basic_component.get_meta()
         assert result["custom"] == "data"
-        assert "_fastmcp" in result
-        assert result["_fastmcp"]["tags"] == ["tag1", "tag2"]  # Should be sorted
+        assert "fastmcp" in result
+        assert result["fastmcp"]["tags"] == ["tag1", "tag2"]  # Should be sorted
 
     def test_get_meta_preserves_existing_fastmcp_meta(self):
-        """Test that get_meta preserves existing _fastmcp meta."""
+        """Test that get_meta preserves existing fastmcp meta."""
         component = FastMCPComponent(
             name="test",
-            meta={"_fastmcp": {"existing": "value"}},
+            meta={"fastmcp": {"existing": "value"}},
             tags={"new_tag"},
         )
-        result = component.get_meta(include_fastmcp_meta=True)
+        result = component.get_meta()
         assert result is not None
-        assert result["_fastmcp"]["existing"] == "value"
-        assert result["_fastmcp"]["tags"] == ["new_tag"]
+        assert result["fastmcp"]["existing"] == "value"
+        assert result["fastmcp"]["tags"] == ["new_tag"]
 
-    def test_get_meta_returns_none_when_empty(self):
-        """Test that get_meta returns None when no meta and fastmcp_meta is False."""
+    def test_get_meta_returns_dict_with_fastmcp_when_empty(self):
+        """Test that get_meta returns dict with fastmcp meta even when no custom meta."""
         component = FastMCPComponent(name="test")
-        result = component.get_meta(include_fastmcp_meta=False)
-        assert result is None
+        result = component.get_meta()
+        assert result is not None
+        assert "fastmcp" in result
+        assert result["fastmcp"]["tags"] == []
+
+    def test_get_meta_includes_version(self):
+        """Test that get_meta includes version when component has a version."""
+        component = FastMCPComponent(name="test", version="v1.0.0", tags={"tag1"})
+        result = component.get_meta()
+        assert result is not None
+        assert result["fastmcp"]["version"] == "v1.0.0"
+        assert result["fastmcp"]["tags"] == ["tag1"]
+
+    def test_get_meta_excludes_version_when_none(self):
+        """Test that get_meta excludes version when component has no version."""
+        component = FastMCPComponent(name="test", tags={"tag1"})
+        result = component.get_meta()
+        assert result is not None
+        assert "version" not in result["fastmcp"]
+        assert result["fastmcp"]["tags"] == ["tag1"]
 
     def test_equality_same_components(self):
         """Test that identical components are equal."""
@@ -207,14 +219,14 @@ class TestKeyPrefix:
         assert Prompt.make_key("my_prompt") == "prompt:my_prompt"
 
     def test_tool_key_property(self):
-        """Test that Tool.key returns prefixed key."""
+        """Test that Tool.key returns prefixed key with version sentinel."""
         tool = Tool(name="greet", description="A greeting tool", parameters={})
-        assert tool.key == "tool:greet"
+        assert tool.key == "tool:greet@"
 
     def test_prompt_key_property(self):
-        """Test that Prompt.key returns prefixed key."""
+        """Test that Prompt.key returns prefixed key with version sentinel."""
         prompt = Prompt(name="analyze", description="An analysis prompt")
-        assert prompt.key == "prompt:analyze"
+        assert prompt.key == "prompt:analyze@"
 
     def test_warning_for_missing_key_prefix(self):
         """Test that subclassing without KEY_PREFIX emits a warning."""
@@ -263,21 +275,21 @@ class TestComponentEnableDisable:
         tool = Tool(name="my_tool", description="A tool", parameters={})
         with pytest.raises(NotImplementedError) as exc_info:
             tool.enable()
-        assert "tool:my_tool" in str(exc_info.value)
+        assert "tool:my_tool@" in str(exc_info.value)
 
     def test_tool_disable_raises_not_implemented(self):
         """Test that Tool.disable() raises NotImplementedError."""
         tool = Tool(name="my_tool", description="A tool", parameters={})
         with pytest.raises(NotImplementedError) as exc_info:
             tool.disable()
-        assert "tool:my_tool" in str(exc_info.value)
+        assert "tool:my_tool@" in str(exc_info.value)
 
     def test_prompt_enable_raises_not_implemented(self):
         """Test that Prompt.enable() raises NotImplementedError."""
         prompt = Prompt(name="my_prompt", description="A prompt")
         with pytest.raises(NotImplementedError) as exc_info:
             prompt.enable()
-        assert "prompt:my_prompt" in str(exc_info.value)
+        assert "prompt:my_prompt@" in str(exc_info.value)
 
 
 class TestFastMCPMeta:
@@ -288,10 +300,17 @@ class TestFastMCPMeta:
         meta: FastMCPMeta = {"tags": ["tag1", "tag2"]}
         assert meta["tags"] == ["tag1", "tag2"]
 
+    def test_fastmcp_meta_with_version(self):
+        """Test that FastMCPMeta can include version."""
+        meta: FastMCPMeta = {"tags": ["tag1"], "version": "v1.0.0"}
+        assert meta["tags"] == ["tag1"]
+        assert meta["version"] == "v1.0.0"
+
     def test_fastmcp_meta_optional_fields(self):
         """Test that FastMCPMeta fields are optional."""
         meta: FastMCPMeta = {}
         assert "tags" not in meta  # Should be optional
+        assert "version" not in meta  # Should be optional
 
 
 class TestEdgeCasesAndIntegration:
@@ -311,7 +330,7 @@ class TestEdgeCasesAndIntegration:
     def test_meta_mutation_affects_original(self):
         """Test that get_meta returns a reference to the original meta."""
         component = FastMCPComponent(name="test", meta={"key": "value"})
-        meta = component.get_meta(include_fastmcp_meta=False)
+        meta = component.get_meta()
         assert meta is not None
         meta["key"] = "modified"
         assert component.meta is not None
@@ -369,13 +388,15 @@ class TestEdgeCasesAndIntegration:
         assert updated_component.title == "New Title"  # Updated
         assert updated_component.description == "New Description"  # Updated
         assert updated_component.tags == {"tag1"}  # Not in update, unchanged
-        assert updated_component.key == "new_name"  # .key is computed from name
+        assert (
+            updated_component.key == "new_name@"
+        )  # .key is computed from name with @ sentinel
 
         # Original should be unchanged
         assert component.name == "test"
         assert component.title == "Original Title"
         assert component.description == "Original Description"
-        assert component.key == "test"  # Uses name as key
+        assert component.key == "test@"  # Uses name as key with @ sentinel
 
     def test_model_copy_deep_parameter(self):
         """Test that model_copy respects the deep parameter."""

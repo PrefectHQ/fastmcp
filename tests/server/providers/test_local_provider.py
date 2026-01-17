@@ -35,8 +35,8 @@ class TestLocalProviderStorage:
         )
         provider.add_tool(tool)
 
-        assert "tool:test_tool" in provider._components
-        assert provider._components["tool:test_tool"] is tool
+        assert "tool:test_tool@" in provider._components
+        assert provider._components["tool:test_tool@"] is tool
 
     def test_add_multiple_tools(self):
         """Test adding multiple tools."""
@@ -55,8 +55,8 @@ class TestLocalProviderStorage:
         provider.add_tool(tool1)
         provider.add_tool(tool2)
 
-        assert "tool:tool1" in provider._components
-        assert "tool:tool2" in provider._components
+        assert "tool:tool1@" in provider._components
+        assert "tool:tool2@" in provider._components
 
     def test_remove_tool(self):
         """Test removing a tool from LocalProvider."""
@@ -70,7 +70,7 @@ class TestLocalProviderStorage:
         provider.add_tool(tool)
         provider.remove_tool("test_tool")
 
-        assert "tool:test_tool" not in provider._components
+        assert "tool:test_tool@" not in provider._components
 
     def test_remove_nonexistent_tool_raises(self):
         """Test that removing a nonexistent tool raises KeyError."""
@@ -87,7 +87,7 @@ class TestLocalProviderStorage:
         def test_resource() -> str:
             return "content"
 
-        assert "resource:resource://test" in provider._components
+        assert "resource:resource://test@" in provider._components
 
     def test_remove_resource(self):
         """Test removing a resource from LocalProvider."""
@@ -99,7 +99,7 @@ class TestLocalProviderStorage:
 
         provider.remove_resource("resource://test")
 
-        assert "resource:resource://test" not in provider._components
+        assert "resource:resource://test@" not in provider._components
 
     def test_add_template(self):
         """Test adding a resource template to LocalProvider."""
@@ -109,7 +109,7 @@ class TestLocalProviderStorage:
         def template_fn(id: str) -> str:
             return f"Resource {id}"
 
-        assert "template:resource://{id}" in provider._components
+        assert "template:resource://{id}@" in provider._components
 
     def test_remove_template(self):
         """Test removing a resource template from LocalProvider."""
@@ -121,7 +121,7 @@ class TestLocalProviderStorage:
 
         provider.remove_template("resource://{id}")
 
-        assert "template:resource://{id}" not in provider._components
+        assert "template:resource://{id}@" not in provider._components
 
     def test_add_prompt(self):
         """Test adding a prompt to LocalProvider."""
@@ -133,7 +133,7 @@ class TestLocalProviderStorage:
         )
         provider.add_prompt(prompt)
 
-        assert "prompt:test_prompt" in provider._components
+        assert "prompt:test_prompt@" in provider._components
 
     def test_remove_prompt(self):
         """Test removing a prompt from LocalProvider."""
@@ -146,7 +146,7 @@ class TestLocalProviderStorage:
         provider.add_prompt(prompt)
         provider.remove_prompt("test_prompt")
 
-        assert "prompt:test_prompt" not in provider._components
+        assert "prompt:test_prompt@" not in provider._components
 
 
 class TestLocalProviderInterface:
@@ -310,8 +310,8 @@ class TestLocalProviderDecorators:
         def my_tool(x: int) -> int:
             return x * 2
 
-        assert "tool:my_tool" in provider._components
-        assert provider._components["tool:my_tool"].name == "my_tool"
+        assert "tool:my_tool@" in provider._components
+        assert provider._components["tool:my_tool@"].name == "my_tool"
 
     def test_tool_decorator_with_custom_name_registers(self):
         """Tool with custom name should register under that name."""
@@ -321,8 +321,8 @@ class TestLocalProviderDecorators:
         def my_tool(x: int) -> int:
             return x * 2
 
-        assert "tool:custom_name" in provider._components
-        assert "tool:my_tool" not in provider._components
+        assert "tool:custom_name@" in provider._components
+        assert "tool:my_tool@" not in provider._components
 
     def test_tool_direct_call(self):
         """provider.tool(fn) should register the function."""
@@ -333,7 +333,7 @@ class TestLocalProviderDecorators:
 
         provider.tool(my_tool, name="direct_tool")
 
-        assert "tool:direct_tool" in provider._components
+        assert "tool:direct_tool@" in provider._components
 
     def test_tool_enabled_false(self):
         """Tool with enabled=False should be disabled."""
@@ -343,8 +343,8 @@ class TestLocalProviderDecorators:
         def disabled_tool() -> str:
             return "should be disabled"
 
-        assert "tool:disabled_tool" in provider._components
-        tool = provider._components["tool:disabled_tool"]
+        assert "tool:disabled_tool@" in provider._components
+        tool = provider._components["tool:disabled_tool@"]
         assert not provider._is_component_enabled(tool)
 
     async def test_tool_enabled_false_not_listed(self):
@@ -386,7 +386,7 @@ class TestLocalProviderDecorators:
         def my_resource() -> str:
             return "test content"
 
-        assert "resource:resource://test" in provider._components
+        assert "resource:resource://test@" in provider._components
 
     def test_resource_with_custom_name_registers(self):
         """Resource with custom name should register with that name."""
@@ -396,7 +396,7 @@ class TestLocalProviderDecorators:
         def my_resource() -> str:
             return "test content"
 
-        assert provider._components["resource:resource://test"].name == "custom_name"
+        assert provider._components["resource:resource://test@"].name == "custom_name"
 
     def test_resource_enabled_false(self):
         """Resource with enabled=False should be disabled."""
@@ -406,8 +406,8 @@ class TestLocalProviderDecorators:
         def disabled_resource() -> str:
             return "should be disabled"
 
-        assert "resource:resource://test" in provider._components
-        resource = provider._components["resource:resource://test"]
+        assert "resource:resource://test@" in provider._components
+        resource = provider._components["resource:resource://test@"]
         assert not provider._is_component_enabled(resource)
 
     async def test_resource_enabled_false_not_listed(self):
@@ -435,8 +435,8 @@ class TestLocalProviderDecorators:
         def disabled_template(id: str) -> str:
             return f"Data {id}"
 
-        assert "template:data://{id}" in provider._components
-        template = provider._components["template:data://{id}"]
+        assert "template:data://{id}@" in provider._components
+        template = provider._components["template:data://{id}@"]
         assert not provider._is_component_enabled(template)
 
     async def test_template_enabled_false_not_listed(self):
@@ -478,7 +478,7 @@ class TestLocalProviderDecorators:
         def my_prompt() -> str:
             return "A prompt"
 
-        assert "prompt:my_prompt" in provider._components
+        assert "prompt:my_prompt@" in provider._components
 
     def test_prompt_with_custom_name_registers(self):
         """Prompt with custom name should register under that name."""
@@ -488,8 +488,8 @@ class TestLocalProviderDecorators:
         def my_prompt() -> str:
             return "A prompt"
 
-        assert "prompt:custom_prompt" in provider._components
-        assert "prompt:my_prompt" not in provider._components
+        assert "prompt:custom_prompt@" in provider._components
+        assert "prompt:my_prompt@" not in provider._components
 
     def test_prompt_enabled_false(self):
         """Prompt with enabled=False should be disabled."""
@@ -499,8 +499,8 @@ class TestLocalProviderDecorators:
         def disabled_prompt() -> str:
             return "should be disabled"
 
-        assert "prompt:disabled_prompt" in provider._components
-        prompt = provider._components["prompt:disabled_prompt"]
+        assert "prompt:disabled_prompt@" in provider._components
+        prompt = provider._components["prompt:disabled_prompt@"]
         assert not provider._is_component_enabled(prompt)
 
     async def test_prompt_enabled_false_not_listed(self):
@@ -577,8 +577,8 @@ class TestProviderToolTransformations:
         )
 
         # Get tool through layer with call_next
-        async def get_tool(name: str):
-            return await provider.get_tool(name)
+        async def get_tool(name: str, version=None):
+            return await provider.get_tool(name, version)
 
         tool = await layer.get_tool("transformed_tool", get_tool)
         assert tool is not None
@@ -603,8 +603,8 @@ class TestProviderToolTransformations:
             {"my_tool": ToolTransformConfig(description="New description")}
         )
 
-        async def get_tool(name: str):
-            return await provider.get_tool(name)
+        async def get_tool(name: str, version=None):
+            return await provider.get_tool(name, version)
 
         tool = await layer.get_tool("my_tool", get_tool)
         assert tool is not None

@@ -200,8 +200,6 @@ class Prompt(FastMCPComponent):
 
     def to_mcp_prompt(
         self,
-        *,
-        include_fastmcp_meta: bool | None = None,
         **overrides: Any,
     ) -> SDKPrompt:
         """Convert the prompt to an MCP prompt."""
@@ -221,7 +219,7 @@ class Prompt(FastMCPComponent):
             title=overrides.get("title", self.title),
             icons=overrides.get("icons", self.icons),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
-                "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
+                "_meta", self.get_meta()
             ),
         )
 
@@ -231,6 +229,7 @@ class Prompt(FastMCPComponent):
         fn: Callable[..., Any],
         *,
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[Icon] | None = None,
@@ -251,6 +250,7 @@ class Prompt(FastMCPComponent):
         return FunctionPrompt.from_function(
             fn=fn,
             name=name,
+            version=version,
             title=title,
             description=description,
             icons=icons,

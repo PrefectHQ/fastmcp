@@ -195,6 +195,18 @@ class Settings(BaseSettings):
 
     docket: DocketSettings = DocketSettings()
 
+    enable_rich_logging: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                If True, will use rich formatting for log output. If False,
+                will use standard Python logging without rich formatting.
+                """
+            )
+        ),
+    ] = True
+
     enable_rich_tracebacks: Annotated[
         bool,
         Field(
@@ -292,20 +304,6 @@ class Settings(BaseSettings):
     stateless_http: bool = (
         False  # If True, uses true stateless mode (new transport per request)
     )
-
-    include_fastmcp_meta: Annotated[
-        bool,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Whether to include FastMCP meta in the server's MCP responses.
-                If True, a `_fastmcp` key will be added to the `meta` field of
-                all MCP component responses. This key will contain a dict of
-                various FastMCP-specific metadata, such as tags.
-                """
-            ),
-        ),
-    ] = True
 
     mounted_components_raise_on_load_error: Annotated[
         bool,

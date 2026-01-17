@@ -1,0 +1,56 @@
+---
+title: telemetry
+sidebarTitle: telemetry
+---
+
+# `fastmcp.server.telemetry`
+
+
+Server-side telemetry helpers.
+
+## Functions
+
+### `get_auth_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/telemetry.py#L13" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_span_attributes() -> dict[str, str]
+```
+
+
+Get auth attributes for the current request, if authenticated.
+
+
+### `get_session_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/telemetry.py#L30" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_session_span_attributes() -> dict[str, str]
+```
+
+
+Get session attributes for the current request.
+
+
+### `server_span` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/telemetry.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+server_span(name: str, method: str, server_name: str, component_type: str, component_key: str, resource_uri: str | None = None) -> Generator[Span, None, None]
+```
+
+
+Create a SERVER span with standard MCP attributes and auth context.
+
+Automatically records any exception on the span and sets error status.
+
+
+### `delegate_span` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/telemetry.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delegate_span(name: str, provider_type: str, component_key: str) -> Generator[Span, None, None]
+```
+
+
+Create an INTERNAL span for provider delegation.
+
+Used by FastMCPProvider when delegating to mounted servers.
+Automatically records any exception on the span and sets error status.
+

@@ -129,6 +129,7 @@ class ResourceTemplate(FastMCPComponent):
         fn: Callable[..., Any],
         uri_template: str,
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[Icon] | None = None,
@@ -143,6 +144,7 @@ class ResourceTemplate(FastMCPComponent):
             fn=fn,
             uri_template=uri_template,
             name=name,
+            version=version,
             title=title,
             description=description,
             icons=icons,
@@ -249,8 +251,6 @@ class ResourceTemplate(FastMCPComponent):
 
     def to_mcp_template(
         self,
-        *,
-        include_fastmcp_meta: bool | None = None,
         **overrides: Any,
     ) -> SDKResourceTemplate:
         """Convert the resource template to an SDKResourceTemplate."""
@@ -264,7 +264,7 @@ class ResourceTemplate(FastMCPComponent):
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
-                "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
+                "_meta", self.get_meta()
             ),
         )
 
@@ -284,7 +284,8 @@ class ResourceTemplate(FastMCPComponent):
     @property
     def key(self) -> str:
         """The globally unique lookup key for this template."""
-        return self.make_key(self.uri_template)
+        base_key = self.make_key(self.uri_template)
+        return f"{base_key}@{self.version or ''}"
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this template with docket for background execution."""
@@ -459,6 +460,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         fn: Callable[..., Any],
         uri_template: str,
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[Icon] | None = None,
@@ -568,6 +570,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         return cls(
             uri_template=uri_template,
             name=func_name,
+            version=str(version) if version is not None else None,
             title=title,
             description=description,
             icons=icons,

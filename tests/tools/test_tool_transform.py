@@ -1054,13 +1054,13 @@ class TestEnableDisable:
             return x + y
 
         # Get the registered Tool object from the server
-        add_tool = await mcp._local_provider.get_component("tool:add")
+        add_tool = await mcp._local_provider.get_tool("add")
         assert isinstance(add_tool, Tool)
         new_add = Tool.from_tool(add_tool, name="new_add")
         mcp.add_tool(new_add)
 
         # Disable original tool, but new_add should still work
-        mcp.disable(keys=["tool:add"])
+        mcp.disable(keys=["tool:add@"])
 
         async with Client(mcp) as client:
             tools = await client.list_tools()
@@ -1081,13 +1081,13 @@ class TestEnableDisable:
             return x + y
 
         # Get the registered Tool object from the server
-        add_tool = await mcp._local_provider.get_component("tool:add")
+        add_tool = await mcp._local_provider.get_tool("add")
         assert isinstance(add_tool, Tool)
         new_add = Tool.from_tool(add_tool, name="new_add")
         mcp.add_tool(new_add)
 
         # Disable both tools via server
-        mcp.disable(keys=["tool:add", "tool:new_add"])
+        mcp.disable(keys=["tool:add@", "tool:new_add@"])
 
         async with Client(mcp) as client:
             tools = await client.list_tools()

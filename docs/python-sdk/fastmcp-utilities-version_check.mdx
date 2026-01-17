@@ -1,0 +1,40 @@
+---
+title: version_check
+sidebarTitle: version_check
+---
+
+# `fastmcp.utilities.version_check`
+
+
+Version checking utilities for FastMCP.
+
+## Functions
+
+### `get_latest_version` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/version_check.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_latest_version(include_prereleases: bool = False) -> str | None
+```
+
+
+Get the latest version of FastMCP from PyPI, using cache when available.
+
+**Args:**
+- `include_prereleases`: If True, include pre-release versions.
+
+**Returns:**
+- The latest version string, or None if unavailable.
+
+
+### `check_for_newer_version` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/version_check.py#L124" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+check_for_newer_version() -> str | None
+```
+
+
+Check if a newer version of FastMCP is available.
+
+**Returns:**
+- The latest version string if newer than current, None otherwise.
+

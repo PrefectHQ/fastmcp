@@ -17,6 +17,7 @@ from fastmcp.server.transforms import (
     ListToolsNext,
     Transform,
 )
+from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
     from fastmcp.prompts.prompt import Prompt
@@ -104,12 +105,14 @@ class Namespace(Transform):
             t.model_copy(update={"name": self._transform_name(t.name)}) for t in tools
         ]
 
-    async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
         """Get tool by namespaced name."""
         original = self._reverse_name(name)
         if original is None:
             return None
-        tool = await call_next(original)
+        tool = await call_next(original, version=version)
         if tool:
             return tool.model_copy(update={"name": name})
         return None
@@ -127,13 +130,17 @@ class Namespace(Transform):
         ]
 
     async def get_resource(
-        self, uri: str, call_next: GetResourceNext
+        self,
+        uri: str,
+        call_next: GetResourceNext,
+        *,
+        version: VersionSpec | None = None,
     ) -> Resource | None:
         """Get resource by namespaced URI."""
         original = self._reverse_uri(uri)
         if original is None:
             return None
-        resource = await call_next(original)
+        resource = await call_next(original, version=version)
         if resource:
             return resource.model_copy(update={"uri": uri})
         return None
@@ -153,13 +160,17 @@ class Namespace(Transform):
         ]
 
     async def get_resource_template(
-        self, uri: str, call_next: GetResourceTemplateNext
+        self,
+        uri: str,
+        call_next: GetResourceTemplateNext,
+        *,
+        version: VersionSpec | None = None,
     ) -> ResourceTemplate | None:
         """Get resource template by namespaced URI."""
         original = self._reverse_uri(uri)
         if original is None:
             return None
-        template = await call_next(original)
+        template = await call_next(original, version=version)
         if template:
             return template.model_copy(
                 update={"uri_template": self._transform_uri(template.uri_template)}
@@ -177,12 +188,14 @@ class Namespace(Transform):
             p.model_copy(update={"name": self._transform_name(p.name)}) for p in prompts
         ]
 
-    async def get_prompt(self, name: str, call_next: GetPromptNext) -> Prompt | None:
+    async def get_prompt(
+        self, name: str, call_next: GetPromptNext, *, version: VersionSpec | None = None
+    ) -> Prompt | None:
         """Get prompt by namespaced name."""
         original = self._reverse_name(name)
         if original is None:
             return None
-        prompt = await call_next(original)
+        prompt = await call_next(original, version=version)
         if prompt:
             return prompt.model_copy(update={"name": name})
         return None

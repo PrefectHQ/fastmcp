@@ -102,6 +102,7 @@ from fastmcp.utilities.cli import log_server_banner
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger, temporary_log_level
 from fastmcp.utilities.types import FastMCPBaseModel, NotSet, NotSetT
+from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -246,7 +247,6 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         tool_serializer: ToolResultSerializerType | None = None,
         include_tags: Collection[str] | None = None,
         exclude_tags: Collection[str] | None = None,
-        include_fastmcp_meta: bool | None = None,
         on_duplicate: DuplicateBehavior | None = None,
         strict_input_validation: bool | None = None,
         tasks: bool | None = None,
@@ -400,12 +400,6 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         self.sampling_handler: SamplingHandler | None = sampling_handler
         self.sampling_handler_behavior: Literal["always", "fallback"] = (
             sampling_handler_behavior or "fallback"
-        )
-
-        self.include_fastmcp_meta: bool = (
-            include_fastmcp_meta
-            if include_fastmcp_meta is not None
-            else fastmcp.settings.include_fastmcp_meta
         )
 
         self._handle_deprecated_settings(
@@ -984,7 +978,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """Enable components by removing from blocklist, or set allowlist with only=True.
 
         Args:
-            keys: Keys to enable (e.g., ``"tool:my_tool"``).
+            keys: Keys to enable (e.g., ``"tool:my_tool@"`` for unversioned, ``"tool:my_tool@1.0"`` for versioned).
             tags: Tags to enable - components with these tags will be enabled.
             only: If True, switches to allowlist mode - ONLY show these keys/tags.
                 This clears existing allowlists and sets default visibility to False.
@@ -999,7 +993,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             .. code-block:: python
 
                 # By key (prefixed)
-                server.enable(keys=["tool:my_tool"])
+                server.enable(keys=["tool:my_tool@"])
 
                 # By tag
                 server.enable(tags={"internal"})
@@ -1018,7 +1012,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """Disable components by adding to the blocklist.
 
         Args:
-            keys: Keys to disable (e.g., ``"tool:my_tool"``).
+            keys: Keys to disable (e.g., ``"tool:my_tool@"`` for unversioned, ``"tool:my_tool@1.0"`` for versioned).
             tags: Tags to disable - components with these tags will be disabled.
 
         Note:
@@ -1031,7 +1025,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             .. code-block:: python
 
                 # By key (prefixed)
-                server.disable(keys=["tool:my_tool"])
+                server.disable(keys=["tool:my_tool@"])
 
                 # By tag
                 server.disable(tags={"dangerous", "internal"})
@@ -1072,35 +1066,52 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
 
-            # Deduplicate by key (first wins) and apply authorization checks
-            seen: dict[str, Tool] = {}
+            # Deduplicate by name (keeping highest version) and apply authorization checks
+            by_name: dict[str, Tool] = {}
             for tool in tools:
-                if tool.key in seen:
-                    continue
                 # Check tool-level auth (skip for STDIO)
                 if not skip_auth and tool.auth is not None:
-                    auth_ctx = AuthContext(token=token, component=tool)
+                    ctx = AuthContext(token=token, component=tool)
                     try:
-                        if not run_auth_checks(tool.auth, auth_ctx):
+                        if not run_auth_checks(tool.auth, ctx):
                             continue
                     except AuthorizationError:
                         # Treat auth errors as denials in list operations
                         continue
-                seen[tool.key] = tool
-            return list(seen.values())
+                # Keep highest version per name
+                existing = by_name.get(tool.name)
+                if existing is None or version_sort_key(tool) > version_sort_key(existing):
+                    by_name[tool.name] = tool
+            return list(by_name.values())
 
-    async def get_tool(self, name: str) -> Tool | None:
+    async def get_tool(
+        self, name: str, version: VersionSpec | str | None = None
+    ) -> Tool | None:
         """Provider interface: aggregate tool lookup from all providers.
 
         Returns None if not found or if the tool is disabled via visibility settings.
+
+        Args:
+            name: The tool name.
+            version: Version filter. Can be:
+                - None: returns highest version
+                - str: returns exact version match
+                - VersionSpec: returns best match within spec (highest matching)
         """
+        # Convert string to VersionSpec for backward compatibility
+        if isinstance(version, str):
+            version_spec: VersionSpec | None = VersionSpec(eq=version)
+        else:
+            version_spec = version
+
         # Query all providers in parallel for efficient lookup
         results = await gather(
-            *[p._get_tool(name) for p in self._providers],
+            *[p._get_tool(name, version_spec) for p in self._providers],
             return_exceptions=True,
         )
 
-        # Return first non-None, enabled result
+        # Collect valid results, pick highest version
+        valid: list[Tool] = []
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 if not isinstance(result, NotFoundError):
@@ -1110,9 +1121,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                     )
                 continue
             if result is not None and self._is_component_enabled(result):
-                return result
+                valid.append(result)
 
-        return None
+        if not valid:
+            return None
+
+        return max(valid, key=version_sort_key)
 
     async def get_resources(self, *, run_middleware: bool = False) -> list[Resource]:
         """Get all enabled resources from providers.
@@ -1144,35 +1158,55 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
 
-            # Deduplicate by key (first wins) and apply authorization checks
-            seen: dict[str, Resource] = {}
+            # Deduplicate by URI (keeping highest version) and apply authorization checks
+            by_uri: dict[str, Resource] = {}
             for resource in resources:
-                if resource.key in seen:
-                    continue
                 # Check resource-level auth (skip for STDIO)
                 if not skip_auth and resource.auth is not None:
-                    auth_ctx = AuthContext(token=token, component=resource)
+                    ctx = AuthContext(token=token, component=resource)
                     try:
-                        if not run_auth_checks(resource.auth, auth_ctx):
+                        if not run_auth_checks(resource.auth, ctx):
                             continue
                     except AuthorizationError:
                         # Treat auth errors as denials in list operations
                         continue
-                seen[resource.key] = resource
-            return list(seen.values())
+                # Keep highest version per URI
+                uri_str = str(resource.uri)
+                existing = by_uri.get(uri_str)
+                if existing is None or version_sort_key(resource) > version_sort_key(
+                    existing
+                ):
+                    by_uri[uri_str] = resource
+            return list(by_uri.values())
 
-    async def get_resource(self, uri: str) -> Resource | None:
+    async def get_resource(
+        self, uri: str, version: VersionSpec | str | None = None
+    ) -> Resource | None:
         """Provider interface: aggregate resource lookup from all providers.
 
         Returns None if not found or if the resource is disabled via visibility settings.
+
+        Args:
+            uri: The resource URI.
+            version: Version filter. Can be:
+                - None: returns highest version
+                - str: returns exact version match
+                - VersionSpec: returns best match within spec (highest matching)
         """
+        # Convert string to VersionSpec for backward compatibility
+        if isinstance(version, str):
+            version_spec: VersionSpec | None = VersionSpec(eq=version)
+        else:
+            version_spec = version
+
         # Query all providers in parallel for efficient lookup
         results = await gather(
-            *[p._get_resource(uri) for p in self._providers],
+            *[p._get_resource(uri, version_spec) for p in self._providers],
             return_exceptions=True,
         )
 
-        # Return first non-None, enabled result
+        # Collect valid results, pick highest version
+        valid: list[Resource] = []
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 if not isinstance(result, NotFoundError):
@@ -1182,9 +1216,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                     )
                 continue
             if result is not None and self._is_component_enabled(result):
-                return result
+                valid.append(result)
 
-        return None
+        if not valid:
+            return None
+
+        return max(valid, key=version_sort_key)
 
     async def get_resource_templates(
         self, *, run_middleware: bool = False
@@ -1220,35 +1257,54 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
 
-            # Deduplicate by key (first wins) and apply authorization checks
-            seen: dict[str, ResourceTemplate] = {}
+            # Deduplicate by uri_template (keeping highest version) and apply authorization checks
+            by_uri_template: dict[str, ResourceTemplate] = {}
             for template in templates:
-                if template.key in seen:
-                    continue
                 # Check template-level auth (skip for STDIO)
                 if not skip_auth and template.auth is not None:
-                    auth_ctx = AuthContext(token=token, component=template)
+                    ctx = AuthContext(token=token, component=template)
                     try:
-                        if not run_auth_checks(template.auth, auth_ctx):
+                        if not run_auth_checks(template.auth, ctx):
                             continue
                     except AuthorizationError:
                         # Treat auth errors as denials in list operations
                         continue
-                seen[template.key] = template
-            return list(seen.values())
+                # Keep highest version per uri_template
+                existing = by_uri_template.get(template.uri_template)
+                if existing is None or version_sort_key(template) > version_sort_key(
+                    existing
+                ):
+                    by_uri_template[template.uri_template] = template
+            return list(by_uri_template.values())
 
-    async def get_resource_template(self, uri: str) -> ResourceTemplate | None:
+    async def get_resource_template(
+        self, uri: str, version: VersionSpec | str | None = None
+    ) -> ResourceTemplate | None:
         """Provider interface: aggregate template lookup from all providers.
 
         Returns None if not found or if the template is disabled via visibility settings.
+
+        Args:
+            uri: The template URI to match.
+            version: Version filter. Can be:
+                - None: returns highest version
+                - str: returns exact version match
+                - VersionSpec: returns best match within spec (highest matching)
         """
+        # Convert string to VersionSpec for backward compatibility
+        if isinstance(version, str):
+            version_spec: VersionSpec | None = VersionSpec(eq=version)
+        else:
+            version_spec = version
+
         # Query all providers in parallel for efficient lookup
         results = await gather(
-            *[p._get_resource_template(uri) for p in self._providers],
+            *[p._get_resource_template(uri, version_spec) for p in self._providers],
             return_exceptions=True,
         )
 
-        # Return first non-None, enabled result
+        # Collect valid results, pick highest version
+        valid: list[ResourceTemplate] = []
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 if not isinstance(result, NotFoundError):
@@ -1258,9 +1314,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                     )
                 continue
             if result is not None and self._is_component_enabled(result):
-                return result
+                valid.append(result)
 
-        return None
+        if not valid:
+            return None
+
+        return max(valid, key=version_sort_key)
 
     async def get_prompts(self, *, run_middleware: bool = False) -> list[Prompt]:
         """Get all enabled prompts from providers.
@@ -1292,35 +1351,54 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
 
-            # Deduplicate by key (first wins) and apply authorization checks
-            seen: dict[str, Prompt] = {}
+            # Deduplicate by name (keeping highest version) and apply authorization checks
+            by_name: dict[str, Prompt] = {}
             for prompt in prompts:
-                if prompt.key in seen:
-                    continue
                 # Check prompt-level auth (skip for STDIO)
                 if not skip_auth and prompt.auth is not None:
-                    auth_ctx = AuthContext(token=token, component=prompt)
+                    ctx = AuthContext(token=token, component=prompt)
                     try:
-                        if not run_auth_checks(prompt.auth, auth_ctx):
+                        if not run_auth_checks(prompt.auth, ctx):
                             continue
                     except AuthorizationError:
                         # Treat auth errors as denials in list operations
                         continue
-                seen[prompt.key] = prompt
-            return list(seen.values())
+                # Keep highest version per name
+                existing = by_name.get(prompt.name)
+                if existing is None or version_sort_key(prompt) > version_sort_key(
+                    existing
+                ):
+                    by_name[prompt.name] = prompt
+            return list(by_name.values())
 
-    async def get_prompt(self, name: str) -> Prompt | None:
+    async def get_prompt(
+        self, name: str, version: VersionSpec | str | None = None
+    ) -> Prompt | None:
         """Provider interface: aggregate prompt lookup from all providers.
 
         Returns None if not found or if the prompt is disabled via visibility settings.
+
+        Args:
+            name: The prompt name.
+            version: Version filter. Can be:
+                - None: returns highest version
+                - str: returns exact version match
+                - VersionSpec: returns best match within spec (highest matching)
         """
+        # Convert string to VersionSpec for backward compatibility
+        if isinstance(version, str):
+            version_spec: VersionSpec | None = VersionSpec(eq=version)
+        else:
+            version_spec = version
+
         # Query all providers in parallel for efficient lookup
         results = await gather(
-            *[p._get_prompt(name) for p in self._providers],
+            *[p._get_prompt(name, version_spec) for p in self._providers],
             return_exceptions=True,
         )
 
-        # Return first non-None, enabled result
+        # Collect valid results, pick highest version
+        valid: list[Prompt] = []
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 if not isinstance(result, NotFoundError):
@@ -1330,9 +1408,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                     )
                 continue
             if result is not None and self._is_component_enabled(result):
-                return result
+                valid.append(result)
 
-        return None
+        if not valid:
+            return None
+
+        return max(valid, key=version_sort_key)
 
     async def get_component(
         self, key: str
@@ -1359,6 +1440,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         elif key.startswith("prompt:"):
             return await self._get_prompt(key[7:])
         return None
+
 
     @overload
     async def call_tool(
@@ -1777,14 +1859,14 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """
         logger.debug(f"[{self.name}] Handler called: list_tools")
 
-        tools = await self.get_tools(run_middleware=True)
-        return [
-            tool.to_mcp_tool(
-                name=tool.name,
-                include_fastmcp_meta=self.include_fastmcp_meta,
-            )
-            for tool in tools
-        ]
+        async with fastmcp.server.context.Context(fastmcp=self):
+            tools = await self.get_tools(run_middleware=True)
+            return [
+                tool.to_mcp_tool(
+                    name=tool.name,
+                )
+                for tool in tools
+            ]
 
     async def _list_resources_mcp(self) -> list[SDKResource]:
         """
@@ -1793,14 +1875,14 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """
         logger.debug(f"[{self.name}] Handler called: list_resources")
 
-        resources = await self.get_resources(run_middleware=True)
-        return [
-            resource.to_mcp_resource(
-                uri=str(resource.uri),
-                include_fastmcp_meta=self.include_fastmcp_meta,
-            )
-            for resource in resources
-        ]
+        async with fastmcp.server.context.Context(fastmcp=self):
+            resources = await self.get_resources(run_middleware=True)
+            return [
+                resource.to_mcp_resource(
+                    uri=str(resource.uri),
+                )
+                for resource in resources
+            ]
 
     async def _list_resource_templates_mcp(self) -> list[SDKResourceTemplate]:
         """
@@ -1824,7 +1906,6 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             return [
                 template.to_mcp_template(
                     uriTemplate=template.uri_template,
-                    include_fastmcp_meta=self.include_fastmcp_meta,
                 )
                 for template in templates
             ]
@@ -1851,7 +1932,6 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             return [
                 prompt.to_mcp_prompt(
                     name=prompt.name,
-                    include_fastmcp_meta=self.include_fastmcp_meta,
                 )
                 for prompt in prompts
             ]
@@ -2003,19 +2083,24 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """
         return self._local_provider.add_tool(tool)
 
-    def remove_tool(self, name: str) -> None:
-        """Remove a tool from the server.
+    def remove_tool(self, name: str, version: str | None = None) -> None:
+        """Remove tool(s) from the server.
 
         Args:
-            name: The name of the tool to remove
+            name: The name of the tool to remove.
+            version: If None, removes ALL versions. If specified, removes only that version.
 
         Raises:
-            NotFoundError: If the tool is not found
+            NotFoundError: If no matching tool is found.
         """
         try:
-            self._local_provider.remove_tool(name)
+            self._local_provider.remove_tool(name, version)
         except KeyError:
-            raise NotFoundError(f"Tool {name!r} not found") from None
+            if version is None:
+                raise NotFoundError(f"Tool {name!r} not found") from None
+            raise NotFoundError(
+                f"Tool {name!r} version {version!r} not found"
+            ) from None
 
     @overload
     def tool(
@@ -2023,6 +2108,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         name_or_fn: AnyFunction,
         *,
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
@@ -2042,6 +2128,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         name_or_fn: str | None = None,
         *,
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
@@ -2060,6 +2147,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         name_or_fn: str | AnyFunction | None = None,
         *,
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
@@ -2128,6 +2216,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         result = self._local_provider.tool(
             name_or_fn,
             name=name,
+            version=version,
             title=title,
             description=description,
             icons=icons,
@@ -2173,6 +2262,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         uri: str,
         *,
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
@@ -2238,6 +2328,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         inner_decorator = self._local_provider.resource(
             uri,
             name=name,
+            version=version,
             title=title,
             description=description,
             icons=icons,
@@ -2271,6 +2362,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         name_or_fn: AnyFunction,
         *,
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
@@ -2286,6 +2378,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         name_or_fn: str | None = None,
         *,
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
@@ -2300,6 +2393,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         name_or_fn: str | AnyFunction | None = None,
         *,
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
@@ -2384,6 +2478,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         return self._local_provider.prompt(
             name_or_fn,
             name=name,
+            version=version,
             title=title,
             description=description,
             icons=icons,

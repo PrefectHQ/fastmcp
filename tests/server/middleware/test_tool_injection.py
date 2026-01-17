@@ -333,7 +333,7 @@ class TestPromptToolMiddleware:
             [
                 TextContent(
                     type="text",
-                    text='[{"name":"greeting","title":null,"description":"Generate a greeting message.","arguments":[{"name":"name","description":null,"required":true}],"icons":null,"_meta":{"_fastmcp":{"tags":[]}}},{"name":"farewell","title":null,"description":"Generate a farewell message.","arguments":[{"name":"name","description":null,"required":true}],"icons":null,"_meta":{"_fastmcp":{"tags":[]}}}]',
+                    text='[{"name":"greeting","title":null,"description":"Generate a greeting message.","arguments":[{"name":"name","description":null,"required":true}],"icons":null,"_meta":{"fastmcp":{"tags":[]}}},{"name":"farewell","title":null,"description":"Generate a farewell message.","arguments":[{"name":"name","description":null,"required":true}],"icons":null,"_meta":{"fastmcp":{"tags":[]}}}]',
                 )
             ]
         )
@@ -348,7 +348,7 @@ class TestPromptToolMiddleware:
                         {"name": "name", "description": None, "required": True}
                     ],
                     "icons": None,
-                    "_meta": {"_fastmcp": {"tags": []}},
+                    "_meta": {"fastmcp": {"tags": []}},
                 },
                 {
                     "name": "farewell",
@@ -358,7 +358,7 @@ class TestPromptToolMiddleware:
                         {"name": "name", "description": None, "required": True}
                     ],
                     "icons": None,
-                    "_meta": {"_fastmcp": {"tags": []}},
+                    "_meta": {"fastmcp": {"tags": []}},
                 },
             ]
         )
@@ -465,7 +465,7 @@ class TestResourceToolMiddleware:
                     "size": None,
                     "icons": None,
                     "annotations": None,
-                    "_meta": {"_fastmcp": {"tags": []}},
+                    "_meta": {"fastmcp": {"tags": []}},
                 },
                 {
                     "name": "data_resource",
@@ -476,7 +476,7 @@ class TestResourceToolMiddleware:
                     "size": None,
                     "icons": None,
                     "annotations": None,
-                    "_meta": {"_fastmcp": {"tags": []}},
+                    "_meta": {"fastmcp": {"tags": []}},
                 },
             ]
         )
