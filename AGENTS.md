@@ -6,22 +6,20 @@ FastMCP is a comprehensive Python framework (Python ≥3.10) for building Model 
 
 ## Required Development Workflow
 
-**CRITICAL**: Always run these commands in sequence before committing:
+**CRITICAL**: Always run these commands in sequence before committing.
 
 ```bash
 uv sync                              # Install dependencies
-uv run prek run --all-files          # Ruff + Prettier + ty
 uv run pytest -n auto                # Run full test suite
 ```
 
-**All three must pass** - this is enforced by CI. Alternative: `just build && just typecheck && just test`
+In addition, you must pass static checks. This is generally done as a pre-commit hook with `prek` but you can run it manually with:
+
+```bash
+uv run prek run --all-files          # Ruff + Prettier + ty
+```
 
 **Tests must pass and lint/typing must be clean before committing.**
-
-**Before creating a PR**, evaluate whether documentation needs updating:
-- New features or APIs require corresponding docs
-- Changed behavior should be reflected in existing docs
-- Check `docs/` for affected pages
 
 ## Repository Structure
 

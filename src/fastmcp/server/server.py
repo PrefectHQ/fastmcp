@@ -867,38 +867,38 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     # Provider interface overrides (aggregate from sub-providers)
     # -------------------------------------------------------------------------
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """Aggregate tools from all sub-providers.
 
-        This is the Provider interface implementation. The inherited _list_tools()
+        This is the Provider interface implementation. The inherited list_tools()
         applies server-level transforms over this method.
         """
         results = await gather(
-            *[p._list_tools() for p in self._providers],
+            *[p.list_tools() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_tools")
 
-    async def list_resources(self) -> Sequence[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         """Aggregate resources from all sub-providers."""
         results = await gather(
-            *[p._list_resources() for p in self._providers],
+            *[p.list_resources() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_resources")
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Aggregate resource templates from all sub-providers."""
         results = await gather(
-            *[p._list_resource_templates() for p in self._providers],
+            *[p.list_resource_templates() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_resource_templates")
 
-    async def list_prompts(self) -> Sequence[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """Aggregate prompts from all sub-providers."""
         results = await gather(
-            *[p._list_prompts() for p in self._providers],
+            *[p.list_prompts() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_prompts")
@@ -1106,7 +1106,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 )
 
             # Query through full transform chain (provider transforms + server transforms + visibility)
-            tools = await self._list_tools()
+            tools = await self.list_tools()
 
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
@@ -1125,12 +1125,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
             return _dedupe_with_versions(authorized, lambda t: t.name)
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name via aggregation from providers.
 
-        This is the raw lookup that Provider._get_tool() wraps with transforms.
+        This is the raw lookup that Provider.get_tool() wraps with transforms.
         Aggregates from all sub-providers and applies component-level auth.
 
         Args:
@@ -1143,7 +1143,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         # Aggregate from all sub-providers (each applies their own transforms)
         results = await gather(
-            *[p._get_tool(name, version) for p in self._providers],
+            *[p.get_tool(name, version) for p in self._providers],
             return_exceptions=True,
         )
 
@@ -1177,7 +1177,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return tool
 
-    # _get_tool is inherited from Provider - wraps get_tool() with transforms
+    # get_tool() is inherited from Provider - wraps _get_tool() with transforms
 
     async def get_resources(self, *, run_middleware: bool = False) -> list[Resource]:
         """Get all enabled resources from providers.
@@ -1204,7 +1204,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 )
 
             # Query through full transform chain (provider transforms + server transforms + visibility)
-            resources = await self._list_resources()
+            resources = await self.list_resources()
 
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
@@ -1223,12 +1223,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
             return _dedupe_with_versions(authorized, lambda r: str(r.uri))
 
-    async def get_resource(
+    async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         """Get a resource by URI via aggregation from providers.
 
-        This is the raw lookup that Provider._get_resource() wraps with transforms.
+        This is the raw lookup that Provider.get_resource() wraps with transforms.
         Aggregates from all sub-providers and applies component-level auth.
 
         Args:
@@ -1240,7 +1240,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """
         # Aggregate from all sub-providers (each applies their own transforms)
         results = await gather(
-            *[p._get_resource(uri, version) for p in self._providers],
+            *[p.get_resource(uri, version) for p in self._providers],
             return_exceptions=True,
         )
 
@@ -1274,7 +1274,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return resource
 
-    # _get_resource is inherited from Provider - wraps get_resource() with transforms
+    # get_resource() is inherited from Provider - wraps _get_resource() with transforms
 
     async def get_resource_templates(
         self, *, run_middleware: bool = False
@@ -1305,7 +1305,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 )
 
             # Query through full transform chain (provider transforms + server transforms + visibility)
-            templates = await self._list_resource_templates()
+            templates = await self.list_resource_templates()
 
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
@@ -1324,12 +1324,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
             return _dedupe_with_versions(authorized, lambda t: t.uri_template)
 
-    async def get_resource_template(
+    async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get a resource template by URI via aggregation from providers.
 
-        This is the raw lookup that Provider._get_resource_template() wraps with transforms.
+        This is the raw lookup that Provider.get_resource_template() wraps with transforms.
         Aggregates from all sub-providers and applies component-level auth.
 
         Args:
@@ -1341,7 +1341,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """
         # Aggregate from all sub-providers (each applies their own transforms)
         results = await gather(
-            *[p._get_resource_template(uri, version) for p in self._providers],
+            *[p.get_resource_template(uri, version) for p in self._providers],
             return_exceptions=True,
         )
 
@@ -1375,7 +1375,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return template
 
-    # _get_resource_template is inherited from Provider - wraps get_resource_template() with transforms
+    # get_resource_template() is inherited from Provider - wraps _get_resource_template() with transforms
 
     async def get_prompts(self, *, run_middleware: bool = False) -> list[Prompt]:
         """Get all enabled prompts from providers.
@@ -1402,7 +1402,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 )
 
             # Query through full transform chain (provider transforms + server transforms + visibility)
-            prompts = await self._list_prompts()
+            prompts = await self.list_prompts()
 
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
@@ -1421,12 +1421,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
             return _dedupe_with_versions(authorized, lambda p: p.name)
 
-    async def get_prompt(
+    async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
         """Get a prompt by name via aggregation from providers.
 
-        This is the raw lookup that Provider._get_prompt() wraps with transforms.
+        This is the raw lookup that Provider.get_prompt() wraps with transforms.
         Aggregates from all sub-providers and applies component-level auth.
 
         Args:
@@ -1438,7 +1438,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """
         # Aggregate from all sub-providers (each applies their own transforms)
         results = await gather(
-            *[p._get_prompt(name, version) for p in self._providers],
+            *[p.get_prompt(name, version) for p in self._providers],
             return_exceptions=True,
         )
 
@@ -1472,7 +1472,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return prompt
 
-    # _get_prompt is inherited from Provider - wraps get_prompt() with transforms
+    # get_prompt() is inherited from Provider - wraps _get_prompt() with transforms
 
     @overload
     async def call_tool(
@@ -1559,7 +1559,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             with server_span(
                 f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
-                tool = await self._get_tool(name, version=version)
+                tool = await self.get_tool(name, version=version)
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")
                 span.set_attributes(tool.get_span_attributes())
@@ -1666,7 +1666,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 resource_uri=uri,
             ) as span:
                 # Try concrete resources first (transforms + auth via _get_resource)
-                resource = await self._get_resource(uri, version=version)
+                resource = await self.get_resource(uri, version=version)
                 if resource is not None:
                     span.set_attributes(resource.get_span_attributes())
                     if task_meta is not None and task_meta.fn_key is None:
@@ -1686,8 +1686,8 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                             f"Error reading resource {uri!r}: {e}"
                         ) from e
 
-                # Try templates (transforms + auth via _get_resource_template)
-                template = await self._get_resource_template(uri, version=version)
+                # Try templates (transforms + auth via get_resource_template)
+                template = await self.get_resource_template(uri, version=version)
                 if template is None:
                     if version is None:
                         raise NotFoundError(f"Unknown resource: {uri!r}")
@@ -1791,7 +1791,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             with server_span(
                 f"prompts/get {name}", "prompts/get", self.name, "prompt", name
             ) as span:
-                prompt = await self._get_prompt(name, version=version)
+                prompt = await self.get_prompt(name, version=version)
                 if prompt is None:
                     raise NotFoundError(f"Unknown prompt: {name!r}")
                 span.set_attributes(prompt.get_span_attributes())

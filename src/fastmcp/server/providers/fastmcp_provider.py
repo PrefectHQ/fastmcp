@@ -482,7 +482,7 @@ class FastMCPProvider(Provider):
     # Tool methods
     # -------------------------------------------------------------------------
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """List all tools from the mounted server as FastMCPProviderTools.
 
         Runs the mounted server's middleware so filtering/transformation applies.
@@ -492,16 +492,16 @@ class FastMCPProvider(Provider):
         raw_tools = await self.server.get_tools(run_middleware=True)
         return [FastMCPProviderTool.wrap(self.server, t) for t in raw_tools]
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name as a FastMCPProviderTool.
 
         Passes the full VersionSpec to the nested server, which handles both
-        exact version matching and range filtering. Uses _get_tool to ensure
+        exact version matching and range filtering. Uses get_tool to ensure
         the nested server's transforms are applied.
         """
-        raw_tool = await self.server._get_tool(name, version)
+        raw_tool = await self.server.get_tool(name, version)
         if raw_tool is None:
             return None
         return FastMCPProviderTool.wrap(self.server, raw_tool)
@@ -510,7 +510,7 @@ class FastMCPProvider(Provider):
     # Resource methods
     # -------------------------------------------------------------------------
 
-    async def list_resources(self) -> Sequence[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         """List all resources from the mounted server as FastMCPProviderResources.
 
         Runs the mounted server's middleware so filtering/transformation applies.
@@ -520,16 +520,16 @@ class FastMCPProvider(Provider):
         raw_resources = await self.server.get_resources(run_middleware=True)
         return [FastMCPProviderResource.wrap(self.server, r) for r in raw_resources]
 
-    async def get_resource(
+    async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         """Get a concrete resource by URI as a FastMCPProviderResource.
 
         Passes the full VersionSpec to the nested server, which handles both
-        exact version matching and range filtering. Uses _get_resource to ensure
+        exact version matching and range filtering. Uses get_resource to ensure
         the nested server's transforms are applied.
         """
-        raw_resource = await self.server._get_resource(uri, version)
+        raw_resource = await self.server.get_resource(uri, version)
         if raw_resource is None:
             return None
         return FastMCPProviderResource.wrap(self.server, raw_resource)
@@ -538,7 +538,7 @@ class FastMCPProvider(Provider):
     # Resource template methods
     # -------------------------------------------------------------------------
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List all resource templates from the mounted server.
 
         Runs the mounted server's middleware so filtering/transformation applies.
@@ -550,16 +550,16 @@ class FastMCPProvider(Provider):
             FastMCPProviderResourceTemplate.wrap(self.server, t) for t in raw_templates
         ]
 
-    async def get_resource_template(
+    async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get a resource template that matches the given URI.
 
         Passes the full VersionSpec to the nested server, which handles both
-        exact version matching and range filtering. Uses _get_resource_template
+        exact version matching and range filtering. Uses get_resource_template
         to ensure the nested server's transforms are applied.
         """
-        raw_template = await self.server._get_resource_template(uri, version)
+        raw_template = await self.server.get_resource_template(uri, version)
         if raw_template is None:
             return None
         return FastMCPProviderResourceTemplate.wrap(self.server, raw_template)
@@ -568,7 +568,7 @@ class FastMCPProvider(Provider):
     # Prompt methods
     # -------------------------------------------------------------------------
 
-    async def list_prompts(self) -> Sequence[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """List all prompts from the mounted server as FastMCPProviderPrompts.
 
         Runs the mounted server's middleware so filtering/transformation applies.
@@ -578,16 +578,16 @@ class FastMCPProvider(Provider):
         raw_prompts = await self.server.get_prompts(run_middleware=True)
         return [FastMCPProviderPrompt.wrap(self.server, p) for p in raw_prompts]
 
-    async def get_prompt(
+    async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
         """Get a prompt by name as a FastMCPProviderPrompt.
 
         Passes the full VersionSpec to the nested server, which handles both
-        exact version matching and range filtering. Uses _get_prompt to ensure
+        exact version matching and range filtering. Uses get_prompt to ensure
         the nested server's transforms are applied.
         """
-        raw_prompt = await self.server._get_prompt(name, version)
+        raw_prompt = await self.server.get_prompt(name, version)
         if raw_prompt is None:
             return None
         return FastMCPProviderPrompt.wrap(self.server, raw_prompt)

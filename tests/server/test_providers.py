@@ -48,11 +48,11 @@ class SimpleToolProvider(Provider):
         self.list_tools_call_count = 0
         self.get_tool_call_count = 0
 
-    async def list_tools(self) -> list[Tool]:
+    async def _list_tools(self) -> list[Tool]:
         self.list_tools_call_count += 1
         return self._tools
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         self.get_tool_call_count += 1
@@ -73,7 +73,7 @@ class ListOnlyProvider(Provider):
         self._tools = tools
         self.list_tools_call_count = 0
 
-    async def list_tools(self) -> list[Tool]:
+    async def _list_tools(self) -> list[Tool]:
         self.list_tools_call_count += 1
         return self._tools
 
@@ -384,7 +384,7 @@ class TestProviderExecutionMethods:
         """Test that default read_resource uses get_resource and reads it."""
 
         class ResourceProvider(Provider):
-            async def list_resources(self) -> Sequence[Resource]:
+            async def _list_resources(self) -> Sequence[Resource]:
                 return [
                     FunctionResource(
                         uri=AnyUrl("test://data"),
@@ -406,7 +406,7 @@ class TestProviderExecutionMethods:
         """Test that read_resource_template handles template-based resources."""
 
         class TemplateProvider(Provider):
-            async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+            async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
                 return [
                     FunctionResourceTemplate.from_function(
                         fn=lambda name: f"content of {name}",
@@ -428,7 +428,7 @@ class TestProviderExecutionMethods:
         """Test that default render_prompt uses get_prompt and renders it."""
 
         class PromptProvider(Provider):
-            async def list_prompts(self) -> Sequence[Prompt]:
+            async def _list_prompts(self) -> Sequence[Prompt]:
                 return [
                     FunctionPrompt.from_function(
                         fn=lambda name: f"Hello, {name}!",

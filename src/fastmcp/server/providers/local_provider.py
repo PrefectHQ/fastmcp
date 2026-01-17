@@ -492,7 +492,7 @@ class LocalProvider(Provider):
     # Provider interface implementation
     # =========================================================================
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """Return all visible tools."""
         return [
             v
@@ -500,7 +500,7 @@ class LocalProvider(Provider):
             if isinstance(v, Tool) and self._is_component_enabled(v)
         ]
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name.
@@ -520,7 +520,7 @@ class LocalProvider(Provider):
             return None
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
-    async def list_resources(self) -> Sequence[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         """Return all visible resources."""
         return [
             v
@@ -528,7 +528,7 @@ class LocalProvider(Provider):
             if isinstance(v, Resource) and self._is_component_enabled(v)
         ]
 
-    async def get_resource(
+    async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         """Get a resource by URI.
@@ -550,7 +550,7 @@ class LocalProvider(Provider):
             return None
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Return all visible resource templates."""
         return [
             v
@@ -558,7 +558,7 @@ class LocalProvider(Provider):
             if isinstance(v, ResourceTemplate) and self._is_component_enabled(v)
         ]
 
-    async def get_resource_template(
+    async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get a resource template that matches the given URI.
@@ -583,7 +583,7 @@ class LocalProvider(Provider):
             return None
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
-    async def list_prompts(self) -> Sequence[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """Return all visible prompts."""
         return [
             v
@@ -591,7 +591,7 @@ class LocalProvider(Provider):
             if isinstance(v, Prompt) and self._is_component_enabled(v)
         ]
 
-    async def get_prompt(
+    async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
         """Get a prompt by name.

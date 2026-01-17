@@ -483,13 +483,13 @@ class TestVersionFilter:
         assert len(tools) == 1
         assert tools[0].version == "3.0"
 
-        # Can request specific versions in range (use _get_tool to apply transforms)
-        tool_v2 = await mcp._get_tool("add", VersionSpec(eq="2.0"))
+        # Can request specific versions in range (use get_tool to apply transforms)
+        tool_v2 = await mcp.get_tool("add", VersionSpec(eq="2.0"))
         assert tool_v2 is not None
         assert tool_v2.version == "2.0"
 
         # Cannot request version outside range - returns None
-        assert await mcp._get_tool("add", VersionSpec(eq="1.0")) is None
+        assert await mcp.get_tool("add", VersionSpec(eq="1.0")) is None
 
     async def test_version_range(self):
         """VersionFilter(version_gte='2.0', version_lt='3.0') shows only v2.x."""
@@ -520,14 +520,14 @@ class TestVersionFilter:
         assert len(tools) == 1
         assert tools[0].version == "2.5"
 
-        # Can request specific versions in range (use _get_tool to apply transforms)
-        tool_v2 = await mcp._get_tool("calc", VersionSpec(eq="2.0"))
+        # Can request specific versions in range (use get_tool to apply transforms)
+        tool_v2 = await mcp.get_tool("calc", VersionSpec(eq="2.0"))
         assert tool_v2 is not None
         assert tool_v2.version == "2.0"
 
         # Versions outside range are not accessible - return None
-        assert await mcp._get_tool("calc", VersionSpec(eq="1.0")) is None
-        assert await mcp._get_tool("calc", VersionSpec(eq="3.0")) is None
+        assert await mcp.get_tool("calc", VersionSpec(eq="1.0")) is None
+        assert await mcp.get_tool("calc", VersionSpec(eq="3.0")) is None
 
     async def test_unversioned_always_passes(self):
         """Unversioned components pass through any filter."""
@@ -589,8 +589,8 @@ class TestVersionFilter:
 
         mcp.add_transform(VersionFilter(version_lt="3.0"))
 
-        # Tool exists but is filtered out - returns None (use _get_tool to apply transforms)
-        assert await mcp._get_tool("only_v5") is None
+        # Tool exists but is filtered out - returns None (use get_tool to apply transforms)
+        assert await mcp.get_tool("only_v5") is None
 
     async def test_must_specify_at_least_one(self):
         """VersionFilter() with no args raises ValueError."""
@@ -831,8 +831,8 @@ class TestMountedVersionFiltering:
         tools = await parent.get_tools()
         assert len(tools) == 0
 
-        # _get_tool should also return None (respects filter, applies transforms)
-        assert await parent._get_tool("child_high_version_tool") is None
+        # get_tool should also return None (respects filter, applies transforms)
+        assert await parent.get_tool("child_high_version_tool") is None
 
 
 class TestMountedRangeFiltering:
@@ -857,8 +857,8 @@ class TestMountedRangeFiltering:
         parent.add_transform(VersionFilter(version_lt="2.0"))
 
         # Should return v1.0 (the highest version that matches <2.0)
-        # Use _get_tool to apply transforms
-        tool = await parent._get_tool("child_calc")
+        # Use get_tool to apply transforms
+        tool = await parent.get_tool("child_calc")
         assert tool is not None
         assert tool.version == "1.0"
 
@@ -884,13 +884,13 @@ class TestMountedRangeFiltering:
         parent.mount(child, "child")
         parent.add_transform(VersionFilter(version_gte="1.0", version_lt="3.0"))
 
-        # Request specific version within range (use _get_tool to apply transforms)
-        tool = await parent._get_tool("child_calc", VersionSpec(eq="1.0"))
+        # Request specific version within range (use get_tool to apply transforms)
+        tool = await parent.get_tool("child_calc", VersionSpec(eq="1.0"))
         assert tool is not None
         assert tool.version == "1.0"
 
         # Request version outside range should return None
-        result = await parent._get_tool("child_calc", VersionSpec(eq="3.0"))
+        result = await parent.get_tool("child_calc", VersionSpec(eq="3.0"))
         assert result is None
 
 

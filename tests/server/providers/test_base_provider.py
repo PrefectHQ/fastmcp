@@ -24,7 +24,7 @@ class SimpleProvider(Provider):
         super().__init__()
         self._tools = tools or []
 
-    async def list_tools(self) -> list[Tool]:
+    async def _list_tools(self) -> list[Tool]:
         return self._tools
 
 

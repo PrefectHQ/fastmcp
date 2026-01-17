@@ -123,15 +123,15 @@ class AggregateProvider(Provider):
     # Tools
     # -------------------------------------------------------------------------
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """List all tools from all providers (with transforms applied)."""
         results = await gather(
-            *[p._list_tools() for p in self._providers],
+            *[p.list_tools() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_tools")
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get tool by name.
@@ -142,7 +142,7 @@ class AggregateProvider(Provider):
                 If specified, returns highest version matching the spec from any provider.
         """
         results = await gather(
-            *[p._get_tool(name, version) for p in self._providers],
+            *[p.get_tool(name, version) for p in self._providers],
             return_exceptions=True,
         )
         return self._get_highest_version_result(results, f"get_tool({name!r})")  # type: ignore[return-value]
@@ -151,15 +151,15 @@ class AggregateProvider(Provider):
     # Resources
     # -------------------------------------------------------------------------
 
-    async def list_resources(self) -> Sequence[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         """List all resources from all providers (with transforms applied)."""
         results = await gather(
-            *[p._list_resources() for p in self._providers],
+            *[p.list_resources() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_resources")
 
-    async def get_resource(
+    async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         """Get resource by URI.
@@ -170,7 +170,7 @@ class AggregateProvider(Provider):
                 If specified, returns highest version matching the spec from any provider.
         """
         results = await gather(
-            *[p._get_resource(uri, version) for p in self._providers],
+            *[p.get_resource(uri, version) for p in self._providers],
             return_exceptions=True,
         )
         return self._get_highest_version_result(results, f"get_resource({uri!r})")  # type: ignore[return-value]
@@ -179,15 +179,15 @@ class AggregateProvider(Provider):
     # Resource Templates
     # -------------------------------------------------------------------------
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List all resource templates from all providers (with transforms applied)."""
         results = await gather(
-            *[p._list_resource_templates() for p in self._providers],
+            *[p.list_resource_templates() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_resource_templates")
 
-    async def get_resource_template(
+    async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get resource template by URI.
@@ -198,7 +198,7 @@ class AggregateProvider(Provider):
                 If specified, returns highest version matching the spec from any provider.
         """
         results = await gather(
-            *[p._get_resource_template(uri, version) for p in self._providers],
+            *[p.get_resource_template(uri, version) for p in self._providers],
             return_exceptions=True,
         )
         return self._get_highest_version_result(
@@ -209,15 +209,15 @@ class AggregateProvider(Provider):
     # Prompts
     # -------------------------------------------------------------------------
 
-    async def list_prompts(self) -> Sequence[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """List all prompts from all providers (with transforms applied)."""
         results = await gather(
-            *[p._list_prompts() for p in self._providers],
+            *[p.list_prompts() for p in self._providers],
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_prompts")
 
-    async def get_prompt(
+    async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
         """Get prompt by name.
@@ -228,7 +228,7 @@ class AggregateProvider(Provider):
                 If specified, returns highest version matching the spec from any provider.
         """
         results = await gather(
-            *[p._get_prompt(name, version) for p in self._providers],
+            *[p.get_prompt(name, version) for p in self._providers],
             return_exceptions=True,
         )
         return self._get_highest_version_result(results, f"get_prompt({name!r})")  # type: ignore[return-value]

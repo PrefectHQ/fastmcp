@@ -137,7 +137,7 @@ class AuthMiddleware(Middleware):
             )
 
         # Get tool (component auth is checked in get_tool, raises if unauthorized)
-        tool = await fastmcp.fastmcp._get_tool(tool_name)
+        tool = await fastmcp.fastmcp.get_tool(tool_name)
         if tool is None:
             raise AuthorizationError(
                 f"Authorization failed for tool '{tool_name}': tool not found"
@@ -202,9 +202,9 @@ class AuthMiddleware(Middleware):
             )
 
         # Get resource/template (component auth is checked in get_*, raises if unauthorized)
-        component = await fastmcp.fastmcp._get_resource(str(uri))
+        component = await fastmcp.fastmcp.get_resource(str(uri))
         if component is None:
-            component = await fastmcp.fastmcp._get_resource_template(str(uri))
+            component = await fastmcp.fastmcp.get_resource_template(str(uri))
         if component is None:
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': resource not found"
@@ -295,7 +295,7 @@ class AuthMiddleware(Middleware):
             )
 
         # Get prompt (component auth is checked in get_prompt, raises if unauthorized)
-        prompt = await fastmcp.fastmcp._get_prompt(prompt_name)
+        prompt = await fastmcp.fastmcp.get_prompt(prompt_name)
         if prompt is None:
             raise AuthorizationError(
                 f"Authorization failed for prompt '{prompt_name}': prompt not found"

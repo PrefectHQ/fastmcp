@@ -578,7 +578,7 @@ class TestProviderToolTransformations:
 
         # Get tool through layer with call_next
         async def get_tool(name: str, version=None):
-            return await provider.get_tool(name, version)
+            return await provider._get_tool(name, version)
 
         tool = await layer.get_tool("transformed_tool", get_tool)
         assert tool is not None
@@ -604,7 +604,7 @@ class TestProviderToolTransformations:
         )
 
         async def get_tool(name: str, version=None):
-            return await provider.get_tool(name, version)
+            return await provider._get_tool(name, version)
 
         tool = await layer.get_tool("my_tool", get_tool)
         assert tool is not None
@@ -621,12 +621,12 @@ class TestProviderToolTransformations:
         def my_tool(x: int) -> int:
             return x
 
-        # Add layer to provider (layers are applied by server, not list_tools)
+        # Add layer to provider (layers are applied by server, not _list_tools)
         layer = ToolTransform({"my_tool": ToolTransformConfig(name="renamed")})
         provider.add_transform(layer)
 
-        # Provider's list_tools returns raw tools (transforms applied when queried via chain)
-        original_tools = await provider.list_tools()
+        # Provider's _list_tools returns raw tools (transforms applied when queried via list_tools)
+        original_tools = await provider._list_tools()
         assert original_tools[0].name == "my_tool"
 
         # Transform modifies them when applied via call_next

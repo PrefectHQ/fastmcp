@@ -349,11 +349,11 @@ class OpenAPIProvider(Provider):
     # Provider interface
     # -------------------------------------------------------------------------
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """Return all tools created from the OpenAPI spec."""
         return list(self._tools.values())
 
-    async def get_tool(
+    async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name."""
@@ -364,11 +364,11 @@ class OpenAPIProvider(Provider):
             return None
         return tool
 
-    async def list_resources(self) -> Sequence[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         """Return all resources created from the OpenAPI spec."""
         return list(self._resources.values())
 
-    async def get_resource(
+    async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         """Get a resource by URI."""
@@ -379,11 +379,11 @@ class OpenAPIProvider(Provider):
             return None
         return resource
 
-    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Return all resource templates created from the OpenAPI spec."""
         return list(self._templates.values())
 
-    async def get_resource_template(
+    async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get a resource template that matches the given URI."""
@@ -396,7 +396,7 @@ class OpenAPIProvider(Provider):
             return None
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
-    async def list_prompts(self) -> Sequence[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """Return empty list - OpenAPI doesn't create prompts."""
         return []
 
