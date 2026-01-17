@@ -377,8 +377,8 @@ class TestPromptEnabled:
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
-        # _get_prompt() applies visibility transform, returns None for disabled
-        prompt = await mcp._get_prompt("sample_prompt")
+        # get_prompt() applies visibility transform, returns None for disabled
+        prompt = await mcp.get_prompt("sample_prompt")
         assert prompt is None
 
     async def test_get_prompt_and_disable(self):
@@ -388,15 +388,15 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        prompt = await mcp._get_prompt("sample_prompt")
+        prompt = await mcp.get_prompt("sample_prompt")
         assert prompt is not None
 
         mcp.disable(keys=["prompt:sample_prompt@"])
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
-        # _get_prompt() applies visibility transform, returns None for disabled
-        prompt = await mcp._get_prompt("sample_prompt")
+        # get_prompt() applies visibility transform, returns None for disabled
+        prompt = await mcp.get_prompt("sample_prompt")
         assert prompt is None
 
     async def test_cant_get_disabled_prompt(self):
@@ -408,8 +408,8 @@ class TestPromptEnabled:
 
         mcp.disable(keys=["prompt:sample_prompt@"])
 
-        # _get_prompt() applies visibility transform, returns None for disabled
-        prompt = await mcp._get_prompt("sample_prompt")
+        # get_prompt() applies visibility transform, returns None for disabled
+        prompt = await mcp.get_prompt("sample_prompt")
         assert prompt is None
 
 
@@ -459,7 +459,7 @@ class TestPromptTags:
         result = await prompt.render({})
         assert result.messages[0].content.text == "1"
 
-        prompt = await mcp._get_prompt("prompt_2")
+        prompt = await mcp.get_prompt("prompt_2")
         assert prompt is None
 
     async def test_read_prompt_excludes_tags(self):
@@ -468,6 +468,6 @@ class TestPromptTags:
         prompt = await mcp._get_prompt("prompt_1")
         assert prompt is None
 
-        prompt = await mcp._get_prompt("prompt_2")
+        prompt = await mcp.get_prompt("prompt_2")
         result = await prompt.render({})
         assert result.messages[0].content.text == "2"
