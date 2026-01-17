@@ -45,7 +45,7 @@ async def test_transformed_tool_filtering():
     # Enable only tools with the enabled_tools tag
     mcp.enable(tags={"enabled_tools"}, only=True)
 
-    tools = await mcp.get_tools(run_middleware=True)
+    tools = await mcp.get_tools()
     # With transformation applied, the tool now has the enabled_tools tag
     assert len(tools) == 1
 

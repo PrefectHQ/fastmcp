@@ -9,7 +9,6 @@ import pytest
 from mcp.types import TextContent
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts.prompt import Prompt
 
 
@@ -352,9 +351,6 @@ class TestPromptEnabled:
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
-        with pytest.raises(NotFoundError, match="Unknown prompt"):
-            await mcp.get_prompt("sample_prompt")
-
     async def test_prompt_toggle_enabled(self):
         mcp = FastMCP()
 
@@ -381,8 +377,9 @@ class TestPromptEnabled:
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
-        with pytest.raises(NotFoundError, match="Unknown prompt"):
-            await mcp.get_prompt("sample_prompt")
+        # _get_prompt() applies visibility transform, returns None for disabled
+        prompt = await mcp._get_prompt("sample_prompt")
+        assert prompt is None
 
     async def test_get_prompt_and_disable(self):
         mcp = FastMCP()
@@ -391,15 +388,16 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        prompt = await mcp.get_prompt("sample_prompt")
+        prompt = await mcp._get_prompt("sample_prompt")
         assert prompt is not None
 
         mcp.disable(keys=["prompt:sample_prompt@"])
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
-        with pytest.raises(NotFoundError, match="Unknown prompt"):
-            await mcp.get_prompt("sample_prompt")
+        # _get_prompt() applies visibility transform, returns None for disabled
+        prompt = await mcp._get_prompt("sample_prompt")
+        assert prompt is None
 
     async def test_cant_get_disabled_prompt(self):
         mcp = FastMCP()
@@ -410,8 +408,9 @@ class TestPromptEnabled:
 
         mcp.disable(keys=["prompt:sample_prompt@"])
 
-        with pytest.raises(NotFoundError, match="Unknown prompt"):
-            await mcp.get_prompt("sample_prompt")
+        # _get_prompt() applies visibility transform, returns None for disabled
+        prompt = await mcp._get_prompt("sample_prompt")
+        assert prompt is None
 
 
 class TestPromptTags:
@@ -455,18 +454,20 @@ class TestPromptTags:
 
     async def test_read_prompt_includes_tags(self):
         mcp = self.create_server(include_tags={"a"})
-        prompt = await mcp.get_prompt("prompt_1")
+        # _get_prompt applies visibility transform (tag filtering)
+        prompt = await mcp._get_prompt("prompt_1")
         result = await prompt.render({})
         assert result.messages[0].content.text == "1"
 
-        with pytest.raises(NotFoundError, match="Unknown prompt"):
-            await mcp.get_prompt("prompt_2")
+        prompt = await mcp._get_prompt("prompt_2")
+        assert prompt is None
 
     async def test_read_prompt_excludes_tags(self):
         mcp = self.create_server(exclude_tags={"a"})
-        with pytest.raises(NotFoundError, match="Unknown prompt"):
-            await mcp.get_prompt("prompt_1")
+        # _get_prompt applies visibility transform (tag filtering)
+        prompt = await mcp._get_prompt("prompt_1")
+        assert prompt is None
 
-        prompt = await mcp.get_prompt("prompt_2")
+        prompt = await mcp._get_prompt("prompt_2")
         result = await prompt.render({})
         assert result.messages[0].content.text == "2"

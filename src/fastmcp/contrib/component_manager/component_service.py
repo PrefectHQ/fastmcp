@@ -188,10 +188,14 @@ class ComponentService:
         if resource_keys:
             self._server.enable(keys=resource_keys)
             resource = await self._server.get_resource(uri)
+            if resource is None:
+                raise NotFoundError(f"Resource {uri!r} not found after enabling")
             return resource
         if template_keys:
             self._server.enable(keys=template_keys)
             template = await self._server.get_resource_template(uri)
+            if template is None:
+                raise NotFoundError(f"Template {uri!r} not found after enabling")
             return template
 
         # 2. Check mounted servers via FastMCPProvider
@@ -234,11 +238,15 @@ class ComponentService:
         if resource_keys:
             # Get the highest version to return before disabling
             resource = await self._server.get_resource(uri)
+            if resource is None:
+                raise NotFoundError(f"Resource {uri!r} not found")
             self._server.disable(keys=resource_keys)
             return resource
         if template_keys:
             # Get the highest version to return before disabling
             template = await self._server.get_resource_template(uri)
+            if template is None:
+                raise NotFoundError(f"Template {uri!r} not found")
             self._server.disable(keys=template_keys)
             return template
 

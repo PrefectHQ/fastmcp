@@ -8,6 +8,7 @@ from mcp.types import TextContent
 from fastmcp import FastMCP
 from fastmcp.utilities.versions import (
     VersionKey,
+    VersionSpec,
     compare_versions,
     is_version_greater,
 )
@@ -377,7 +378,7 @@ class TestMountedServerVersioning:
         assert tool.version == "2.0"
 
         # Get specific version
-        tool_v1 = await parent.get_tool("child_calc", version="1.0")
+        tool_v1 = await parent.get_tool("child_calc", VersionSpec(eq="1.0"))
         assert tool_v1 is not None
         assert tool_v1.version == "1.0"
 
@@ -482,18 +483,13 @@ class TestVersionFilter:
         assert len(tools) == 1
         assert tools[0].version == "3.0"
 
-        # Can request specific versions in range
-        tool_v2 = await mcp.get_tool("add", version="2.0")
+        # Can request specific versions in range (use _get_tool to apply transforms)
+        tool_v2 = await mcp._get_tool("add", VersionSpec(eq="2.0"))
         assert tool_v2 is not None
         assert tool_v2.version == "2.0"
 
-        # Cannot request version outside range
-        import pytest
-
-        from fastmcp.exceptions import NotFoundError
-
-        with pytest.raises(NotFoundError):
-            await mcp.get_tool("add", version="1.0")
+        # Cannot request version outside range - returns None
+        assert await mcp._get_tool("add", VersionSpec(eq="1.0")) is None
 
     async def test_version_range(self):
         """VersionFilter(version_gte='2.0', version_lt='3.0') shows only v2.x."""
@@ -524,21 +520,14 @@ class TestVersionFilter:
         assert len(tools) == 1
         assert tools[0].version == "2.5"
 
-        # Can request specific versions in range
-        tool_v2 = await mcp.get_tool("calc", version="2.0")
+        # Can request specific versions in range (use _get_tool to apply transforms)
+        tool_v2 = await mcp._get_tool("calc", VersionSpec(eq="2.0"))
         assert tool_v2 is not None
         assert tool_v2.version == "2.0"
 
-        # Versions outside range are not accessible
-        import pytest
-
-        from fastmcp.exceptions import NotFoundError
-
-        with pytest.raises(NotFoundError):
-            await mcp.get_tool("calc", version="1.0")
-
-        with pytest.raises(NotFoundError):
-            await mcp.get_tool("calc", version="3.0")
+        # Versions outside range are not accessible - return None
+        assert await mcp._get_tool("calc", VersionSpec(eq="1.0")) is None
+        assert await mcp._get_tool("calc", VersionSpec(eq="3.0")) is None
 
     async def test_unversioned_always_passes(self):
         """Unversioned components pass through any filter."""
@@ -588,10 +577,8 @@ class TestVersionFilter:
         assert tools[0].version == "2025-01-01"
 
     async def test_get_tool_respects_filter(self):
-        """get_tool() raises NotFoundError if highest version is filtered out."""
-        import pytest
+        """get_tool() returns None if highest version is filtered out."""
 
-        from fastmcp.exceptions import NotFoundError
         from fastmcp.server.transforms import VersionFilter
 
         mcp = FastMCP()
@@ -602,9 +589,8 @@ class TestVersionFilter:
 
         mcp.add_transform(VersionFilter(version_lt="3.0"))
 
-        # Tool exists but is filtered out
-        with pytest.raises(NotFoundError):
-            await mcp.get_tool("only_v5")
+        # Tool exists but is filtered out - returns None (use _get_tool to apply transforms)
+        assert await mcp._get_tool("only_v5") is None
 
     async def test_must_specify_at_least_one(self):
         """VersionFilter() with no args raises ValueError."""
@@ -845,13 +831,8 @@ class TestMountedVersionFiltering:
         tools = await parent.get_tools()
         assert len(tools) == 0
 
-        # get_tool should also return None (respects filter)
-        import pytest
-
-        from fastmcp.exceptions import NotFoundError
-
-        with pytest.raises(NotFoundError):
-            await parent.get_tool("child_high_version_tool")
+        # _get_tool should also return None (respects filter, applies transforms)
+        assert await parent._get_tool("child_high_version_tool") is None
 
 
 class TestMountedRangeFiltering:
@@ -876,7 +857,8 @@ class TestMountedRangeFiltering:
         parent.add_transform(VersionFilter(version_lt="2.0"))
 
         # Should return v1.0 (the highest version that matches <2.0)
-        tool = await parent.get_tool("child_calc")
+        # Use _get_tool to apply transforms
+        tool = await parent._get_tool("child_calc")
         assert tool is not None
         assert tool.version == "1.0"
 
@@ -902,18 +884,14 @@ class TestMountedRangeFiltering:
         parent.mount(child, "child")
         parent.add_transform(VersionFilter(version_gte="1.0", version_lt="3.0"))
 
-        # Request specific version within range
-        tool = await parent.get_tool("child_calc", version="1.0")
+        # Request specific version within range (use _get_tool to apply transforms)
+        tool = await parent._get_tool("child_calc", VersionSpec(eq="1.0"))
         assert tool is not None
         assert tool.version == "1.0"
 
-        # Request version outside range should fail
-        import pytest
-
-        from fastmcp.exceptions import NotFoundError
-
-        with pytest.raises(NotFoundError):
-            await parent.get_tool("child_calc", version="3.0")
+        # Request version outside range should return None
+        result = await parent._get_tool("child_calc", VersionSpec(eq="3.0"))
+        assert result is None
 
 
 class TestUnversionedExemption:
@@ -954,7 +932,7 @@ class TestUnversionedExemption:
 
         # Even with explicit version request, unversioned tool is returned
         # (it's the only version that exists, and unversioned matches any spec)
-        tool = await mcp.get_tool("my_tool", version="1.0")
+        tool = await mcp.get_tool("my_tool", VersionSpec(eq="1.0"))
         assert tool is not None
         assert tool.version is None
 
@@ -1090,12 +1068,16 @@ class TestVersionedCalls:
         assert result.structured_content["result"] == 12
 
         # Explicit v1.0 (addition)
-        result = await mcp.call_tool("calculate", {"x": 3, "y": 4}, version="1.0")
+        result = await mcp.call_tool(
+            "calculate", {"x": 3, "y": 4}, version=VersionSpec(eq="1.0")
+        )
         assert result.structured_content is not None
         assert result.structured_content["result"] == 7
 
         # Explicit v2.0 (multiplication)
-        result = await mcp.call_tool("calculate", {"x": 3, "y": 4}, version="2.0")
+        result = await mcp.call_tool(
+            "calculate", {"x": 3, "y": 4}, version=VersionSpec(eq="2.0")
+        )
         assert result.structured_content is not None
         assert result.structured_content["result"] == 12
 
@@ -1116,7 +1098,7 @@ class TestVersionedCalls:
         assert result.contents[0].content == "config v2"
 
         # Explicit v1.0
-        result = await mcp.read_resource("data://config", version="1.0")
+        result = await mcp.read_resource("data://config", version=VersionSpec(eq="1.0"))
         assert result.contents[0].content == "config v1"
 
     async def test_render_prompt_with_version(self):
@@ -1137,7 +1119,7 @@ class TestVersionedCalls:
         assert isinstance(content, TextContent) and content.text == "Hello from v2"
 
         # Explicit v1.0
-        result = await mcp.render_prompt("greet", version="1.0")
+        result = await mcp.render_prompt("greet", version=VersionSpec(eq="1.0"))
         content = result.messages[0].content
         assert isinstance(content, TextContent) and content.text == "Hello from v1"
 
@@ -1154,7 +1136,7 @@ class TestVersionedCalls:
             return "v1"
 
         with pytest.raises(NotFoundError):
-            await mcp.call_tool("mytool", {}, version="999.0")
+            await mcp.call_tool("mytool", {}, version=VersionSpec(eq="999.0"))
 
 
 class TestClientVersionSelection:

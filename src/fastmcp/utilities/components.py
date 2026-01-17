@@ -20,6 +20,7 @@ T = TypeVar("T", default=Any)
 class FastMCPMeta(TypedDict, total=False):
     tags: list[str]
     version: str
+    versions: list[str]
 
 
 def get_fastmcp_metadata(meta: dict[str, Any] | None) -> FastMCPMeta:
