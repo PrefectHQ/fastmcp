@@ -577,9 +577,7 @@ class TestVersionFilter:
 
     async def test_get_tool_respects_filter(self):
         """get_tool() raises NotFoundError if highest version is filtered out."""
-        import pytest
 
-        from fastmcp.exceptions import NotFoundError
         from fastmcp.server.transforms import VersionFilter
 
         mcp = FastMCP()

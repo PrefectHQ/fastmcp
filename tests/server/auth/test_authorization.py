@@ -328,6 +328,7 @@ class TestToolLevelAuth:
         tok = set_token(token)
         try:
             tool = await mcp.get_tool("protected_tool")
+            assert tool is not None
             assert tool.name == "protected_tool"
         finally:
             auth_context_var.reset(tok)

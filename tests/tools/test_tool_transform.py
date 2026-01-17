@@ -806,6 +806,7 @@ class TestProxy:
         # when adding transformed tools to proxy servers. Needs separate investigation.
 
         add_tool = await proxy_server.get_tool("add")
+        assert add_tool is not None
         new_add_tool = Tool.from_tool(
             add_tool,
             name="add_transformed",

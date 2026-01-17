@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Any, overload
 import mcp.types
 from mcp.types import AnyUrl
 
-from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts.prompt import Prompt, PromptResult
 from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate

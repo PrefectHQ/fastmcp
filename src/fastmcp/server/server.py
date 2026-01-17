@@ -1080,7 +1080,9 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                         continue
                 # Keep highest version per name
                 existing = by_name.get(tool.name)
-                if existing is None or version_sort_key(tool) > version_sort_key(existing):
+                if existing is None or version_sort_key(tool) > version_sort_key(
+                    existing
+                ):
                     by_name[tool.name] = tool
             return list(by_name.values())
 
@@ -1139,7 +1141,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             if not valid:
                 return None
 
-            return max(valid, key=version_sort_key)
+            return max(valid, key=version_sort_key)  # type: ignore[type-var]
 
         # Build transform chain: server transforms applied over aggregation
         chain = base
@@ -1231,7 +1233,9 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         server-level transforms.
         """
 
-        async def base(u: str, *, version: VersionSpec | None = None) -> Resource | None:
+        async def base(
+            u: str, *, version: VersionSpec | None = None
+        ) -> Resource | None:
             # Aggregate from all sub-providers
             results = await gather(
                 *[p._get_resource(u, version) for p in self._providers],
@@ -1254,7 +1258,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             if not valid:
                 return None
 
-            return max(valid, key=version_sort_key)
+            return max(valid, key=version_sort_key)  # type: ignore[type-var]
 
         # Build transform chain: server transforms applied over aggregation
         chain = base
@@ -1374,7 +1378,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             if not valid:
                 return None
 
-            return max(valid, key=version_sort_key)
+            return max(valid, key=version_sort_key)  # type: ignore[type-var]
 
         # Build transform chain: server transforms applied over aggregation
         chain = base
@@ -1488,7 +1492,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             if not valid:
                 return None
 
-            return max(valid, key=version_sort_key)
+            return max(valid, key=version_sort_key)  # type: ignore[type-var]
 
         # Build transform chain: server transforms applied over aggregation
         chain = base
@@ -1522,7 +1526,6 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         elif key.startswith("prompt:"):
             return await self._get_prompt(key[7:])
         return None
-
 
     @overload
     async def call_tool(
