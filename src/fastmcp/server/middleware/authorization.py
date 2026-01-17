@@ -136,16 +136,16 @@ class AuthMiddleware(Middleware):
                 f"Authorization failed for tool '{tool_name}': missing context"
             )
 
-        # Resolve tool (includes component-level auth check)
-        tool = await fastmcp.fastmcp.get_tool(tool_name)
+        # Get tool (component auth is checked in get_tool, raises if unauthorized)
+        tool = await fastmcp.fastmcp._get_tool(tool_name)
         if tool is None:
             raise AuthorizationError(
                 f"Authorization failed for tool '{tool_name}': tool not found"
             )
 
+        # Global auth check
         token = get_access_token()
         ctx = AuthContext(token=token, component=tool)
-
         if not run_auth_checks(self.auth, ctx):
             raise AuthorizationError(
                 f"Authorization failed for tool '{tool_name}': insufficient permissions"
@@ -201,18 +201,18 @@ class AuthMiddleware(Middleware):
                 f"Authorization failed for resource '{uri}': missing context"
             )
 
-        # Try concrete resource first, then template (includes component-level auth check)
-        component = await fastmcp.fastmcp.get_resource(str(uri))
+        # Get resource/template (component auth is checked in get_*, raises if unauthorized)
+        component = await fastmcp.fastmcp._get_resource(str(uri))
         if component is None:
-            component = await fastmcp.fastmcp.get_resource_template(str(uri))
+            component = await fastmcp.fastmcp._get_resource_template(str(uri))
         if component is None:
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': resource not found"
             )
 
+        # Global auth check
         token = get_access_token()
         ctx = AuthContext(token=token, component=component)
-
         if not run_auth_checks(self.auth, ctx):
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': insufficient permissions"
@@ -294,16 +294,16 @@ class AuthMiddleware(Middleware):
                 f"Authorization failed for prompt '{prompt_name}': missing context"
             )
 
-        # Resolve prompt (includes component-level auth check)
-        prompt = await fastmcp.fastmcp.get_prompt(prompt_name)
+        # Get prompt (component auth is checked in get_prompt, raises if unauthorized)
+        prompt = await fastmcp.fastmcp._get_prompt(prompt_name)
         if prompt is None:
             raise AuthorizationError(
                 f"Authorization failed for prompt '{prompt_name}': prompt not found"
             )
 
+        # Global auth check
         token = get_access_token()
         ctx = AuthContext(token=token, component=prompt)
-
         if not run_auth_checks(self.auth, ctx):
             raise AuthorizationError(
                 f"Authorization failed for prompt '{prompt_name}': insufficient permissions"

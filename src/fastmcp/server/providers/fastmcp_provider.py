@@ -628,7 +628,7 @@ class FastMCPProvider(Provider):
         templates_chain = templates_base
         prompts_chain = prompts_base
 
-        for transform in self._transforms:
+        for transform in self.transforms:
             tools_chain = partial(transform.list_tools, call_next=tools_chain)
             resources_chain = partial(
                 transform.list_resources, call_next=resources_chain

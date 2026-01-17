@@ -31,6 +31,7 @@ from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.tasks.config import DEFAULT_POLL_INTERVAL_MS, DEFAULT_TTL_MS
 from fastmcp.server.tasks.keys import parse_task_key
 from fastmcp.tools.tool import Tool
+from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
@@ -313,16 +314,20 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
         component: Tool | Resource | ResourceTemplate | Prompt | None = None
         try:
             if component_key.startswith("tool:"):
-                name, version = _parse_key_version(component_key[5:])
+                name, version_str = _parse_key_version(component_key[5:])
+                version = VersionSpec(eq=version_str) if version_str else None
                 component = await server.get_tool(name, version)
             elif component_key.startswith("resource:"):
-                uri, version = _parse_key_version(component_key[9:])
+                uri, version_str = _parse_key_version(component_key[9:])
+                version = VersionSpec(eq=version_str) if version_str else None
                 component = await server.get_resource(uri, version)
             elif component_key.startswith("template:"):
-                uri, version = _parse_key_version(component_key[9:])
+                uri, version_str = _parse_key_version(component_key[9:])
+                version = VersionSpec(eq=version_str) if version_str else None
                 component = await server.get_resource_template(uri, version)
             elif component_key.startswith("prompt:"):
-                name, version = _parse_key_version(component_key[7:])
+                name, version_str = _parse_key_version(component_key[7:])
+                version = VersionSpec(eq=version_str) if version_str else None
                 component = await server.get_prompt(name, version)
         except NotFoundError:
             component = None

@@ -351,10 +351,6 @@ class TestPromptEnabled:
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
-        # get_prompt() returns None for disabled prompts (Provider interface)
-        prompt = await mcp.get_prompt("sample_prompt")
-        assert prompt is None
-
     async def test_prompt_toggle_enabled(self):
         mcp = FastMCP()
 
@@ -381,8 +377,8 @@ class TestPromptEnabled:
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
-        # get_prompt() returns None for disabled prompts (Provider interface)
-        prompt = await mcp.get_prompt("sample_prompt")
+        # _get_prompt() applies visibility transform, returns None for disabled
+        prompt = await mcp._get_prompt("sample_prompt")
         assert prompt is None
 
     async def test_get_prompt_and_disable(self):
@@ -392,15 +388,15 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        prompt = await mcp.get_prompt("sample_prompt")
+        prompt = await mcp._get_prompt("sample_prompt")
         assert prompt is not None
 
         mcp.disable(keys=["prompt:sample_prompt@"])
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
-        # get_prompt() returns None for disabled prompts (Provider interface)
-        prompt = await mcp.get_prompt("sample_prompt")
+        # _get_prompt() applies visibility transform, returns None for disabled
+        prompt = await mcp._get_prompt("sample_prompt")
         assert prompt is None
 
     async def test_cant_get_disabled_prompt(self):
@@ -412,8 +408,8 @@ class TestPromptEnabled:
 
         mcp.disable(keys=["prompt:sample_prompt@"])
 
-        # get_prompt() returns None for disabled prompts (Provider interface)
-        prompt = await mcp.get_prompt("sample_prompt")
+        # _get_prompt() applies visibility transform, returns None for disabled
+        prompt = await mcp._get_prompt("sample_prompt")
         assert prompt is None
 
 
@@ -458,18 +454,20 @@ class TestPromptTags:
 
     async def test_read_prompt_includes_tags(self):
         mcp = self.create_server(include_tags={"a"})
-        prompt = await mcp.get_prompt("prompt_1")
+        # _get_prompt applies visibility transform (tag filtering)
+        prompt = await mcp._get_prompt("prompt_1")
         result = await prompt.render({})
         assert result.messages[0].content.text == "1"
 
-        prompt = await mcp.get_prompt("prompt_2")
+        prompt = await mcp._get_prompt("prompt_2")
         assert prompt is None
 
     async def test_read_prompt_excludes_tags(self):
         mcp = self.create_server(exclude_tags={"a"})
-        prompt = await mcp.get_prompt("prompt_1")
+        # _get_prompt applies visibility transform (tag filtering)
+        prompt = await mcp._get_prompt("prompt_1")
         assert prompt is None
 
-        prompt = await mcp.get_prompt("prompt_2")
+        prompt = await mcp._get_prompt("prompt_2")
         result = await prompt.render({})
         assert result.messages[0].content.text == "2"
