@@ -40,7 +40,7 @@ class TestToolTracing:
         # FastMCP-specific attributes
         assert span.attributes["fastmcp.server.name"] == "test-server"
         assert span.attributes["fastmcp.component.type"] == "tool"
-        assert span.attributes["fastmcp.component.key"] == "tool:greet"
+        assert span.attributes["fastmcp.component.key"] == "tool:greet@"
 
     async def test_call_tool_with_error_sets_status(
         self, trace_exporter: InMemorySpanExporter
@@ -108,7 +108,7 @@ class TestResourceTracing:
         # FastMCP-specific attributes
         assert span.attributes["fastmcp.server.name"] == "test-server"
         assert span.attributes["fastmcp.component.type"] == "resource"
-        assert span.attributes["fastmcp.component.key"] == "resource:config://app"
+        assert span.attributes["fastmcp.component.key"] == "resource:config://app@"
 
     async def test_read_resource_template_creates_span(
         self, trace_exporter: InMemorySpanExporter
@@ -138,7 +138,7 @@ class TestResourceTracing:
         assert span.attributes["fastmcp.component.type"] == "resource_template"
         assert (
             span.attributes["fastmcp.component.key"]
-            == "template:users://{user_id}/profile"
+            == "template:users://{user_id}/profile@"
         )
 
     async def test_read_nonexistent_resource_sets_error(
@@ -186,7 +186,7 @@ class TestPromptTracing:
         # FastMCP-specific attributes
         assert span.attributes["fastmcp.server.name"] == "test-server"
         assert span.attributes["fastmcp.component.type"] == "prompt"
-        assert span.attributes["fastmcp.component.key"] == "prompt:greeting"
+        assert span.attributes["fastmcp.component.key"] == "prompt:greeting@"
 
     async def test_render_nonexistent_prompt_sets_error(
         self, trace_exporter: InMemorySpanExporter

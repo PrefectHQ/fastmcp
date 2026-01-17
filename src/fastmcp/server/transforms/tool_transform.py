@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from fastmcp.server.transforms import GetToolNext, ListToolsNext, Transform
 from fastmcp.tools.tool_transform import ToolTransformConfig
+from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
     from fastmcp.tools.tool import Tool
@@ -72,13 +73,15 @@ class ToolTransform(Transform):
                 result.append(tool)
         return result
 
-    async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
         """Get tool by transformed name."""
         # Check if this name is a transformed name
         original_name = self._name_reverse.get(name, name)
 
         # Get the original tool
-        tool = await call_next(original_name)
+        tool = await call_next(original_name, version=version)
         if tool is None:
             return None
 

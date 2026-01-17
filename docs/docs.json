@@ -129,6 +129,7 @@
                   "servers/storage-backends",
                   "servers/tasks",
                   "servers/telemetry",
+                  "servers/versioning",
                   "servers/visibility"
                 ]
               },

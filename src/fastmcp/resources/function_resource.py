@@ -46,6 +46,7 @@ class ResourceMeta:
     type: Literal["resource"] = field(default="resource", init=False)
     uri: str
     name: str | None = None
+    version: str | int | None = None
     title: str | None = None
     description: str | None = None
     icons: list[Icon] | None = None
@@ -81,6 +82,7 @@ class FunctionResource(Resource):
         metadata: ResourceMeta | None = None,
         # Keep individual params for backwards compat
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[Icon] | None = None,
@@ -107,6 +109,7 @@ class FunctionResource(Resource):
                 x is not None
                 for x in [
                     name,
+                    version,
                     title,
                     description,
                     icons,
@@ -134,6 +137,7 @@ class FunctionResource(Resource):
             metadata = ResourceMeta(
                 uri=str(uri),
                 name=name,
+                version=version,
                 title=title,
                 description=description,
                 icons=icons,
@@ -179,6 +183,7 @@ class FunctionResource(Resource):
             fn=wrapped_fn,
             uri=uri_obj,
             name=func_name,
+            version=str(metadata.version) if metadata.version is not None else None,
             title=metadata.title,
             description=metadata.description or inspect.getdoc(fn),
             icons=metadata.icons,
@@ -226,6 +231,7 @@ def resource(
     uri: str,
     *,
     name: str | None = None,
+    version: str | int | None = None,
     title: str | None = None,
     description: str | None = None,
     icons: list[Icon] | None = None,
@@ -263,6 +269,7 @@ def resource(
         resource_meta = ResourceMeta(
             uri=uri,
             name=name,
+            version=version,
             title=title,
             description=description,
             icons=icons,
@@ -280,6 +287,7 @@ def resource(
                 fn=fn,
                 uri_template=uri,
                 name=name,
+                version=version,
                 title=title,
                 description=description,
                 icons=icons,
@@ -297,6 +305,7 @@ def resource(
         metadata = ResourceMeta(
             uri=uri,
             name=name,
+            version=version,
             title=title,
             description=description,
             icons=icons,

@@ -17,7 +17,7 @@ class TestVisibilityBasics:
         """Disabling by key hides the component."""
         v = Visibility()
         tool = Tool(name="test", parameters={})
-        v.disable(keys=["tool:test"])
+        v.disable(keys=["tool:test@"])
         assert v.is_enabled(tool) is False
 
     def test_disable_by_tag(self):
@@ -38,9 +38,9 @@ class TestVisibilityBasics:
         """Enable removes keys/tags from blocklist."""
         v = Visibility()
         tool = Tool(name="test", parameters={})
-        v.disable(keys=["tool:test"])
+        v.disable(keys=["tool:test@"])
         assert v.is_enabled(tool) is False
-        v.enable(keys=["tool:test"])
+        v.enable(keys=["tool:test@"])
         assert v.is_enabled(tool) is True
 
 
@@ -51,14 +51,14 @@ class TestVisibilityAllowlist:
         """With only=True, non-matching components are hidden."""
         v = Visibility()
         tool = Tool(name="test", parameters={})
-        v.enable(keys=["tool:other"], only=True)
+        v.enable(keys=["tool:other@"], only=True)
         assert v.is_enabled(tool) is False
 
     def test_only_mode_shows_matching_key(self):
         """With only=True, matching keys are shown."""
         v = Visibility()
         tool = Tool(name="test", parameters={})
-        v.enable(keys=["tool:test"], only=True)
+        v.enable(keys=["tool:test@"], only=True)
         assert v.is_enabled(tool) is True
 
     def test_only_mode_shows_matching_tag(self):
@@ -83,8 +83,8 @@ class TestVisibilityPrecedence:
         """Blocklist key beats allowlist key."""
         v = Visibility()
         tool = Tool(name="test", parameters={})
-        v.enable(keys=["tool:test"], only=True)
-        v.disable(keys=["tool:test"])
+        v.enable(keys=["tool:test@"], only=True)
+        v.disable(keys=["tool:test@"])
         assert v.is_enabled(tool) is False
 
     def test_blocklist_wins_over_allowlist_tag(self):
@@ -103,7 +103,7 @@ class TestVisibilityReset:
         """Reset returns to default state."""
         v = Visibility()
         tool = Tool(name="test", parameters={})
-        v.disable(keys=["tool:test"])
+        v.disable(keys=["tool:test@"])
         assert v.is_enabled(tool) is False
         v.reset()
         assert v.is_enabled(tool) is True
@@ -112,7 +112,7 @@ class TestVisibilityReset:
         """Reset clears allowlist mode."""
         v = Visibility()
         tool = Tool(name="test", parameters={})
-        v.enable(keys=["tool:other"], only=True)
+        v.enable(keys=["tool:other@"], only=True)
         assert v.is_enabled(tool) is False
         v.reset()
         assert v.is_enabled(tool) is True

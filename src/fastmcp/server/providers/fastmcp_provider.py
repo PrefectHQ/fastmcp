@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, overload
 import mcp.types
 from mcp.types import AnyUrl
 
+from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts.prompt import Prompt, PromptResult
 from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
@@ -27,6 +28,7 @@ from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.telemetry import delegate_span
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.components import FastMCPComponent
+from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -79,6 +81,7 @@ class FastMCPProviderTool(Tool):
             server=server,
             original_name=tool.name,
             name=tool.name,
+            version=tool.version,
             description=tool.description,
             parameters=tool.parameters,
             output_schema=tool.output_schema,
@@ -167,6 +170,7 @@ class FastMCPProviderResource(Resource):
             server=server,
             original_uri=str(resource.uri),
             uri=resource.uri,
+            version=resource.version,
             name=resource.name,
             description=resource.description,
             mime_type=resource.mime_type,
@@ -231,6 +235,7 @@ class FastMCPProviderPrompt(Prompt):
             server=server,
             original_name=prompt.name,
             name=prompt.name,
+            version=prompt.version,
             description=prompt.description,
             arguments=prompt.arguments,
             tags=prompt.tags,
@@ -320,6 +325,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             server=server,
             original_uri_template=template.uri_template,
             uri_template=template.uri_template,
+            version=template.version,
             name=template.name,
             description=template.description,
             mime_type=template.mime_type,
@@ -487,10 +493,19 @@ class FastMCPProvider(Provider):
         raw_tools = await self.server.get_tools(run_middleware=True)
         return [FastMCPProviderTool.wrap(self.server, t) for t in raw_tools]
 
-    async def get_tool(self, name: str) -> Tool | None:
-        """Get a tool by name as a FastMCPProviderTool."""
-        tools = await self.list_tools()
-        return next((t for t in tools if t.name == name), None)
+    async def get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
+        """Get a tool by name as a FastMCPProviderTool.
+
+        Passes the full VersionSpec to the nested server, which handles both
+        exact version matching and range filtering.
+        """
+        try:
+            raw_tool = await self.server.get_tool(name, version)
+        except NotFoundError:
+            return None
+        return FastMCPProviderTool.wrap(self.server, raw_tool)
 
     # -------------------------------------------------------------------------
     # Resource methods
@@ -506,10 +521,19 @@ class FastMCPProvider(Provider):
         raw_resources = await self.server.get_resources(run_middleware=True)
         return [FastMCPProviderResource.wrap(self.server, r) for r in raw_resources]
 
-    async def get_resource(self, uri: str) -> Resource | None:
-        """Get a concrete resource by URI as a FastMCPProviderResource."""
-        resources = await self.list_resources()
-        return next((r for r in resources if str(r.uri) == uri), None)
+    async def get_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> Resource | None:
+        """Get a concrete resource by URI as a FastMCPProviderResource.
+
+        Passes the full VersionSpec to the nested server, which handles both
+        exact version matching and range filtering.
+        """
+        try:
+            raw_resource = await self.server.get_resource(uri, version)
+        except NotFoundError:
+            return None
+        return FastMCPProviderResource.wrap(self.server, raw_resource)
 
     # -------------------------------------------------------------------------
     # Resource template methods
@@ -526,13 +550,19 @@ class FastMCPProvider(Provider):
             FastMCPProviderResourceTemplate.wrap(self.server, t) for t in raw_templates
         ]
 
-    async def get_resource_template(self, uri: str) -> ResourceTemplate | None:
-        """Get a resource template that matches the given URI."""
-        templates = await self.list_resource_templates()
-        for template in templates:
-            if template.matches(uri) is not None:
-                return template
-        return None
+    async def get_resource_template(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> ResourceTemplate | None:
+        """Get a resource template that matches the given URI.
+
+        Passes the full VersionSpec to the nested server, which handles both
+        exact version matching and range filtering.
+        """
+        try:
+            raw_template = await self.server.get_resource_template(uri, version)
+        except NotFoundError:
+            return None
+        return FastMCPProviderResourceTemplate.wrap(self.server, raw_template)
 
     # -------------------------------------------------------------------------
     # Prompt methods
@@ -547,10 +577,19 @@ class FastMCPProvider(Provider):
         raw_prompts = await self.server.get_prompts(run_middleware=True)
         return [FastMCPProviderPrompt.wrap(self.server, p) for p in raw_prompts]
 
-    async def get_prompt(self, name: str) -> Prompt | None:
-        """Get a prompt by name as a FastMCPProviderPrompt."""
-        prompts = await self.list_prompts()
-        return next((p for p in prompts if p.name == name), None)
+    async def get_prompt(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Prompt | None:
+        """Get a prompt by name as a FastMCPProviderPrompt.
+
+        Passes the full VersionSpec to the nested server, which handles both
+        exact version matching and range filtering.
+        """
+        try:
+            raw_prompt = await self.server.get_prompt(name, version)
+        except NotFoundError:
+            return None
+        return FastMCPProviderPrompt.wrap(self.server, raw_prompt)
 
     # -------------------------------------------------------------------------
     # Task registration

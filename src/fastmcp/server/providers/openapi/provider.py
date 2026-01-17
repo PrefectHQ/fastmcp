@@ -36,6 +36,7 @@ from fastmcp.utilities.openapi import (
     parse_openapi_to_http_routes,
 )
 from fastmcp.utilities.openapi.director import RequestDirector
+from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 __all__ = [
     "OpenAPIProvider",
@@ -352,28 +353,48 @@ class OpenAPIProvider(Provider):
         """Return all tools created from the OpenAPI spec."""
         return list(self._tools.values())
 
-    async def get_tool(self, name: str) -> Tool | None:
+    async def get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
         """Get a tool by name."""
-        return self._tools.get(name)
+        tool = self._tools.get(name)
+        if tool is None:
+            return None
+        if version is not None and not version.matches(tool.version):
+            return None
+        return tool
 
     async def list_resources(self) -> Sequence[Resource]:
         """Return all resources created from the OpenAPI spec."""
         return list(self._resources.values())
 
-    async def get_resource(self, uri: str) -> Resource | None:
+    async def get_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> Resource | None:
         """Get a resource by URI."""
-        return self._resources.get(uri)
+        resource = self._resources.get(uri)
+        if resource is None:
+            return None
+        if version is not None and not version.matches(resource.version):
+            return None
+        return resource
 
     async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Return all resource templates created from the OpenAPI spec."""
         return list(self._templates.values())
 
-    async def get_resource_template(self, uri: str) -> ResourceTemplate | None:
+    async def get_resource_template(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> ResourceTemplate | None:
         """Get a resource template that matches the given URI."""
-        return next(
-            (t for t in self._templates.values() if t.matches(uri) is not None),
-            None,
-        )
+        matching = [t for t in self._templates.values() if t.matches(uri) is not None]
+        if not matching:
+            return None
+        if version is not None:
+            matching = [t for t in matching if version.matches(t.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
     async def list_prompts(self) -> Sequence[Prompt]:
         """Return empty list - OpenAPI doesn't create prompts."""

@@ -64,6 +64,7 @@ class ToolMeta:
 
     type: Literal["tool"] = field(default="tool", init=False)
     name: str | None = None
+    version: str | int | None = None
     title: str | None = None
     description: str | None = None
     icons: list[Icon] | None = None
@@ -111,6 +112,7 @@ class FunctionTool(Tool):
         metadata: ToolMeta | None = None,
         # Keep individual params for backwards compat
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[Icon] | None = None,
@@ -139,6 +141,7 @@ class FunctionTool(Tool):
                 x is not None and x is not NotSet
                 for x in [
                     name,
+                    version,
                     title,
                     description,
                     icons,
@@ -165,6 +168,7 @@ class FunctionTool(Tool):
         if metadata is None:
             metadata = ToolMeta(
                 name=name,
+                version=version,
                 title=title,
                 description=description,
                 icons=icons,
@@ -228,6 +232,7 @@ class FunctionTool(Tool):
         return cls(
             fn=parsed_fn.fn,
             name=metadata.name or parsed_fn.name,
+            version=str(metadata.version) if metadata.version is not None else None,
             title=metadata.title,
             description=metadata.description or parsed_fn.description,
             icons=metadata.icons,
@@ -329,6 +334,7 @@ def tool(fn: F) -> F: ...
 def tool(
     name_or_fn: str,
     *,
+    version: str | int | None = None,
     title: str | None = None,
     description: str | None = None,
     icons: list[Icon] | None = None,
@@ -347,6 +353,7 @@ def tool(
     name_or_fn: None = None,
     *,
     name: str | None = None,
+    version: str | int | None = None,
     title: str | None = None,
     description: str | None = None,
     icons: list[Icon] | None = None,
@@ -366,6 +373,7 @@ def tool(
     name_or_fn: str | Callable[..., Any] | None = None,
     *,
     name: str | None = None,
+    version: str | int | None = None,
     title: str | None = None,
     description: str | None = None,
     icons: list[Icon] | None = None,
@@ -397,6 +405,7 @@ def tool(
         # Create metadata first, then pass it
         tool_meta = ToolMeta(
             name=tool_name,
+            version=version,
             title=title,
             description=description,
             icons=icons,
@@ -415,6 +424,7 @@ def tool(
     def attach_metadata(fn: F, tool_name: str | None) -> F:
         metadata = ToolMeta(
             name=tool_name,
+            version=version,
             title=title,
             description=description,
             icons=icons,

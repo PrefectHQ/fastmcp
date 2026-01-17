@@ -120,6 +120,12 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 
   Execution timeout in seconds. If the tool takes longer than this to complete, an MCP error is returned to the client. See [Timeouts](#timeouts) for details.
 </ParamField>
+
+<ParamField body="version" type="str | int | None">
+  <VersionBadge version="3.0.0" />
+
+  Optional version identifier for this tool. See [Versioning](/servers/versioning) for details.
+</ParamField>
 </Card>
 
 ### Using with Methods
@@ -1062,3 +1068,9 @@ def calculate_sum(a: int, b: int) -> int:
 
 mcp.remove_tool("calculate_sum")
 ```
+
+## Versioning
+
+<VersionBadge version="3.0.0" />
+
+Tools support versioning, allowing you to maintain multiple implementations under the same name while clients automatically receive the highest version. See [Versioning](/servers/versioning) for complete documentation on version comparison, retrieval, and migration patterns.

@@ -158,8 +158,8 @@ class TestTransformReverseLookup:
         layer = Namespace("ns")
 
         # Create call_next that delegates to provider
-        async def get_tool(name: str):
-            return await provider.get_tool(name)
+        async def get_tool(name: str, version=None):
+            return await provider.get_tool(name, version)
 
         tool = await layer.get_tool("ns_my_tool", get_tool)
 
@@ -177,8 +177,8 @@ class TestTransformReverseLookup:
         provider = FastMCPProvider(server)
         layer = ToolTransform({"original": ToolTransformConfig(name="renamed")})
 
-        async def get_tool(name: str):
-            return await provider.get_tool(name)
+        async def get_tool(name: str, version=None):
+            return await provider.get_tool(name, version)
 
         tool = await layer.get_tool("renamed", get_tool)
 
@@ -196,8 +196,8 @@ class TestTransformReverseLookup:
         provider = FastMCPProvider(server)
         layer = Namespace("ns")
 
-        async def get_resource(uri: str):
-            return await provider.get_resource(uri)
+        async def get_resource(uri: str, version=None):
+            return await provider.get_resource(uri, version)
 
         resource = await layer.get_resource("resource://ns/data", get_resource)
 
@@ -215,8 +215,8 @@ class TestTransformReverseLookup:
         provider = FastMCPProvider(server)
         layer = Namespace("ns")
 
-        async def get_tool(name: str):
-            return await provider.get_tool(name)
+        async def get_tool(name: str, version=None):
+            return await provider.get_tool(name, version)
 
         # Wrong namespace prefix
         assert await layer.get_tool("wrong_my_tool", get_tool) is None

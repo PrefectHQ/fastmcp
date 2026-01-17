@@ -331,12 +331,12 @@ class TestPromptEnabled:
         prompts = await mcp.get_prompts()
         assert any(p.name == "sample_prompt" for p in prompts)
 
-        mcp.disable(keys=["prompt:sample_prompt"])
+        mcp.disable(keys=["prompt:sample_prompt@"])
 
         prompts = await mcp.get_prompts()
         assert not any(p.name == "sample_prompt" for p in prompts)
 
-        mcp.enable(keys=["prompt:sample_prompt"])
+        mcp.enable(keys=["prompt:sample_prompt@"])
 
         prompts = await mcp.get_prompts()
         assert any(p.name == "sample_prompt" for p in prompts)
@@ -348,7 +348,7 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        mcp.disable(keys=["prompt:sample_prompt"])
+        mcp.disable(keys=["prompt:sample_prompt@"])
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
@@ -362,11 +362,11 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        mcp.disable(keys=["prompt:sample_prompt"])
+        mcp.disable(keys=["prompt:sample_prompt@"])
         prompts = await mcp.get_prompts()
         assert not any(p.name == "sample_prompt" for p in prompts)
 
-        mcp.enable(keys=["prompt:sample_prompt"])
+        mcp.enable(keys=["prompt:sample_prompt@"])
         prompts = await mcp.get_prompts()
         assert len(prompts) == 1
 
@@ -377,7 +377,7 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        mcp.disable(keys=["prompt:sample_prompt"])
+        mcp.disable(keys=["prompt:sample_prompt@"])
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
@@ -394,7 +394,7 @@ class TestPromptEnabled:
         prompt = await mcp.get_prompt("sample_prompt")
         assert prompt is not None
 
-        mcp.disable(keys=["prompt:sample_prompt"])
+        mcp.disable(keys=["prompt:sample_prompt@"])
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
@@ -408,7 +408,7 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        mcp.disable(keys=["prompt:sample_prompt"])
+        mcp.disable(keys=["prompt:sample_prompt@"])
 
         with pytest.raises(NotFoundError, match="Unknown prompt"):
             await mcp.get_prompt("sample_prompt")

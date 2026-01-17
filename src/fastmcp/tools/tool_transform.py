@@ -367,6 +367,7 @@ class TransformedTool(Tool):
         cls,
         tool: Tool,
         name: str | None = None,
+        version: str | NotSetT | None = NotSet,
         title: str | NotSetT | None = NotSet,
         description: str | NotSetT | None = NotSet,
         tags: set[str] | None = None,
@@ -385,6 +386,7 @@ class TransformedTool(Tool):
                 to call the parent tool. Functions with **kwargs receive transformed
                 argument names.
             name: New name for the tool. Defaults to parent tool's name.
+            version: New version for the tool. Defaults to parent tool's version.
             title: New title for the tool. Defaults to parent tool's title.
             transform_args: Optional transformations for parent tool arguments.
                 Only specified arguments are transformed, others pass through unchanged:
@@ -569,6 +571,7 @@ class TransformedTool(Tool):
                 )
 
         final_name = name or tool.name
+        final_version = version if not isinstance(version, NotSetT) else tool.version
         final_description = (
             description if not isinstance(description, NotSetT) else tool.description
         )
@@ -586,6 +589,7 @@ class TransformedTool(Tool):
             forwarding_fn=forwarding_fn,
             parent_tool=tool,
             name=final_name,
+            version=final_version,
             title=final_title,
             description=final_description,
             parameters=final_schema,
@@ -892,7 +896,9 @@ class ToolTransformConfig(FastMCPBaseModel):
     """Provides a way to transform a tool."""
 
     name: str | None = Field(default=None, description="The new name for the tool.")
-
+    version: str | None = Field(
+        default=None, description="The new version for the tool."
+    )
     title: str | None = Field(
         default=None,
         description="The new title of the tool.",

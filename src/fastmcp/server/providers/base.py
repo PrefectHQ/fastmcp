@@ -40,6 +40,7 @@ from fastmcp.server.transforms.visibility import Visibility
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.components import FastMCPComponent
+from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 if TYPE_CHECKING:
     from fastmcp.server.transforms import Transform
@@ -114,24 +115,27 @@ class Provider:
 
         return await chain()
 
-    async def _get_tool(self, name: str) -> Tool | None:
+    async def _get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
         """Get tool by transformed name with all transforms applied.
 
         Args:
             name: The transformed tool name to look up.
+            version: Optional version filter. If None, returns highest version.
 
         Returns:
             The tool if found and enabled, None otherwise.
         """
 
-        async def base(n: str) -> Tool | None:
-            return await self.get_tool(n)
+        async def base(n: str, version: VersionSpec | None = None) -> Tool | None:
+            return await self.get_tool(n, version)
 
         chain = base
         for transform in self._transforms:
             chain = partial(transform.get_tool, call_next=chain)
 
-        return await chain(name)
+        return await chain(name, version=version)
 
     async def _list_resources(self) -> Sequence[Resource]:
         """List resources with all transforms applied."""
@@ -145,17 +149,24 @@ class Provider:
 
         return await chain()
 
-    async def _get_resource(self, uri: str) -> Resource | None:
-        """Get resource by transformed URI with all transforms applied."""
+    async def _get_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> Resource | None:
+        """Get resource by transformed URI with all transforms applied.
 
-        async def base(u: str) -> Resource | None:
-            return await self.get_resource(u)
+        Args:
+            uri: The transformed resource URI to look up.
+            version: Optional version filter. If None, returns highest version.
+        """
+
+        async def base(u: str, version: VersionSpec | None = None) -> Resource | None:
+            return await self.get_resource(u, version)
 
         chain = base
         for transform in self._transforms:
             chain = partial(transform.get_resource, call_next=chain)
 
-        return await chain(uri)
+        return await chain(uri, version=version)
 
     async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List resource templates with all transforms applied."""
@@ -169,17 +180,26 @@ class Provider:
 
         return await chain()
 
-    async def _get_resource_template(self, uri: str) -> ResourceTemplate | None:
-        """Get resource template by transformed URI with all transforms applied."""
+    async def _get_resource_template(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> ResourceTemplate | None:
+        """Get resource template by transformed URI with all transforms applied.
 
-        async def base(u: str) -> ResourceTemplate | None:
-            return await self.get_resource_template(u)
+        Args:
+            uri: The transformed template URI to look up.
+            version: Optional version filter. If None, returns highest version.
+        """
+
+        async def base(
+            u: str, version: VersionSpec | None = None
+        ) -> ResourceTemplate | None:
+            return await self.get_resource_template(u, version)
 
         chain = base
         for transform in self._transforms:
             chain = partial(transform.get_resource_template, call_next=chain)
 
-        return await chain(uri)
+        return await chain(uri, version=version)
 
     async def _list_prompts(self) -> Sequence[Prompt]:
         """List prompts with all transforms applied."""
@@ -193,17 +213,24 @@ class Provider:
 
         return await chain()
 
-    async def _get_prompt(self, name: str) -> Prompt | None:
-        """Get prompt by transformed name with all transforms applied."""
+    async def _get_prompt(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Prompt | None:
+        """Get prompt by transformed name with all transforms applied.
 
-        async def base(n: str) -> Prompt | None:
-            return await self.get_prompt(n)
+        Args:
+            name: The transformed prompt name to look up.
+            version: Optional version filter. If None, returns highest version.
+        """
+
+        async def base(n: str, version: VersionSpec | None = None) -> Prompt | None:
+            return await self.get_prompt(n, version)
 
         chain = base
         for transform in self._transforms:
             chain = partial(transform.get_prompt, call_next=chain)
 
-        return await chain(name)
+        return await chain(name, version=version)
 
     # -------------------------------------------------------------------------
     # Public list/get methods (override these to provide components)
@@ -212,82 +239,127 @@ class Provider:
     async def list_tools(self) -> Sequence[Tool]:
         """Return all available tools.
 
-        Override to provide tools dynamically.
+        Override to provide tools dynamically. Returns ALL versions of all tools.
+        The server handles deduplication to show one tool per name.
         """
         return []
 
-    async def get_tool(self, name: str) -> Tool | None:
+    async def get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
         """Get a specific tool by name.
 
-        Default implementation lists all tools and finds by name.
-        Override for more efficient single-tool lookup.
+        Default implementation filters list_tools() and picks the highest version
+        that matches the spec.
+
+        Args:
+            name: The tool name.
+            version: Optional version filter. If None, returns highest version.
+                     If specified, returns highest version matching the spec.
 
         Returns:
             The Tool if found, or None to continue searching other providers.
         """
         tools = await self.list_tools()
-        return next((t for t in tools if t.name == name), None)
+        matching = [t for t in tools if t.name == name]
+        if version:
+            matching = [t for t in matching if version.matches(t.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
     async def list_resources(self) -> Sequence[Resource]:
         """Return all available resources.
 
-        Override to provide resources dynamically.
+        Override to provide resources dynamically. Returns ALL versions of all resources.
+        The server handles deduplication to show one resource per URI.
         """
         return []
 
-    async def get_resource(self, uri: str) -> Resource | None:
+    async def get_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> Resource | None:
         """Get a specific resource by URI.
 
-        Default implementation lists all resources and finds by URI.
-        Override for more efficient single-resource lookup.
+        Default implementation filters list_resources() and returns highest
+        version matching the spec.
+
+        Args:
+            uri: The resource URI.
+            version: Optional version filter. If None, returns highest version.
 
         Returns:
             The Resource if found, or None to continue searching other providers.
         """
         resources = await self.list_resources()
-        return next((r for r in resources if str(r.uri) == uri), None)
+        matching = [r for r in resources if str(r.uri) == uri]
+        if version:
+            matching = [r for r in matching if version.matches(r.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
     async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Return all available resource templates.
 
-        Override to provide resource templates dynamically.
+        Override to provide resource templates dynamically. Returns ALL versions.
+        The server handles deduplication.
         """
         return []
 
-    async def get_resource_template(self, uri: str) -> ResourceTemplate | None:
+    async def get_resource_template(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> ResourceTemplate | None:
         """Get a resource template that matches the given URI.
 
-        Default implementation lists all templates and finds one whose pattern
-        matches the URI.
-        Override for more efficient lookup.
+        Default implementation lists all templates, finds those whose pattern
+        matches the URI, and returns the highest version matching the spec.
+
+        Args:
+            uri: The URI to match against templates.
+            version: Optional version filter. If None, returns highest version.
 
         Returns:
             The ResourceTemplate if a matching one is found, or None to continue searching.
         """
         templates = await self.list_resource_templates()
-        return next(
-            (t for t in templates if t.matches(uri) is not None),
-            None,
-        )
+        matching = [t for t in templates if t.matches(uri) is not None]
+        if version:
+            matching = [t for t in matching if version.matches(t.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
     async def list_prompts(self) -> Sequence[Prompt]:
         """Return all available prompts.
 
-        Override to provide prompts dynamically.
+        Override to provide prompts dynamically. Returns ALL versions of all prompts.
+        The server handles deduplication to show one prompt per name.
         """
         return []
 
-    async def get_prompt(self, name: str) -> Prompt | None:
+    async def get_prompt(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Prompt | None:
         """Get a specific prompt by name.
 
-        Default implementation lists all prompts and finds by name.
-        Override for more efficient single-prompt lookup.
+        Default implementation filters list_prompts() and picks the highest version
+        matching the spec.
+
+        Args:
+            name: The prompt name.
+            version: Optional version filter. If None, returns highest version.
 
         Returns:
             The Prompt if found, or None to continue searching other providers.
         """
         prompts = await self.list_prompts()
-        return next((p for p in prompts if p.name == name), None)
+        matching = [p for p in prompts if p.name == name]
+        if version:
+            matching = [p for p in matching if version.matches(p.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
     # -------------------------------------------------------------------------
     # Task registration
@@ -406,7 +478,7 @@ class Provider:
         """Enable components by removing from blocklist, or set allowlist with only=True.
 
         Args:
-            keys: Keys to enable (e.g., "tool:my_tool").
+            keys: Keys to enable (e.g., "tool:my_tool@" for unversioned, "tool:my_tool@1.0" for versioned).
             tags: Tags to enable - components with these tags will be enabled.
             only: If True, switches to allowlist mode - ONLY show these keys/tags.
         """
@@ -421,7 +493,7 @@ class Provider:
         """Disable components by adding to the blocklist.
 
         Args:
-            keys: Keys to disable (e.g., "tool:my_tool").
+            keys: Keys to disable (e.g., "tool:my_tool@" for unversioned, "tool:my_tool@1.0" for versioned).
             tags: Tags to disable - components with these tags will be disabled.
         """
         self._visibility.disable(keys=keys, tags=tags)

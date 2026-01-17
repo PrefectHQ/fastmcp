@@ -107,6 +107,7 @@ Transforms modify components (tools, resources, prompts) as they flow from provi
 - `Namespace` - adds prefixes to names (`tool` → `api_tool`) and path segments to URIs (`data://x` → `data://api/x`)
 - `ToolTransform` - modifies tool schemas (rename, description, tags, argument transforms)
 - `Visibility` - filters components by key or tag (backs `enable()`/`disable()` API)
+- `VersionFilter` - filters components by version range (`version_gte`, `version_lt`)
 
 ```python
 from fastmcp.server.transforms import Namespace, ToolTransform
@@ -188,20 +189,100 @@ Components can be dynamically enabled/disabled at runtime using the visibility s
 ```python
 mcp = FastMCP("Server")
 
-# Disable specific components
-mcp.disable(keys=["tool:dangerous_tool"])
+# Disable specific components (keys include @ version suffix)
+mcp.disable(keys=["tool:dangerous_tool@"])
 
 # Disable by tag
 mcp.disable(tags={"admin"})
 
 # Allowlist mode - only show these
-mcp.enable(keys=["tool:safe_tool"], only=True)
+mcp.enable(keys=["tool:safe_tool@"], only=True)
 ```
 
 Works at both server and provider level. Supports:
 - **Blocklist mode** (default): All components visible except explicitly disabled
 - **Allowlist mode** (`only=True`): Only explicitly enabled components visible
 - **Tag-based filtering**: Enable/disable groups of components by tag
+
+---
+
+## Component Versioning
+
+v3.0 introduces versioning support for tools, resources, and prompts. Components can declare a version, and when multiple versions of the same component exist, the highest version is automatically exposed to clients.
+
+**Declaring versions:**
+
+```python
+@mcp.tool(version="1.0")
+def add(x: int, y: int) -> int:
+    return x + y
+
+@mcp.tool(version="2.0")
+def add(x: int, y: int, z: int = 0) -> int:
+    return x + y + z
+
+# Only v2.0 is exposed to clients via list_tools()
+# Calling "add" invokes the v2.0 implementation
+```
+
+**Version comparison:**
+- Uses PEP 440 semantic versioning (1.10 > 1.9 > 1.2)
+- Falls back to string comparison for non-PEP 440 versions (dates like `2025-01-15` work)
+- Unversioned components sort lower than any versioned component
+- The `v` prefix is normalized (`v1.0` equals `1.0`)
+
+**Retrieving specific versions:**
+
+```python
+# Get the highest version (default)
+tool = await server.get_tool("add")
+
+# Get a specific version
+tool_v1 = await server.get_tool("add", version="1.0")
+
+# Get all versions
+all_versions = await server.get_tool_versions("add")
+```
+
+**VersionFilter transform:**
+
+The `VersionFilter` transform enables serving different API versions from a single codebase:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers import LocalProvider
+from fastmcp.server.transforms import VersionFilter
+
+# Define components on a shared provider
+components = LocalProvider()
+
+@components.tool(version="1.0")
+def calculate(x: int, y: int) -> int:
+    return x + y
+
+@components.tool(version="2.0")
+def calculate(x: int, y: int, z: int = 0) -> int:
+    return x + y + z
+
+# Create servers that share the provider with different filters
+api_v1 = FastMCP("API v1", providers=[components])
+api_v1.add_transform(VersionFilter(version_lt="2.0"))
+
+api_v2 = FastMCP("API v2", providers=[components])
+api_v2.add_transform(VersionFilter(version_gte="2.0"))
+```
+
+Parameters mirror comparison operators:
+- `version_gte`: Versions >= this value pass through
+- `version_lt`: Versions < this value pass through
+
+**Key format:**
+
+Component keys now include a version suffix using `@` as a delimiter:
+- Versioned: `tool:add@1.0`, `resource:data://config@2.0`
+- Unversioned: `tool:add@`, `resource:data://config@`
+
+The `@` is always present (even for unversioned components) to enable unambiguous parsing of URIs that may contain `@`.
 
 ---
 
@@ -695,7 +776,7 @@ tool = await server.get_tool("my_tool")
 tool.disable()
 
 # v3.0
-server.disable(keys=["tool:my_tool"])
+server.disable(keys=["tool:my_tool@"])
 ```
 
 ### Component Lookup Methods

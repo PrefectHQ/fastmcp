@@ -31,6 +31,21 @@ def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
     return set(maybe_set)
 
 
+def _coerce_version(v: str | int | None) -> str | None:
+    """Coerce version to string, accepting int or str.
+
+    Raises ValueError if version contains '@' (used as key delimiter).
+    """
+    if v is None:
+        return None
+    version = str(v)
+    if "@" in version:
+        raise ValueError(
+            f"Version string cannot contain '@' (used as key delimiter): {version!r}"
+        )
+    return version
+
+
 class FastMCPComponent(FastMCPBaseModel):
     """Base class for FastMCP tools, prompts, resources, and resource templates."""
 
@@ -51,6 +66,11 @@ class FastMCPComponent(FastMCPBaseModel):
 
     name: str = Field(
         description="The name of the component.",
+    )
+    version: Annotated[str | None, BeforeValidator(_coerce_version)] = Field(
+        default=None,
+        description="Optional version identifier for this component. "
+        "Multiple versions of the same component (same name) can coexist.",
     )
     title: str | None = Field(
         default=None,
@@ -94,12 +114,17 @@ class FastMCPComponent(FastMCPBaseModel):
     def key(self) -> str:
         """The globally unique lookup key for this component.
 
-        Format: "{key_prefix}:{identifier}" e.g. "tool:my_tool", "resource:file://x.txt"
+        Format: "{key_prefix}:{identifier}@{version}" or "{key_prefix}:{identifier}@"
+        e.g. "tool:my_tool@v2", "tool:my_tool@", "resource:file://x.txt@"
+
+        The @ suffix is ALWAYS present to enable unambiguous parsing of keys
+        (URIs may contain @ characters, so we always include the delimiter).
 
         Subclasses should override this to use their specific identifier.
         Base implementation uses name.
         """
-        return self.make_key(self.name)
+        base_key = self.make_key(self.name)
+        return f"{base_key}@{self.version or ''}"
 
     def get_meta(
         self, include_fastmcp_meta: bool | None = None
@@ -133,7 +158,17 @@ class FastMCPComponent(FastMCPBaseModel):
         return self.model_dump() == other.model_dump()
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self.name!r}, title={self.title!r}, description={self.description!r}, tags={self.tags})"
+        parts = [f"name={self.name!r}"]
+        if self.version:
+            parts.append(f"version={self.version!r}")
+        parts.extend(
+            [
+                f"title={self.title!r}",
+                f"description={self.description!r}",
+                f"tags={self.tags}",
+            ]
+        )
+        return f"{self.__class__.__name__}({', '.join(parts)})"
 
     def enable(self) -> None:
         """Removed in 3.0. Use server.enable(keys=[...]) instead."""

@@ -196,6 +196,7 @@ class Tool(FastMCPComponent):
         fn: Callable[..., Any],
         *,
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[Icon] | None = None,
@@ -215,6 +216,7 @@ class Tool(FastMCPComponent):
         return FunctionTool.from_function(
             fn=fn,
             name=name,
+            version=version,
             title=title,
             description=description,
             icons=icons,

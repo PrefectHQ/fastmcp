@@ -82,8 +82,9 @@ class TestFastMCPComponent:
         assert component.meta == meta
 
     def test_key_property_without_custom_key(self, basic_component):
-        """Test that key property returns name when no custom key is set."""
-        assert basic_component.key == "test_component"
+        """Test that key property returns name@version when no custom key is set."""
+        # Base component has no KEY_PREFIX, so key is just "name@version" (or "name@" for unversioned)
+        assert basic_component.key == "test_component@"
 
     def test_get_meta_without_fastmcp_meta(self, basic_component):
         """Test get_meta without including fastmcp meta."""
@@ -207,14 +208,14 @@ class TestKeyPrefix:
         assert Prompt.make_key("my_prompt") == "prompt:my_prompt"
 
     def test_tool_key_property(self):
-        """Test that Tool.key returns prefixed key."""
+        """Test that Tool.key returns prefixed key with version sentinel."""
         tool = Tool(name="greet", description="A greeting tool", parameters={})
-        assert tool.key == "tool:greet"
+        assert tool.key == "tool:greet@"
 
     def test_prompt_key_property(self):
-        """Test that Prompt.key returns prefixed key."""
+        """Test that Prompt.key returns prefixed key with version sentinel."""
         prompt = Prompt(name="analyze", description="An analysis prompt")
-        assert prompt.key == "prompt:analyze"
+        assert prompt.key == "prompt:analyze@"
 
     def test_warning_for_missing_key_prefix(self):
         """Test that subclassing without KEY_PREFIX emits a warning."""
@@ -263,21 +264,21 @@ class TestComponentEnableDisable:
         tool = Tool(name="my_tool", description="A tool", parameters={})
         with pytest.raises(NotImplementedError) as exc_info:
             tool.enable()
-        assert "tool:my_tool" in str(exc_info.value)
+        assert "tool:my_tool@" in str(exc_info.value)
 
     def test_tool_disable_raises_not_implemented(self):
         """Test that Tool.disable() raises NotImplementedError."""
         tool = Tool(name="my_tool", description="A tool", parameters={})
         with pytest.raises(NotImplementedError) as exc_info:
             tool.disable()
-        assert "tool:my_tool" in str(exc_info.value)
+        assert "tool:my_tool@" in str(exc_info.value)
 
     def test_prompt_enable_raises_not_implemented(self):
         """Test that Prompt.enable() raises NotImplementedError."""
         prompt = Prompt(name="my_prompt", description="A prompt")
         with pytest.raises(NotImplementedError) as exc_info:
             prompt.enable()
-        assert "prompt:my_prompt" in str(exc_info.value)
+        assert "prompt:my_prompt@" in str(exc_info.value)
 
 
 class TestFastMCPMeta:
@@ -369,13 +370,15 @@ class TestEdgeCasesAndIntegration:
         assert updated_component.title == "New Title"  # Updated
         assert updated_component.description == "New Description"  # Updated
         assert updated_component.tags == {"tag1"}  # Not in update, unchanged
-        assert updated_component.key == "new_name"  # .key is computed from name
+        assert (
+            updated_component.key == "new_name@"
+        )  # .key is computed from name with @ sentinel
 
         # Original should be unchanged
         assert component.name == "test"
         assert component.title == "Original Title"
         assert component.description == "Original Description"
-        assert component.key == "test"  # Uses name as key
+        assert component.key == "test@"  # Uses name as key with @ sentinel
 
     def test_model_copy_deep_parameter(self):
         """Test that model_copy respects the deep parameter."""

@@ -24,6 +24,7 @@ from mcp.types import (
 )
 
 import fastmcp.server.context
+from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
@@ -45,6 +46,25 @@ DOCKET_TO_MCP_STATE: dict[ExecutionState, str] = {
     ExecutionState.FAILED: "failed",
     ExecutionState.CANCELLED: "cancelled",
 }
+
+
+def _parse_key_version(key_suffix: str) -> tuple[str, str | None]:
+    """Parse a key suffix into (name_or_uri, version).
+
+    Keys always contain @ as a version delimiter (sentinel pattern):
+    - "add@1.0" → ("add", "1.0")  # versioned
+    - "add@" → ("add", None)      # unversioned
+    - "user@example.com@1.0" → ("user@example.com", "1.0")  # @ in URI
+
+    Uses rsplit to split on the LAST @ which is always the version delimiter.
+    Falls back to treating the whole string as the name if @ is not present
+    (for backwards compatibility with legacy task keys).
+    """
+    if "@" not in key_suffix:
+        # Legacy key without version sentinel - treat as unversioned
+        return key_suffix, None
+    name_or_uri, version = key_suffix.rsplit("@", 1)
+    return name_or_uri, version if version else None
 
 
 async def _lookup_task_execution(
@@ -289,8 +309,31 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
         key_parts = parse_task_key(task_key)
         component_key = key_parts["component_identifier"]
 
-        # Look up component by its prefixed key
-        component = await server.get_component(component_key)
+        # Look up component by its prefixed key (inlined from deleted get_component)
+        component: Tool | Resource | ResourceTemplate | Prompt | None = None
+        try:
+            if component_key.startswith("tool:"):
+                name, version = _parse_key_version(component_key[5:])
+                component = await server.get_tool(name, version)
+            elif component_key.startswith("resource:"):
+                uri, version = _parse_key_version(component_key[9:])
+                component = await server.get_resource(uri, version)
+            elif component_key.startswith("template:"):
+                uri, version = _parse_key_version(component_key[9:])
+                component = await server.get_resource_template(uri, version)
+            elif component_key.startswith("prompt:"):
+                name, version = _parse_key_version(component_key[7:])
+                component = await server.get_prompt(name, version)
+        except NotFoundError:
+            component = None
+
+        if component is None:
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=f"Component not found for task: {component_key}",
+                )
+            )
 
         # Build related-task metadata
         related_task_meta = {

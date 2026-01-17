@@ -237,6 +237,7 @@ class Resource(FastMCPComponent):
         uri: str | AnyUrl,
         *,
         name: str | None = None,
+        version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
         icons: list[Icon] | None = None,
@@ -255,6 +256,7 @@ class Resource(FastMCPComponent):
             fn=fn,
             uri=uri,
             name=name,
+            version=version,
             title=title,
             description=description,
             icons=icons,
@@ -380,7 +382,8 @@ class Resource(FastMCPComponent):
     @property
     def key(self) -> str:
         """The globally unique lookup key for this resource."""
-        return self.make_key(str(self.uri))
+        base_key = self.make_key(str(self.uri))
+        return f"{base_key}@{self.version or ''}"
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this resource with docket for background execution."""

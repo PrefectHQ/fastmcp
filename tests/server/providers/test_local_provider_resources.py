@@ -738,12 +738,12 @@ class TestResourceEnabled:
         resources = await mcp.get_resources()
         assert any(str(r.uri) == "resource://data" for r in resources)
 
-        mcp.disable(keys=["resource:resource://data"])
+        mcp.disable(keys=["resource:resource://data@"])
 
         resources = await mcp.get_resources()
         assert not any(str(r.uri) == "resource://data" for r in resources)
 
-        mcp.enable(keys=["resource:resource://data"])
+        mcp.enable(keys=["resource:resource://data@"])
 
         resources = await mcp.get_resources()
         assert any(str(r.uri) == "resource://data" for r in resources)
@@ -755,7 +755,7 @@ class TestResourceEnabled:
         def sample_resource() -> str:
             return "Hello, world!"
 
-        mcp.disable(keys=["resource:resource://data"])
+        mcp.disable(keys=["resource:resource://data@"])
         resources = await mcp.get_resources()
         assert len(resources) == 0
 
@@ -769,11 +769,11 @@ class TestResourceEnabled:
         def sample_resource() -> str:
             return "Hello, world!"
 
-        mcp.disable(keys=["resource:resource://data"])
+        mcp.disable(keys=["resource:resource://data@"])
         resources = await mcp.get_resources()
         assert not any(str(r.uri) == "resource://data" for r in resources)
 
-        mcp.enable(keys=["resource:resource://data"])
+        mcp.enable(keys=["resource:resource://data@"])
         resources = await mcp.get_resources()
         assert len(resources) == 1
 
@@ -784,7 +784,7 @@ class TestResourceEnabled:
         def sample_resource() -> str:
             return "Hello, world!"
 
-        mcp.disable(keys=["resource:resource://data"])
+        mcp.disable(keys=["resource:resource://data@"])
         resources = await mcp.get_resources()
         assert len(resources) == 0
 
@@ -801,7 +801,7 @@ class TestResourceEnabled:
         resource = await mcp.get_resource("resource://data")
         assert resource is not None
 
-        mcp.disable(keys=["resource:resource://data"])
+        mcp.disable(keys=["resource:resource://data@"])
         resources = await mcp.get_resources()
         assert len(resources) == 0
 
@@ -815,7 +815,7 @@ class TestResourceEnabled:
         def sample_resource() -> str:
             return "Hello, world!"
 
-        mcp.disable(keys=["resource:resource://data"])
+        mcp.disable(keys=["resource:resource://data@"])
 
         with pytest.raises(NotFoundError, match="Unknown resource"):
             await mcp.read_resource("resource://data")
@@ -891,12 +891,12 @@ class TestResourceTemplateEnabled:
         templates = await mcp.get_resource_templates()
         assert any(t.uri_template == "resource://{param}" for t in templates)
 
-        mcp.disable(keys=["template:resource://{param}"])
+        mcp.disable(keys=["template:resource://{param}@"])
 
         templates = await mcp.get_resource_templates()
         assert not any(t.uri_template == "resource://{param}" for t in templates)
 
-        mcp.enable(keys=["template:resource://{param}"])
+        mcp.enable(keys=["template:resource://{param}@"])
 
         templates = await mcp.get_resource_templates()
         assert any(t.uri_template == "resource://{param}" for t in templates)
@@ -908,7 +908,7 @@ class TestResourceTemplateEnabled:
         def sample_template(param: str) -> str:
             return f"Template: {param}"
 
-        mcp.disable(keys=["template:resource://{param}"])
+        mcp.disable(keys=["template:resource://{param}@"])
         templates = await mcp.get_resource_templates()
         assert len(templates) == 0
 
@@ -922,11 +922,11 @@ class TestResourceTemplateEnabled:
         def sample_template(param: str) -> str:
             return f"Template: {param}"
 
-        mcp.disable(keys=["template:resource://{param}"])
+        mcp.disable(keys=["template:resource://{param}@"])
         templates = await mcp.get_resource_templates()
         assert not any(t.uri_template == "resource://{param}" for t in templates)
 
-        mcp.enable(keys=["template:resource://{param}"])
+        mcp.enable(keys=["template:resource://{param}@"])
         templates = await mcp.get_resource_templates()
         assert len(templates) == 1
 
@@ -937,7 +937,7 @@ class TestResourceTemplateEnabled:
         def sample_template(param: str) -> str:
             return f"Template: {param}"
 
-        mcp.disable(keys=["template:resource://{param}"])
+        mcp.disable(keys=["template:resource://{param}@"])
         templates = await mcp.get_resource_templates()
         assert len(templates) == 0
 
@@ -954,7 +954,7 @@ class TestResourceTemplateEnabled:
         template = await mcp.get_resource_template("resource://{param}")
         assert template is not None
 
-        mcp.disable(keys=["template:resource://{param}"])
+        mcp.disable(keys=["template:resource://{param}@"])
         templates = await mcp.get_resource_templates()
         assert len(templates) == 0
 
@@ -968,7 +968,7 @@ class TestResourceTemplateEnabled:
         def sample_template(param: str) -> str:
             return f"Template: {param}"
 
-        mcp.disable(keys=["template:resource://{param}"])
+        mcp.disable(keys=["template:resource://{param}@"])
 
         with pytest.raises(NotFoundError, match="Unknown resource"):
             await mcp.read_resource("resource://test")

@@ -14,6 +14,7 @@ from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.server.providers import Provider
 from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.utilities.versions import VersionSpec
 
 
 class SimpleTool(Tool):
@@ -51,9 +52,17 @@ class SimpleToolProvider(Provider):
         self.list_tools_call_count += 1
         return self._tools
 
-    async def get_tool(self, name: str) -> Tool | None:
+    async def get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
         self.get_tool_call_count += 1
-        return next((t for t in self._tools if t.name == name), None)
+        matching = [t for t in self._tools if t.name == name]
+        if not matching:
+            return None
+        if version is None:
+            return matching[0]  # Return first (for testing simplicity)
+        matching = [t for t in matching if version.matches(t.version)]
+        return matching[0] if matching else None
 
 
 class ListOnlyProvider(Provider):
