@@ -159,7 +159,7 @@ class AggregateProvider(Provider):
         )
         return self._collect_list_results(results, "list_resources")
 
-    async def get_resource(
+    async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         """Get resource by URI.
@@ -170,7 +170,7 @@ class AggregateProvider(Provider):
                 If specified, returns highest version matching the spec from any provider.
         """
         results = await gather(
-            *[p._get_resource(uri, version) for p in self._providers],
+            *[p.get_resource(uri, version) for p in self._providers],
             return_exceptions=True,
         )
         return self._get_highest_version_result(results, f"get_resource({uri!r})")  # type: ignore[return-value]

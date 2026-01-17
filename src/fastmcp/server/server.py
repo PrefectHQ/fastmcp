@@ -1223,12 +1223,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
             return _dedupe_with_versions(authorized, lambda r: str(r.uri))
 
-    async def get_resource(
+    async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         """Get a resource by URI via aggregation from providers.
 
-        This is the raw lookup that Provider._get_resource() wraps with transforms.
+        This is the raw lookup that Provider.get_resource() wraps with transforms.
         Aggregates from all sub-providers and applies component-level auth.
 
         Args:
@@ -1240,7 +1240,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """
         # Aggregate from all sub-providers (each applies their own transforms)
         results = await gather(
-            *[p._get_resource(uri, version) for p in self._providers],
+            *[p.get_resource(uri, version) for p in self._providers],
             return_exceptions=True,
         )
 
@@ -1666,7 +1666,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 resource_uri=uri,
             ) as span:
                 # Try concrete resources first (transforms + auth via _get_resource)
-                resource = await self._get_resource(uri, version=version)
+                resource = await self.get_resource(uri, version=version)
                 if resource is not None:
                     span.set_attributes(resource.get_span_attributes())
                     if task_meta is not None and task_meta.fn_key is None:

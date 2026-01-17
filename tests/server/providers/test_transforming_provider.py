@@ -197,7 +197,7 @@ class TestTransformReverseLookup:
         layer = Namespace("ns")
 
         async def get_resource(uri: str, version=None):
-            return await provider.get_resource(uri, version)
+            return await provider._get_resource(uri, version)
 
         resource = await layer.get_resource("resource://ns/data", get_resource)
 

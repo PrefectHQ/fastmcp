@@ -520,16 +520,16 @@ class FastMCPProvider(Provider):
         raw_resources = await self.server.get_resources(run_middleware=True)
         return [FastMCPProviderResource.wrap(self.server, r) for r in raw_resources]
 
-    async def get_resource(
+    async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         """Get a concrete resource by URI as a FastMCPProviderResource.
 
         Passes the full VersionSpec to the nested server, which handles both
-        exact version matching and range filtering. Uses _get_resource to ensure
+        exact version matching and range filtering. Uses get_resource to ensure
         the nested server's transforms are applied.
         """
-        raw_resource = await self.server._get_resource(uri, version)
+        raw_resource = await self.server.get_resource(uri, version)
         if raw_resource is None:
             return None
         return FastMCPProviderResource.wrap(self.server, raw_resource)

@@ -368,7 +368,7 @@ class OpenAPIProvider(Provider):
         """Return all resources created from the OpenAPI spec."""
         return list(self._resources.values())
 
-    async def get_resource(
+    async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         """Get a resource by URI."""

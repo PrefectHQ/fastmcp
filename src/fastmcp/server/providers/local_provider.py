@@ -528,7 +528,7 @@ class LocalProvider(Provider):
             if isinstance(v, Resource) and self._is_component_enabled(v)
         ]
 
-    async def get_resource(
+    async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         """Get a resource by URI.

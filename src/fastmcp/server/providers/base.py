@@ -153,7 +153,7 @@ class Provider:
 
         return await chain()
 
-    async def _get_resource(
+    async def get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         """Get resource by transformed URI with all transforms applied.
@@ -164,7 +164,7 @@ class Provider:
         """
 
         async def base(u: str, version: VersionSpec | None = None) -> Resource | None:
-            return await self.get_resource(u, version)
+            return await self._get_resource(u, version)
 
         chain = base
         for transform in self.transforms:
@@ -280,12 +280,12 @@ class Provider:
         """
         return []
 
-    async def get_resource(
+    async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         """Get a specific resource by URI.
 
-        Default implementation filters list_resources() and returns highest
+        Default implementation filters _list_resources() and returns highest
         version matching the spec.
 
         Args:
@@ -295,7 +295,7 @@ class Provider:
         Returns:
             The Resource if found, or None to continue searching other providers.
         """
-        resources = await self.list_resources()
+        resources = await self._list_resources()
         matching = [r for r in resources if str(r.uri) == uri]
         if version:
             matching = [r for r in matching if version.matches(r.version)]
