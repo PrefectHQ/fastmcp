@@ -301,19 +301,17 @@ class TestToolLevelAuth:
         finally:
             auth_context_var.reset(tok)
 
-    async def test_get_tool_raises_without_auth(self):
-        """get_tool() checks auth and raises AuthorizationError for unauthorized tools."""
-        from fastmcp.exceptions import AuthorizationError
-
+    async def test_get_tool_returns_none_without_auth(self):
+        """get_tool() returns None for unauthorized tools (consistent with list filtering)."""
         mcp = FastMCP()
 
         @mcp.tool(auth=require_auth)
         def protected_tool() -> str:
             return "protected"
 
-        # get_tool() raises AuthorizationError for unauthorized tools
-        with pytest.raises(AuthorizationError, match="Unauthorized access to tool"):
-            await mcp.get_tool("protected_tool")
+        # get_tool() returns None for unauthorized tools
+        tool = await mcp.get_tool("protected_tool")
+        assert tool is None
 
     async def test_get_tool_returns_tool_with_auth(self):
         mcp = FastMCP()
