@@ -195,6 +195,18 @@ class Settings(BaseSettings):
 
     docket: DocketSettings = DocketSettings()
 
+    enable_rich_logging: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                If True, will use rich formatting for log output. If False,
+                will use standard Python logging without rich formatting.
+                """
+            )
+        ),
+    ] = True
+
     enable_rich_tracebacks: Annotated[
         bool,
         Field(

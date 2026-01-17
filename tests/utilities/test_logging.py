@@ -1,5 +1,6 @@
 import logging
 
+import fastmcp
 from fastmcp.utilities.logging import configure_logging, get_logger
 
 
@@ -54,3 +55,46 @@ def test_configure_logging_traceback_defaults_can_be_overridden():
     assert logger.handlers
     # The traceback handler should have been created with custom values
     # We can't directly inspect RichHandler internals easily, but we verified no error was raised
+
+
+def test_configure_logging_with_rich_disabled():
+    """Test that disabling rich logging uses standard StreamHandler."""
+    original_enable_rich = fastmcp.settings.enable_rich_logging
+    try:
+        fastmcp.settings.enable_rich_logging = False
+        configure_logging()
+
+        logger = logging.getLogger("fastmcp")
+        assert logger.handlers
+        # Should only have one handler when rich logging is disabled
+        assert len(logger.handlers) == 1
+        # Should be a StreamHandler, not RichHandler
+        assert isinstance(logger.handlers[0], logging.StreamHandler)
+        assert not hasattr(
+            logger.handlers[0], "console"
+        )  # RichHandler has console attribute
+    finally:
+        fastmcp.settings.enable_rich_logging = original_enable_rich
+        # Reconfigure to restore state
+        configure_logging()
+
+
+def test_configure_logging_with_rich_enabled():
+    """Test that enabling rich logging uses RichHandler."""
+    original_enable_rich = fastmcp.settings.enable_rich_logging
+    try:
+        fastmcp.settings.enable_rich_logging = True
+        configure_logging()
+
+        logger = logging.getLogger("fastmcp")
+        assert logger.handlers
+        # Should have two handlers when rich logging is enabled (normal + traceback)
+        assert len(logger.handlers) == 2
+        # Both should be RichHandler instances
+        from rich.logging import RichHandler
+
+        assert all(isinstance(h, RichHandler) for h in logger.handlers)
+    finally:
+        fastmcp.settings.enable_rich_logging = original_enable_rich
+        # Reconfigure to restore state
+        configure_logging()

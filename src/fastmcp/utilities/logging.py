@@ -57,6 +57,18 @@ def configure_logging(
     logger.propagate = False
     logger.setLevel(level)
 
+    # Remove any existing handlers to avoid duplicates on reconfiguration
+    for hdlr in logger.handlers[:]:
+        logger.removeHandler(hdlr)
+
+    # Use standard logging handlers if rich logging is disabled
+    if not fastmcp.settings.enable_rich_logging:
+        # Create a standard StreamHandler for stderr
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+        logger.addHandler(handler)
+        return
+
     # Configure the handler for normal logs
     handler = RichHandler(
         console=Console(stderr=True),
@@ -90,10 +102,6 @@ def configure_logging(
     traceback_handler.setFormatter(formatter)
 
     traceback_handler.addFilter(lambda record: record.exc_info is not None)
-
-    # Remove any existing handlers to avoid duplicates on reconfiguration
-    for hdlr in logger.handlers[:]:
-        logger.removeHandler(hdlr)
 
     logger.addHandler(handler)
     logger.addHandler(traceback_handler)
