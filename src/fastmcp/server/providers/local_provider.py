@@ -283,7 +283,7 @@ class LocalProvider(Provider):
                 tool = Tool.from_function(tool)
         self._add_component(tool)
         if not enabled:
-            self.disable(keys={tool.key}, components=["tool"], version=tool.version)
+            self.disable(keys={tool.key})
         return tool
 
     def remove_tool(self, name: str, version: str | None = None) -> None:
@@ -374,18 +374,7 @@ class LocalProvider(Provider):
                 )
         self._add_component(resource)
         if not enabled:
-            if isinstance(resource, ResourceTemplate):
-                self.disable(
-                    keys={resource.key},
-                    components=["template"],
-                    version=resource.version,
-                )
-            else:
-                self.disable(
-                    keys={resource.key},
-                    components=["resource"],
-                    version=resource.version,
-                )
+            self.disable(keys={resource.key})
         return resource
 
     def remove_resource(self, uri: str, version: str | None = None) -> None:
@@ -483,9 +472,7 @@ class LocalProvider(Provider):
                 )
         self._add_component(prompt)
         if not enabled:
-            self.disable(
-                keys={prompt.key}, components=["prompt"], version=prompt.version
-            )
+            self.disable(keys={prompt.key})
         return prompt
 
     def remove_prompt(self, name: str, version: str | None = None) -> None:
@@ -809,11 +796,7 @@ class LocalProvider(Provider):
                 )
                 self._add_component(tool_obj)
                 if not enabled:
-                    self.disable(
-                        keys={tool_obj.key},
-                        components=["tool"],
-                        version=tool_obj.version,
-                    )
+                    self.disable(keys={tool_obj.key})
                 return tool_obj
             else:
                 from fastmcp.tools.function_tool import ToolMeta

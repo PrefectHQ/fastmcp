@@ -305,14 +305,13 @@ mcp.disable(tags={"maintenance"})
 
 Understanding the filtering logic helps when debugging enabled state issues.
 
-The `is_enabled()` function checks components in this order:
+The `is_enabled()` function checks a component's internal metadata:
 
-1. **Blocklist by key**: If the component's key is in `_disabled_keys`, it's disabled
-2. **Blocklist by tag**: If any of the component's tags are in `_disabled_tags`, it's disabled
-3. **Allowlist check**: If default enabled is off (allowlist mode) and the component isn't in the allowlist, it's disabled
-4. **Default**: Otherwise, the component is enabled
+1. If the component has `meta.fastmcp._internal.enabled = False`, it's disabled
+2. If the component has `meta.fastmcp._internal.enabled = True`, it's enabled
+3. If no enabled state is set, the component is enabled by default
 
-The blocklist always wins over the allowlist. A component that matches both is disabled.
+When multiple `enable()` and `disable()` calls are made, transforms are applied in order. **Later transforms override earlier ones**, so the last matching transform wins.
 
 ## The Enabled Transform
 
