@@ -327,16 +327,15 @@ class TestEdgeCasesAndIntegration:
         component = FastMCPComponent(name="test")
         assert component.tags == set()
 
-    def test_meta_mutation_affects_original(self):
-        """Test that get_meta returns a reference to the original meta."""
+    def test_get_meta_returns_copy(self):
+        """Test that get_meta returns a copy, not a reference to the original."""
         component = FastMCPComponent(name="test", meta={"key": "value"})
         meta = component.get_meta()
         assert meta is not None
         meta["key"] = "modified"
         assert component.meta is not None
-        assert component.meta["key"] == "modified"  # Original is modified
-
-        # This is the actual behavior - get_meta returns a reference
+        # get_meta returns a copy - mutating it doesn't affect the original
+        assert component.meta["key"] == "value"
 
     def test_component_with_complex_meta(self):
         """Test component with nested meta structures."""

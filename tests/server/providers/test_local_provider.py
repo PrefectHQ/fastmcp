@@ -336,7 +336,7 @@ class TestLocalProviderDecorators:
         assert "tool:direct_tool@" in provider._components
 
     def test_tool_enabled_false(self):
-        """Tool with enabled=False should be disabled."""
+        """Tool with enabled=False should add an Enabled transform."""
         provider = LocalProvider()
 
         @provider.tool(enabled=False)
@@ -344,11 +344,16 @@ class TestLocalProviderDecorators:
             return "should be disabled"
 
         assert "tool:disabled_tool@" in provider._components
-        tool = provider._components["tool:disabled_tool@"]
-        assert not provider._is_component_enabled(tool)
+        # enabled=False adds an Enabled transform to disable the tool
+        from fastmcp.server.transforms.enabled import Enabled
+
+        enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
+        assert len(enabled_transforms) == 1
+        assert enabled_transforms[0]._enabled is False
+        assert enabled_transforms[0].name == "disabled_tool"
 
     async def test_tool_enabled_false_not_listed(self):
-        """Disabled tool should not appear in list_tools."""
+        """Disabled tool should not appear in get_tools (filtering happens at server level)."""
         provider = LocalProvider()
 
         @provider.tool(enabled=False)
@@ -359,10 +364,31 @@ class TestLocalProviderDecorators:
         def enabled_tool() -> str:
             return "should be enabled"
 
-        tools = await provider.list_tools()
+        # Filtering happens at the server level, not provider level
+        server = FastMCP("Test", providers=[provider])
+        tools = await server.get_tools()
         names = {t.name for t in tools}
         assert "enabled_tool" in names
         assert "disabled_tool" not in names
+
+    async def test_server_enable_overrides_provider_disable(self):
+        """Server-level enable should override provider-level disable."""
+        provider = LocalProvider()
+
+        @provider.tool(enabled=False)
+        def my_tool() -> str:
+            return "result"
+
+        server = FastMCP("Test", providers=[provider])
+
+        # Tool is disabled at provider level
+        assert await server.get_tool("my_tool") is None
+
+        # Server-level enable overrides it
+        server.enable(name="my_tool")
+        tool = await server.get_tool("my_tool")
+        assert tool is not None
+        assert tool.name == "my_tool"
 
     async def test_tool_roundtrip(self):
         """Tool should execute correctly via Client."""
@@ -399,7 +425,7 @@ class TestLocalProviderDecorators:
         assert provider._components["resource:resource://test@"].name == "custom_name"
 
     def test_resource_enabled_false(self):
-        """Resource with enabled=False should be disabled."""
+        """Resource with enabled=False should add an Enabled transform."""
         provider = LocalProvider()
 
         @provider.resource("resource://test", enabled=False)
@@ -407,11 +433,16 @@ class TestLocalProviderDecorators:
             return "should be disabled"
 
         assert "resource:resource://test@" in provider._components
-        resource = provider._components["resource:resource://test@"]
-        assert not provider._is_component_enabled(resource)
+        # enabled=False adds an Enabled transform to disable the resource
+        from fastmcp.server.transforms.enabled import Enabled
+
+        enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
+        assert len(enabled_transforms) == 1
+        assert enabled_transforms[0]._enabled is False
+        assert enabled_transforms[0].name == "resource://test"
 
     async def test_resource_enabled_false_not_listed(self):
-        """Disabled resource should not appear in list_resources."""
+        """Disabled resource should not appear in get_resources (filtering at server level)."""
         provider = LocalProvider()
 
         @provider.resource("resource://disabled", enabled=False)
@@ -422,13 +453,15 @@ class TestLocalProviderDecorators:
         def enabled_resource() -> str:
             return "should be enabled"
 
-        resources = await provider.list_resources()
+        # Filtering happens at the server level, not provider level
+        server = FastMCP("Test", providers=[provider])
+        resources = await server.get_resources()
         uris = {str(r.uri) for r in resources}
         assert "resource://enabled" in uris
         assert "resource://disabled" not in uris
 
     def test_template_enabled_false(self):
-        """Template with enabled=False should be disabled."""
+        """Template with enabled=False should add an Enabled transform."""
         provider = LocalProvider()
 
         @provider.resource("data://{id}", enabled=False)
@@ -436,11 +469,16 @@ class TestLocalProviderDecorators:
             return f"Data {id}"
 
         assert "template:data://{id}@" in provider._components
-        template = provider._components["template:data://{id}@"]
-        assert not provider._is_component_enabled(template)
+        # enabled=False adds an Enabled transform to disable the template
+        from fastmcp.server.transforms.enabled import Enabled
+
+        enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
+        assert len(enabled_transforms) == 1
+        assert enabled_transforms[0]._enabled is False
+        assert enabled_transforms[0].name == "data://{id}"
 
     async def test_template_enabled_false_not_listed(self):
-        """Disabled template should not appear in list_resource_templates."""
+        """Disabled template should not appear in get_resource_templates (filtering at server level)."""
         provider = LocalProvider()
 
         @provider.resource("data://{id}", enabled=False)
@@ -451,7 +489,9 @@ class TestLocalProviderDecorators:
         def enabled_template(id: str) -> str:
             return f"Item {id}"
 
-        templates = await provider.list_resource_templates()
+        # Filtering happens at the server level, not provider level
+        server = FastMCP("Test", providers=[provider])
+        templates = await server.get_resource_templates()
         uris = {t.uri_template for t in templates}
         assert "items://{id}" in uris
         assert "data://{id}" not in uris
@@ -492,7 +532,7 @@ class TestLocalProviderDecorators:
         assert "prompt:my_prompt@" not in provider._components
 
     def test_prompt_enabled_false(self):
-        """Prompt with enabled=False should be disabled."""
+        """Prompt with enabled=False should add an Enabled transform."""
         provider = LocalProvider()
 
         @provider.prompt(enabled=False)
@@ -500,11 +540,16 @@ class TestLocalProviderDecorators:
             return "should be disabled"
 
         assert "prompt:disabled_prompt@" in provider._components
-        prompt = provider._components["prompt:disabled_prompt@"]
-        assert not provider._is_component_enabled(prompt)
+        # enabled=False adds an Enabled transform to disable the prompt
+        from fastmcp.server.transforms.enabled import Enabled
+
+        enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
+        assert len(enabled_transforms) == 1
+        assert enabled_transforms[0]._enabled is False
+        assert enabled_transforms[0].name == "disabled_prompt"
 
     async def test_prompt_enabled_false_not_listed(self):
-        """Disabled prompt should not appear in list_prompts."""
+        """Disabled prompt should not appear in get_prompts (filtering at server level)."""
         provider = LocalProvider()
 
         @provider.prompt(enabled=False)
@@ -515,7 +560,9 @@ class TestLocalProviderDecorators:
         def enabled_prompt() -> str:
             return "should be enabled"
 
-        prompts = await provider.list_prompts()
+        # Filtering happens at the server level, not provider level
+        server = FastMCP("Test", providers=[provider])
+        prompts = await server.get_prompts()
         names = {p.name for p in prompts}
         assert "enabled_prompt" in names
         assert "disabled_prompt" not in names

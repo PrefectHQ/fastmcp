@@ -253,6 +253,7 @@ class LocalProvider(Provider):
 
         Accepts either a Tool object or a decorated function with __fastmcp__ metadata.
         """
+        enabled = True
         if not isinstance(tool, Tool):
             from fastmcp.decorators import get_fastmcp_meta
             from fastmcp.tools.function_tool import ToolMeta
@@ -260,6 +261,7 @@ class LocalProvider(Provider):
             meta = get_fastmcp_meta(tool)
             if meta is not None and isinstance(meta, ToolMeta):
                 resolved_task = meta.task if meta.task is not None else False
+                enabled = meta.enabled
                 tool = Tool.from_function(
                     tool,
                     name=meta.name,
@@ -279,7 +281,10 @@ class LocalProvider(Provider):
                 )
             else:
                 tool = Tool.from_function(tool)
-        return self._add_component(tool)
+        self._add_component(tool)
+        if not enabled:
+            self.disable(name=tool.name)
+        return tool
 
     def remove_tool(self, name: str, version: str | None = None) -> None:
         """Remove tool(s) from this provider's storage.
@@ -316,6 +321,7 @@ class LocalProvider(Provider):
 
         Accepts either a Resource/ResourceTemplate object or a decorated function with __fastmcp__ metadata.
         """
+        enabled = True
         if not isinstance(resource, (Resource, ResourceTemplate)):
             from fastmcp.decorators import get_fastmcp_meta
             from fastmcp.resources.function_resource import ResourceMeta
@@ -324,6 +330,7 @@ class LocalProvider(Provider):
             meta = get_fastmcp_meta(resource)
             if meta is not None and isinstance(meta, ResourceMeta):
                 resolved_task = meta.task if meta.task is not None else False
+                enabled = meta.enabled
                 has_uri_params = "{" in meta.uri and "}" in meta.uri
                 wrapper_fn = without_injected_parameters(resource)
                 has_func_params = bool(inspect.signature(wrapper_fn).parameters)
@@ -365,7 +372,13 @@ class LocalProvider(Provider):
                     f"Expected Resource, ResourceTemplate, or @resource-decorated function, got {type(resource).__name__}. "
                     "Use @resource('uri') decorator or pass a Resource/ResourceTemplate instance."
                 )
-        return self._add_component(resource)
+        self._add_component(resource)
+        if not enabled:
+            if isinstance(resource, ResourceTemplate):
+                self.disable(name=resource.uri_template)
+            else:
+                self.disable(name=str(resource.uri))
+        return resource
 
     def remove_resource(self, uri: str, version: str | None = None) -> None:
         """Remove resource(s) from this provider's storage.
@@ -434,6 +447,7 @@ class LocalProvider(Provider):
 
         Accepts either a Prompt object or a decorated function with __fastmcp__ metadata.
         """
+        enabled = True
         if not isinstance(prompt, Prompt):
             from fastmcp.decorators import get_fastmcp_meta
             from fastmcp.prompts.function_prompt import PromptMeta
@@ -441,6 +455,7 @@ class LocalProvider(Provider):
             meta = get_fastmcp_meta(prompt)
             if meta is not None and isinstance(meta, PromptMeta):
                 resolved_task = meta.task if meta.task is not None else False
+                enabled = meta.enabled
                 prompt = Prompt.from_function(
                     prompt,
                     name=meta.name,
@@ -458,7 +473,10 @@ class LocalProvider(Provider):
                     f"Expected Prompt or @prompt-decorated function, got {type(prompt).__name__}. "
                     "Use @prompt decorator or pass a Prompt instance."
                 )
-        return self._add_component(prompt)
+        self._add_component(prompt)
+        if not enabled:
+            self.disable(name=prompt.name)
+        return prompt
 
     def remove_prompt(self, name: str, version: str | None = None) -> None:
         """Remove prompt(s) from this provider's storage.
@@ -493,12 +511,8 @@ class LocalProvider(Provider):
     # =========================================================================
 
     async def _list_tools(self) -> Sequence[Tool]:
-        """Return all visible tools."""
-        return [
-            v
-            for v in self._components.values()
-            if isinstance(v, Tool) and self._is_component_enabled(v)
-        ]
+        """Return all tools."""
+        return [v for v in self._components.values() if isinstance(v, Tool)]
 
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -512,7 +526,7 @@ class LocalProvider(Provider):
         matching = [
             v
             for v in self._components.values()
-            if isinstance(v, Tool) and v.name == name and self._is_component_enabled(v)
+            if isinstance(v, Tool) and v.name == name
         ]
         if version:
             matching = [t for t in matching if version.matches(t.version)]
@@ -521,12 +535,8 @@ class LocalProvider(Provider):
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
     async def _list_resources(self) -> Sequence[Resource]:
-        """Return all visible resources."""
-        return [
-            v
-            for v in self._components.values()
-            if isinstance(v, Resource) and self._is_component_enabled(v)
-        ]
+        """Return all resources."""
+        return [v for v in self._components.values() if isinstance(v, Resource)]
 
     async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
@@ -540,9 +550,7 @@ class LocalProvider(Provider):
         matching = [
             v
             for v in self._components.values()
-            if isinstance(v, Resource)
-            and str(v.uri) == uri
-            and self._is_component_enabled(v)
+            if isinstance(v, Resource) and str(v.uri) == uri
         ]
         if version:
             matching = [r for r in matching if version.matches(r.version)]
@@ -551,12 +559,8 @@ class LocalProvider(Provider):
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
     async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
-        """Return all visible resource templates."""
-        return [
-            v
-            for v in self._components.values()
-            if isinstance(v, ResourceTemplate) and self._is_component_enabled(v)
-        ]
+        """Return all resource templates."""
+        return [v for v in self._components.values() if isinstance(v, ResourceTemplate)]
 
     async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
@@ -571,11 +575,8 @@ class LocalProvider(Provider):
         matching = [
             component
             for component in self._components.values()
-            if (
-                isinstance(component, ResourceTemplate)
-                and component.matches(uri) is not None
-                and self._is_component_enabled(component)
-            )
+            if isinstance(component, ResourceTemplate)
+            and component.matches(uri) is not None
         ]
         if version:
             matching = [t for t in matching if version.matches(t.version)]
@@ -584,12 +585,8 @@ class LocalProvider(Provider):
         return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
     async def _list_prompts(self) -> Sequence[Prompt]:
-        """Return all visible prompts."""
-        return [
-            v
-            for v in self._components.values()
-            if isinstance(v, Prompt) and self._is_component_enabled(v)
-        ]
+        """Return all prompts."""
+        return [v for v in self._components.values() if isinstance(v, Prompt)]
 
     async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
@@ -603,9 +600,7 @@ class LocalProvider(Provider):
         matching = [
             v
             for v in self._components.values()
-            if isinstance(v, Prompt)
-            and v.name == name
-            and self._is_component_enabled(v)
+            if isinstance(v, Prompt) and v.name == name
         ]
         if version:
             matching = [p for p in matching if version.matches(p.version)]
@@ -804,7 +799,7 @@ class LocalProvider(Provider):
                 )
                 self._add_component(tool_obj)
                 if not enabled:
-                    self.disable(keys=[tool_obj.key])
+                    self.disable(name=tool_name)
                 return tool_obj
             else:
                 from fastmcp.tools.function_tool import ToolMeta
@@ -824,12 +819,11 @@ class LocalProvider(Provider):
                     serializer=serializer,
                     timeout=timeout,
                     auth=auth,
+                    enabled=enabled,
                 )
                 target = fn.__func__ if hasattr(fn, "__func__") else fn
                 target.__fastmcp__ = metadata  # type: ignore[attr-defined]
                 tool_obj = self.add_tool(fn)
-                if not enabled:
-                    self.disable(keys=[tool_obj.key])
                 return fn
 
         if inspect.isroutine(name_or_fn):
@@ -976,10 +970,12 @@ class LocalProvider(Provider):
                 assert isinstance(obj, (Resource, ResourceTemplate))
                 if isinstance(obj, ResourceTemplate):
                     self.add_template(obj)
+                    if not enabled:
+                        self.disable(name=obj.uri_template)
                 else:
                     self.add_resource(obj)
-                if not enabled:
-                    self.disable(keys=[obj.key])
+                    if not enabled:
+                        self.disable(name=str(obj.uri))
                 return obj
             else:
                 from fastmcp.resources.function_resource import ResourceMeta
@@ -997,12 +993,11 @@ class LocalProvider(Provider):
                     meta=meta,
                     task=task,
                     auth=auth,
+                    enabled=enabled,
                 )
                 target = fn.__func__ if hasattr(fn, "__func__") else fn
                 target.__fastmcp__ = metadata  # type: ignore[attr-defined]
-                obj = self.add_resource(fn)
-                if not enabled:
-                    self.disable(keys=[obj.key])
+                self.add_resource(fn)
                 return fn
 
         return decorator
@@ -1143,7 +1138,7 @@ class LocalProvider(Provider):
                 )
                 self._add_component(prompt_obj)
                 if not enabled:
-                    self.disable(keys=[prompt_obj.key])
+                    self.disable(name=prompt_name)
                 return prompt_obj
             else:
                 from fastmcp.prompts.function_prompt import PromptMeta
@@ -1158,12 +1153,11 @@ class LocalProvider(Provider):
                     meta=meta,
                     task=task,
                     auth=auth,
+                    enabled=enabled,
                 )
                 target = fn.__func__ if hasattr(fn, "__func__") else fn
                 target.__fastmcp__ = metadata  # type: ignore[attr-defined]
-                prompt_obj = self.add_prompt(fn)
-                if not enabled:
-                    self.disable(keys=[prompt_obj.key])
+                self.add_prompt(fn)
                 return fn
 
         if inspect.isroutine(name_or_fn):

@@ -31,12 +31,14 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from functools import partial
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Literal, cast
+
+from typing_extensions import Self
 
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.transforms.visibility import Visibility
+from fastmcp.server.transforms.enabled import Enabled
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.components import FastMCPComponent
@@ -65,7 +67,6 @@ class Provider:
     """
 
     def __init__(self) -> None:
-        self._visibility = Visibility()
         self._transforms: list[Transform] = []
 
     def __repr__(self) -> str:
@@ -73,8 +74,8 @@ class Provider:
 
     @property
     def transforms(self) -> list[Transform]:
-        """All transforms including visibility (applied last/outermost)."""
-        return [*self._transforms, self._visibility]
+        """All transforms applied to components from this provider."""
+        return list(self._transforms)
 
     def add_transform(self, transform: Transform) -> None:
         """Add a transform to this provider.
@@ -105,9 +106,11 @@ class Provider:
 
         Builds a middleware chain: base → transforms (in order).
         Each transform wraps the previous via call_next.
+        Components may be marked as disabled but are NOT filtered here -
+        filtering happens at the server level to allow session transforms to override.
 
         Returns:
-            Transformed sequence of tools.
+            Transformed sequence of tools (including disabled ones).
         """
 
         async def base() -> Sequence[Tool]:
@@ -124,12 +127,16 @@ class Provider:
     ) -> Tool | None:
         """Get tool by transformed name with all transforms applied.
 
+        Note: This method does NOT filter disabled components. The Server
+        (FastMCP) performs enabled filtering after all transforms complete,
+        allowing session-level transforms to override provider-level disables.
+
         Args:
             name: The transformed tool name to look up.
             version: Optional version filter. If None, returns highest version.
 
         Returns:
-            The tool if found and enabled, None otherwise.
+            The tool if found (may be marked disabled), None if not found.
         """
 
         async def base(n: str, version: VersionSpec | None = None) -> Tool | None:
@@ -142,7 +149,10 @@ class Provider:
         return await chain(name, version=version)
 
     async def list_resources(self) -> Sequence[Resource]:
-        """List resources with all transforms applied."""
+        """List resources with all transforms applied.
+
+        Components may be marked as disabled but are NOT filtered here.
+        """
 
         async def base() -> Sequence[Resource]:
             return await self._list_resources()
@@ -158,9 +168,15 @@ class Provider:
     ) -> Resource | None:
         """Get resource by transformed URI with all transforms applied.
 
+        Note: This method does NOT filter disabled components. The Server
+        (FastMCP) performs enabled filtering after all transforms complete.
+
         Args:
             uri: The transformed resource URI to look up.
             version: Optional version filter. If None, returns highest version.
+
+        Returns:
+            The resource if found (may be marked disabled), None if not found.
         """
 
         async def base(u: str, version: VersionSpec | None = None) -> Resource | None:
@@ -173,7 +189,10 @@ class Provider:
         return await chain(uri, version=version)
 
     async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
-        """List resource templates with all transforms applied."""
+        """List resource templates with all transforms applied.
+
+        Components may be marked as disabled but are NOT filtered here.
+        """
 
         async def base() -> Sequence[ResourceTemplate]:
             return await self._list_resource_templates()
@@ -189,9 +208,15 @@ class Provider:
     ) -> ResourceTemplate | None:
         """Get resource template by transformed URI with all transforms applied.
 
+        Note: This method does NOT filter disabled components. The Server
+        (FastMCP) performs enabled filtering after all transforms complete.
+
         Args:
             uri: The transformed template URI to look up.
             version: Optional version filter. If None, returns highest version.
+
+        Returns:
+            The template if found (may be marked disabled), None if not found.
         """
 
         async def base(
@@ -206,7 +231,10 @@ class Provider:
         return await chain(uri, version=version)
 
     async def list_prompts(self) -> Sequence[Prompt]:
-        """List prompts with all transforms applied."""
+        """List prompts with all transforms applied.
+
+        Components may be marked as disabled but are NOT filtered here.
+        """
 
         async def base() -> Sequence[Prompt]:
             return await self._list_prompts()
@@ -222,9 +250,15 @@ class Provider:
     ) -> Prompt | None:
         """Get prompt by transformed name with all transforms applied.
 
+        Note: This method does NOT filter disabled components. The Server
+        (FastMCP) performs enabled filtering after all transforms complete.
+
         Args:
             name: The transformed prompt name to look up.
             version: Optional version filter. If None, returns highest version.
+
+        Returns:
+            The prompt if found (may be marked disabled), None if not found.
         """
 
         async def base(n: str, version: VersionSpec | None = None) -> Prompt | None:
@@ -406,7 +440,7 @@ class Provider:
         async def prompts_base() -> Sequence[Prompt]:
             return prompts
 
-        # Apply transforms in order (visibility last/outermost)
+        # Apply transforms in order
         tools_chain = tools_base
         resources_chain = resources_base
         templates_chain = templates_base
@@ -475,42 +509,79 @@ class Provider:
     def enable(
         self,
         *,
-        keys: Sequence[str] | None = None,
+        name: str | None = None,
+        version: str | None = None,
         tags: set[str] | None = None,
+        components: list[Literal["tool", "resource", "template", "prompt"]]
+        | None = None,
         only: bool = False,
-    ) -> None:
-        """Enable components by removing from blocklist, or set allowlist with only=True.
+    ) -> Self:
+        """Enable components matching all specified criteria.
+
+        Adds an enabled transform that marks matching components as enabled.
+        Later transforms override earlier ones, so enable after disable makes
+        the component enabled.
+
+        With only=True, switches to allowlist mode - first disables everything,
+        then enables matching components.
 
         Args:
-            keys: Keys to enable (e.g., "tool:my_tool@" for unversioned, "tool:my_tool@1.0" for versioned).
-            tags: Tags to enable - components with these tags will be enabled.
-            only: If True, switches to allowlist mode - ONLY show these keys/tags.
+            name: Component name to enable.
+            version: Component version to enable.
+            tags: Enable components with these tags.
+            components: Component types to include (e.g., ["tool", "prompt"]).
+            only: If True, ONLY enable matching components (allowlist mode).
+
+        Returns:
+            Self for method chaining.
         """
-        self._visibility.enable(keys=keys, tags=tags, only=only)
+        if only:
+            # Allowlist: disable everything, then enable matching
+            # The enable transform runs later on return path, so it overrides
+            self._transforms.append(Enabled(False, match_all=True))
+        self._transforms.append(
+            Enabled(
+                True,
+                name=name,
+                version=version,
+                components=frozenset(components) if components else None,
+                tags=frozenset(tags) if tags else None,
+            )
+        )
+
+        return self
 
     def disable(
         self,
         *,
-        keys: Sequence[str] | None = None,
+        name: str | None = None,
+        version: str | None = None,
         tags: set[str] | None = None,
-    ) -> None:
-        """Disable components by adding to the blocklist.
+        components: list[Literal["tool", "resource", "template", "prompt"]]
+        | None = None,
+    ) -> Self:
+        """Disable components matching all specified criteria.
+
+        Adds an enabled transform that marks matching components as disabled.
+        Components can be re-enabled by calling enable() with matching criteria
+        (the later transform wins).
 
         Args:
-            keys: Keys to disable (e.g., "tool:my_tool@" for unversioned, "tool:my_tool@1.0" for versioned).
-            tags: Tags to disable - components with these tags will be disabled.
-        """
-        self._visibility.disable(keys=keys, tags=tags)
-
-    def _is_component_enabled(self, component: FastMCPComponent) -> bool:
-        """Check if a component is enabled.
-
-        Delegates to the visibility filter which handles blocklist and allowlist logic.
-
-        Args:
-            component: The component to check.
+            name: Component name to disable.
+            version: Component version to disable.
+            tags: Disable components with these tags.
+            components: Component types to include (e.g., ["tool", "prompt"]).
 
         Returns:
-            True if the component should be served, False otherwise.
+            Self for method chaining.
         """
-        return self._visibility.is_enabled(component)
+        self._transforms.append(
+            Enabled(
+                False,
+                name=name,
+                version=version,
+                components=frozenset(components) if components else None,
+                tags=frozenset(tags) if tags else None,
+            )
+        )
+        return self

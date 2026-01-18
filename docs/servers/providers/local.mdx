@@ -102,7 +102,7 @@ Configure this when creating the server:
 mcp = FastMCP("MyServer", on_duplicate="warn")
 ```
 
-## Visibility Control
+## Component Visibility
 
 <VersionBadge version="3.0.0" />
 
@@ -119,14 +119,14 @@ def get_status() -> str:
     """Get system status."""
     return "OK"
 
-# Hide admin tools
+# Disable admin tools
 mcp.disable(tags={"admin"})
 
-# Or only show specific tools
+# Or only enable specific tools
 mcp.enable(keys=["tool:get_status"], only=True)
 ```
 
-See [Visibility](/servers/visibility) for the full documentation on keys, tags, allowlist mode, and provider-level visibility.
+See [Enabled](/servers/enabled) for the full documentation on keys, tags, allowlist mode, and provider-level control.
 
 ## Standalone LocalProvider
 
@@ -157,4 +157,4 @@ This is useful for:
 - Testing components in isolation
 - Building reusable component libraries
 
-Standalone providers also support visibility control with `enable()` and `disable()`. See [Visibility](/servers/visibility) for details.
+Standalone providers also support enabled control with `enable()` and `disable()`. See [Enabled](/servers/enabled) for details.

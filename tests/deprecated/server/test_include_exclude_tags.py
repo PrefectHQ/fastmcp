@@ -3,7 +3,7 @@
 import pytest
 
 from fastmcp import FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.server.transforms.enabled import Enabled
 
 
 class TestIncludeExcludeTagsDeprecation:
@@ -20,31 +20,49 @@ class TestIncludeExcludeTagsDeprecation:
             FastMCP(include_tags={"public"})
 
     def test_exclude_tags_still_works(self):
-        """exclude_tags still filters components correctly."""
+        """exclude_tags adds an Enabled transform that disables matching tags."""
         with pytest.warns(DeprecationWarning):
             mcp = FastMCP(exclude_tags={"internal"})
 
-        tool_public = Tool(name="public_tool", parameters={}, tags={"public"})
-        tool_internal = Tool(name="internal_tool", parameters={}, tags={"internal"})
-
-        assert mcp._is_component_enabled(tool_public) is True
-        assert mcp._is_component_enabled(tool_internal) is False
+        # Should have added an Enabled transform that disables the tag
+        enabled_transforms = [t for t in mcp._transforms if isinstance(t, Enabled)]
+        assert len(enabled_transforms) == 1
+        e = enabled_transforms[0]
+        assert e._enabled is False
+        assert e.tags == frozenset({"internal"})
 
     def test_include_tags_still_works(self):
-        """include_tags still filters components correctly."""
+        """include_tags adds Enabled transforms for allowlist mode."""
         with pytest.warns(DeprecationWarning):
             mcp = FastMCP(include_tags={"public"})
 
-        tool_public = Tool(name="public_tool", parameters={}, tags={"public"})
-        tool_other = Tool(name="other_tool", parameters={}, tags={"other"})
+        # Should have added Enabled transforms for allowlist mode
+        # (one to disable all, one to enable matching)
+        enabled_transforms = [t for t in mcp._transforms if isinstance(t, Enabled)]
+        assert len(enabled_transforms) == 2
 
-        assert mcp._is_component_enabled(tool_public) is True
-        assert mcp._is_component_enabled(tool_other) is False
+        # First should disable all (Enabled.all(False))
+        disable_all_transform = enabled_transforms[0]
+        assert disable_all_transform._enabled is False
+        assert disable_all_transform.match_all is True
 
-    def test_exclude_takes_precedence_over_include(self):
-        """exclude_tags takes precedence over include_tags."""
+        # Second should enable matching tags
+        enable_transform = enabled_transforms[1]
+        assert enable_transform._enabled is True
+        assert enable_transform.tags == frozenset({"public"})
+
+    def test_exclude_and_include_both_create_transforms(self):
+        """exclude_tags and include_tags both create transforms."""
         with pytest.warns(DeprecationWarning):
             mcp = FastMCP(include_tags={"public"}, exclude_tags={"deprecated"})
 
-        tool = Tool(name="tool", parameters={}, tags={"public", "deprecated"})
-        assert mcp._is_component_enabled(tool) is False
+        # Should have added transforms for both
+        # include_tags creates 2 (disable all + enable matching)
+        # exclude_tags creates 1 (disable matching)
+        enabled_transforms = [t for t in mcp._transforms if isinstance(t, Enabled)]
+        assert len(enabled_transforms) == 3
+
+        # Check we have both tag rules
+        tags_in_transforms = {frozenset(t.tags) for t in enabled_transforms if t.tags}
+        assert frozenset({"public"}) in tags_in_transforms
+        assert frozenset({"deprecated"}) in tags_in_transforms

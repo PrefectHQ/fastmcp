@@ -1,0 +1,160 @@
+---
+title: enabled
+sidebarTitle: enabled
+---
+
+# `fastmcp.server.transforms.enabled`
+
+
+Enabled transform for marking component enabled state.
+
+This module provides the `Enabled` class which marks components with enabled/disabled
+state using metadata. Multiple Enabled transforms can be stacked - later transforms
+override earlier ones. Final filtering happens at the Provider level.
+
+
+## Classes
+
+### `Enabled` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Sets enabled state on matching components.
+
+Does NOT filter inline - just marks components with enabled state.
+Later transforms in the chain can override earlier marks.
+Final filtering happens at the Provider level after all transforms run.
+
+Filtering logic (blocklist wins over allowlist):
+1. If component key is in _disabled_keys -> DISABLED
+2. If any component tag is in _disabled_tags -> DISABLED
+3. If _default_enabled is False and component not in allowlist -> DISABLED
+4. Otherwise -> ENABLED
+
+Example usage:
+```python
+from fastmcp.server.transforms import Enabled
+
+# Disable components tagged "internal"
+Enabled(False, tags=frozenset({"internal"}))
+
+# Re-enable specific tool (override earlier disable)
+Enabled(True, name="safe_tool")
+
+# Allowlist via composition:
+Enabled(False, match_all=True)  # disable everything
+Enabled(True, tags=frozenset({"public"}))  # enable public
+```
+
+
+**Methods:**
+
+#### `__init__` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+__init__(self, enabled: bool, *, name: str | None = None, version: str | None = None, tags: frozenset[str] | None = None, components: frozenset[str] | None = None, match_all: bool = False) -> None
+```
+
+Initialize an enabled marker.
+
+**Args:**
+- `enabled`: If True, mark matching as enabled; if False, mark as disabled.
+- `name`: Component name to match.
+- `version`: Component version to match.
+- `tags`: Tags to match (component must have at least one).
+- `components`: Component types to match (e.g., frozenset({"tool", "prompt"})).
+- `match_all`: If True, matches all components regardless of other criteria.
+
+
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L182" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]
+```
+
+Mark tools by enabled state.
+
+
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L187" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool(self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None) -> Tool | None
+```
+
+Mark tool if found.
+
+
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]
+```
+
+Mark resources by enabled state.
+
+
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource(self, uri: str, call_next: GetResourceNext, *, version: VersionSpec | None = None) -> Resource | None
+```
+
+Mark resource if found.
+
+
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L222" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resource_templates(self, call_next: ListResourceTemplatesNext) -> Sequence[ResourceTemplate]
+```
+
+Mark resource templates by enabled state.
+
+
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L229" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource_template(self, uri: str, call_next: GetResourceTemplateNext, *, version: VersionSpec | None = None) -> ResourceTemplate | None
+```
+
+Mark resource template if found.
+
+
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L246" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]
+```
+
+Mark prompts by enabled state.
+
+
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L251" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(self, name: str, call_next: GetPromptNext, *, version: VersionSpec | None = None) -> Prompt | None
+```
+
+Mark prompt if found.
+
+
+## Functions
+
+### `is_enabled` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L261" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_enabled(component: FastMCPComponent) -> bool
+```
+
+Check if component is enabled.
+
+Returns True if:
+- No enabled mark exists (default is enabled)
+- Enabled mark is True
+
+Returns False if enabled mark is False.
+
+**Args:**
+- `component`: Component to check.
+
+**Returns:**
+True if component should be enabled/visible to clients.

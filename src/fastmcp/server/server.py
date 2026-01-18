@@ -88,6 +88,7 @@ from fastmcp.server.transforms import (
     ToolTransform,
     Transform,
 )
+from fastmcp.server.transforms.enabled import is_enabled
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.settings import Settings
 from fastmcp.tools.function_tool import FunctionTool
@@ -340,7 +341,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
         tool_transformations: Mapping[str, ToolTransformConfig] | None = None,
     ):
-        # Initialize Provider (sets up _transforms and _visibility)
+        # Initialize Provider (sets up _transforms)
         super().__init__()
 
         # Resolve on_duplicate from deprecated params (delete when removing deprecation)
@@ -439,7 +440,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 stacklevel=2,
             )
             # For backwards compatibility, initialize allowlist from include_tags
-            self._visibility.enable(tags=set(include_tags), only=True)
+            self.enable(tags=set(include_tags), only=True)
         if exclude_tags is not None:
             warnings.warn(
                 "exclude_tags is deprecated. Use server.disable(tags=...) instead.",
@@ -447,7 +448,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 stacklevel=2,
             )
             # For backwards compatibility, initialize blocklist from exclude_tags
-            self._visibility.disable(tags=set(exclude_tags))
+            self.disable(tags=set(exclude_tags))
 
         # Handle deprecated tool_transformations parameter
         if tool_transformations:
@@ -1046,7 +1047,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """Remove a tool transformation.
 
         .. deprecated::
-            Tool transformations are now immutable. Use visibility controls instead.
+            Tool transformations are now immutable. Use enable/disable controls instead.
         """
         if fastmcp.settings.deprecation_warnings:
             warnings.warn(
@@ -1057,79 +1058,11 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 stacklevel=2,
             )
 
-    # -------------------------------------------------------------------------
-    # Enable/Disable
-    # -------------------------------------------------------------------------
-
-    def enable(
-        self,
-        *,
-        keys: Sequence[str] | None = None,
-        tags: set[str] | None = None,
-        only: bool = False,
-    ) -> None:
-        """Enable components by removing from blocklist, or set allowlist with only=True.
-
-        Args:
-            keys: Keys to enable (e.g., ``"tool:my_tool@"`` for unversioned, ``"tool:my_tool@1.0"`` for versioned).
-            tags: Tags to enable - components with these tags will be enabled.
-            only: If True, switches to allowlist mode - ONLY show these keys/tags.
-                This clears existing allowlists and sets default visibility to False.
-
-        Note:
-            Component keys must match how they appear on this server. If a tool
-            passes through a transforming provider (e.g., mounted with a namespace),
-            its key changes. Always retrieve components from the same server you
-            call enable/disable on.
-
-        Example:
-            .. code-block:: python
-
-                # By key (prefixed)
-                server.enable(keys=["tool:my_tool@"])
-
-                # By tag
-                server.enable(tags={"internal"})
-
-                # Allowlist mode - ONLY show tools tagged "final"
-                server.enable(tags={"final"}, only=True)
-        """
-        self._visibility.enable(keys=keys, tags=tags, only=only)
-
-    def disable(
-        self,
-        *,
-        keys: Sequence[str] | None = None,
-        tags: set[str] | None = None,
-    ) -> None:
-        """Disable components by adding to the blocklist.
-
-        Args:
-            keys: Keys to disable (e.g., ``"tool:my_tool@"`` for unversioned, ``"tool:my_tool@1.0"`` for versioned).
-            tags: Tags to disable - components with these tags will be disabled.
-
-        Note:
-            Component keys must match how they appear on this server. If a tool
-            passes through a transforming provider (e.g., mounted with a namespace),
-            its key changes. Always retrieve components from the same server you
-            call enable/disable on.
-
-        Example:
-            .. code-block:: python
-
-                # By key (prefixed)
-                server.disable(keys=["tool:my_tool@"])
-
-                # By tag
-                server.disable(tags={"dangerous", "internal"})
-        """
-        self._visibility.disable(keys=keys, tags=tags)
-
     async def get_tools(self, *, run_middleware: bool = False) -> list[Tool]:
         """Get all enabled tools from providers.
 
         Queries all providers via the root provider (which applies provider transforms,
-        server transforms, and visibility filtering). First provider wins for duplicate keys.
+        server transforms, and enabled filtering). First provider wins for duplicate keys.
 
         Args:
             run_middleware: If True, apply the middleware chain before returning.
@@ -1149,8 +1082,9 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                     call_next=lambda context: self.get_tools(run_middleware=False),
                 )
 
-            # Query through full transform chain (provider transforms + server transforms + visibility)
-            tools = await self.list_tools()
+            # Query through full transform chain (provider transforms + server transforms)
+            # Then apply enabled filtering at the server level
+            tools = [t for t in await self.list_tools() if is_enabled(t)]
 
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
@@ -1221,13 +1155,32 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return tool
 
-    # get_tool() is inherited from Provider - wraps _get_tool() with transforms
+    async def get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
+        """Get a tool by name, filtering disabled tools.
+
+        Overrides Provider.get_tool() to add enabled filtering after all
+        transforms (including session-level) have been applied. This ensures
+        session transforms can override provider-level disables.
+
+        Args:
+            name: The tool name.
+            version: Version filter (None returns highest version).
+
+        Returns:
+            The tool if found and enabled, None otherwise.
+        """
+        tool = await super().get_tool(name, version)
+        if tool is None or not is_enabled(tool):
+            return None
+        return tool
 
     async def get_resources(self, *, run_middleware: bool = False) -> list[Resource]:
         """Get all enabled resources from providers.
 
         Queries all providers via the root provider (which applies provider transforms,
-        server transforms, and visibility filtering). First provider wins for duplicate keys.
+        server transforms, and enabled filtering). First provider wins for duplicate keys.
 
         Args:
             run_middleware: If True, apply the middleware chain before returning.
@@ -1247,8 +1200,8 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                     call_next=lambda context: self.get_resources(run_middleware=False),
                 )
 
-            # Query through full transform chain (provider transforms + server transforms + visibility)
-            resources = await self.list_resources()
+            # Query through full transform chain, then apply enabled filtering
+            resources = [r for r in await self.list_resources() if is_enabled(r)]
 
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
@@ -1318,7 +1271,25 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return resource
 
-    # get_resource() is inherited from Provider - wraps _get_resource() with transforms
+    async def get_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> Resource | None:
+        """Get a resource by URI, filtering disabled resources.
+
+        Overrides Provider.get_resource() to add enabled filtering after all
+        transforms (including session-level) have been applied.
+
+        Args:
+            uri: The resource URI.
+            version: Version filter (None returns highest version).
+
+        Returns:
+            The resource if found and enabled, None otherwise.
+        """
+        resource = await super().get_resource(uri, version)
+        if resource is None or not is_enabled(resource):
+            return None
+        return resource
 
     async def get_resource_templates(
         self, *, run_middleware: bool = False
@@ -1326,7 +1297,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """Get all enabled resource templates from providers.
 
         Queries all providers via the root provider (which applies provider transforms,
-        server transforms, and visibility filtering). First provider wins for duplicate keys.
+        server transforms, and enabled filtering). First provider wins for duplicate keys.
 
         Args:
             run_middleware: If True, apply the middleware chain before returning.
@@ -1348,8 +1319,10 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                     ),
                 )
 
-            # Query through full transform chain (provider transforms + server transforms + visibility)
-            templates = await self.list_resource_templates()
+            # Query through full transform chain, then apply enabled filtering
+            templates = [
+                t for t in await self.list_resource_templates() if is_enabled(t)
+            ]
 
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
@@ -1419,13 +1392,31 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return template
 
-    # get_resource_template() is inherited from Provider - wraps _get_resource_template() with transforms
+    async def get_resource_template(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> ResourceTemplate | None:
+        """Get a resource template by URI, filtering disabled templates.
+
+        Overrides Provider.get_resource_template() to add enabled filtering after
+        all transforms (including session-level) have been applied.
+
+        Args:
+            uri: The template URI.
+            version: Version filter (None returns highest version).
+
+        Returns:
+            The template if found and enabled, None otherwise.
+        """
+        template = await super().get_resource_template(uri, version)
+        if template is None or not is_enabled(template):
+            return None
+        return template
 
     async def get_prompts(self, *, run_middleware: bool = False) -> list[Prompt]:
         """Get all enabled prompts from providers.
 
         Queries all providers via the root provider (which applies provider transforms,
-        server transforms, and visibility filtering). First provider wins for duplicate keys.
+        server transforms, and enabled filtering). First provider wins for duplicate keys.
 
         Args:
             run_middleware: If True, apply the middleware chain before returning.
@@ -1445,8 +1436,8 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                     call_next=lambda context: self.get_prompts(run_middleware=False),
                 )
 
-            # Query through full transform chain (provider transforms + server transforms + visibility)
-            prompts = await self.list_prompts()
+            # Query through full transform chain, then apply enabled filtering
+            prompts = [p for p in await self.list_prompts() if is_enabled(p)]
 
             # Get auth context (skip_auth=True for STDIO which has no auth concept)
             skip_auth, token = _get_auth_context()
@@ -1516,7 +1507,25 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         return prompt
 
-    # get_prompt() is inherited from Provider - wraps _get_prompt() with transforms
+    async def get_prompt(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Prompt | None:
+        """Get a prompt by name, filtering disabled prompts.
+
+        Overrides Provider.get_prompt() to add enabled filtering after all
+        transforms (including session-level) have been applied.
+
+        Args:
+            name: The prompt name.
+            version: Version filter (None returns highest version).
+
+        Returns:
+            The prompt if found and enabled, None otherwise.
+        """
+        prompt = await super().get_prompt(name, version)
+        if prompt is None or not is_enabled(prompt):
+            return None
+        return prompt
 
     @overload
     async def call_tool(
@@ -1599,7 +1608,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 )
 
             # Core logic: find and execute tool (providers queried in parallel)
-            # Use _get_tool to apply transforms (including visibility)
+            # Use get_tool to apply transforms and filter disabled
             with server_span(
                 f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
@@ -1831,7 +1840,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 )
 
             # Core logic: find and render prompt (providers queried in parallel)
-            # Use _get_prompt to apply transforms (including visibility)
+            # Use get_prompt to apply transforms and filter disabled
             with server_span(
                 f"prompts/get {name}", "prompts/get", self.name, "prompt", name
             ) as span:

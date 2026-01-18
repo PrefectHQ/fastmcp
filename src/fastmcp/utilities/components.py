@@ -144,18 +144,24 @@ class FastMCPComponent(FastMCPBaseModel):
         Returns a dict that always includes a `fastmcp` key containing:
         - `tags`: sorted list of component tags
         - `version`: component version (only if set)
+
+        Internal keys (prefixed with `_`) are stripped from the fastmcp namespace.
         """
-        meta = self.meta or {}
+        meta = dict(self.meta) if self.meta else {}
 
         fastmcp_meta: FastMCPMeta = {"tags": sorted(self.tags)}
         if self.version is not None:
             fastmcp_meta["version"] = self.version
 
-        # overwrite any existing fastmcp meta with keys from the new one
+        # Merge with upstream fastmcp meta, stripping internal keys
         if (upstream_meta := meta.get("fastmcp")) is not None:
             if not isinstance(upstream_meta, dict):
                 raise TypeError("meta['fastmcp'] must be a dict")
-            fastmcp_meta = upstream_meta | fastmcp_meta
+            # Filter out internal keys (e.g., _internal used for enabled state)
+            public_upstream = {
+                k: v for k, v in upstream_meta.items() if not k.startswith("_")
+            }
+            fastmcp_meta = cast(FastMCPMeta, public_upstream | fastmcp_meta)
         meta["fastmcp"] = fastmcp_meta
 
         return meta

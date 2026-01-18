@@ -67,6 +67,7 @@ class PromptMeta:
     meta: dict[str, Any] | None = None
     task: bool | TaskConfig | None = None
     auth: AuthCheckCallable | list[AuthCheckCallable] | None = None
+    enabled: bool = True
 
 
 class FunctionPrompt(Prompt):
