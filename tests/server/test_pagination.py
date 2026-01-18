@@ -223,3 +223,21 @@ class TestServerPagination:
             result2 = await client.list_tools_mcp(cursor=result.nextCursor)
             assert len(result2.tools) == 10
             assert result2.nextCursor is None
+
+
+class TestPageSizeValidation:
+    """Tests for list_page_size validation."""
+
+    def test_zero_page_size_raises(self) -> None:
+        """Zero page size should raise ValueError."""
+        with pytest.raises(
+            ValueError, match="list_page_size must be a positive integer"
+        ):
+            FastMCP(list_page_size=0)
+
+    def test_negative_page_size_raises(self) -> None:
+        """Negative page size should raise ValueError."""
+        with pytest.raises(
+            ValueError, match="list_page_size must be a positive integer"
+        ):
+            FastMCP(list_page_size=-1)

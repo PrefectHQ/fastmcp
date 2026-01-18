@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -36,7 +37,13 @@ class CursorState:
         try:
             data = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
             return cls(offset=data["o"])
-        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+        except (
+            json.JSONDecodeError,
+            KeyError,
+            ValueError,
+            TypeError,
+            binascii.Error,
+        ) as e:
             raise ValueError(f"Invalid cursor: {cursor}") from e
 
 

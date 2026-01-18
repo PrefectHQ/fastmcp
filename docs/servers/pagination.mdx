@@ -21,11 +21,16 @@ from fastmcp import FastMCP
 # Enable pagination with 50 items per page
 server = FastMCP("ComponentRegistry", list_page_size=50)
 
-# Register many tools, resources, prompts...
-for i in range(200):
-    @server.tool(name=f"tool_{i}")
-    def make_tool(x: int) -> int:
-        return x * i
+# Register tools (in practice, these might come from a database or config)
+@server.tool
+def search(query: str) -> str:
+    return f"Results for: {query}"
+
+@server.tool
+def analyze(data: str) -> dict:
+    return {"status": "analyzed", "data": data}
+
+# ... many more tools, resources, prompts
 ```
 
 When `list_page_size` is configured, the `tools/list`, `resources/list`, `resources/templates/list`, and `prompts/list` endpoints all paginate their responses. Each response includes a `nextCursor` field when more results exist, which clients use to fetch subsequent pages.

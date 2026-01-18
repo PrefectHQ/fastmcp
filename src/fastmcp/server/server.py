@@ -387,6 +387,8 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         )
 
         # Store list_page_size for pagination of list operations
+        if list_page_size is not None and list_page_size <= 0:
+            raise ValueError("list_page_size must be a positive integer")
         self._list_page_size: int | None = list_page_size
 
         if tool_serializer is not None and fastmcp.settings.deprecation_warnings:
