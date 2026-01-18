@@ -123,7 +123,7 @@ def get_status() -> str:
 mcp.disable(tags={"admin"})
 
 # Or only enable specific tools
-mcp.enable(keys=["tool:get_status"], only=True)
+mcp.enable(keys={"tool:get_status"}, only=True)
 ```
 
 See [Enabled](/servers/enabled) for the full documentation on keys, tags, allowlist mode, and provider-level control.

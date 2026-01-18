@@ -1488,12 +1488,12 @@ class TestComponentServicePrefixLess:
         assert any(t.name == "my_tool" for t in tools)
 
         # Disable and re-enable
-        main_app.disable(name="my_tool", components=["tool"])
+        main_app.disable(names={"my_tool"}, components=["tool"])
         # Verify tool is now disabled
         tools = await main_app.get_tools()
         assert not any(t.name == "my_tool" for t in tools)
 
-        main_app.enable(name="my_tool", components=["tool"])
+        main_app.enable(names={"my_tool"}, components=["tool"])
         # Verify tool is now enabled
         tools = await main_app.get_tools()
         assert any(t.name == "my_tool" for t in tools)
@@ -1511,12 +1511,12 @@ class TestComponentServicePrefixLess:
         main_app.mount(sub_app)
 
         # Disable and re-enable
-        main_app.disable(name="data://test", components=["resource"])
+        main_app.disable(names={"data://test"}, components=["resource"])
         # Verify resource is now disabled
         resources = await main_app.get_resources()
         assert not any(str(r.uri) == "data://test" for r in resources)
 
-        main_app.enable(name="data://test", components=["resource"])
+        main_app.enable(names={"data://test"}, components=["resource"])
         # Verify resource is now enabled
         resources = await main_app.get_resources()
         assert any(str(r.uri) == "data://test" for r in resources)
@@ -1534,12 +1534,12 @@ class TestComponentServicePrefixLess:
         main_app.mount(sub_app)
 
         # Disable and re-enable
-        main_app.disable(name="my_prompt", components=["prompt"])
+        main_app.disable(names={"my_prompt"}, components=["prompt"])
         # Verify prompt is now disabled
         prompts = await main_app.get_prompts()
         assert not any(p.name == "my_prompt" for p in prompts)
 
-        main_app.enable(name="my_prompt", components=["prompt"])
+        main_app.enable(names={"my_prompt"}, components=["prompt"])
         # Verify prompt is now enabled
         prompts = await main_app.get_prompts()
         assert any(p.name == "my_prompt" for p in prompts)

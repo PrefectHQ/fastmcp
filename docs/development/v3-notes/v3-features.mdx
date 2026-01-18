@@ -190,20 +190,20 @@ Components can be enabled/disabled using the enabled system. Each `enable()` or 
 mcp = FastMCP("Server")
 
 # Disable by name and component type
-mcp.disable(name="dangerous_tool", components=["tool"])
+mcp.disable(names={"dangerous_tool"}, components=["tool"])
 
 # Disable by tag
 mcp.disable(tags={"admin"})
 
 # Disable by version
-mcp.disable(name="old_tool", version="1.0", components=["tool"])
+mcp.disable(names={"old_tool"}, version="1.0", components=["tool"])
 
 # Allowlist mode - only show components with these tags
 mcp.enable(tags={"public"}, only=True)
 
 # Enable overrides earlier disable (later transform wins)
 mcp.disable(tags={"internal"})
-mcp.enable(name="safe_tool")  # safe_tool is visible despite internal tag
+mcp.enable(names={"safe_tool"})  # safe_tool is visible despite internal tag
 ```
 
 Works at both server and provider level. Supports:
@@ -823,7 +823,7 @@ tool = await server.get_tool("my_tool")
 tool.disable()
 
 # v3.0
-server.disable(name="my_tool", components=["tool"])
+server.disable(names={"my_tool"}, components=["tool"])
 ```
 
 ### Component Lookup Methods

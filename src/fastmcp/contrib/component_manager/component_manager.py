@@ -112,7 +112,7 @@ def _make_endpoint(server: FastMCP, component_type: str, action: str):
 
         # Call server.enable() or server.disable()
         method = getattr(server, action)
-        method(name=name, version=version, components=components)
+        method(names={name} if name else None, version=version, components=components)
 
         return JSONResponse(
             {"message": f"{action.capitalize()}d {component_type}: {name}"}

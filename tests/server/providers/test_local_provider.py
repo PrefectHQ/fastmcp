@@ -350,7 +350,7 @@ class TestLocalProviderDecorators:
         enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
         assert len(enabled_transforms) == 1
         assert enabled_transforms[0]._enabled is False
-        assert enabled_transforms[0].name == "disabled_tool"
+        assert enabled_transforms[0].names == {"disabled_tool"}
 
     async def test_tool_enabled_false_not_listed(self):
         """Disabled tool should not appear in get_tools (filtering happens at server level)."""
@@ -385,7 +385,7 @@ class TestLocalProviderDecorators:
         assert await server.get_tool("my_tool") is None
 
         # Server-level enable overrides it
-        server.enable(name="my_tool")
+        server.enable(names={"my_tool"})
         tool = await server.get_tool("my_tool")
         assert tool is not None
         assert tool.name == "my_tool"
@@ -439,7 +439,7 @@ class TestLocalProviderDecorators:
         enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
         assert len(enabled_transforms) == 1
         assert enabled_transforms[0]._enabled is False
-        assert enabled_transforms[0].name == "resource://test"
+        assert enabled_transforms[0].names == {"resource://test"}
 
     async def test_resource_enabled_false_not_listed(self):
         """Disabled resource should not appear in get_resources (filtering at server level)."""
@@ -475,7 +475,7 @@ class TestLocalProviderDecorators:
         enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
         assert len(enabled_transforms) == 1
         assert enabled_transforms[0]._enabled is False
-        assert enabled_transforms[0].name == "data://{id}"
+        assert enabled_transforms[0].names == {"data://{id}"}
 
     async def test_template_enabled_false_not_listed(self):
         """Disabled template should not appear in get_resource_templates (filtering at server level)."""
@@ -546,7 +546,7 @@ class TestLocalProviderDecorators:
         enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
         assert len(enabled_transforms) == 1
         assert enabled_transforms[0]._enabled is False
-        assert enabled_transforms[0].name == "disabled_prompt"
+        assert enabled_transforms[0].names == {"disabled_prompt"}
 
     async def test_prompt_enabled_false_not_listed(self):
         """Disabled prompt should not appear in get_prompts (filtering at server level)."""

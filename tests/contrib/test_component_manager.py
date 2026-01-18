@@ -50,7 +50,7 @@ class TestComponentManagementRoutes:
     async def test_enable_tool_route(self, client, mcp):
         """Test enabling a tool via the HTTP route."""
         # First disable the tool
-        mcp.disable(name="test_tool", components=["tool"])
+        mcp.disable(names={"test_tool"}, components=["tool"])
         tools = await mcp.get_tools()
         assert not any(t.name == "test_tool" for t in tools)
 
@@ -83,7 +83,7 @@ class TestComponentManagementRoutes:
     async def test_enable_resource_route(self, client, mcp):
         """Test enabling a resource via the HTTP route."""
         # First disable the resource (can use URI as name for resources)
-        mcp.disable(name="data://test_resource", components=["resource"])
+        mcp.disable(names={"data://test_resource"}, components=["resource"])
         resources = await mcp.get_resources()
         assert not any(str(r.uri) == "data://test_resource" for r in resources)
 
@@ -116,7 +116,7 @@ class TestComponentManagementRoutes:
     async def test_enable_template_route(self, client, mcp):
         """Test enabling a resource template via the HTTP route."""
         key = "data://test_resource/{id}"
-        mcp.disable(name="data://test_resource/{id}", components=["template"])
+        mcp.disable(names={"data://test_resource/{id}"}, components=["template"])
         templates = await mcp.get_resource_templates()
         assert not any(t.uri_template == key for t in templates)
         response = client.post("/resources/data://test_resource/{id}/enable")
@@ -143,7 +143,7 @@ class TestComponentManagementRoutes:
     async def test_enable_prompt_route(self, client, mcp):
         """Test enabling a prompt via the HTTP route."""
         # First disable the prompt
-        mcp.disable(name="test_prompt", components=["prompt"])
+        mcp.disable(names={"test_prompt"}, components=["prompt"])
         prompts = await mcp.get_prompts()
         assert not any(p.name == "test_prompt" for p in prompts)
 
@@ -224,7 +224,7 @@ class TestAuthComponentManagementRoutes:
 
     async def test_unauthorized_enable_tool(self):
         """Test that unauthenticated requests to enable a tool are rejected."""
-        self.mcp.disable(name="test_tool", components=["tool"])
+        self.mcp.disable(names={"test_tool"}, components=["tool"])
         tools = await self.mcp.get_tools()
         assert not any(t.name == "test_tool" for t in tools)
 
@@ -235,7 +235,7 @@ class TestAuthComponentManagementRoutes:
 
     async def test_authorized_enable_tool(self):
         """Test that authenticated requests to enable a tool are allowed."""
-        self.mcp.disable(name="test_tool", components=["tool"])
+        self.mcp.disable(names={"test_tool"}, components=["tool"])
         tools = await self.mcp.get_tools()
         assert not any(t.name == "test_tool" for t in tools)
 
@@ -273,7 +273,7 @@ class TestAuthComponentManagementRoutes:
 
     async def test_forbidden_enable_tool(self):
         """Test that requests with insufficient scopes are rejected."""
-        self.mcp.disable(name="test_tool", components=["tool"])
+        self.mcp.disable(names={"test_tool"}, components=["tool"])
         tools = await self.mcp.get_tools()
         assert not any(t.name == "test_tool" for t in tools)
 
@@ -287,7 +287,7 @@ class TestAuthComponentManagementRoutes:
 
     async def test_authorized_enable_resource(self):
         """Test that authenticated requests to enable a resource are allowed."""
-        self.mcp.disable(name="data://test_resource", components=["resource"])
+        self.mcp.disable(names={"data://test_resource"}, components=["resource"])
         resources = await self.mcp.get_resources()
         assert not any(str(r.uri) == "data://test_resource" for r in resources)
 
@@ -312,7 +312,7 @@ class TestAuthComponentManagementRoutes:
 
     async def test_forbidden_enable_resource(self):
         """Test that requests with insufficient scopes are rejected."""
-        self.mcp.disable(name="data://test_resource", components=["resource"])
+        self.mcp.disable(names={"data://test_resource"}, components=["resource"])
         resources = await self.mcp.get_resources()
         assert not any(str(r.uri) == "data://test_resource" for r in resources)
 
@@ -340,7 +340,7 @@ class TestAuthComponentManagementRoutes:
 
     async def test_unauthorized_enable_prompt(self):
         """Test that unauthenticated requests to enable a prompt are rejected."""
-        self.mcp.disable(name="test_prompt", components=["prompt"])
+        self.mcp.disable(names={"test_prompt"}, components=["prompt"])
         prompts = await self.mcp.get_prompts()
         assert not any(p.name == "test_prompt" for p in prompts)
 
@@ -351,7 +351,7 @@ class TestAuthComponentManagementRoutes:
 
     async def test_authorized_enable_prompt(self):
         """Test that authenticated requests to enable a prompt are allowed."""
-        self.mcp.disable(name="test_prompt", components=["prompt"])
+        self.mcp.disable(names={"test_prompt"}, components=["prompt"])
         prompts = await self.mcp.get_prompts()
         assert not any(p.name == "test_prompt" for p in prompts)
 
@@ -429,7 +429,7 @@ class TestComponentManagerWithPath:
         return TestClient(mcp_with_path.http_app())
 
     async def test_enable_tool_route_with_path(self, client_with_path, mcp_with_path):
-        mcp_with_path.disable(name="test_tool", components=["tool"])
+        mcp_with_path.disable(names={"test_tool"}, components=["tool"])
         tools = await mcp_with_path.get_tools()
         assert not any(t.name == "test_tool" for t in tools)
         response = client_with_path.post("/test/tools/test_tool/enable")
@@ -450,7 +450,7 @@ class TestComponentManagerWithPath:
         assert not any(str(r.uri) == "data://test_resource" for r in resources)
 
     async def test_enable_prompt_route_with_path(self, client_with_path, mcp_with_path):
-        mcp_with_path.disable(name="test_prompt", components=["prompt"])
+        mcp_with_path.disable(names={"test_prompt"}, components=["prompt"])
         prompts = await mcp_with_path.get_prompts()
         assert not any(p.name == "test_prompt" for p in prompts)
         response = client_with_path.post("/test/prompts/test_prompt/enable")
@@ -503,7 +503,7 @@ class TestComponentManagerWithPathAuth:
         self.client = TestClient(self.mcp.http_app())
 
     async def test_unauthorized_enable_tool(self):
-        self.mcp.disable(name="test_tool", components=["tool"])
+        self.mcp.disable(names={"test_tool"}, components=["tool"])
         tools = await self.mcp.get_tools()
         assert not any(t.name == "test_tool" for t in tools)
         response = self.client.post("/test/tools/test_tool/enable")
@@ -512,7 +512,7 @@ class TestComponentManagerWithPathAuth:
         assert not any(t.name == "test_tool" for t in tools)
 
     async def test_forbidden_enable_tool(self):
-        self.mcp.disable(name="test_tool", components=["tool"])
+        self.mcp.disable(names={"test_tool"}, components=["tool"])
         tools = await self.mcp.get_tools()
         assert not any(t.name == "test_tool" for t in tools)
         response = self.client.post(
@@ -524,7 +524,7 @@ class TestComponentManagerWithPathAuth:
         assert not any(t.name == "test_tool" for t in tools)
 
     async def test_authorized_enable_tool(self):
-        self.mcp.disable(name="test_tool", components=["tool"])
+        self.mcp.disable(names={"test_tool"}, components=["tool"])
         tools = await self.mcp.get_tools()
         assert not any(t.name == "test_tool" for t in tools)
         response = self.client.post(
@@ -568,7 +568,7 @@ class TestComponentManagerWithPathAuth:
         assert not any(str(r.uri) == "data://test_resource" for r in resources)
 
     async def test_unauthorized_enable_prompt(self):
-        self.mcp.disable(name="test_prompt", components=["prompt"])
+        self.mcp.disable(names={"test_prompt"}, components=["prompt"])
         prompts = await self.mcp.get_prompts()
         assert not any(p.name == "test_prompt" for p in prompts)
         response = self.client.post("/test/prompts/test_prompt/enable")
@@ -577,7 +577,7 @@ class TestComponentManagerWithPathAuth:
         assert not any(p.name == "test_prompt" for p in prompts)
 
     async def test_forbidden_enable_prompt(self):
-        self.mcp.disable(name="test_prompt", components=["prompt"])
+        self.mcp.disable(names={"test_prompt"}, components=["prompt"])
         prompts = await self.mcp.get_prompts()
         assert not any(p.name == "test_prompt" for p in prompts)
         response = self.client.post(
@@ -589,7 +589,7 @@ class TestComponentManagerWithPathAuth:
         assert not any(p.name == "test_prompt" for p in prompts)
 
     async def test_authorized_enable_prompt(self):
-        self.mcp.disable(name="test_prompt", components=["prompt"])
+        self.mcp.disable(names={"test_prompt"}, components=["prompt"])
         prompts = await self.mcp.get_prompts()
         assert not any(p.name == "test_prompt" for p in prompts)
         response = self.client.post(

@@ -38,7 +38,7 @@ from fastmcp.server.transforms import Enabled
 Enabled(False, tags=frozenset({"internal"}))
 
 # Re-enable specific tool (override earlier disable)
-Enabled(True, name="safe_tool")
+Enabled(True, names={"safe_tool"})
 
 # Allowlist via composition:
 Enabled(False, match_all=True)  # disable everything

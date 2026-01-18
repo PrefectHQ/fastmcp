@@ -509,7 +509,8 @@ class Provider:
     def enable(
         self,
         *,
-        name: str | None = None,
+        names: set[str] | None = None,
+        keys: set[str] | None = None,
         version: str | None = None,
         tags: set[str] | None = None,
         components: list[Literal["tool", "resource", "template", "prompt"]]
@@ -526,7 +527,8 @@ class Provider:
         then enables matching components.
 
         Args:
-            name: Component name to enable.
+            names: Component names or URIs to enable.
+            keys: Component keys to enable (e.g., {"tool:my_tool@v1"}).
             version: Component version to enable.
             tags: Enable components with these tags.
             components: Component types to include (e.g., ["tool", "prompt"]).
@@ -542,7 +544,8 @@ class Provider:
         self._transforms.append(
             Enabled(
                 True,
-                name=name,
+                names=names,
+                keys=keys,
                 version=version,
                 components=frozenset(components) if components else None,
                 tags=frozenset(tags) if tags else None,
@@ -554,7 +557,8 @@ class Provider:
     def disable(
         self,
         *,
-        name: str | None = None,
+        names: set[str] | None = None,
+        keys: set[str] | None = None,
         version: str | None = None,
         tags: set[str] | None = None,
         components: list[Literal["tool", "resource", "template", "prompt"]]
@@ -567,7 +571,8 @@ class Provider:
         (the later transform wins).
 
         Args:
-            name: Component name to disable.
+            names: Component names or URIs to disable.
+            keys: Component keys to disable (e.g., {"tool:my_tool@v1"}).
             version: Component version to disable.
             tags: Disable components with these tags.
             components: Component types to include (e.g., ["tool", "prompt"]).
@@ -578,7 +583,8 @@ class Provider:
         self._transforms.append(
             Enabled(
                 False,
-                name=name,
+                names=names,
+                keys=keys,
                 version=version,
                 components=frozenset(components) if components else None,
                 tags=frozenset(tags) if tags else None,

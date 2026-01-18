@@ -231,7 +231,7 @@ def get_public(): return "public"
 def get_secret(): return "secret"
 
 # Disable specific resources by key
-mcp.disable(keys=["resource:data://secret"])
+mcp.disable(keys={"resource:data://secret"})
 
 # Disable resources by tag
 mcp.disable(tags={"internal"})
@@ -395,8 +395,8 @@ def example_resource() -> str:
 
 # These operations trigger notifications:
 mcp.add_resource(example_resource)                   # Sends resources/list_changed notification
-mcp.disable(keys=["resource:data://example"])        # Sends resources/list_changed notification
-mcp.enable(keys=["resource:data://example"])         # Sends resources/list_changed notification
+mcp.disable(keys={"resource:data://example"})        # Sends resources/list_changed notification
+mcp.enable(keys={"resource:data://example"})         # Sends resources/list_changed notification
 ```
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.

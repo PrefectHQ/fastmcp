@@ -853,7 +853,7 @@ def public_action() -> str:
     return "Done"
 
 # Disable specific tools by key
-mcp.disable(keys=["tool:admin_action"])
+mcp.disable(keys={"tool:admin_action"})
 
 # Disable tools by tag
 mcp.disable(tags={"admin"})
@@ -967,8 +967,8 @@ def example_tool() -> str:
 
 # These operations trigger notifications:
 mcp.add_tool(example_tool)              # Sends tools/list_changed notification
-mcp.disable(keys=["tool:example_tool"]) # Sends tools/list_changed notification
-mcp.enable(keys=["tool:example_tool"])  # Sends tools/list_changed notification
+mcp.disable(keys={"tool:example_tool"}) # Sends tools/list_changed notification
+mcp.enable(keys={"tool:example_tool"})  # Sends tools/list_changed notification
 mcp.remove_tool("example_tool")         # Sends tools/list_changed notification
 ```
 

@@ -244,7 +244,7 @@ my_server = FastMCP("MyServer")
 my_server.add_tool(local_tool)
 
 # Now you can control enabled state
-my_server.disable(keys=[local_tool.key])
+my_server.disable(keys={local_tool.key})
 ```
 
 ## Performance Considerations

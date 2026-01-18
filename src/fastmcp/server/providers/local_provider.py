@@ -283,7 +283,7 @@ class LocalProvider(Provider):
                 tool = Tool.from_function(tool)
         self._add_component(tool)
         if not enabled:
-            self.disable(name=tool.name)
+            self.disable(keys={tool.key}, components=["tool"], version=tool.version)
         return tool
 
     def remove_tool(self, name: str, version: str | None = None) -> None:
@@ -375,9 +375,17 @@ class LocalProvider(Provider):
         self._add_component(resource)
         if not enabled:
             if isinstance(resource, ResourceTemplate):
-                self.disable(name=resource.uri_template)
+                self.disable(
+                    keys={resource.key},
+                    components=["template"],
+                    version=resource.version,
+                )
             else:
-                self.disable(name=str(resource.uri))
+                self.disable(
+                    keys={resource.key},
+                    components=["resource"],
+                    version=resource.version,
+                )
         return resource
 
     def remove_resource(self, uri: str, version: str | None = None) -> None:
@@ -475,7 +483,9 @@ class LocalProvider(Provider):
                 )
         self._add_component(prompt)
         if not enabled:
-            self.disable(name=prompt.name)
+            self.disable(
+                keys={prompt.key}, components=["prompt"], version=prompt.version
+            )
         return prompt
 
     def remove_prompt(self, name: str, version: str | None = None) -> None:
@@ -799,7 +809,11 @@ class LocalProvider(Provider):
                 )
                 self._add_component(tool_obj)
                 if not enabled:
-                    self.disable(name=tool_name)
+                    self.disable(
+                        keys={tool_obj.key},
+                        components=["tool"],
+                        version=tool_obj.version,
+                    )
                 return tool_obj
             else:
                 from fastmcp.tools.function_tool import ToolMeta
@@ -971,11 +985,11 @@ class LocalProvider(Provider):
                 if isinstance(obj, ResourceTemplate):
                     self.add_template(obj)
                     if not enabled:
-                        self.disable(name=obj.uri_template)
+                        self.disable(keys={obj.key})
                 else:
                     self.add_resource(obj)
                     if not enabled:
-                        self.disable(name=str(obj.uri))
+                        self.disable(keys={obj.key})
                 return obj
             else:
                 from fastmcp.resources.function_resource import ResourceMeta
@@ -1138,7 +1152,7 @@ class LocalProvider(Provider):
                 )
                 self._add_component(prompt_obj)
                 if not enabled:
-                    self.disable(name=prompt_name)
+                    self.disable(keys={prompt_obj.key})
                 return prompt_obj
             else:
                 from fastmcp.prompts.function_prompt import PromptMeta

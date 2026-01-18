@@ -149,7 +149,7 @@ mcp.add_transform(ToolTransform({
 ```
 </CodeGroup>
 
-`remove_tool_transformation()` is deprecated with no replacement - transforms are immutable once added. Use `server.disable(name=..., components=["tool"])` to hide tools dynamically.
+`remove_tool_transformation()` is deprecated with no replacement - transforms are immutable once added. Use `server.disable(names={...}, components=["tool"])` to hide tools dynamically.
 
 ### FastMCP.as_proxy() Deprecated
 
@@ -195,8 +195,8 @@ tool.enable()
 ```
 
 ```python After
-server.disable(name="my_tool", components=["tool"])
-server.enable(name="my_tool", components=["tool"])
+server.disable(names={"my_tool"}, components=["tool"])
+server.enable(names={"my_tool"}, components=["tool"])
 ```
 </CodeGroup>
 
@@ -208,7 +208,7 @@ Multiple `enable()`/`disable()` calls are additive. Later calls override earlier
 
 ```python
 server.disable(tags={"internal"})  # Hide all internal
-server.enable(name="safe_tool")    # Show safe_tool (overrides the disable)
+server.enable(names={"safe_tool"})    # Show safe_tool (overrides the disable)
 # Result: safe_tool is visible, other internal tools are hidden
 ```
 

@@ -345,7 +345,7 @@ def internal_prompt() -> str:
     return "Internal system prompt"
 
 # Disable specific prompts by key
-mcp.disable(keys=["prompt:internal_prompt"])
+mcp.disable(keys={"prompt:internal_prompt"})
 
 # Disable prompts by tag
 mcp.disable(tags={"internal"})
@@ -412,8 +412,8 @@ def example_prompt() -> str:
 
 # These operations trigger notifications:
 mcp.add_prompt(example_prompt)               # Sends prompts/list_changed notification
-mcp.disable(keys=["prompt:example_prompt"])  # Sends prompts/list_changed notification
-mcp.enable(keys=["prompt:example_prompt"])   # Sends prompts/list_changed notification
+mcp.disable(keys={"prompt:example_prompt"})  # Sends prompts/list_changed notification
+mcp.enable(keys={"prompt:example_prompt"})   # Sends prompts/list_changed notification
 ```
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.

@@ -50,7 +50,7 @@ class Enabled(Transform):
         Enabled(False, tags=frozenset({"internal"}))
 
         # Re-enable specific tool (override earlier disable)
-        Enabled(True, name="safe_tool")
+        Enabled(True, names={"safe_tool"})
 
         # Allowlist via composition:
         Enabled(False, match_all=True)  # disable everything
@@ -62,7 +62,8 @@ class Enabled(Transform):
         self,
         enabled: bool,
         *,
-        name: str | None = None,
+        names: set[str] | None = None,
+        keys: set[str] | None = None,
         version: str | None = None,
         tags: frozenset[str] | None = None,
         components: frozenset[str] | None = None,
@@ -72,14 +73,16 @@ class Enabled(Transform):
 
         Args:
             enabled: If True, mark matching as enabled; if False, mark as disabled.
-            name: Component name to match.
+            names: Component names or URIs to match.
+            keys: Component keys to match (e.g., {"tool:my_tool@v1"}).
             version: Component version to match.
             tags: Tags to match (component must have at least one).
             components: Component types to match (e.g., frozenset({"tool", "prompt"})).
             match_all: If True, matches all components regardless of other criteria.
         """
         self._enabled = enabled
-        self.name = name
+        self.names = names
+        self.keys = keys
         self.version = version
         self.tags = tags  # e.g., frozenset({"internal", "deprecated"})
         self.components = components  # e.g., frozenset({"tool", "prompt"})
@@ -90,8 +93,10 @@ class Enabled(Transform):
         if self.match_all:
             return f"Enabled({self._enabled}, match_all=True)"
         parts = []
-        if self.name:
-            parts.append(f"name={self.name!r}")
+        if self.names:
+            parts.append(f"names={set(self.names)}")
+        if self.keys:
+            parts.append(f"keys={set(self.keys)}")
         if self.version:
             parts.append(f"version={self.version!r}")
         if self.components:
@@ -121,7 +126,8 @@ class Enabled(Transform):
 
         # Empty criteria matches nothing (safe default)
         if (
-            self.name is None
+            self.names is None
+            and self.keys is None
             and self.version is None
             and self.components is None
             and self.tags is None
@@ -136,15 +142,20 @@ class Enabled(Transform):
             if component_type not in self.components:
                 return False
 
-        # Check name if specified
-        if self.name is not None:
+        # Check keys if specified (exact match only)
+        if self.keys is not None:
+            if component.key not in self.keys:
+                return False
+
+        # Check names if specified
+        if self.names is not None:
             # For resources, also check URI; for templates, check uri_template
-            matches_name = component.name == self.name
+            matches_name = component.name in self.names
             matches_uri = False
             if isinstance(component, Resource):
-                matches_uri = str(component.uri) == self.name
+                matches_uri = str(component.uri) in self.names
             elif isinstance(component, ResourceTemplate):
-                matches_uri = component.uri_template == self.name
+                matches_uri = component.uri_template in self.names
             if not (matches_name or matches_uri):
                 return False
 

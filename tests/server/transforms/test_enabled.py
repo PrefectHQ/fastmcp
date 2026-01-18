@@ -21,7 +21,7 @@ class TestMatching:
 
     def test_match_by_name(self):
         """Matches component by name."""
-        t = Enabled(False, name="foo")
+        t = Enabled(False, names={"foo"})
         assert t._matches(Tool(name="foo", parameters={})) is True
         assert t._matches(Tool(name="bar", parameters={})) is False
 
@@ -39,7 +39,7 @@ class TestMatching:
 
     def test_match_by_component_type(self):
         """Only matches specified component types."""
-        t = Enabled(False, name="foo", components=frozenset({"prompt"}))
+        t = Enabled(False, names={"foo"}, components=frozenset({"prompt"}))
         # Tool has key "tool:foo@", not "prompt:foo@"
         assert t._matches(Tool(name="foo", parameters={})) is False
 
@@ -47,7 +47,7 @@ class TestMatching:
         """Multiple criteria use AND logic - all must match."""
         t = Enabled(
             False,
-            name="foo",
+            names={"foo"},
             version="v1",
             tags=frozenset({"internal"}),
         )
@@ -69,13 +69,13 @@ class TestMarking:
     def test_disable_marks_as_disabled(self):
         """Enabled(False, ...) marks matching components as disabled."""
         tool = Tool(name="foo", parameters={})
-        Enabled(False, name="foo")._mark_component(tool)
+        Enabled(False, names={"foo"})._mark_component(tool)
         assert is_enabled(tool) is False
 
     def test_enable_marks_as_enabled(self):
         """Enabled(True, ...) marks matching components as enabled."""
         tool = Tool(name="foo", parameters={})
-        Enabled(True, name="foo")._mark_component(tool)
+        Enabled(True, names={"foo"})._mark_component(tool)
         assert is_enabled(tool) is True
         assert tool.meta is not None
         assert tool.meta["fastmcp"]["_internal"]["enabled"] is True
@@ -83,7 +83,7 @@ class TestMarking:
     def test_non_matching_unchanged(self):
         """Non-matching components are not modified."""
         tool = Tool(name="bar", parameters={})
-        Enabled(False, name="foo")._mark_component(tool)
+        Enabled(False, names={"foo"})._mark_component(tool)
         # No _internal key added
         assert tool.meta is None or "_internal" not in tool.meta.get("fastmcp", {})
         assert is_enabled(tool) is True
@@ -91,7 +91,7 @@ class TestMarking:
     def test_mutates_in_place(self):
         """Marking mutates the component in place."""
         tool = Tool(name="foo", parameters={})
-        result = Enabled(False, name="foo")._mark_component(tool)
+        result = Enabled(False, names={"foo"})._mark_component(tool)
         assert result is tool
 
     def test_disable_all(self):
@@ -107,19 +107,19 @@ class TestOverride:
     def test_enable_overrides_disable(self):
         """An enable after disable results in enabled."""
         tool = Tool(name="foo", parameters={})
-        Enabled(False, name="foo")._mark_component(tool)
+        Enabled(False, names={"foo"})._mark_component(tool)
         assert is_enabled(tool) is False
 
-        Enabled(True, name="foo")._mark_component(tool)
+        Enabled(True, names={"foo"})._mark_component(tool)
         assert is_enabled(tool) is True
 
     def test_disable_overrides_enable(self):
         """A disable after enable results in disabled."""
         tool = Tool(name="foo", parameters={})
-        Enabled(True, name="foo")._mark_component(tool)
+        Enabled(True, names={"foo"})._mark_component(tool)
         assert is_enabled(tool) is True
 
-        Enabled(False, name="foo")._mark_component(tool)
+        Enabled(False, names={"foo"})._mark_component(tool)
         assert is_enabled(tool) is False
 
 
@@ -137,7 +137,7 @@ class TestHelperFunctions:
             Tool(name="enabled", parameters={}),
             Tool(name="disabled", parameters={}),
         ]
-        Enabled(False, name="disabled")._mark_component(tools[1])
+        Enabled(False, names={"disabled"})._mark_component(tools[1])
 
         visible = [t for t in tools if is_enabled(t)]
         assert [t.name for t in visible] == ["enabled"]
@@ -149,7 +149,7 @@ class TestMetadata:
     def test_internal_metadata_stripped_by_get_meta(self):
         """Internal metadata is stripped when calling get_meta()."""
         tool = Tool(name="foo", parameters={})
-        Enabled(True, name="foo")._mark_component(tool)
+        Enabled(True, names={"foo"})._mark_component(tool)
 
         # Raw meta has _internal
         assert tool.meta is not None
@@ -162,7 +162,7 @@ class TestMetadata:
     def test_user_metadata_preserved(self):
         """User-provided metadata is not affected."""
         tool = Tool(name="foo", parameters={}, meta={"custom": "value"})
-        marked = Enabled(False, name="foo")._mark_component(tool)
+        marked = Enabled(False, names={"foo"})._mark_component(tool)
 
         assert marked.meta is not None
         assert marked.meta["custom"] == "value"
@@ -173,14 +173,14 @@ class TestRepr:
 
     def test_repr_disable(self):
         """Repr shows disable action and criteria."""
-        t = Enabled(False, name="foo")
+        t = Enabled(False, names={"foo"})
         r = repr(t)
         assert "disable" in r
         assert "foo" in r
 
     def test_repr_enable(self):
         """Repr shows enable action."""
-        t = Enabled(True, name="foo")
+        t = Enabled(True, names={"foo"})
         assert "enable" in repr(t)
 
     def test_repr_match_all(self):

@@ -1061,7 +1061,7 @@ class TestEnableDisable:
         mcp.add_tool(new_add)
 
         # Disable original tool, but new_add should still work
-        mcp.disable(name="add", components=["tool"])
+        mcp.disable(names={"add"}, components=["tool"])
 
         async with Client(mcp) as client:
             tools = await client.list_tools()
@@ -1088,8 +1088,8 @@ class TestEnableDisable:
         mcp.add_tool(new_add)
 
         # Disable both tools via server
-        mcp.disable(name="add", components=["tool"]).disable(
-            name="new_add", components=["tool"]
+        mcp.disable(names={"add"}, components=["tool"]).disable(
+            names={"new_add"}, components=["tool"]
         )
 
         async with Client(mcp) as client:

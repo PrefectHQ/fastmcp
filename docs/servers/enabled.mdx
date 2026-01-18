@@ -75,10 +75,10 @@ Use keys to target specific components.
 
 ```python
 # Disable a specific tool
-mcp.disable(keys=["tool:delete_everything"])
+mcp.disable(keys={"tool:delete_everything"})
 
 # Disable multiple specific components
-mcp.disable(keys=["tool:reset_system", "resource:data://secrets"])
+mcp.disable(keys={"tool:reset_system", "resource:data://secrets"})
 ```
 
 ### Tags
@@ -117,7 +117,7 @@ You can specify both keys and tags in a single call. The filters combine additiv
 
 ```python
 # Disable specific tools AND all dangerous-tagged components
-mcp.disable(keys=["tool:debug_info"], tags={"dangerous"})
+mcp.disable(keys={"tool:debug_info"}, tags={"dangerous"})
 ```
 
 ## Allowlist Mode
@@ -164,7 +164,7 @@ When you call `enable(only=True)`:
 
 ```python
 # Start fresh - only enable these specific tools
-mcp.enable(keys=["tool:safe_read", "tool:safe_write"], only=True)
+mcp.enable(keys={"tool:safe_read", "tool:safe_write"}, only=True)
 
 # Later, switch to a different allowlist
 mcp.enable(tags={"production"}, only=True)
@@ -176,7 +176,7 @@ Even in allowlist mode, the blocklist takes precedence. A component that's both 
 
 ```python
 mcp.enable(tags={"api"}, only=True)  # Allow all api-tagged
-mcp.disable(keys=["tool:api_admin"])  # But block this specific one
+mcp.disable(keys={"tool:api_admin"})  # But block this specific one
 
 # api_admin is disabled despite having the "api" tag
 ```
@@ -325,10 +325,10 @@ from fastmcp.server.transforms import Enabled
 mcp = FastMCP("Server")
 
 # Using the convenience method (recommended)
-mcp.disable(name="secret_tool")
+mcp.disable(names={"secret_tool"})
 
 # Equivalent to:
-mcp.add_transform(Enabled(False, name="secret_tool"))
+mcp.add_transform(Enabled(False, names={"secret_tool"}))
 ```
 
 Server-level transforms override provider-level transforms. If a component is disabled at the provider level but enabled at the server level, the server-level `enable()` can re-enable it.
