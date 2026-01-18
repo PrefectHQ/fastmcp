@@ -170,18 +170,18 @@ mcp.enable(keys={"tool:safe_read", "tool:safe_write"}, only=True)
 mcp.enable(tags={"production"}, only=True)
 ```
 
-### Blocklist Precedence
+### Ordering and Overrides
 
-Even in allowlist mode, the blocklist takes precedence. A component that's both allowlisted and blocklisted remains disabled.
+Later `enable()` and `disable()` calls override earlier ones. This lets you create broad rules with specific exceptions.
 
 ```python
 mcp.enable(tags={"api"}, only=True)  # Allow all api-tagged
-mcp.disable(keys={"tool:api_admin"})  # But block this specific one
+mcp.disable(keys={"tool:api_admin"})  # Later disable overrides for this tool
 
-# api_admin is disabled despite having the "api" tag
+# api_admin is disabled because the later disable() overrides the allowlist
 ```
 
-This lets you create broad allowlists with specific exceptions.
+You can always re-enable something that was disabled by adding another `enable()` call after it.
 
 ## Server vs Provider
 
@@ -207,7 +207,7 @@ main.disable(tags={"internal"})
 
 ### Provider-Level
 
-Each provider maintains its own enabled state. Provider-level filtering happens before components reach the server.
+Each provider can add its own enabled transforms. These run before server-level transforms, so the server can override provider-level disables.
 
 ```python
 from fastmcp import FastMCP
@@ -224,18 +224,19 @@ def admin_action() -> str:
 def regular_action() -> str:
     return "Regular"
 
-# Filter at provider level
+# Disable at provider level
 admin_tools.disable(tags={"admin"})
 
-# Server receives only regular_action
+# Server can override if needed
 mcp = FastMCP("Server", providers=[admin_tools])
+mcp.enable(names={"admin_action"})  # Re-enables despite provider disable
 ```
 
-Provider-level filtering is useful when different servers should see different subsets of the same provider's components.
+Provider-level transforms are useful for setting default visibility that servers can selectively override.
 
-### Layered Filtering
+### Layered Transforms
 
-When both server and provider have enabled rules, they stack. A component must pass both filters to be enabled.
+Provider transforms run first, then server transforms. Later transforms override earlier ones, so the server has final say.
 
 ```python
 from fastmcp import FastMCP
@@ -247,14 +248,14 @@ provider = LocalProvider()
 def new_feature() -> str:
     return "New"
 
-# Provider allows feature-tagged
+# Provider enables feature-tagged
 provider.enable(tags={"feature"}, only=True)
 
-# Server blocks beta-tagged
+# Server disables beta-tagged (runs after provider)
 mcp = FastMCP("Server", providers=[provider])
 mcp.disable(tags={"beta"})
 
-# new_feature is disabled (blocked at server level)
+# new_feature is disabled (server's later disable overrides provider's enable)
 ```
 
 ## Dynamic Changes
@@ -315,7 +316,7 @@ When multiple `enable()` and `disable()` calls are made, transforms are applied 
 
 ## The Enabled Transform
 
-Under the hood, `enable()` and `disable()` add `Enabled` transforms to the server or provider. The `Enabled` transform marks components with enabled metadata, and filtering happens at the provider level after all transforms complete.
+Under the hood, `enable()` and `disable()` add `Enabled` transforms to the server or provider. The `Enabled` transform marks components with enabled metadata, and the server applies the final filter after all provider and server transforms complete.
 
 ```python
 from fastmcp import FastMCP

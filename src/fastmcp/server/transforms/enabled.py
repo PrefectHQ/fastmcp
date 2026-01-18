@@ -171,8 +171,8 @@ class Enabled(Transform):
         if not self._matches(component):
             return component
 
-        # Create new dicts for the nested structure to avoid mutating shared dicts
-        # (e.g., when Tool.from_tool shares the 'fastmcp' dict between tools)
+        # Create new dicts to avoid mutating shared dicts
+        # (e.g., when Tool.from_tool shares the meta dict between tools)
         if component.meta is None:
             component.meta = {_FASTMCP_KEY: {_INTERNAL_KEY: {"enabled": self._enabled}}}
         else:
@@ -180,7 +180,7 @@ class Enabled(Transform):
             old_internal = old_fastmcp.get(_INTERNAL_KEY, {})
             new_internal = {**old_internal, "enabled": self._enabled}
             new_fastmcp = {**old_fastmcp, _INTERNAL_KEY: new_internal}
-            component.meta[_FASTMCP_KEY] = new_fastmcp
+            component.meta = {**component.meta, _FASTMCP_KEY: new_fastmcp}
         return component
 
     # -------------------------------------------------------------------------
