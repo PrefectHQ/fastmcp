@@ -350,7 +350,7 @@ class TestLocalProviderDecorators:
         enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
         assert len(enabled_transforms) == 1
         assert enabled_transforms[0]._enabled is False
-        assert enabled_transforms[0].names == {"disabled_tool"}
+        assert enabled_transforms[0].keys == {"tool:disabled_tool@"}
 
     async def test_tool_enabled_false_not_listed(self):
         """Disabled tool should not appear in get_tools (filtering happens at server level)."""
@@ -439,7 +439,7 @@ class TestLocalProviderDecorators:
         enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
         assert len(enabled_transforms) == 1
         assert enabled_transforms[0]._enabled is False
-        assert enabled_transforms[0].names == {"resource://test"}
+        assert enabled_transforms[0].keys == {"resource:resource://test@"}
 
     async def test_resource_enabled_false_not_listed(self):
         """Disabled resource should not appear in get_resources (filtering at server level)."""
@@ -475,7 +475,7 @@ class TestLocalProviderDecorators:
         enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
         assert len(enabled_transforms) == 1
         assert enabled_transforms[0]._enabled is False
-        assert enabled_transforms[0].names == {"data://{id}"}
+        assert enabled_transforms[0].keys == {"template:data://{id}@"}
 
     async def test_template_enabled_false_not_listed(self):
         """Disabled template should not appear in get_resource_templates (filtering at server level)."""
@@ -546,7 +546,7 @@ class TestLocalProviderDecorators:
         enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
         assert len(enabled_transforms) == 1
         assert enabled_transforms[0]._enabled is False
-        assert enabled_transforms[0].names == {"disabled_prompt"}
+        assert enabled_transforms[0].keys == {"prompt:disabled_prompt@"}
 
     async def test_prompt_enabled_false_not_listed(self):
         """Disabled prompt should not appear in get_prompts (filtering at server level)."""
