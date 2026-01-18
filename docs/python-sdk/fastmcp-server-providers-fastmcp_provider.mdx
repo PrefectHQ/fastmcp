@@ -18,7 +18,7 @@ executed.
 
 ## Classes
 
-### `FastMCPProviderTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPProviderTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L55" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Tool that delegates execution to a wrapped server's middleware.
@@ -30,7 +30,7 @@ chain is executed.
 
 **Methods:**
 
-#### `wrap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `wrap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 wrap(cls, server: Any, tool: Tool) -> FastMCPProviderTool
@@ -39,7 +39,7 @@ wrap(cls, server: Any, tool: Tool) -> FastMCPProviderTool
 Wrap a Tool to delegate execution to the server's middleware.
 
 
-#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L124" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, arguments: dict[str, Any]) -> ToolResult
@@ -51,13 +51,13 @@ This is called when the tool is used within a TransformedTool
 forwarding function or other contexts where task_meta is not available.
 
 
-#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L139" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L138" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]
 ```
 
-### `FastMCPProviderResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L146" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPProviderResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L145" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Resource that delegates reading to a wrapped server's read_resource().
@@ -68,7 +68,7 @@ When `read()` is called, this resource invokes the wrapped server's
 
 **Methods:**
 
-#### `wrap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L167" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `wrap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L166" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 wrap(cls, server: Any, resource: Resource) -> FastMCPProviderResource
@@ -77,13 +77,13 @@ wrap(cls, server: Any, resource: Resource) -> FastMCPProviderResource
 Wrap a Resource to delegate reading to the server's middleware.
 
 
-#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L203" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]
 ```
 
-### `FastMCPProviderPrompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L211" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPProviderPrompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L210" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Prompt that delegates rendering to a wrapped server's render_prompt().
@@ -94,7 +94,7 @@ When `render()` is called, this prompt invokes the wrapped server's
 
 **Methods:**
 
-#### `wrap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L232" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `wrap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L231" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 wrap(cls, server: Any, prompt: Prompt) -> FastMCPProviderPrompt
@@ -103,7 +103,7 @@ wrap(cls, server: Any, prompt: Prompt) -> FastMCPProviderPrompt
 Wrap a Prompt to delegate rendering to the server's middleware.
 
 
-#### `render` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L277" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `render` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L276" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 render(self, arguments: dict[str, Any] | None = None) -> PromptResult
@@ -115,13 +115,13 @@ This is called when the prompt is used within a transformed context
 or other contexts where task_meta is not available.
 
 
-#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L291" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L290" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]
 ```
 
-### `FastMCPProviderResourceTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPProviderResourceTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L297" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Resource template that creates FastMCPProviderResources.
@@ -133,7 +133,7 @@ when read.
 
 **Methods:**
 
-#### `wrap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L320" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `wrap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L319" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 wrap(cls, server: Any, template: ResourceTemplate) -> FastMCPProviderResourceTemplate
@@ -142,7 +142,7 @@ wrap(cls, server: Any, template: ResourceTemplate) -> FastMCPProviderResourceTem
 Wrap a ResourceTemplate to create FastMCPProviderResources.
 
 
-#### `create_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L338" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `create_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L337" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_resource(self, uri: str, params: dict[str, Any]) -> Resource
@@ -155,7 +155,7 @@ We use `_original_uri_template` with `params` to construct the internal
 URI that the nested server understands.
 
 
-#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L383" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L382" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
@@ -167,7 +167,7 @@ Reads the resource via the wrapped server and returns the ResourceResult.
 This method is called by Docket during background task execution.
 
 
-#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L401" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L400" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_with_docket(self, docket: Docket) -> None
@@ -176,7 +176,7 @@ register_with_docket(self, docket: Docket) -> None
 No-op: the child's actual template is registered via get_tasks().
 
 
-#### `add_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L404" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L403" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_to_docket(self, docket: Docket, params: dict[str, Any], **kwargs: Any) -> Execution
@@ -188,13 +188,13 @@ The child's FunctionResourceTemplate.fn is registered (via get_tasks),
 and it expects splatted **kwargs, so we splat params here.
 
 
-#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L423" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L422" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]
 ```
 
-### `FastMCPProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L435" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L434" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Provider that wraps a FastMCP server.
@@ -210,105 +210,7 @@ This ensures middleware runs when components are executed.
 
 **Methods:**
 
-#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L486" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-list_tools(self) -> Sequence[Tool]
-```
-
-List all tools from the mounted server as FastMCPProviderTools.
-
-Calls the nested server's middleware to list tools, then wraps
-each tool as a FastMCPProviderTool that delegates execution to the
-nested server's middleware.
-
-
-#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L496" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None
-```
-
-Get a tool by name as a FastMCPProviderTool.
-
-Passes the full VersionSpec to the nested server, which handles both
-exact version matching and range filtering.
-
-
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L514" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-list_resources(self) -> Sequence[Resource]
-```
-
-List all resources from the mounted server as FastMCPProviderResources.
-
-Calls the nested server's middleware to list resources, then wraps
-each resource as a FastMCPProviderResource that delegates reading to the
-nested server's middleware.
-
-
-#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L524" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_resource(self, uri: str, version: VersionSpec | None = None) -> Resource | None
-```
-
-Get a concrete resource by URI as a FastMCPProviderResource.
-
-Passes the full VersionSpec to the nested server, which handles both
-exact version matching and range filtering.
-
-
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L542" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-list_resource_templates(self) -> Sequence[ResourceTemplate]
-```
-
-List all resource templates from the mounted server.
-
-Returns FastMCPProviderResourceTemplate instances that create
-FastMCPProviderResources when materialized.
-
-
-#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L553" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_resource_template(self, uri: str, version: VersionSpec | None = None) -> ResourceTemplate | None
-```
-
-Get a resource template that matches the given URI.
-
-Passes the full VersionSpec to the nested server, which handles both
-exact version matching and range filtering.
-
-
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L571" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-list_prompts(self) -> Sequence[Prompt]
-```
-
-List all prompts from the mounted server as FastMCPProviderPrompts.
-
-Returns FastMCPProviderPrompt instances that delegate rendering to the
-wrapped server's middleware.
-
-
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L580" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_prompt(self, name: str, version: VersionSpec | None = None) -> Prompt | None
-```
-
-Get a prompt by name as a FastMCPProviderPrompt.
-
-Passes the full VersionSpec to the nested server, which handles both
-exact version matching and range filtering.
-
-
-#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L598" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L599" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tasks(self) -> Sequence[FastMCPComponent]
@@ -317,12 +219,12 @@ get_tasks(self) -> Sequence[FastMCPComponent]
 Return task-eligible components from the mounted server.
 
 Returns the child's ACTUAL components (not wrapped) so their actual
-functions get registered with Docket. Uses _source_get_tasks() to get
-components with child server's transforms applied, then applies this
-provider's transforms for correct registration keys.
+functions get registered with Docket. Gets components with child
+server's transforms applied, then applies this provider's transforms
+for correct registration keys.
 
 
-#### `lifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L656" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `lifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L662" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 lifespan(self) -> AsyncIterator[None]

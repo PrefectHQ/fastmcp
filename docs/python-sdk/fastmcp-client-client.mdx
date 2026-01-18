@@ -242,6 +242,9 @@ list_resources_mcp(self) -> mcp.types.ListResourcesResult
 
 Send a resources/list request and return the complete MCP protocol result.
 
+**Args:**
+- `cursor`: Optional pagination cursor from a previous request's nextCursor.
+
 **Returns:**
 - mcp.types.ListResourcesResult: The complete response object from the protocol,
 containing the list of resources and any additional metadata.
@@ -251,29 +254,36 @@ containing the list of resources and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L817" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L822" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resources(self) -> list[mcp.types.Resource]
 ```
 
-Retrieve a list of resources available on the server.
+Retrieve all resources available on the server.
+
+This method automatically fetches all pages if the server paginates results,
+returning the complete list. For manual pagination control (e.g., to handle
+large result sets incrementally), use list_resources_mcp() with the cursor parameter.
 
 **Returns:**
-- list\[mcp.types.Resource]: A list of Resource objects.
+- list\[mcp.types.Resource]: A list of all Resource objects.
 
 **Raises:**
 - `RuntimeError`: If called while the client is not connected.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_resource_templates_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L830" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L848" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resource_templates_mcp(self) -> mcp.types.ListResourceTemplatesResult
 ```
 
 Send a resources/listResourceTemplates request and return the complete MCP protocol result.
+
+**Args:**
+- `cursor`: Optional pagination cursor from a previous request's nextCursor.
 
 **Returns:**
 - mcp.types.ListResourceTemplatesResult: The complete response object from the protocol,
@@ -284,23 +294,28 @@ containing the list of resource templates and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L850" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L871" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resource_templates(self) -> list[mcp.types.ResourceTemplate]
 ```
 
-Retrieve a list of resource templates available on the server.
+Retrieve all resource templates available on the server.
+
+This method automatically fetches all pages if the server paginates results,
+returning the complete list. For manual pagination control (e.g., to handle
+large result sets incrementally), use list_resource_templates_mcp() with the
+cursor parameter.
 
 **Returns:**
-- list\[mcp.types.ResourceTemplate]: A list of ResourceTemplate objects.
+- list\[mcp.types.ResourceTemplate]: A list of all ResourceTemplate objects.
 
 **Raises:**
 - `RuntimeError`: If called while the client is not connected.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `read_resource_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L865" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L898" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource_mcp(self, uri: AnyUrl | str, meta: dict[str, Any] | None = None) -> mcp.types.ReadResourceResult
@@ -321,19 +336,19 @@ containing the resource contents and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L921" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L954" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource(self, uri: AnyUrl | str) -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]
 ```
 
-#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L929" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L964" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource(self, uri: AnyUrl | str) -> ResourceTask
 ```
 
-#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L938" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L975" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource(self, uri: AnyUrl | str) -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents] | ResourceTask
@@ -343,6 +358,8 @@ Read the contents of a resource or resolved template.
 
 **Args:**
 - `uri`: The URI of the resource to read. Can be a string or an AnyUrl object.
+- `version`: Specific version to read. If None, reads highest version.
+- `meta`: Optional request-level metadata.
 - `task`: If True, execute as background task (SEP-1686). Defaults to False.
 - `task_id`: Optional client-provided task ID (auto-generated if not provided).
 - `ttl`: Time to keep results available in milliseconds (default 60s).
@@ -356,13 +373,16 @@ A list of content objects if task=False, or a ResourceTask object if task=True.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_prompts_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1053" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1107" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts_mcp(self) -> mcp.types.ListPromptsResult
 ```
 
 Send a prompts/list request and return the complete MCP protocol result.
+
+**Args:**
+- `cursor`: Optional pagination cursor from a previous request's nextCursor.
 
 **Returns:**
 - mcp.types.ListPromptsResult: The complete response object from the protocol,
@@ -373,23 +393,27 @@ containing the list of prompts and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1069" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1130" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts(self) -> list[mcp.types.Prompt]
 ```
 
-Retrieve a list of prompts available on the server.
+Retrieve all prompts available on the server.
+
+This method automatically fetches all pages if the server paginates results,
+returning the complete list. For manual pagination control (e.g., to handle
+large result sets incrementally), use list_prompts_mcp() with the cursor parameter.
 
 **Returns:**
-- list\[mcp.types.Prompt]: A list of Prompt objects.
+- list\[mcp.types.Prompt]: A list of all Prompt objects.
 
 **Raises:**
 - `RuntimeError`: If called while the client is not connected.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `get_prompt_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1083" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1157" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt_mcp(self, name: str, arguments: dict[str, Any] | None = None, meta: dict[str, Any] | None = None) -> mcp.types.GetPromptResult
@@ -411,19 +435,19 @@ containing the prompt messages and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1152" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1226" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, arguments: dict[str, Any] | None = None) -> mcp.types.GetPromptResult
 ```
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1161" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1237" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, arguments: dict[str, Any] | None = None) -> PromptTask
 ```
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1171" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1249" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, arguments: dict[str, Any] | None = None) -> mcp.types.GetPromptResult | PromptTask
@@ -434,6 +458,8 @@ Retrieve a rendered prompt message list from the server.
 **Args:**
 - `name`: The name of the prompt to retrieve.
 - `arguments`: Arguments to pass to the prompt. Defaults to None.
+- `version`: Specific prompt version to get. If None, gets highest version.
+- `meta`: Optional request-level metadata.
 - `task`: If True, execute as background task (SEP-1686). Defaults to False.
 - `task_id`: Optional client-provided task ID (auto-generated if not provided).
 - `ttl`: Time to keep results available in milliseconds (default 60s).
@@ -447,7 +473,7 @@ or a PromptTask object if task=True.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `complete_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1275" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `complete_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1372" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 complete_mcp(self, ref: mcp.types.ResourceTemplateReference | mcp.types.PromptReference, argument: dict[str, str], context_arguments: dict[str, Any] | None = None) -> mcp.types.CompleteResult
@@ -470,7 +496,7 @@ containing the completion and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `complete` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1306" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `complete` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1403" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 complete(self, ref: mcp.types.ResourceTemplateReference | mcp.types.PromptReference, argument: dict[str, str], context_arguments: dict[str, Any] | None = None) -> mcp.types.Completion
@@ -492,13 +518,16 @@ include with the completion request. Defaults to None.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_tools_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1334" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1431" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools_mcp(self) -> mcp.types.ListToolsResult
 ```
 
 Send a tools/list request and return the complete MCP protocol result.
+
+**Args:**
+- `cursor`: Optional pagination cursor from a previous request's nextCursor.
 
 **Returns:**
 - mcp.types.ListToolsResult: The complete response object from the protocol,
@@ -509,23 +538,27 @@ containing the list of tools and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1350" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1454" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools(self) -> list[mcp.types.Tool]
 ```
 
-Retrieve a list of tools available on the server.
+Retrieve all tools available on the server.
+
+This method automatically fetches all pages if the server paginates results,
+returning the complete list. For manual pagination control (e.g., to handle
+large result sets incrementally), use list_tools_mcp() with the cursor parameter.
 
 **Returns:**
-- list\[mcp.types.Tool]: A list of Tool objects.
+- list\[mcp.types.Tool]: A list of all Tool objects.
 
 **Raises:**
 - `RuntimeError`: If called while the client is not connected.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `call_tool_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1365" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1482" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool_mcp(self, name: str, arguments: dict[str, Any], progress_handler: ProgressHandler | None = None, timeout: datetime.timedelta | float | int | None = None, meta: dict[str, Any] | None = None) -> mcp.types.CallToolResult
@@ -555,19 +588,19 @@ containing the tool result and any additional metadata.
 - `McpError`: If the tool call requests results in a TimeoutError | JSONRPCError
 
 
-#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1470" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1587" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> CallToolResult
 ```
 
-#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1483" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1601" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> ToolTask
 ```
 
-#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1497" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1616" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> CallToolResult | ToolTask
@@ -580,6 +613,7 @@ Unlike call_tool_mcp, this method raises a ToolError if the tool call results in
 **Args:**
 - `name`: The name of the tool to call.
 - `arguments`: Arguments to pass to the tool. Defaults to None.
+- `version`: Specific tool version to call. If None, calls highest version.
 - `timeout`: The timeout for the tool call. Defaults to None.
 - `progress_handler`: The progress handler to use for the tool call. Defaults to None.
 - `raise_on_error`: Whether to raise an exception if the tool call results in an error. Defaults to True.
@@ -606,7 +640,7 @@ raw result object.
 - `RuntimeError`: If called while the client is not connected.
 
 
-#### `get_task_status` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1619" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_task_status` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1753" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_task_status(self, task_id: str) -> GetTaskResult
@@ -627,7 +661,7 @@ Sends a 'tasks/get' MCP protocol request over the existing transport.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `get_task_result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1642" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_task_result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1776" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_task_result(self, task_id: str) -> Any
@@ -649,7 +683,7 @@ Returns the raw result - callers should parse it appropriately.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1671" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1805" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tasks(self, cursor: str | None = None, limit: int = 50) -> dict[str, Any]
@@ -675,7 +709,7 @@ querying status for locally tracked task IDs.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `cancel_task` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1721" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `cancel_task` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1855" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 cancel_task(self, task_id: str) -> mcp.types.CancelTaskResult
@@ -697,7 +731,7 @@ and transition to cancelled state.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `generate_name` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1746" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `generate_name` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1880" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_name(cls, name: str | None = None) -> str

@@ -10,7 +10,7 @@ Standalone @resource decorator for FastMCP.
 
 ## Functions
 
-### `resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L230" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L231" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resource(uri: str) -> Callable[[F], F]
@@ -37,7 +37,7 @@ Protocol for functions decorated with @resource.
 Metadata attached to functions by the @resource decorator.
 
 
-### `FunctionResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FunctionResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L62" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A resource that defers data loading by wrapping a function.
@@ -54,7 +54,7 @@ The function can return:
 
 **Methods:**
 
-#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any], uri: str | AnyUrl | None = None) -> FunctionResource
@@ -71,7 +71,7 @@ individual parameters must not be passed.
 Cannot be used together with metadata parameter.
 
 
-#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L199" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read(self) -> str | bytes | ResourceResult
@@ -80,7 +80,7 @@ read(self) -> str | bytes | ResourceResult
 Read the resource by calling the wrapped function.
 
 
-#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L219" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L220" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_with_docket(self, docket: Docket) -> None

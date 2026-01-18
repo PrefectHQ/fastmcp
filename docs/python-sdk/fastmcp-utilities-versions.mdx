@@ -22,7 +22,7 @@ Examples:
 
 ## Functions
 
-### `parse_version_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L184" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `parse_version_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L187" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 parse_version_key(version: str | None) -> VersionKey
@@ -38,7 +38,7 @@ Parse a version string into a sortable key.
 - A VersionKey suitable for sorting.
 
 
-### `version_sort_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `version_sort_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L199" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 version_sort_key(component: FastMCPComponent) -> VersionKey
@@ -56,7 +56,7 @@ Use with sorted() or max() to order components by version.
 - A sortable VersionKey.
 
 
-### `compare_versions` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L216" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `compare_versions` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L219" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 compare_versions(a: str | None, b: str | None) -> int
@@ -73,7 +73,7 @@ Compare two version strings.
 - -1 if a &lt; b, 0 if a == b, 1 if a &gt; b.
 
 
-### `is_version_greater` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `is_version_greater` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L241" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_version_greater(a: str | None, b: str | None) -> bool
@@ -90,7 +90,7 @@ Check if version a is greater than version b.
 - True if a > b, False otherwise.
 
 
-### `max_version` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L251" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `max_version` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L254" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 max_version(a: str | None, b: str | None) -> str | None
@@ -107,7 +107,7 @@ Return the greater of two versions.
 - The greater version, or None if both are None.
 
 
-### `min_version` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L268" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `min_version` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L271" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 min_version(a: str | None, b: str | None) -> str | None
@@ -153,12 +153,16 @@ Check if a version matches this spec.
 
 **Args:**
 - `version`: The version to check, or None for unversioned.
+- `match_none`: Whether unversioned (None) components match. Defaults to True
+for backward compatibility with retrieval operations. Set to False
+when filtering (e.g., enable/disable) to exclude unversioned components
+from version-specific rules.
 
 **Returns:**
 - True if the version matches the spec.
 
 
-#### `intersect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `intersect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 intersect(self, other: VersionSpec | None) -> VersionSpec
@@ -177,7 +181,7 @@ the intersection validates "1.0" is in range and returns the exact spec.
 - A VersionSpec that matches only versions satisfying both specs.
 
 
-### `VersionKey` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `VersionKey` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/versions.py#L114" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A comparable version key that handles None, PEP 440 versions, and strings.
