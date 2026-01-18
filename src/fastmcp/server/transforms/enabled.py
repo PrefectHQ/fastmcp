@@ -64,7 +64,7 @@ class Enabled(Transform):
         *,
         names: set[str] | None = None,
         keys: set[str] | None = None,
-        version: str | None = None,
+        version: VersionSpec | None = None,
         tags: frozenset[str] | None = None,
         components: frozenset[str] | None = None,
         match_all: bool = False,
@@ -75,7 +75,8 @@ class Enabled(Transform):
             enabled: If True, mark matching as enabled; if False, mark as disabled.
             names: Component names or URIs to match.
             keys: Component keys to match (e.g., {"tool:my_tool@v1"}).
-            version: Component version to match.
+            version: Component version spec to match. Unversioned components (version=None)
+                will NOT match a version spec.
             tags: Tags to match (component must have at least one).
             components: Component types to match (e.g., frozenset({"tool", "prompt"})).
             match_all: If True, matches all components regardless of other criteria.
@@ -160,7 +161,10 @@ class Enabled(Transform):
                 return False
 
         # Check version if specified
-        if self.version is not None and component.version != self.version:
+        # Note: match_none=False means unversioned components don't match a version spec
+        if self.version is not None and not self.version.matches(
+            component.version, match_none=False
+        ):
             return False
 
         # Check tags if specified (component must have at least one matching tag)
