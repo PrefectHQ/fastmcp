@@ -346,7 +346,20 @@ class Context:
         Returns:
             List of Resource objects available on the server
         """
-        return await self.fastmcp._list_resources_mcp()
+        all_resources: list[SDKResource] = []
+        cursor: str | None = None
+        while True:
+            request = mcp.types.ListResourcesRequest(
+                params=mcp.types.ListResourcesRequestParams(cursor=cursor)
+                if cursor
+                else None
+            )
+            result = await self.fastmcp._list_resources_mcp(request)
+            all_resources.extend(result.resources)
+            if result.nextCursor is None:
+                break
+            cursor = result.nextCursor
+        return all_resources
 
     async def list_prompts(self) -> list[SDKPrompt]:
         """List all available prompts from the server.
@@ -354,7 +367,20 @@ class Context:
         Returns:
             List of Prompt objects available on the server
         """
-        return await self.fastmcp._list_prompts_mcp()
+        all_prompts: list[SDKPrompt] = []
+        cursor: str | None = None
+        while True:
+            request = mcp.types.ListPromptsRequest(
+                params=mcp.types.ListPromptsRequestParams(cursor=cursor)
+                if cursor
+                else None
+            )
+            result = await self.fastmcp._list_prompts_mcp(request)
+            all_prompts.extend(result.prompts)
+            if result.nextCursor is None:
+                break
+            cursor = result.nextCursor
+        return all_prompts
 
     async def get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None

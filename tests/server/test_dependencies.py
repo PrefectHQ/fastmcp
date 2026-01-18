@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager, contextmanager
 
+import mcp.types as mcp_types
 import pytest
 from mcp.types import TextContent, TextResourceContents
 
@@ -135,8 +136,8 @@ async def test_dependencies_excluded_from_schema(mcp: FastMCP):
     ) -> str:
         return f"{name} is {age} years old"
 
-    tools = await mcp._list_tools_mcp()
-    tool = next(t for t in tools if t.name == "my_tool")
+    result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
+    tool = next(t for t in result.tools if t.name == "my_tool")
 
     assert "name" in tool.inputSchema["properties"]
     assert "age" in tool.inputSchema["properties"]
@@ -466,8 +467,8 @@ async def test_connection_dependency_excluded_from_tool_schema(mcp: FastMCP):
     ) -> str:
         return name
 
-    tools = await mcp._list_tools_mcp()
-    tool = next(t for t in tools if t.name == "with_connection")
+    result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
+    tool = next(t for t in result.tools if t.name == "with_connection")
 
     assert "name" in tool.inputSchema["properties"]
     assert "connection" not in tool.inputSchema["properties"]
@@ -588,8 +589,8 @@ async def test_external_user_cannot_override_dependency(mcp: FastMCP):
         return f"action={action},admin={admin}"
 
     # Verify dependency is NOT in the schema
-    tools = await mcp._list_tools_mcp()
-    tool = next(t for t in tools if t.name == "check_permission")
+    result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
+    tool = next(t for t in result.tools if t.name == "check_permission")
     assert "admin" not in tool.inputSchema["properties"]
 
     # Normal call - dependency is resolved
@@ -859,8 +860,8 @@ class TestTransformContextAnnotations:
             return f"same={ctx1 is ctx2}"
 
         # Both ctx params should be excluded from schema
-        tools = await mcp._list_tools_mcp()
-        tool = next(t for t in tools if t.name == "tool_with_multiple_ctx")
+        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
+        tool = next(t for t in result.tools if t.name == "tool_with_multiple_ctx")
         assert "name" in tool.inputSchema["properties"]
         assert "ctx1" not in tool.inputSchema["properties"]
         assert "ctx2" not in tool.inputSchema["properties"]

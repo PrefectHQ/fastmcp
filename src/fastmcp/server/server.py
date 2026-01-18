@@ -43,10 +43,6 @@ from mcp.types import (
     ContentBlock,
     ToolAnnotations,
 )
-from mcp.types import Prompt as SDKPrompt
-from mcp.types import Resource as SDKResource
-from mcp.types import ResourceTemplate as SDKResourceTemplate
-from mcp.types import Tool as SDKTool
 from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
 from starlette.middleware import Middleware as ASGIMiddleware
@@ -101,6 +97,7 @@ from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.cli import log_server_banner
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger, temporary_log_level
+from fastmcp.utilities.pagination import paginate_sequence
 from fastmcp.utilities.types import FastMCPBaseModel, NotSet, NotSetT
 from fastmcp.utilities.versions import (
     VersionSpec,
@@ -275,6 +272,26 @@ def _lifespan_proxy(
     return wrap
 
 
+PaginateT = TypeVar("PaginateT")
+
+
+def _apply_pagination(
+    items: Sequence[PaginateT],
+    cursor: str | None,
+    page_size: int | None,
+) -> tuple[list[PaginateT], str | None]:
+    """Apply pagination to items, raising McpError for invalid cursors.
+
+    If page_size is None, returns all items without pagination.
+    """
+    if page_size is None:
+        return list(items), None
+    try:
+        return paginate_sequence(items, cursor, page_size)
+    except ValueError as e:
+        raise McpError(mcp.types.ErrorData(code=-32602, message=str(e))) from e
+
+
 class StateValue(FastMCPBaseModel):
     """Wrapper for stored context state values."""
 
@@ -301,6 +318,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         exclude_tags: Collection[str] | None = None,
         on_duplicate: DuplicateBehavior | None = None,
         strict_input_validation: bool | None = None,
+        list_page_size: int | None = None,
         tasks: bool | None = None,
         session_state_store: AsyncKeyValue | None = None,
         # ---
@@ -367,6 +385,11 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             if mask_error_details is not None
             else fastmcp.settings.mask_error_details
         )
+
+        # Store list_page_size for pagination of list operations
+        if list_page_size is not None and list_page_size <= 0:
+            raise ValueError("list_page_size must be a positive integer")
+        self._list_page_size: int | None = list_page_size
 
         if tool_serializer is not None and fastmcp.settings.deprecation_warnings:
             warnings.warn(
@@ -738,15 +761,25 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     def _setup_handlers(self) -> None:
         """Set up core MCP protocol handlers.
 
-        All handlers use decorator-based registration for consistency.
+        List handlers use SDK decorators that pass the request object to our handler
+        (needed for pagination cursor). The SDK also populates caches like _tool_cache.
+
+        Exception: list_resource_templates SDK decorator doesn't pass the request,
+        so we register that handler directly.
+
         The call_tool decorator is from the SDK (supports CreateTaskResult + validate_input).
         The read_resource and get_prompt decorators are from LowLevelServer to add
         CreateTaskResult support until the SDK provides it natively.
         """
         self._mcp_server.list_tools()(self._list_tools_mcp)
         self._mcp_server.list_resources()(self._list_resources_mcp)
-        self._mcp_server.list_resource_templates()(self._list_resource_templates_mcp)
         self._mcp_server.list_prompts()(self._list_prompts_mcp)
+
+        # list_resource_templates SDK decorator doesn't pass the request to handlers,
+        # so we register directly to get cursor access for pagination
+        self._mcp_server.request_handlers[mcp.types.ListResourceTemplatesRequest] = (
+            self._wrap_list_handler(self._list_resource_templates_mcp)
+        )
 
         self._mcp_server.call_tool(validate_input=self.strict_input_validation)(
             self._call_tool_mcp
@@ -756,6 +789,17 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         # Register SEP-1686 task protocol handlers
         self._setup_task_protocol_handlers()
+
+    def _wrap_list_handler(
+        self, handler: Callable[..., Awaitable[Any]]
+    ) -> Callable[..., Awaitable[mcp.types.ServerResult]]:
+        """Wrap a list handler to pass the request and return ServerResult."""
+
+        async def wrapper(request: Any) -> mcp.types.ServerResult:
+            result = await handler(request)
+            return mcp.types.ServerResult(result)
+
+        return wrapper
 
     def _setup_task_protocol_handlers(self) -> None:
         """Register SEP-1686 task protocol handlers with SDK.
@@ -1869,42 +1913,56 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         """
         return list(self._additional_http_routes)
 
-    async def _list_tools_mcp(self) -> list[SDKTool]:
+    async def _list_tools_mcp(
+        self, request: mcp.types.ListToolsRequest
+    ) -> mcp.types.ListToolsResult:
         """
         List all available tools, in the format expected by the low-level MCP
-        server.
+        server. Supports pagination when list_page_size is configured.
         """
         logger.debug(f"[{self.name}] Handler called: list_tools")
 
         async with fastmcp.server.context.Context(fastmcp=self):
             tools = await self.get_tools(run_middleware=True)
-            return [
-                tool.to_mcp_tool(
-                    name=tool.name,
-                )
-                for tool in tools
-            ]
+            sdk_tools = [tool.to_mcp_tool(name=tool.name) for tool in tools]
+            # SDK may pass None for internal cache refresh despite type hint
+            cursor = (
+                request.params.cursor  # type: ignore[union-attr]
+                if request is not None and request.params
+                else None
+            )
+            page, next_cursor = _apply_pagination(
+                sdk_tools, cursor, self._list_page_size
+            )
+            return mcp.types.ListToolsResult(tools=page, nextCursor=next_cursor)
 
-    async def _list_resources_mcp(self) -> list[SDKResource]:
+    async def _list_resources_mcp(
+        self, request: mcp.types.ListResourcesRequest
+    ) -> mcp.types.ListResourcesResult:
         """
         List all available resources, in the format expected by the low-level MCP
-        server.
+        server. Supports pagination when list_page_size is configured.
         """
         logger.debug(f"[{self.name}] Handler called: list_resources")
 
         async with fastmcp.server.context.Context(fastmcp=self):
             resources = await self.get_resources(run_middleware=True)
-            return [
-                resource.to_mcp_resource(
-                    uri=str(resource.uri),
-                )
+            sdk_resources = [
+                resource.to_mcp_resource(uri=str(resource.uri))
                 for resource in resources
             ]
+            cursor = request.params.cursor if request.params else None
+            page, next_cursor = _apply_pagination(
+                sdk_resources, cursor, self._list_page_size
+            )
+            return mcp.types.ListResourcesResult(resources=page, nextCursor=next_cursor)
 
-    async def _list_resource_templates_mcp(self) -> list[SDKResourceTemplate]:
+    async def _list_resource_templates_mcp(
+        self, request: mcp.types.ListResourceTemplatesRequest
+    ) -> mcp.types.ListResourceTemplatesResult:
         """
         List all available resource templates, in the format expected by the low-level MCP
-        server.
+        server. Supports pagination when list_page_size is configured.
         """
         logger.debug(f"[{self.name}] Handler called: list_resource_templates")
 
@@ -1920,17 +1978,24 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 context=mw_context,
                 call_next=lambda context: self.get_resource_templates(),
             )
-            return [
-                template.to_mcp_template(
-                    uriTemplate=template.uri_template,
-                )
+            sdk_templates = [
+                template.to_mcp_template(uriTemplate=template.uri_template)
                 for template in templates
             ]
+            cursor = request.params.cursor if request.params else None
+            page, next_cursor = _apply_pagination(
+                sdk_templates, cursor, self._list_page_size
+            )
+            return mcp.types.ListResourceTemplatesResult(
+                resourceTemplates=page, nextCursor=next_cursor
+            )
 
-    async def _list_prompts_mcp(self) -> list[SDKPrompt]:
+    async def _list_prompts_mcp(
+        self, request: mcp.types.ListPromptsRequest
+    ) -> mcp.types.ListPromptsResult:
         """
         List all available prompts, in the format expected by the low-level MCP
-        server.
+        server. Supports pagination when list_page_size is configured.
         """
         logger.debug(f"[{self.name}] Handler called: list_prompts")
 
@@ -1946,12 +2011,12 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 context=mw_context,
                 call_next=lambda context: self.get_prompts(),
             )
-            return [
-                prompt.to_mcp_prompt(
-                    name=prompt.name,
-                )
-                for prompt in prompts
-            ]
+            sdk_prompts = [prompt.to_mcp_prompt(name=prompt.name) for prompt in prompts]
+            cursor = request.params.cursor if request.params else None
+            page, next_cursor = _apply_pagination(
+                sdk_prompts, cursor, self._list_page_size
+            )
+            return mcp.types.ListPromptsResult(prompts=page, nextCursor=next_cursor)
 
     async def _call_tool_mcp(
         self, key: str, arguments: dict[str, Any]

@@ -2,6 +2,7 @@ import inspect
 import json
 from typing import Any, cast
 
+import mcp.types as mcp_types
 import pytest
 from anyio import create_task_group
 from dirty_equals import Contains
@@ -285,10 +286,9 @@ class TestTools:
         assert tool.description is None
 
     async def test_list_tools_same_as_original(self, fastmcp_server, proxy_server):
-        assert (
-            await proxy_server._list_tools_mcp()
-            == await fastmcp_server._list_tools_mcp()
-        )
+        assert await proxy_server._list_tools_mcp(
+            mcp_types.ListToolsRequest()
+        ) == await fastmcp_server._list_tools_mcp(mcp_types.ListToolsRequest())
 
     async def test_call_tool_result_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
@@ -371,10 +371,9 @@ class TestResources:
         assert wave_resource.icons == [Icon(src="https://example.com/wave-icon.png")]
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
-        assert (
-            await proxy_server._list_resources_mcp()
-            == await fastmcp_server._list_resources_mcp()
-        )
+        assert await proxy_server._list_resources_mcp(
+            mcp_types.ListResourcesRequest()
+        ) == await fastmcp_server._list_resources_mcp(mcp_types.ListResourcesRequest())
 
     async def test_read_resource(self, proxy_server: FastMCPProxy):
         async with Client(proxy_server) as client:
@@ -489,8 +488,12 @@ class TestResourceTemplates:
     async def test_list_resource_templates_same_as_original(
         self, fastmcp_server, proxy_server
     ):
-        result = await fastmcp_server._list_resource_templates_mcp()
-        proxy_result = await proxy_server._list_resource_templates_mcp()
+        result = await fastmcp_server._list_resource_templates_mcp(
+            mcp_types.ListResourceTemplatesRequest()
+        )
+        proxy_result = await proxy_server._list_resource_templates_mcp(
+            mcp_types.ListResourceTemplatesRequest()
+        )
         assert proxy_result == result
 
     @pytest.mark.parametrize("id", [1, 2, 3])

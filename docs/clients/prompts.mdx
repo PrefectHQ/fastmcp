@@ -13,13 +13,13 @@ Prompts are reusable message templates exposed by MCP servers. They can accept a
 
 ## Listing Prompts
 
-Use `list_prompts()` to retrieve all available prompt templates:
+Use `list_prompts()` to retrieve all available prompt templates. When the server paginates results, the client automatically fetches all pages and returns the complete list.
 
 ```python
 async with client:
     prompts = await client.list_prompts()
     # prompts -> list[mcp.types.Prompt]
-    
+
     for prompt in prompts:
         print(f"Prompt: {prompt.name}")
         print(f"Description: {prompt.description}")
@@ -30,6 +30,8 @@ async with client:
             fastmcp_meta = prompt.meta.get('fastmcp', {})
             print(f"Tags: {fastmcp_meta.get('tags', [])}")
 ```
+
+For manual pagination control, use `list_prompts_mcp()` with the `cursor` parameter. See [Pagination](/servers/pagination#manual-pagination) for details.
 
 ### Filtering by Tags
 

@@ -95,6 +95,11 @@ The `FastMCP` constructor accepts several arguments:
   Controls how tool input parameters are validated. When `False` (default), FastMCP uses Pydantic's flexible validation that coerces compatible inputs (e.g., `"10"` → `10` for int parameters). When `True`, uses the MCP SDK's JSON Schema validation to validate inputs against the exact schema before passing them to your function, rejecting any type mismatches. The default mode improves compatibility with LLM clients while maintaining type safety. See [Input Validation Modes](/servers/tools#input-validation-modes) for details
 </ParamField>
 
+<ParamField body="list_page_size" type="int | None" default="None">
+  <VersionBadge version="3.0.0" />
+  Maximum number of items per page for list operations (`tools/list`, `resources/list`, etc.). When `None` (default), all results are returned in a single response. When set, responses are paginated and include a `nextCursor` for fetching additional pages. See [Pagination](/servers/pagination) for details
+</ParamField>
+
 </Card>
 ## Components
 

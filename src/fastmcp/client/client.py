@@ -796,8 +796,13 @@ class Client(Generic[ClientTransportT]):
 
     # --- Resources ---
 
-    async def list_resources_mcp(self) -> mcp.types.ListResourcesResult:
+    async def list_resources_mcp(
+        self, *, cursor: str | None = None
+    ) -> mcp.types.ListResourcesResult:
         """Send a resources/list request and return the complete MCP protocol result.
+
+        Args:
+            cursor: Optional pagination cursor from a previous request's nextCursor.
 
         Returns:
             mcp.types.ListResourcesResult: The complete response object from the protocol,
@@ -810,27 +815,43 @@ class Client(Generic[ClientTransportT]):
         logger.debug(f"[{self.name}] called list_resources")
 
         result = await self._await_with_session_monitoring(
-            self.session.list_resources()
+            self.session.list_resources(cursor=cursor)
         )
         return result
 
     async def list_resources(self) -> list[mcp.types.Resource]:
-        """Retrieve a list of resources available on the server.
+        """Retrieve all resources available on the server.
+
+        This method automatically fetches all pages if the server paginates results,
+        returning the complete list. For manual pagination control (e.g., to handle
+        large result sets incrementally), use list_resources_mcp() with the cursor parameter.
 
         Returns:
-            list[mcp.types.Resource]: A list of Resource objects.
+            list[mcp.types.Resource]: A list of all Resource objects.
 
         Raises:
             RuntimeError: If called while the client is not connected.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        result = await self.list_resources_mcp()
-        return result.resources
+        all_resources: list[mcp.types.Resource] = []
+        cursor: str | None = None
+
+        while True:
+            result = await self.list_resources_mcp(cursor=cursor)
+            all_resources.extend(result.resources)
+            if result.nextCursor is None:
+                break
+            cursor = result.nextCursor
+
+        return all_resources
 
     async def list_resource_templates_mcp(
-        self,
+        self, *, cursor: str | None = None
     ) -> mcp.types.ListResourceTemplatesResult:
         """Send a resources/listResourceTemplates request and return the complete MCP protocol result.
+
+        Args:
+            cursor: Optional pagination cursor from a previous request's nextCursor.
 
         Returns:
             mcp.types.ListResourceTemplatesResult: The complete response object from the protocol,
@@ -843,24 +864,36 @@ class Client(Generic[ClientTransportT]):
         logger.debug(f"[{self.name}] called list_resource_templates")
 
         result = await self._await_with_session_monitoring(
-            self.session.list_resource_templates()
+            self.session.list_resource_templates(cursor=cursor)
         )
         return result
 
-    async def list_resource_templates(
-        self,
-    ) -> list[mcp.types.ResourceTemplate]:
-        """Retrieve a list of resource templates available on the server.
+    async def list_resource_templates(self) -> list[mcp.types.ResourceTemplate]:
+        """Retrieve all resource templates available on the server.
+
+        This method automatically fetches all pages if the server paginates results,
+        returning the complete list. For manual pagination control (e.g., to handle
+        large result sets incrementally), use list_resource_templates_mcp() with the
+        cursor parameter.
 
         Returns:
-            list[mcp.types.ResourceTemplate]: A list of ResourceTemplate objects.
+            list[mcp.types.ResourceTemplate]: A list of all ResourceTemplate objects.
 
         Raises:
             RuntimeError: If called while the client is not connected.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        result = await self.list_resource_templates_mcp()
-        return result.resourceTemplates
+        all_templates: list[mcp.types.ResourceTemplate] = []
+        cursor: str | None = None
+
+        while True:
+            result = await self.list_resource_templates_mcp(cursor=cursor)
+            all_templates.extend(result.resourceTemplates)
+            if result.nextCursor is None:
+                break
+            cursor = result.nextCursor
+
+        return all_templates
 
     async def read_resource_mcp(
         self, uri: AnyUrl | str, meta: dict[str, Any] | None = None
@@ -1071,8 +1104,13 @@ class Client(Generic[ClientTransportT]):
 
     # --- Prompts ---
 
-    async def list_prompts_mcp(self) -> mcp.types.ListPromptsResult:
+    async def list_prompts_mcp(
+        self, *, cursor: str | None = None
+    ) -> mcp.types.ListPromptsResult:
         """Send a prompts/list request and return the complete MCP protocol result.
+
+        Args:
+            cursor: Optional pagination cursor from a previous request's nextCursor.
 
         Returns:
             mcp.types.ListPromptsResult: The complete response object from the protocol,
@@ -1084,21 +1122,36 @@ class Client(Generic[ClientTransportT]):
         """
         logger.debug(f"[{self.name}] called list_prompts")
 
-        result = await self._await_with_session_monitoring(self.session.list_prompts())
+        result = await self._await_with_session_monitoring(
+            self.session.list_prompts(cursor=cursor)
+        )
         return result
 
     async def list_prompts(self) -> list[mcp.types.Prompt]:
-        """Retrieve a list of prompts available on the server.
+        """Retrieve all prompts available on the server.
+
+        This method automatically fetches all pages if the server paginates results,
+        returning the complete list. For manual pagination control (e.g., to handle
+        large result sets incrementally), use list_prompts_mcp() with the cursor parameter.
 
         Returns:
-            list[mcp.types.Prompt]: A list of Prompt objects.
+            list[mcp.types.Prompt]: A list of all Prompt objects.
 
         Raises:
             RuntimeError: If called while the client is not connected.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        result = await self.list_prompts_mcp()
-        return result.prompts
+        all_prompts: list[mcp.types.Prompt] = []
+        cursor: str | None = None
+
+        while True:
+            result = await self.list_prompts_mcp(cursor=cursor)
+            all_prompts.extend(result.prompts)
+            if result.nextCursor is None:
+                break
+            cursor = result.nextCursor
+
+        return all_prompts
 
     # --- Prompt ---
     async def get_prompt_mcp(
@@ -1375,8 +1428,13 @@ class Client(Generic[ClientTransportT]):
 
     # --- Tools ---
 
-    async def list_tools_mcp(self) -> mcp.types.ListToolsResult:
+    async def list_tools_mcp(
+        self, *, cursor: str | None = None
+    ) -> mcp.types.ListToolsResult:
         """Send a tools/list request and return the complete MCP protocol result.
+
+        Args:
+            cursor: Optional pagination cursor from a previous request's nextCursor.
 
         Returns:
             mcp.types.ListToolsResult: The complete response object from the protocol,
@@ -1388,21 +1446,36 @@ class Client(Generic[ClientTransportT]):
         """
         logger.debug(f"[{self.name}] called list_tools")
 
-        result = await self._await_with_session_monitoring(self.session.list_tools())
+        result = await self._await_with_session_monitoring(
+            self.session.list_tools(cursor=cursor)
+        )
         return result
 
     async def list_tools(self) -> list[mcp.types.Tool]:
-        """Retrieve a list of tools available on the server.
+        """Retrieve all tools available on the server.
+
+        This method automatically fetches all pages if the server paginates results,
+        returning the complete list. For manual pagination control (e.g., to handle
+        large result sets incrementally), use list_tools_mcp() with the cursor parameter.
 
         Returns:
-            list[mcp.types.Tool]: A list of Tool objects.
+            list[mcp.types.Tool]: A list of all Tool objects.
 
         Raises:
             RuntimeError: If called while the client is not connected.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        result = await self.list_tools_mcp()
-        return result.tools
+        all_tools: list[mcp.types.Tool] = []
+        cursor: str | None = None
+
+        while True:
+            result = await self.list_tools_mcp(cursor=cursor)
+            all_tools.extend(result.tools)
+            if result.nextCursor is None:
+                break
+            cursor = result.nextCursor
+
+        return all_tools
 
     # --- Call Tool ---
 

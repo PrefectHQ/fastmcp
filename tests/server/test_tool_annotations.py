@@ -1,5 +1,6 @@
 from typing import Any
 
+import mcp.types as mcp_types
 from mcp.types import Tool as MCPTool
 from mcp.types import ToolAnnotations, ToolExecution
 
@@ -47,12 +48,12 @@ async def test_tool_annotations_in_mcp_protocol():
         return message
 
     # Check via MCP protocol
-    mcp_tools = await mcp._list_tools_mcp()
-    assert len(mcp_tools) == 1
-    assert mcp_tools[0].annotations is not None
-    assert mcp_tools[0].annotations.title == "Echo Tool"
-    assert mcp_tools[0].annotations.readOnlyHint is True
-    assert mcp_tools[0].annotations.openWorldHint is False
+    result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
+    assert len(result.tools) == 1
+    assert result.tools[0].annotations is not None
+    assert result.tools[0].annotations.title == "Echo Tool"
+    assert result.tools[0].annotations.readOnlyHint is True
+    assert result.tools[0].annotations.openWorldHint is False
 
 
 async def test_tool_annotations_in_client_api():
