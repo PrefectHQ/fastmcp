@@ -273,19 +273,10 @@ import mcp.types
 @mcp.tool
 async def custom_tool_management(ctx: Context) -> str:
     """Example of manual notification after custom tool changes."""
-    # In async code, send immediately
     await ctx.send_notification(mcp.types.ToolListChangedNotification())
     await ctx.send_notification(mcp.types.ResourceListChangedNotification())
     await ctx.send_notification(mcp.types.PromptListChangedNotification())
     return "Notifications sent"
-
-
-@mcp.tool
-def sync_tool(ctx: Context) -> str:
-    """Example of notification from sync code."""
-    # In sync code, queue for background sending (~1 second delay)
-    ctx.send_notification_sync(mcp.types.ToolListChangedNotification())
-    return "Notification queued"
 ```
 
 These methods are primarily used internally by FastMCP's automatic notification system and most users will not need to invoke them directly.

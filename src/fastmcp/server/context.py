@@ -4,13 +4,12 @@ import json
 import logging
 import weakref
 from collections.abc import Callable, Generator, Mapping, Sequence
-from contextlib import AsyncExitStack, contextmanager
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from logging import Logger
 from typing import Any, Literal, cast, overload
 
-import anyio
 import mcp.types
 from mcp import LoggingLevel, ServerSession
 from mcp.server.lowlevel.server import request_ctx
@@ -184,9 +183,6 @@ class Context:
         self._fastmcp: weakref.ref[FastMCP] = weakref.ref(fastmcp)
         self._session: ServerSession | None = session  # For state ops during init
         self._tokens: list[Token] = []
-        self._notification_queue: list[mcp.types.ServerNotificationType] = []
-        self._exit_stack: AsyncExitStack | None = None
-        self._cancel_scope: anyio.CancelScope | None = None
 
     @property
     def fastmcp(self) -> FastMCP:
@@ -221,24 +217,10 @@ class Context:
         if server._worker is not None:
             self._worker_token = _current_worker.set(server._worker)
 
-        # Start background notification flusher
-        self._exit_stack = AsyncExitStack()
-        await self._exit_stack.__aenter__()
-        tg = await self._exit_stack.enter_async_context(anyio.create_task_group())
-        self._cancel_scope = anyio.CancelScope()
-        tg.start_soon(self._periodic_flush)
-
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit the context manager and reset the most recent token."""
-        # Stop background flusher and do final flush
-        if self._cancel_scope is not None:
-            self._cancel_scope.cancel()
-        await self._flush_notifications()
-        if self._exit_stack is not None:
-            await self._exit_stack.aclose()
-
         # Reset server/docket/worker tokens
         from fastmcp.server.dependencies import (
             _current_docket,
@@ -621,27 +603,10 @@ class Context:
     ) -> None:
         """Send a notification to the client immediately.
 
-        Use this in async code when you want the notification sent right away.
-        For sync code, use send_notification_sync() which queues the notification
-        for the background flusher.
-
         Args:
             notification: An MCP notification instance (e.g., ToolListChangedNotification())
         """
         await self.session.send_notification(mcp.types.ServerNotification(notification))
-
-    def send_notification_sync(
-        self, notification: mcp.types.ServerNotificationType
-    ) -> None:
-        """Queue a notification to be sent by the background flusher.
-
-        Use this in sync code when you can't await. The notification will be
-        sent within ~1 second by the background flusher.
-
-        Args:
-            notification: An MCP notification instance (e.g., ToolListChangedNotification())
-        """
-        self._notification_queue.append(notification)
 
     async def close_sse_stream(self) -> None:
         """Close the current response stream to trigger client reconnection.
@@ -1175,28 +1140,6 @@ class Context:
         """Delete a value from the session-scoped state store."""
         prefixed_key = self._make_state_key(key)
         await self.fastmcp._state_store.delete(key=prefixed_key)
-
-    async def _periodic_flush(self) -> None:
-        """Background task that flushes the notification queue every second."""
-        with self._cancel_scope:  # type: ignore[union-attr]
-            while True:
-                await anyio.sleep(1)
-                await self._flush_notifications()
-
-    async def _flush_notifications(self) -> None:
-        """Send all queued notifications."""
-        if not self._notification_queue:
-            return
-
-        for notification in self._notification_queue:
-            try:
-                await self.send_notification(notification)
-            except Exception:
-                # Don't let notification failures break the request
-                logger.debug(
-                    f"Failed to send notification: {notification}", exc_info=True
-                )
-        self._notification_queue.clear()
 
 
 async def _log_to_server_and_client(
