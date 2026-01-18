@@ -76,10 +76,10 @@ def tools(mcp: FastMCP, test_dir: Path) -> FastMCP:
 
 
 async def test_list_resources(mcp: FastMCP):
-    resources = await mcp._list_resources_mcp()
-    assert len(resources) == 4
+    result = await mcp._list_resources_mcp(mcp_types.ListResourcesRequest())
+    assert len(result.resources) == 4
 
-    assert [str(r.uri) for r in resources] == [
+    assert [str(r.uri) for r in result.resources] == [
         "dir://test_dir",
         "file://test_dir/example.py",
         "file://test_dir/readme.md",
