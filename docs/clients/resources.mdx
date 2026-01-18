@@ -22,13 +22,13 @@ MCP servers expose two types of resources:
 
 ### Static Resources
 
-Use `list_resources()` to retrieve all static resources available on the server:
+Use `list_resources()` to retrieve all static resources available on the server. When the server paginates results, the client automatically fetches all pages and returns the complete list.
 
 ```python
 async with client:
     resources = await client.list_resources()
     # resources -> list[mcp.types.Resource]
-    
+
     for resource in resources:
         print(f"Resource URI: {resource.uri}")
         print(f"Name: {resource.name}")
@@ -40,15 +40,17 @@ async with client:
             print(f"Tags: {fastmcp_meta.get('tags', [])}")
 ```
 
+For manual pagination control, use `list_resources_mcp()` with the `cursor` parameter. See [Pagination](/servers/pagination#manual-pagination) for details.
+
 ### Resource Templates
 
-Use `list_resource_templates()` to retrieve available resource templates:
+Use `list_resource_templates()` to retrieve available resource templates. When the server paginates results, the client automatically fetches all pages and returns the complete list.
 
 ```python
 async with client:
     templates = await client.list_resource_templates()
     # templates -> list[mcp.types.ResourceTemplate]
-    
+
     for template in templates:
         print(f"Template URI: {template.uriTemplate}")
         print(f"Name: {template.name}")
@@ -58,6 +60,8 @@ async with client:
             fastmcp_meta = template.meta.get('fastmcp', {})
             print(f"Tags: {fastmcp_meta.get('tags', [])}")
 ```
+
+For manual pagination control, use `list_resource_templates_mcp()` with the `cursor` parameter. See [Pagination](/servers/pagination#manual-pagination) for details.
 
 ### Filtering by Tags
 

@@ -13,13 +13,13 @@ Tools are executable functions exposed by MCP servers. The FastMCP client provid
 
 ## Discovering Tools
 
-Use `list_tools()` to retrieve all tools available on the server:
+Use `list_tools()` to retrieve all tools available on the server. When the server paginates results, the client automatically fetches all pages and returns the complete list.
 
 ```python
 async with client:
     tools = await client.list_tools()
     # tools -> list[mcp.types.Tool]
-    
+
     for tool in tools:
         print(f"Tool: {tool.name}")
         print(f"Description: {tool.description}")
@@ -30,6 +30,8 @@ async with client:
             fastmcp_meta = tool.meta.get('fastmcp', {})
             print(f"Tags: {fastmcp_meta.get('tags', [])}")
 ```
+
+For manual pagination control, use `list_tools_mcp()` with the `cursor` parameter. See [Pagination](/servers/pagination#manual-pagination) for details.
 
 ### Filtering by Tags
 
