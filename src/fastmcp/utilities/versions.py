@@ -42,18 +42,21 @@ class VersionSpec:
     lt: str | None = None
     eq: str | None = None
 
-    def matches(self, version: str | None) -> bool:
+    def matches(self, version: str | None, *, match_none: bool = True) -> bool:
         """Check if a version matches this spec.
 
         Args:
             version: The version to check, or None for unversioned.
+            match_none: Whether unversioned (None) components match. Defaults to True
+                for backward compatibility with retrieval operations. Set to False
+                when filtering (e.g., enable/disable) to exclude unversioned components
+                from version-specific rules.
 
         Returns:
             True if the version matches the spec.
         """
         if version is None:
-            # Unversioned components always match
-            return True
+            return match_none
 
         if self.eq is not None:
             return version == self.eq

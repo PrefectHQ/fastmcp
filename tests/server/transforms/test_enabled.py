@@ -4,6 +4,7 @@ import pytest
 
 from fastmcp.server.transforms.enabled import Enabled, is_enabled
 from fastmcp.tools.tool import Tool
+from fastmcp.utilities.versions import VersionSpec
 
 
 class TestMatching:
@@ -27,9 +28,40 @@ class TestMatching:
 
     def test_match_by_version(self):
         """Matches component by version."""
-        t = Enabled(False, version="v1")
+        t = Enabled(False, version=VersionSpec(eq="v1"))
         assert t._matches(Tool(name="foo", version="v1", parameters={})) is True
         assert t._matches(Tool(name="foo", version="v2", parameters={})) is False
+
+    def test_match_by_version_spec_exact(self):
+        """VersionSpec(eq="v1") matches v1 only."""
+        t = Enabled(False, version=VersionSpec(eq="v1"))
+        assert t._matches(Tool(name="foo", version="v1", parameters={})) is True
+        assert t._matches(Tool(name="foo", version="v2", parameters={})) is False
+        assert t._matches(Tool(name="foo", version="v0", parameters={})) is False
+
+    def test_match_by_version_spec_gte(self):
+        """VersionSpec(gte="v2") matches v2, v3, but not v1."""
+        t = Enabled(False, version=VersionSpec(gte="v2"))
+        assert t._matches(Tool(name="foo", version="v1", parameters={})) is False
+        assert t._matches(Tool(name="foo", version="v2", parameters={})) is True
+        assert t._matches(Tool(name="foo", version="v3", parameters={})) is True
+
+    def test_match_by_version_spec_range(self):
+        """VersionSpec(gte="v1", lt="v3") matches v1, v2, but not v3."""
+        t = Enabled(False, version=VersionSpec(gte="v1", lt="v3"))
+        assert t._matches(Tool(name="foo", version="v0", parameters={})) is False
+        assert t._matches(Tool(name="foo", version="v1", parameters={})) is True
+        assert t._matches(Tool(name="foo", version="v2", parameters={})) is True
+        assert t._matches(Tool(name="foo", version="v3", parameters={})) is False
+        assert t._matches(Tool(name="foo", version="v4", parameters={})) is False
+
+    def test_unversioned_does_not_match_version_spec(self):
+        """Unversioned components (version=None) don't match a VersionSpec."""
+        t = Enabled(False, version=VersionSpec(eq="v1"))
+        assert t._matches(Tool(name="foo", parameters={})) is False
+
+        t2 = Enabled(False, version=VersionSpec(gte="v1"))
+        assert t2._matches(Tool(name="foo", parameters={})) is False
 
     def test_match_by_tag(self):
         """Matches if component has any of the specified tags."""
@@ -48,7 +80,7 @@ class TestMatching:
         t = Enabled(
             False,
             names={"foo"},
-            version="v1",
+            version=VersionSpec(eq="v1"),
             tags=frozenset({"internal"}),
         )
         # All match
