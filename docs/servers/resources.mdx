@@ -104,7 +104,7 @@ def get_application_status() -> str:
 
 <ParamField body="enabled" type="bool" default="True">
   <Warning>Deprecated in v3.0.0. Use `mcp.enable()` / `mcp.disable()` at the server level instead.</Warning>
-  A boolean to enable or disable the resource. See [Visibility Control](#visibility-control) for the recommended approach.
+  A boolean to enable or disable the resource. See [Component Visibility](#component-visibility) for the recommended approach.
 </ParamField>
 
 <ParamField body="icons" type="list[Icon] | None">
@@ -213,11 +213,11 @@ return ResourceResult(b"\x00\x01\x02")         # binary content
 </ParamField>
 </Card>
 
-### Visibility Control
+### Component Visibility
 
 <VersionBadge version="3.0.0" />
 
-You can control which resources are visible to clients using server-level visibility control. Disabled resources don't appear in `list_resources` and can't be read.
+You can control which resources are enabled for clients using server-level enabled control. Disabled resources don't appear in `list_resources` and can't be read.
 
 ```python
 from fastmcp import FastMCP
@@ -231,16 +231,16 @@ def get_public(): return "public"
 def get_secret(): return "secret"
 
 # Disable specific resources by key
-mcp.disable(keys=["resource:data://secret"])
+mcp.disable(keys={"resource:data://secret"})
 
 # Disable resources by tag
 mcp.disable(tags={"internal"})
 
-# Or use allowlist mode - only show resources with specific tags
+# Or use allowlist mode - only enable resources with specific tags
 mcp.enable(tags={"public"}, only=True)
 ```
 
-See [Local Provider](/servers/providers/local#visibility-control) for the complete visibility control API including key formats and tag-based filtering.
+See [Enabled](/servers/enabled) for the complete enabled control API including key formats, tag-based filtering, and provider-level control.
 
 
 ### Accessing MCP Context
@@ -395,8 +395,8 @@ def example_resource() -> str:
 
 # These operations trigger notifications:
 mcp.add_resource(example_resource)                   # Sends resources/list_changed notification
-mcp.disable(keys=["resource:data://example"])        # Sends resources/list_changed notification
-mcp.enable(keys=["resource:data://example"])         # Sends resources/list_changed notification
+mcp.disable(keys={"resource:data://example"})        # Sends resources/list_changed notification
+mcp.enable(keys={"resource:data://example"})         # Sends resources/list_changed notification
 ```
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.

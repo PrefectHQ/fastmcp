@@ -134,7 +134,7 @@
                   "servers/tasks",
                   "servers/telemetry",
                   "servers/versioning",
-                  "servers/visibility"
+                  "servers/enabled"
                 ]
               },
               {
@@ -497,7 +497,7 @@
                       "python-sdk/fastmcp-server-transforms-namespace",
                       "python-sdk/fastmcp-server-transforms-tool_transform",
                       "python-sdk/fastmcp-server-transforms-version_filter",
-                      "python-sdk/fastmcp-server-transforms-visibility"
+                      "python-sdk/fastmcp-server-transforms-enabled"
                     ]
                   }
                 ]

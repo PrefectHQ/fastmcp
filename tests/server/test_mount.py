@@ -1469,12 +1469,10 @@ class TestMountedServerDocketBehavior:
 
 
 class TestComponentServicePrefixLess:
-    """Test that ComponentService works with prefix-less mounted servers."""
+    """Test that enable/disable works with prefix-less mounted servers."""
 
     async def test_enable_tool_prefixless_mount(self):
         """Test enabling a tool on a prefix-less mounted server."""
-        from fastmcp.contrib.component_manager.component_service import ComponentService
-
         main_app = FastMCP("MainApp")
         sub_app = FastMCP("SubApp")
 
@@ -1489,24 +1487,19 @@ class TestComponentServicePrefixLess:
         tools = await main_app.get_tools()
         assert any(t.name == "my_tool" for t in tools)
 
-        # Disable and re-enable via ComponentService
-        service = ComponentService(main_app)
-        tool = await service._disable_tool("my_tool")
-        assert tool is not None
+        # Disable and re-enable
+        main_app.disable(names={"my_tool"}, components=["tool"])
         # Verify tool is now disabled
         tools = await main_app.get_tools()
         assert not any(t.name == "my_tool" for t in tools)
 
-        tool = await service._enable_tool("my_tool")
-        assert tool is not None
+        main_app.enable(names={"my_tool"}, components=["tool"])
         # Verify tool is now enabled
         tools = await main_app.get_tools()
         assert any(t.name == "my_tool" for t in tools)
 
     async def test_enable_resource_prefixless_mount(self):
         """Test enabling a resource on a prefix-less mounted server."""
-        from fastmcp.contrib.component_manager.component_service import ComponentService
-
         main_app = FastMCP("MainApp")
         sub_app = FastMCP("SubApp")
 
@@ -1517,24 +1510,19 @@ class TestComponentServicePrefixLess:
         # Mount without prefix
         main_app.mount(sub_app)
 
-        # Disable and re-enable via ComponentService
-        service = ComponentService(main_app)
-        resource = await service._disable_resource("data://test")
-        assert resource is not None
+        # Disable and re-enable
+        main_app.disable(names={"data://test"}, components=["resource"])
         # Verify resource is now disabled
         resources = await main_app.get_resources()
         assert not any(str(r.uri) == "data://test" for r in resources)
 
-        resource = await service._enable_resource("data://test")
-        assert resource is not None
+        main_app.enable(names={"data://test"}, components=["resource"])
         # Verify resource is now enabled
         resources = await main_app.get_resources()
         assert any(str(r.uri) == "data://test" for r in resources)
 
     async def test_enable_prompt_prefixless_mount(self):
         """Test enabling a prompt on a prefix-less mounted server."""
-        from fastmcp.contrib.component_manager.component_service import ComponentService
-
         main_app = FastMCP("MainApp")
         sub_app = FastMCP("SubApp")
 
@@ -1545,16 +1533,13 @@ class TestComponentServicePrefixLess:
         # Mount without prefix
         main_app.mount(sub_app)
 
-        # Disable and re-enable via ComponentService
-        service = ComponentService(main_app)
-        prompt = await service._disable_prompt("my_prompt")
-        assert prompt is not None
+        # Disable and re-enable
+        main_app.disable(names={"my_prompt"}, components=["prompt"])
         # Verify prompt is now disabled
         prompts = await main_app.get_prompts()
         assert not any(p.name == "my_prompt" for p in prompts)
 
-        prompt = await service._enable_prompt("my_prompt")
-        assert prompt is not None
+        main_app.enable(names={"my_prompt"}, components=["prompt"])
         # Verify prompt is now enabled
         prompts = await main_app.get_prompts()
         assert any(p.name == "my_prompt" for p in prompts)

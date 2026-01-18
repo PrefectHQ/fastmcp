@@ -29,7 +29,7 @@ Both providers and [middleware](/servers/middleware) can influence what componen
 
 **Middleware** intercepts individual requests. It's well-suited for request-specific decisions like logging, rate limiting, or authentication.
 
-You *could* use middleware to dynamically add tools based on request context. But it's often cleaner to have a provider source all possible tools, then use middleware or [visibility controls](/servers/providers/local#visibility-control) to filter what each request can see. This separation makes it easier to reason about how components are sourced and how they interact with other server machinery.
+You *could* use middleware to dynamically add tools based on request context. But it's often cleaner to have a provider source all possible tools, then use middleware or [enabled controls](/servers/enabled) to filter what each request can see. This separation makes it easier to reason about how components are sourced and how they interact with other server machinery.
 
 ## The Provider Interface
 

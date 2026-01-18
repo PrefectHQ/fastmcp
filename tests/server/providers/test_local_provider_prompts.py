@@ -330,12 +330,12 @@ class TestPromptEnabled:
         prompts = await mcp.get_prompts()
         assert any(p.name == "sample_prompt" for p in prompts)
 
-        mcp.disable(keys=["prompt:sample_prompt@"])
+        mcp.disable(names={"sample_prompt"}, components=["prompt"])
 
         prompts = await mcp.get_prompts()
         assert not any(p.name == "sample_prompt" for p in prompts)
 
-        mcp.enable(keys=["prompt:sample_prompt@"])
+        mcp.enable(names={"sample_prompt"}, components=["prompt"])
 
         prompts = await mcp.get_prompts()
         assert any(p.name == "sample_prompt" for p in prompts)
@@ -347,7 +347,7 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        mcp.disable(keys=["prompt:sample_prompt@"])
+        mcp.disable(names={"sample_prompt"}, components=["prompt"])
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
@@ -358,11 +358,11 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        mcp.disable(keys=["prompt:sample_prompt@"])
+        mcp.disable(names={"sample_prompt"}, components=["prompt"])
         prompts = await mcp.get_prompts()
         assert not any(p.name == "sample_prompt" for p in prompts)
 
-        mcp.enable(keys=["prompt:sample_prompt@"])
+        mcp.enable(names={"sample_prompt"}, components=["prompt"])
         prompts = await mcp.get_prompts()
         assert len(prompts) == 1
 
@@ -373,11 +373,11 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        mcp.disable(keys=["prompt:sample_prompt@"])
+        mcp.disable(names={"sample_prompt"}, components=["prompt"])
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
-        # get_prompt() applies visibility transform, returns None for disabled
+        # get_prompt() applies enabled transform, returns None for disabled
         prompt = await mcp.get_prompt("sample_prompt")
         assert prompt is None
 
@@ -391,11 +391,11 @@ class TestPromptEnabled:
         prompt = await mcp.get_prompt("sample_prompt")
         assert prompt is not None
 
-        mcp.disable(keys=["prompt:sample_prompt@"])
+        mcp.disable(names={"sample_prompt"}, components=["prompt"])
         prompts = await mcp.get_prompts()
         assert len(prompts) == 0
 
-        # get_prompt() applies visibility transform, returns None for disabled
+        # get_prompt() applies enabled transform, returns None for disabled
         prompt = await mcp.get_prompt("sample_prompt")
         assert prompt is None
 
@@ -406,9 +406,9 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        mcp.disable(keys=["prompt:sample_prompt@"])
+        mcp.disable(names={"sample_prompt"}, components=["prompt"])
 
-        # get_prompt() applies visibility transform, returns None for disabled
+        # get_prompt() applies enabled transform, returns None for disabled
         prompt = await mcp.get_prompt("sample_prompt")
         assert prompt is None
 
@@ -454,7 +454,7 @@ class TestPromptTags:
 
     async def test_read_prompt_includes_tags(self):
         mcp = self.create_server(include_tags={"a"})
-        # _get_prompt applies visibility transform (tag filtering)
+        # _get_prompt applies enabled transform (tag filtering)
         prompt = await mcp._get_prompt("prompt_1")
         result = await prompt.render({})
         assert result.messages[0].content.text == "1"
@@ -464,7 +464,7 @@ class TestPromptTags:
 
     async def test_read_prompt_excludes_tags(self):
         mcp = self.create_server(exclude_tags={"a"})
-        # get_prompt applies visibility transform (tag filtering)
+        # get_prompt applies enabled transform (tag filtering)
         prompt = await mcp.get_prompt("prompt_1")
         assert prompt is None
 

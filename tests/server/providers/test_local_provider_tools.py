@@ -1473,14 +1473,14 @@ class TestToolEnabled:
         assert any(t.name == "sample_tool" for t in tools)
 
         # Disable via server
-        mcp.disable(keys=["tool:sample_tool@"])
+        mcp.disable(names={"sample_tool"}, components=["tool"])
 
         # Tool should not be in list when disabled
         tools = await mcp.get_tools()
         assert not any(t.name == "sample_tool" for t in tools)
 
         # Re-enable via server
-        mcp.enable(keys=["tool:sample_tool@"])
+        mcp.enable(names={"sample_tool"}, components=["tool"])
         tools = await mcp.get_tools()
         assert any(t.name == "sample_tool" for t in tools)
 
@@ -1491,7 +1491,7 @@ class TestToolEnabled:
         def sample_tool(x: int) -> int:
             return x * 2
 
-        mcp.disable(keys=["tool:sample_tool@"])
+        mcp.disable(names={"sample_tool"}, components=["tool"])
         tools = await mcp.get_tools()
         assert len(tools) == 0
 
@@ -1505,8 +1505,8 @@ class TestToolEnabled:
         def sample_tool(x: int) -> int:
             return x * 2
 
-        mcp.disable(keys=["tool:sample_tool@"])
-        mcp.enable(keys=["tool:sample_tool@"])
+        mcp.disable(names={"sample_tool"}, components=["tool"])
+        mcp.enable(names={"sample_tool"}, components=["tool"])
         tools = await mcp.get_tools()
         assert len(tools) == 1
 
@@ -1517,7 +1517,7 @@ class TestToolEnabled:
         def sample_tool(x: int) -> int:
             return x * 2
 
-        mcp.disable(keys=["tool:sample_tool@"])
+        mcp.disable(names={"sample_tool"}, components=["tool"])
         tools = await mcp.get_tools()
         assert len(tools) == 0
 
@@ -1531,10 +1531,10 @@ class TestToolEnabled:
         def sample_tool(x: int) -> int:
             return x * 2
 
-        tool = await mcp.get_tool(name="sample_tool")
+        tool = await mcp.get_tool("sample_tool")
         assert tool is not None
 
-        mcp.disable(keys=["tool:sample_tool@"])
+        mcp.disable(names={"sample_tool"}, components=["tool"])
         tools = await mcp.get_tools()
         assert len(tools) == 0
 
@@ -1548,7 +1548,7 @@ class TestToolEnabled:
         def sample_tool(x: int) -> int:
             return x * 2
 
-        mcp.disable(keys=["tool:sample_tool@"])
+        mcp.disable(names={"sample_tool"}, components=["tool"])
 
         with pytest.raises(NotFoundError, match="Unknown tool"):
             await mcp.call_tool("sample_tool", {"x": 5})

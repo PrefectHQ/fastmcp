@@ -79,7 +79,7 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 
 <ParamField body="enabled" type="bool" default="True">
   <Warning>Deprecated in v3.0.0. Use `mcp.enable()` / `mcp.disable()` at the server level instead.</Warning>
-  A boolean to enable or disable the tool. See [Visibility Control](#visibility-control) for the recommended approach.
+  A boolean to enable or disable the tool. See [Component Visibility](#component-visibility) for the recommended approach.
 </ParamField>
 
 <ParamField body="icons" type="list[Icon] | None">
@@ -831,11 +831,11 @@ See the [Docket documentation](https://chrisguidry.github.io/docket/dependencies
 
 When a tool times out, FastMCP logs a warning suggesting task mode. For operations you know will be long-running, use `task=True` instead—background tasks offload work to distributed workers and let clients poll for progress.
 
-## Visibility Control
+## Component Visibility
 
 <VersionBadge version="3.0.0" />
 
-You can control which tools are visible to clients using server-level visibility control. Disabled tools don't appear in `list_tools` and can't be called.
+You can control which tools are enabled for clients using server-level enabled control. Disabled tools don't appear in `list_tools` and can't be called.
 
 ```python
 from fastmcp import FastMCP
@@ -853,16 +853,16 @@ def public_action() -> str:
     return "Done"
 
 # Disable specific tools by key
-mcp.disable(keys=["tool:admin_action"])
+mcp.disable(keys={"tool:admin_action"})
 
 # Disable tools by tag
 mcp.disable(tags={"admin"})
 
-# Or use allowlist mode - only show tools with specific tags
+# Or use allowlist mode - only enable tools with specific tags
 mcp.enable(tags={"public"}, only=True)
 ```
 
-See [Local Provider](/servers/providers/local#visibility-control) for the complete visibility control API including key formats and tag-based filtering.
+See [Enabled](/servers/enabled) for the complete enabled control API including key formats, tag-based filtering, and provider-level control.
 
 ## MCP Annotations
 
@@ -967,8 +967,8 @@ def example_tool() -> str:
 
 # These operations trigger notifications:
 mcp.add_tool(example_tool)              # Sends tools/list_changed notification
-mcp.disable(keys=["tool:example_tool"]) # Sends tools/list_changed notification
-mcp.enable(keys=["tool:example_tool"])  # Sends tools/list_changed notification
+mcp.disable(keys={"tool:example_tool"}) # Sends tools/list_changed notification
+mcp.enable(keys={"tool:example_tool"})  # Sends tools/list_changed notification
 mcp.remove_tool("example_tool")         # Sends tools/list_changed notification
 ```
 

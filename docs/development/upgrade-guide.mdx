@@ -149,7 +149,7 @@ mcp.add_transform(ToolTransform({
 ```
 </CodeGroup>
 
-`remove_tool_transformation()` is deprecated with no replacement - transforms are immutable once added. Use `server.disable(keys=[...])` to hide tools dynamically.
+`remove_tool_transformation()` is deprecated with no replacement - transforms are immutable once added. Use `server.disable(names={...}, components=["tool"])` to hide tools dynamically.
 
 ### FastMCP.as_proxy() Deprecated
 
@@ -185,7 +185,7 @@ main.mount(subserver, namespace="api")
 
 ### Component Enable/Disable
 
-The `enabled` field and `enable()`/`disable()` methods have been removed from component objects. Use server or provider methods instead:
+The `enable()`/`disable()` methods have moved from component objects to the server and provider level:
 
 <CodeGroup>
 ```python Before
@@ -195,16 +195,26 @@ tool.enable()
 ```
 
 ```python After
-server.disable(keys=["tool:my_tool@"])
-server.enable(keys=["tool:my_tool@"])
+server.disable(names={"my_tool"}, components=["tool"])
+server.enable(names={"my_tool"}, components=["tool"])
 ```
 </CodeGroup>
 
-Components describe capabilities; servers and providers control availability. This ensures mutations work correctly even when components pass through transforming providers.
+Components describe capabilities; servers and providers control availability. This ensures enabled state works correctly even when components pass through transforming providers.
+
+**Override semantics:**
+
+Multiple `enable()`/`disable()` calls are additive. Later calls override earlier ones for matching components:
+
+```python
+server.disable(tags={"internal"})  # Hide all internal
+server.enable(names={"safe_tool"})    # Show safe_tool (overrides the disable)
+# Result: safe_tool is visible, other internal tools are hidden
+```
 
 **Allowlist mode:**
 
-Use `only=True` to restrict visibility to specific components:
+Use `only=True` to restrict access to specific components:
 
 ```python
 # Show ONLY tools with "public" tag
@@ -215,13 +225,28 @@ server.enable(tags={"public"}, only=True)
 
 These init parameters emit deprecation warnings. Use the new methods instead:
 
-```python
-# Before
+<CodeGroup>
+```python Before
 mcp = FastMCP("server", exclude_tags={"internal"})
+```
 
-# After
+```python After
 mcp = FastMCP("server")
 mcp.disable(tags={"internal"})
+```
+</CodeGroup>
+
+**No automatic notifications:**
+
+Component `enable()`/`disable()` in v2 sent `ToolListChangedNotification` automatically. The new server-level methods don't - they're treated as startup configuration. To notify clients of enabled state changes at runtime, send notifications explicitly:
+
+```python
+import mcp.types
+
+@server.tool
+async def hide_admin_tools(ctx: Context):
+    ctx.fastmcp.disable(tags={"admin"})
+    await ctx.send_notification(mcp.types.ToolListChangedNotification())
 ```
 
 ### Component Lookup Method Parameter Names

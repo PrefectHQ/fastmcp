@@ -1052,16 +1052,21 @@ class MCPConfigTransport(ClientTransport):
             transport = config.to_transport()
 
         client = ProxyClient(transport=transport, timeout=timeout)
+        # Create proxy without include_tags/exclude_tags - we'll add them after tool transforms
         proxy = create_proxy(
             client,
             name=f"Proxy-{name}",
-            include_tags=include_tags,
-            exclude_tags=exclude_tags,
         )
+        # Add tool transforms FIRST - they may add/modify tags
         if tool_transforms:
             from fastmcp.server.transforms import ToolTransform
 
             proxy.add_transform(ToolTransform(tool_transforms))
+        # Then add enabled filters - they filter based on tags
+        if include_tags:
+            proxy.enable(tags=set(include_tags), only=True)
+        if exclude_tags:
+            proxy.disable(tags=set(exclude_tags))
         return transport, proxy
 
     async def close(self):

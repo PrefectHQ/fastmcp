@@ -23,7 +23,7 @@ class Provider:
 
 Providers support:
 - **Lifecycle management**: `async def lifespan()` for setup/teardown
-- **Visibility control**: `enable()` / `disable()` with keys, tags, and allowlist mode
+- **Enabled control**: `enable()` / `disable()` with name, version, tags, components, and allowlist mode
 - **Transform stacking**: `provider.add_transform(Namespace(...))`, `provider.add_transform(ToolTransform(...))`
 
 ### LocalProvider
@@ -106,7 +106,7 @@ Transforms modify components (tools, resources, prompts) as they flow from provi
 
 - `Namespace` - adds prefixes to names (`tool` → `api_tool`) and path segments to URIs (`data://x` → `data://api/x`)
 - `ToolTransform` - modifies tool schemas (rename, description, tags, argument transforms)
-- `Visibility` - filters components by key or tag (backs `enable()`/`disable()` API)
+- `Enabled` - sets enabled state on components by key or tag (backs `enable()`/`disable()` API)
 - `VersionFilter` - filters components by version range (`version_gte`, `version_lt`)
 
 ```python
@@ -147,7 +147,7 @@ Transforms apply at two levels:
 - **Provider-level**: `provider.add_transform()` - affects only that provider's components
 - **Server-level**: `server.add_transform()` - affects all components from all providers
 
-Documentation: `docs/servers/providers/transforms.mdx`, `docs/servers/visibility.mdx`
+Documentation: `docs/servers/providers/transforms.mdx`, `docs/servers/enabled.mdx`
 
 ---
 
@@ -182,27 +182,36 @@ Documentation: `docs/servers/context.mdx`
 
 ---
 
-## Visibility System
+## Enabled System
 
-Components can be dynamically enabled/disabled at runtime using the visibility system ([#2708](https://github.com/jlowin/fastmcp/pull/2708)).
+Components can be enabled/disabled using the enabled system. Each `enable()` or `disable()` call adds a stateless Enabled transform that marks components via internal metadata. Later transforms override earlier ones.
 
 ```python
 mcp = FastMCP("Server")
 
-# Disable specific components (keys include @ version suffix)
-mcp.disable(keys=["tool:dangerous_tool@"])
+# Disable by name and component type
+mcp.disable(names={"dangerous_tool"}, components=["tool"])
 
 # Disable by tag
 mcp.disable(tags={"admin"})
 
-# Allowlist mode - only show these
-mcp.enable(keys=["tool:safe_tool@"], only=True)
+# Disable by version
+mcp.disable(names={"old_tool"}, version="1.0", components=["tool"])
+
+# Allowlist mode - only show components with these tags
+mcp.enable(tags={"public"}, only=True)
+
+# Enable overrides earlier disable (later transform wins)
+mcp.disable(tags={"internal"})
+mcp.enable(names={"safe_tool"})  # safe_tool is visible despite internal tag
 ```
 
 Works at both server and provider level. Supports:
 - **Blocklist mode** (default): All components visible except explicitly disabled
 - **Allowlist mode** (`only=True`): Only explicitly enabled components visible
 - **Tag-based filtering**: Enable/disable groups of components by tag
+- **Override semantics**: Later transforms override earlier marks (enable after disable = enabled)
+- **Transform ordering**: Enabled transforms are injected at the point you call them, so component state is known
 
 ---
 
@@ -814,7 +823,7 @@ tool = await server.get_tool("my_tool")
 tool.disable()
 
 # v3.0
-server.disable(keys=["tool:my_tool@"])
+server.disable(names={"my_tool"}, components=["tool"])
 ```
 
 ### Component Lookup Methods

@@ -123,7 +123,7 @@ set_up_component_manager(server=mcp, required_scopes=["mcp:write"])
 mounted = FastMCP(name="Component Manager", instructions="This is a test server with component manager.", auth=auth)
 set_up_component_manager(server=mounted, required_scopes=["mounted:write"])
 
-mcp.mount(server=mounted, prefix="mo")
+mcp.mount(server=mounted, namespace="mo")
 ```
 
 This allows you to grant different levels of access:
@@ -146,15 +146,9 @@ curl -X POST \
 
 ## ⚙️ How It Works
 
-- `set_up_component_manager()` registers API routes for tools, resources, and prompts.
-- The `ComponentService` class exposes async methods to enable/disable components.
-- Each endpoint returns a success message in JSON or a 404 error if the component isn't found.
-
----
-
-## 🧩 Extending
-
-You can subclass `ComponentService` for custom behavior or mount its routes elsewhere as needed.
+- `set_up_component_manager()` registers HTTP routes for tools, resources, and prompts.
+- Each endpoint calls `server.enable()` or `server.disable()` with the component name.
+- Returns a success message in JSON.
 
 ---
 

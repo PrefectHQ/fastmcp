@@ -77,6 +77,7 @@ class ToolMeta:
     serializer: Any | None = None
     timeout: float | None = None
     auth: AuthCheckCallable | list[AuthCheckCallable] | None = None
+    enabled: bool = True
 
 
 class FunctionTool(Tool):

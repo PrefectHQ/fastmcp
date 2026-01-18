@@ -44,7 +44,7 @@ mounted = FastMCP(
 set_up_component_manager(server=mounted, required_scopes=["mounted:write"])
 
 # Mount
-mcp.mount(server=mounted, prefix="mo")
+mcp.mount(server=mounted, namespace="mo")
 
 
 @mcp.resource("resource://greeting")

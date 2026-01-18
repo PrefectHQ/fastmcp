@@ -1,186 +1,121 @@
 """
-Routes and helpers for managing tools, resources, and prompts in FastMCP.
-Provides endpoints for enabling/disabling components via HTTP, with optional authentication scopes.
-"""
+HTTP routes for enabling/disabling components in FastMCP.
 
-from typing import Any
+Provides REST endpoints for controlling component enabled state with optional
+authentication scopes.
+"""
 
 from mcp.server.auth.middleware.bearer_auth import RequireAuthMiddleware
 from starlette.applications import Starlette
-from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
-from fastmcp.contrib.component_manager.component_service import ComponentService
-from fastmcp.exceptions import NotFoundError
 from fastmcp.server.server import FastMCP
 
 
 def set_up_component_manager(
     server: FastMCP, path: str = "/", required_scopes: list[str] | None = None
-):
-    """Set up routes for enabling/disabling tools, resources, and prompts.
+) -> None:
+    """Set up HTTP routes for enabling/disabling tools, resources, and prompts.
+
     Args:
-        server: The FastMCP server instance
-        path: Path used to mount all component-related routes on the server
-        required_scopes: Optional list of scopes required for these routes. Applies only if authentication is enabled.
+        server: The FastMCP server instance.
+        path: Base path for component management routes.
+        required_scopes: Optional list of scopes required for these routes.
+            Applies only if authentication is enabled.
+
+    Routes created:
+        POST /tools/{name}/enable[?version=v1]
+        POST /tools/{name}/disable[?version=v1]
+        POST /resources/{uri}/enable[?version=v1]
+        POST /resources/{uri}/disable[?version=v1]
+        POST /prompts/{name}/enable[?version=v1]
+        POST /prompts/{name}/disable[?version=v1]
     """
-
-    service = ComponentService(server)
-    routes: list[Route] = []
-    mounts: list[Mount] = []
-    route_configs = {
-        "tool": {
-            "param": "tool_name",
-            "enable": service._enable_tool,
-            "disable": service._disable_tool,
-        },
-        "resource": {
-            "param": "uri:path",
-            "enable": service._enable_resource,
-            "disable": service._disable_resource,
-        },
-        "prompt": {
-            "param": "prompt_name",
-            "enable": service._enable_prompt,
-            "disable": service._disable_prompt,
-        },
-    }
-
     if required_scopes is None:
-        routes.extend(build_component_manager_endpoints(route_configs, path))
+        # No auth - include path prefix in routes
+        routes = _build_routes(server, path)
+        server._additional_http_routes.extend(routes)
     else:
-        if path != "/":
-            mounts.append(
-                build_component_manager_mount(route_configs, path, required_scopes)
-            )
+        # With auth - Mount handles path prefix, routes shouldn't have it
+        routes = _build_routes(server, "/")
+        mount = Mount(
+            path if path != "/" else "",
+            app=RequireAuthMiddleware(Starlette(routes=routes), required_scopes),
+        )
+        server._additional_http_routes.append(mount)
+
+
+def _build_routes(server: FastMCP, base_path: str) -> list[Route]:
+    """Build all component management routes."""
+    prefix = base_path.rstrip("/") if base_path != "/" else ""
+
+    return [
+        # Tools
+        Route(
+            f"{prefix}/tools/{{name}}/enable",
+            endpoint=_make_endpoint(server, "tool", "enable"),
+            methods=["POST"],
+        ),
+        Route(
+            f"{prefix}/tools/{{name}}/disable",
+            endpoint=_make_endpoint(server, "tool", "disable"),
+            methods=["POST"],
+        ),
+        # Resources
+        Route(
+            f"{prefix}/resources/{{uri:path}}/enable",
+            endpoint=_make_endpoint(server, "resource", "enable"),
+            methods=["POST"],
+        ),
+        Route(
+            f"{prefix}/resources/{{uri:path}}/disable",
+            endpoint=_make_endpoint(server, "resource", "disable"),
+            methods=["POST"],
+        ),
+        # Prompts
+        Route(
+            f"{prefix}/prompts/{{name}}/enable",
+            endpoint=_make_endpoint(server, "prompt", "enable"),
+            methods=["POST"],
+        ),
+        Route(
+            f"{prefix}/prompts/{{name}}/disable",
+            endpoint=_make_endpoint(server, "prompt", "disable"),
+            methods=["POST"],
+        ),
+    ]
+
+
+def _make_endpoint(server: FastMCP, component_type: str, action: str):
+    """Create an endpoint function for enabling/disabling a component type."""
+
+    async def endpoint(request: Request) -> JSONResponse:
+        # Get name from path params (tools/prompts use 'name', resources use 'uri')
+        name = request.path_params.get("name") or request.path_params.get("uri")
+        version = request.query_params.get("version")
+
+        # Map component type to components list
+        # Note: "resource" in the route can refer to either a resource or template
+        # We need to check if it's a template (contains {}) and use "template" if so
+        if component_type == "resource" and name is not None and "{" in name:
+            components = ["template"]
+        elif component_type == "resource":
+            components = ["resource"]
         else:
-            mounts.append(
-                build_component_manager_mount(
-                    {"tool": route_configs["tool"]}, "/tools", required_scopes
-                )
-            )
-            mounts.append(
-                build_component_manager_mount(
-                    {"resource": route_configs["resource"]},
-                    "/resources",
-                    required_scopes,
-                )
-            )
-            mounts.append(
-                build_component_manager_mount(
-                    {"prompt": route_configs["prompt"]}, "/prompts", required_scopes
-                )
-            )
+            component_map = {
+                "tool": ["tool"],
+                "prompt": ["prompt"],
+            }
+            components = component_map[component_type]
 
-    server._additional_http_routes.extend(routes)
-    server._additional_http_routes.extend(mounts)
+        # Call server.enable() or server.disable()
+        method = getattr(server, action)
+        method(names={name} if name else None, version=version, components=components)
 
-
-def make_endpoint(action, component, config):
-    """
-    Factory for creating Starlette endpoint functions for enabling/disabling a component.
-    Args:
-        action: 'enable' or 'disable'
-        component: The component type (e.g., 'tool', 'resource', or 'prompt')
-        config: Dict with param and handler functions for the component
-    Returns:
-        An async endpoint function for Starlette.
-    """
-
-    async def endpoint(request: Request):
-        name = request.path_params[config["param"].split(":")[0]]
-
-        try:
-            await config[action](name)
-            return JSONResponse(
-                {"message": f"{action.capitalize()}d {component}: {name}"}
-            )
-        except NotFoundError as e:
-            raise StarletteHTTPException(
-                status_code=404,
-                detail=f"Unknown {component}: {name!r}",
-            ) from e
+        return JSONResponse(
+            {"message": f"{action.capitalize()}d {component_type}: {name}"}
+        )
 
     return endpoint
-
-
-def make_route(action, component, config, required_scopes, root_path) -> Route:
-    """
-    Creates a Starlette Route for enabling/disabling a component.
-    Args:
-        action: 'enable' or 'disable'
-        component: The component type
-        config: Dict with param and handler functions
-        required_scopes: Optional list of required auth scopes
-        root_path: The base path for the route
-    Returns:
-        A Starlette Route object.
-    """
-    endpoint = make_endpoint(action, component, config)
-
-    if required_scopes is not None and root_path in [
-        "/tools",
-        "/resources",
-        "/prompts",
-    ]:
-        path = f"/{{{config['param']}}}/{action}"
-    else:
-        if root_path != "/" and required_scopes is None:
-            path = f"{root_path}/{component}s/{{{config['param']}}}/{action}"
-        else:
-            path = f"/{component}s/{{{config['param']}}}/{action}"
-
-    return Route(path, endpoint=endpoint, methods=["POST"])
-
-
-def build_component_manager_endpoints(
-    route_configs, root_path, required_scopes=None
-) -> list[Route]:
-    """
-    Build a list of Starlette Route objects for all components/actions.
-    Args:
-        route_configs: Dict describing component types and their handlers
-        root_path: The base path for the routes
-        required_scopes: Optional list of required auth scopes
-    Returns:
-        List of Starlette Route objects for component management.
-    """
-    component_management_routes: list[Route] = []
-
-    for component in route_configs:
-        config: dict[str, Any] = route_configs[component]
-        for action in ["enable", "disable"]:
-            component_management_routes.append(
-                make_route(action, component, config, required_scopes, root_path)
-            )
-
-    return component_management_routes
-
-
-def build_component_manager_mount(route_configs, root_path, required_scopes) -> Mount:
-    """
-    Build a Starlette Mount with authentication for component management routes.
-    Args:
-        route_configs: Dict describing component types and their handlers
-        root_path: The base path for the mount
-        required_scopes: List of required auth scopes
-    Returns:
-        A Starlette Mount object with authentication middleware.
-    """
-    component_management_routes: list[Route] = []
-
-    for component in route_configs:
-        config: dict[str, Any] = route_configs[component]
-        for action in ["enable", "disable"]:
-            component_management_routes.append(
-                make_route(action, component, config, required_scopes, root_path)
-            )
-
-    return Mount(
-        f"{root_path}",
-        app=RequireAuthMiddleware(
-            Starlette(routes=component_management_routes), required_scopes
-        ),
-    )
