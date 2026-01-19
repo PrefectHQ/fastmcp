@@ -6,10 +6,10 @@ from mcp.types import ModelPreferences
 
 from fastmcp.server.context import (
     Context,
-    _parse_model_preferences,
     reset_transport,
     set_transport,
 )
+from fastmcp.server.sampling.run import _parse_model_preferences
 from fastmcp.server.server import FastMCP
 
 

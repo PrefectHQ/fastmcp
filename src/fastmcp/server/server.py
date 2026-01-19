@@ -88,7 +88,7 @@ from fastmcp.server.transforms import (
     ToolTransform,
     Transform,
 )
-from fastmcp.server.transforms.enabled import is_enabled
+from fastmcp.server.transforms.enabled import apply_session_transforms, is_enabled
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.settings import Settings
 from fastmcp.tools.function_tool import FunctionTool
@@ -1027,8 +1027,6 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
                 )
 
             # Get all tools, apply session transforms, then filter enabled
-            from fastmcp.server.context import apply_session_transforms
-
             tools = list(await super().list_tools())
             tools = await apply_session_transforms(tools)
             tools = [t for t in tools if is_enabled(t)]
@@ -1098,8 +1096,6 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
             return None
 
         # Apply session transforms to single item
-        from fastmcp.server.context import apply_session_transforms
-
         tools = await apply_session_transforms([tool])
         if not tools or not is_enabled(tools[0]):
             return None
@@ -1129,8 +1125,6 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
                 )
 
             # Get all resources, apply session transforms, then filter enabled
-            from fastmcp.server.context import apply_session_transforms
-
             resources = list(await super().list_resources())
             resources = await apply_session_transforms(resources)
             resources = [r for r in resources if is_enabled(r)]
@@ -1199,8 +1193,6 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
             return None
 
         # Apply session transforms to single item
-        from fastmcp.server.context import apply_session_transforms
-
         resources = await apply_session_transforms([resource])
         if not resources or not is_enabled(resources[0]):
             return None
@@ -1232,8 +1224,6 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
                 )
 
             # Get all templates, apply session transforms, then filter enabled
-            from fastmcp.server.context import apply_session_transforms
-
             templates = list(await super().list_resource_templates())
             templates = await apply_session_transforms(templates)
             templates = [t for t in templates if is_enabled(t)]
@@ -1302,8 +1292,6 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
             return None
 
         # Apply session transforms to single item
-        from fastmcp.server.context import apply_session_transforms
-
         templates = await apply_session_transforms([template])
         if not templates or not is_enabled(templates[0]):
             return None
@@ -1331,8 +1319,6 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
                 )
 
             # Get all prompts, apply session transforms, then filter enabled
-            from fastmcp.server.context import apply_session_transforms
-
             prompts = list(await super().list_prompts())
             prompts = await apply_session_transforms(prompts)
             prompts = [p for p in prompts if is_enabled(p)]
@@ -1401,8 +1387,6 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
             return None
 
         # Apply session transforms to single item
-        from fastmcp.server.context import apply_session_transforms
-
         prompts = await apply_session_transforms([prompt])
         if not prompts or not is_enabled(prompts[0]):
             return None

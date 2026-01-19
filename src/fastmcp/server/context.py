@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import weakref
 from collections.abc import Callable, Generator, Mapping, Sequence
@@ -8,34 +7,24 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from logging import Logger
-from typing import Any, Literal, cast, overload
+from typing import Any, Literal, overload
 
 import mcp.types
 from mcp import LoggingLevel, ServerSession
 from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext
 from mcp.types import (
-    CreateMessageResult,
-    CreateMessageResultWithTools,
     GetPromptResult,
     ModelPreferences,
     Root,
     SamplingMessage,
-    SamplingMessageContentBlock,
-    TextContent,
-    ToolChoice,
-    ToolResultContent,
-    ToolUseContent,
 )
 from mcp.types import Prompt as SDKPrompt
 from mcp.types import Resource as SDKResource
-from mcp.types import Tool as SDKTool
-from pydantic import ValidationError
 from pydantic.networks import AnyUrl
 from starlette.requests import Request
 from typing_extensions import TypeVar
 
-from fastmcp import settings
 from fastmcp.resources.resource import ResourceResult
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
@@ -46,19 +35,29 @@ from fastmcp.server.elicitation import (
 )
 from fastmcp.server.sampling import SampleStep, SamplingResult, SamplingTool
 from fastmcp.server.sampling.run import (
-    _parse_model_preferences,
-    call_sampling_handler,
-    determine_handler_mode,
-)
-from fastmcp.server.sampling.run import (
-    execute_tools as run_sampling_tools,
+    sample_impl,
+    sample_step_impl,
 )
 from fastmcp.server.server import FastMCP, StateValue
-from fastmcp.server.transforms.enabled import Enabled
-from fastmcp.utilities.components import FastMCPComponent
-from fastmcp.utilities.json_schema import compress_schema
+from fastmcp.server.transforms.enabled import (
+    Enabled,
+)
+from fastmcp.server.transforms.enabled import (
+    disable_components as _disable_components,
+)
+from fastmcp.server.transforms.enabled import (
+    enable_components as _enable_components,
+)
+from fastmcp.server.transforms.enabled import (
+    get_session_transforms as _get_session_transforms,
+)
+from fastmcp.server.transforms.enabled import (
+    get_visibility_rules as _get_visibility_rules,
+)
+from fastmcp.server.transforms.enabled import (
+    reset_components as _reset_components,
+)
 from fastmcp.utilities.logging import _clamp_logger, get_logger
-from fastmcp.utilities.types import get_cached_typeadapter
 from fastmcp.utilities.versions import VersionSpec
 
 logger: Logger = get_logger(name=__name__)
@@ -73,8 +72,8 @@ _clamp_logger(logger=to_client_logger, max_level="DEBUG")
 T = TypeVar("T", default=Any)
 ResultT = TypeVar("ResultT", default=str)
 
-# Simplified tool choice type - just the mode string instead of the full MCP object
-ToolChoiceOption = Literal["auto", "required", "none"]
+# Import ToolChoiceOption from sampling module (after other imports)
+from fastmcp.server.sampling.run import ToolChoiceOption  # noqa: E402
 
 _current_context: ContextVar[Context | None] = ContextVar("context", default=None)
 
@@ -325,26 +324,48 @@ class Context:
             related_request_id=self.request_id,
         )
 
+    async def _paginate_list(
+        self,
+        request_factory: Callable[[str | None], Any],
+        call_method: Callable[[Any], Any],
+        extract_items: Callable[[Any], list[Any]],
+    ) -> list[Any]:
+        """Generic pagination helper for list operations.
+
+        Args:
+            request_factory: Function that creates a request from a cursor
+            call_method: Async method to call with the request
+            extract_items: Function to extract items from the result
+
+        Returns:
+            List of all items across all pages
+        """
+        all_items: list[Any] = []
+        cursor: str | None = None
+        while True:
+            request = request_factory(cursor)
+            result = await call_method(request)
+            all_items.extend(extract_items(result))
+            if result.nextCursor is None:
+                break
+            cursor = result.nextCursor
+        return all_items
+
     async def list_resources(self) -> list[SDKResource]:
         """List all available resources from the server.
 
         Returns:
             List of Resource objects available on the server
         """
-        all_resources: list[SDKResource] = []
-        cursor: str | None = None
-        while True:
-            request = mcp.types.ListResourcesRequest(
-                params=mcp.types.ListResourcesRequestParams(cursor=cursor)
+        return await self._paginate_list(
+            request_factory=lambda cursor: mcp.types.ListResourcesRequest(
+                params=mcp.types.PaginatedRequestParams(cursor=cursor)
                 if cursor
                 else None
-            )
-            result = await self.fastmcp._list_resources_mcp(request)
-            all_resources.extend(result.resources)
-            if result.nextCursor is None:
-                break
-            cursor = result.nextCursor
-        return all_resources
+            ),
+            call_method=self.fastmcp._list_resources_mcp,
+            extract_items=lambda result: result.resources,
+        )
 
     async def list_prompts(self) -> list[SDKPrompt]:
         """List all available prompts from the server.
@@ -352,20 +373,15 @@ class Context:
         Returns:
             List of Prompt objects available on the server
         """
-        all_prompts: list[SDKPrompt] = []
-        cursor: str | None = None
-        while True:
-            request = mcp.types.ListPromptsRequest(
-                params=mcp.types.ListPromptsRequestParams(cursor=cursor)
+        return await self._paginate_list(
+            request_factory=lambda cursor: mcp.types.ListPromptsRequest(
+                params=mcp.types.PaginatedRequestParams(cursor=cursor)
                 if cursor
                 else None
-            )
-            result = await self.fastmcp._list_prompts_mcp(request)
-            all_prompts.extend(result.prompts)
-            if result.nextCursor is None:
-                break
-            cursor = result.nextCursor
-        return all_prompts
+            ),
+            call_method=self.fastmcp._list_prompts_mcp,
+            extract_items=lambda result: result.prompts,
+        )
 
     async def get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None
@@ -707,100 +723,18 @@ class Context:
                 # Continue with tool results
                 messages = step.history
         """
-        # Convert messages to SamplingMessage objects
-        current_messages = _prepare_messages(messages)
-
-        # Convert tools to SamplingTools
-        sampling_tools = _prepare_tools(tools)
-        sdk_tools: list[SDKTool] | None = (
-            [t._to_sdk_tool() for t in sampling_tools] if sampling_tools else None
+        return await sample_step_impl(
+            self,
+            messages=messages,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            model_preferences=model_preferences,
+            tools=tools,
+            tool_choice=tool_choice,
+            auto_execute_tools=execute_tools,
+            mask_error_details=mask_error_details,
         )
-        tool_map: dict[str, SamplingTool] = (
-            {t.name: t for t in sampling_tools} if sampling_tools else {}
-        )
-
-        # Determine whether to use fallback handler or client
-        use_fallback = determine_handler_mode(self, bool(sampling_tools))
-
-        # Build tool choice
-        effective_tool_choice: ToolChoice | None = None
-        if tool_choice is not None:
-            if tool_choice not in ("auto", "required", "none"):
-                raise ValueError(
-                    f"Invalid tool_choice: {tool_choice!r}. "
-                    "Must be 'auto', 'required', or 'none'."
-                )
-            effective_tool_choice = ToolChoice(
-                mode=cast(Literal["auto", "required", "none"], tool_choice)
-            )
-
-        # Effective max_tokens
-        effective_max_tokens = max_tokens if max_tokens is not None else 512
-
-        # Make the LLM call
-        if use_fallback:
-            response = await call_sampling_handler(
-                self,
-                current_messages,
-                system_prompt=system_prompt,
-                temperature=temperature,
-                max_tokens=effective_max_tokens,
-                model_preferences=model_preferences,
-                sdk_tools=sdk_tools,
-                tool_choice=effective_tool_choice,
-            )
-        else:
-            response = await self.session.create_message(
-                messages=current_messages,
-                system_prompt=system_prompt,
-                temperature=temperature,
-                max_tokens=effective_max_tokens,
-                model_preferences=_parse_model_preferences(model_preferences),
-                tools=sdk_tools,
-                tool_choice=effective_tool_choice,
-                related_request_id=self.request_id,
-            )
-
-        # Check if this is a tool use response
-        is_tool_use_response = (
-            isinstance(response, CreateMessageResultWithTools)
-            and response.stopReason == "toolUse"
-        )
-
-        # Always include the assistant response in history
-        current_messages.append(
-            SamplingMessage(role="assistant", content=response.content)
-        )
-
-        # If not a tool use, return immediately
-        if not is_tool_use_response:
-            return SampleStep(response=response, history=current_messages)
-
-        # If not executing tools, return with assistant message but no tool results
-        if not execute_tools:
-            return SampleStep(response=response, history=current_messages)
-
-        # Execute tools and add results to history
-        step_tool_calls = _extract_tool_calls(response)
-        if step_tool_calls:
-            effective_mask = (
-                mask_error_details
-                if mask_error_details is not None
-                else settings.mask_error_details
-            )
-            tool_results: list[SamplingMessageContentBlock] = await run_sampling_tools(  # type: ignore[assignment]
-                step_tool_calls, tool_map, mask_error_details=effective_mask
-            )
-
-            if tool_results:
-                current_messages.append(
-                    SamplingMessage(
-                        role="user",
-                        content=tool_results,
-                    )
-                )
-
-        return SampleStep(response=response, history=current_messages)
 
     @overload
     async def sample(
@@ -880,113 +814,17 @@ class Context:
             - .result: The typed result (str for text, parsed object for structured)
             - .history: All messages exchanged during sampling
         """
-        # Safety limit to prevent infinite loops
-        max_iterations = 100
-
-        # Convert tools to SamplingTools
-        sampling_tools = _prepare_tools(tools)
-
-        # Handle structured output with result_type
-        tool_choice: str | None = None
-        if result_type is not None and result_type is not str:
-            final_response_tool = _create_final_response_tool(result_type)
-            sampling_tools = list(sampling_tools) if sampling_tools else []
-            sampling_tools.append(final_response_tool)
-
-            # Always require tool calls when result_type is set - the LLM must
-            # eventually call final_response (text responses are not accepted)
-            tool_choice = "required"
-
-        # Convert messages for the loop
-        current_messages: str | Sequence[str | SamplingMessage] = messages
-
-        for _iteration in range(max_iterations):
-            step = await self.sample_step(
-                messages=current_messages,
-                system_prompt=system_prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                model_preferences=model_preferences,
-                tools=sampling_tools,
-                tool_choice=tool_choice,
-                mask_error_details=mask_error_details,
-            )
-
-            # Check for final_response tool call for structured output
-            if result_type is not None and result_type is not str and step.is_tool_use:
-                for tool_call in step.tool_calls:
-                    if tool_call.name == "final_response":
-                        # Validate and return the structured result
-                        type_adapter = get_cached_typeadapter(result_type)
-
-                        # Unwrap if we wrapped primitives (non-object schemas)
-                        input_data = tool_call.input
-                        original_schema = compress_schema(
-                            type_adapter.json_schema(), prune_titles=True
-                        )
-                        if (
-                            original_schema.get("type") != "object"
-                            and isinstance(input_data, dict)
-                            and "value" in input_data
-                        ):
-                            input_data = input_data["value"]
-
-                        try:
-                            validated_result = type_adapter.validate_python(input_data)
-                            text = json.dumps(
-                                type_adapter.dump_python(validated_result, mode="json")
-                            )
-                            return SamplingResult(
-                                text=text,
-                                result=validated_result,
-                                history=step.history,
-                            )
-                        except ValidationError as e:
-                            # Validation failed - add error as tool result
-                            step.history.append(
-                                SamplingMessage(
-                                    role="user",
-                                    content=[
-                                        ToolResultContent(
-                                            type="tool_result",
-                                            toolUseId=tool_call.id,
-                                            content=[
-                                                TextContent(
-                                                    type="text",
-                                                    text=(
-                                                        f"Validation error: {e}. "
-                                                        "Please try again with valid data."
-                                                    ),
-                                                )
-                                            ],
-                                            isError=True,
-                                        )
-                                    ],
-                                )
-                            )
-
-            # If not a tool use response, we're done
-            if not step.is_tool_use:
-                # For structured output, the LLM must use the final_response tool
-                if result_type is not None and result_type is not str:
-                    raise RuntimeError(
-                        f"Expected structured output of type {result_type.__name__}, "
-                        "but the LLM returned a text response instead of calling "
-                        "the final_response tool."
-                    )
-                return SamplingResult(
-                    text=step.text,
-                    result=cast(ResultT, step.text if step.text else ""),
-                    history=step.history,
-                )
-
-            # Continue with the updated history
-            current_messages = step.history
-
-            # After first iteration, reset tool_choice to auto
-            tool_choice = None
-
-        raise RuntimeError(f"Sampling exceeded maximum iterations ({max_iterations})")
+        return await sample_impl(
+            self,
+            messages=messages,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            model_preferences=model_preferences,
+            tools=tools,
+            result_type=result_type,
+            mask_error_details=mask_error_details,
+        )
 
     @overload
     async def elicit(
@@ -1150,71 +988,11 @@ class Context:
 
     async def _get_visibility_rules(self) -> list[dict[str, Any]]:
         """Load visibility rule dicts from session state."""
-        return await self.get_state("_visibility_rules") or []
-
-    async def _save_visibility_rules(
-        self,
-        rules: list[dict[str, Any]],
-        *,
-        components: set[Literal["tool", "resource", "template", "prompt"]]
-        | None = None,
-    ) -> None:
-        """Save visibility rule dicts to session state and send notifications.
-
-        Args:
-            rules: The visibility rules to save.
-            components: Optional hint about which component types are affected.
-                If None, sends notifications for all types (safe default).
-                If provided, only sends notifications for specified types.
-        """
-        await self.set_state("_visibility_rules", rules)
-
-        # Send notifications based on components hint
-        # Note: MCP has no separate template notification - templates use ResourceListChangedNotification
-        if components is None or "tool" in components:
-            await self.send_notification(mcp.types.ToolListChangedNotification())
-        if components is None or "resource" in components or "template" in components:
-            await self.send_notification(mcp.types.ResourceListChangedNotification())
-        if components is None or "prompt" in components:
-            await self.send_notification(mcp.types.PromptListChangedNotification())
-
-    def _create_enabled_transforms(self, rules: list[dict[str, Any]]) -> list[Enabled]:
-        """Convert rule dicts to Enabled transforms."""
-        transforms = []
-        for params in rules:
-            version = None
-            if params.get("version"):
-                version_dict = params["version"]
-                version = VersionSpec(
-                    gte=version_dict.get("gte"),
-                    lt=version_dict.get("lt"),
-                    eq=version_dict.get("eq"),
-                )
-            transforms.append(
-                Enabled(
-                    params["enabled"],
-                    names=set(params["names"]) if params.get("names") else None,
-                    keys=set(params["keys"]) if params.get("keys") else None,
-                    version=version,
-                    tags=set(params["tags"]) if params.get("tags") else None,
-                    components=(
-                        set(params["components"]) if params.get("components") else None
-                    ),
-                    match_all=params.get("match_all", False),
-                )
-            )
-        return transforms
+        return await _get_visibility_rules(self)
 
     async def _get_session_transforms(self) -> list[Enabled]:
         """Get session-specific Enabled transforms from state store."""
-        try:
-            # Will raise RuntimeError if no session available
-            _ = self.session_id
-        except RuntimeError:
-            return []
-
-        rules = await self._get_visibility_rules()
-        return self._create_enabled_transforms(rules)
+        return await _get_session_transforms(self)
 
     async def enable_components(
         self,
@@ -1244,30 +1022,15 @@ class Context:
             components: Component types to match (e.g., {"tool", "prompt"}).
             match_all: If True, matches all components regardless of other criteria.
         """
-        # Normalize empty sets to None (empty = match all)
-        components = components if components else None
-
-        # Load current rules
-        rules = await self._get_visibility_rules()
-
-        # Create new rule dict
-        rule: dict[str, Any] = {
-            "enabled": True,
-            "names": list(names) if names else None,
-            "keys": list(keys) if keys else None,
-            "version": (
-                {"gte": version.gte, "lt": version.lt, "eq": version.eq}
-                if version
-                else None
-            ),
-            "tags": list(tags) if tags else None,
-            "components": list(components) if components else None,
-            "match_all": match_all,
-        }
-
-        # Add and save (notifications sent by _save_visibility_rules)
-        rules.append(rule)
-        await self._save_visibility_rules(rules, components=components)
+        await _enable_components(
+            self,
+            names=names,
+            keys=keys,
+            version=version,
+            tags=tags,
+            components=components,
+            match_all=match_all,
+        )
 
     async def disable_components(
         self,
@@ -1297,30 +1060,15 @@ class Context:
             components: Component types to match (e.g., {"tool", "prompt"}).
             match_all: If True, matches all components regardless of other criteria.
         """
-        # Normalize empty sets to None (empty = match all)
-        components = components if components else None
-
-        # Load current rules
-        rules = await self._get_visibility_rules()
-
-        # Create new rule dict
-        rule: dict[str, Any] = {
-            "enabled": False,
-            "names": list(names) if names else None,
-            "keys": list(keys) if keys else None,
-            "version": (
-                {"gte": version.gte, "lt": version.lt, "eq": version.eq}
-                if version
-                else None
-            ),
-            "tags": list(tags) if tags else None,
-            "components": list(components) if components else None,
-            "match_all": match_all,
-        }
-
-        # Add and save (notifications sent by _save_visibility_rules)
-        rules.append(rule)
-        await self._save_visibility_rules(rules, components=components)
+        await _disable_components(
+            self,
+            names=names,
+            keys=keys,
+            version=version,
+            tags=tags,
+            components=components,
+            match_all=match_all,
+        )
 
     async def reset_components(self) -> None:
         """Clear all session visibility rules.
@@ -1330,7 +1078,7 @@ class Context:
         Sends notifications to this session only: ToolListChangedNotification,
         ResourceListChangedNotification, and PromptListChangedNotification.
         """
-        await self._save_visibility_rules([])
+        await _reset_components(self)
 
 
 async def _log_to_server_and_client(
@@ -1359,137 +1107,3 @@ async def _log_to_server_and_client(
         logger=logger_name,
         related_request_id=related_request_id,
     )
-
-
-def _create_final_response_tool(result_type: type) -> SamplingTool:
-    """Create a synthetic 'final_response' tool for structured output.
-
-    This tool is used to capture structured responses from the LLM.
-    The tool's schema is derived from the result_type.
-    """
-    type_adapter = get_cached_typeadapter(result_type)
-    schema = type_adapter.json_schema()
-    schema = compress_schema(schema, prune_titles=True)
-
-    # Tool parameters must be object-shaped. Wrap primitives in {"value": <schema>}
-    if schema.get("type") != "object":
-        schema = {
-            "type": "object",
-            "properties": {"value": schema},
-            "required": ["value"],
-        }
-
-    # The fn just returns the input as-is (validation happens in the loop)
-    def final_response(**kwargs: Any) -> dict[str, Any]:
-        return kwargs
-
-    return SamplingTool(
-        name="final_response",
-        description=(
-            "Call this tool to provide your final response. "
-            "Use this when you have completed the task and are ready to return the result."
-        ),
-        parameters=schema,
-        fn=final_response,
-    )
-
-
-def _extract_text_from_content(
-    content: SamplingMessageContentBlock | list[SamplingMessageContentBlock],
-) -> str | None:
-    """Extract text from content block(s).
-
-    Returns the text if content is a TextContent or list containing TextContent,
-    otherwise returns None.
-    """
-    if isinstance(content, list):
-        for block in content:
-            if isinstance(block, TextContent):
-                return block.text
-        return None
-    elif isinstance(content, TextContent):
-        return content.text
-    return None
-
-
-def _prepare_messages(
-    messages: str | Sequence[str | SamplingMessage],
-) -> list[SamplingMessage]:
-    """Convert various message formats to a list of SamplingMessage objects."""
-    if isinstance(messages, str):
-        return [
-            SamplingMessage(
-                content=TextContent(text=messages, type="text"), role="user"
-            )
-        ]
-    else:
-        return [
-            SamplingMessage(content=TextContent(text=m, type="text"), role="user")
-            if isinstance(m, str)
-            else m
-            for m in messages
-        ]
-
-
-def _prepare_tools(
-    tools: Sequence[SamplingTool | Callable[..., Any]] | None,
-) -> list[SamplingTool] | None:
-    """Convert tools to SamplingTool objects."""
-    if tools is None:
-        return None
-
-    sampling_tools: list[SamplingTool] = []
-    for t in tools:
-        if isinstance(t, SamplingTool):
-            sampling_tools.append(t)
-        elif callable(t):
-            sampling_tools.append(SamplingTool.from_function(t))
-        else:
-            raise TypeError(f"Expected SamplingTool or callable, got {type(t)}")
-
-    return sampling_tools if sampling_tools else None
-
-
-def _extract_tool_calls(
-    response: CreateMessageResult | CreateMessageResultWithTools,
-) -> list[ToolUseContent]:
-    """Extract tool calls from a response."""
-    content = response.content
-    if isinstance(content, list):
-        return [c for c in content if isinstance(c, ToolUseContent)]
-    elif isinstance(content, ToolUseContent):
-        return [content]
-    return []
-
-
-ComponentT = TypeVar("ComponentT", bound="FastMCPComponent")
-
-
-async def apply_session_transforms(
-    components: Sequence[ComponentT],
-) -> Sequence[ComponentT]:
-    """Apply session-specific visibility transforms to components.
-
-    This helper applies session-level enable/disable rules by marking
-    components with their enabled state. Session transforms override
-    global transforms due to mark-based semantics (later marks win).
-
-    Args:
-        components: The components to apply session transforms to.
-
-    Returns:
-        The components with session transforms applied.
-    """
-    current_ctx = _current_context.get()
-    if current_ctx is None:
-        return components
-
-    session_transforms = await current_ctx._get_session_transforms()
-    if not session_transforms:
-        return components
-
-    # Apply each transform's marking to each component
-    result = list(components)
-    for transform in session_transforms:
-        result = [transform._mark_component(c) for c in result]
-    return result

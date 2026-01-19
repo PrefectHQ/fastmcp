@@ -8,7 +8,9 @@ Final filtering happens at the Provider level.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
+
+import mcp.types
 
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
@@ -27,6 +29,7 @@ from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
     from fastmcp.prompts.prompt import Prompt
+    from fastmcp.server.context import Context
     from fastmcp.tools.tool import Tool
     from fastmcp.utilities.components import FastMCPComponent
 
@@ -290,3 +293,240 @@ def is_enabled(component: FastMCPComponent) -> bool:
     fastmcp = meta.get(_FASTMCP_KEY, {})
     internal = fastmcp.get(_INTERNAL_KEY, {})
     return internal.get("enabled", True)  # Default True if not set
+
+
+# -------------------------------------------------------------------------
+# Session visibility control
+# -------------------------------------------------------------------------
+
+if TYPE_CHECKING:
+    from fastmcp.server.context import Context
+
+
+async def get_visibility_rules(context: Context) -> list[dict[str, Any]]:
+    """Load visibility rule dicts from session state."""
+    return await context.get_state("_visibility_rules") or []
+
+
+async def save_visibility_rules(
+    context: Context,
+    rules: list[dict[str, Any]],
+    *,
+    components: set[Literal["tool", "resource", "template", "prompt"]] | None = None,
+) -> None:
+    """Save visibility rule dicts to session state and send notifications.
+
+    Args:
+        context: The context to save rules for.
+        rules: The visibility rules to save.
+        components: Optional hint about which component types are affected.
+            If None, sends notifications for all types (safe default).
+            If provided, only sends notifications for specified types.
+    """
+    await context.set_state("_visibility_rules", rules)
+
+    # Send notifications based on components hint
+    # Note: MCP has no separate template notification - templates use ResourceListChangedNotification
+    if components is None or "tool" in components:
+        await context.send_notification(mcp.types.ToolListChangedNotification())
+    if components is None or "resource" in components or "template" in components:
+        await context.send_notification(mcp.types.ResourceListChangedNotification())
+    if components is None or "prompt" in components:
+        await context.send_notification(mcp.types.PromptListChangedNotification())
+
+
+def create_enabled_transforms(rules: list[dict[str, Any]]) -> list[Enabled]:
+    """Convert rule dicts to Enabled transforms."""
+    transforms = []
+    for params in rules:
+        version = None
+        if params.get("version"):
+            version_dict = params["version"]
+            version = VersionSpec(
+                gte=version_dict.get("gte"),
+                lt=version_dict.get("lt"),
+                eq=version_dict.get("eq"),
+            )
+        transforms.append(
+            Enabled(
+                params["enabled"],
+                names=set(params["names"]) if params.get("names") else None,
+                keys=set(params["keys"]) if params.get("keys") else None,
+                version=version,
+                tags=set(params["tags"]) if params.get("tags") else None,
+                components=(
+                    set(params["components"]) if params.get("components") else None
+                ),
+                match_all=params.get("match_all", False),
+            )
+        )
+    return transforms
+
+
+async def get_session_transforms(context: Context) -> list[Enabled]:
+    """Get session-specific Enabled transforms from state store."""
+    try:
+        # Will raise RuntimeError if no session available
+        _ = context.session_id
+    except RuntimeError:
+        return []
+
+    rules = await get_visibility_rules(context)
+    return create_enabled_transforms(rules)
+
+
+async def enable_components(
+    context: Context,
+    *,
+    names: set[str] | None = None,
+    keys: set[str] | None = None,
+    version: VersionSpec | None = None,
+    tags: set[str] | None = None,
+    components: set[Literal["tool", "resource", "template", "prompt"]] | None = None,
+    match_all: bool = False,
+) -> None:
+    """Enable components matching criteria for this session only.
+
+    Session rules override global transforms. Rules accumulate - each call
+    adds a new rule to the session. Later marks override earlier ones
+    (Enabled transform semantics).
+
+    Sends notifications to this session only: ToolListChangedNotification,
+    ResourceListChangedNotification, and PromptListChangedNotification.
+
+    Args:
+        context: The context for this session.
+        names: Component names or URIs to match.
+        keys: Component keys to match (e.g., {"tool:my_tool@v1"}).
+        version: Component version spec to match.
+        tags: Tags to match (component must have at least one).
+        components: Component types to match (e.g., {"tool", "prompt"}).
+        match_all: If True, matches all components regardless of other criteria.
+    """
+    # Normalize empty sets to None (empty = match all)
+    components = components if components else None
+
+    # Load current rules
+    rules = await get_visibility_rules(context)
+
+    # Create new rule dict
+    rule: dict[str, Any] = {
+        "enabled": True,
+        "names": list(names) if names else None,
+        "keys": list(keys) if keys else None,
+        "version": (
+            {"gte": version.gte, "lt": version.lt, "eq": version.eq}
+            if version
+            else None
+        ),
+        "tags": list(tags) if tags else None,
+        "components": list(components) if components else None,
+        "match_all": match_all,
+    }
+
+    # Add and save (notifications sent by save_visibility_rules)
+    rules.append(rule)
+    await save_visibility_rules(context, rules, components=components)
+
+
+async def disable_components(
+    context: Context,
+    *,
+    names: set[str] | None = None,
+    keys: set[str] | None = None,
+    version: VersionSpec | None = None,
+    tags: set[str] | None = None,
+    components: set[Literal["tool", "resource", "template", "prompt"]] | None = None,
+    match_all: bool = False,
+) -> None:
+    """Disable components matching criteria for this session only.
+
+    Session rules override global transforms. Rules accumulate - each call
+    adds a new rule to the session. Later marks override earlier ones
+    (Enabled transform semantics).
+
+    Sends notifications to this session only: ToolListChangedNotification,
+    ResourceListChangedNotification, and PromptListChangedNotification.
+
+    Args:
+        context: The context for this session.
+        names: Component names or URIs to match.
+        keys: Component keys to match (e.g., {"tool:my_tool@v1"}).
+        version: Component version spec to match.
+        tags: Tags to match (component must have at least one).
+        components: Component types to match (e.g., {"tool", "prompt"}).
+        match_all: If True, matches all components regardless of other criteria.
+    """
+    # Normalize empty sets to None (empty = match all)
+    components = components if components else None
+
+    # Load current rules
+    rules = await get_visibility_rules(context)
+
+    # Create new rule dict
+    rule: dict[str, Any] = {
+        "enabled": False,
+        "names": list(names) if names else None,
+        "keys": list(keys) if keys else None,
+        "version": (
+            {"gte": version.gte, "lt": version.lt, "eq": version.eq}
+            if version
+            else None
+        ),
+        "tags": list(tags) if tags else None,
+        "components": list(components) if components else None,
+        "match_all": match_all,
+    }
+
+    # Add and save (notifications sent by save_visibility_rules)
+    rules.append(rule)
+    await save_visibility_rules(context, rules, components=components)
+
+
+async def reset_components(context: Context) -> None:
+    """Clear all session visibility rules.
+
+    Use this to reset session visibility back to global defaults.
+
+    Sends notifications to this session only: ToolListChangedNotification,
+    ResourceListChangedNotification, and PromptListChangedNotification.
+
+    Args:
+        context: The context for this session.
+    """
+    await save_visibility_rules(context, [])
+
+
+ComponentT = TypeVar("ComponentT", bound="FastMCPComponent")
+
+
+async def apply_session_transforms(
+    components: Sequence[ComponentT],
+) -> Sequence[ComponentT]:
+    """Apply session-specific visibility transforms to components.
+
+    This helper applies session-level enable/disable rules by marking
+    components with their enabled state. Session transforms override
+    global transforms due to mark-based semantics (later marks win).
+
+    Args:
+        components: The components to apply session transforms to.
+
+    Returns:
+        The components with session transforms applied.
+    """
+    from fastmcp.server.context import _current_context
+
+    current_ctx = _current_context.get()
+    if current_ctx is None:
+        return components
+
+    session_transforms = await get_session_transforms(current_ctx)
+    if not session_transforms:
+        return components
+
+    # Apply each transform's marking to each component
+    result = list(components)
+    for transform in session_transforms:
+        result = [transform._mark_component(c) for c in result]
+    return result
