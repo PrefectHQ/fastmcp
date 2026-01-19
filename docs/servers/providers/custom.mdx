@@ -33,31 +33,32 @@ You *could* use middleware to dynamically add tools based on request context. Bu
 
 ## The Provider Interface
 
-A provider must implement `list_*` methods that return available components:
+A provider implements protected `_list_*` methods that return available components. The public `list_*` methods handle transforms automatically - you override the underscore-prefixed versions:
 
 ```python
+from collections.abc import Sequence
 from fastmcp.server.providers import Provider
 from fastmcp.tools import Tool
 from fastmcp.resources import Resource
 from fastmcp.prompts import Prompt
 
 class MyProvider(Provider):
-    async def list_tools(self) -> list[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         """Return all tools this provider offers."""
         return []
 
-    async def list_resources(self) -> list[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         """Return all resources this provider offers."""
         return []
 
-    async def list_prompts(self) -> list[Prompt]:
+    async def _list_prompts(self) -> Sequence[Prompt]:
         """Return all prompts this provider offers."""
         return []
 ```
 
-You only need to implement the methods for component types you provide. The base class returns empty lists by default.
+You only need to implement the methods for component types you provide. The base class returns empty sequences by default.
 
-The `get_*` methods (`get_tool`, `get_resource`, `get_prompt`) have default implementations that search through the list results. Override them only if you can fetch individual components more efficiently than iterating the full list.
+The `_get_*` methods (`_get_tool`, `_get_resource`, `_get_prompt`) have default implementations that search through the list results. Override them only if you can fetch individual components more efficiently than iterating the full list.
 
 ## What Providers Return
 
@@ -113,6 +114,7 @@ mcp.add_provider(DatabaseProvider(db_url))
 Here's a minimal provider that serves tools from a dictionary:
 
 ```python
+from collections.abc import Callable, Sequence
 from fastmcp import FastMCP
 from fastmcp.server.providers import Provider
 from fastmcp.tools import Tool
@@ -125,7 +127,7 @@ class DictProvider(Provider):
             for name, fn in tools.items()
         ]
 
-    async def list_tools(self) -> list[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         return self._tools
 ```
 
@@ -151,7 +153,7 @@ Providers often need to set up connections when the server starts and clean them
 
 ```python
 from contextlib import asynccontextmanager
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
 class DatabaseProvider(Provider):
     def __init__(self, db_url: str):
@@ -167,7 +169,7 @@ class DatabaseProvider(Provider):
         finally:
             await self.db.close()
 
-    async def list_tools(self) -> list[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         rows = await self.db.fetch("SELECT * FROM tools")
         return [self._make_tool(row) for row in rows]
 ```
@@ -180,6 +182,7 @@ Here's a complete provider that fetches resources from an external REST API:
 
 ```python
 from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Sequence
 from fastmcp.server.providers import Provider
 from fastmcp.resources import Resource
 import httpx
@@ -204,7 +207,7 @@ class ApiResourceProvider(Provider):
         finally:
             await self.client.aclose()
 
-    async def list_resources(self) -> list[Resource]:
+    async def _list_resources(self) -> Sequence[Resource]:
         response = await self.client.get("/resources")
         response.raise_for_status()
         return [
