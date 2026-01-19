@@ -4,6 +4,7 @@ from typing import Any
 
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.server.transforms import Namespace
 from fastmcp.tools.tool import Tool, ToolResult
 
 
@@ -77,3 +78,14 @@ class TestBaseProviderGetTasks:
 
         assert len(tasks) == 1
         assert tasks[0].name == "enabled"
+
+    async def test_get_tasks_applies_transforms(self):
+        """get_tasks should apply provider transforms to component names."""
+        tool = CustomTool(name="my_tool", description="A tool")
+        provider = SimpleProvider(tools=[tool])
+        provider.add_transform(Namespace("api"))
+
+        tasks = await provider.get_tasks()
+
+        assert len(tasks) == 1
+        assert tasks[0].name == "api_my_tool"

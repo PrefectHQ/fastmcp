@@ -10,10 +10,6 @@ from fastmcp.server.transforms import (
     GetResourceNext,
     GetResourceTemplateNext,
     GetToolNext,
-    ListPromptsNext,
-    ListResourcesNext,
-    ListResourceTemplatesNext,
-    ListToolsNext,
     Transform,
 )
 from fastmcp.utilities.versions import VersionSpec
@@ -73,8 +69,7 @@ class VersionFilter(Transform):
     # Tools
     # -------------------------------------------------------------------------
 
-    async def list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]:
-        tools = await call_next()
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         return [t for t in tools if self._spec.matches(t.version)]
 
     async def get_tool(
@@ -86,8 +81,7 @@ class VersionFilter(Transform):
     # Resources
     # -------------------------------------------------------------------------
 
-    async def list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]:
-        resources = await call_next()
+    async def list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]:
         return [r for r in resources if self._spec.matches(r.version)]
 
     async def get_resource(
@@ -104,9 +98,8 @@ class VersionFilter(Transform):
     # -------------------------------------------------------------------------
 
     async def list_resource_templates(
-        self, call_next: ListResourceTemplatesNext
+        self, templates: Sequence[ResourceTemplate]
     ) -> Sequence[ResourceTemplate]:
-        templates = await call_next()
         return [t for t in templates if self._spec.matches(t.version)]
 
     async def get_resource_template(
@@ -122,8 +115,7 @@ class VersionFilter(Transform):
     # Prompts
     # -------------------------------------------------------------------------
 
-    async def list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]:
-        prompts = await call_next()
+    async def list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]:
         return [p for p in prompts if self._spec.matches(p.version)]
 
     async def get_prompt(

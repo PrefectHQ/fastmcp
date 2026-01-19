@@ -600,11 +600,9 @@ class TestProviderToolTransformations:
         layer = ToolTransform({"my_tool": ToolTransformConfig(name="renamed_tool")})
         provider.add_transform(layer)
 
-        # Use call_next pattern
-        async def get_tools():
-            return await provider.list_tools()
-
-        transformed_tools = await layer.list_tools(get_tools)
+        # Get tools and pass directly to transform
+        tools = await provider.list_tools()
+        transformed_tools = await layer.list_tools(tools)
         assert len(transformed_tools) == 1
         assert transformed_tools[0].name == "renamed_tool"
 
@@ -676,11 +674,8 @@ class TestProviderToolTransformations:
         original_tools = await provider._list_tools()
         assert original_tools[0].name == "my_tool"
 
-        # Transform modifies them when applied via call_next
-        async def get_tools():
-            return original_tools
-
-        transformed_tools = await layer.list_tools(get_tools)
+        # Transform modifies them when applied directly
+        transformed_tools = await layer.list_tools(original_tools)
         assert transformed_tools[0].name == "renamed"
 
     def test_transform_layer_duplicate_target_name_raises_error(self):

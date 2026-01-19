@@ -236,10 +236,7 @@ class TestTransformChain:
         """list_tools applies marks to matching components."""
         disable_internal = Enabled(False, tags=set({"internal"}))
 
-        async def base():
-            return tools
-
-        result = await disable_internal.list_tools(base)
+        result = await disable_internal.list_tools(tools)
 
         assert len(result) == 3
         assert is_enabled(result[0])  # public
@@ -251,12 +248,8 @@ class TestTransformChain:
         disable_internal = Enabled(False, tags=set({"internal"}))
         enable_safe = Enabled(True, tags=set({"safe"}))
 
-        async def base():
-            return tools
-
-        async def after_disable():
-            return await disable_internal.list_tools(base)
-
+        # Apply transforms sequentially
+        after_disable = await disable_internal.list_tools(tools)
         result = await enable_safe.list_tools(after_disable)
         enabled = [t for t in result if is_enabled(t)]
 
@@ -270,12 +263,8 @@ class TestTransformChain:
         disable_all = Enabled(False, match_all=True)
         enable_public = Enabled(True, tags=set({"public"}))
 
-        async def base():
-            return tools
-
-        async def after_disable():
-            return await disable_all.list_tools(base)
-
+        # Apply transforms sequentially
+        after_disable = await disable_all.list_tools(tools)
         result = await enable_public.list_tools(after_disable)
         enabled = [t for t in result if is_enabled(t)]
 

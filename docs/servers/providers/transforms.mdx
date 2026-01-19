@@ -19,9 +19,7 @@ Think of transforms as filters in a pipeline. Components flow from providers thr
 Provider → [Transform A] → [Transform B] → Client
 ```
 
-When listing components, transforms see the original components and can modify them. When getting a specific component by name, transforms work in reverse: mapping the client's requested name back to the original, then transforming the result.
-
-Each transform uses a middleware-style pattern with `call_next`. The transform receives a function that invokes the next stage in the chain. The transform can call `call_next()` to get components from downstream, then modify the results before returning them.
+When listing components, transforms receive sequences and return transformed sequences—a pure function pattern. When getting a specific component by name, transforms use a middleware pattern with `call_next`, working in reverse: mapping the client's requested name back to the original, then transforming the result.
 
 ## Namespace
 
@@ -347,7 +345,7 @@ Create custom transforms by subclassing `Transform` and overriding the methods y
 
 ```python
 from collections.abc import Sequence
-from fastmcp.server.transforms import Transform, ListToolsNext, GetToolNext
+from fastmcp.server.transforms import Transform, GetToolNext
 from fastmcp.tools.tool import Tool
 
 class TagFilter(Transform):
@@ -356,8 +354,7 @@ class TagFilter(Transform):
     def __init__(self, required_tags: set[str]):
         self.required_tags = required_tags
 
-    async def list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]:
-        tools = await call_next()
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         return [t for t in tools if t.tags & self.required_tags]
 
     async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:
@@ -369,28 +366,27 @@ class TagFilter(Transform):
 
 The `Transform` base class provides default implementations that pass through unchanged. Override only the methods relevant to your transform.
 
-Each component type has two methods:
+Each component type has two methods with different patterns:
 
-| Method | Purpose |
-|--------|---------|
-| `list_tools(call_next)` | Transform the list of all tools |
-| `get_tool(name, call_next)` | Transform lookup by name |
-| `list_resources(call_next)` | Transform the list of all resources |
-| `get_resource(uri, call_next)` | Transform lookup by URI |
-| `list_resource_templates(call_next)` | Transform the list of all templates |
-| `get_resource_template(uri, call_next)` | Transform template lookup by URI |
-| `list_prompts(call_next)` | Transform the list of all prompts |
-| `get_prompt(name, call_next)` | Transform lookup by name |
+| Method | Pattern | Purpose |
+|--------|---------|---------|
+| `list_tools(tools)` | Pure function | Transform the sequence of tools |
+| `get_tool(name, call_next)` | Middleware | Transform lookup by name |
+| `list_resources(resources)` | Pure function | Transform the sequence of resources |
+| `get_resource(uri, call_next)` | Middleware | Transform lookup by URI |
+| `list_resource_templates(templates)` | Pure function | Transform the sequence of templates |
+| `get_resource_template(uri, call_next)` | Middleware | Transform template lookup by URI |
+| `list_prompts(prompts)` | Pure function | Transform the sequence of prompts |
+| `get_prompt(name, call_next)` | Middleware | Transform lookup by name |
 
-For get methods that change names, you must implement the reverse mapping. When a client requests "new_name", your transform maps it back to "original_name" before calling `call_next()`.
+List methods receive sequences directly and return transformed sequences. Get methods use `call_next` for routing flexibility—when a client requests "new_name", your transform maps it back to "original_name" before calling `call_next()`.
 
 ```python
 class PrefixTransform(Transform):
     def __init__(self, prefix: str):
         self.prefix = prefix
 
-    async def list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]:
-        tools = await call_next()
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         return [t.model_copy(update={"name": f"{self.prefix}_{t.name}"}) for t in tools]
 
     async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:

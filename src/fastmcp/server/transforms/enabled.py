@@ -19,10 +19,6 @@ from fastmcp.server.transforms import (
     GetResourceNext,
     GetResourceTemplateNext,
     GetToolNext,
-    ListPromptsNext,
-    ListResourcesNext,
-    ListResourceTemplatesNext,
-    ListToolsNext,
     Transform,
 )
 from fastmcp.utilities.versions import VersionSpec
@@ -195,9 +191,8 @@ class Enabled(Transform):
     # Transform methods (mark components, don't filter)
     # -------------------------------------------------------------------------
 
-    async def list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]:
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Mark tools by enabled state."""
-        tools = await call_next()
         return [self._mark_component(t) for t in tools]
 
     async def get_tool(
@@ -213,9 +208,8 @@ class Enabled(Transform):
     # Resources
     # -------------------------------------------------------------------------
 
-    async def list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]:
+    async def list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]:
         """Mark resources by enabled state."""
-        resources = await call_next()
         return [self._mark_component(r) for r in resources]
 
     async def get_resource(
@@ -236,10 +230,9 @@ class Enabled(Transform):
     # -------------------------------------------------------------------------
 
     async def list_resource_templates(
-        self, call_next: ListResourceTemplatesNext
+        self, templates: Sequence[ResourceTemplate]
     ) -> Sequence[ResourceTemplate]:
         """Mark resource templates by enabled state."""
-        templates = await call_next()
         return [self._mark_component(t) for t in templates]
 
     async def get_resource_template(
@@ -259,9 +252,8 @@ class Enabled(Transform):
     # Prompts
     # -------------------------------------------------------------------------
 
-    async def list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]:
+    async def list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]:
         """Mark prompts by enabled state."""
-        prompts = await call_next()
         return [self._mark_component(p) for p in prompts]
 
     async def get_prompt(

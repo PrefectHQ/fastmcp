@@ -11,10 +11,6 @@ from fastmcp.server.transforms import (
     GetResourceNext,
     GetResourceTemplateNext,
     GetToolNext,
-    ListPromptsNext,
-    ListResourcesNext,
-    ListResourceTemplatesNext,
-    ListToolsNext,
     Transform,
 )
 from fastmcp.utilities.versions import VersionSpec
@@ -98,9 +94,8 @@ class Namespace(Transform):
     # Tools
     # -------------------------------------------------------------------------
 
-    async def list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]:
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Prefix tool names with namespace."""
-        tools = await call_next()
         return [
             t.model_copy(update={"name": self._transform_name(t.name)}) for t in tools
         ]
@@ -121,9 +116,8 @@ class Namespace(Transform):
     # Resources
     # -------------------------------------------------------------------------
 
-    async def list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]:
+    async def list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]:
         """Add namespace path segment to resource URIs."""
-        resources = await call_next()
         return [
             r.model_copy(update={"uri": self._transform_uri(str(r.uri))})
             for r in resources
@@ -150,10 +144,9 @@ class Namespace(Transform):
     # -------------------------------------------------------------------------
 
     async def list_resource_templates(
-        self, call_next: ListResourceTemplatesNext
+        self, templates: Sequence[ResourceTemplate]
     ) -> Sequence[ResourceTemplate]:
         """Add namespace path segment to template URIs."""
-        templates = await call_next()
         return [
             t.model_copy(update={"uri_template": self._transform_uri(t.uri_template)})
             for t in templates
@@ -181,9 +174,8 @@ class Namespace(Transform):
     # Prompts
     # -------------------------------------------------------------------------
 
-    async def list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]:
+    async def list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]:
         """Prefix prompt names with namespace."""
-        prompts = await call_next()
         return [
             p.model_copy(update={"name": self._transform_name(p.name)}) for p in prompts
         ]

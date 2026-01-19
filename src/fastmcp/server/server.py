@@ -535,44 +535,18 @@ class FastMCP(
         templates = [c for c in components if isinstance(c, ResourceTemplate)]
         prompts = [c for c in components if isinstance(c, Prompt)]
 
-        # Apply server-level transforms using call_next pattern
-        async def tools_base() -> Sequence[Tool]:
-            return tools
-
-        async def resources_base() -> Sequence[Resource]:
-            return resources
-
-        async def templates_base() -> Sequence[ResourceTemplate]:
-            return templates
-
-        async def prompts_base() -> Sequence[Prompt]:
-            return prompts
-
-        tools_chain = tools_base
-        resources_chain = resources_base
-        templates_chain = templates_base
-        prompts_chain = prompts_base
-
+        # Apply server-level transforms sequentially
         for transform in self.transforms:
-            tools_chain = partial(transform.list_tools, call_next=tools_chain)
-            resources_chain = partial(
-                transform.list_resources, call_next=resources_chain
-            )
-            templates_chain = partial(
-                transform.list_resource_templates, call_next=templates_chain
-            )
-            prompts_chain = partial(transform.list_prompts, call_next=prompts_chain)
-
-        transformed_tools = await tools_chain()
-        transformed_resources = await resources_chain()
-        transformed_templates = await templates_chain()
-        transformed_prompts = await prompts_chain()
+            tools = await transform.list_tools(tools)
+            resources = await transform.list_resources(resources)
+            templates = await transform.list_resource_templates(templates)
+            prompts = await transform.list_prompts(prompts)
 
         return [
-            *transformed_tools,
-            *transformed_resources,
-            *transformed_templates,
-            *transformed_prompts,
+            *tools,
+            *resources,
+            *templates,
+            *prompts,
         ]
 
     def add_transform(self, transform: Transform) -> None:

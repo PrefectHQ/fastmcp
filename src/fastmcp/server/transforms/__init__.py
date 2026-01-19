@@ -1,8 +1,8 @@
 """Transform system for component transformations.
 
-Transforms modify components (tools, resources, prompts) using a middleware pattern.
-Each transform wraps the next in the chain via `call_next`, allowing transforms to
-intercept, modify, or replace component queries.
+Transforms modify components (tools, resources, prompts). List operations use a pure
+function pattern where transforms receive sequences and return transformed sequences.
+Get operations use a middleware pattern with `call_next` to chain lookups.
 
 Unlike middleware (which operates on requests), transforms are observable by the
 system for task registration, tag filtering, and component introspection.
@@ -20,7 +20,7 @@ Example:
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Sequence
 from typing import TYPE_CHECKING, Protocol
 
 from fastmcp.utilities.versions import VersionSpec
@@ -30,13 +30,6 @@ if TYPE_CHECKING:
     from fastmcp.resources.resource import Resource
     from fastmcp.resources.template import ResourceTemplate
     from fastmcp.tools.tool import Tool
-
-# Type aliases for call_next signatures
-# List methods are simple callables
-ListToolsNext = Callable[[], Awaitable[Sequence["Tool"]]]
-ListResourcesNext = Callable[[], Awaitable[Sequence["Resource"]]]
-ListResourceTemplatesNext = Callable[[], Awaitable[Sequence["ResourceTemplate"]]]
-ListPromptsNext = Callable[[], Awaitable[Sequence["Prompt"]]]
 
 
 # Get methods use Protocol to express keyword-only version parameter
@@ -75,19 +68,15 @@ class GetPromptNext(Protocol):
 class Transform:
     """Base class for component transformations.
 
-    Transforms use a middleware pattern with `call_next` to chain operations.
-    Each transform can intercept, modify, or pass through component queries.
-
-    For list operations, call `call_next()` to get components from downstream,
-    then transform the result. For get operations, optionally transform the
-    name/uri before calling `call_next`, then transform the result.
+    List operations use a pure function pattern: transforms receive sequences
+    and return transformed sequences. Get operations use a middleware pattern
+    with `call_next` to chain lookups.
 
     Example:
         ```python
         class MyTransform(Transform):
-            async def list_tools(self, call_next):
-                tools = await call_next()  # Get tools from downstream
-                return [transform(t) for t in tools]  # Transform them
+            async def list_tools(self, tools):
+                return [transform(t) for t in tools]  # Transform sequence
 
             async def get_tool(self, name, call_next, *, version=None):
                 original = self.reverse_name(name)  # Map to original name
@@ -103,16 +92,16 @@ class Transform:
     # Tools
     # -------------------------------------------------------------------------
 
-    async def list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]:
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """List tools with transformation applied.
 
         Args:
-            call_next: Callable to get tools from downstream transforms/provider.
+            tools: Sequence of tools to transform.
 
         Returns:
             Transformed sequence of tools.
         """
-        return await call_next()
+        return tools
 
     async def get_tool(
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
@@ -133,16 +122,16 @@ class Transform:
     # Resources
     # -------------------------------------------------------------------------
 
-    async def list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]:
+    async def list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]:
         """List resources with transformation applied.
 
         Args:
-            call_next: Callable to get resources from downstream transforms/provider.
+            resources: Sequence of resources to transform.
 
         Returns:
             Transformed sequence of resources.
         """
-        return await call_next()
+        return resources
 
     async def get_resource(
         self,
@@ -168,17 +157,17 @@ class Transform:
     # -------------------------------------------------------------------------
 
     async def list_resource_templates(
-        self, call_next: ListResourceTemplatesNext
+        self, templates: Sequence[ResourceTemplate]
     ) -> Sequence[ResourceTemplate]:
         """List resource templates with transformation applied.
 
         Args:
-            call_next: Callable to get templates from downstream transforms/provider.
+            templates: Sequence of resource templates to transform.
 
         Returns:
             Transformed sequence of resource templates.
         """
-        return await call_next()
+        return templates
 
     async def get_resource_template(
         self,
@@ -203,16 +192,16 @@ class Transform:
     # Prompts
     # -------------------------------------------------------------------------
 
-    async def list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]:
+    async def list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]:
         """List prompts with transformation applied.
 
         Args:
-            call_next: Callable to get prompts from downstream transforms/provider.
+            prompts: Sequence of prompts to transform.
 
         Returns:
             Transformed sequence of prompts.
         """
-        return await call_next()
+        return prompts
 
     async def get_prompt(
         self, name: str, call_next: GetPromptNext, *, version: VersionSpec | None = None
@@ -242,10 +231,6 @@ __all__ = [
     "GetResourceNext",
     "GetResourceTemplateNext",
     "GetToolNext",
-    "ListPromptsNext",
-    "ListResourceTemplatesNext",
-    "ListResourcesNext",
-    "ListToolsNext",
     "Namespace",
     "ToolTransform",
     "Transform",

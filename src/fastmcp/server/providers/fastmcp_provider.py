@@ -13,7 +13,6 @@ from __future__ import annotations
 import re
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from functools import partial
 from typing import TYPE_CHECKING, Any, overload
 
 import mcp.types
@@ -640,43 +639,21 @@ class FastMCPProvider(Provider):
         templates = [c for c in components if isinstance(c, ResourceTemplate)]
         prompts = [c for c in components if isinstance(c, Prompt)]
 
-        # Apply this provider's transforms using call_next pattern
-
-        async def tools_base() -> Sequence[Tool]:
-            return tools
-
-        async def resources_base() -> Sequence[Resource]:
-            return resources
-
-        async def templates_base() -> Sequence[ResourceTemplate]:
-            return templates
-
-        async def prompts_base() -> Sequence[Prompt]:
-            return prompts
-
-        tools_chain = tools_base
-        resources_chain = resources_base
-        templates_chain = templates_base
-        prompts_chain = prompts_base
-
+        # Apply this provider's transforms sequentially
         for transform in self.transforms:
-            tools_chain = partial(transform.list_tools, call_next=tools_chain)
-            resources_chain = partial(
-                transform.list_resources, call_next=resources_chain
-            )
-            templates_chain = partial(
-                transform.list_resource_templates, call_next=templates_chain
-            )
-            prompts_chain = partial(transform.list_prompts, call_next=prompts_chain)
+            tools = await transform.list_tools(tools)
+            resources = await transform.list_resources(resources)
+            templates = await transform.list_resource_templates(templates)
+            prompts = await transform.list_prompts(prompts)
 
         # Filter to only task-eligible components (same as base Provider)
         return [
             c
             for c in [
-                *await tools_chain(),
-                *await resources_chain(),
-                *await templates_chain(),
-                *await prompts_chain(),
+                *tools,
+                *resources,
+                *templates,
+                *prompts,
             ]
             if c.task_config.supports_tasks()
         ]
