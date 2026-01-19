@@ -1,0 +1,119 @@
+---
+title: prompts
+sidebarTitle: prompts
+---
+
+# `fastmcp.client.prompts`
+
+
+Prompt-related methods for FastMCP Client.
+
+## Classes
+
+### `ClientPromptsMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L29" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Mixin providing prompt-related methods for Client.
+
+
+**Methods:**
+
+#### `list_prompts_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_prompts_mcp(self: Client) -> mcp.types.ListPromptsResult
+```
+
+Send a prompts/list request and return the complete MCP protocol result.
+
+**Args:**
+- `cursor`: Optional pagination cursor from a previous request's nextCursor.
+
+**Returns:**
+- mcp.types.ListPromptsResult: The complete response object from the protocol,
+containing the list of prompts and any additional metadata.
+
+**Raises:**
+- `RuntimeError`: If called while the client is not connected.
+- `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_prompts(self: Client) -> list[mcp.types.Prompt]
+```
+
+Retrieve all prompts available on the server.
+
+This method automatically fetches all pages if the server paginates results,
+returning the complete list. For manual pagination control (e.g., to handle
+large result sets incrementally), use list_prompts_mcp() with the cursor parameter.
+
+**Returns:**
+- list\[mcp.types.Prompt]: A list of all Prompt objects.
+
+**Raises:**
+- `RuntimeError`: If called while the client is not connected.
+- `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+
+#### `get_prompt_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L84" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt_mcp(self: Client, name: str, arguments: dict[str, Any] | None = None, meta: dict[str, Any] | None = None) -> mcp.types.GetPromptResult
+```
+
+Send a prompts/get request and return the complete MCP protocol result.
+
+**Args:**
+- `name`: The name of the prompt to retrieve.
+- `arguments`: Arguments to pass to the prompt. Defaults to None.
+- `meta`: Request metadata (e.g., for SEP-1686 tasks). Defaults to None.
+
+**Returns:**
+- mcp.types.GetPromptResult: The complete response object from the protocol,
+containing the prompt messages and any additional metadata.
+
+**Raises:**
+- `RuntimeError`: If called while the client is not connected.
+- `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L153" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(self: Client, name: str, arguments: dict[str, Any] | None = None) -> mcp.types.GetPromptResult
+```
+
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L164" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(self: Client, name: str, arguments: dict[str, Any] | None = None) -> PromptTask
+```
+
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(self: Client, name: str, arguments: dict[str, Any] | None = None) -> mcp.types.GetPromptResult | PromptTask
+```
+
+Retrieve a rendered prompt message list from the server.
+
+**Args:**
+- `name`: The name of the prompt to retrieve.
+- `arguments`: Arguments to pass to the prompt. Defaults to None.
+- `version`: Specific prompt version to get. If None, gets highest version.
+- `meta`: Optional request-level metadata.
+- `task`: If True, execute as background task (SEP-1686). Defaults to False.
+- `task_id`: Optional client-provided task ID (auto-generated if not provided).
+- `ttl`: Time to keep results available in milliseconds (default 60s).
+
+**Returns:**
+- mcp.types.GetPromptResult | PromptTask: The complete response object if task=False,
+or a PromptTask object if task=True.
+
+**Raises:**
+- `RuntimeError`: If called while the client is not connected.
+- `McpError`: If the request results in a TimeoutError | JSONRPCError
+

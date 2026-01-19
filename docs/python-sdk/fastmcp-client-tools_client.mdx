@@ -1,0 +1,141 @@
+---
+title: tools_client
+sidebarTitle: tools_client
+---
+
+# `fastmcp.client.tools_client`
+
+
+Tool-related methods for FastMCP Client.
+
+## Classes
+
+### `ClientToolsMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tools_client.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Mixin providing tool-related methods for Client.
+
+
+**Methods:**
+
+#### `list_tools_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tools_client.py#L37" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools_mcp(self: Client) -> mcp.types.ListToolsResult
+```
+
+Send a tools/list request and return the complete MCP protocol result.
+
+**Args:**
+- `cursor`: Optional pagination cursor from a previous request's nextCursor.
+
+**Returns:**
+- mcp.types.ListToolsResult: The complete response object from the protocol,
+containing the list of tools and any additional metadata.
+
+**Raises:**
+- `RuntimeError`: If called while the client is not connected.
+- `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tools_client.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self: Client) -> list[mcp.types.Tool]
+```
+
+Retrieve all tools available on the server.
+
+This method automatically fetches all pages if the server paginates results,
+returning the complete list. For manual pagination control (e.g., to handle
+large result sets incrementally), use list_tools_mcp() with the cursor parameter.
+
+**Returns:**
+- list\[mcp.types.Tool]: A list of all Tool objects.
+
+**Raises:**
+- `RuntimeError`: If called while the client is not connected.
+- `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+
+#### `call_tool_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tools_client.py#L88" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+call_tool_mcp(self: Client, name: str, arguments: dict[str, Any], progress_handler: ProgressHandler | None = None, timeout: datetime.timedelta | float | int | None = None, meta: dict[str, Any] | None = None) -> mcp.types.CallToolResult
+```
+
+Send a tools/call request and return the complete MCP protocol result.
+
+This method returns the raw CallToolResult object, which includes an isError flag
+and other metadata. It does not raise an exception if the tool call results in an error.
+
+**Args:**
+- `name`: The name of the tool to call.
+- `arguments`: Arguments to pass to the tool.
+- `timeout`: The timeout for the tool call. Defaults to None.
+- `progress_handler`: The progress handler to use for the tool call. Defaults to None.
+- `meta`: Additional metadata to include with the request.
+This is useful for passing contextual information (like user IDs, trace IDs, or preferences)
+that shouldn't be tool arguments but may influence server-side processing. The server
+can access this via `context.request_context.meta`. Defaults to None.
+
+**Returns:**
+- mcp.types.CallToolResult: The complete response object from the protocol,
+containing the tool result and any additional metadata.
+
+**Raises:**
+- `RuntimeError`: If called while the client is not connected.
+- `McpError`: If the tool call requests results in a TimeoutError | JSONRPCError
+
+
+#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tools_client.py#L168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+call_tool(self: Client, name: str, arguments: dict[str, Any] | None = None) -> CallToolResult
+```
+
+#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tools_client.py#L182" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+call_tool(self: Client, name: str, arguments: dict[str, Any] | None = None) -> ToolTask
+```
+
+#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tools_client.py#L197" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+call_tool(self: Client, name: str, arguments: dict[str, Any] | None = None) -> CallToolResult | ToolTask
+```
+
+Call a tool on the server.
+
+Unlike call_tool_mcp, this method raises a ToolError if the tool call results in an error.
+
+**Args:**
+- `name`: The name of the tool to call.
+- `arguments`: Arguments to pass to the tool. Defaults to None.
+- `version`: Specific tool version to call. If None, calls highest version.
+- `timeout`: The timeout for the tool call. Defaults to None.
+- `progress_handler`: The progress handler to use for the tool call. Defaults to None.
+- `raise_on_error`: Whether to raise an exception if the tool call results in an error. Defaults to True.
+- `meta`: Additional metadata to include with the request.
+This is useful for passing contextual information (like user IDs, trace IDs, or preferences)
+that shouldn't be tool arguments but may influence server-side processing. The server
+can access this via `context.request_context.meta`. Defaults to None.
+- `task`: If True, execute as background task (SEP-1686). Defaults to False.
+- `task_id`: Optional client-provided task ID (auto-generated if not provided).
+- `ttl`: Time to keep results available in milliseconds (default 60s).
+
+**Returns:**
+- CallToolResult | ToolTask: The content returned by the tool if task=False,
+or a ToolTask object if task=True. If the tool returns structured
+outputs, they are returned as a dataclass (if an output schema
+is available) or a dictionary; otherwise, a list of content
+blocks is returned. Note: to receive both structured and
+unstructured outputs, use call_tool_mcp instead and access the
+raw result object.
+
+**Raises:**
+- `ToolError`: If the tool call results in an error.
+- `McpError`: If the tool call request results in a TimeoutError | JSONRPCError
+- `RuntimeError`: If called while the client is not connected.
+

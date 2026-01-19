@@ -1,0 +1,104 @@
+---
+title: models
+sidebarTitle: models
+---
+
+# `fastmcp.server.auth.oauth_proxy.models`
+
+
+OAuth Proxy Models and Constants.
+
+This module contains all Pydantic models and constants used by the OAuth proxy.
+
+
+## Classes
+
+### `OAuthTransaction` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+OAuth transaction state for consent flow.
+
+Stored server-side to track active authorization flows with client context.
+Includes CSRF tokens for consent protection per MCP security best practices.
+
+
+### `ClientCode` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Client authorization code with PKCE and upstream tokens.
+
+Stored server-side after upstream IdP callback. Contains the upstream
+tokens bound to the client's PKCE challenge for secure token exchange.
+
+
+### `UpstreamTokenSet` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Stored upstream OAuth tokens from identity provider.
+
+These tokens are obtained from the upstream provider (Google, GitHub, etc.)
+and stored in plaintext within this model. Encryption is handled transparently
+at the storage layer via FernetEncryptionWrapper. Tokens are never exposed to MCP clients.
+
+
+### `JTIMapping` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L97" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Maps FastMCP token JTI to upstream token ID.
+
+This allows stateless JWT validation while still being able to look up
+the corresponding upstream token when tools need to access upstream APIs.
+
+
+### `RefreshTokenMetadata` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L109" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Metadata for a refresh token, stored keyed by token hash.
+
+We store only metadata (not the token itself) for security - if storage
+is compromised, attackers get hashes they can't reverse into usable tokens.
+
+
+### `ProxyDCRClient` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L131" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Client for DCR proxy with configurable redirect URI validation.
+
+This special client class is critical for the OAuth proxy to work correctly
+with Dynamic Client Registration (DCR). Here's why it exists:
+
+Problem:
+--------
+When MCP clients use OAuth, they dynamically register with random localhost
+ports (e.g., http://localhost:55454/callback). The OAuth proxy needs to:
+1. Accept these dynamic redirect URIs from clients based on configured patterns
+2. Use its own fixed redirect URI with the upstream provider (Google, GitHub, etc.)
+3. Forward the authorization code back to the client's dynamic URI
+
+Solution:
+---------
+This class validates redirect URIs against configurable patterns,
+while the proxy internally uses its own fixed redirect URI with the upstream
+provider. This allows the flow to work even when clients reconnect with
+different ports or when tokens are cached.
+
+Without proper validation, clients could get "Redirect URI not registered" errors
+when trying to authenticate with cached tokens, or security vulnerabilities could
+arise from accepting arbitrary redirect URIs.
+
+
+**Methods:**
+
+#### `validate_redirect_uri` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L160" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl
+```
+
+Validate redirect URI against allowed patterns.
+
+Since we're acting as a proxy and clients register dynamically,
+we validate their redirect URIs against configurable patterns.
+This is essential for cached token scenarios where the client may
+reconnect with a different port.
+

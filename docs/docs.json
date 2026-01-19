@@ -337,6 +337,8 @@
                   "python-sdk/fastmcp-client-messages",
                   "python-sdk/fastmcp-client-oauth_callback",
                   "python-sdk/fastmcp-client-progress",
+                  "python-sdk/fastmcp-client-prompts",
+                  "python-sdk/fastmcp-client-resources",
                   "python-sdk/fastmcp-client-roots",
                   {
                     "group": "sampling",
@@ -352,8 +354,10 @@
                       }
                     ]
                   },
+                  "python-sdk/fastmcp-client-task_management",
                   "python-sdk/fastmcp-client-tasks",
                   "python-sdk/fastmcp-client-telemetry",
+                  "python-sdk/fastmcp-client-tools_client",
                   {
                     "group": "transports",
                     "pages": [
@@ -363,6 +367,7 @@
                       "python-sdk/fastmcp-client-transports-http",
                       "python-sdk/fastmcp-client-transports-inference",
                       "python-sdk/fastmcp-client-transports-memory",
+                      "python-sdk/fastmcp-client-transports-sse",
                       "python-sdk/fastmcp-client-transports-stdio"
                     ]
                   }
@@ -398,7 +403,16 @@
                       "python-sdk/fastmcp-server-auth-authorization",
                       "python-sdk/fastmcp-server-auth-jwt_issuer",
                       "python-sdk/fastmcp-server-auth-middleware",
-                      "python-sdk/fastmcp-server-auth-oauth_proxy",
+                      {
+                        "group": "oauth_proxy",
+                        "pages": [
+                          "python-sdk/fastmcp-server-auth-oauth_proxy-__init__",
+                          "python-sdk/fastmcp-server-auth-oauth_proxy-consent",
+                          "python-sdk/fastmcp-server-auth-oauth_proxy-models",
+                          "python-sdk/fastmcp-server-auth-oauth_proxy-proxy",
+                          "python-sdk/fastmcp-server-auth-oauth_proxy-ui"
+                        ]
+                      },
                       "python-sdk/fastmcp-server-auth-oidc_proxy",
                       {
                         "group": "providers",
@@ -582,6 +596,7 @@
                   },
                   "python-sdk/fastmcp-utilities-pagination",
                   "python-sdk/fastmcp-utilities-tests",
+                  "python-sdk/fastmcp-utilities-timeout",
                   "python-sdk/fastmcp-utilities-types",
                   "python-sdk/fastmcp-utilities-ui",
                   "python-sdk/fastmcp-utilities-version_check",

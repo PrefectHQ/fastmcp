@@ -1,0 +1,110 @@
+---
+title: task_management
+sidebarTitle: task_management
+---
+
+# `fastmcp.client.task_management`
+
+
+Task management methods for FastMCP Client.
+
+## Classes
+
+### `ClientTaskManagementMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/task_management.py#L30" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Mixin providing task management methods for Client.
+
+
+**Methods:**
+
+#### `get_task_status` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/task_management.py#L33" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_task_status(self: Client, task_id: str) -> GetTaskResult
+```
+
+Query the status of a background task.
+
+Sends a 'tasks/get' MCP protocol request over the existing transport.
+
+**Args:**
+- `task_id`: The task ID returned from call_tool_as_task
+
+**Returns:**
+- Status information including taskId, status, pollInterval, etc.
+
+**Raises:**
+- `RuntimeError`: If client not connected
+- `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+
+#### `get_task_result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/task_management.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_task_result(self: Client, task_id: str) -> Any
+```
+
+Retrieve the raw result of a completed background task.
+
+Sends a 'tasks/result' MCP protocol request over the existing transport.
+Returns the raw result - callers should parse it appropriately.
+
+**Args:**
+- `task_id`: The task ID returned from call_tool_as_task
+
+**Returns:**
+- The raw result (could be tool, prompt, or resource result)
+
+**Raises:**
+- `RuntimeError`: If client not connected, task not found, or task failed
+- `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+
+#### `list_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/task_management.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tasks(self: Client, cursor: str | None = None, limit: int = 50) -> dict[str, Any]
+```
+
+List background tasks.
+
+Sends a 'tasks/list' MCP protocol request to the server. If the server
+returns an empty list (indicating client-side tracking), falls back to
+querying status for locally tracked task IDs.
+
+**Args:**
+- `cursor`: Optional pagination cursor
+- `limit`: Maximum number of tasks to return (default 50)
+
+**Returns:**
+- Response with structure:
+- tasks: List of task status dicts with taskId, status, etc.
+- nextCursor: Optional cursor for next page
+
+**Raises:**
+- `RuntimeError`: If client not connected
+- `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+
+#### `cancel_task` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/task_management.py#L135" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+cancel_task(self: Client, task_id: str) -> mcp.types.CancelTaskResult
+```
+
+Cancel a task, transitioning it to cancelled state.
+
+Sends a 'tasks/cancel' MCP protocol request. Task will halt execution
+and transition to cancelled state.
+
+**Args:**
+- `task_id`: The task ID to cancel
+
+**Returns:**
+- The task status showing cancelled state
+
+**Raises:**
+- `RuntimeError`: If task doesn't exist
+- `McpError`: If the request results in a TimeoutError | JSONRPCError
+
