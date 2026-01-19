@@ -126,7 +126,7 @@ class TestToolTransformRenames:
         provider.add_transform(
             ToolTransform({"original": ToolTransformConfig(name="renamed")})
         )
-        main._providers.append(provider)
+        main.add_provider(provider)
 
         async with Client(main) as client:
             result = await client.call_tool("renamed", {})
@@ -266,7 +266,7 @@ class TestTransformStacking:
         provider.add_transform(
             ToolTransform({"ns_my_tool": ToolTransformConfig(name="short")})
         )
-        main._providers.append(provider)
+        main.add_provider(provider)
 
         async with Client(main) as client:
             result = await client.call_tool("short", {})

@@ -81,10 +81,10 @@ from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.providers import LocalProvider, Provider
+from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.server.telemetry import server_span
 from fastmcp.server.transforms import (
-    Namespace,
     ToolTransform,
     Transform,
 )
@@ -94,7 +94,6 @@ from fastmcp.settings import Settings
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool import AuthCheckCallable, Tool, ToolResult
 from fastmcp.tools.tool_transform import ToolTransformConfig
-from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.cli import log_server_banner
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger, temporary_log_level
@@ -299,7 +298,7 @@ class StateValue(FastMCPBaseModel):
     value: Any
 
 
-class FastMCP(Provider, Generic[LifespanResultT]):
+class FastMCP(AggregateProvider, Generic[LifespanResultT]):
     def __init__(
         self,
         name: str | None = None,
@@ -374,11 +373,11 @@ class FastMCP(Provider, Generic[LifespanResultT]):
             on_duplicate=self._on_duplicate
         )
 
-        # Local provider is always first in the provider list
-        self._providers: list[Provider] = [
-            self._local_provider,
-            *(providers or []),
-        ]
+        # Add providers using AggregateProvider's add_provider
+        # LocalProvider is always first (no namespace)
+        self.add_provider(self._local_provider)
+        for p in providers or []:
+            self.add_provider(p)
 
         # Store mask_error_details for execution error handling
         self._mask_error_details: bool = (
@@ -690,7 +689,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
             async with AsyncExitStack[bool | None]() as stack:
                 # Start lifespans for all providers
-                for provider in self._providers:
+                for provider in self.providers:
                     await stack.enter_async_context(provider.lifespan())
 
                 self._started.set()
@@ -877,7 +876,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     def add_middleware(self, middleware: Middleware) -> None:
         self.middleware.append(middleware)
 
-    def add_provider(self, provider: Provider) -> None:
+    def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider for dynamic tools, resources, and prompts.
 
         Providers are queried in registration order. The first provider to return
@@ -886,81 +885,29 @@ class FastMCP(Provider, Generic[LifespanResultT]):
 
         Args:
             provider: A Provider instance that will provide components dynamically.
+            namespace: Optional namespace prefix. When set:
+                - Tools become "namespace_toolname"
+                - Resources become "protocol://namespace/path"
+                - Prompts become "namespace_promptname"
         """
-        self._providers.append(provider)
+        super().add_provider(provider, namespace=namespace)
 
     # -------------------------------------------------------------------------
-    # Tool Transforms
+    # Provider interface overrides - inherited from AggregateProvider
     # -------------------------------------------------------------------------
-
-    def _collect_list_results(
-        self, results: list[Sequence[Any] | BaseException], operation: str
-    ) -> list[Any]:
-        """Collect successful list results, logging any exceptions."""
-        collected: list[Any] = []
-        for i, result in enumerate(results):
-            if isinstance(result, BaseException):
-                logger.debug(
-                    f"Error during {operation} from provider "
-                    f"{self._providers[i]}: {result}"
-                )
-                continue
-            collected.extend(result)
-        return collected
-
-    # -------------------------------------------------------------------------
-    # Provider interface overrides (aggregate from sub-providers)
-    # -------------------------------------------------------------------------
-
-    async def _list_tools(self) -> Sequence[Tool]:
-        """Aggregate tools from all sub-providers.
-
-        This is the Provider interface implementation. The inherited list_tools()
-        applies server-level transforms over this method.
-        """
-        results = await gather(
-            *[p.list_tools() for p in self._providers],
-            return_exceptions=True,
-        )
-        return self._collect_list_results(results, "list_tools")
-
-    async def _list_resources(self) -> Sequence[Resource]:
-        """Aggregate resources from all sub-providers."""
-        results = await gather(
-            *[p.list_resources() for p in self._providers],
-            return_exceptions=True,
-        )
-        return self._collect_list_results(results, "list_resources")
-
-    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
-        """Aggregate resource templates from all sub-providers."""
-        results = await gather(
-            *[p.list_resource_templates() for p in self._providers],
-            return_exceptions=True,
-        )
-        return self._collect_list_results(results, "list_resource_templates")
-
-    async def _list_prompts(self) -> Sequence[Prompt]:
-        """Aggregate prompts from all sub-providers."""
-        results = await gather(
-            *[p.list_prompts() for p in self._providers],
-            return_exceptions=True,
-        )
-        return self._collect_list_results(results, "list_prompts")
+    # _list_tools, _list_resources, _list_resource_templates, _list_prompts
+    # are inherited from AggregateProvider which handles aggregation and namespacing
 
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
         """Get task-eligible components with all transforms applied.
 
-        Overrides Provider.get_tasks() to collect task-eligible components
-        from all sub-providers and apply server-level transforms.
+        Overrides AggregateProvider.get_tasks() to apply server-level transforms
+        after aggregation. AggregateProvider handles provider-level namespacing.
         """
-        results = await gather(
-            *[p.get_tasks() for p in self._providers],
-            return_exceptions=True,
-        )
-        components = self._collect_list_results(results, "get_tasks")
+        # Get tasks from AggregateProvider (handles aggregation and namespacing)
+        components = list(await super().get_tasks())
 
-        # Separate by component type for transform application
+        # Separate by component type for server-level transform application
         tools = [c for c in components if isinstance(c, Tool)]
         resources = [c for c in components if isinstance(c, Resource)]
         templates = [c for c in components if isinstance(c, ResourceTemplate)]
@@ -1108,8 +1055,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     ) -> Tool | None:
         """Get a tool by name via aggregation from providers.
 
-        This is the raw lookup that Provider.get_tool() wraps with transforms.
-        Aggregates from all sub-providers and applies component-level auth.
+        Extends AggregateProvider._get_tool() with component-level auth checks.
 
         Args:
             name: The tool name.
@@ -1118,30 +1064,10 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         Returns:
             The tool if found and authorized, None if not found or unauthorized.
         """
-
-        # Aggregate from all sub-providers (each applies their own transforms)
-        results = await gather(
-            *[p.get_tool(name, version) for p in self._providers],
-            return_exceptions=True,
-        )
-
-        # Collect valid results, pick highest version
-        valid: list[Tool] = []
-        for i, result in enumerate(results):
-            if isinstance(result, BaseException):
-                if not isinstance(result, NotFoundError):
-                    logger.debug(
-                        f"Error during get_tool({name!r}) from provider "
-                        f"{self._providers[i]}: {result}"
-                    )
-                continue
-            if result is not None:
-                valid.append(result)
-
-        if not valid:
+        # Get tool from AggregateProvider (handles aggregation and namespacing)
+        tool = await super()._get_tool(name, version)
+        if tool is None:
             return None
-
-        tool: Tool = max(valid, key=version_sort_key)  # type: ignore[type-var]
 
         # Component auth - return None if unauthorized (consistent with list filtering)
         skip_auth, token = _get_auth_context()
@@ -1225,8 +1151,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     ) -> Resource | None:
         """Get a resource by URI via aggregation from providers.
 
-        This is the raw lookup that Provider.get_resource() wraps with transforms.
-        Aggregates from all sub-providers and applies component-level auth.
+        Extends AggregateProvider._get_resource() with component-level auth checks.
 
         Args:
             uri: The resource URI.
@@ -1235,29 +1160,10 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         Returns:
             The resource if found and authorized, None if not found or unauthorized.
         """
-        # Aggregate from all sub-providers (each applies their own transforms)
-        results = await gather(
-            *[p.get_resource(uri, version) for p in self._providers],
-            return_exceptions=True,
-        )
-
-        # Collect valid results, pick highest version
-        valid: list[Resource] = []
-        for i, result in enumerate(results):
-            if isinstance(result, BaseException):
-                if not isinstance(result, NotFoundError):
-                    logger.debug(
-                        f"Error during get_resource({uri!r}) from provider "
-                        f"{self._providers[i]}: {result}"
-                    )
-                continue
-            if result is not None:
-                valid.append(result)
-
-        if not valid:
+        # Get resource from AggregateProvider (handles aggregation and namespacing)
+        resource = await super()._get_resource(uri, version)
+        if resource is None:
             return None
-
-        resource: Resource = max(valid, key=version_sort_key)  # type: ignore[type-var]
 
         # Component auth - return None if unauthorized (consistent with list filtering)
         skip_auth, token = _get_auth_context()
@@ -1346,8 +1252,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     ) -> ResourceTemplate | None:
         """Get a resource template by URI via aggregation from providers.
 
-        This is the raw lookup that Provider.get_resource_template() wraps with transforms.
-        Aggregates from all sub-providers and applies component-level auth.
+        Extends AggregateProvider._get_resource_template() with component-level auth checks.
 
         Args:
             uri: The template URI to match.
@@ -1356,29 +1261,10 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         Returns:
             The template if found and authorized, None if not found or unauthorized.
         """
-        # Aggregate from all sub-providers (each applies their own transforms)
-        results = await gather(
-            *[p.get_resource_template(uri, version) for p in self._providers],
-            return_exceptions=True,
-        )
-
-        # Collect valid results, pick highest version
-        valid: list[ResourceTemplate] = []
-        for i, result in enumerate(results):
-            if isinstance(result, BaseException):
-                if not isinstance(result, NotFoundError):
-                    logger.debug(
-                        f"Error during get_resource_template({uri!r}) from provider "
-                        f"{self._providers[i]}: {result}"
-                    )
-                continue
-            if result is not None:
-                valid.append(result)
-
-        if not valid:
+        # Get template from AggregateProvider (handles aggregation and namespacing)
+        template = await super()._get_resource_template(uri, version)
+        if template is None:
             return None
-
-        template: ResourceTemplate = max(valid, key=version_sort_key)  # type: ignore[type-var]
 
         # Component auth - return None if unauthorized (consistent with list filtering)
         skip_auth, token = _get_auth_context()
@@ -1461,8 +1347,7 @@ class FastMCP(Provider, Generic[LifespanResultT]):
     ) -> Prompt | None:
         """Get a prompt by name via aggregation from providers.
 
-        This is the raw lookup that Provider.get_prompt() wraps with transforms.
-        Aggregates from all sub-providers and applies component-level auth.
+        Extends AggregateProvider._get_prompt() with component-level auth checks.
 
         Args:
             name: The prompt name.
@@ -1471,29 +1356,10 @@ class FastMCP(Provider, Generic[LifespanResultT]):
         Returns:
             The prompt if found and authorized, None if not found or unauthorized.
         """
-        # Aggregate from all sub-providers (each applies their own transforms)
-        results = await gather(
-            *[p.get_prompt(name, version) for p in self._providers],
-            return_exceptions=True,
-        )
-
-        # Collect valid results, pick highest version
-        valid: list[Prompt] = []
-        for i, result in enumerate(results):
-            if isinstance(result, BaseException):
-                if not isinstance(result, NotFoundError):
-                    logger.debug(
-                        f"Error during get_prompt({name!r}) from provider "
-                        f"{self._providers[i]}: {result}"
-                    )
-                continue
-            if result is not None:
-                valid.append(result)
-
-        if not valid:
+        # Get prompt from AggregateProvider (handles aggregation and namespacing)
+        prompt = await super()._get_prompt(name, version)
+        if prompt is None:
             return None
-
-        prompt: Prompt = max(valid, key=version_sort_key)  # type: ignore[type-var]
 
         # Component auth - return None if unauthorized (consistent with list filtering)
         skip_auth, token = _get_auth_context()
@@ -2869,21 +2735,20 @@ class FastMCP(Provider, Generic[LifespanResultT]):
                 if not isinstance(server, FastMCPProxy):
                     server = FastMCP.as_proxy(server)
 
-        # Create provider with optional transforms
+        # Create provider and add it with namespace
         provider: Provider = FastMCPProvider(server)
-        if namespace:
-            provider.add_transform(Namespace(namespace))
+
+        # Apply tool renames first (scoped to this provider), then namespace
+        # So foo → bar with namespace="baz" becomes baz_bar
         if tool_names:
-            # Tool renames are implemented as a ToolTransform
-            # Keys must use the namespaced names (after Namespace transform)
             transforms = {
-                (
-                    f"{namespace}_{old_name}" if namespace else old_name
-                ): ToolTransformConfig(name=new_name)
+                old_name: ToolTransformConfig(name=new_name)
                 for old_name, new_name in tool_names.items()
             }
-            provider.add_transform(ToolTransform(transforms))
-        self._providers.append(provider)
+            provider = provider.wrap_transform(ToolTransform(transforms))
+
+        # Use add_provider with namespace (applies namespace in AggregateProvider)
+        self.add_provider(provider, namespace=namespace or "")
 
     async def import_server(
         self,

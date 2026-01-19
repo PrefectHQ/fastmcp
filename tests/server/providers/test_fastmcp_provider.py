@@ -121,7 +121,7 @@ class TestToolOperations:
             return f"Hello, {name}!"
 
         main = FastMCP("Main")
-        main._providers.append(FastMCPProvider(sub))
+        main.add_provider(FastMCPProvider(sub))
 
         async with Client(main) as client:
             result = await client.call_tool("greet", {"name": "World"})
@@ -173,7 +173,7 @@ class TestResourceOperations:
             return "content"
 
         main = FastMCP("Main")
-        main._providers.append(FastMCPProvider(sub))
+        main.add_provider(FastMCPProvider(sub))
 
         async with Client(main) as client:
             result = await client.read_resource("resource://data")
@@ -220,7 +220,7 @@ class TestResourceTemplateOperations:
             return f"data for {id}"
 
         main = FastMCP("Main")
-        main._providers.append(FastMCPProvider(sub))
+        main.add_provider(FastMCPProvider(sub))
 
         async with Client(main) as client:
             result = await client.read_resource("resource://123/data")
@@ -273,7 +273,7 @@ class TestPromptOperations:
             return f"Hello, {name}!"
 
         main = FastMCP("Main")
-        main._providers.append(FastMCPProvider(sub))
+        main.add_provider(FastMCPProvider(sub))
 
         async with Client(main) as client:
             result = await client.get_prompt("greet", {"name": "World"})

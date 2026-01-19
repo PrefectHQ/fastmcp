@@ -97,6 +97,38 @@ class Provider:
         """
         self._transforms.append(transform)
 
+    def wrap_transform(self, transform: Transform) -> Provider:
+        """Return a new provider with this transform applied (immutable).
+
+        Unlike add_transform() which mutates this provider, wrap_transform()
+        returns a new provider that wraps this one. The original provider
+        is unchanged.
+
+        This is useful when you want to apply transforms without side effects,
+        such as adding the same provider to multiple aggregators with different
+        namespaces.
+
+        Args:
+            transform: The transform to apply.
+
+        Returns:
+            A new provider that wraps this one with the transform applied.
+
+        Example:
+            ```python
+            from fastmcp.server.transforms import Namespace
+
+            provider = MyProvider()
+            namespaced = provider.wrap_transform(Namespace("api"))
+            # provider is unchanged
+            # namespaced returns tools as "api_toolname"
+            ```
+        """
+        # Import here to avoid circular imports
+        from fastmcp.server.providers.wrapped_provider import _WrappedProvider
+
+        return _WrappedProvider(self, transform)
+
     # -------------------------------------------------------------------------
     # Internal transform chain building
     # -------------------------------------------------------------------------

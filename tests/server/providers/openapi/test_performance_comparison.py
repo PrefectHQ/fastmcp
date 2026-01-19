@@ -255,7 +255,7 @@ class TestPerformance:
         # Helper to count total tools across all providers
         def count_provider_tools(server):
             total = 0
-            for provider in server._providers:
+            for provider in server.providers:
                 if hasattr(provider, "_tools"):
                     total += len(provider._tools)
             return total
