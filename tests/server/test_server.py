@@ -212,7 +212,7 @@ class TestAbstractCollectionTypes:
             middleware=(),  # Empty tuple
             tools=(Tool.from_function(dummy_tool),),  # Tuple of tools
             include_tags={"tag1", "tag2"},  # Set
-            exclude_tags=frozenset({"tag3"}),  # Frozen set
+            exclude_tags={"tag3"},  # Set
         )
         assert mcp is not None
         assert mcp.name == "test"

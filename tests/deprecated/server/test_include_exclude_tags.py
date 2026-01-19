@@ -29,7 +29,7 @@ class TestIncludeExcludeTagsDeprecation:
         assert len(enabled_transforms) == 1
         e = enabled_transforms[0]
         assert e._enabled is False
-        assert e.tags == frozenset({"internal"})
+        assert e.tags == {"internal"}
 
     def test_include_tags_still_works(self):
         """include_tags adds Enabled transforms for allowlist mode."""
@@ -49,7 +49,7 @@ class TestIncludeExcludeTagsDeprecation:
         # Second should enable matching tags
         enable_transform = enabled_transforms[1]
         assert enable_transform._enabled is True
-        assert enable_transform.tags == frozenset({"public"})
+        assert enable_transform.tags == {"public"}
 
     def test_exclude_and_include_both_create_transforms(self):
         """exclude_tags and include_tags both create transforms."""
@@ -63,6 +63,6 @@ class TestIncludeExcludeTagsDeprecation:
         assert len(enabled_transforms) == 3
 
         # Check we have both tag rules
-        tags_in_transforms = {frozenset(t.tags) for t in enabled_transforms if t.tags}
-        assert frozenset({"public"}) in tags_in_transforms
-        assert frozenset({"deprecated"}) in tags_in_transforms
+        tags_in_transforms = [t.tags for t in enabled_transforms if t.tags]
+        assert {"public"} in tags_in_transforms
+        assert {"deprecated"} in tags_in_transforms

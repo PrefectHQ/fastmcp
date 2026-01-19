@@ -926,7 +926,7 @@ class TestProxyServer:
         self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
     ):
         # proxy server will have its tools listed as well as called in order to
-        # run the `should_enable_component` hook prior to the call.
+        # apply transforms and filters prior to the call.
         proxy_server = FastMCP.as_proxy(mcp_server, name="Proxy Server")
         async with Client(proxy_server) as client:
             await client.call_tool("add", {"a": 1, "b": 2})

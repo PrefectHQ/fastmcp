@@ -1026,7 +1026,13 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
                     call_next=lambda context: self.list_tools(run_middleware=False),
                 )
 
-            tools = [t for t in await super().list_tools() if is_enabled(t)]
+            # Get all tools, apply session transforms, then filter enabled
+            from fastmcp.server.context import apply_session_transforms
+
+            tools = list(await super().list_tools())
+            tools = await apply_session_transforms(tools)
+            tools = [t for t in tools if is_enabled(t)]
+
             skip_auth, token = _get_auth_context()
             authorized: list[Tool] = []
             for tool in tools:
@@ -1088,9 +1094,16 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
             The tool if found and enabled, None otherwise.
         """
         tool = await super().get_tool(name, version)
-        if tool is None or not is_enabled(tool):
+        if tool is None:
             return None
-        return tool
+
+        # Apply session transforms to single item
+        from fastmcp.server.context import apply_session_transforms
+
+        tools = await apply_session_transforms([tool])
+        if not tools or not is_enabled(tools[0]):
+            return None
+        return tools[0]
 
     async def list_resources(
         self, *, run_middleware: bool = True
@@ -1115,7 +1128,13 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
                     call_next=lambda context: self.list_resources(run_middleware=False),
                 )
 
-            resources = [r for r in await super().list_resources() if is_enabled(r)]
+            # Get all resources, apply session transforms, then filter enabled
+            from fastmcp.server.context import apply_session_transforms
+
+            resources = list(await super().list_resources())
+            resources = await apply_session_transforms(resources)
+            resources = [r for r in resources if is_enabled(r)]
+
             skip_auth, token = _get_auth_context()
             authorized: list[Resource] = []
             for resource in resources:
@@ -1176,9 +1195,16 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
             The resource if found and enabled, None otherwise.
         """
         resource = await super().get_resource(uri, version)
-        if resource is None or not is_enabled(resource):
+        if resource is None:
             return None
-        return resource
+
+        # Apply session transforms to single item
+        from fastmcp.server.context import apply_session_transforms
+
+        resources = await apply_session_transforms([resource])
+        if not resources or not is_enabled(resources[0]):
+            return None
+        return resources[0]
 
     async def list_resource_templates(
         self, *, run_middleware: bool = True
@@ -1205,9 +1231,13 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
                     ),
                 )
 
-            templates = [
-                t for t in await super().list_resource_templates() if is_enabled(t)
-            ]
+            # Get all templates, apply session transforms, then filter enabled
+            from fastmcp.server.context import apply_session_transforms
+
+            templates = list(await super().list_resource_templates())
+            templates = await apply_session_transforms(templates)
+            templates = [t for t in templates if is_enabled(t)]
+
             skip_auth, token = _get_auth_context()
             authorized: list[ResourceTemplate] = []
             for template in templates:
@@ -1268,9 +1298,16 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
             The template if found and enabled, None otherwise.
         """
         template = await super().get_resource_template(uri, version)
-        if template is None or not is_enabled(template):
+        if template is None:
             return None
-        return template
+
+        # Apply session transforms to single item
+        from fastmcp.server.context import apply_session_transforms
+
+        templates = await apply_session_transforms([template])
+        if not templates or not is_enabled(templates[0]):
+            return None
+        return templates[0]
 
     async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
         """List all enabled prompts from providers.
@@ -1293,7 +1330,13 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
                     call_next=lambda context: self.list_prompts(run_middleware=False),
                 )
 
-            prompts = [p for p in await super().list_prompts() if is_enabled(p)]
+            # Get all prompts, apply session transforms, then filter enabled
+            from fastmcp.server.context import apply_session_transforms
+
+            prompts = list(await super().list_prompts())
+            prompts = await apply_session_transforms(prompts)
+            prompts = [p for p in prompts if is_enabled(p)]
+
             skip_auth, token = _get_auth_context()
             authorized: list[Prompt] = []
             for prompt in prompts:
@@ -1354,9 +1397,16 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
             The prompt if found and enabled, None otherwise.
         """
         prompt = await super().get_prompt(name, version)
-        if prompt is None or not is_enabled(prompt):
+        if prompt is None:
             return None
-        return prompt
+
+        # Apply session transforms to single item
+        from fastmcp.server.context import apply_session_transforms
+
+        prompts = await apply_session_transforms([prompt])
+        if not prompts or not is_enabled(prompts[0]):
+            return None
+        return prompts[0]
 
     @overload
     async def call_tool(

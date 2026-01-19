@@ -8,7 +8,7 @@ Final filtering happens at the Provider level.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Literal, TypeVar
 
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
@@ -47,14 +47,14 @@ class Enabled(Transform):
     Example:
         ```python
         # Disable components tagged "internal"
-        Enabled(False, tags=frozenset({"internal"}))
+        Enabled(False, tags={"internal"})
 
         # Re-enable specific tool (override earlier disable)
         Enabled(True, names={"safe_tool"})
 
         # Allowlist via composition:
         Enabled(False, match_all=True)  # disable everything
-        Enabled(True, tags=frozenset({"public"}))  # enable public
+        Enabled(True, tags={"public"})  # enable public
         ```
     """
 
@@ -65,8 +65,9 @@ class Enabled(Transform):
         names: set[str] | None = None,
         keys: set[str] | None = None,
         version: VersionSpec | None = None,
-        tags: frozenset[str] | None = None,
-        components: frozenset[str] | None = None,
+        tags: set[str] | None = None,
+        components: set[Literal["tool", "resource", "template", "prompt"]]
+        | None = None,
         match_all: bool = False,
     ) -> None:
         """Initialize an enabled marker.
@@ -78,15 +79,15 @@ class Enabled(Transform):
             version: Component version spec to match. Unversioned components (version=None)
                 will NOT match a version spec.
             tags: Tags to match (component must have at least one).
-            components: Component types to match (e.g., frozenset({"tool", "prompt"})).
+            components: Component types to match (e.g., {"tool", "prompt"}).
             match_all: If True, matches all components regardless of other criteria.
         """
         self._enabled = enabled
         self.names = names
         self.keys = keys
         self.version = version
-        self.tags = tags  # e.g., frozenset({"internal", "deprecated"})
-        self.components = components  # e.g., frozenset({"tool", "prompt"})
+        self.tags = tags  # e.g., {"internal", "deprecated"}
+        self.components = components  # e.g., {"tool", "prompt"}
         self.match_all = match_all
 
     def __repr__(self) -> str:

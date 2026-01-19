@@ -330,12 +330,12 @@ class TestPromptEnabled:
         prompts = await mcp.list_prompts()
         assert any(p.name == "sample_prompt" for p in prompts)
 
-        mcp.disable(names={"sample_prompt"}, components=["prompt"])
+        mcp.disable(names={"sample_prompt"}, components={"prompt"})
 
         prompts = await mcp.list_prompts()
         assert not any(p.name == "sample_prompt" for p in prompts)
 
-        mcp.enable(names={"sample_prompt"}, components=["prompt"])
+        mcp.enable(names={"sample_prompt"}, components={"prompt"})
 
         prompts = await mcp.list_prompts()
         assert any(p.name == "sample_prompt" for p in prompts)
@@ -347,7 +347,7 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        mcp.disable(names={"sample_prompt"}, components=["prompt"])
+        mcp.disable(names={"sample_prompt"}, components={"prompt"})
         prompts = await mcp.list_prompts()
         assert len(prompts) == 0
 
@@ -358,11 +358,11 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        mcp.disable(names={"sample_prompt"}, components=["prompt"])
+        mcp.disable(names={"sample_prompt"}, components={"prompt"})
         prompts = await mcp.list_prompts()
         assert not any(p.name == "sample_prompt" for p in prompts)
 
-        mcp.enable(names={"sample_prompt"}, components=["prompt"])
+        mcp.enable(names={"sample_prompt"}, components={"prompt"})
         prompts = await mcp.list_prompts()
         assert len(prompts) == 1
 
@@ -373,7 +373,7 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        mcp.disable(names={"sample_prompt"}, components=["prompt"])
+        mcp.disable(names={"sample_prompt"}, components={"prompt"})
         prompts = await mcp.list_prompts()
         assert len(prompts) == 0
 
@@ -391,7 +391,7 @@ class TestPromptEnabled:
         prompt = await mcp.get_prompt("sample_prompt")
         assert prompt is not None
 
-        mcp.disable(names={"sample_prompt"}, components=["prompt"])
+        mcp.disable(names={"sample_prompt"}, components={"prompt"})
         prompts = await mcp.list_prompts()
         assert len(prompts) == 0
 
@@ -406,7 +406,7 @@ class TestPromptEnabled:
         def sample_prompt() -> str:
             return "Hello, world!"
 
-        mcp.disable(names={"sample_prompt"}, components=["prompt"])
+        mcp.disable(names={"sample_prompt"}, components={"prompt"})
 
         # get_prompt() applies enabled transform, returns None for disabled
         prompt = await mcp.get_prompt("sample_prompt")

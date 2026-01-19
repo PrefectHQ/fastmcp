@@ -545,7 +545,7 @@ class Provider:
         keys: set[str] | None = None,
         version: VersionSpec | None = None,
         tags: set[str] | None = None,
-        components: list[Literal["tool", "resource", "template", "prompt"]]
+        components: set[Literal["tool", "resource", "template", "prompt"]]
         | None = None,
         only: bool = False,
     ) -> Self:
@@ -564,7 +564,7 @@ class Provider:
             version: Component version spec to enable (e.g., VersionSpec(eq="v1") or
                 VersionSpec(gte="v2")). Unversioned components will not match.
             tags: Enable components with these tags.
-            components: Component types to include (e.g., ["tool", "prompt"]).
+            components: Component types to include (e.g., {"tool", "prompt"}).
             only: If True, ONLY enable matching components (allowlist mode).
 
         Returns:
@@ -580,8 +580,8 @@ class Provider:
                 names=names,
                 keys=keys,
                 version=version,
-                components=frozenset(components) if components else None,
-                tags=frozenset(tags) if tags else None,
+                components=set(components) if components else None,
+                tags=set(tags) if tags else None,
             )
         )
 
@@ -594,7 +594,7 @@ class Provider:
         keys: set[str] | None = None,
         version: VersionSpec | None = None,
         tags: set[str] | None = None,
-        components: list[Literal["tool", "resource", "template", "prompt"]]
+        components: set[Literal["tool", "resource", "template", "prompt"]]
         | None = None,
     ) -> Self:
         """Disable components matching all specified criteria.
@@ -609,7 +609,7 @@ class Provider:
             version: Component version spec to disable (e.g., VersionSpec(eq="v1") or
                 VersionSpec(gte="v2")). Unversioned components will not match.
             tags: Disable components with these tags.
-            components: Component types to include (e.g., ["tool", "prompt"]).
+            components: Component types to include (e.g., {"tool", "prompt"}).
 
         Returns:
             Self for method chaining.
@@ -620,8 +620,8 @@ class Provider:
                 names=names,
                 keys=keys,
                 version=version,
-                components=frozenset(components) if components else None,
-                tags=frozenset(tags) if tags else None,
+                components=set(components) if components else None,
+                tags=set(tags) if tags else None,
             )
         )
         return self

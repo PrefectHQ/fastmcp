@@ -65,13 +65,13 @@ class TestMatching:
 
     def test_match_by_tag(self):
         """Matches if component has any of the specified tags."""
-        t = Enabled(False, tags=frozenset({"internal", "deprecated"}))
+        t = Enabled(False, tags=set({"internal", "deprecated"}))
         assert t._matches(Tool(name="foo", parameters={}, tags={"internal"})) is True
         assert t._matches(Tool(name="foo", parameters={}, tags={"public"})) is False
 
     def test_match_by_component_type(self):
         """Only matches specified component types."""
-        t = Enabled(False, names={"foo"}, components=frozenset({"prompt"}))
+        t = Enabled(False, names={"foo"}, components={"prompt"})
         # Tool has key "tool:foo@", not "prompt:foo@"
         assert t._matches(Tool(name="foo", parameters={})) is False
 
@@ -81,7 +81,7 @@ class TestMatching:
             False,
             names={"foo"},
             version=VersionSpec(eq="v1"),
-            tags=frozenset({"internal"}),
+            tags=set({"internal"}),
         )
         # All match
         assert (
@@ -234,7 +234,7 @@ class TestTransformChain:
 
     async def test_list_tools_marks_matching(self, tools):
         """list_tools applies marks to matching components."""
-        disable_internal = Enabled(False, tags=frozenset({"internal"}))
+        disable_internal = Enabled(False, tags=set({"internal"}))
 
         async def base():
             return tools
@@ -248,8 +248,8 @@ class TestTransformChain:
 
     async def test_later_transform_overrides(self, tools):
         """Later transforms in chain override earlier ones."""
-        disable_internal = Enabled(False, tags=frozenset({"internal"}))
-        enable_safe = Enabled(True, tags=frozenset({"safe"}))
+        disable_internal = Enabled(False, tags=set({"internal"}))
+        enable_safe = Enabled(True, tags=set({"safe"}))
 
         async def base():
             return tools
@@ -268,7 +268,7 @@ class TestTransformChain:
     async def test_allowlist_pattern(self, tools):
         """Disable all, then enable specific = allowlist."""
         disable_all = Enabled(False, match_all=True)
-        enable_public = Enabled(True, tags=frozenset({"public"}))
+        enable_public = Enabled(True, tags=set({"public"}))
 
         async def base():
             return tools
