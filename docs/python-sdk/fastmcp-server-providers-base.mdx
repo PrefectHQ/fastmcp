@@ -274,7 +274,7 @@ then enables matching components.
 - `version`: Component version spec to enable (e.g., VersionSpec(eq="v1") or
 VersionSpec(gte="v2")). Unversioned components will not match.
 - `tags`: Enable components with these tags.
-- `components`: Component types to include (e.g., ["tool", "prompt"]).
+- `components`: Component types to include (e.g., {"tool", "prompt"}).
 - `only`: If True, ONLY enable matching components (allowlist mode).
 
 **Returns:**
@@ -299,7 +299,7 @@ Components can be re-enabled by calling enable() with matching criteria
 - `version`: Component version spec to disable (e.g., VersionSpec(eq="v1") or
 VersionSpec(gte="v2")). Unversioned components will not match.
 - `tags`: Disable components with these tags.
-- `components`: Component types to include (e.g., ["tool", "prompt"]).
+- `components`: Component types to include (e.g., {"tool", "prompt"}).
 
 **Returns:**
 - Self for method chaining.

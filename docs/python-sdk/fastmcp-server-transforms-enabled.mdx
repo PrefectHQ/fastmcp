@@ -15,7 +15,7 @@ Final filtering happens at the Provider level.
 
 ## Functions
 
-### `is_enabled` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L273" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `is_enabled` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L274" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_enabled(component: FastMCPComponent) -> bool
@@ -51,7 +51,7 @@ Final filtering happens at the Provider level after all transforms run.
 
 **Methods:**
 
-#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L194" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L195" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]
@@ -60,7 +60,7 @@ list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]
 Mark tools by enabled state.
 
 
-#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L199" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
@@ -69,7 +69,7 @@ get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
 Mark tool if found.
 
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L212" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]
@@ -78,7 +78,7 @@ list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]
 Mark resources by enabled state.
 
 
-#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L217" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L218" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource(self, uri: str, call_next: GetResourceNext) -> Resource | None
@@ -87,7 +87,7 @@ get_resource(self, uri: str, call_next: GetResourceNext) -> Resource | None
 Mark resource if found.
 
 
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L234" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L235" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resource_templates(self, call_next: ListResourceTemplatesNext) -> Sequence[ResourceTemplate]
@@ -96,7 +96,7 @@ list_resource_templates(self, call_next: ListResourceTemplatesNext) -> Sequence[
 Mark resource templates by enabled state.
 
 
-#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L241" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L242" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource_template(self, uri: str, call_next: GetResourceTemplateNext) -> ResourceTemplate | None
@@ -105,7 +105,7 @@ get_resource_template(self, uri: str, call_next: GetResourceTemplateNext) -> Res
 Mark resource template if found.
 
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L258" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L259" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]
@@ -114,7 +114,7 @@ list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]
 Mark prompts by enabled state.
 
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L263" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L264" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, call_next: GetPromptNext) -> Prompt | None
