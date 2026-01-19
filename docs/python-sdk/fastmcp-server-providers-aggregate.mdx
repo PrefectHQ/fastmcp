@@ -17,7 +17,9 @@ Example:
     from fastmcp.server.providers import AggregateProvider
 
     # Combine multiple providers into one
-    combined = AggregateProvider([provider1, provider2, provider3])
+    combined = AggregateProvider()
+    combined.add_provider(provider1)
+    combined.add_provider(provider2, namespace="api")  # Tools become "api_foo"
 
     # Use like any other provider
     tools = await combined.list_tools()
@@ -26,7 +28,7 @@ Example:
 
 ## Classes
 
-### `AggregateProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AggregateProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Utility provider that combines multiple providers into one.
@@ -34,15 +36,35 @@ Utility provider that combines multiple providers into one.
 Components are aggregated from all providers. For get_* operations,
 providers are queried in parallel and the highest version is returned.
 
-Errors from individual providers are logged and skipped (graceful degradation).
+When adding providers with a namespace, wrap_transform() is used to apply
+the Namespace transform. This means namespace transformation is handled
+by the wrapped provider, not by AggregateProvider.
 
-This is useful when you want to combine custom providers without creating
-a full FastMCP server.
+Errors from individual providers are logged and skipped (graceful degradation).
 
 
 **Methods:**
 
-#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L240" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_provider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_provider(self, provider: Provider) -> None
+```
+
+Add a provider with optional namespace.
+
+If the provider is a FastMCP server, it's automatically wrapped in
+FastMCPProvider to ensure middleware is invoked correctly.
+
+**Args:**
+- `provider`: The provider to add.
+- `namespace`: Optional namespace prefix. When set\:
+- Tools become "namespace_toolname"
+- Resources become "protocol\://namespace/path"
+- Prompts become "namespace_promptname"
+
+
+#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L243" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tasks(self) -> Sequence[FastMCPComponent]
@@ -51,7 +73,7 @@ get_tasks(self) -> Sequence[FastMCPComponent]
 Get all task-eligible components from all providers.
 
 
-#### `lifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L252" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `lifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/aggregate.py#L256" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 lifespan(self) -> AsyncIterator[None]

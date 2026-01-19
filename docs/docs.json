@@ -463,7 +463,8 @@
                           "python-sdk/fastmcp-server-providers-openapi-routing"
                         ]
                       },
-                      "python-sdk/fastmcp-server-providers-proxy"
+                      "python-sdk/fastmcp-server-providers-proxy",
+                      "python-sdk/fastmcp-server-providers-wrapped_provider"
                     ]
                   },
                   "python-sdk/fastmcp-server-proxy",
