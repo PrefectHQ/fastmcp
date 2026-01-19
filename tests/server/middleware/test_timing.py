@@ -11,7 +11,6 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.middleware.middleware import MiddlewareContext
 from fastmcp.server.middleware.timing import DetailedTimingMiddleware, TimingMiddleware
-from fastmcp.utilities.tests import caplog_for_fastmcp
 
 
 @pytest.fixture
@@ -48,8 +47,7 @@ class TestTimingMiddleware:
         """Test timing successful requests."""
         middleware = TimingMiddleware()
 
-        with caplog_for_fastmcp(caplog):
-            result = await middleware.on_request(mock_context, mock_call_next)
+        result = await middleware.on_request(mock_context, mock_call_next)
 
         assert result == "test_result"
         assert mock_call_next.called
@@ -61,9 +59,8 @@ class TestTimingMiddleware:
         middleware = TimingMiddleware()
         mock_call_next = AsyncMock(side_effect=ValueError("test error"))
 
-        with caplog_for_fastmcp(caplog):
-            with pytest.raises(ValueError):
-                await middleware.on_request(mock_context, mock_call_next)
+        with pytest.raises(ValueError):
+            await middleware.on_request(mock_context, mock_call_next)
 
         assert "Request test_method failed after" in caplog.text
         assert "ms: test error" in caplog.text
@@ -85,8 +82,7 @@ class TestDetailedTimingMiddleware:
         context.message.name = "test_tool"
         mock_call_next = AsyncMock(return_value="tool_result")
 
-        with caplog_for_fastmcp(caplog):
-            result = await middleware.on_call_tool(context, mock_call_next)
+        result = await middleware.on_call_tool(context, mock_call_next)
 
         assert result == "tool_result"
         assert "Tool 'test_tool' completed in" in caplog.text
@@ -98,8 +94,7 @@ class TestDetailedTimingMiddleware:
         context.message.uri = "test://resource"
         mock_call_next = AsyncMock(return_value="resource_result")
 
-        with caplog_for_fastmcp(caplog):
-            result = await middleware.on_read_resource(context, mock_call_next)
+        result = await middleware.on_read_resource(context, mock_call_next)
 
         assert result == "resource_result"
         assert "Resource 'test://resource' completed in" in caplog.text
@@ -111,8 +106,7 @@ class TestDetailedTimingMiddleware:
         context.message.name = "test_prompt"
         mock_call_next = AsyncMock(return_value="prompt_result")
 
-        with caplog_for_fastmcp(caplog):
-            result = await middleware.on_get_prompt(context, mock_call_next)
+        result = await middleware.on_get_prompt(context, mock_call_next)
 
         assert result == "prompt_result"
         assert "Prompt 'test_prompt' completed in" in caplog.text
@@ -123,8 +117,7 @@ class TestDetailedTimingMiddleware:
         context = MagicMock()
         mock_call_next = AsyncMock(return_value="tools_result")
 
-        with caplog_for_fastmcp(caplog):
-            result = await middleware.on_list_tools(context, mock_call_next)
+        result = await middleware.on_list_tools(context, mock_call_next)
 
         assert result == "tools_result"
         assert "List tools completed in" in caplog.text
@@ -136,9 +129,8 @@ class TestDetailedTimingMiddleware:
         context.message.name = "failing_tool"
         mock_call_next = AsyncMock(side_effect=RuntimeError("operation failed"))
 
-        with caplog_for_fastmcp(caplog):
-            with pytest.raises(RuntimeError):
-                await middleware.on_call_tool(context, mock_call_next)
+        with pytest.raises(RuntimeError):
+            await middleware.on_call_tool(context, mock_call_next)
 
         assert "Tool 'failing_tool' failed after" in caplog.text
         assert "ms: operation failed" in caplog.text
@@ -195,16 +187,15 @@ class TestTimingMiddlewareIntegration:
         """Test that timing middleware accurately measures tool execution times."""
         timing_server.add_middleware(TimingMiddleware())
 
-        with caplog_for_fastmcp(caplog):
-            async with Client(timing_server) as client:
-                # Test instant task
-                await client.call_tool("instant_task")
+        async with Client(timing_server) as client:
+            # Test instant task
+            await client.call_tool("instant_task")
 
-                # Test short task (0.1s)
-                await client.call_tool("short_task")
+            # Test short task (0.1s)
+            await client.call_tool("short_task")
 
-                # Test medium task (0.15s)
-                await client.call_tool("medium_task")
+            # Test medium task (0.15s)
+            await client.call_tool("medium_task")
 
         log_text = caplog.text
 
@@ -226,11 +217,10 @@ class TestTimingMiddlewareIntegration:
         """Test that timing middleware measures time even for failed operations."""
         timing_server.add_middleware(TimingMiddleware())
 
-        with caplog_for_fastmcp(caplog):
-            async with Client(timing_server) as client:
-                # This should fail but still be timed
-                with pytest.raises(Exception):
-                    await client.call_tool("failing_task")
+        async with Client(timing_server) as client:
+            # This should fail but still be timed
+            with pytest.raises(Exception):
+                await client.call_tool("failing_task")
 
         # Should log the failure with timing
         assert "tools/call failed after" in caplog.text
@@ -242,21 +232,20 @@ class TestTimingMiddlewareIntegration:
         """Test that detailed timing middleware provides operation-specific timing."""
         timing_server.add_middleware(DetailedTimingMiddleware())
 
-        with caplog_for_fastmcp(caplog):
-            async with Client(timing_server) as client:
-                # Test tool call
-                await client.call_tool("short_task")
+        async with Client(timing_server) as client:
+            # Test tool call
+            await client.call_tool("short_task")
 
-                # Test resource read
-                await client.read_resource("timer://test")
+            # Test resource read
+            await client.read_resource("timer://test")
 
-                # Test prompt
-                await client.get_prompt("test_prompt")
+            # Test prompt
+            await client.get_prompt("test_prompt")
 
-                # Test listing operations
-                await client.list_tools()
-                await client.list_resources()
-                await client.list_prompts()
+            # Test listing operations
+            await client.list_tools()
+            await client.list_resources()
+            await client.list_prompts()
 
         log_text = caplog.text
 
@@ -272,16 +261,15 @@ class TestTimingMiddlewareIntegration:
         """Test timing middleware with concurrent operations."""
         timing_server.add_middleware(TimingMiddleware())
 
-        with caplog_for_fastmcp(caplog):
-            async with Client(timing_server) as client:
-                # Run multiple operations concurrently
-                tasks = [
-                    client.call_tool("instant_task"),
-                    client.call_tool("short_task"),
-                    client.call_tool("instant_task"),
-                ]
+        async with Client(timing_server) as client:
+            # Run multiple operations concurrently
+            tasks = [
+                client.call_tool("instant_task"),
+                client.call_tool("short_task"),
+                client.call_tool("instant_task"),
+            ]
 
-                await asyncio.gather(*tasks)
+            await asyncio.gather(*tasks)
 
         log_text = caplog.text
 

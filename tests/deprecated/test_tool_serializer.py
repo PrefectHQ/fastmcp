@@ -15,7 +15,7 @@ from fastmcp.contrib.mcp_mixin import mcp_tool
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools.tool import Tool, _convert_to_content
 from fastmcp.tools.tool_transform import TransformedTool
-from fastmcp.utilities.tests import caplog_for_fastmcp, temporary_settings
+from fastmcp.utilities.tests import temporary_settings
 
 # Reset deprecation warnings for this module
 pytestmark = pytest.mark.filterwarnings("default::DeprecationWarning")
@@ -60,10 +60,7 @@ class TestToolSerializerDeprecated:
         def custom_serializer_that_fails(data):
             raise ValueError("Serialization failed")
 
-        with caplog_for_fastmcp(caplog):
-            result = _convert_to_content(
-                {"a": 1}, serializer=custom_serializer_that_fails
-            )
+        result = _convert_to_content({"a": 1}, serializer=custom_serializer_that_fails)
 
         assert isinstance(result, list)
         assert result == snapshot([TextContent(type="text", text='{"a":1}')])

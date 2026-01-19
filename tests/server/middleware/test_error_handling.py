@@ -12,7 +12,6 @@ from fastmcp.server.middleware.error_handling import (
     RetryMiddleware,
 )
 from fastmcp.server.middleware.middleware import MiddlewareContext
-from fastmcp.utilities.tests import caplog_for_fastmcp
 
 
 @pytest.fixture
@@ -62,9 +61,8 @@ class TestErrorHandlingMiddleware:
         middleware = ErrorHandlingMiddleware()
         error = ValueError("test error")
 
-        with caplog_for_fastmcp(caplog):
-            with caplog.at_level(logging.ERROR):
-                middleware._log_error(error, mock_context)
+        with caplog.at_level(logging.ERROR):
+            middleware._log_error(error, mock_context)
 
         assert "Error in test_method: ValueError: test error" in caplog.text
         assert "ValueError:test_method" in middleware.error_counts
@@ -75,9 +73,8 @@ class TestErrorHandlingMiddleware:
         middleware = ErrorHandlingMiddleware(include_traceback=True)
         error = ValueError("test error")
 
-        with caplog_for_fastmcp(caplog):
-            with caplog.at_level(logging.ERROR):
-                middleware._log_error(error, mock_context)
+        with caplog.at_level(logging.ERROR):
+            middleware._log_error(error, mock_context)
 
         assert "Error in test_method: ValueError: test error" in caplog.text
         # The traceback is added to the log message
@@ -99,9 +96,8 @@ class TestErrorHandlingMiddleware:
         middleware = ErrorHandlingMiddleware(error_callback=callback)
         error = ValueError("test error")
 
-        with caplog_for_fastmcp(caplog):
-            with caplog.at_level(logging.ERROR):
-                middleware._log_error(error, mock_context)
+        with caplog.at_level(logging.ERROR):
+            middleware._log_error(error, mock_context)
 
         assert "Error in error callback: callback error" in caplog.text
 
@@ -205,10 +201,9 @@ class TestErrorHandlingMiddleware:
         middleware = ErrorHandlingMiddleware()
         mock_call_next = AsyncMock(side_effect=ValueError("test error"))
 
-        with caplog_for_fastmcp(caplog):
-            with caplog.at_level(logging.ERROR):
-                with pytest.raises(McpError) as exc_info:
-                    await middleware.on_message(mock_context, mock_call_next)
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(McpError) as exc_info:
+                await middleware.on_message(mock_context, mock_call_next)
 
         assert isinstance(exc_info.value, McpError)
         assert exc_info.value.error.code == -32602
@@ -222,10 +217,9 @@ class TestErrorHandlingMiddleware:
         tool_error.__cause__ = ValueError()
         mock_call_next = AsyncMock(side_effect=tool_error)
 
-        with caplog_for_fastmcp(caplog):
-            with caplog.at_level(logging.ERROR):
-                with pytest.raises(McpError) as exc_info:
-                    await middleware.on_message(mock_context, mock_call_next)
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(McpError) as exc_info:
+                await middleware.on_message(mock_context, mock_call_next)
 
         assert isinstance(exc_info.value, McpError)
         assert exc_info.value.error.code == -32602
@@ -327,9 +321,8 @@ class TestRetryMiddleware:
             ]
         )
 
-        with caplog_for_fastmcp(caplog):
-            with caplog.at_level(logging.WARNING):
-                result = await middleware.on_request(mock_context, mock_call_next)
+        with caplog.at_level(logging.WARNING):
+            result = await middleware.on_request(mock_context, mock_call_next)
 
         assert result == "test_result"
         assert mock_call_next.call_count == 3
@@ -342,10 +335,9 @@ class TestRetryMiddleware:
         # Fail all attempts
         mock_call_next = AsyncMock(side_effect=ConnectionError("connection failed"))
 
-        with caplog_for_fastmcp(caplog):
-            with caplog.at_level(logging.WARNING):
-                with pytest.raises(ConnectionError):
-                    await middleware.on_request(mock_context, mock_call_next)
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(ConnectionError):
+                await middleware.on_request(mock_context, mock_call_next)
 
         assert mock_call_next.call_count == 3  # initial + 2 retries
         assert "Retrying in" in caplog.text
@@ -421,19 +413,14 @@ class TestErrorHandlingMiddlewareIntegration:
 
         error_handling_server.add_middleware(ErrorHandlingMiddleware())
 
-        with caplog_for_fastmcp(caplog):
-            with caplog.at_level(logging.ERROR):
-                async with Client(error_handling_server) as client:
-                    # Test different types of errors
-                    with pytest.raises(Exception):
-                        await client.call_tool(
-                            "failing_operation", {"error_type": "value"}
-                        )
+        with caplog.at_level(logging.ERROR):
+            async with Client(error_handling_server) as client:
+                # Test different types of errors
+                with pytest.raises(Exception):
+                    await client.call_tool("failing_operation", {"error_type": "value"})
 
-                    with pytest.raises(Exception):
-                        await client.call_tool(
-                            "failing_operation", {"error_type": "file"}
-                        )
+                with pytest.raises(Exception):
+                    await client.call_tool("failing_operation", {"error_type": "file"})
 
         log_text = caplog.text
 
@@ -462,12 +449,12 @@ class TestErrorHandlingMiddlewareIntegration:
                 with pytest.raises(Exception):
                     await client.call_tool("failing_operation", {"error_type": "file"})
 
-            # Try some intermittent operations (some may succeed)
-            for _ in range(5):
-                try:
-                    await client.call_tool("intermittent_operation", {"fail_rate": 0.8})
-                except Exception:
-                    pass  # Expected failures
+        # Try some intermittent operations (some may succeed)
+        for _ in range(5):
+            try:
+                await client.call_tool("intermittent_operation", {"fail_rate": 0.8})
+            except Exception:
+                pass  # Expected failures
 
         # Check error statistics
         stats = error_middleware.get_error_stats()
@@ -484,20 +471,17 @@ class TestErrorHandlingMiddlewareIntegration:
 
         error_handling_server.add_middleware(ErrorHandlingMiddleware())
 
-        with caplog_for_fastmcp(caplog):
-            with caplog.at_level(logging.ERROR):
-                async with Client(error_handling_server) as client:
-                    # Successful operation (should not generate error logs)
-                    await client.call_tool("reliable_operation", {"data": "test"})
+        with caplog.at_level(logging.ERROR):
+            async with Client(error_handling_server) as client:
+                # Successful operation (should not generate error logs)
+                await client.call_tool("reliable_operation", {"data": "test"})
 
-                    # Failed operation (should generate error log)
-                    with pytest.raises(Exception):
-                        await client.call_tool(
-                            "failing_operation", {"error_type": "value"}
-                        )
+                # Failed operation (should generate error log)
+                with pytest.raises(Exception):
+                    await client.call_tool("failing_operation", {"error_type": "value"})
 
-                    # Another successful operation
-                    await client.call_tool("reliable_operation", {"data": "test2"})
+                # Another successful operation
+                await client.call_tool("reliable_operation", {"data": "test2"})
 
         log_text = caplog.text
 
@@ -555,8 +539,8 @@ class TestErrorHandlingMiddlewareIntegration:
             with pytest.raises(Exception) as exc_info:
                 await client.call_tool("failing_operation", {"error_type": "value"})
 
-            # Error should still exist (may be wrapped by FastMCP)
-            assert exc_info.value is not None
+        # Error should still exist (may be wrapped by FastMCP)
+        assert exc_info.value is not None
 
 
 class TestRetryMiddlewareIntegration:
@@ -577,19 +561,18 @@ class TestRetryMiddlewareIntegration:
             )
         )
 
-        with caplog_for_fastmcp(caplog):
-            with caplog.at_level(logging.WARNING):
-                async with Client(error_handling_server) as client:
-                    # This operation fails intermittently - try several times
-                    success_count = 0
-                    for _ in range(5):
-                        try:
-                            await client.call_tool(
-                                "intermittent_operation", {"fail_rate": 0.7}
-                            )
-                            success_count += 1
-                        except Exception:
-                            pass  # Some failures expected even with retries
+        with caplog.at_level(logging.WARNING):
+            async with Client(error_handling_server) as client:
+                # This operation fails intermittently - try several times
+                success_count = 0
+                for _ in range(5):
+                    try:
+                        await client.call_tool(
+                            "intermittent_operation", {"fail_rate": 0.7}
+                        )
+                        success_count += 1
+                    except Exception:
+                        pass  # Some failures expected even with retries
 
         # Should have some retry log messages
         # Note: Retry logs might not appear if the underlying errors are wrapped by FastMCP
@@ -613,7 +596,7 @@ class TestRetryMiddlewareIntegration:
             with pytest.raises(Exception):
                 await client.call_tool("failing_operation", {"error_type": "value"})
 
-            # Should fail immediately without retries
+        # Should fail immediately without retries
 
     async def test_combined_error_handling_and_retry_middleware(
         self, error_handling_server, caplog
@@ -629,22 +612,17 @@ class TestRetryMiddlewareIntegration:
             )
         )
 
-        with caplog_for_fastmcp(caplog):
-            with caplog.at_level(logging.ERROR):
-                async with Client(error_handling_server) as client:
-                    # Try intermittent operation
-                    try:
-                        await client.call_tool(
-                            "intermittent_operation", {"fail_rate": 0.9}
-                        )
-                    except Exception:
-                        pass  # May still fail even with retries
+        with caplog.at_level(logging.ERROR):
+            async with Client(error_handling_server) as client:
+                # Try intermittent operation
+                try:
+                    await client.call_tool("intermittent_operation", {"fail_rate": 0.9})
+                except Exception:
+                    pass  # May still fail even with retries
 
-                    # Try permanent failure
-                    with pytest.raises(Exception):
-                        await client.call_tool(
-                            "failing_operation", {"error_type": "value"}
-                        )
+                # Try permanent failure
+                with pytest.raises(Exception):
+                    await client.call_tool("failing_operation", {"error_type": "value"})
 
         log_text = caplog.text
 

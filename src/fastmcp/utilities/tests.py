@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import logging
 import multiprocessing
 import socket
 import time
@@ -12,7 +11,6 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import uvicorn
-from pytest import LogCaptureFixture
 
 from fastmcp import settings
 from fastmcp.client.auth.oauth import OAuth
@@ -222,20 +220,6 @@ async def run_server_async(
         server_task.cancel()
         with suppress(asyncio.CancelledError, asyncio.TimeoutError):
             await asyncio.wait_for(server_task, timeout=2.0)
-
-
-@contextmanager
-def caplog_for_fastmcp(
-    caplog: LogCaptureFixture,
-) -> Generator[LogCaptureFixture, None, None]:
-    """Context manager to capture logs from FastMCP loggers even when propagation is disabled."""
-    caplog.clear()
-    logger = logging.getLogger("fastmcp")
-    logger.addHandler(caplog.handler)
-    try:
-        yield caplog
-    finally:
-        logger.removeHandler(caplog.handler)
 
 
 class HeadlessOAuth(OAuth):
