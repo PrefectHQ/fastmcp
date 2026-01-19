@@ -672,6 +672,49 @@ Documentation: [FileSystemProvider](/servers/providers/filesystem)
 
 ---
 
+## SkillsProvider
+
+v3.0 introduces `SkillsProvider` for exposing agent skills as MCP resources ([#2944](https://github.com/jlowin/fastmcp/pull/2944)). Skills are directories containing instructions and supporting files that teach AI assistants how to perform tasks—used by Claude Code, Cursor, VS Code Copilot, and other AI coding tools.
+
+**Usage**:
+
+```python
+from pathlib import Path
+from fastmcp import FastMCP
+from fastmcp.server.providers.skills import SkillsDirectoryProvider
+
+mcp = FastMCP("Skills Server")
+mcp.add_provider(SkillsDirectoryProvider(roots=Path.home() / ".claude" / "skills"))
+```
+
+Each subdirectory with a `SKILL.md` file becomes a discoverable skill. Clients see:
+- `skill://{name}/SKILL.md` - Main instruction file
+- `skill://{name}/_manifest` - JSON listing of all files with sizes and hashes
+- `skill://{name}/{path}` - Supporting files (via template or resources)
+
+**Two-layer architecture**:
+- `SkillProvider` - Handles a single skill folder
+- `SkillsDirectoryProvider` - Scans directories, creates a `SkillProvider` per valid skill
+
+**Vendor providers** with locked default paths:
+
+| Provider | Directory |
+|----------|-----------|
+| `ClaudeSkillsProvider` | `~/.claude/skills/` |
+| `CursorSkillsProvider` | `~/.cursor/skills/` |
+| `VSCodeSkillsProvider` | `~/.copilot/skills/` |
+| `CodexSkillsProvider` | `/etc/codex/skills/`, `~/.codex/skills/` |
+| `GeminiSkillsProvider` | `~/.gemini/skills/` |
+| `GooseSkillsProvider` | `~/.config/agents/skills/` |
+| `CopilotSkillsProvider` | `~/.copilot/skills/` |
+| `OpenCodeSkillsProvider` | `~/.config/opencode/skills/` |
+
+**Progressive disclosure**: By default, supporting files are hidden from `list_resources()` and accessed via template. Set `supporting_files="resources"` for full enumeration.
+
+Documentation: [Skills Provider](/servers/providers/skills)
+
+---
+
 ## OpenTelemetry Tracing
 
 v3.0 adds OpenTelemetry instrumentation for observability into server and client operations ([#2869](https://github.com/jlowin/fastmcp/pull/2869)).
