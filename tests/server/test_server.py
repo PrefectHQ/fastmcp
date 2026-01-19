@@ -112,7 +112,7 @@ class TestServerDelegation:
         def local_tool() -> str:
             return "local"
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert any(t.name == "local_tool" for t in tools)
 
 
@@ -141,8 +141,8 @@ class TestResourcePrefixMounting:
         main_server.mount(server, "prefix")
 
         # Check that the resources are mounted with the correct prefixes
-        resources = await main_server.get_resources()
-        templates = await main_server.get_resource_templates()
+        resources = await main_server.list_resources()
+        templates = await main_server.list_resource_templates()
 
         assert any(str(r.uri) == "resource://prefix/test-resource" for r in resources)
         assert any(str(r.uri) == "resource://prefix//absolute/path" for r in resources)

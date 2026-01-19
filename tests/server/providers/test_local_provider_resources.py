@@ -140,7 +140,7 @@ class TestResourceTemplates:
         def add(x: int, y: int = 10) -> str:
             return str(int(x) + y)
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert len(templates) == 1
         assert templates[0].uri_template == "math://add/{x}"
 
@@ -158,7 +158,7 @@ class TestResourceTemplates:
         def get_data(name: str) -> str:
             return f"Data for {name}"
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert len(templates) == 1
         assert templates[0].uri_template == "resource://{name}/data"
 
@@ -172,7 +172,7 @@ class TestResourceTemplates:
         def template_resource(param: str) -> str:
             return f"Template resource: {param}"
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         template = next(t for t in templates if t.uri_template == "resource://{param}")
         assert template.tags == {"template", "test-tag"}
 
@@ -250,7 +250,7 @@ class TestResourceTemplates:
         def get_user(user_id: str) -> str:
             return f"User {user_id} data"
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert len(templates) == 1
 
         template = templates[0]
@@ -330,7 +330,7 @@ class TestResourceDecorator:
         def get_data() -> str:
             return "Hello, world!"
 
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert len(resources) == 1
         assert resources[0].name == "custom-data"
 
@@ -344,7 +344,7 @@ class TestResourceDecorator:
         def get_data() -> str:
             return "Hello, world!"
 
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert len(resources) == 1
         assert resources[0].description == "Data resource"
 
@@ -356,7 +356,7 @@ class TestResourceDecorator:
         def get_data() -> str:
             return "Hello, world!"
 
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert len(resources) == 1
         assert resources[0].tags == {"example", "test-tag"}
 
@@ -456,7 +456,7 @@ class TestResourceDecorator:
         def get_data() -> str:
             return "Hello, world!"
 
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         resource = next(r for r in resources if str(r.uri) == "resource://data")
 
         assert resource.meta == meta_data
@@ -525,7 +525,7 @@ class TestTemplateDecorator:
         def get_data(name: str) -> str:
             return f"Data for {name}"
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert len(templates) == 1
         assert templates[0].name == "get_data"
         assert templates[0].uri_template == "resource://{name}/data"
@@ -551,7 +551,7 @@ class TestTemplateDecorator:
         def get_data(name: str) -> str:
             return f"Data for {name}"
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert len(templates) == 1
         assert templates[0].name == "custom-template"
 
@@ -565,7 +565,7 @@ class TestTemplateDecorator:
         def get_data(name: str) -> str:
             return f"Data for {name}"
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert len(templates) == 1
         assert templates[0].description == "Template description"
 
@@ -640,7 +640,7 @@ class TestTemplateDecorator:
         def template_resource(param: str) -> str:
             return f"Template resource: {param}"
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         template = next(t for t in templates if t.uri_template == "resource://{param}")
         assert template.tags == {"template", "test-tag"}
 
@@ -651,7 +651,7 @@ class TestTemplateDecorator:
         def template_resource(param: str) -> str:
             return f"Template resource: {param}"
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         template = next(t for t in templates if t.uri_template == "resource://{param*}")
         assert template.uri_template == "resource://{param*}"
         assert template.name == "template_resource"
@@ -666,7 +666,7 @@ class TestTemplateDecorator:
         def get_template_data(param: str) -> str:
             return f"Data for {param}"
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         template = next(
             t for t in templates if t.uri_template == "resource://{param}/data"
         )
@@ -690,27 +690,27 @@ class TestResourceTags:
 
     async def test_include_tags_all_resources(self):
         mcp = self.create_server(include_tags={"a", "b"})
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert {r.name for r in resources} == {"resource_1", "resource_2"}
 
     async def test_include_tags_some_resources(self):
         mcp = self.create_server(include_tags={"a", "z"})
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert {r.name for r in resources} == {"resource_1"}
 
     async def test_exclude_tags_all_resources(self):
         mcp = self.create_server(exclude_tags={"a", "b"})
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert {r.name for r in resources} == set()
 
     async def test_exclude_tags_some_resources(self):
         mcp = self.create_server(exclude_tags={"a"})
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert {r.name for r in resources} == {"resource_2"}
 
     async def test_exclude_precedence(self):
         mcp = self.create_server(exclude_tags={"a"}, include_tags={"b"})
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert {r.name for r in resources} == {"resource_2"}
 
     async def test_read_included_resource(self):
@@ -735,17 +735,17 @@ class TestResourceEnabled:
         def sample_resource() -> str:
             return "Hello, world!"
 
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert any(str(r.uri) == "resource://data" for r in resources)
 
         mcp.disable(names={"resource://data"}, components=["resource"])
 
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert not any(str(r.uri) == "resource://data" for r in resources)
 
         mcp.enable(names={"resource://data"}, components=["resource"])
 
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert any(str(r.uri) == "resource://data" for r in resources)
 
     async def test_resource_disabled(self):
@@ -756,7 +756,7 @@ class TestResourceEnabled:
             return "Hello, world!"
 
         mcp.disable(names={"resource://data"}, components=["resource"])
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert len(resources) == 0
 
         with pytest.raises(NotFoundError, match="Unknown resource"):
@@ -770,11 +770,11 @@ class TestResourceEnabled:
             return "Hello, world!"
 
         mcp.disable(names={"resource://data"}, components=["resource"])
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert not any(str(r.uri) == "resource://data" for r in resources)
 
         mcp.enable(names={"resource://data"}, components=["resource"])
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert len(resources) == 1
 
     async def test_resource_toggle_disabled(self):
@@ -785,7 +785,7 @@ class TestResourceEnabled:
             return "Hello, world!"
 
         mcp.disable(names={"resource://data"}, components=["resource"])
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert len(resources) == 0
 
         with pytest.raises(NotFoundError, match="Unknown resource"):
@@ -802,7 +802,7 @@ class TestResourceEnabled:
         assert resource is not None
 
         mcp.disable(names={"resource://data"}, components=["resource"])
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert len(resources) == 0
 
         with pytest.raises(NotFoundError, match="Unknown resource"):
@@ -837,7 +837,7 @@ class TestResourceTemplatesTags:
 
     async def test_include_tags_all_resources(self):
         mcp = self.create_server(include_tags={"a", "b"})
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert {t.name for t in templates} == {
             "template_resource_1",
             "template_resource_2",
@@ -845,22 +845,22 @@ class TestResourceTemplatesTags:
 
     async def test_include_tags_some_resources(self):
         mcp = self.create_server(include_tags={"a"})
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert {t.name for t in templates} == {"template_resource_1"}
 
     async def test_exclude_tags_all_resources(self):
         mcp = self.create_server(exclude_tags={"a", "b"})
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert {t.name for t in templates} == set()
 
     async def test_exclude_tags_some_resources(self):
         mcp = self.create_server(exclude_tags={"a"})
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert {t.name for t in templates} == {"template_resource_2"}
 
     async def test_exclude_takes_precedence_over_include(self):
         mcp = self.create_server(exclude_tags={"a"}, include_tags={"b"})
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert {t.name for t in templates} == {"template_resource_2"}
 
     async def test_read_resource_template_includes_tags(self):
@@ -888,17 +888,17 @@ class TestResourceTemplateEnabled:
         def sample_template(param: str) -> str:
             return f"Template: {param}"
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert any(t.uri_template == "resource://{param}" for t in templates)
 
         mcp.disable(names={"resource://{param}"}, components=["template"])
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert not any(t.uri_template == "resource://{param}" for t in templates)
 
         mcp.enable(names={"resource://{param}"}, components=["template"])
 
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert any(t.uri_template == "resource://{param}" for t in templates)
 
     async def test_template_disabled(self):
@@ -909,7 +909,7 @@ class TestResourceTemplateEnabled:
             return f"Template: {param}"
 
         mcp.disable(names={"resource://{param}"}, components=["template"])
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert len(templates) == 0
 
         with pytest.raises(NotFoundError, match="Unknown resource"):
@@ -923,11 +923,11 @@ class TestResourceTemplateEnabled:
             return f"Template: {param}"
 
         mcp.disable(names={"resource://{param}"}, components=["template"])
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert not any(t.uri_template == "resource://{param}" for t in templates)
 
         mcp.enable(names={"resource://{param}"}, components=["template"])
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert len(templates) == 1
 
     async def test_template_toggle_disabled(self):
@@ -938,7 +938,7 @@ class TestResourceTemplateEnabled:
             return f"Template: {param}"
 
         mcp.disable(names={"resource://{param}"}, components=["template"])
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert len(templates) == 0
 
         with pytest.raises(NotFoundError, match="Unknown resource"):
@@ -955,7 +955,7 @@ class TestResourceTemplateEnabled:
         assert template is not None
 
         mcp.disable(names={"resource://{param}"}, components=["template"])
-        templates = await mcp.get_resource_templates()
+        templates = await mcp.list_resource_templates()
         assert len(templates) == 0
 
         with pytest.raises(NotFoundError, match="Unknown resource"):

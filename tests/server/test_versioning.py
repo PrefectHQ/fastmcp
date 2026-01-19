@@ -92,7 +92,7 @@ class TestComponentVersioning:
         def my_tool(x: int) -> int:
             return x * 2
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         assert tools[0].name == "my_tool"
         assert tools[0].version == "2.0"
@@ -106,7 +106,7 @@ class TestComponentVersioning:
         def my_tool(x: int) -> int:
             return x * 2
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         assert tools[0].version is None
         # Keys always have @ sentinel for unambiguous parsing
@@ -120,7 +120,7 @@ class TestComponentVersioning:
         def my_tool(x: int) -> int:
             return x * 2
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         assert tools[0].version == "2"
         assert tools[0].key == "tool:my_tool@2"
@@ -133,13 +133,13 @@ class TestComponentVersioning:
         def my_tool(x: int) -> int:
             return x * 2
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         assert tools[0].version == "0"
         assert tools[0].key == "tool:my_tool@0"  # Not "tool:my_tool@"
 
-    async def test_multiple_tool_versions_deduplicated(self):
-        """Multiple versions of same tool should deduplicate to highest."""
+    async def test_multiple_tool_versions_all_returned(self):
+        """list_tools returns all versions; get_tool returns highest."""
         mcp = FastMCP()
 
         @mcp.tool(version="1.0")
@@ -150,11 +150,16 @@ class TestComponentVersioning:
         def add(x: int, y: int, z: int = 0) -> int:
             return x + y + z
 
-        tools = await mcp.get_tools()
-        # Should only show the highest version
-        assert len(tools) == 1
-        assert tools[0].name == "add"
-        assert tools[0].version == "2.0"
+        # list_tools returns all versions
+        tools = await mcp.list_tools()
+        assert len(tools) == 2
+        versions = {t.version for t in tools}
+        assert versions == {"1.0", "2.0"}
+
+        # get_tool returns highest version
+        tool = await mcp.get_tool("add")
+        assert tool is not None
+        assert tool.version == "2.0"
 
     async def test_call_tool_invokes_highest_version(self):
         """Calling a tool by name should invoke the highest version."""
@@ -211,17 +216,24 @@ class TestComponentVersioning:
         """Resource version should work like tool version."""
         mcp = FastMCP()
 
-        @mcp.resource("file://config", version="1.0")
+        @mcp.resource("file:///config", version="1.0")
         def config_v1() -> str:
             return "config v1"
 
-        @mcp.resource("file://config", version="2.0")
+        @mcp.resource("file:///config", version="2.0")
         def config_v2() -> str:
             return "config v2"
 
-        resources = await mcp.get_resources()
-        assert len(resources) == 1
-        assert resources[0].version == "2.0"
+        # list_resources returns all versions
+        resources = await mcp.list_resources()
+        assert len(resources) == 2
+        versions = {r.version for r in resources}
+        assert versions == {"1.0", "2.0"}
+
+        # get_resource returns highest version
+        resource = await mcp.get_resource("file:///config")
+        assert resource is not None
+        assert resource.version == "2.0"
 
     async def test_prompt_with_version(self):
         """Prompt version should work like tool version."""
@@ -235,9 +247,16 @@ class TestComponentVersioning:
         def greet(name: str) -> str:
             return f"Greetings, {name}!"
 
-        prompts = await mcp.get_prompts()
-        assert len(prompts) == 1
-        assert prompts[0].version == "2.0"
+        # list_prompts returns all versions
+        prompts = await mcp.list_prompts()
+        assert len(prompts) == 2
+        versions = {p.version for p in prompts}
+        assert versions == {"1.0", "2.0"}
+
+        # get_prompt returns highest version
+        prompt = await mcp.get_prompt("greet")
+        assert prompt is not None
+        assert prompt.version == "2.0"
 
 
 class TestVersionSorting:
@@ -260,11 +279,18 @@ class TestVersionSorting:
         def count() -> int:
             return 2
 
-        tools = await mcp.get_tools()
-        # Should keep v10 as highest (semantic: 10 > 2 > 1)
-        assert len(tools) == 1
-        assert tools[0].version == "10"
+        # list_tools returns all versions
+        tools = await mcp.list_tools()
+        assert len(tools) == 3
+        versions = {t.version for t in tools}
+        assert versions == {"1", "2", "10"}
 
+        # get_tool returns highest (semantic: 10 > 2 > 1)
+        tool = await mcp.get_tool("count")
+        assert tool is not None
+        assert tool.version == "10"
+
+        # call_tool uses highest version
         result = await mcp.call_tool("count", {})
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "10"
@@ -285,10 +311,16 @@ class TestVersionSorting:
         def info() -> str:
             return "1.10.1"
 
-        tools = await mcp.get_tools()
-        assert len(tools) == 1
-        # 1.10.1 > 1.2.10 > 1.2.3 (semantic)
-        assert tools[0].version == "1.10.1"
+        # list_tools returns all versions
+        tools = await mcp.list_tools()
+        assert len(tools) == 3
+        versions = {t.version for t in tools}
+        assert versions == {"1.2.3", "1.2.10", "1.10.1"}
+
+        # get_tool returns highest: 1.10.1 > 1.2.10 > 1.2.3 (semantic)
+        tool = await mcp.get_tool("info")
+        assert tool is not None
+        assert tool.version == "1.10.1"
 
     async def test_v_prefix_normalized(self):
         """Versions with 'v' prefix should compare correctly."""
@@ -302,9 +334,16 @@ class TestVersionSorting:
         def calc() -> int:
             return 2
 
-        tools = await mcp.get_tools()
-        assert len(tools) == 1
-        assert tools[0].version == "v2.0"
+        # list_tools returns all versions
+        tools = await mcp.list_tools()
+        assert len(tools) == 2
+        versions = {t.version for t in tools}
+        assert versions == {"v1.0", "v2.0"}
+
+        # get_tool returns highest
+        tool = await mcp.get_tool("calc")
+        assert tool is not None
+        assert tool.version == "v2.0"
 
 
 class TestMountedServerVersioning:
@@ -321,7 +360,7 @@ class TestMountedServerVersioning:
         parent = FastMCP("Parent")
         parent.mount(child, "child")
 
-        tools = await parent.get_tools()
+        tools = await parent.list_tools()
         assert len(tools) == 1
         assert tools[0].name == "child_add"
         assert tools[0].version == "2.0"
@@ -330,14 +369,14 @@ class TestMountedServerVersioning:
         """Mounted resources should preserve their version info."""
         child = FastMCP("Child")
 
-        @child.resource("file://config", version="1.5")
+        @child.resource("file:///config", version="1.5")
         def config() -> str:
             return "config data"
 
         parent = FastMCP("Parent")
         parent.mount(child, "child")
 
-        resources = await parent.get_resources()
+        resources = await parent.list_resources()
         assert len(resources) == 1
         assert resources[0].version == "1.5"
 
@@ -352,7 +391,7 @@ class TestMountedServerVersioning:
         parent = FastMCP("Parent")
         parent.mount(child, "child")
 
-        prompts = await parent.get_prompts()
+        prompts = await parent.list_prompts()
         assert len(prompts) == 1
         assert prompts[0].name == "child_greet"
         assert prompts[0].version == "3.0"
@@ -382,8 +421,8 @@ class TestMountedServerVersioning:
         assert tool_v1 is not None
         assert tool_v1.version == "1.0"
 
-    async def test_mounted_multiple_versions_deduplicates(self):
-        """Mounted server with multiple versions should show only highest."""
+    async def test_mounted_multiple_versions_all_returned(self):
+        """Mounted server with multiple versions should show all versions."""
         child = FastMCP("Child")
 
         @child.tool(version="1.0")
@@ -401,9 +440,16 @@ class TestMountedServerVersioning:
         parent = FastMCP("Parent")
         parent.mount(child, "child")
 
-        tools = await parent.get_tools()
-        assert len(tools) == 1
-        assert tools[0].version == "3.0"
+        # list_tools returns all versions
+        tools = await parent.list_tools()
+        assert len(tools) == 3
+        versions = {t.version for t in tools}
+        assert versions == {"1.0", "2.0", "3.0"}
+
+        # get_tool returns highest
+        tool = await parent.get_tool("child_my_tool")
+        assert tool is not None
+        assert tool.version == "3.0"
 
     async def test_mounted_call_tool_uses_highest_version(self):
         """Calling mounted tool should use highest version."""
@@ -424,6 +470,124 @@ class TestMountedServerVersioning:
         # Should use v2.0 which adds 100
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "110"
+
+    async def test_mounted_tool_wrapper_executes_correct_version(self):
+        """Calling a specific versioned tool wrapper should execute that version."""
+        child = FastMCP("Child")
+
+        @child.tool(version="1.0")
+        def calc(x: int) -> int:
+            return x * 10  # v1.0 multiplies by 10
+
+        @child.tool(version="2.0")
+        def calc(x: int) -> int:
+            return x * 100  # v2.0 multiplies by 100
+
+        parent = FastMCP("Parent")
+        parent.mount(child, "child")
+
+        # Get the v1.0 wrapper specifically
+        tools = await parent.list_tools()
+        v1_tool = next(
+            t for t in tools if t.name == "child_calc" and t.version == "1.0"
+        )
+
+        # Calling the v1.0 wrapper should execute v1.0's logic
+        result = await v1_tool.run({"x": 5})
+        assert result.content[0].text == "50"  # 5 * 10, not 5 * 100
+
+    async def test_mounted_resource_wrapper_reads_correct_version(self):
+        """Reading a specific versioned resource should read that version."""
+        from fastmcp.utilities.versions import VersionSpec
+
+        child = FastMCP("Child")
+
+        @child.resource("data:///config", version="1.0")
+        def config_v1() -> str:
+            return "config-v1-content"
+
+        @child.resource("data:///config", version="2.0")
+        def config_v2() -> str:
+            return "config-v2-content"
+
+        parent = FastMCP("Parent")
+        parent.mount(child, "child")
+
+        # Reading with version=1.0 should read v1.0's content
+        result = await parent.read_resource(
+            "data://child//config", version=VersionSpec(eq="1.0")
+        )
+        assert result.contents[0].content == "config-v1-content"
+
+        # Reading with version=2.0 should read v2.0's content
+        result = await parent.read_resource(
+            "data://child//config", version=VersionSpec(eq="2.0")
+        )
+        assert result.contents[0].content == "config-v2-content"
+
+    async def test_mounted_prompt_wrapper_renders_correct_version(self):
+        """Rendering a specific versioned prompt should render that version."""
+        from fastmcp.utilities.versions import VersionSpec
+
+        child = FastMCP("Child")
+
+        @child.prompt(version="1.0")
+        def greeting(name: str) -> str:
+            return f"Hello, {name}!"  # v1.0 says Hello
+
+        @child.prompt(version="2.0")
+        def greeting(name: str) -> str:
+            return f"Greetings, {name}!"  # v2.0 says Greetings
+
+        parent = FastMCP("Parent")
+        parent.mount(child, "child")
+
+        # Rendering with version=1.0 should render v1.0's content
+        result = await parent.render_prompt(
+            "child_greeting", {"name": "World"}, version=VersionSpec(eq="1.0")
+        )
+        content = result.messages[0].content
+        assert isinstance(content, TextContent) and "Hello, World!" in content.text
+
+        # Rendering with version=2.0 should render v2.0's content
+        result = await parent.render_prompt(
+            "child_greeting", {"name": "World"}, version=VersionSpec(eq="2.0")
+        )
+        content = result.messages[0].content
+        assert isinstance(content, TextContent) and "Greetings, World!" in content.text
+
+    async def test_deeply_nested_version_forwarding(self):
+        """Verify version is correctly forwarded through multiple mount levels."""
+        level3 = FastMCP("Level3")
+
+        @level3.tool(version="1.0")
+        def calc(x: int) -> int:
+            return x * 10  # v1.0 multiplies by 10
+
+        @level3.tool(version="2.0")
+        def calc(x: int) -> int:
+            return x * 100  # v2.0 multiplies by 100
+
+        level2 = FastMCP("Level2")
+        level2.mount(level3, "l3")
+
+        level1 = FastMCP("Level1")
+        level1.mount(level2, "l2")
+
+        # All versions should be visible through two levels of mounting
+        tools = await level1.list_tools()
+        calc_tools = [t for t in tools if "calc" in t.name]
+        assert len(calc_tools) == 2
+        versions = {t.version for t in calc_tools}
+        assert versions == {"1.0", "2.0"}
+
+        # Get v1.0 wrapper through two levels of mounting
+        v1_tool = next(t for t in tools if "calc" in t.name and t.version == "1.0")
+
+        # Should execute v1.0 logic, not v2.0
+        result = await v1_tool.run({"x": 5})
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "50"  # 5 * 10, not 5 * 100
 
 
 class TestVersionFilter:
@@ -447,16 +611,21 @@ class TestVersionFilter:
         def calc() -> int:
             return 3
 
-        # Without filter, should show v3 (highest)
-        tools = await mcp.get_tools()
-        assert len(tools) == 1
-        assert tools[0].version == "3.0"
+        # Without filter, list_tools returns all versions
+        tools = await mcp.list_tools()
+        versions = {t.version for t in tools}
+        assert versions == {"1.0", "2.0", "3.0"}
 
-        # With filter, should show v2 (highest below 3.0)
+        # With filter, only v1 and v2 are visible
         mcp.add_transform(VersionFilter(version_lt="3.0"))
-        tools = await mcp.get_tools()
-        assert len(tools) == 1
-        assert tools[0].version == "2.0"
+        tools = await mcp.list_tools()
+        versions = {t.version for t in tools}
+        assert versions == {"1.0", "2.0"}
+
+        # get_tool returns highest matching version
+        tool = await mcp.get_tool("calc")
+        assert tool is not None
+        assert tool.version == "2.0"
 
     async def test_version_gte_filters_low_versions(self):
         """VersionFilter(version_gte='2.0') hides v1, shows v2 and v3."""
@@ -478,12 +647,17 @@ class TestVersionFilter:
 
         mcp.add_transform(VersionFilter(version_gte="2.0"))
 
-        # Should show v3 (highest >= 2.0)
-        tools = await mcp.get_tools()
-        assert len(tools) == 1
-        assert tools[0].version == "3.0"
+        # list_tools shows all matching versions (v2 and v3)
+        tools = await mcp.list_tools()
+        versions = {t.version for t in tools}
+        assert versions == {"2.0", "3.0"}
 
-        # Can request specific versions in range (use get_tool to apply transforms)
+        # get_tool returns highest matching version
+        tool = await mcp.get_tool("add")
+        assert tool is not None
+        assert tool.version == "3.0"
+
+        # Can request specific versions in range
         tool_v2 = await mcp.get_tool("add", VersionSpec(eq="2.0"))
         assert tool_v2 is not None
         assert tool_v2.version == "2.0"
@@ -515,12 +689,17 @@ class TestVersionFilter:
 
         mcp.add_transform(VersionFilter(version_gte="2.0", version_lt="3.0"))
 
-        # Should show v2.5 (highest in range)
-        tools = await mcp.get_tools()
-        assert len(tools) == 1
-        assert tools[0].version == "2.5"
+        # list_tools shows all versions in range
+        tools = await mcp.list_tools()
+        versions = {t.version for t in tools}
+        assert versions == {"2.0", "2.5"}
 
-        # Can request specific versions in range (use get_tool to apply transforms)
+        # get_tool returns highest in range
+        tool = await mcp.get_tool("calc")
+        assert tool is not None
+        assert tool.version == "2.5"
+
+        # Can request specific versions in range
         tool_v2 = await mcp.get_tool("calc", VersionSpec(eq="2.0"))
         assert tool_v2 is not None
         assert tool_v2.version == "2.0"
@@ -546,7 +725,7 @@ class TestVersionFilter:
         # Filter that would exclude v5.0
         mcp.add_transform(VersionFilter(version_lt="3.0"))
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         names = [t.name for t in tools]
         assert "unversioned_tool" in names
         assert "versioned_tool" not in names
@@ -572,7 +751,7 @@ class TestVersionFilter:
         # Q1 API: before April
         mcp.add_transform(VersionFilter(version_lt="2025-04-01"))
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         assert tools[0].version == "2025-01-01"
 
@@ -607,17 +786,17 @@ class TestVersionFilter:
 
         mcp = FastMCP()
 
-        @mcp.resource("file://config", version="1.0")
+        @mcp.resource("file:///config", version="1.0")
         def config_v1() -> str:
             return "v1"
 
-        @mcp.resource("file://config", version="2.0")
+        @mcp.resource("file:///config", version="2.0")
         def config_v2() -> str:
             return "v2"
 
         mcp.add_transform(VersionFilter(version_lt="2.0"))
 
-        resources = await mcp.get_resources()
+        resources = await mcp.list_resources()
         assert len(resources) == 1
         assert resources[0].version == "1.0"
 
@@ -637,7 +816,7 @@ class TestVersionFilter:
 
         mcp.add_transform(VersionFilter(version_lt="2.0"))
 
-        prompts = await mcp.get_prompts()
+        prompts = await mcp.list_prompts()
         assert len(prompts) == 1
         assert prompts[0].version == "1.0"
 
@@ -664,13 +843,13 @@ class TestVersionMixingValidation:
 
         mcp = FastMCP()
 
-        @mcp.resource("file://config", version="1.0")
+        @mcp.resource("file:///config", version="1.0")
         def config_v1() -> str:
             return "v1"
 
         with pytest.raises(ValueError, match="unversioned.*versioned"):
 
-            @mcp.resource("file://config")
+            @mcp.resource("file:///config")
             def config_unversioned() -> str:
                 return "unversioned"
 
@@ -706,10 +885,16 @@ class TestVersionMixingValidation:
         def calc() -> int:
             return 3
 
-        # All versioned - this should work
-        tools = await mcp.get_tools()
-        assert len(tools) == 1
-        assert tools[0].version == "3.0"
+        # All versioned - list_tools returns all
+        tools = await mcp.list_tools()
+        assert len(tools) == 3
+        versions = {t.version for t in tools}
+        assert versions == {"1.0", "2.0", "3.0"}
+
+        # get_tool returns highest
+        tool = await mcp.get_tool("calc")
+        assert tool is not None
+        assert tool.version == "3.0"
 
 
 class TestMountedVersionFiltering:
@@ -808,7 +993,7 @@ class TestMountedVersionFiltering:
         parent.add_transform(VersionFilter(version_lt="3.0"))
 
         # Unversioned should pass through
-        tools = await parent.get_tools()
+        tools = await parent.list_tools()
         assert len(tools) == 1
         assert tools[0].name == "child_unversioned_tool"
         assert tools[0].version is None
@@ -828,7 +1013,7 @@ class TestMountedVersionFiltering:
         parent.add_transform(VersionFilter(version_lt="3.0"))
 
         # v5.0 is outside the filter range, so it should be hidden
-        tools = await parent.get_tools()
+        tools = await parent.list_tools()
         assert len(tools) == 0
 
         # get_tool should also return None (respects filter, applies transforms)
@@ -914,7 +1099,7 @@ class TestUnversionedExemption:
         # Filter that would exclude v5.0
         mcp.add_transform(VersionFilter(version_lt="3.0"))
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         names = [t.name for t in tools]
 
         # Unversioned passes through (exempt from filtering)
@@ -972,7 +1157,7 @@ class TestVersionMetadata:
     """Tests for version metadata exposure in list operations."""
 
     async def test_tool_versions_in_meta(self):
-        """List tools should include versions list in meta."""
+        """Each version has its own version in metadata."""
         mcp = FastMCP()
 
         @mcp.tool(version="1.0")
@@ -983,16 +1168,17 @@ class TestVersionMetadata:
         def add(x: int, y: int) -> int:  # noqa: F811
             return x + y
 
-        tools = await mcp.get_tools()
-        assert len(tools) == 1
+        # list_tools returns all versions
+        tools = await mcp.list_tools()
+        assert len(tools) == 2
 
-        tool = tools[0]
-        meta = tool.get_meta()
-        assert meta["fastmcp"]["version"] == "2.0"
-        assert meta["fastmcp"]["versions"] == ["2.0", "1.0"]
+        # Each version has its own version in metadata
+        by_version = {t.version: t for t in tools}
+        assert by_version["1.0"].get_meta()["fastmcp"]["version"] == "1.0"
+        assert by_version["2.0"].get_meta()["fastmcp"]["version"] == "2.0"
 
     async def test_resource_versions_in_meta(self):
-        """List resources should include versions list in meta."""
+        """Each version has its own version in metadata."""
         mcp = FastMCP()
 
         @mcp.resource("data://config", version="1.0")
@@ -1003,16 +1189,17 @@ class TestVersionMetadata:
         def config_v2() -> str:  # noqa: F811
             return "v2"
 
-        resources = await mcp.get_resources()
-        assert len(resources) == 1
+        # list_resources returns all versions
+        resources = await mcp.list_resources()
+        assert len(resources) == 2
 
-        resource = resources[0]
-        meta = resource.get_meta()
-        assert meta["fastmcp"]["version"] == "2.0"
-        assert meta["fastmcp"]["versions"] == ["2.0", "1.0"]
+        # Each version has its own version in metadata
+        by_version = {r.version: r for r in resources}
+        assert by_version["1.0"].get_meta()["fastmcp"]["version"] == "1.0"
+        assert by_version["2.0"].get_meta()["fastmcp"]["version"] == "2.0"
 
     async def test_prompt_versions_in_meta(self):
-        """List prompts should include versions list in meta."""
+        """Each version has its own version in metadata."""
         mcp = FastMCP()
 
         @mcp.prompt(version="1.0")
@@ -1023,13 +1210,14 @@ class TestVersionMetadata:
         def greet() -> str:  # noqa: F811
             return "Hello v2"
 
-        prompts = await mcp.get_prompts()
-        assert len(prompts) == 1
+        # list_prompts returns all versions
+        prompts = await mcp.list_prompts()
+        assert len(prompts) == 2
 
-        prompt = prompts[0]
-        meta = prompt.get_meta()
-        assert meta["fastmcp"]["version"] == "2.0"
-        assert meta["fastmcp"]["versions"] == ["2.0", "1.0"]
+        # Each version has its own version in metadata
+        by_version = {p.version: p for p in prompts}
+        assert by_version["1.0"].get_meta()["fastmcp"]["version"] == "1.0"
+        assert by_version["2.0"].get_meta()["fastmcp"]["version"] == "2.0"
 
     async def test_unversioned_no_versions_list(self):
         """Unversioned components should not have versions list in meta."""
@@ -1039,7 +1227,7 @@ class TestVersionMetadata:
         def simple() -> str:
             return "simple"
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
 
         tool = tools[0]

@@ -53,7 +53,7 @@ class TestParallelCalls:
 
         count = 10
 
-        tasks = [proxy.get_tools() for _ in range(count)]
+        tasks = [proxy.list_tools() for _ in range(count)]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 

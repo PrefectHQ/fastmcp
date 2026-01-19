@@ -237,7 +237,7 @@ class TestToolLevelAuth:
         def public_tool() -> str:
             return "public"
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         assert tools[0].name == "public_tool"
 
@@ -249,7 +249,7 @@ class TestToolLevelAuth:
             return "protected"
 
         # No token set - tool should be hidden
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 0
 
     async def test_tool_with_auth_visible_with_token(self):
@@ -263,7 +263,7 @@ class TestToolLevelAuth:
         token = make_token()
         tok = set_token(token)
         try:
-            tools = await mcp.get_tools()
+            tools = await mcp.list_tools()
             assert len(tools) == 1
             assert tools[0].name == "protected_tool"
         finally:
@@ -280,7 +280,7 @@ class TestToolLevelAuth:
         token = make_token(scopes=["read"])
         tok = set_token(token)
         try:
-            tools = await mcp.get_tools()
+            tools = await mcp.list_tools()
             assert len(tools) == 0
         finally:
             auth_context_var.reset(tok)
@@ -296,7 +296,7 @@ class TestToolLevelAuth:
         token = make_token(scopes=["admin"])
         tok = set_token(token)
         try:
-            tools = await mcp.get_tools()
+            tools = await mcp.list_tools()
             assert len(tools) == 1
             assert tools[0].name == "admin_tool"
         finally:
@@ -517,7 +517,7 @@ class TestTransformedToolAuth:
         )
 
         # Without token, transformed tool should not be visible
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 0
 
     async def test_transformed_tool_visible_with_token(self):
@@ -539,7 +539,7 @@ class TestTransformedToolAuth:
         token = make_token()
         tok = set_token(token)
         try:
-            tools = await mcp.get_tools()
+            tools = await mcp.list_tools()
             assert len(tools) == 1
             assert tools[0].name == "renamed_protected"
         finally:

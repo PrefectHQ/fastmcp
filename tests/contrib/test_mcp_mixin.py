@@ -67,7 +67,7 @@ class TestMCPMixin:
         instance = MyToolMixin()
         instance.register_tools(mcp, prefix=prefix, separator=separator)
 
-        registered_tools = await mcp.get_tools()
+        registered_tools = await mcp.list_tools()
         assert any(t.name == expected_key for t in registered_tools)
         assert not any(t.name == unexpected_key for t in registered_tools)
 
@@ -112,7 +112,7 @@ class TestMCPMixin:
         instance = MyResourceMixin()
         instance.register_resources(mcp, prefix=prefix, separator=separator)
 
-        registered_resources = await mcp.get_resources()
+        registered_resources = await mcp.list_resources()
         assert any(str(r.uri) == expected_uri_key for r in registered_resources)
         resource = next(
             r for r in registered_resources if str(r.uri) == expected_uri_key
@@ -158,7 +158,7 @@ class TestMCPMixin:
         instance = MyPromptMixin()
         instance.register_prompts(mcp, prefix=prefix, separator=separator)
 
-        prompts = await mcp.get_prompts()
+        prompts = await mcp.list_prompts()
         assert any(p.name == expected_name for p in prompts)
         assert not any(p.name == unexpected_name for p in prompts)
 
@@ -182,9 +182,9 @@ class TestMCPMixin:
         instance = MyFullMixin()
         instance.register_all(mcp)
 
-        tools = await mcp.get_tools()
-        resources = await mcp.get_resources()
-        prompts = await mcp.get_prompts()
+        tools = await mcp.list_tools()
+        resources = await mcp.list_resources()
+        prompts = await mcp.list_prompts()
 
         assert any(t.name == "tool_all" for t in tools)
         assert any(str(r.uri) == "res://all" for r in resources)
@@ -210,9 +210,9 @@ class TestMCPMixin:
         instance = MyFullMixinPrefixed()
         instance.register_all(mcp, prefix="all")
 
-        tools = await mcp.get_tools()
-        resources = await mcp.get_resources()
-        prompts = await mcp.get_prompts()
+        tools = await mcp.list_tools()
+        resources = await mcp.list_resources()
+        prompts = await mcp.list_prompts()
 
         assert any(t.name == f"all{_DEFAULT_SEPARATOR_TOOL}tool_all_p" for t in tools)
         assert any(
@@ -249,9 +249,9 @@ class TestMCPMixin:
             prompt_separator=".",
         )
 
-        tools = await mcp.get_tools()
-        resources = await mcp.get_resources()
-        prompts = await mcp.get_prompts()
+        tools = await mcp.list_tools()
+        resources = await mcp.list_resources()
+        prompts = await mcp.list_prompts()
 
         assert any(t.name == "cust-tool_cust" for t in tools)
         assert any(str(r.uri) == "cust::res://cust" for r in resources)
@@ -286,7 +286,7 @@ class TestMCPMixin:
         instance = MyToolWithMeta()
         instance.register_tools(mcp)
 
-        registered_tools = await mcp.get_tools()
+        registered_tools = await mcp.list_tools()
         tool = next(t for t in registered_tools if t.name == "sample_tool")
 
         assert tool.annotations is not None
@@ -309,7 +309,7 @@ class TestMCPMixin:
         instance = MyResourceWithMeta()
         instance.register_resources(mcp)
 
-        registered_resources = await mcp.get_resources()
+        registered_resources = await mcp.list_resources()
         resource = next(
             r for r in registered_resources if str(r.uri) == "test://resource"
         )
@@ -332,7 +332,7 @@ class TestMCPMixin:
         instance = MyPromptWithMeta()
         instance.register_prompts(mcp)
 
-        prompts = await mcp.get_prompts()
+        prompts = await mcp.list_prompts()
         prompt = next(p for p in prompts if p.name == "sample_prompt")
 
         assert prompt.title == "My Prompt Title"

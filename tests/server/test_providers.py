@@ -136,7 +136,7 @@ class TestProvider:
         provider = SimpleToolProvider(tools=dynamic_tools)
         base_server.add_provider(provider)
 
-        tools = await base_server.get_tools()
+        tools = await base_server.list_tools()
 
         # Should have all tools: 2 static + 2 dynamic
         assert len(tools) == 4
@@ -154,9 +154,9 @@ class TestProvider:
         base_server.add_provider(provider)
 
         # Call get_tools multiple times
-        await base_server.get_tools()
-        await base_server.get_tools()
-        await base_server.get_tools()
+        await base_server.list_tools()
+        await base_server.list_tools()
+        await base_server.list_tools()
 
         # Provider should have been called 3 times (once per get_tools call)
         assert provider.list_tools_call_count == 3
@@ -250,7 +250,7 @@ class TestProvider:
         provider = SimpleToolProvider(tools=dynamic_tools)
         base_server.add_provider(provider)
 
-        tools = await base_server.get_tools()
+        tools = await base_server.list_tools()
 
         tool_names = [tool.name for tool in tools]
         # Local tools should come first (LocalProvider is first in _providers)
@@ -261,7 +261,7 @@ class TestProvider:
         provider = SimpleToolProvider(tools=[])
         base_server.add_provider(provider)
 
-        tools = await base_server.get_tools()
+        tools = await base_server.list_tools()
 
         # Should only have static tools
         assert len(tools) == 2
@@ -330,7 +330,7 @@ class TestDynamicToolUpdates:
         provider = SimpleToolProvider(tools=initial_tools)
         mcp.add_provider(provider)
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         assert tools[0].name == "tool_v1"
 
@@ -351,7 +351,7 @@ class TestDynamicToolUpdates:
         ]
 
         # List tools again - should see new tools
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 2
         tool_names = [t.name for t in tools]
         assert "tool_v1" not in tool_names

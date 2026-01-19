@@ -16,7 +16,7 @@ async def test_tool_transformation_via_layer():
         ToolTransform({"echo": ToolTransformConfig(name="echo_transformed")})
     )
 
-    tools = await mcp.get_tools()
+    tools = await mcp.list_tools()
     assert len(tools) == 1
     assert any(t.name == "echo_transformed" for t in tools)
     tool = next(t for t in tools if t.name == "echo_transformed")
@@ -45,7 +45,7 @@ async def test_transformed_tool_filtering():
     # Enable only tools with the enabled_tools tag
     mcp.enable(tags={"enabled_tools"}, only=True)
 
-    tools = await mcp.get_tools()
+    tools = await mcp.list_tools()
     # With transformation applied, the tool now has the enabled_tools tag
     assert len(tools) == 1
 
@@ -92,7 +92,7 @@ async def test_layer_based_transforms():
         ToolTransform({"my_tool": ToolTransformConfig(name="renamed_tool")})
     )
 
-    tools = await mcp.get_tools()
+    tools = await mcp.list_tools()
     assert len(tools) == 1
     assert tools[0].name == "renamed_tool"
 
@@ -113,7 +113,7 @@ async def test_server_level_transforms_apply_to_mounted_servers():
         ToolTransform({"sub_tool": ToolTransformConfig(name="renamed_sub_tool")})
     )
 
-    tools = await main.get_tools()
+    tools = await main.list_tools()
     tool_names = [t.name for t in tools]
 
     assert "renamed_sub_tool" in tool_names

@@ -42,7 +42,7 @@ class TestBasicMount:
         main_app.mount(sub_app, "sub")
 
         # Get tools from main app, should include sub_app's tools
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert any(t.name == "sub_tool" for t in tools)
         assert any(t.name == "sub_transformed_tool" for t in tools)
 
@@ -62,7 +62,7 @@ class TestBasicMount:
         main_app.mount(sub_app, "sub")
 
         # Tool should be accessible with the default separator
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert any(t.name == "sub_greet" for t in tools)
 
         # Call the tool
@@ -81,7 +81,7 @@ class TestBasicMount:
         # Mount with empty prefix but without deprecated separators
         main_app.mount(sub_app, namespace=prefix)
 
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         # With empty prefix, the tool should keep its original name
         assert any(t.name == "sub_tool" for t in tools)
 
@@ -97,7 +97,7 @@ class TestBasicMount:
         # Mount without providing a prefix (should be None)
         main_app.mount(sub_app)
 
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         # Without prefix, the tool should keep its original name
         assert any(t.name == "sub_tool" for t in tools)
 
@@ -118,7 +118,7 @@ class TestBasicMount:
         main_app.mount(sub_app)
 
         # Verify tool is accessible with original name
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert any(t.name == "sub_tool" for t in tools)
 
         # Test actual functionality
@@ -138,7 +138,7 @@ class TestBasicMount:
         main_app.mount(sub_app)
 
         # Verify resource is accessible with original URI
-        resources = await main_app.get_resources()
+        resources = await main_app.list_resources()
         assert any(str(r.uri) == "data://config" for r in resources)
 
         # Test actual functionality
@@ -158,7 +158,7 @@ class TestBasicMount:
         main_app.mount(sub_app)
 
         # Verify template is accessible with original URI template
-        templates = await main_app.get_resource_templates()
+        templates = await main_app.list_resource_templates()
         assert any(t.uri_template == "users://{user_id}/info" for t in templates)
 
         # Test actual functionality
@@ -178,7 +178,7 @@ class TestBasicMount:
         main_app.mount(sub_app)
 
         # Verify prompt is accessible with original name
-        prompts = await main_app.get_prompts()
+        prompts = await main_app.list_prompts()
         assert any(p.name == "sub_prompt" for p in prompts)
 
         # Test actual functionality
@@ -208,7 +208,7 @@ class TestMultipleServerMount:
         main_app.mount(news_app, "news")
 
         # Check both are accessible
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert any(t.name == "weather_get_forecast" for t in tools)
         assert any(t.name == "news_get_headlines" for t in tools)
 
@@ -234,12 +234,12 @@ class TestMultipleServerMount:
 
         # Mount first app
         main_app.mount(first_app, "api")
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert any(t.name == "api_first_tool" for t in tools)
 
         # Mount second app with same prefix
         main_app.mount(second_app, "api")
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
 
         # Both apps' tools should be accessible (new behavior)
         assert any(t.name == "api_first_tool" for t in tools)
@@ -344,11 +344,10 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app)
         main_app.mount(second_app)
 
-        # Test that get_tools shows the tool
-        tools = await main_app.get_tools()
+        # list_tools returns all components; execution uses first match
+        tools = await main_app.list_tools()
         tool_names = [t.name for t in tools]
         assert "shared_tool" in tool_names
-        assert tool_names.count("shared_tool") == 1  # Should only appear once
 
         # Test that calling the tool uses the first server's implementation
         result = await main_app.call_tool("shared_tool", {})
@@ -372,11 +371,10 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app, "api")
         main_app.mount(second_app, "api")
 
-        # Test that get_tools shows the tool
-        tools = await main_app.get_tools()
+        # list_tools returns all components; execution uses first match
+        tools = await main_app.list_tools()
         tool_names = [t.name for t in tools]
         assert "api_shared_tool" in tool_names
-        assert tool_names.count("api_shared_tool") == 1  # Should only appear once
 
         # Test that calling the tool uses the first server's implementation
         result = await main_app.call_tool("api_shared_tool", {})
@@ -400,11 +398,10 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app)
         main_app.mount(second_app)
 
-        # Test that get_resources shows the resource
-        resources = await main_app.get_resources()
+        # list_resources returns all components; execution uses first match
+        resources = await main_app.list_resources()
         resource_uris = [str(r.uri) for r in resources]
         assert "shared://data" in resource_uris
-        assert resource_uris.count("shared://data") == 1  # Should only appear once
 
         # Test that reading the resource uses the first server's implementation
         result = await main_app.read_resource("shared://data")
@@ -428,11 +425,10 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app, "api")
         main_app.mount(second_app, "api")
 
-        # Test that get_resources shows the resource
-        resources = await main_app.get_resources()
+        # list_resources returns all components; execution uses first match
+        resources = await main_app.list_resources()
         resource_uris = [str(r.uri) for r in resources]
         assert "shared://api/data" in resource_uris
-        assert resource_uris.count("shared://api/data") == 1  # Should only appear once
 
         # Test that reading the resource uses the first server's implementation
         result = await main_app.read_resource("shared://api/data")
@@ -456,13 +452,10 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app)
         main_app.mount(second_app)
 
-        # Test that get_resource_templates shows the template
-        templates = await main_app.get_resource_templates()
+        # list_resource_templates returns all components; execution uses first match
+        templates = await main_app.list_resource_templates()
         template_uris = [t.uri_template for t in templates]
         assert "users://{user_id}/profile" in template_uris
-        assert (
-            template_uris.count("users://{user_id}/profile") == 1
-        )  # Should only appear once
 
         # Test that reading the resource uses the first server's implementation
         result = await main_app.read_resource("users://123/profile")
@@ -486,13 +479,10 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app, "api")
         main_app.mount(second_app, "api")
 
-        # Test that get_resource_templates shows the template
-        templates = await main_app.get_resource_templates()
+        # list_resource_templates returns all components; execution uses first match
+        templates = await main_app.list_resource_templates()
         template_uris = [t.uri_template for t in templates]
         assert "users://api/{user_id}/profile" in template_uris
-        assert (
-            template_uris.count("users://api/{user_id}/profile") == 1
-        )  # Should only appear once
 
         # Test that reading the resource uses the first server's implementation
         result = await main_app.read_resource("users://api/123/profile")
@@ -516,11 +506,10 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app)
         main_app.mount(second_app)
 
-        # Test that get_prompts shows the prompt
-        prompts = await main_app.get_prompts()
+        # list_prompts returns all components; execution uses first match
+        prompts = await main_app.list_prompts()
         prompt_names = [p.name for p in prompts]
         assert "shared_prompt" in prompt_names
-        assert prompt_names.count("shared_prompt") == 1  # Should only appear once
 
         # Test that getting the prompt uses the first server's implementation
         result = await main_app.render_prompt("shared_prompt")
@@ -546,11 +535,10 @@ class TestPrefixConflictResolution:
         main_app.mount(first_app, "api")
         main_app.mount(second_app, "api")
 
-        # Test that get_prompts shows the prompt
-        prompts = await main_app.get_prompts()
+        # list_prompts returns all components; execution uses first match
+        prompts = await main_app.list_prompts()
         prompt_names = [p.name for p in prompts]
         assert "api_shared_prompt" in prompt_names
-        assert prompt_names.count("api_shared_prompt") == 1  # Should only appear once
 
         # Test that getting the prompt uses the first server's implementation
         result = await main_app.render_prompt("api_shared_prompt")
@@ -571,7 +559,7 @@ class TestDynamicChanges:
         main_app.mount(sub_app, "sub")
 
         # Initially, there should be no tools from sub_app
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert not any(t.name.startswith("sub_") for t in tools)
 
         # Add a tool to the sub-app after mounting
@@ -580,7 +568,7 @@ class TestDynamicChanges:
             return "Added after mounting"
 
         # The tool should be accessible through the main app
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert any(t.name == "sub_dynamic_tool" for t in tools)
 
         # Call the dynamically added tool
@@ -600,14 +588,14 @@ class TestDynamicChanges:
         main_app.mount(sub_app, "sub")
 
         # Initially, the tool should be accessible
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert any(t.name == "sub_temp_tool" for t in tools)
 
         # Remove the tool from sub_app using public API
         sub_app.remove_tool("temp_tool")
 
         # The tool should no longer be accessible
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert not any(t.name == "sub_temp_tool" for t in tools)
 
 
@@ -627,7 +615,7 @@ class TestResourcesAndTemplates:
         main_app.mount(data_app, "data")
 
         # Resource should be accessible through main app
-        resources = await main_app.get_resources()
+        resources = await main_app.list_resources()
         assert any(str(r.uri) == "data://data/users" for r in resources)
 
         # Check that resource can be accessed
@@ -650,7 +638,7 @@ class TestResourcesAndTemplates:
         main_app.mount(user_app, "api")
 
         # Template should be accessible through main app
-        templates = await main_app.get_resource_templates()
+        templates = await main_app.list_resource_templates()
         assert any(t.uri_template == "users://api/{user_id}/profile" for t in templates)
 
         # Check template instantiation
@@ -674,7 +662,7 @@ class TestResourcesAndTemplates:
             return json.dumps({"version": "1.0"})
 
         # Resource should be accessible through main app
-        resources = await main_app.get_resources()
+        resources = await main_app.list_resources()
         assert any(str(r.uri) == "data://data/config" for r in resources)
 
         # Check access to the resource
@@ -700,7 +688,7 @@ class TestPrompts:
         main_app.mount(assistant_app, "assistant")
 
         # Prompt should be accessible through main app
-        prompts = await main_app.get_prompts()
+        prompts = await main_app.list_prompts()
         assert any(p.name == "assistant_greeting" for p in prompts)
 
         # Render the prompt
@@ -722,7 +710,7 @@ class TestPrompts:
             return f"Goodbye, {name}!"
 
         # Prompt should be accessible through main app
-        prompts = await main_app.get_prompts()
+        prompts = await main_app.list_prompts()
         assert any(p.name == "assistant_farewell" for p in prompts)
 
         # Render the prompt
@@ -751,7 +739,7 @@ class TestProxyServer:
         main_app.mount(proxy_server, "proxy")
 
         # Tool should be accessible through main app
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert any(t.name == "proxy_get_data" for t in tools)
 
         # Call the tool
@@ -776,7 +764,7 @@ class TestProxyServer:
             return "Dynamic data"
 
         # Tool should be accessible through main app via proxy
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert any(t.name == "proxy_dynamic_data" for t in tools)
 
         # Call the tool
@@ -849,7 +837,7 @@ class TestAsProxyKwarg:
         assert isinstance(provider._inner, FastMCPProvider)
         assert provider._inner.server is sub
         # Verify namespace is applied
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert {t.name for t in tools} == {"sub_sub_tool"}
 
     async def test_as_proxy_false(self):
@@ -872,7 +860,7 @@ class TestAsProxyKwarg:
         assert isinstance(provider._inner, FastMCPProvider)
         assert provider._inner.server is sub
         # Verify namespace is applied
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert {t.name for t in tools} == {"sub_sub_tool"}
 
     async def test_as_proxy_true(self):
@@ -896,7 +884,7 @@ class TestAsProxyKwarg:
         assert provider._inner.server is not sub
         assert isinstance(provider._inner.server, FastMCPProxy)
         # Verify namespace is applied
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert {t.name for t in tools} == {"sub_sub_tool"}
 
     async def test_lifespan_server_mounted_directly(self):
@@ -930,7 +918,7 @@ class TestAsProxyKwarg:
         assert isinstance(provider._inner, FastMCPProvider)
         assert provider._inner.server is sub
         # Verify namespace is applied
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert {t.name for t in tools} == {"sub_sub_tool"}
 
     async def test_as_proxy_ignored_for_proxy_mounts_default(self):
@@ -990,13 +978,13 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub, "sub", as_proxy=True)
 
-        assert len(await mcp.get_tools()) == 0
+        assert len(await mcp.list_tools()) == 0
 
         @sub.tool
         def hello():
             return "hi"
 
-        assert len(await mcp.get_tools()) == 1
+        assert len(await mcp.list_tools()) == 1
 
     async def test_sub_lifespan_is_executed(self):
         lifespan_check = []
@@ -1043,7 +1031,7 @@ class TestResourceUriPrefixing:
         main_app.mount(sub_app, "prefix")
 
         # Get resources from main app
-        resources = await main_app.get_resources()
+        resources = await main_app.list_resources()
 
         # Should have prefixed key (using path format: resource://prefix/resource_name)
         assert any(str(r.uri) == "resource://prefix/my_resource" for r in resources)
@@ -1069,7 +1057,7 @@ class TestResourceUriPrefixing:
         main_app.mount(sub_app, "prefix")
 
         # Get resource templates from main app
-        templates = await main_app.get_resource_templates()
+        templates = await main_app.list_resource_templates()
 
         # Should have prefixed key (using path format: resource://prefix/template_uri)
         assert any(
@@ -1101,7 +1089,7 @@ class TestParentTagFiltering:
 
         parent.mount(mounted)
 
-        tools = await parent.get_tools()
+        tools = await parent.list_tools()
         tool_names = {t.name for t in tools}
         assert "allowed_tool" in tool_names
         assert "blocked_tool" not in tool_names
@@ -1128,7 +1116,7 @@ class TestParentTagFiltering:
 
         parent.mount(mounted)
 
-        tools = await parent.get_tools()
+        tools = await parent.list_tools()
         tool_names = {t.name for t in tools}
         assert "production_tool" in tool_names
         assert "blocked_tool" not in tool_names
@@ -1148,7 +1136,7 @@ class TestParentTagFiltering:
 
         parent.mount(mounted)
 
-        resources = await parent.get_resources()
+        resources = await parent.list_resources()
         resource_uris = {str(r.uri) for r in resources}
         assert "resource://allowed" in resource_uris
         assert "resource://blocked" not in resource_uris
@@ -1168,7 +1156,7 @@ class TestParentTagFiltering:
 
         parent.mount(mounted)
 
-        prompts = await parent.get_prompts()
+        prompts = await parent.list_prompts()
         prompt_names = {p.name for p in prompts}
         assert "allowed_prompt" in prompt_names
         assert "blocked_prompt" not in prompt_names
@@ -1236,7 +1224,7 @@ class TestCustomRouteForwarding:
         assert provider2._inner.server == sub_server2
 
         # Verify namespacing is applied by checking tool names
-        tools = await main_server.get_tools()
+        tools = await main_server.list_tools()
         tool_names = {t.name for t in tools}
         assert tool_names == {"sub1_tool1", "sub2_tool2"}
 
@@ -1389,7 +1377,7 @@ class TestDeeplyNestedMount:
         root.mount(level1, namespace="l1")
 
         # Verify tool is listed
-        tools = await root.get_tools()
+        tools = await root.list_tools()
         tool_names = [t.name for t in tools]
         assert "l1_l2_l3_deep_tool" in tool_names
 
@@ -1422,7 +1410,7 @@ class TestToolNameOverrides:
         )
 
         # Server introspection shows renamed + namespaced names
-        tools = await main.get_tools()
+        tools = await main.list_tools()
         tool_names = [t.name for t in tools]
         assert "prefix_custom_name" in tool_names
         assert "original_tool" not in tool_names
@@ -1444,7 +1432,7 @@ class TestToolNameOverrides:
             tool_names={"original_tool": "custom_name"},
         )
 
-        tools = await main.get_tools()
+        tools = await main.list_tools()
         tool_names = [t.name for t in tools]
         assert "prefix_custom_name" in tool_names
         assert "prefix_original_tool" not in tool_names
@@ -1541,18 +1529,18 @@ class TestComponentServicePrefixLess:
         main_app.mount(sub_app)
 
         # Initially the tool is enabled
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert any(t.name == "my_tool" for t in tools)
 
         # Disable and re-enable
         main_app.disable(names={"my_tool"}, components=["tool"])
         # Verify tool is now disabled
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert not any(t.name == "my_tool" for t in tools)
 
         main_app.enable(names={"my_tool"}, components=["tool"])
         # Verify tool is now enabled
-        tools = await main_app.get_tools()
+        tools = await main_app.list_tools()
         assert any(t.name == "my_tool" for t in tools)
 
     async def test_enable_resource_prefixless_mount(self):
@@ -1570,12 +1558,12 @@ class TestComponentServicePrefixLess:
         # Disable and re-enable
         main_app.disable(names={"data://test"}, components=["resource"])
         # Verify resource is now disabled
-        resources = await main_app.get_resources()
+        resources = await main_app.list_resources()
         assert not any(str(r.uri) == "data://test" for r in resources)
 
         main_app.enable(names={"data://test"}, components=["resource"])
         # Verify resource is now enabled
-        resources = await main_app.get_resources()
+        resources = await main_app.list_resources()
         assert any(str(r.uri) == "data://test" for r in resources)
 
     async def test_enable_prompt_prefixless_mount(self):
@@ -1593,10 +1581,10 @@ class TestComponentServicePrefixLess:
         # Disable and re-enable
         main_app.disable(names={"my_prompt"}, components=["prompt"])
         # Verify prompt is now disabled
-        prompts = await main_app.get_prompts()
+        prompts = await main_app.list_prompts()
         assert not any(p.name == "my_prompt" for p in prompts)
 
         main_app.enable(names={"my_prompt"}, components=["prompt"])
         # Verify prompt is now enabled
-        prompts = await main_app.get_prompts()
+        prompts = await main_app.list_prompts()
         assert any(p.name == "my_prompt" for p in prompts)

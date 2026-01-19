@@ -25,8 +25,8 @@ async def test_import_basic_functionality():
     await main_app.import_server(sub_app, "sub")
 
     # Verify the tool was imported with the prefix
-    main_tools = await main_app.get_tools()
-    sub_tools = await sub_app.get_tools()
+    main_tools = await main_app.list_tools()
+    sub_tools = await sub_app.list_tools()
     assert any(t.name == "sub_sub_tool" for t in main_tools)
     assert any(t.name == "sub_tool" for t in sub_tools)
 
@@ -60,7 +60,7 @@ async def test_import_multiple_apps():
     await main_app.import_server(news_app, "news")
 
     # Verify tools were imported with the correct prefixes
-    tools = await main_app.get_tools()
+    tools = await main_app.list_tools()
     assert any(t.name == "weather_get_forecast" for t in tools)
     assert any(t.name == "news_get_headlines" for t in tools)
 
@@ -83,14 +83,14 @@ async def test_import_combines_tools():
 
     # Import first app
     await main_app.import_server(first_app, "api")
-    tools = await main_app.get_tools()
+    tools = await main_app.list_tools()
     assert any(t.name == "api_first_tool" for t in tools)
 
     # Import second app to same prefix
     await main_app.import_server(second_app, "api")
 
     # Verify second tool is there
-    tools = await main_app.get_tools()
+    tools = await main_app.list_tools()
     assert any(t.name == "api_second_tool" for t in tools)
 
     # Tools from both imports are combined
@@ -112,7 +112,7 @@ async def test_import_with_resources():
     await main_app.import_server(data_app, "data")
 
     # Verify the resource was imported with the prefix
-    resources = await main_app.get_resources()
+    resources = await main_app.list_resources()
     assert any(str(r.uri) == "data://data/users" for r in resources)
 
 
@@ -135,7 +135,7 @@ async def test_import_with_resource_templates():
     await main_app.import_server(user_app, "api")
 
     # Verify the template was imported with the prefix
-    templates = await main_app.get_resource_templates()
+    templates = await main_app.list_resource_templates()
     assert any(t.uri_template == "users://api/{user_id}/profile" for t in templates)
 
 
@@ -154,7 +154,7 @@ async def test_import_with_prompts():
     await main_app.import_server(assistant_app, "assistant")
 
     # Verify the prompt was imported with the prefix
-    prompts = await main_app.get_prompts()
+    prompts = await main_app.list_prompts()
     assert any(p.name == "assistant_greeting" for p in prompts)
 
 
@@ -179,7 +179,7 @@ async def test_import_multiple_resource_templates():
     await main_app.import_server(news_app, "content")
 
     # Verify templates were imported with correct prefixes
-    templates = await main_app.get_resource_templates()
+    templates = await main_app.list_resource_templates()
     assert any(t.uri_template == "weather://data/{city}" for t in templates)
     assert any(t.uri_template == "news://content/{category}" for t in templates)
 
@@ -205,7 +205,7 @@ async def test_import_multiple_prompts():
     await main_app.import_server(sql_app, "sql")
 
     # Verify prompts were imported with correct prefixes
-    prompts = await main_app.get_prompts()
+    prompts = await main_app.list_prompts()
     assert any(p.name == "python_review_python" for p in prompts)
     assert any(p.name == "sql_explain_sql" for p in prompts)
 
@@ -443,10 +443,10 @@ async def test_import_with_no_prefix():
     await main_app.import_server(sub_app)
 
     # Verify all component types are accessible with original names
-    tools = await main_app.get_tools()
-    resources = await main_app.get_resources()
-    templates = await main_app.get_resource_templates()
-    prompts = await main_app.get_prompts()
+    tools = await main_app.list_tools()
+    resources = await main_app.list_resources()
+    templates = await main_app.list_resource_templates()
+    prompts = await main_app.list_prompts()
     assert any(t.name == "sub_tool" for t in tools)
     assert any(str(r.uri) == "data://config" for r in resources)
     assert any(t.uri_template == "users://{user_id}/info" for t in templates)
@@ -640,7 +640,7 @@ async def test_import_server_resource_uri_prefixing():
     await main_server.import_server(sub_server, prefix="imported")
 
     # Get resources and verify URI prefixing (name should NOT be prefixed)
-    resources = await main_server.get_resources()
+    resources = await main_server.list_resources()
     resource = next(
         r for r in resources if str(r.uri) == "resource://imported/test_resource"
     )
@@ -661,7 +661,7 @@ async def test_import_server_resource_template_uri_prefixing():
     await main_server.import_server(sub_server, prefix="imported")
 
     # Get resource templates and verify URI prefixing (name should NOT be prefixed)
-    templates = await main_server.get_resource_templates()
+    templates = await main_server.list_resource_templates()
     template = next(
         t for t in templates if t.uri_template == "resource://imported/data/{item_id}"
     )
@@ -690,8 +690,8 @@ async def test_import_server_with_new_prefix_format():
     await target_server.import_server(source_server, "imported")
 
     # Check that the resources were imported with the correct prefixes
-    resources = await target_server.get_resources()
-    templates = await target_server.get_resource_templates()
+    resources = await target_server.list_resources()
+    templates = await target_server.list_resource_templates()
 
     assert any(str(r.uri) == "resource://imported/test-resource" for r in resources)
     assert any(str(r.uri) == "resource://imported//absolute/path" for r in resources)

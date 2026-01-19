@@ -141,7 +141,7 @@ class TestToolTimeout:
             return "completed"
 
         # Tool should be registered successfully
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         tool = next((t for t in tools if t.name == "task_with_timeout"), None)
         assert tool is not None
         assert tool.timeout == 1.0

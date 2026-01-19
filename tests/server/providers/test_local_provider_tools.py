@@ -379,7 +379,7 @@ class TestToolParameters:
             """A greeting tool"""
             return f"Hello {title} {name}"
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         tool = tools[0]
 
@@ -402,7 +402,7 @@ class TestToolParameters:
             """A greeting tool"""
             return f"Hello {title} {name}"
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         tool = tools[0]
 
@@ -731,7 +731,7 @@ class TestToolParameters:
         def f(x: Annotated[int, "A number"]):
             return x
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         assert tools[0].parameters["properties"]["x"]["description"] == "A number"
 
@@ -745,7 +745,7 @@ class TestToolOutputSchema:
         def f() -> annotation:
             return "hello"
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
 
         type_schema = TypeAdapter(annotation).json_schema()
@@ -768,7 +768,7 @@ class TestToolOutputSchema:
         def f() -> annotation:
             return {"name": "John", "age": 30}
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
 
         type_schema = compress_schema(
             TypeAdapter(annotation).json_schema(), prune_titles=True
@@ -826,7 +826,7 @@ class TestToolOutputSchema:
         def simple_tool() -> int:
             return 42
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         tool = next(t for t in tools if t.name == "simple_tool")
         assert tool.output_schema is None
 
@@ -853,7 +853,7 @@ class TestToolOutputSchema:
         def explicit_tool() -> dict[str, Any]:
             return {"greeting": "Hello", "count": 42}
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         tool = next(t for t in tools if t.name == "explicit_tool")
         expected_schema = {
             "type": "object",
@@ -876,7 +876,7 @@ class TestToolOutputSchema:
         def primitive_tool() -> str:
             return "Hello, primitives!"
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         tool = next(t for t in tools if t.name == "primitive_tool")
         expected_schema = {
             "type": "object",
@@ -897,7 +897,7 @@ class TestToolOutputSchema:
         def complex_tool() -> list[dict[str, int]]:
             return [{"a": 1, "b": 2}, {"c": 3, "d": 4}]
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         tool = next(t for t in tools if t.name == "complex_tool")
         expected_inner_schema = compress_schema(
             TypeAdapter(list[dict[str, int]]).json_schema(), prune_titles=True
@@ -927,7 +927,7 @@ class TestToolOutputSchema:
         def dataclass_tool() -> User:
             return User(name="Alice", age=30)
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         tool = next(t for t in tools if t.name == "dataclass_tool")
         expected_schema = compress_schema(
             TypeAdapter(User).json_schema(), prune_titles=True
@@ -968,7 +968,7 @@ class TestToolOutputSchema:
         def edge_case_tool() -> tuple[int, str]:
             return (42, "hello")
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         tool = next(t for t in tools if t.name == "edge_case_tool")
 
         assert tool.output_schema and "x-fastmcp-wrap-result" in tool.output_schema
@@ -988,7 +988,7 @@ class TestToolContextInjection:
         def tool_with_context(x: int, ctx: Context) -> str:
             return f"Request: {x}"
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         assert tools[0].name == "tool_with_context"
         # Context param should not appear in schema
@@ -1057,7 +1057,7 @@ class TestToolContextInjection:
         def sample_tool(x: int) -> int:
             return x * 2
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         assert tools[0].tags == {"example", "test-tag"}
 
@@ -1093,7 +1093,7 @@ class TestToolContextInjection:
             assert isinstance(ctx, Context)
             return f"query: {query}"
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         tool = next(t for t in tools if t.name == "decorated_tool")
         assert "ctx" not in tool.parameters.get("properties", {})
 
@@ -1128,7 +1128,7 @@ class TestToolDecorator:
         def add(x: int, y: int) -> int:
             return x + y
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert any(t.name == "add" for t in tools)
 
         result = await mcp.call_tool("add", {"x": 1, "y": 2})
@@ -1151,7 +1151,7 @@ class TestToolDecorator:
         def add(x: int, y: int) -> int:
             return x + y
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         tool = tools[0]
         assert tool.description == "Add two numbers"
@@ -1265,7 +1265,7 @@ class TestToolDecorator:
         def sample_tool(x: int) -> int:
             return x * 2
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
         assert tools[0].tags == {"example", "test-tag"}
 
@@ -1279,7 +1279,7 @@ class TestToolDecorator:
 
         mcp.add_tool(Tool.from_function(multiply, name="custom_multiply"))
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert any(t.name == "custom_multiply" for t in tools)
 
         result = await mcp.call_tool("custom_multiply", {"a": 5, "b": 3})
@@ -1298,7 +1298,7 @@ class TestToolDecorator:
         ) -> None:
             pass
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         tool = next(t for t in tools if t.name == "add")
         assert tool.parameters["properties"]["x"]["description"] == "x is an int"
         assert tool.parameters["properties"]["y"]["description"] == "y is not an int"
@@ -1314,7 +1314,7 @@ class TestToolDecorator:
         ) -> None:
             pass
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         tool = next(t for t in tools if t.name == "add")
         assert tool.parameters["properties"]["x"]["description"] == "x is an int"
         assert tool.parameters["properties"]["y"]["description"] == "y is not an int"
@@ -1339,7 +1339,7 @@ class TestToolDecorator:
         assert decorated.__fastmcp__.name == "direct_call_tool"
         assert result_fn is standalone_function
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         tool = next(t for t in tools if t.name == "direct_call_tool")
         # Tool is registered separately, not same object as decorated function
         assert tool.name == "direct_call_tool"
@@ -1356,7 +1356,7 @@ class TestToolDecorator:
             """A function with a string name."""
             return f"Result: {x}"
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert any(t.name == "string_named_tool" for t in tools)
         assert not any(t.name == "my_function" for t in tools)
 
@@ -1398,7 +1398,7 @@ class TestToolDecorator:
             """Multiply two numbers."""
             return a * b
 
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         tool = next(t for t in tools if t.name == "multiply")
 
         assert tool.meta == meta_data
@@ -1420,27 +1420,27 @@ class TestToolTags:
 
     async def test_include_tags_all_tools(self):
         mcp = self.create_server(include_tags={"a", "b"})
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert {t.name for t in tools} == {"tool_1", "tool_2"}
 
     async def test_include_tags_some_tools(self):
         mcp = self.create_server(include_tags={"a", "z"})
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert {t.name for t in tools} == {"tool_1"}
 
     async def test_exclude_tags_all_tools(self):
         mcp = self.create_server(exclude_tags={"a", "b"})
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert {t.name for t in tools} == set()
 
     async def test_exclude_tags_some_tools(self):
         mcp = self.create_server(exclude_tags={"a", "z"})
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert {t.name for t in tools} == {"tool_2"}
 
     async def test_exclude_precedence(self):
         mcp = self.create_server(exclude_tags={"a"}, include_tags={"b"})
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert {t.name for t in tools} == {"tool_2"}
 
     async def test_call_included_tool(self):
@@ -1469,19 +1469,19 @@ class TestToolEnabled:
             return x * 2
 
         # Tool is enabled by default
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert any(t.name == "sample_tool" for t in tools)
 
         # Disable via server
         mcp.disable(names={"sample_tool"}, components=["tool"])
 
         # Tool should not be in list when disabled
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert not any(t.name == "sample_tool" for t in tools)
 
         # Re-enable via server
         mcp.enable(names={"sample_tool"}, components=["tool"])
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert any(t.name == "sample_tool" for t in tools)
 
     async def test_tool_disabled_via_server(self):
@@ -1492,7 +1492,7 @@ class TestToolEnabled:
             return x * 2
 
         mcp.disable(names={"sample_tool"}, components=["tool"])
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 0
 
         with pytest.raises(NotFoundError, match="Unknown tool"):
@@ -1507,7 +1507,7 @@ class TestToolEnabled:
 
         mcp.disable(names={"sample_tool"}, components=["tool"])
         mcp.enable(names={"sample_tool"}, components=["tool"])
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 1
 
     async def test_tool_toggle_disabled(self):
@@ -1518,7 +1518,7 @@ class TestToolEnabled:
             return x * 2
 
         mcp.disable(names={"sample_tool"}, components=["tool"])
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 0
 
         with pytest.raises(NotFoundError, match="Unknown tool"):
@@ -1535,7 +1535,7 @@ class TestToolEnabled:
         assert tool is not None
 
         mcp.disable(names={"sample_tool"}, components=["tool"])
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(tools) == 0
 
         with pytest.raises(NotFoundError, match="Unknown tool"):

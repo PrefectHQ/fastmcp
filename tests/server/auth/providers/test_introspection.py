@@ -547,5 +547,5 @@ class TestIntrospectionTokenVerifierIntegration:
 
         # Verify the auth is set correctly
         assert mcp.auth is verifier
-        tools = await mcp.get_tools()
+        tools = await mcp.list_tools()
         assert len(list(tools)) == 1

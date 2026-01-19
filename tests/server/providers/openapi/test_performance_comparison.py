@@ -233,7 +233,7 @@ class TestPerformance:
         )
 
         # Get tools from the server via public API
-        tools = await server.get_tools()
+        tools = await server.list_tools()
 
         # Should have 6 operations in the spec
         assert len(tools) == 6

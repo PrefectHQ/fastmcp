@@ -61,7 +61,7 @@ class TestOpenAPIPerformance:
         )
 
         # Verify server and tools were created successfully
-        tools = await mcp_server.get_tools()
+        tools = await mcp_server.list_tools()
         assert len(tools) > 500
 
     def test_medium_schema_performance(self):

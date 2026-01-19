@@ -24,7 +24,7 @@ async def test_tool_annotations_in_tool_manager():
         return message
 
     # Check internal tool objects directly
-    tools = await mcp.get_tools()
+    tools = await mcp.list_tools()
     assert len(tools) == 1
     assert tools[0].annotations is not None
     assert tools[0].annotations.title == "Echo Tool"
@@ -126,7 +126,7 @@ async def test_direct_tool_annotations_in_tool_manager():
         return {"modified": True, **data}
 
     # Check internal tool objects directly
-    tools = await mcp.get_tools()
+    tools = await mcp.list_tools()
     assert len(tools) == 1
     assert tools[0].annotations is not None
     assert tools[0].annotations.title == "Direct Tool"
@@ -185,7 +185,7 @@ async def test_add_tool_method_annotations():
     mcp.add_tool(tool)
 
     # Check internal tool objects directly
-    tools = await mcp.get_tools()
+    tools = await mcp.list_tools()
     assert len(tools) == 1
     assert tools[0].annotations is not None
     assert tools[0].annotations.title == "Create Item"

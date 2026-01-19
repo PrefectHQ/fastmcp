@@ -163,7 +163,7 @@ def greet(name: str) -> str:
         source = FileSystemSource(path=str(test_file))
         server = await source.load_server()
         assert server.name == "TestServer"
-        tools = await server.get_tools()
+        tools = await server.list_tools()
         assert any(t.name == "greet" for t in tools)
 
     async def test_import_server_with_main_block(self, tmp_path):
@@ -185,7 +185,7 @@ if __name__ == "__main__":
         source = FileSystemSource(path=str(test_file))
         server = await source.load_server()
         assert server.name == "MainServer"
-        tools = await server.get_tools()
+        tools = await server.list_tools()
         assert any(t.name == "calculate" for t in tools)
 
     async def test_import_server_standard_names(self, tmp_path):
@@ -239,7 +239,7 @@ def custom_tool() -> str:
         source = FileSystemSource(path=f"{test_file}:my_custom_server")
         server = await source.load_server()
         assert server.name == "CustomServer"
-        tools = await server.get_tools()
+        tools = await server.list_tools()
         assert any(t.name == "custom_tool" for t in tools)
 
     async def test_import_server_no_standard_names_fails(self, tmp_path):

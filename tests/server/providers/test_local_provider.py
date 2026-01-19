@@ -366,7 +366,7 @@ class TestLocalProviderDecorators:
 
         # Filtering happens at the server level, not provider level
         server = FastMCP("Test", providers=[provider])
-        tools = await server.get_tools()
+        tools = await server.list_tools()
         names = {t.name for t in tools}
         assert "enabled_tool" in names
         assert "disabled_tool" not in names
@@ -455,7 +455,7 @@ class TestLocalProviderDecorators:
 
         # Filtering happens at the server level, not provider level
         server = FastMCP("Test", providers=[provider])
-        resources = await server.get_resources()
+        resources = await server.list_resources()
         uris = {str(r.uri) for r in resources}
         assert "resource://enabled" in uris
         assert "resource://disabled" not in uris
@@ -491,7 +491,7 @@ class TestLocalProviderDecorators:
 
         # Filtering happens at the server level, not provider level
         server = FastMCP("Test", providers=[provider])
-        templates = await server.get_resource_templates()
+        templates = await server.list_resource_templates()
         uris = {t.uri_template for t in templates}
         assert "items://{id}" in uris
         assert "data://{id}" not in uris
@@ -562,7 +562,7 @@ class TestLocalProviderDecorators:
 
         # Filtering happens at the server level, not provider level
         server = FastMCP("Test", providers=[provider])
-        prompts = await server.get_prompts()
+        prompts = await server.list_prompts()
         names = {p.name for p in prompts}
         assert "enabled_prompt" in names
         assert "disabled_prompt" not in names
@@ -778,7 +778,7 @@ class TestLocalProviderStandaloneUsage:
             assert any(t.name == "shared_tool" for t in tools2)
 
     async def test_tools_visible_via_server_get_tools(self):
-        """Test that provider tools are visible via server.get_tools()."""
+        """Test that provider tools are visible via server.list_tools()."""
         provider = LocalProvider()
 
         @provider.tool
@@ -787,7 +787,7 @@ class TestLocalProviderStandaloneUsage:
 
         server = FastMCP("Test", providers=[provider])
 
-        tools = await server.get_tools()
+        tools = await server.list_tools()
         assert any(t.name == "provider_tool" for t in tools)
 
     async def test_server_decorator_and_provider_tools_coexist(self):
@@ -804,7 +804,7 @@ class TestLocalProviderStandaloneUsage:
         def server_tool() -> str:
             return "from server"
 
-        tools = await server.get_tools()
+        tools = await server.list_tools()
         assert any(t.name == "provider_tool" for t in tools)
         assert any(t.name == "server_tool" for t in tools)
 
@@ -823,7 +823,7 @@ class TestLocalProviderStandaloneUsage:
             return "from server"
 
         # Server's LocalProvider is first, so its tool wins
-        tools = await server.get_tools()
+        tools = await server.list_tools()
         assert any(t.name == "duplicate_tool" for t in tools)
 
         async with Client(server) as client:

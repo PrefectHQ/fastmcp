@@ -40,11 +40,11 @@ first_sample.register_all(mcp_server=mcp, prefix="first")
 second_sample.register_all(mcp_server=mcp, prefix="second")
 
 
-async def list_components():
+async def list_components() -> None:
     print("MCP Server running with registered components...")
-    print("Tools:", list(await mcp.get_tools()))
-    print("Resources:", list(await mcp.get_resources()))
-    print("Prompts:", list(await mcp.get_prompts()))
+    print("Tools:", list(await mcp.list_tools()))
+    print("Resources:", list(await mcp.list_resources()))
+    print("Prompts:", list(await mcp.list_prompts()))
 
 
 if __name__ == "__main__":
