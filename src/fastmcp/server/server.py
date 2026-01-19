@@ -1800,9 +1800,7 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
         sdk_tools = [tool.to_mcp_tool(name=tool.name) for tool in tools]
         # SDK may pass None for internal cache refresh despite type hint
         cursor = (
-            request.params.cursor  # type: ignore[union-attr]
-            if request is not None and request.params
-            else None
+            request.params.cursor if request is not None and request.params else None
         )
         page, next_cursor = _apply_pagination(sdk_tools, cursor, self._list_page_size)
         return mcp.types.ListToolsResult(tools=page, nextCursor=next_cursor)

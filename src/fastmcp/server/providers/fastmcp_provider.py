@@ -427,7 +427,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
     def register_with_docket(self, docket: Docket) -> None:
         """No-op: the child's actual template is registered via get_tasks()."""
 
-    async def add_to_docket(  # type: ignore[override]
+    async def add_to_docket(
         self,
         docket: Docket,
         params: dict[str, Any],

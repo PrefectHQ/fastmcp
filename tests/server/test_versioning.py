@@ -1420,4 +1420,4 @@ class TestClientVersionSelection:
 
         async with Client(mcp) as client:
             result = await client.read_resource("data://info", version=version)
-            assert result[0].text == expected  # type: ignore[union-attr]
+            assert result[0].text == expected

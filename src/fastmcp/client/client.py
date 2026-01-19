@@ -1078,7 +1078,7 @@ class Client(Generic[ClientTransportT]):
             task_obj = ResourceTask(
                 self, server_task_id, uri=str(uri), immediate_result=None
             )
-            self._task_registry[server_task_id] = weakref.ref(task_obj)  # type: ignore[assignment]
+            self._task_registry[server_task_id] = weakref.ref(task_obj)
             return task_obj
         else:
             # Graceful degradation - server returned ReadResourceResult
@@ -1358,7 +1358,7 @@ class Client(Generic[ClientTransportT]):
             task_obj = PromptTask(
                 self, server_task_id, prompt_name=name, immediate_result=None
             )
-            self._task_registry[server_task_id] = weakref.ref(task_obj)  # type: ignore[assignment]
+            self._task_registry[server_task_id] = weakref.ref(task_obj)
             return task_obj
         else:
             # Graceful degradation - server returned GetPromptResult
@@ -1740,7 +1740,7 @@ class Client(Generic[ClientTransportT]):
             task_obj = ToolTask(
                 self, server_task_id, tool_name=name, immediate_result=None
             )
-            self._task_registry[server_task_id] = weakref.ref(task_obj)  # type: ignore[assignment]
+            self._task_registry[server_task_id] = weakref.ref(task_obj)
             return task_obj
         else:
             # Graceful degradation - server returned CallToolResult

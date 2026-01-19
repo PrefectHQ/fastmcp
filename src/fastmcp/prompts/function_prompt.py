@@ -323,7 +323,7 @@ class FunctionPrompt(Prompt):
             return
         docket.register(self.fn, names=[self.key])
 
-    async def add_to_docket(  # type: ignore[override]
+    async def add_to_docket(
         self,
         docket: Docket,
         arguments: dict[str, Any] | None,

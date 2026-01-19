@@ -429,7 +429,7 @@ class FunctionResourceTemplate(ResourceTemplate):
             return
         docket.register(self.fn, names=[self.key])
 
-    async def add_to_docket(  # type: ignore[override]
+    async def add_to_docket(
         self,
         docket: Docket,
         params: dict[str, Any],
