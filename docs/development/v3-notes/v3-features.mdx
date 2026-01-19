@@ -108,6 +108,8 @@ Transforms modify components (tools, resources, prompts) as they flow from provi
 - `ToolTransform` - modifies tool schemas (rename, description, tags, argument transforms)
 - `Enabled` - sets enabled state on components by key or tag (backs `enable()`/`disable()` API)
 - `VersionFilter` - filters components by version range (`version_gte`, `version_lt`)
+- `ResourcesAsTools` - exposes resources as tools for tool-only clients
+- `PromptsAsTools` - exposes prompts as tools for tool-only clients
 
 ```python
 from fastmcp.server.transforms import Namespace, ToolTransform
@@ -148,6 +150,54 @@ Transforms apply at two levels:
 - **Server-level**: `server.add_transform()` - affects all components from all providers
 
 Documentation: `docs/servers/providers/transforms.mdx`, `docs/servers/enabled.mdx`
+
+### ResourcesAsTools and PromptsAsTools
+
+These transforms expose resources and prompts as tools for clients that only support the tools protocol. Each transform generates two tools that provide listing and access functionality.
+
+**ResourcesAsTools** generates `list_resources` and `read_resource` tools:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms import ResourcesAsTools
+
+mcp = FastMCP("Server")
+
+@mcp.resource("data://config")
+def get_config() -> dict:
+    return {"setting": "value"}
+
+mcp.add_transform(ResourcesAsTools(mcp))
+# Now has list_resources and read_resource tools
+```
+
+The `list_resources` tool returns JSON with resource metadata. The `read_resource` tool accepts a URI and returns the resource content, preserving both text and binary data through base64 encoding.
+
+**PromptsAsTools** generates `list_prompts` and `get_prompt` tools:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms import PromptsAsTools
+
+mcp = FastMCP("Server")
+
+@mcp.prompt
+def analyze_code(code: str, language: str = "python") -> str:
+    return f"Analyze this {language} code:\n{code}"
+
+mcp.add_transform(PromptsAsTools(mcp))
+# Now has list_prompts and get_prompt tools
+```
+
+The `list_prompts` tool returns JSON with prompt metadata including argument information. The `get_prompt` tool accepts a prompt name and optional arguments dict, returning the rendered prompt as a messages array. Non-text content (like embedded resources) is preserved as structured JSON.
+
+Both transforms:
+- Capture a provider reference at construction for deferred querying
+- Route through `FastMCP.read_resource()` / `FastMCP.render_prompt()` when the provider is FastMCP, ensuring middleware chains execute
+- Fall back to direct provider methods for plain providers
+- Return JSON for easy parsing by tool-only clients
+
+Documentation: `docs/servers/providers/resources-as-tools.mdx`, `docs/servers/providers/prompts-as-tools.mdx`
 
 ---
 

@@ -110,6 +110,7 @@
                   "servers/providers/overview",
                   "servers/providers/transforms",
                   "servers/providers/resources-as-tools",
+                  "servers/providers/prompts-as-tools",
                   "servers/providers/local",
                   "servers/providers/filesystem",
                   "servers/providers/mounting",
