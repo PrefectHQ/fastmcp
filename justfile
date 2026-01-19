@@ -16,7 +16,7 @@ docs:
 
 # Check for broken links in documentation
 docs-broken-links:
-    cd docs && npx --yes mint@latest install && npx --yes mint@latest broken-links
+    cd docs && npx --yes mint@latest broken-links
 
 # Generate API reference documentation for all modules
 api-ref-all:

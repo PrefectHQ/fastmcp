@@ -1,0 +1,62 @@
+---
+title: base
+sidebarTitle: base
+---
+
+# `fastmcp.client.transports.base`
+
+## Classes
+
+### `SessionKwargs` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports/base.py#L23" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Keyword arguments for the MCP ClientSession constructor.
+
+
+### `ClientTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports/base.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Abstract base class for different MCP client transport mechanisms.
+
+A Transport is responsible for establishing and managing connections
+to an MCP server, and providing a ClientSession within an async context.
+
+
+**Methods:**
+
+#### `connect_session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports/base.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+connect_session(self, **session_kwargs: Unpack[SessionKwargs]) -> AsyncIterator[ClientSession]
+```
+
+Establishes a connection and yields an active ClientSession.
+
+The ClientSession is *not* expected to be initialized in this context manager.
+
+The session is guaranteed to be valid only within the scope of the
+async context manager. Connection setup and teardown are handled
+within this context.
+
+**Args:**
+- `**session_kwargs`: Keyword arguments to pass to the ClientSession
+              constructor (e.g., callbacks, timeouts).
+
+
+#### `close` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports/base.py#L73" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+close(self)
+```
+
+Close the transport.
+
+
+#### `get_session_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports/base.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_session_id(self) -> str | None
+```
+
+Get the session ID for this transport, if available.
+

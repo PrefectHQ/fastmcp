@@ -79,10 +79,6 @@ path = "src/fastmcp/server/auth/oauth_proxy.py"
 max_lines = 2282
 
 [[rules]]
-path = "src/fastmcp/client/transports.py"
-max_lines = 1208
-
-[[rules]]
 path = "tests/server/test_dependencies.py"
 max_lines = 1046
 

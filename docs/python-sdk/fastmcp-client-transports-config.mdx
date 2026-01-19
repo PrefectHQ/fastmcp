@@ -1,0 +1,72 @@
+---
+title: config
+sidebarTitle: config
+---
+
+# `fastmcp.client.transports.config`
+
+## Classes
+
+### `MCPConfigTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports/config.py#L22" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Transport for connecting to one or more MCP servers defined in an MCPConfig.
+
+This transport provides a unified interface to multiple MCP servers defined in an MCPConfig
+object or dictionary matching the MCPConfig schema. It supports two key scenarios:
+
+1. If the MCPConfig contains exactly one server, it creates a direct transport to that server.
+2. If the MCPConfig contains multiple servers, it creates a composite client by mounting
+   all servers on a single FastMCP instance, with each server's name, by default, used as its mounting prefix.
+
+In the multi-server case, tools are accessible with the prefix pattern `{server_name}_{tool_name}`
+and resources with the pattern `protocol://{server_name}/path/to/resource`.
+
+This is particularly useful for creating clients that need to interact with multiple specialized
+MCP servers through a single interface, simplifying client code.
+
+**Examples:**
+
+```python
+from fastmcp import Client
+
+# Create a config with multiple servers
+config = {
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather-api.example.com/mcp",
+            "transport": "http"
+        },
+        "calendar": {
+            "url": "https://calendar-api.example.com/mcp",
+            "transport": "http"
+        }
+    }
+}
+
+# Create a client with the config
+client = Client(config)
+
+async with client:
+    # Access tools with prefixes
+    weather = await client.call_tool("weather_get_forecast", {"city": "London"})
+    events = await client.call_tool("calendar_list_events", {"date": "2023-06-01"})
+
+    # Access resources with prefixed URIs
+    icons = await client.read_resource("weather://weather/icons/sunny")
+```
+
+
+**Methods:**
+
+#### `connect_session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports/config.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+connect_session(self, **session_kwargs: Unpack[SessionKwargs]) -> AsyncIterator[ClientSession]
+```
+
+#### `close` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports/config.py#L165" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+close(self)
+```

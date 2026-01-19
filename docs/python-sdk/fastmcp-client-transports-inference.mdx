@@ -1,0 +1,56 @@
+---
+title: inference
+sidebarTitle: inference
+---
+
+# `fastmcp.client.transports.inference`
+
+## Functions
+
+### `infer_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports/inference.py#L59" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+infer_transport(transport: ClientTransport | FastMCP | FastMCP1Server | AnyUrl | Path | MCPConfig | dict[str, Any] | str) -> ClientTransport
+```
+
+
+Infer the appropriate transport type from the given transport argument.
+
+This function attempts to infer the correct transport type from the provided
+argument, handling various input types and converting them to the appropriate
+ClientTransport subclass.
+
+The function supports these input types:
+- ClientTransport: Used directly without modification
+- FastMCP or FastMCP1Server: Creates an in-memory FastMCPTransport
+- Path or str (file path): Creates PythonStdioTransport (.py) or NodeStdioTransport (.js)
+- AnyUrl or str (URL): Creates StreamableHttpTransport (default) or SSETransport (for /sse endpoints)
+- MCPConfig or dict: Creates MCPConfigTransport, potentially connecting to multiple servers
+
+For HTTP URLs, they are assumed to be Streamable HTTP URLs unless they end in `/sse`.
+
+For MCPConfig with multiple servers, a composite client is created where each server
+is mounted with its name as prefix. This allows accessing tools and resources from multiple
+servers through a single unified client interface, using naming patterns like
+`servername_toolname` for tools and `protocol://servername/path` for resources.
+If the MCPConfig contains only one server, a direct connection is established without prefixing.
+
+**Examples:**
+
+```python
+# Connect to a local Python script
+transport = infer_transport("my_script.py")
+
+# Connect to a remote server via HTTP
+transport = infer_transport("http://example.com/mcp")
+
+# Connect to multiple servers using MCPConfig
+config = {
+    "mcpServers": {
+        "weather": {"url": "http://weather.example.com/mcp"},
+        "calendar": {"url": "http://calendar.example.com/mcp"}
+    }
+}
+transport = infer_transport(config)
+```
+

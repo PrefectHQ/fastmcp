@@ -354,7 +354,18 @@
                   },
                   "python-sdk/fastmcp-client-tasks",
                   "python-sdk/fastmcp-client-telemetry",
-                  "python-sdk/fastmcp-client-transports"
+                  {
+                    "group": "transports",
+                    "pages": [
+                      "python-sdk/fastmcp-client-transports-__init__",
+                      "python-sdk/fastmcp-client-transports-base",
+                      "python-sdk/fastmcp-client-transports-config",
+                      "python-sdk/fastmcp-client-transports-http",
+                      "python-sdk/fastmcp-client-transports-inference",
+                      "python-sdk/fastmcp-client-transports-memory",
+                      "python-sdk/fastmcp-client-transports-stdio"
+                    ]
+                  }
                 ]
               },
               {
