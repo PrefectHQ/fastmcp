@@ -1,0 +1,104 @@
+---
+title: Resources as Tools
+sidebarTitle: Resources as Tools
+description: Expose resources to tool-only clients
+icon: toolbox
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.0.0" />
+
+Some MCP clients only support tools. They cannot list or read resources directly because they lack resource protocol support. The `ResourcesAsTools` transform bridges this gap by generating tools that provide access to your server's resources.
+
+When you add `ResourcesAsTools` to a server, it creates two tools that clients can call instead of using the resource protocol:
+
+- **`list_resources`** returns JSON describing all available resources and templates
+- **`read_resource`** reads a specific resource by URI
+
+This means any client that can call tools can now access resources, even if the client has no native resource support.
+
+## Basic Usage
+
+Pass your server to `ResourcesAsTools` when adding the transform. The transform queries that server for resources whenever the generated tools are called.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms import ResourcesAsTools
+
+mcp = FastMCP("My Server")
+
+@mcp.resource("config://app")
+def app_config() -> str:
+    """Application configuration."""
+    return '{"app_name": "My App", "version": "1.0.0"}'
+
+@mcp.resource("user://{user_id}/profile")
+def user_profile(user_id: str) -> str:
+    """Get a user's profile by ID."""
+    return f'{{"user_id": "{user_id}", "name": "User {user_id}"}}'
+
+# Add the transform - creates list_resources and read_resource tools
+mcp.add_transform(ResourcesAsTools(mcp))
+```
+
+Clients now see three tools: whatever tools you defined directly, plus `list_resources` and `read_resource`.
+
+## Static Resources vs Templates
+
+Resources come in two forms, and the `list_resources` tool distinguishes between them in its JSON output.
+
+Static resources have fixed URIs. They represent concrete data that exists at a known location. In the listing output, static resources include a `uri` field containing the exact URI to request.
+
+Resource templates have parameterized URIs with placeholders like `{user_id}`. They represent patterns for accessing dynamic data. In the listing output, templates include a `uri_template` field showing the pattern with its placeholders.
+
+When a client calls `list_resources`, it receives JSON like this:
+
+```json
+[
+  {
+    "uri": "config://app",
+    "name": "app_config",
+    "description": "Application configuration.",
+    "mime_type": "text/plain"
+  },
+  {
+    "uri_template": "user://{user_id}/profile",
+    "name": "user_profile",
+    "description": "Get a user's profile by ID."
+  }
+]
+```
+
+The client can distinguish resource types by checking which field is present: `uri` for static resources, `uri_template` for templates.
+
+## Reading Resources
+
+The `read_resource` tool accepts a single `uri` argument. For static resources, pass the exact URI. For templates, fill in the placeholders with actual values.
+
+```python
+# Reading a static resource
+result = await client.call_tool("read_resource", {"uri": "config://app"})
+print(result.data)  # '{"app_name": "My App", "version": "1.0.0"}'
+
+# Reading a templated resource - fill in {user_id} with an actual ID
+result = await client.call_tool("read_resource", {"uri": "user://42/profile"})
+print(result.data)  # '{"user_id": "42", "name": "User 42"}'
+```
+
+The transform handles template matching automatically. When you request `user://42/profile`, it matches against the `user://{user_id}/profile` template, extracts `user_id=42`, and calls your resource function with that parameter.
+
+## Binary Content
+
+Resources that return binary data (like images or files) are automatically base64-encoded when read through the `read_resource` tool. This ensures binary content can be transmitted as a string in the tool response.
+
+```python
+@mcp.resource("data://binary", mime_type="application/octet-stream")
+def binary_data() -> bytes:
+    return b"\x00\x01\x02\x03"
+
+# Client receives base64-encoded string
+result = await client.call_tool("read_resource", {"uri": "data://binary"})
+decoded = base64.b64decode(result.data)  # b'\x00\x01\x02\x03'
+```
+
