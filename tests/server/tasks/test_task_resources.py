@@ -8,6 +8,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.tasks import ResourceTask
 
 
 @pytest.fixture
@@ -50,8 +51,6 @@ async def test_resource_with_task_metadata_returns_immediately(resource_server):
         task = await client.read_resource("file://large.txt", task=True)
 
         # Should return a ResourceTask object immediately
-        from fastmcp.client.client import ResourceTask
-
         assert isinstance(task, ResourceTask)
         assert isinstance(task.task_id, str)
         assert len(task.task_id) > 0

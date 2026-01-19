@@ -9,6 +9,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.tasks import ToolTask
 
 
 @pytest.fixture
@@ -33,8 +34,6 @@ async def test_call_tool_as_task_returns_tool_task(tool_task_server):
     """call_tool with task=True returns a ToolTask object."""
     async with Client(tool_task_server) as client:
         task = await client.call_tool("echo", {"message": "hello"}, task=True)
-
-        from fastmcp.client.client import ToolTask
 
         assert isinstance(task, ToolTask)
         assert isinstance(task.task_id, str)

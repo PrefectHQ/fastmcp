@@ -6,8 +6,9 @@ from pydantic import AnyUrl
 
 from fastmcp.client.transports.base import ClientTransport, ClientTransportT
 from fastmcp.client.transports.config import MCPConfigTransport
-from fastmcp.client.transports.http import SSETransport, StreamableHttpTransport
+from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.memory import FastMCPTransport
+from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import NodeStdioTransport, PythonStdioTransport
 from fastmcp.mcp_config import MCPConfig, infer_transport_type_from_url
 from fastmcp.server.server import FastMCP

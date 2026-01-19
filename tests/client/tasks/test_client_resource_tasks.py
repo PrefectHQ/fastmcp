@@ -8,6 +8,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.tasks import ResourceTask
 
 
 @pytest.fixture
@@ -32,8 +33,6 @@ async def test_read_resource_as_task_returns_resource_task(resource_server):
     """read_resource with task=True returns a ResourceTask object."""
     async with Client(resource_server) as client:
         task = await client.read_resource("file://document.txt", task=True)
-
-        from fastmcp.client.client import ResourceTask
 
         assert isinstance(task, ResourceTask)
         assert isinstance(task.task_id, str)

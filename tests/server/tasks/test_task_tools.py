@@ -11,6 +11,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.tasks import ToolTask
 
 
 @pytest.fixture
@@ -48,8 +49,6 @@ async def test_tool_with_task_metadata_returns_immediately(tool_server):
         task = await client.call_tool("simple_tool", {"message": "test"}, task=True)
         assert task
         assert not task.returned_immediately
-
-        from fastmcp.client.client import ToolTask
 
         assert isinstance(task, ToolTask)
         assert isinstance(task.task_id, str)

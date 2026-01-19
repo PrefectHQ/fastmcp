@@ -8,6 +8,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.tasks import PromptTask
 
 
 @pytest.fixture
@@ -32,8 +33,6 @@ async def test_get_prompt_as_task_returns_prompt_task(prompt_server):
     """get_prompt with task=True returns a PromptTask object."""
     async with Client(prompt_server) as client:
         task = await client.get_prompt("analysis_prompt", {"topic": "AI"}, task=True)
-
-        from fastmcp.client.client import PromptTask
 
         assert isinstance(task, PromptTask)
         assert isinstance(task.task_id, str)

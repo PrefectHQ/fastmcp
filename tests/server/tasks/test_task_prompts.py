@@ -8,6 +8,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.tasks import PromptTask
 
 
 @pytest.fixture
@@ -45,8 +46,6 @@ async def test_prompt_with_task_metadata_returns_immediately(prompt_server):
         task = await client.get_prompt("background_prompt", {"topic": "AI"}, task=True)
 
         # Should return a PromptTask object immediately
-        from fastmcp.client.client import PromptTask
-
         assert isinstance(task, PromptTask)
         assert isinstance(task.task_id, str)
         assert len(task.task_id) > 0

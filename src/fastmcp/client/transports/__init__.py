@@ -7,8 +7,9 @@ from fastmcp.client.transports.base import (
     SessionKwargs,
 )
 from fastmcp.client.transports.config import MCPConfigTransport
-from fastmcp.client.transports.http import SSETransport, StreamableHttpTransport
+from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.inference import infer_transport
+from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.memory import FastMCPTransport
 from fastmcp.client.transports.stdio import (
     FastMCPStdioTransport,
