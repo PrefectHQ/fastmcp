@@ -10,7 +10,7 @@ Sampling types and helper functions for FastMCP servers.
 
 ## Functions
 
-### `determine_handler_mode` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `determine_handler_mode` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 determine_handler_mode(context: Context, needs_tools: bool) -> bool
@@ -30,7 +30,7 @@ Determine whether to use fallback handler or client for sampling.
 - `ValueError`: If client lacks required capability and no fallback configured.
 
 
-### `call_sampling_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `call_sampling_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L187" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_sampling_handler(context: Context, messages: list[SamplingMessage]) -> CreateMessageResult | CreateMessageResultWithTools
@@ -44,7 +44,7 @@ sampling_handler is set via determine_handler_mode(). The checks below are
 safeguards against internal misuse.
 
 
-### `execute_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L228" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `execute_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 execute_tools(tool_calls: list[ToolUseContent], tool_map: dict[str, SamplingTool], mask_error_details: bool = False) -> list[ToolResultContent]
@@ -65,9 +65,79 @@ to provide specific error messages to the LLM.
 - List of tool result content blocks.
 
 
+### `prepare_messages` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L317" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+prepare_messages(messages: str | Sequence[str | SamplingMessage]) -> list[SamplingMessage]
+```
+
+
+Convert various message formats to a list of SamplingMessage objects.
+
+
+### `prepare_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L336" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+prepare_tools(tools: Sequence[SamplingTool | Callable[..., Any]] | None) -> list[SamplingTool] | None
+```
+
+
+Convert tools to SamplingTool objects.
+
+
+### `extract_tool_calls` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L355" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+extract_tool_calls(response: CreateMessageResult | CreateMessageResultWithTools) -> list[ToolUseContent]
+```
+
+
+Extract tool calls from a response.
+
+
+### `create_final_response_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L367" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_final_response_tool(result_type: type) -> SamplingTool
+```
+
+
+Create a synthetic 'final_response' tool for structured output.
+
+This tool is used to capture structured responses from the LLM.
+The tool's schema is derived from the result_type.
+
+
+### `sample_step_impl` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L403" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+sample_step_impl(context: Context, messages: str | Sequence[str | SamplingMessage]) -> SampleStep
+```
+
+
+Implementation of Context.sample_step().
+
+Make a single LLM sampling call. This is a stateless function that makes
+exactly one LLM call and optionally executes any requested tools.
+
+
+### `sample_impl` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L515" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+sample_impl(context: Context, messages: str | Sequence[str | SamplingMessage]) -> SamplingResult[ResultT]
+```
+
+
+Implementation of Context.sample().
+
+Send a sampling request to the client and await the response. This method
+runs to completion automatically, executing a tool loop until the LLM
+provides a final text response.
+
+
 ## Classes
 
-### `SamplingResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SamplingResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L50" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Result of a sampling operation.
@@ -78,7 +148,7 @@ Result of a sampling operation.
 - `history`: All messages exchanged during sampling.
 
 
-### `SampleStep` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L55" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SampleStep` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L65" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Result of a single sampling call.
@@ -88,7 +158,7 @@ Represents what the LLM returned in this step plus the message history.
 
 **Methods:**
 
-#### `is_tool_use` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L65" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `is_tool_use` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_tool_use(self) -> bool
@@ -97,7 +167,7 @@ is_tool_use(self) -> bool
 True if the LLM is requesting tool execution.
 
 
-#### `text` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L72" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `text` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L82" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 text(self) -> str | None
@@ -106,7 +176,7 @@ text(self) -> str | None
 Extract text from the response, if available.
 
 
-#### `tool_calls` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool_calls` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L95" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool_calls(self) -> list[ToolUseContent]

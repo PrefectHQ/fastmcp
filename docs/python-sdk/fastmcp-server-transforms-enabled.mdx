@@ -15,7 +15,7 @@ Final filtering happens at the Provider level.
 
 ## Functions
 
-### `is_enabled` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L274" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `is_enabled` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L277" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_enabled(component: FastMCPComponent) -> bool
@@ -37,9 +37,146 @@ Returns False if enabled mark is False.
 - True if component should be enabled/visible to clients.
 
 
+### `get_visibility_rules` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L306" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_visibility_rules(context: Context) -> list[dict[str, Any]]
+```
+
+
+Load visibility rule dicts from session state.
+
+
+### `save_visibility_rules` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L311" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+save_visibility_rules(context: Context, rules: list[dict[str, Any]]) -> None
+```
+
+
+Save visibility rule dicts to session state and send notifications.
+
+**Args:**
+- `context`: The context to save rules for.
+- `rules`: The visibility rules to save.
+- `components`: Optional hint about which component types are affected.
+If None, sends notifications for all types (safe default).
+If provided, only sends notifications for specified types.
+
+
+### `create_enabled_transforms` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L338" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_enabled_transforms(rules: list[dict[str, Any]]) -> list[Enabled]
+```
+
+
+Convert rule dicts to Enabled transforms.
+
+
+### `get_session_transforms` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L366" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_session_transforms(context: Context) -> list[Enabled]
+```
+
+
+Get session-specific Enabled transforms from state store.
+
+
+### `enable_components` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L378" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+enable_components(context: Context) -> None
+```
+
+
+Enable components matching criteria for this session only.
+
+Session rules override global transforms. Rules accumulate - each call
+adds a new rule to the session. Later marks override earlier ones
+(Enabled transform semantics).
+
+Sends notifications to this session only: ToolListChangedNotification,
+ResourceListChangedNotification, and PromptListChangedNotification.
+
+**Args:**
+- `context`: The context for this session.
+- `names`: Component names or URIs to match.
+- `keys`: Component keys to match (e.g., {"tool\:my_tool@v1"}).
+- `version`: Component version spec to match.
+- `tags`: Tags to match (component must have at least one).
+- `components`: Component types to match (e.g., {"tool", "prompt"}).
+- `match_all`: If True, matches all components regardless of other criteria.
+
+
+### `disable_components` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L432" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+disable_components(context: Context) -> None
+```
+
+
+Disable components matching criteria for this session only.
+
+Session rules override global transforms. Rules accumulate - each call
+adds a new rule to the session. Later marks override earlier ones
+(Enabled transform semantics).
+
+Sends notifications to this session only: ToolListChangedNotification,
+ResourceListChangedNotification, and PromptListChangedNotification.
+
+**Args:**
+- `context`: The context for this session.
+- `names`: Component names or URIs to match.
+- `keys`: Component keys to match (e.g., {"tool\:my_tool@v1"}).
+- `version`: Component version spec to match.
+- `tags`: Tags to match (component must have at least one).
+- `components`: Component types to match (e.g., {"tool", "prompt"}).
+- `match_all`: If True, matches all components regardless of other criteria.
+
+
+### `reset_components` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L486" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+reset_components(context: Context) -> None
+```
+
+
+Clear all session visibility rules.
+
+Use this to reset session visibility back to global defaults.
+
+Sends notifications to this session only: ToolListChangedNotification,
+ResourceListChangedNotification, and PromptListChangedNotification.
+
+**Args:**
+- `context`: The context for this session.
+
+
+### `apply_session_transforms` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L503" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+apply_session_transforms(components: Sequence[ComponentT]) -> Sequence[ComponentT]
+```
+
+
+Apply session-specific visibility transforms to components.
+
+This helper applies session-level enable/disable rules by marking
+components with their enabled state. Session transforms override
+global transforms due to mark-based semantics (later marks win).
+
+**Args:**
+- `components`: The components to apply session transforms to.
+
+**Returns:**
+- The components with session transforms applied.
+
+
 ## Classes
 
-### `Enabled` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Enabled` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Sets enabled state on matching components.
@@ -51,7 +188,7 @@ Final filtering happens at the Provider level after all transforms run.
 
 **Methods:**
 
-#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L195" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]
@@ -60,7 +197,7 @@ list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]
 Mark tools by enabled state.
 
 
-#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L203" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
@@ -69,7 +206,7 @@ get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
 Mark tool if found.
 
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L216" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]
@@ -78,7 +215,7 @@ list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]
 Mark resources by enabled state.
 
 
-#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L218" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L221" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource(self, uri: str, call_next: GetResourceNext) -> Resource | None
@@ -87,7 +224,7 @@ get_resource(self, uri: str, call_next: GetResourceNext) -> Resource | None
 Mark resource if found.
 
 
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L235" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resource_templates(self, call_next: ListResourceTemplatesNext) -> Sequence[ResourceTemplate]
@@ -96,7 +233,7 @@ list_resource_templates(self, call_next: ListResourceTemplatesNext) -> Sequence[
 Mark resource templates by enabled state.
 
 
-#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L242" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L245" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource_template(self, uri: str, call_next: GetResourceTemplateNext) -> ResourceTemplate | None
@@ -105,7 +242,7 @@ get_resource_template(self, uri: str, call_next: GetResourceTemplateNext) -> Res
 Mark resource template if found.
 
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L259" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L262" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]
@@ -114,7 +251,7 @@ list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]
 Mark prompts by enabled state.
 
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L264" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/enabled.py#L267" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, call_next: GetPromptNext) -> Prompt | None
