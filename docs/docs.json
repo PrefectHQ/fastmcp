@@ -335,10 +335,18 @@
                   "python-sdk/fastmcp-client-elicitation",
                   "python-sdk/fastmcp-client-logging",
                   "python-sdk/fastmcp-client-messages",
+                  {
+                    "group": "mixins",
+                    "pages": [
+                      "python-sdk/fastmcp-client-mixins-__init__",
+                      "python-sdk/fastmcp-client-mixins-prompts",
+                      "python-sdk/fastmcp-client-mixins-resources",
+                      "python-sdk/fastmcp-client-mixins-task_management",
+                      "python-sdk/fastmcp-client-mixins-tools"
+                    ]
+                  },
                   "python-sdk/fastmcp-client-oauth_callback",
                   "python-sdk/fastmcp-client-progress",
-                  "python-sdk/fastmcp-client-prompts",
-                  "python-sdk/fastmcp-client-resources",
                   "python-sdk/fastmcp-client-roots",
                   {
                     "group": "sampling",
@@ -354,10 +362,8 @@
                       }
                     ]
                   },
-                  "python-sdk/fastmcp-client-task_management",
                   "python-sdk/fastmcp-client-tasks",
                   "python-sdk/fastmcp-client-telemetry",
-                  "python-sdk/fastmcp-client-tools_client",
                   {
                     "group": "transports",
                     "pages": [
@@ -458,6 +464,15 @@
                       "python-sdk/fastmcp-server-middleware-rate_limiting",
                       "python-sdk/fastmcp-server-middleware-timing",
                       "python-sdk/fastmcp-server-middleware-tool_injection"
+                    ]
+                  },
+                  {
+                    "group": "mixins",
+                    "pages": [
+                      "python-sdk/fastmcp-server-mixins-__init__",
+                      "python-sdk/fastmcp-server-mixins-lifespan",
+                      "python-sdk/fastmcp-server-mixins-mcp_operations",
+                      "python-sdk/fastmcp-server-mixins-transport"
                     ]
                   },
                   {

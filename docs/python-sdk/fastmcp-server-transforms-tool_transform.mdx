@@ -24,13 +24,13 @@ hidden arguments, and other transformations at the transform level.
 #### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/tool_transform.py#L64" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]
+list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
 ```
 
 Apply transforms to matching tools.
 
 
-#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/tool_transform.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/tool_transform.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tool(self, name: str, call_next: GetToolNext) -> Tool | None

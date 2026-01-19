@@ -1,0 +1,131 @@
+---
+title: transport
+sidebarTitle: transport
+---
+
+# `fastmcp.server.mixins.transport`
+
+
+Transport-related methods for FastMCP Server.
+
+## Classes
+
+### `TransportMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/mixins/transport.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Mixin providing transport-related methods for FastMCP.
+
+Includes HTTP/stdio/SSE transport handling and custom HTTP routes.
+
+
+**Methods:**
+
+#### `run_async` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/mixins/transport.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_async(self: FastMCP, transport: Transport | None = None, show_banner: bool | None = None, **transport_kwargs: Any) -> None
+```
+
+Run the FastMCP server asynchronously.
+
+**Args:**
+- `transport`: Transport protocol to use ("stdio", "http", "sse", or "streamable-http")
+- `show_banner`: Whether to display the server banner. If None, uses the
+FASTMCP_SHOW_SERVER_BANNER setting (default\: True).
+
+
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/mixins/transport.py#L74" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run(self: FastMCP, transport: Transport | None = None, show_banner: bool | None = None, **transport_kwargs: Any) -> None
+```
+
+Run the FastMCP server. Note this is a synchronous function.
+
+**Args:**
+- `transport`: Transport protocol to use ("http", "stdio", "sse", or "streamable-http")
+- `show_banner`: Whether to display the server banner. If None, uses the
+FASTMCP_SHOW_SERVER_BANNER setting (default\: True).
+
+
+#### `custom_route` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/mixins/transport.py#L97" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+custom_route(self: FastMCP, path: str, methods: list[str], name: str | None = None, include_in_schema: bool = True) -> Callable[[Callable[[Request], Awaitable[Response]]], Callable[[Request], Awaitable[Response]]]
+```
+
+Decorator to register a custom HTTP route on the FastMCP server.
+
+Allows adding arbitrary HTTP endpoints outside the standard MCP protocol,
+which can be useful for OAuth callbacks, health checks, or admin APIs.
+The handler function must be an async function that accepts a Starlette
+Request and returns a Response.
+
+**Args:**
+- `path`: URL path for the route (e.g., "/auth/callback")
+- `methods`: List of HTTP methods to support (e.g., ["GET", "POST"])
+- `name`: Optional name for the route (to reference this route with
+Starlette's reverse URL lookup feature)
+- `include_in_schema`: Whether to include in OpenAPI schema, defaults to True
+
+
+#### `run_stdio_async` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/mixins/transport.py#L158" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_stdio_async(self: FastMCP, show_banner: bool = True, log_level: str | None = None, stateless: bool = False) -> None
+```
+
+Run the server using stdio transport.
+
+**Args:**
+- `show_banner`: Whether to display the server banner
+- `log_level`: Log level for the server
+- `stateless`: Whether to run in stateless mode (no session initialization)
+
+
+#### `run_http_async` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/mixins/transport.py#L200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_http_async(self: FastMCP, show_banner: bool = True, transport: Literal['http', 'streamable-http', 'sse'] = 'http', host: str | None = None, port: int | None = None, log_level: str | None = None, path: str | None = None, uvicorn_config: dict[str, Any] | None = None, middleware: list[ASGIMiddleware] | None = None, json_response: bool | None = None, stateless_http: bool | None = None, stateless: bool | None = None) -> None
+```
+
+Run the server using HTTP transport.
+
+**Args:**
+- `transport`: Transport protocol to use - "http" (default), "streamable-http", or "sse"
+- `host`: Host address to bind to (defaults to settings.host)
+- `port`: Port to bind to (defaults to settings.port)
+- `log_level`: Log level for the server (defaults to settings.log_level)
+- `path`: Path for the endpoint (defaults to settings.streamable_http_path or settings.sse_path)
+- `uvicorn_config`: Additional configuration for the Uvicorn server
+- `middleware`: A list of middleware to apply to the app
+- `json_response`: Whether to use JSON response format (defaults to settings.json_response)
+- `stateless_http`: Whether to use stateless HTTP (defaults to settings.stateless_http)
+- `stateless`: Alias for stateless_http for CLI consistency
+
+
+#### `http_app` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/mixins/transport.py#L281" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+http_app(self: FastMCP, path: str | None = None, middleware: list[ASGIMiddleware] | None = None, json_response: bool | None = None, stateless_http: bool | None = None, transport: Literal['http', 'streamable-http', 'sse'] = 'http', event_store: EventStore | None = None, retry_interval: int | None = None) -> StarletteWithLifespan
+```
+
+Create a Starlette app using the specified HTTP transport.
+
+**Args:**
+- `path`: The path for the HTTP endpoint
+- `middleware`: A list of middleware to apply to the app
+- `json_response`: Whether to use JSON response format
+- `stateless_http`: Whether to use stateless mode (new transport per request)
+- `transport`: Transport protocol to use - "http", "streamable-http", or "sse"
+- `event_store`: Optional event store for SSE polling/resumability. When set,
+enables clients to reconnect and resume receiving events after
+server-initiated disconnections. Only used with streamable-http transport.
+- `retry_interval`: Optional retry interval in milliseconds for SSE polling.
+Controls how quickly clients should reconnect after server-initiated
+disconnections. Requires event_store to be set. Only used with
+streamable-http transport.
+
+**Returns:**
+- A Starlette application configured with the specified transport
+

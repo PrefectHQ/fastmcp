@@ -3,14 +3,14 @@ title: task_management
 sidebarTitle: task_management
 ---
 
-# `fastmcp.client.task_management`
+# `fastmcp.client.mixins.task_management`
 
 
 Task management methods for FastMCP Client.
 
 ## Classes
 
-### `ClientTaskManagementMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/task_management.py#L30" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClientTaskManagementMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/task_management.py#L30" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Mixin providing task management methods for Client.
@@ -18,7 +18,7 @@ Mixin providing task management methods for Client.
 
 **Methods:**
 
-#### `get_task_status` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/task_management.py#L33" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_task_status` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/task_management.py#L33" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_task_status(self: Client, task_id: str) -> GetTaskResult
@@ -39,7 +39,7 @@ Sends a 'tasks/get' MCP protocol request over the existing transport.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `get_task_result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/task_management.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_task_result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/task_management.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_task_result(self: Client, task_id: str) -> Any
@@ -61,7 +61,7 @@ Returns the raw result - callers should parse it appropriately.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/task_management.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/task_management.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tasks(self: Client, cursor: str | None = None, limit: int = 50) -> dict[str, Any]
@@ -87,7 +87,7 @@ querying status for locally tracked task IDs.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `cancel_task` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/task_management.py#L135" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `cancel_task` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/task_management.py#L135" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 cancel_task(self: Client, task_id: str) -> mcp.types.CancelTaskResult

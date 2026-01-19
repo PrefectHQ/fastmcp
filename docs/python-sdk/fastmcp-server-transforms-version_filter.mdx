@@ -10,7 +10,7 @@ Version filter transform for filtering components by version range.
 
 ## Classes
 
-### `VersionFilter` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `VersionFilter` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L24" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Filters components by version range.
@@ -36,49 +36,49 @@ Works with any version string - PEP 440 (1.0, 2.0) or dates (2025-01-01).
 
 **Methods:**
 
-#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L72" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]
+list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
 ```
 
-#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L80" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
 ```
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L84" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]
+list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]
 ```
 
-#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L87" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource(self, uri: str, call_next: GetResourceNext) -> Resource | None
 ```
 
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_resource_templates(self, call_next: ListResourceTemplatesNext) -> Sequence[ResourceTemplate]
+list_resource_templates(self, templates: Sequence[ResourceTemplate]) -> Sequence[ResourceTemplate]
 ```
 
-#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource_template(self, uri: str, call_next: GetResourceTemplateNext) -> ResourceTemplate | None
 ```
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]
+list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]
 ```
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L129" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/version_filter.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, call_next: GetPromptNext) -> Prompt | None

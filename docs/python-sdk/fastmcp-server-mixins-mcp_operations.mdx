@@ -1,0 +1,23 @@
+---
+title: mcp_operations
+sidebarTitle: mcp_operations
+---
+
+# `fastmcp.server.mixins.mcp_operations`
+
+
+MCP protocol handler setup and wire-format handlers for FastMCP Server.
+
+## Classes
+
+### `MCPOperationsMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/mixins/mcp_operations.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Mixin providing MCP protocol handler setup and wire-format handlers.
+
+Note: Methods registered with SDK decorators (e.g., _list_tools_mcp, _call_tool_mcp)
+cannot use `self: FastMCP` type hints because the SDK's `get_type_hints()` fails
+to resolve FastMCP at runtime (it's only available under TYPE_CHECKING). When
+type hints fail to resolve, the SDK falls back to calling handlers with no arguments.
+These methods use untyped `self` to avoid this issue.
+

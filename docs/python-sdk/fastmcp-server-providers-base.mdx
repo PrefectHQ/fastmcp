@@ -103,8 +103,8 @@ list_tools(self) -> Sequence[Tool]
 
 List tools with all transforms applied.
 
-Builds a middleware chain: base → transforms (in order).
-Each transform wraps the previous via call_next.
+Applies transforms sequentially: base → transforms (in order).
+Each transform receives the result from the previous transform.
 Components may be marked as disabled but are NOT filtered here -
 filtering happens at the server level to allow session transforms to override.
 
@@ -112,7 +112,7 @@ filtering happens at the server level to allow session transforms to override.
 - Transformed sequence of tools (including disabled ones).
 
 
-#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L157" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L152" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None
@@ -132,7 +132,7 @@ allowing session-level transforms to override provider-level disables.
 - The tool if found (may be marked disabled), None if not found.
 
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L178" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resources(self) -> Sequence[Resource]
@@ -143,7 +143,7 @@ List resources with all transforms applied.
 Components may be marked as disabled but are NOT filtered here.
 
 
-#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L188" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource(self, uri: str, version: VersionSpec | None = None) -> Resource | None
@@ -162,7 +162,7 @@ Note: This method does NOT filter disabled components. The Server
 - The resource if found (may be marked disabled), None if not found.
 
 
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L223" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resource_templates(self) -> Sequence[ResourceTemplate]
@@ -173,7 +173,7 @@ List resource templates with all transforms applied.
 Components may be marked as disabled but are NOT filtered here.
 
 
-#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L223" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource_template(self, uri: str, version: VersionSpec | None = None) -> ResourceTemplate | None
@@ -192,7 +192,7 @@ Note: This method does NOT filter disabled components. The Server
 - The template if found (may be marked disabled), None if not found.
 
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L265" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L250" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts(self) -> Sequence[Prompt]
@@ -203,7 +203,7 @@ List prompts with all transforms applied.
 Components may be marked as disabled but are NOT filtered here.
 
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L280" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L260" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, version: VersionSpec | None = None) -> Prompt | None
@@ -222,7 +222,7 @@ Note: This method does NOT filter disabled components. The Server
 - The prompt if found (may be marked disabled), None if not found.
 
 
-#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L438" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L418" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tasks(self) -> Sequence[FastMCPComponent]
@@ -237,7 +237,7 @@ for components with task_config.mode != 'forbidden'.
 Used by the server during startup to register functions with Docket.
 
 
-#### `lifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L512" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `lifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L463" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 lifespan(self) -> AsyncIterator[None]
@@ -253,7 +253,7 @@ The lifespan scope matches the server's lifespan - code before yield
 runs at startup, code after yield runs at shutdown.
 
 
-#### `enable` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L541" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `enable` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L492" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 enable(self) -> Self
@@ -281,7 +281,7 @@ VersionSpec(gte="v2")). Unversioned components will not match.
 - Self for method chaining.
 
 
-#### `disable` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L590" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `disable` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/base.py#L541" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 disable(self) -> Self

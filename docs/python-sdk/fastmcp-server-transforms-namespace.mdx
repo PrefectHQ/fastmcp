@@ -10,7 +10,7 @@ Namespace transform for prefixing component names.
 
 ## Classes
 
-### `Namespace` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Namespace` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Prefixes component names with a namespace.
@@ -23,16 +23,16 @@ Prefixes component names with a namespace.
 
 **Methods:**
 
-#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L101" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L97" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]
+list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
 ```
 
 Prefix tool names with namespace.
 
 
-#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L108" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L103" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
@@ -41,16 +41,16 @@ get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
 Get tool by namespaced name.
 
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L124" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L119" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]
+list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]
 ```
 
 Add namespace path segment to resource URIs.
 
 
-#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L126" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource(self, uri: str, call_next: GetResourceNext) -> Resource | None
@@ -59,16 +59,16 @@ get_resource(self, uri: str, call_next: GetResourceNext) -> Resource | None
 Get resource by namespaced URI.
 
 
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L152" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L146" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_resource_templates(self, call_next: ListResourceTemplatesNext) -> Sequence[ResourceTemplate]
+list_resource_templates(self, templates: Sequence[ResourceTemplate]) -> Sequence[ResourceTemplate]
 ```
 
 Add namespace path segment to template URIs.
 
 
-#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L162" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L155" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource_template(self, uri: str, call_next: GetResourceTemplateNext) -> ResourceTemplate | None
@@ -77,16 +77,16 @@ get_resource_template(self, uri: str, call_next: GetResourceTemplateNext) -> Res
 Get resource template by namespaced URI.
 
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L184" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]
+list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]
 ```
 
 Prefix prompt names with namespace.
 
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L191" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/namespace.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, call_next: GetPromptNext) -> Prompt | None

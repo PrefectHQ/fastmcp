@@ -3,14 +3,14 @@ title: prompts
 sidebarTitle: prompts
 ---
 
-# `fastmcp.client.prompts`
+# `fastmcp.client.mixins.prompts`
 
 
 Prompt-related methods for FastMCP Client.
 
 ## Classes
 
-### `ClientPromptsMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L29" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClientPromptsMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/prompts.py#L29" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Mixin providing prompt-related methods for Client.
@@ -18,7 +18,7 @@ Mixin providing prompt-related methods for Client.
 
 **Methods:**
 
-#### `list_prompts_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/prompts.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts_mcp(self: Client) -> mcp.types.ListPromptsResult
@@ -38,7 +38,7 @@ containing the list of prompts and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/prompts.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts(self: Client) -> list[mcp.types.Prompt]
@@ -58,7 +58,7 @@ large result sets incrementally), use list_prompts_mcp() with the cursor paramet
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `get_prompt_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L84" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/prompts.py#L84" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt_mcp(self: Client, name: str, arguments: dict[str, Any] | None = None, meta: dict[str, Any] | None = None) -> mcp.types.GetPromptResult
@@ -80,19 +80,19 @@ containing the prompt messages and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L153" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/prompts.py#L153" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self: Client, name: str, arguments: dict[str, Any] | None = None) -> mcp.types.GetPromptResult
 ```
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L164" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/prompts.py#L164" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self: Client, name: str, arguments: dict[str, Any] | None = None) -> PromptTask
 ```
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/prompts.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/prompts.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self: Client, name: str, arguments: dict[str, Any] | None = None) -> mcp.types.GetPromptResult | PromptTask

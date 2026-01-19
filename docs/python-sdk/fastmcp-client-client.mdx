@@ -7,7 +7,7 @@ sidebarTitle: client
 
 ## Classes
 
-### `ClientSessionState` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClientSessionState` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L95" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Holds all session-related state for a Client instance.
@@ -16,13 +16,13 @@ This allows clean separation of configuration (which is copied) from
 session state (which should be fresh for each new client instance).
 
 
-### `CallToolResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CallToolResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Parsed result from a tool call.
 
 
-### `Client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L120" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L122" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 MCP client that delegates connection management to a Transport instance.
@@ -85,7 +85,7 @@ async with client:
 
 **Methods:**
 
-#### `session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L341" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L343" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 session(self) -> ClientSession
@@ -94,7 +94,7 @@ session(self) -> ClientSession
 Get the current active session. Raises RuntimeError if not connected.
 
 
-#### `initialize_result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L351" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `initialize_result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L353" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 initialize_result(self) -> mcp.types.InitializeResult | None
@@ -103,7 +103,7 @@ initialize_result(self) -> mcp.types.InitializeResult | None
 Get the result of the initialization request.
 
 
-#### `set_roots` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L355" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_roots` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L357" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_roots(self, roots: RootsList | RootsHandler) -> None
@@ -112,7 +112,7 @@ set_roots(self, roots: RootsList | RootsHandler) -> None
 Set the roots for the client. This does not automatically call `send_roots_list_changed`.
 
 
-#### `set_sampling_callback` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L359" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_sampling_callback` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L361" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_sampling_callback(self, sampling_callback: SamplingHandler, sampling_capabilities: mcp.types.SamplingCapability | None = None) -> None
@@ -121,7 +121,7 @@ set_sampling_callback(self, sampling_callback: SamplingHandler, sampling_capabil
 Set the sampling callback for the client.
 
 
-#### `set_elicitation_callback` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L375" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_elicitation_callback` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L377" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_elicitation_callback(self, elicitation_callback: ElicitationHandler) -> None
@@ -130,7 +130,7 @@ set_elicitation_callback(self, elicitation_callback: ElicitationHandler) -> None
 Set the elicitation callback for the client.
 
 
-#### `is_connected` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L383" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `is_connected` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L385" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_connected(self) -> bool
@@ -139,7 +139,7 @@ is_connected(self) -> bool
 Check if the client is currently connected.
 
 
-#### `new` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L387" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `new` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L389" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 new(self) -> Client[ClientTransportT]
@@ -155,7 +155,7 @@ share state with the original client.
 - A new Client instance with the same configuration but disconnected state.
 
 
-#### `initialize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L432" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `initialize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L434" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 initialize(self, timeout: datetime.timedelta | float | int | None = None) -> mcp.types.InitializeResult
@@ -183,13 +183,13 @@ capabilities, protocol version, and optional instructions.
 - `RuntimeError`: If the client is not connected or initialization times out.
 
 
-#### `close` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L733" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `close` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L735" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 close(self)
 ```
 
-#### `ping` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L739" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `ping` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L741" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 ping(self) -> bool
@@ -198,7 +198,7 @@ ping(self) -> bool
 Send a ping request.
 
 
-#### `cancel` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L744" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `cancel` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L746" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 cancel(self, request_id: str | int, reason: str | None = None) -> None
@@ -207,7 +207,7 @@ cancel(self, request_id: str | int, reason: str | None = None) -> None
 Send a cancellation notification for an in-progress request.
 
 
-#### `progress` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L761" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `progress` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L763" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 progress(self, progress_token: str | int, progress: float, total: float | None = None, message: str | None = None) -> None
@@ -216,7 +216,7 @@ progress(self, progress_token: str | int, progress: float, total: float | None =
 Send a progress notification.
 
 
-#### `set_logging_level` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L773" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_logging_level` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L775" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_logging_level(self, level: mcp.types.LoggingLevel) -> None
@@ -225,7 +225,7 @@ set_logging_level(self, level: mcp.types.LoggingLevel) -> None
 Send a logging/setLevel request.
 
 
-#### `send_roots_list_changed` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L777" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `send_roots_list_changed` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L779" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 send_roots_list_changed(self) -> None
@@ -234,7 +234,7 @@ send_roots_list_changed(self) -> None
 Send a roots/list_changed notification.
 
 
-#### `complete_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L783" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `complete_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L785" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 complete_mcp(self, ref: mcp.types.ResourceTemplateReference | mcp.types.PromptReference, argument: dict[str, str], context_arguments: dict[str, Any] | None = None) -> mcp.types.CompleteResult
@@ -257,7 +257,7 @@ containing the completion and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `complete` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L814" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `complete` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L816" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 complete(self, ref: mcp.types.ResourceTemplateReference | mcp.types.PromptReference, argument: dict[str, str], context_arguments: dict[str, Any] | None = None) -> mcp.types.Completion
@@ -279,7 +279,7 @@ include with the completion request. Defaults to None.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `generate_name` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L841" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `generate_name` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L843" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_name(cls, name: str | None = None) -> str

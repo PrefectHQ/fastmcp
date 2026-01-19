@@ -8,9 +8,9 @@ sidebarTitle: __init__
 
 Transform system for component transformations.
 
-Transforms modify components (tools, resources, prompts) using a middleware pattern.
-Each transform wraps the next in the chain via `call_next`, allowing transforms to
-intercept, modify, or replace component queries.
+Transforms modify components (tools, resources, prompts). List operations use a pure
+function pattern where transforms receive sequences and return transformed sequences.
+Get operations use a middleware pattern with `call_next` to chain lookups.
 
 Unlike middleware (which operates on requests), transforms are observable by the
 system for task registration, tag filtering, and component introspection.
@@ -28,61 +28,58 @@ Example:
 
 ## Classes
 
-### `GetToolNext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GetToolNext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Protocol for get_tool call_next functions.
 
 
-### `GetResourceNext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GetResourceNext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L44" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Protocol for get_resource call_next functions.
 
 
-### `GetResourceTemplateNext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L59" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GetResourceTemplateNext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L52" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Protocol for get_resource_template call_next functions.
 
 
-### `GetPromptNext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L67" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GetPromptNext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Protocol for get_prompt call_next functions.
 
 
-### `Transform` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Transform` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Base class for component transformations.
 
-Transforms use a middleware pattern with `call_next` to chain operations.
-Each transform can intercept, modify, or pass through component queries.
-
-For list operations, call `call_next()` to get components from downstream,
-then transform the result. For get operations, optionally transform the
-name/uri before calling `call_next`, then transform the result.
+List operations use a pure function pattern: transforms receive sequences
+and return transformed sequences. Get operations use a middleware pattern
+with `call_next` to chain lookups.
 
 
 **Methods:**
 
-#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L95" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]
+list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
 ```
 
 List tools with transformation applied.
 
 **Args:**
-- `call_next`: Callable to get tools from downstream transforms/provider.
+- `tools`: Sequence of tools to transform.
 
 **Returns:**
 - Transformed sequence of tools.
 
 
-#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L117" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
@@ -99,22 +96,22 @@ Get a tool by name.
 - The tool if found, None otherwise.
 
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L136" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_resources(self, call_next: ListResourcesNext) -> Sequence[Resource]
+list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]
 ```
 
 List resources with transformation applied.
 
 **Args:**
-- `call_next`: Callable to get resources from downstream transforms/provider.
+- `resources`: Sequence of resources to transform.
 
 **Returns:**
 - Transformed sequence of resources.
 
 
-#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L147" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L136" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource(self, uri: str, call_next: GetResourceNext) -> Resource | None
@@ -131,22 +128,22 @@ Get a resource by URI.
 - The resource if found, None otherwise.
 
 
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L170" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L159" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_resource_templates(self, call_next: ListResourceTemplatesNext) -> Sequence[ResourceTemplate]
+list_resource_templates(self, templates: Sequence[ResourceTemplate]) -> Sequence[ResourceTemplate]
 ```
 
 List resource templates with transformation applied.
 
 **Args:**
-- `call_next`: Callable to get templates from downstream transforms/provider.
+- `templates`: Sequence of resource templates to transform.
 
 **Returns:**
 - Transformed sequence of resource templates.
 
 
-#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L172" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource_template(self, uri: str, call_next: GetResourceTemplateNext) -> ResourceTemplate | None
@@ -163,22 +160,22 @@ Get a resource template by URI.
 - The resource template if found, None otherwise.
 
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L206" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L195" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_prompts(self, call_next: ListPromptsNext) -> Sequence[Prompt]
+list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]
 ```
 
 List prompts with transformation applied.
 
 **Args:**
-- `call_next`: Callable to get prompts from downstream transforms/provider.
+- `prompts`: Sequence of prompts to transform.
 
 **Returns:**
 - Transformed sequence of prompts.
 
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L217" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/__init__.py#L206" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, call_next: GetPromptNext) -> Prompt | None
