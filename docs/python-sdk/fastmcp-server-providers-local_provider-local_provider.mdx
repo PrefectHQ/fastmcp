@@ -1,0 +1,125 @@
+---
+title: local_provider
+sidebarTitle: local_provider
+---
+
+# `fastmcp.server.providers.local_provider.local_provider`
+
+
+LocalProvider for locally-defined MCP components.
+
+This module provides the `LocalProvider` class that manages tools, resources,
+templates, and prompts registered via decorators or direct methods.
+
+LocalProvider can be used standalone and attached to multiple servers:
+
+```python
+from fastmcp.server.providers import LocalProvider
+
+# Create a reusable provider with tools
+provider = LocalProvider()
+
+@provider.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+# Attach to any server
+from fastmcp import FastMCP
+server1 = FastMCP("Server1", providers=[provider])
+server2 = FastMCP("Server2", providers=[provider])
+```
+
+
+## Classes
+
+### `LocalProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/local_provider.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Provider for locally-defined components.
+
+Supports decorator-based registration (`@provider.tool`, `@provider.resource`,
+`@provider.prompt`) and direct object registration methods.
+
+When used standalone, LocalProvider uses default settings. When attached
+to a FastMCP server via the server's decorators, server-level settings
+like `_tool_serializer` and `_support_tasks_by_default` are injected.
+
+
+**Methods:**
+
+#### `remove_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/local_provider.py#L229" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+remove_tool(self, name: str, version: str | None = None) -> None
+```
+
+Remove tool(s) from this provider's storage.
+
+**Args:**
+- `name`: The tool name.
+- `version`: If None, removes ALL versions. If specified, removes only that version.
+
+**Raises:**
+- `KeyError`: If no matching tool is found.
+
+
+#### `remove_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/local_provider.py#L257" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+remove_resource(self, uri: str, version: str | None = None) -> None
+```
+
+Remove resource(s) from this provider's storage.
+
+**Args:**
+- `uri`: The resource URI.
+- `version`: If None, removes ALL versions. If specified, removes only that version.
+
+**Raises:**
+- `KeyError`: If no matching resource is found.
+
+
+#### `remove_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/local_provider.py#L285" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+remove_template(self, uri_template: str, version: str | None = None) -> None
+```
+
+Remove resource template(s) from this provider's storage.
+
+**Args:**
+- `uri_template`: The template URI pattern.
+- `version`: If None, removes ALL versions. If specified, removes only that version.
+
+**Raises:**
+- `KeyError`: If no matching template is found.
+
+
+#### `remove_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/local_provider.py#L315" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+remove_prompt(self, name: str, version: str | None = None) -> None
+```
+
+Remove prompt(s) from this provider's storage.
+
+**Args:**
+- `name`: The prompt name.
+- `version`: If None, removes ALL versions. If specified, removes only that version.
+
+**Raises:**
+- `KeyError`: If no matching prompt is found.
+
+
+#### `get_tasks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/local_provider.py#L449" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tasks(self) -> Sequence[FastMCPComponent]
+```
+
+Return components eligible for background task execution.
+
+Returns components that have task_config.mode != 'forbidden'.
+This includes both FunctionTool/Resource/Prompt instances created via
+decorators and custom Tool/Resource/Prompt subclasses.
+

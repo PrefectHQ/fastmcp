@@ -1,0 +1,84 @@
+---
+title: tools
+sidebarTitle: tools
+---
+
+# `fastmcp.server.providers.local_provider.decorators.tools`
+
+
+Tool decorator mixin for LocalProvider.
+
+This module provides the ToolDecoratorMixin class that adds tool
+registration functionality to LocalProvider.
+
+
+## Classes
+
+### `ToolDecoratorMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/tools.py#L31" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Mixin class providing tool decorator functionality for LocalProvider.
+
+This mixin contains all methods related to:
+- Tool registration via add_tool()
+- Tool decorator (@provider.tool)
+
+
+**Methods:**
+
+#### `add_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/tools.py#L39" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_tool(self: LocalProvider, tool: Tool | Callable[..., Any]) -> Tool
+```
+
+Add a tool to this provider's storage.
+
+Accepts either a Tool object or a decorated function with __fastmcp__ metadata.
+
+
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/tools.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tool(self: LocalProvider, name_or_fn: AnyFunction) -> FunctionTool
+```
+
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/tools.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tool(self: LocalProvider, name_or_fn: str | None = None) -> Callable[[AnyFunction], FunctionTool]
+```
+
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/tools.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tool(self: LocalProvider, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionTool] | FunctionTool | partial[Callable[[AnyFunction], FunctionTool] | FunctionTool]
+```
+
+Decorator to register a tool.
+
+This decorator supports multiple calling patterns:
+- @provider.tool (without parentheses)
+- @provider.tool() (with empty parentheses)
+- @provider.tool("custom_name") (with name as first argument)
+- @provider.tool(name="custom_name") (with name as keyword argument)
+- provider.tool(function, name="custom_name") (direct function call)
+
+**Args:**
+- `name_or_fn`: Either a function (when used as @tool), a string name, or None
+- `name`: Optional name for the tool (keyword-only, alternative to name_or_fn)
+- `title`: Optional title for the tool
+- `description`: Optional description of what the tool does
+- `icons`: Optional icons for the tool
+- `tags`: Optional set of tags for categorizing the tool
+- `output_schema`: Optional JSON schema for the tool's output
+- `annotations`: Optional annotations about the tool's behavior
+- `exclude_args`: Optional list of argument names to exclude from the tool schema
+- `meta`: Optional meta information about the tool
+- `enabled`: Whether the tool is enabled (default True). If False, adds to blocklist.
+- `task`: Optional task configuration for background execution
+- `serializer`: Deprecated. Return ToolResult from your tools for full control over serialization.
+
+**Returns:**
+- The registered FunctionTool or a decorator function.
+

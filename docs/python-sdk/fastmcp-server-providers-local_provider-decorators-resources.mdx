@@ -1,0 +1,77 @@
+---
+title: resources
+sidebarTitle: resources
+---
+
+# `fastmcp.server.providers.local_provider.decorators.resources`
+
+
+Resource decorator mixin for LocalProvider.
+
+This module provides the ResourceDecoratorMixin class that adds resource
+and template registration functionality to LocalProvider.
+
+
+## Classes
+
+### `ResourceDecoratorMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/resources.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Mixin class providing resource decorator functionality for LocalProvider.
+
+This mixin contains all methods related to:
+- Resource registration via add_resource()
+- Resource template registration via add_template()
+- Resource decorator (@provider.resource)
+
+
+**Methods:**
+
+#### `add_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/resources.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_resource(self: LocalProvider, resource: Resource | ResourceTemplate | Callable[..., Any]) -> Resource | ResourceTemplate
+```
+
+Add a resource to this provider's storage.
+
+Accepts either a Resource/ResourceTemplate object or a decorated function with __fastmcp__ metadata.
+
+
+#### `add_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/resources.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_template(self: LocalProvider, template: ResourceTemplate) -> ResourceTemplate
+```
+
+Add a resource template to this provider's storage.
+
+
+#### `resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/resources.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+resource(self: LocalProvider, uri: str) -> Callable[[AnyFunction], Resource | ResourceTemplate | AnyFunction]
+```
+
+Decorator to register a function as a resource.
+
+If the URI contains parameters (e.g. "resource://{param}") or the function
+has parameters, it will be registered as a template resource.
+
+**Args:**
+- `uri`: URI for the resource (e.g. "resource\://my-resource" or "resource\://{param}")
+- `name`: Optional name for the resource
+- `title`: Optional title for the resource
+- `description`: Optional description of the resource
+- `icons`: Optional icons for the resource
+- `mime_type`: Optional MIME type for the resource
+- `tags`: Optional set of tags for categorizing the resource
+- `enabled`: Whether the resource is enabled (default True). If False, adds to blocklist.
+- `annotations`: Optional annotations about the resource's behavior
+- `meta`: Optional meta information about the resource
+- `task`: Optional task configuration for background execution
+- `auth`: Optional authorization checks for the resource
+
+**Returns:**
+- A decorator function.
+

@@ -478,7 +478,22 @@
                       "python-sdk/fastmcp-server-providers-fastmcp_provider",
                       "python-sdk/fastmcp-server-providers-filesystem",
                       "python-sdk/fastmcp-server-providers-filesystem_discovery",
-                      "python-sdk/fastmcp-server-providers-local_provider",
+                      {
+                        "group": "local_provider",
+                        "pages": [
+                          "python-sdk/fastmcp-server-providers-local_provider-__init__",
+                          {
+                            "group": "decorators",
+                            "pages": [
+                              "python-sdk/fastmcp-server-providers-local_provider-decorators-__init__",
+                              "python-sdk/fastmcp-server-providers-local_provider-decorators-prompts",
+                              "python-sdk/fastmcp-server-providers-local_provider-decorators-resources",
+                              "python-sdk/fastmcp-server-providers-local_provider-decorators-tools"
+                            ]
+                          },
+                          "python-sdk/fastmcp-server-providers-local_provider-local_provider"
+                        ]
+                      },
                       {
                         "group": "openapi",
                         "pages": [
