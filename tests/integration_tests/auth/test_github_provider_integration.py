@@ -12,14 +12,18 @@ with the following configuration:
 
 import os
 import re
+import secrets
+import time
 from collections.abc import AsyncGenerator
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth.oauth_proxy.models import ClientCode
 from fastmcp.server.auth.providers.github import GitHubProvider
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
 
@@ -81,11 +85,6 @@ def create_github_server_with_mock_callback(base_url: str) -> FastMCP:
     # Mock the authorize method to return a fake code instead of redirecting to GitHub
     async def mock_authorize(client, params):
         # Instead of redirecting to GitHub, simulate an immediate callback
-        import secrets
-        import time
-
-        from fastmcp.server.auth.oauth_proxy import ClientCode
-
         # Generate a fake authorization code
         fake_code = secrets.token_urlsafe(32)
 
@@ -117,8 +116,6 @@ def create_github_server_with_mock_callback(base_url: str) -> FastMCP:
             "code": fake_code,
             "state": params.state,
         }
-        from urllib.parse import urlencode
-
         separator = "&" if "?" in str(params.redirect_uri) else "?"
         return f"{params.redirect_uri}{separator}{urlencode(callback_params)}"
 
@@ -130,10 +127,6 @@ def create_github_server_with_mock_callback(base_url: str) -> FastMCP:
     async def mock_verify_token(token: str):
         if token.startswith("gho_mock_token_"):
             # Return a mock AccessToken for our fake tokens
-            import time
-
-            from fastmcp.server.auth.auth import AccessToken
-
             return AccessToken(
                 token=token,
                 client_id=FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID or "test-client",

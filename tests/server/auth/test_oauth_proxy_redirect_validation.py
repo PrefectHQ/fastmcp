@@ -5,7 +5,8 @@ from mcp.shared.auth import InvalidRedirectUriError
 from pydantic import AnyUrl
 
 from fastmcp.server.auth.auth import TokenVerifier
-from fastmcp.server.auth.oauth_proxy import OAuthProxy, ProxyDCRClient
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
 
 
 class MockTokenVerifier(TokenVerifier):

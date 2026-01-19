@@ -75,8 +75,8 @@ path = "tests/utilities/test_json_schema_type.py"
 max_lines = 1584
 
 [[rules]]
-path = "src/fastmcp/server/auth/oauth_proxy.py"
-max_lines = 2282
+path = "src/fastmcp/server/auth/oauth_proxy/proxy.py"
+max_lines = 1600
 
 [[rules]]
 path = "tests/server/test_dependencies.py"

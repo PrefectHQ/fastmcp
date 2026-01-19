@@ -18,16 +18,35 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 import pytest
-from mcp.server.auth.provider import AuthorizationParams
+from mcp.server.auth.handlers.token import TokenErrorResponse
+from mcp.server.auth.handlers.token import TokenHandler as SDKTokenHandler
+from mcp.server.auth.provider import (
+    AuthorizationCode,
+    AuthorizationParams,
+    AuthorizeError,
+)
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 from starlette.applications import Starlette
-from starlette.responses import JSONResponse
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Route
+from starlette.testclient import TestClient
 
 from fastmcp import FastMCP
-from fastmcp.server.auth.auth import AccessToken, RefreshToken, TokenVerifier
+from fastmcp.server.auth.auth import (
+    AccessToken,
+    RefreshToken,
+    TokenHandler,
+    TokenVerifier,
+)
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.oauth_proxy.models import (
+    DEFAULT_ACCESS_TOKEN_EXPIRY_NO_REFRESH_SECONDS,
+    DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS,
+    ClientCode,
+)
+from fastmcp.server.auth.oauth_proxy.ui import create_error_html
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 # =============================================================================
@@ -651,7 +670,9 @@ class TestOAuthProxyTokenEndpointAuth:
         )
 
         # Mock the upstream OAuth provider response
-        with patch("fastmcp.server.auth.oauth_proxy.AsyncOAuth2Client") as MockClient:
+        with patch(
+            "fastmcp.server.auth.oauth_proxy.proxy.AsyncOAuth2Client"
+        ) as MockClient:
             mock_client = AsyncMock()
 
             # Mock initial token exchange (authorization code flow)
@@ -679,8 +700,6 @@ class TestOAuthProxyTokenEndpointAuth:
             await proxy.register_client(client)
 
             # Store client code that would be created during OAuth callback
-            from fastmcp.server.auth.oauth_proxy import ClientCode
-
             client_code = ClientCode(
                 code="test-auth-code",
                 client_id="test-client",
@@ -700,8 +719,6 @@ class TestOAuthProxyTokenEndpointAuth:
             await proxy._code_store.put(key=client_code.code, value=client_code)
 
             # Exchange authorization code to get FastMCP tokens
-            from mcp.server.auth.provider import AuthorizationCode
-
             auth_code = AuthorizationCode(
                 code="test-auth-code",
                 scopes=["read"],
@@ -837,7 +854,9 @@ class TestOAuthProxyE2E:
             "scope": "read write",
         }
 
-        with patch("fastmcp.server.auth.oauth_proxy.AsyncOAuth2Client") as MockClient:
+        with patch(
+            "fastmcp.server.auth.oauth_proxy.proxy.AsyncOAuth2Client"
+        ) as MockClient:
             mock_client = AsyncMock()
 
             # Mock initial token exchange to get FastMCP tokens
@@ -866,8 +885,6 @@ class TestOAuthProxyE2E:
             MockClient.return_value = mock_client
 
             # Store client code that would be created during OAuth callback
-            from fastmcp.server.auth.oauth_proxy import ClientCode
-
             client_code = ClientCode(
                 code="test-auth-code",
                 client_id="test-client",
@@ -887,8 +904,6 @@ class TestOAuthProxyE2E:
             await proxy._code_store.put(key=client_code.code, value=client_code)
 
             # Exchange authorization code to get FastMCP tokens
-            from mcp.server.auth.provider import AuthorizationCode
-
             auth_code = AuthorizationCode(
                 code="test-auth-code",
                 scopes=["read", "write"],
@@ -1201,9 +1216,6 @@ class TestParameterForwarding:
 
         This aligns with OAuth 2.1 spec and enables Claude's automatic client re-registration.
         """
-        from starlette.applications import Starlette
-        from starlette.testclient import TestClient
-
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://oauth.example.com/authorize",
             upstream_token_endpoint="https://oauth.example.com/token",
@@ -1254,12 +1266,6 @@ class TestTokenHandlerErrorTransformation:
 
     async def test_transforms_client_auth_failure_to_invalid_client_401(self):
         """Test that client authentication failures return invalid_client with 401."""
-        from unittest.mock import AsyncMock, patch
-
-        from mcp.server.auth.handlers.token import TokenHandler as SDKTokenHandler
-
-        from fastmcp.server.auth.auth import TokenHandler
-
         handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
 
         # Create a mock 401 response like the SDK returns for auth failures
@@ -1285,10 +1291,6 @@ class TestTokenHandlerErrorTransformation:
 
     def test_does_not_transform_grant_type_unauthorized_to_invalid_client(self):
         """Test that grant type authorization errors stay as unauthorized_client with 400."""
-        from mcp.server.auth.handlers.token import TokenErrorResponse
-
-        from fastmcp.server.auth.auth import TokenHandler
-
         handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
 
         # Simulate error from grant_type not in client_info.grant_types
@@ -1309,12 +1311,6 @@ class TestTokenHandlerErrorTransformation:
         Per MCP spec: "Invalid or expired tokens MUST receive a HTTP 401 response."
         The SDK incorrectly returns 400 for all TokenErrorResponse including invalid_grant.
         """
-        from unittest.mock import AsyncMock, patch
-
-        from mcp.server.auth.handlers.token import TokenHandler as SDKTokenHandler
-
-        from fastmcp.server.auth.auth import TokenHandler
-
         handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
 
         # Create a mock 400 response like the SDK returns for invalid_grant
@@ -1340,10 +1336,6 @@ class TestTokenHandlerErrorTransformation:
 
     def test_does_not_transform_other_400_errors(self):
         """Test that non-invalid_grant 400 errors pass through unchanged."""
-        from mcp.server.auth.handlers.token import TokenErrorResponse
-
-        from fastmcp.server.auth.auth import TokenHandler
-
         handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
 
         # Test with invalid_request error (should stay 400)
@@ -1364,7 +1356,6 @@ class TestErrorPageRendering:
 
     def test_create_error_html_basic(self):
         """Test basic error page generation."""
-        from fastmcp.server.auth.oauth_proxy import create_error_html
 
         html = create_error_html(
             error_title="Test Error",
@@ -1379,7 +1370,6 @@ class TestErrorPageRendering:
 
     def test_create_error_html_with_details(self):
         """Test error page with error details."""
-        from fastmcp.server.auth.oauth_proxy import create_error_html
 
         html = create_error_html(
             error_title="OAuth Error",
@@ -1399,7 +1389,6 @@ class TestErrorPageRendering:
 
     def test_create_error_html_escapes_user_input(self):
         """Test that error page properly escapes HTML in user input."""
-        from fastmcp.server.auth.oauth_proxy import create_error_html
 
         html = create_error_html(
             error_title="Error <script>alert('xss')</script>",
@@ -1415,14 +1404,6 @@ class TestErrorPageRendering:
 
     async def test_callback_error_returns_html_page(self):
         """Test that OAuth callback errors return styled HTML instead of data: URLs."""
-        from unittest.mock import Mock
-
-        from starlette.requests import Request
-        from starlette.responses import HTMLResponse
-
-        from fastmcp.server.auth.oauth_proxy import OAuthProxy
-        from fastmcp.server.auth.providers.jwt import JWTVerifier
-
         # Create a minimal OAuth proxy
         provider = OAuthProxy(
             upstream_authorization_endpoint="https://idp.example.com/authorize",
@@ -1464,11 +1445,6 @@ class TestFallbackAccessTokenExpiry:
 
     def test_default_constants(self):
         """Verify the default expiry constants are set correctly."""
-        from fastmcp.server.auth.oauth_proxy import (
-            DEFAULT_ACCESS_TOKEN_EXPIRY_NO_REFRESH_SECONDS,
-            DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS,
-        )
-
         assert DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS == 60 * 60  # 1 hour
         assert (
             DEFAULT_ACCESS_TOKEN_EXPIRY_NO_REFRESH_SECONDS == 60 * 60 * 24 * 365
@@ -1531,7 +1507,6 @@ class TestResourceURLValidation:
 
     async def test_authorize_rejects_mismatched_resource(self, proxy_with_resource_url):
         """Test that authorization rejects requests with mismatched resource."""
-        from mcp.server.auth.provider import AuthorizeError
 
         client = OAuthClientInformationFull(
             client_id="test-client",
@@ -1585,7 +1560,6 @@ class TestResourceURLValidation:
         self, proxy_with_resource_url
     ):
         """Test that old hardcoded /mcp path is rejected when server uses different path."""
-        from mcp.server.auth.provider import AuthorizeError
 
         client = OAuthClientInformationFull(
             client_id="test-client",
@@ -1752,8 +1726,6 @@ class TestUpstreamTokenStorageTTL:
         but expires_in=28800 (8 hours). The upstream tokens should persist for
         8 hours (the access token lifetime), not 2 minutes.
         """
-        from fastmcp.server.auth.oauth_proxy import ClientCode
-
         # Register client
         client = OAuthClientInformationFull(
             client_id="test-client",
@@ -1783,8 +1755,6 @@ class TestUpstreamTokenStorageTTL:
         await proxy._code_store.put(key=client_code.code, value=client_code)
 
         # Exchange the code
-        from mcp.server.auth.provider import AuthorizationCode
-
         auth_code = AuthorizationCode(
             code="test-auth-code",
             scopes=["read", "write"],
@@ -1834,8 +1804,6 @@ class TestUpstreamTokenStorageTTL:
         refresh_expires_in=32318 (9 hours). The upstream tokens should persist
         for 9 hours (the refresh token lifetime).
         """
-        from fastmcp.server.auth.oauth_proxy import ClientCode
-
         # Register client
         client = OAuthClientInformationFull(
             client_id="test-client",
@@ -1865,8 +1833,6 @@ class TestUpstreamTokenStorageTTL:
         await proxy._code_store.put(key=client_code.code, value=client_code)
 
         # Exchange the code
-        from mcp.server.auth.provider import AuthorizationCode
-
         auth_code = AuthorizationCode(
             code="test-auth-code-2",
             scopes=["read", "write"],

@@ -14,18 +14,22 @@ This test suite verifies:
 import re
 import secrets
 import time
+from unittest.mock import Mock
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
+from mcp.types import Icon
 from pydantic import AnyUrl
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from fastmcp.server.auth.auth import TokenVerifier
+from fastmcp import FastMCP
+from fastmcp.server.auth.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.oauth_proxy.models import OAuthTransaction
 
 
 class MockTokenVerifier(TokenVerifier):
@@ -36,8 +40,6 @@ class MockTokenVerifier(TokenVerifier):
 
     async def verify_token(self, token: str):
         """Mock token verification."""
-        from fastmcp.server.auth.auth import AccessToken
-
         return AccessToken(
             token=token,
             client_id="mock-client",
@@ -53,8 +55,6 @@ class _Verifier(TokenVerifier):
         self.required_scopes = ["read"]
 
     async def verify_token(self, token: str):
-        from fastmcp.server.auth.auth import AccessToken
-
         return AccessToken(
             token=token, client_id="c", scopes=self.required_scopes, expires_at=None
         )
@@ -504,8 +504,6 @@ class TestStoragePersistence:
 
     async def test_storage_uses_pydantic_adapter(self, oauth_proxy_with_storage):
         """Verify that PydanticAdapter serializes/deserializes correctly."""
-        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
-
         client = OAuthClientInformationFull(
             client_id="pydantic-test-client",
             client_secret="test-secret",
@@ -668,9 +666,6 @@ class TestConsentPageServerIcon:
 
     async def test_consent_screen_displays_server_icon(self):
         """Test that consent screen shows server's custom icon when available."""
-        from unittest.mock import Mock
-
-        from fastmcp import FastMCP
 
         # Create mock JWT verifier
         verifier = Mock(spec=TokenVerifier)
@@ -690,7 +685,6 @@ class TestConsentPageServerIcon:
         )
 
         # Create FastMCP server with custom icon
-        from mcp.types import Icon
 
         server = FastMCP(
             name="My Custom Server",
@@ -711,7 +705,6 @@ class TestConsentPageServerIcon:
         await proxy.register_client(client_info)
 
         # Create a transaction manually
-        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
 
         txn_id = "test-txn-id"
         transaction = OAuthTransaction(
@@ -741,9 +734,6 @@ class TestConsentPageServerIcon:
 
     async def test_consent_screen_falls_back_to_fastmcp_logo(self):
         """Test that consent screen shows FastMCP logo when no server icon provided."""
-        from unittest.mock import Mock
-
-        from fastmcp import FastMCP
 
         # Create mock JWT verifier
         verifier = Mock(spec=TokenVerifier)
@@ -777,7 +767,6 @@ class TestConsentPageServerIcon:
         await proxy.register_client(client_info)
 
         # Create a transaction
-        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
 
         txn_id = "test-txn-id"
         transaction = OAuthTransaction(
@@ -807,11 +796,6 @@ class TestConsentPageServerIcon:
 
     async def test_consent_screen_escapes_server_name(self):
         """Test that server name is properly HTML-escaped."""
-        from unittest.mock import Mock
-
-        from mcp.types import Icon
-
-        from fastmcp import FastMCP
 
         # Create mock JWT verifier
         verifier = Mock(spec=TokenVerifier)
@@ -849,7 +833,6 @@ class TestConsentPageServerIcon:
         await proxy.register_client(client_info)
 
         # Create a transaction
-        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
 
         txn_id = "test-txn-id"
         transaction = OAuthTransaction(
@@ -885,9 +868,6 @@ class TestConsentCSPPolicy:
 
     async def test_default_csp_includes_form_action(self):
         """Test that default CSP includes form-action directive."""
-        from unittest.mock import Mock
-
-        from fastmcp import FastMCP
 
         verifier = Mock(spec=TokenVerifier)
         verifier.required_scopes = ["read"]
@@ -915,8 +895,6 @@ class TestConsentCSPPolicy:
         )
         await proxy.register_client(client_info)
 
-        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
-
         txn_id = "test-txn-id"
         transaction = OAuthTransaction(
             txn_id=txn_id,
@@ -940,9 +918,6 @@ class TestConsentCSPPolicy:
 
     async def test_empty_csp_disables_csp_meta_tag(self):
         """Test that empty string CSP disables CSP meta tag entirely."""
-        from unittest.mock import Mock
-
-        from fastmcp import FastMCP
 
         verifier = Mock(spec=TokenVerifier)
         verifier.required_scopes = ["read"]
@@ -971,8 +946,6 @@ class TestConsentCSPPolicy:
         )
         await proxy.register_client(client_info)
 
-        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
-
         txn_id = "test-txn-id"
         transaction = OAuthTransaction(
             txn_id=txn_id,
@@ -995,9 +968,6 @@ class TestConsentCSPPolicy:
 
     async def test_custom_csp_policy_is_used(self):
         """Test that custom CSP policy is applied to consent page."""
-        from unittest.mock import Mock
-
-        from fastmcp import FastMCP
 
         verifier = Mock(spec=TokenVerifier)
         verifier.required_scopes = ["read"]
@@ -1026,8 +996,6 @@ class TestConsentCSPPolicy:
             redirect_uris=[AnyUrl("http://localhost:12345/callback")],
         )
         await proxy.register_client(client_info)
-
-        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
 
         txn_id = "test-txn-id"
         transaction = OAuthTransaction(
