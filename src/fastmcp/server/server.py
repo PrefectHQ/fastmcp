@@ -6,7 +6,6 @@ import asyncio
 import re
 import secrets
 import warnings
-import weakref
 from collections.abc import (
     AsyncIterator,
     Awaitable,
@@ -17,45 +16,35 @@ from collections.abc import (
 )
 from contextlib import (
     AbstractAsyncContextManager,
-    AsyncExitStack,
     asynccontextmanager,
-    suppress,
 )
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, Generic, Literal, cast, overload
 
-import anyio
 import httpx
 import mcp.types
-import uvicorn
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
-from mcp.server.lowlevel.server import LifespanResultT, NotificationOptions
-from mcp.server.stdio import stdio_server
+from mcp.server.lowlevel.server import LifespanResultT
 from mcp.shared.exceptions import McpError
 from mcp.types import (
     Annotations,
     AnyFunction,
     CallToolRequestParams,
-    ContentBlock,
     ToolAnnotations,
 )
 from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
-from starlette.middleware import Middleware as ASGIMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
-from starlette.routing import BaseRoute, Route
+from starlette.routing import BaseRoute
 from typing_extensions import Self
 
 import fastmcp
 import fastmcp.server
 from fastmcp.exceptions import (
     AuthorizationError,
-    DisabledError,
     FastMCPError,
     NotFoundError,
     PromptError,
@@ -71,15 +60,10 @@ from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.dependencies import get_access_token
-from fastmcp.server.event_store import EventStore
-from fastmcp.server.http import (
-    StarletteWithLifespan,
-    create_sse_app,
-    create_streamable_http_app,
-)
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
 from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
@@ -94,20 +78,14 @@ from fastmcp.settings import Settings
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool import AuthCheckCallable, Tool, ToolResult
 from fastmcp.tools.tool_transform import ToolTransformConfig
-from fastmcp.utilities.cli import log_server_banner
 from fastmcp.utilities.components import FastMCPComponent
-from fastmcp.utilities.logging import get_logger, temporary_log_level
-from fastmcp.utilities.pagination import paginate_sequence
+from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel, NotSet, NotSetT
 from fastmcp.utilities.versions import (
     VersionSpec,
-    parse_version_key,
-    version_sort_key,
 )
 
 if TYPE_CHECKING:
-    from docket import Docket
-
     from fastmcp.client import Client
     from fastmcp.client.client import FastMCP1Server
     from fastmcp.client.sampling import SamplingHandler
@@ -187,54 +165,6 @@ def _get_auth_context() -> tuple[bool, Any]:
     return (False, get_access_token())
 
 
-C = TypeVar("C", bound="FastMCPComponent")
-
-
-def _dedupe_with_versions(
-    components: Sequence[C],
-    key_fn: Callable[[C], str],
-) -> list[C]:
-    """Deduplicate components by key, keeping highest version.
-
-    Groups components by key, selects the highest version from each group,
-    and injects available versions into meta if any component is versioned.
-
-    Args:
-        components: Sequence of components to deduplicate.
-        key_fn: Function to extract the grouping key from a component.
-
-    Returns:
-        Deduplicated list with versions injected into meta.
-    """
-    by_key: dict[str, list[C]] = {}
-    for c in components:
-        by_key.setdefault(key_fn(c), []).append(c)
-
-    result: list[C] = []
-    for versions in by_key.values():
-        highest: C = cast(C, max(versions, key=version_sort_key))
-        if any(c.version is not None for c in versions):
-            all_versions = sorted(
-                [c.version for c in versions if c.version is not None],
-                key=parse_version_key,
-                reverse=True,
-            )
-            meta = highest.meta or {}
-            highest = highest.model_copy(
-                update={
-                    "meta": {
-                        **meta,
-                        "fastmcp": {
-                            **meta.get("fastmcp", {}),
-                            "versions": all_versions,
-                        },
-                    }
-                }
-            )
-        result.append(highest)
-    return result
-
-
 @asynccontextmanager
 async def default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]:
     """Default lifespan context manager that does nothing.
@@ -272,33 +202,19 @@ def _lifespan_proxy(
     return wrap
 
 
-PaginateT = TypeVar("PaginateT")
-
-
-def _apply_pagination(
-    items: Sequence[PaginateT],
-    cursor: str | None,
-    page_size: int | None,
-) -> tuple[list[PaginateT], str | None]:
-    """Apply pagination to items, raising McpError for invalid cursors.
-
-    If page_size is None, returns all items without pagination.
-    """
-    if page_size is None:
-        return list(items), None
-    try:
-        return paginate_sequence(items, cursor, page_size)
-    except ValueError as e:
-        raise McpError(mcp.types.ErrorData(code=-32602, message=str(e))) from e
-
-
 class StateValue(FastMCPBaseModel):
     """Wrapper for stored context state values."""
 
     value: Any
 
 
-class FastMCP(AggregateProvider, Generic[LifespanResultT]):
+class FastMCP(
+    AggregateProvider,
+    LifespanMixin,
+    MCPOperationsMixin,
+    TransportMixin,
+    Generic[LifespanResultT],
+):
     def __init__(
         self,
         name: str | None = None,
@@ -567,300 +483,6 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
             return []
         else:
             return list(self._mcp_server.icons)
-
-    @property
-    def docket(self) -> Docket | None:
-        """Get the Docket instance if Docket support is enabled.
-
-        Returns None if Docket is not enabled or server hasn't been started yet.
-        """
-        return self._docket
-
-    @asynccontextmanager
-    async def _docket_lifespan(self) -> AsyncIterator[None]:
-        """Manage Docket instance and Worker for background task execution.
-
-        Docket infrastructure is only initialized if:
-        1. pydocket is installed (fastmcp[tasks] extra)
-        2. There are task-enabled components (task_config.mode != 'forbidden')
-
-        This means users with pydocket installed but no task-enabled components
-        won't spin up Docket/Worker infrastructure.
-        """
-        from fastmcp.server.dependencies import _current_server, is_docket_available
-
-        # Set FastMCP server in ContextVar so CurrentFastMCP can access it
-        # (use weakref to avoid reference cycles)
-        server_token = _current_server.set(weakref.ref(self))
-
-        try:
-            # If docket is not available, skip task infrastructure
-            if not is_docket_available():
-                yield
-                return
-
-            # Collect task-enabled components at startup with all transforms applied.
-            # Components must be available now to be registered with Docket workers;
-            # dynamically added components after startup won't be registered.
-            try:
-                task_components = list(await self.get_tasks())
-            except Exception as e:
-                logger.warning(f"Failed to get tasks: {e}")
-                if fastmcp.settings.mounted_components_raise_on_load_error:
-                    raise
-                task_components = []
-
-            # If no task-enabled components, skip Docket infrastructure entirely
-            if not task_components:
-                yield
-                return
-
-            # Docket is available AND there are task-enabled components
-            from docket import Docket, Worker
-
-            from fastmcp import settings
-            from fastmcp.server.dependencies import (
-                _current_docket,
-                _current_worker,
-            )
-
-            # Create Docket instance using configured name and URL
-            async with Docket(
-                name=settings.docket.name,
-                url=settings.docket.url,
-            ) as docket:
-                # Store on server instance for cross-task access (FastMCPTransport)
-                self._docket = docket
-
-                # Register task-enabled components with Docket
-                for component in task_components:
-                    component.register_with_docket(docket)
-
-                # Set Docket in ContextVar so CurrentDocket can access it
-                docket_token = _current_docket.set(docket)
-                try:
-                    # Build worker kwargs from settings
-                    worker_kwargs: dict[str, Any] = {
-                        "concurrency": settings.docket.concurrency,
-                        "redelivery_timeout": settings.docket.redelivery_timeout,
-                        "reconnection_delay": settings.docket.reconnection_delay,
-                    }
-                    if settings.docket.worker_name:
-                        worker_kwargs["name"] = settings.docket.worker_name
-
-                    # Create and start Worker
-                    async with Worker(docket, **worker_kwargs) as worker:
-                        # Store on server instance for cross-context access
-                        self._worker = worker
-                        # Set Worker in ContextVar so CurrentWorker can access it
-                        worker_token = _current_worker.set(worker)
-                        try:
-                            worker_task = asyncio.create_task(worker.run_forever())
-                            try:
-                                yield
-                            finally:
-                                worker_task.cancel()
-                                with suppress(asyncio.CancelledError):
-                                    await worker_task
-                        finally:
-                            _current_worker.reset(worker_token)
-                            self._worker = None
-                finally:
-                    # Reset ContextVar
-                    _current_docket.reset(docket_token)
-                    # Clear instance attribute
-                    self._docket = None
-        finally:
-            # Reset server ContextVar
-            _current_server.reset(server_token)
-
-    @asynccontextmanager
-    async def _lifespan_manager(self) -> AsyncIterator[None]:
-        if self._lifespan_result_set:
-            yield
-            return
-
-        async with (
-            self._lifespan(self) as user_lifespan_result,
-            self._docket_lifespan(),
-        ):
-            self._lifespan_result = user_lifespan_result
-            self._lifespan_result_set = True
-
-            async with AsyncExitStack[bool | None]() as stack:
-                # Start lifespans for all providers
-                for provider in self.providers:
-                    await stack.enter_async_context(provider.lifespan())
-
-                self._started.set()
-                try:
-                    yield
-                finally:
-                    self._started.clear()
-
-        self._lifespan_result_set = False
-        self._lifespan_result = None
-
-    async def run_async(
-        self,
-        transport: Transport | None = None,
-        show_banner: bool | None = None,
-        **transport_kwargs: Any,
-    ) -> None:
-        """Run the FastMCP server asynchronously.
-
-        Args:
-            transport: Transport protocol to use ("stdio", "sse", or "streamable-http")
-            show_banner: Whether to display the server banner. If None, uses the
-                FASTMCP_SHOW_SERVER_BANNER setting (default: True).
-        """
-        if show_banner is None:
-            show_banner = fastmcp.settings.show_server_banner
-        if transport is None:
-            transport = "stdio"
-        if transport not in {"stdio", "http", "sse", "streamable-http"}:
-            raise ValueError(f"Unknown transport: {transport}")
-
-        if transport == "stdio":
-            await self.run_stdio_async(
-                show_banner=show_banner,
-                **transport_kwargs,
-            )
-        elif transport in {"http", "sse", "streamable-http"}:
-            await self.run_http_async(
-                transport=transport,
-                show_banner=show_banner,
-                **transport_kwargs,
-            )
-        else:
-            raise ValueError(f"Unknown transport: {transport}")
-
-    def run(
-        self,
-        transport: Transport | None = None,
-        show_banner: bool | None = None,
-        **transport_kwargs: Any,
-    ) -> None:
-        """Run the FastMCP server. Note this is a synchronous function.
-
-        Args:
-            transport: Transport protocol to use ("http", "stdio", "sse", or "streamable-http")
-            show_banner: Whether to display the server banner. If None, uses the
-                FASTMCP_SHOW_SERVER_BANNER setting (default: True).
-        """
-
-        anyio.run(
-            partial(
-                self.run_async,
-                transport,
-                show_banner=show_banner,
-                **transport_kwargs,
-            )
-        )
-
-    def _setup_handlers(self) -> None:
-        """Set up core MCP protocol handlers.
-
-        List handlers use SDK decorators that pass the request object to our handler
-        (needed for pagination cursor). The SDK also populates caches like _tool_cache.
-
-        Exception: list_resource_templates SDK decorator doesn't pass the request,
-        so we register that handler directly.
-
-        The call_tool decorator is from the SDK (supports CreateTaskResult + validate_input).
-        The read_resource and get_prompt decorators are from LowLevelServer to add
-        CreateTaskResult support until the SDK provides it natively.
-        """
-        self._mcp_server.list_tools()(self._list_tools_mcp)
-        self._mcp_server.list_resources()(self._list_resources_mcp)
-        self._mcp_server.list_prompts()(self._list_prompts_mcp)
-
-        # list_resource_templates SDK decorator doesn't pass the request to handlers,
-        # so we register directly to get cursor access for pagination
-        self._mcp_server.request_handlers[mcp.types.ListResourceTemplatesRequest] = (
-            self._wrap_list_handler(self._list_resource_templates_mcp)
-        )
-
-        self._mcp_server.call_tool(validate_input=self.strict_input_validation)(
-            self._call_tool_mcp
-        )
-        self._mcp_server.read_resource()(self._read_resource_mcp)
-        self._mcp_server.get_prompt()(self._get_prompt_mcp)
-
-        # Register SEP-1686 task protocol handlers
-        self._setup_task_protocol_handlers()
-
-    def _wrap_list_handler(
-        self, handler: Callable[..., Awaitable[Any]]
-    ) -> Callable[..., Awaitable[mcp.types.ServerResult]]:
-        """Wrap a list handler to pass the request and return ServerResult."""
-
-        async def wrapper(request: Any) -> mcp.types.ServerResult:
-            result = await handler(request)
-            return mcp.types.ServerResult(result)
-
-        return wrapper
-
-    def _setup_task_protocol_handlers(self) -> None:
-        """Register SEP-1686 task protocol handlers with SDK.
-
-        Only registers handlers if docket is installed. Without docket,
-        task protocol requests will return "method not found" errors.
-        """
-        from fastmcp.server.dependencies import is_docket_available
-
-        if not is_docket_available():
-            return
-
-        from mcp.types import (
-            CancelTaskRequest,
-            GetTaskPayloadRequest,
-            GetTaskRequest,
-            ListTasksRequest,
-            ServerResult,
-        )
-
-        from fastmcp.server.tasks.requests import (
-            tasks_cancel_handler,
-            tasks_get_handler,
-            tasks_list_handler,
-            tasks_result_handler,
-        )
-
-        # Manually register handlers (SDK decorators fail with locally-defined functions)
-        # SDK expects handlers that receive Request objects and return ServerResult
-
-        async def handle_get_task(req: GetTaskRequest) -> ServerResult:
-            params = req.params.model_dump(by_alias=True, exclude_none=True)
-            result = await tasks_get_handler(self, params)
-            return ServerResult(result)
-
-        async def handle_get_task_result(req: GetTaskPayloadRequest) -> ServerResult:
-            params = req.params.model_dump(by_alias=True, exclude_none=True)
-            result = await tasks_result_handler(self, params)
-            return ServerResult(result)
-
-        async def handle_list_tasks(req: ListTasksRequest) -> ServerResult:
-            params = (
-                req.params.model_dump(by_alias=True, exclude_none=True)
-                if req.params
-                else {}
-            )
-            result = await tasks_list_handler(self, params)
-            return ServerResult(result)
-
-        async def handle_cancel_task(req: CancelTaskRequest) -> ServerResult:
-            params = req.params.model_dump(by_alias=True, exclude_none=True)
-            result = await tasks_cancel_handler(self, params)
-            return ServerResult(result)
-
-        # Register directly with SDK (same as what decorators do internally)
-        self._mcp_server.request_handlers[GetTaskRequest] = handle_get_task
-        self._mcp_server.request_handlers[GetTaskPayloadRequest] = (
-            handle_get_task_result
-        )
-        self._mcp_server.request_handlers[ListTasksRequest] = handle_list_tasks
-        self._mcp_server.request_handlers[CancelTaskRequest] = handle_cancel_task
 
     async def _run_middleware(
         self,
@@ -1726,307 +1348,6 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
                         raise PromptError(f"Error rendering prompt {name!r}") from e
                     raise PromptError(f"Error rendering prompt {name!r}: {e}") from e
 
-    def custom_route(
-        self,
-        path: str,
-        methods: list[str],
-        name: str | None = None,
-        include_in_schema: bool = True,
-    ) -> Callable[
-        [Callable[[Request], Awaitable[Response]]],
-        Callable[[Request], Awaitable[Response]],
-    ]:
-        """
-        Decorator to register a custom HTTP route on the FastMCP server.
-
-        Allows adding arbitrary HTTP endpoints outside the standard MCP protocol,
-        which can be useful for OAuth callbacks, health checks, or admin APIs.
-        The handler function must be an async function that accepts a Starlette
-        Request and returns a Response.
-
-        Args:
-            path: URL path for the route (e.g., "/auth/callback")
-            methods: List of HTTP methods to support (e.g., ["GET", "POST"])
-            name: Optional name for the route (to reference this route with
-                Starlette's reverse URL lookup feature)
-            include_in_schema: Whether to include in OpenAPI schema, defaults to True
-
-        Example:
-            Register a custom HTTP route for a health check endpoint:
-            ```python
-            @server.custom_route("/health", methods=["GET"])
-            async def health_check(request: Request) -> Response:
-                return JSONResponse({"status": "ok"})
-            ```
-        """
-
-        def decorator(
-            fn: Callable[[Request], Awaitable[Response]],
-        ) -> Callable[[Request], Awaitable[Response]]:
-            self._additional_http_routes.append(
-                Route(
-                    path,
-                    endpoint=fn,
-                    methods=methods,
-                    name=name,
-                    include_in_schema=include_in_schema,
-                )
-            )
-            return fn
-
-        return decorator
-
-    def _get_additional_http_routes(self) -> list[BaseRoute]:
-        """Get all additional HTTP routes including from providers.
-
-        Returns a list of all custom HTTP routes from this server and
-        from all providers that have HTTP routes (e.g., FastMCPProvider).
-
-        Returns:
-            List of Starlette BaseRoute objects
-        """
-        return list(self._additional_http_routes)
-
-    async def _list_tools_mcp(
-        self, request: mcp.types.ListToolsRequest
-    ) -> mcp.types.ListToolsResult:
-        """
-        List all available tools, in the format expected by the low-level MCP
-        server. Supports pagination when list_page_size is configured.
-        """
-        logger.debug(f"[{self.name}] Handler called: list_tools")
-
-        tools = _dedupe_with_versions(list(await self.list_tools()), lambda t: t.name)
-        sdk_tools = [tool.to_mcp_tool(name=tool.name) for tool in tools]
-        # SDK may pass None for internal cache refresh despite type hint
-        cursor = (
-            request.params.cursor if request is not None and request.params else None
-        )
-        page, next_cursor = _apply_pagination(sdk_tools, cursor, self._list_page_size)
-        return mcp.types.ListToolsResult(tools=page, nextCursor=next_cursor)
-
-    async def _list_resources_mcp(
-        self, request: mcp.types.ListResourcesRequest
-    ) -> mcp.types.ListResourcesResult:
-        """
-        List all available resources, in the format expected by the low-level MCP
-        server. Supports pagination when list_page_size is configured.
-        """
-        logger.debug(f"[{self.name}] Handler called: list_resources")
-
-        resources = _dedupe_with_versions(
-            list(await self.list_resources()), lambda r: str(r.uri)
-        )
-        sdk_resources = [
-            resource.to_mcp_resource(uri=str(resource.uri)) for resource in resources
-        ]
-        cursor = request.params.cursor if request.params else None
-        page, next_cursor = _apply_pagination(
-            sdk_resources, cursor, self._list_page_size
-        )
-        return mcp.types.ListResourcesResult(resources=page, nextCursor=next_cursor)
-
-    async def _list_resource_templates_mcp(
-        self, request: mcp.types.ListResourceTemplatesRequest
-    ) -> mcp.types.ListResourceTemplatesResult:
-        """
-        List all available resource templates, in the format expected by the low-level MCP
-        server. Supports pagination when list_page_size is configured.
-        """
-        logger.debug(f"[{self.name}] Handler called: list_resource_templates")
-
-        templates = _dedupe_with_versions(
-            list(await self.list_resource_templates()), lambda t: t.uri_template
-        )
-        sdk_templates = [
-            template.to_mcp_template(uriTemplate=template.uri_template)
-            for template in templates
-        ]
-        cursor = request.params.cursor if request.params else None
-        page, next_cursor = _apply_pagination(
-            sdk_templates, cursor, self._list_page_size
-        )
-        return mcp.types.ListResourceTemplatesResult(
-            resourceTemplates=page, nextCursor=next_cursor
-        )
-
-    async def _list_prompts_mcp(
-        self, request: mcp.types.ListPromptsRequest
-    ) -> mcp.types.ListPromptsResult:
-        """
-        List all available prompts, in the format expected by the low-level MCP
-        server. Supports pagination when list_page_size is configured.
-        """
-        logger.debug(f"[{self.name}] Handler called: list_prompts")
-
-        prompts = _dedupe_with_versions(
-            list(await self.list_prompts()), lambda p: p.name
-        )
-        sdk_prompts = [prompt.to_mcp_prompt(name=prompt.name) for prompt in prompts]
-        cursor = request.params.cursor if request.params else None
-        page, next_cursor = _apply_pagination(sdk_prompts, cursor, self._list_page_size)
-        return mcp.types.ListPromptsResult(prompts=page, nextCursor=next_cursor)
-
-    async def _call_tool_mcp(
-        self, key: str, arguments: dict[str, Any]
-    ) -> (
-        list[ContentBlock]
-        | tuple[list[ContentBlock], dict[str, Any]]
-        | mcp.types.CallToolResult
-        | mcp.types.CreateTaskResult
-    ):
-        """
-        Handle MCP 'callTool' requests.
-
-        Extracts task metadata from MCP request context and passes it explicitly
-        to call_tool(). The tool's _run() method handles the backgrounding decision,
-        ensuring middleware runs before Docket.
-
-        Args:
-            key: The name of the tool to call
-            arguments: Arguments to pass to the tool
-
-        Returns:
-            Tool result or CreateTaskResult for background execution
-        """
-        logger.debug(
-            f"[{self.name}] Handler called: call_tool %s with %s", key, arguments
-        )
-
-        try:
-            # Extract version and task metadata from request context.
-            # fn_key is set by call_tool() after finding the tool.
-            version_str: str | None = None
-            task_meta: TaskMeta | None = None
-            try:
-                ctx = self._mcp_server.request_context
-                # Extract version from request-level _meta.fastmcp.version
-                if ctx.meta:
-                    meta_dict = ctx.meta.model_dump(exclude_none=True)
-                    version_str = meta_dict.get("fastmcp", {}).get("version")
-                # Extract SEP-1686 task metadata
-                if ctx.experimental.is_task:
-                    mcp_task_meta = ctx.experimental.task_metadata
-                    task_meta_dict = mcp_task_meta.model_dump(exclude_none=True)
-                    task_meta = TaskMeta(ttl=task_meta_dict.get("ttl"))
-            except (AttributeError, LookupError):
-                pass
-
-            version = VersionSpec(eq=version_str) if version_str else None
-            result = await self.call_tool(
-                key, arguments, version=version, task_meta=task_meta
-            )
-
-            if isinstance(result, mcp.types.CreateTaskResult):
-                return result
-            return result.to_mcp_result()
-
-        except DisabledError as e:
-            raise NotFoundError(f"Unknown tool: {key!r}") from e
-        except NotFoundError as e:
-            raise NotFoundError(f"Unknown tool: {key!r}") from e
-
-    async def _read_resource_mcp(
-        self, uri: AnyUrl | str
-    ) -> mcp.types.ReadResourceResult | mcp.types.CreateTaskResult:
-        """Handle MCP 'readResource' requests.
-
-        Extracts task metadata from MCP request context and passes it explicitly
-        to read_resource(). The resource's _read() method handles the backgrounding
-        decision, ensuring middleware runs before Docket.
-
-        Args:
-            uri: The resource URI
-
-        Returns:
-            ReadResourceResult or CreateTaskResult for background execution
-        """
-        logger.debug(f"[{self.name}] Handler called: read_resource %s", uri)
-
-        try:
-            # Extract version and task metadata from request context.
-            version_str: str | None = None
-            task_meta: TaskMeta | None = None
-            try:
-                ctx = self._mcp_server.request_context
-                # Extract version from _meta.fastmcp.version if provided
-                if ctx.meta:
-                    meta_dict = ctx.meta.model_dump(exclude_none=True)
-                    fastmcp_meta = meta_dict.get("fastmcp") or {}
-                    version_str = fastmcp_meta.get("version")
-                # Extract SEP-1686 task metadata
-                if ctx.experimental.is_task:
-                    mcp_task_meta = ctx.experimental.task_metadata
-                    task_meta_dict = mcp_task_meta.model_dump(exclude_none=True)
-                    task_meta = TaskMeta(ttl=task_meta_dict.get("ttl"))
-            except (AttributeError, LookupError):
-                pass
-
-            version = VersionSpec(eq=version_str) if version_str else None
-            result = await self.read_resource(
-                str(uri), version=version, task_meta=task_meta
-            )
-
-            if isinstance(result, mcp.types.CreateTaskResult):
-                return result
-            return result.to_mcp_result(uri)
-        except DisabledError as e:
-            raise NotFoundError(f"Unknown resource: {str(uri)!r}") from e
-        except NotFoundError:
-            raise
-
-    async def _get_prompt_mcp(
-        self, name: str, arguments: dict[str, Any] | None
-    ) -> mcp.types.GetPromptResult | mcp.types.CreateTaskResult:
-        """Handle MCP 'getPrompt' requests.
-
-        Extracts task metadata from MCP request context and passes it explicitly
-        to render_prompt(). The prompt's _render() method handles the backgrounding
-        decision, ensuring middleware runs before Docket.
-
-        Args:
-            name: The prompt name
-            arguments: Prompt arguments
-
-        Returns:
-            GetPromptResult or CreateTaskResult for background execution
-        """
-        logger.debug(
-            f"[{self.name}] Handler called: get_prompt %s with %s", name, arguments
-        )
-
-        try:
-            # Extract version and task metadata from request context.
-            # fn_key is set by render_prompt() after finding the prompt.
-            version_str: str | None = None
-            task_meta: TaskMeta | None = None
-            try:
-                ctx = self._mcp_server.request_context
-                # Extract version from request-level _meta.fastmcp.version
-                if ctx.meta:
-                    meta_dict = ctx.meta.model_dump(exclude_none=True)
-                    version_str = meta_dict.get("fastmcp", {}).get("version")
-                # Extract SEP-1686 task metadata
-                if ctx.experimental.is_task:
-                    mcp_task_meta = ctx.experimental.task_metadata
-                    task_meta_dict = mcp_task_meta.model_dump(exclude_none=True)
-                    task_meta = TaskMeta(ttl=task_meta_dict.get("ttl"))
-            except (AttributeError, LookupError):
-                pass
-
-            version = VersionSpec(eq=version_str) if version_str else None
-            result = await self.render_prompt(
-                name, arguments, version=version, task_meta=task_meta
-            )
-
-            if isinstance(result, mcp.types.CreateTaskResult):
-                return result
-            return result.to_mcp_prompt_result()
-        except DisabledError as e:
-            raise NotFoundError(f"Unknown prompt: {name!r}") from e
-        except NotFoundError:
-            raise
-
     def add_tool(self, tool: Tool | Callable[..., Any]) -> Tool:
         """Add a tool to the server.
 
@@ -2445,190 +1766,6 @@ class FastMCP(AggregateProvider, Generic[LifespanResultT]):
             task=task if task is not None else self._support_tasks_by_default,
             auth=auth,
         )
-
-    async def run_stdio_async(
-        self,
-        show_banner: bool = True,
-        log_level: str | None = None,
-        stateless: bool = False,
-    ) -> None:
-        """Run the server using stdio transport.
-
-        Args:
-            show_banner: Whether to display the server banner
-            log_level: Log level for the server
-            stateless: Whether to run in stateless mode (no session initialization)
-        """
-        from fastmcp.server.context import reset_transport, set_transport
-
-        # Display server banner
-        if show_banner:
-            log_server_banner(server=self)
-
-        token = set_transport("stdio")
-        try:
-            with temporary_log_level(log_level):
-                async with self._lifespan_manager():
-                    async with stdio_server() as (read_stream, write_stream):
-                        mode = " (stateless)" if stateless else ""
-                        logger.info(
-                            f"Starting MCP server {self.name!r} with transport 'stdio'{mode}"
-                        )
-
-                        await self._mcp_server.run(
-                            read_stream,
-                            write_stream,
-                            self._mcp_server.create_initialization_options(
-                                notification_options=NotificationOptions(
-                                    tools_changed=True
-                                ),
-                            ),
-                            stateless=stateless,
-                        )
-        finally:
-            reset_transport(token)
-
-    async def run_http_async(
-        self,
-        show_banner: bool = True,
-        transport: Literal["http", "streamable-http", "sse"] = "http",
-        host: str | None = None,
-        port: int | None = None,
-        log_level: str | None = None,
-        path: str | None = None,
-        uvicorn_config: dict[str, Any] | None = None,
-        middleware: list[ASGIMiddleware] | None = None,
-        json_response: bool | None = None,
-        stateless_http: bool | None = None,
-        stateless: bool | None = None,
-    ) -> None:
-        """Run the server using HTTP transport.
-
-        Args:
-            transport: Transport protocol to use - either "streamable-http" (default) or "sse"
-            host: Host address to bind to (defaults to settings.host)
-            port: Port to bind to (defaults to settings.port)
-            log_level: Log level for the server (defaults to settings.log_level)
-            path: Path for the endpoint (defaults to settings.streamable_http_path or settings.sse_path)
-            uvicorn_config: Additional configuration for the Uvicorn server
-            middleware: A list of middleware to apply to the app
-            json_response: Whether to use JSON response format (defaults to settings.json_response)
-            stateless_http: Whether to use stateless HTTP (defaults to settings.stateless_http)
-            stateless: Alias for stateless_http for CLI consistency
-        """
-        # Allow stateless as alias for stateless_http
-        if stateless is not None and stateless_http is None:
-            stateless_http = stateless
-
-        # Resolve from settings/env var if not explicitly set
-        if stateless_http is None:
-            stateless_http = self._deprecated_settings.stateless_http
-
-        # SSE doesn't support stateless mode
-        if stateless_http and transport == "sse":
-            raise ValueError("SSE transport does not support stateless mode")
-
-        host = host or self._deprecated_settings.host
-        port = port or self._deprecated_settings.port
-        default_log_level_to_use = (
-            log_level or self._deprecated_settings.log_level
-        ).lower()
-
-        app = self.http_app(
-            path=path,
-            transport=transport,
-            middleware=middleware,
-            json_response=json_response,
-            stateless_http=stateless_http,
-        )
-
-        # Display server banner
-        if show_banner:
-            log_server_banner(server=self)
-        uvicorn_config_from_user = uvicorn_config or {}
-
-        config_kwargs: dict[str, Any] = {
-            "timeout_graceful_shutdown": 0,
-            "lifespan": "on",
-            "ws": "websockets-sansio",
-        }
-        config_kwargs.update(uvicorn_config_from_user)
-
-        if "log_config" not in config_kwargs and "log_level" not in config_kwargs:
-            config_kwargs["log_level"] = default_log_level_to_use
-
-        with temporary_log_level(log_level):
-            async with self._lifespan_manager():
-                config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
-                server = uvicorn.Server(config)
-                path = getattr(app.state, "path", "").lstrip("/")
-                mode = " (stateless)" if stateless_http else ""
-                logger.info(
-                    f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{host}:{port}/{path}"
-                )
-
-                await server.serve()
-
-    def http_app(
-        self,
-        path: str | None = None,
-        middleware: list[ASGIMiddleware] | None = None,
-        json_response: bool | None = None,
-        stateless_http: bool | None = None,
-        transport: Literal["http", "streamable-http", "sse"] = "http",
-        event_store: EventStore | None = None,
-        retry_interval: int | None = None,
-    ) -> StarletteWithLifespan:
-        """Create a Starlette app using the specified HTTP transport.
-
-        Args:
-            path: The path for the HTTP endpoint
-            middleware: A list of middleware to apply to the app
-            json_response: Whether to use JSON response format
-            stateless_http: Whether to use stateless mode (new transport per request)
-            transport: Transport protocol to use - "http", "streamable-http", or "sse"
-            event_store: Optional event store for SSE polling/resumability. When set,
-                enables clients to reconnect and resume receiving events after
-                server-initiated disconnections. Only used with streamable-http transport.
-            retry_interval: Optional retry interval in milliseconds for SSE polling.
-                Controls how quickly clients should reconnect after server-initiated
-                disconnections. Requires event_store to be set. Only used with
-                streamable-http transport.
-
-        Returns:
-            A Starlette application configured with the specified transport
-        """
-
-        if transport in ("streamable-http", "http"):
-            return create_streamable_http_app(
-                server=self,
-                streamable_http_path=path
-                or self._deprecated_settings.streamable_http_path,
-                event_store=event_store,
-                retry_interval=retry_interval,
-                auth=self.auth,
-                json_response=(
-                    json_response
-                    if json_response is not None
-                    else self._deprecated_settings.json_response
-                ),
-                stateless_http=(
-                    stateless_http
-                    if stateless_http is not None
-                    else self._deprecated_settings.stateless_http
-                ),
-                debug=self._deprecated_settings.debug,
-                middleware=middleware,
-            )
-        elif transport == "sse":
-            return create_sse_app(
-                server=self,
-                message_path=self._deprecated_settings.message_path,
-                sse_path=path or self._deprecated_settings.sse_path,
-                auth=self.auth,
-                debug=self._deprecated_settings.debug,
-                middleware=middleware,
-            )
 
     def mount(
         self,

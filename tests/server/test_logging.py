@@ -18,8 +18,8 @@ def mcp_server() -> FastMCP:
     return FastMCP(name="TestLogServer")
 
 
-@patch("fastmcp.server.server.uvicorn.Server")
-@patch("fastmcp.server.server.uvicorn.Config")
+@patch("fastmcp.server.mixins.transport.uvicorn.Server")
+@patch("fastmcp.server.mixins.transport.uvicorn.Config")
 async def test_uvicorn_logging_default_level(
     mock_uvicorn_config_constructor: Mock,
     mock_uvicorn_server_constructor: Mock,
@@ -59,8 +59,8 @@ async def test_uvicorn_logging_default_level(
         pass
 
 
-@patch("fastmcp.server.server.uvicorn.Server")
-@patch("fastmcp.server.server.uvicorn.Config")
+@patch("fastmcp.server.mixins.transport.uvicorn.Server")
+@patch("fastmcp.server.mixins.transport.uvicorn.Config")
 async def test_uvicorn_logging_with_custom_log_config(
     mock_uvicorn_config_constructor: Mock,
     mock_uvicorn_server_constructor: Mock,
@@ -124,8 +124,8 @@ async def test_uvicorn_logging_with_custom_log_config(
         pass
 
 
-@patch("fastmcp.server.server.uvicorn.Server")
-@patch("fastmcp.server.server.uvicorn.Config")
+@patch("fastmcp.server.mixins.transport.uvicorn.Server")
+@patch("fastmcp.server.mixins.transport.uvicorn.Config")
 async def test_uvicorn_logging_custom_log_config_overrides_log_level_param(
     mock_uvicorn_config_constructor: Mock,
     mock_uvicorn_server_constructor: Mock,

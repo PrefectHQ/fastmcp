@@ -27,9 +27,13 @@ from fastmcp.client.logging import (
     default_log_handler,
 )
 from fastmcp.client.messages import MessageHandler, MessageHandlerT
+from fastmcp.client.mixins import (
+    ClientPromptsMixin,
+    ClientResourcesMixin,
+    ClientTaskManagementMixin,
+    ClientToolsMixin,
+)
 from fastmcp.client.progress import ProgressHandler, default_progress_handler
-from fastmcp.client.prompts import ClientPromptsMixin
-from fastmcp.client.resources import ClientResourcesMixin
 from fastmcp.client.roots import (
     RootsHandler,
     RootsList,
@@ -39,14 +43,12 @@ from fastmcp.client.sampling import (
     SamplingHandler,
     create_sampling_callback,
 )
-from fastmcp.client.task_management import ClientTaskManagementMixin
 from fastmcp.client.tasks import (
     PromptTask,
     ResourceTask,
     TaskNotificationHandler,
     ToolTask,
 )
-from fastmcp.client.tools_client import ClientToolsMixin
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.server import FastMCP
 from fastmcp.utilities.exceptions import get_catch_handlers

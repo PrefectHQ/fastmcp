@@ -14,7 +14,7 @@ class TestLogLevelParameter:
         server = FastMCP("TestServer")
 
         # Mock the stdio_server to avoid actual stdio operations
-        with patch("fastmcp.server.server.stdio_server") as mock_stdio:
+        with patch("fastmcp.server.mixins.transport.stdio_server") as mock_stdio:
             mock_stdio.return_value.__aenter__ = AsyncMock(
                 return_value=(AsyncMock(), AsyncMock())
             )
@@ -36,7 +36,9 @@ class TestLogLevelParameter:
         server = FastMCP("TestServer")
 
         # Mock uvicorn to avoid actual server start
-        with patch("fastmcp.server.server.uvicorn.Server") as mock_server_class:
+        with patch(
+            "fastmcp.server.mixins.transport.uvicorn.Server"
+        ) as mock_server_class:
             mock_instance = mock_server_class.return_value
             mock_instance.serve = AsyncMock()
 
