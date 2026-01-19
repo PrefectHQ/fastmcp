@@ -213,6 +213,45 @@ Works at both server and provider level. Supports:
 - **Override semantics**: Later transforms override earlier marks (enable after disable = enabled)
 - **Transform ordering**: Enabled transforms are injected at the point you call them, so component state is known
 
+### Per-Session Visibility
+
+Server-level visibility changes affect all connected clients. For per-session control, use `Context` methods that apply rules only to the current session ([#2917](https://github.com/jlowin/fastmcp/pull/2917)):
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.context import Context
+
+mcp = FastMCP("Server")
+
+@mcp.tool(tags={"premium"})
+def premium_analysis(data: str) -> str:
+    return f"Premium analysis of: {data}"
+
+@mcp.tool
+async def unlock_premium(ctx: Context) -> str:
+    """Unlock premium features for this session only."""
+    await ctx.enable_components(tags={"premium"})
+    return "Premium features unlocked"
+
+@mcp.tool
+async def reset_features(ctx: Context) -> str:
+    """Reset to default feature set."""
+    await ctx.reset_components()
+    return "Features reset to defaults"
+
+# Globally disabled - sessions unlock individually
+mcp.disable(tags={"premium"})
+```
+
+Session visibility methods:
+- `await ctx.enable_components(...)`: Enable components for this session
+- `await ctx.disable_components(...)`: Disable components for this session
+- `await ctx.reset_components()`: Clear session rules, return to global defaults
+
+Session rules override global transforms. FastMCP automatically sends `ToolListChangedNotification` (and resource/prompt equivalents) to affected sessions when visibility changes.
+
+Documentation: `docs/servers/enabled.mdx`
+
 ---
 
 ## Component Versioning
@@ -608,6 +647,32 @@ trace.set_tracer_provider(provider)
 Components provide their own span attributes through a `get_span_attributes()` method that subclasses override—this lets LocalProvider, FastMCPProvider, and ProxyProvider each include relevant context (original names, backend URIs, etc.).
 
 Documentation: [Telemetry](/servers/telemetry)
+
+---
+
+## Pagination
+
+v3.0 adds pagination support for list operations when servers expose many components ([#2903](https://github.com/jlowin/fastmcp/pull/2903)).
+
+```python
+from fastmcp import FastMCP
+
+# Enable pagination with 50 items per page
+server = FastMCP("ComponentRegistry", list_page_size=50)
+```
+
+When `list_page_size` is set, `tools/list`, `resources/list`, `resources/templates/list`, and `prompts/list` paginate responses with `nextCursor` for subsequent pages.
+
+**Client behavior**: The FastMCP Client fetches all pages automatically—`list_tools()` and similar methods return the complete list. For manual pagination (memory constraints, progress reporting), use `_mcp` variants:
+
+```python
+async with Client(server) as client:
+    result = await client.list_tools_mcp()
+    while result.nextCursor:
+        result = await client.list_tools_mcp(cursor=result.nextCursor)
+```
+
+Documentation: [Pagination](/servers/pagination)
 
 ---
 
