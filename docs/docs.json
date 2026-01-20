@@ -522,6 +522,16 @@
                         ]
                       },
                       "python-sdk/fastmcp-server-providers-proxy",
+                      {
+                        "group": "skills",
+                        "pages": [
+                          "python-sdk/fastmcp-server-providers-skills-__init__",
+                          "python-sdk/fastmcp-server-providers-skills-claude_provider",
+                          "python-sdk/fastmcp-server-providers-skills-directory_provider",
+                          "python-sdk/fastmcp-server-providers-skills-skill_provider",
+                          "python-sdk/fastmcp-server-providers-skills-vendor_providers"
+                        ]
+                      },
                       "python-sdk/fastmcp-server-providers-wrapped_provider"
                     ]
                   },
@@ -555,6 +565,8 @@
                       "python-sdk/fastmcp-server-transforms-__init__",
                       "python-sdk/fastmcp-server-transforms-enabled",
                       "python-sdk/fastmcp-server-transforms-namespace",
+                      "python-sdk/fastmcp-server-transforms-prompts_as_tools",
+                      "python-sdk/fastmcp-server-transforms-resources_as_tools",
                       "python-sdk/fastmcp-server-transforms-tool_transform",
                       "python-sdk/fastmcp-server-transforms-version_filter"
                     ]

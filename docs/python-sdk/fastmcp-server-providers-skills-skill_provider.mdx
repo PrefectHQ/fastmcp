@@ -1,0 +1,109 @@
+---
+title: skill_provider
+sidebarTitle: skill_provider
+---
+
+# `fastmcp.server.providers.skills.skill_provider`
+
+
+Basic skill provider for handling a single skill folder.
+
+## Classes
+
+### `SkillResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/skills/skill_provider.py#L35" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A resource representing a skill's main file or manifest.
+
+
+**Methods:**
+
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/skills/skill_provider.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read(self) -> str | bytes | ResourceResult
+```
+
+Read the resource content.
+
+
+### `SkillFileTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/skills/skill_provider.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A template for accessing files within a skill.
+
+
+**Methods:**
+
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/skills/skill_provider.py#L66" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
+```
+
+Read a file from the skill directory.
+
+
+#### `create_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/skills/skill_provider.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_resource(self, uri: str, params: dict[str, Any]) -> Resource
+```
+
+Create a resource for the given URI and parameters.
+
+Note: This is not typically used since _read() handles file reading directly.
+Provided for compatibility with the ResourceTemplate interface.
+
+
+### `SkillFileResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/skills/skill_provider.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A resource representing a specific file within a skill.
+
+
+**Methods:**
+
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/skills/skill_provider.py#L138" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read(self) -> str | bytes | ResourceResult
+```
+
+Read the file content.
+
+
+### `SkillProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/skills/skill_provider.py#L162" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Provider that exposes a single skill folder as MCP resources.
+
+Each skill folder must contain a main file (default: SKILL.md) and may
+contain additional supporting files.
+
+Exposes:
+- A Resource for the main file (skill://{name}/SKILL.md)
+- A Resource for the synthetic manifest (skill://{name}/_manifest)
+- Supporting files via ResourceTemplate or Resources (configurable)
+
+**Args:**
+- `skill_path`: Path to the skill directory.
+- `main_file_name`: Name of the main skill file. Defaults to "SKILL.md".
+- `supporting_files`: How supporting files (everything except main file and
+manifest) are exposed to clients\:
+- "template"\: Accessed via ResourceTemplate, hidden from list_resources().
+  Clients discover files by reading the manifest first.
+- "resources"\: Each file exposed as individual Resource in list_resources().
+  Full enumeration upfront.
+
+
+**Methods:**
+
+#### `skill_info` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/skills/skill_provider.py#L254" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+skill_info(self) -> SkillInfo
+```
+
+Get the loaded skill info.
+

@@ -1,0 +1,59 @@
+---
+title: resources_as_tools
+sidebarTitle: resources_as_tools
+---
+
+# `fastmcp.server.transforms.resources_as_tools`
+
+
+Transform that exposes resources as tools.
+
+This transform generates tools for listing and reading resources, enabling
+clients that only support tools to access resource functionality.
+
+Example:
+    ```python
+    from fastmcp import FastMCP
+    from fastmcp.server.transforms import ResourcesAsTools
+
+    mcp = FastMCP("Server")
+    mcp.add_transform(ResourcesAsTools(mcp))
+    # Now has list_resources and read_resource tools
+    ```
+
+
+## Classes
+
+### `ResourcesAsTools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/resources_as_tools.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Transform that adds tools for listing and reading resources.
+
+Generates two tools:
+- `list_resources`: Lists all resources and templates from the provider
+- `read_resource`: Reads a resource by URI
+
+The transform captures a provider reference at construction and queries it
+for resources when the generated tools are called. When used with FastMCP,
+the provider's auth and visibility filtering is automatically applied.
+
+
+**Methods:**
+
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/resources_as_tools.py#L63" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
+```
+
+Add resource tools to the tool list.
+
+
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/resources_as_tools.py#L71" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
+```
+
+Get a tool by name, including generated resource tools.
+

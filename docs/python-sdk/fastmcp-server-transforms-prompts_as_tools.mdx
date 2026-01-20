@@ -1,0 +1,59 @@
+---
+title: prompts_as_tools
+sidebarTitle: prompts_as_tools
+---
+
+# `fastmcp.server.transforms.prompts_as_tools`
+
+
+Transform that exposes prompts as tools.
+
+This transform generates tools for listing and getting prompts, enabling
+clients that only support tools to access prompt functionality.
+
+Example:
+    ```python
+    from fastmcp import FastMCP
+    from fastmcp.server.transforms import PromptsAsTools
+
+    mcp = FastMCP("Server")
+    mcp.add_transform(PromptsAsTools(mcp))
+    # Now has list_prompts and get_prompt tools
+    ```
+
+
+## Classes
+
+### `PromptsAsTools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/prompts_as_tools.py#L35" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Transform that adds tools for listing and getting prompts.
+
+Generates two tools:
+- `list_prompts`: Lists all prompts from the provider
+- `get_prompt`: Gets a specific prompt with optional arguments
+
+The transform captures a provider reference at construction and queries it
+for prompts when the generated tools are called. When used with FastMCP,
+the provider's auth and visibility filtering is automatically applied.
+
+
+**Methods:**
+
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/prompts_as_tools.py#L66" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
+```
+
+Add prompt tools to the tool list.
+
+
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/prompts_as_tools.py#L74" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
+```
+
+Get a tool by name, including generated prompt tools.
+

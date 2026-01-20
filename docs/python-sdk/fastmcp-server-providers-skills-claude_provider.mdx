@@ -1,0 +1,25 @@
+---
+title: claude_provider
+sidebarTitle: claude_provider
+---
+
+# `fastmcp.server.providers.skills.claude_provider`
+
+
+Claude-specific skills provider for Claude Code skills.
+
+## Classes
+
+### `ClaudeSkillsProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/skills/claude_provider.py#L11" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Provider for Claude Code skills from ~/.claude/skills/.
+
+A convenience subclass that sets the default root to Claude's skills location.
+
+**Args:**
+- `reload`: If True, re-scan on every request. Defaults to False.
+- `supporting_files`: How supporting files are exposed\:
+- "template"\: Accessed via ResourceTemplate, hidden from list_resources().
+- "resources"\: Each file exposed as individual Resource in list_resources().
+

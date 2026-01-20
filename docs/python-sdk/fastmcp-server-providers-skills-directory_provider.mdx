@@ -1,0 +1,31 @@
+---
+title: directory_provider
+sidebarTitle: directory_provider
+---
+
+# `fastmcp.server.providers.skills.directory_provider`
+
+
+Directory scanning provider for discovering multiple skills.
+
+## Classes
+
+### `SkillsDirectoryProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/skills/directory_provider.py#L19" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Provider that scans directories and creates a SkillProvider per skill folder.
+
+This extends AggregateProvider to combine multiple SkillProviders into one.
+Each subdirectory containing a main file (default: SKILL.md) becomes a skill.
+Can scan multiple root directories - if a skill name appears in multiple roots,
+the first one found wins.
+
+**Args:**
+- `roots`: Root directory(ies) containing skill folders. Can be a single path
+or a sequence of paths.
+- `reload`: If True, re-discover skills on each request. Defaults to False.
+- `main_file_name`: Name of the main skill file. Defaults to "SKILL.md".
+- `supporting_files`: How supporting files are exposed in child SkillProviders\:
+- "template"\: Accessed via ResourceTemplate, hidden from list_resources().
+- "resources"\: Each file exposed as individual Resource in list_resources().
+
