@@ -3,548 +3,214 @@ title: Upgrade Guide
 sidebarTitle: Upgrade Guide
 description: Migration instructions for upgrading between FastMCP versions
 icon: up
-tag: NEW
 ---
 
-This guide provides migration instructions for breaking changes and major updates when upgrading between FastMCP versions.
-
-## FastMCP Metadata Namespace Change
-
-### Metadata Namespace Renamed
-
-The FastMCP metadata namespace has been renamed from `_fastmcp` to `fastmcp` (underscore prefix removed). All metadata is now always included in component responses.
-
-**What changed:**
-- Metadata namespace: `meta._fastmcp` → `meta.fastmcp`
-- The `include_fastmcp_meta` setting and parameter have been removed
-- Component version is now included in metadata when available (`meta.fastmcp.version`)
-
-**Migration steps:**
-
-1. **Update metadata access patterns:**
-   <CodeGroup>
-   ```python Before
-   tags = tool.meta.get("_fastmcp", {}).get("tags", [])
-   ```
-   
-   ```python After
-   tags = tool.meta.get("fastmcp", {}).get("tags", [])
-   ```
-   </CodeGroup>
-
-2. **Remove `include_fastmcp_meta` parameter:**
-   <CodeGroup>
-   ```python Before
-   mcp = FastMCP(include_fastmcp_meta=False)
-   ```
-   
-   ```python After
-   # Parameter removed - metadata is always included
-   mcp = FastMCP()
-   ```
-   </CodeGroup>
-
-3. **Remove `include_fastmcp_meta` from component serialization:**
-   <CodeGroup>
-   ```python Before
-   mcp_tool = tool.to_mcp_tool(include_fastmcp_meta=True)
-   ```
-   
-   ```python After
-   mcp_tool = tool.to_mcp_tool()
-   ```
-   </CodeGroup>
-
-4. **Access component version from metadata:**
-   <CodeGroup>
-   ```python Before
-   # Version was not available in metadata
-   ```
-   
-   ```python After
-   version = tool.meta.get("fastmcp", {}).get("version")
-   if version:
-       print(f"Tool version: {version}")
-   ```
-   </CodeGroup>
-
-**Why this changed:** The underscore prefix was removed to make the namespace more discoverable and consistent with standard naming conventions. Making metadata always included simplifies the API and ensures consistent behavior across all FastMCP servers.
+This guide covers breaking changes and migration steps when upgrading FastMCP.
 
 ## v3.0.0
 
-### WSTransport Removed
+Most servers need only one change: update your import from `from mcp.server.fastmcp import FastMCP` to `from fastmcp import FastMCP`. The sections below cover less common breaking changes.
 
-The deprecated `WSTransport` client transport has been removed. Use `StreamableHttpTransport` instead.
+### Breaking Changes
 
-### Decorators Return Functions
+#### WSTransport Removed
 
-<Warning>
-**Breaking Change:** Decorators now return your original function instead of a component object. Code that treats the decorated function as a `FunctionTool`, `FunctionResource`, or `FunctionPrompt` will break.
-</Warning>
+Use `StreamableHttpTransport` instead.
 
-Decorators (`@tool`, `@resource`, `@prompt`) now return the original function instead of transforming it into a component object:
+#### Auth Provider Environment Variables Removed
 
-<CodeGroup>
-```python Before
-@mcp.tool
-def greet(name: str) -> str:
-    return f"Hello, {name}!"
-
-isinstance(greet, FunctionTool)  # True
-greet.name                       # "greet"
-```
-
-```python After
-@mcp.tool
-def greet(name: str) -> str:
-    return f"Hello, {name}!"
-
-isinstance(greet, FunctionTool)  # False - it's your function now
-greet("World")                   # "Hello, World!" - still callable
-```
-</CodeGroup>
-
-**Why this changed:** Functions staying as functions means they're directly callable for testing, work naturally with instance methods, and match how Flask/FastAPI decorators behave.
-
-**For v2 compatibility:**
+Auth providers no longer auto-load configuration. Read them explicitly:
 
 ```python
-import fastmcp
-fastmcp.settings.decorator_mode = "object"
-```
-
-Or set the environment variable `FASTMCP_DECORATOR_MODE=object`.
-
-### Provider Architecture
-
-FastMCP v3 introduces a unified provider architecture for sourcing components. All tools, resources, and prompts now flow through providers:
-
-- **LocalProvider** stores decorator-registered components (`@mcp.tool`, etc.)
-- **FastMCPProvider** wraps another FastMCP server for composition
-- **ProxyProvider** connects to remote MCP servers
-- **Transforms** modify components as they flow through using a middleware `call_next` pattern
-
-See [Providers](/servers/providers/overview) and [Transforms](/servers/providers/transforms) for documentation.
-
-### Tool Transformation API
-
-`FastMCP.add_tool_transformation()` and the `tool_transformations` constructor parameter are deprecated. Use `add_transform()` with `ToolTransform` instead:
-
-<CodeGroup>
-```python Before
-mcp = FastMCP("server", tool_transformations={
-    "verbose_name": ToolTransformConfig(name="short")
-})
-mcp.add_tool_transformation("verbose_name", ToolTransformConfig(name="short"))
-```
-
-```python After
-from fastmcp.server.transforms import ToolTransform
-from fastmcp.tools.tool_transform import ToolTransformConfig
-
-mcp = FastMCP("server")
-mcp.add_transform(ToolTransform({
-    "verbose_name": ToolTransformConfig(name="short")
-}))
-```
-</CodeGroup>
-
-`remove_tool_transformation()` is deprecated with no replacement - transforms are immutable once added. Use `server.disable(names={...}, components=["tool"])` to hide tools dynamically.
-
-### FastMCP.as_proxy() Deprecated
-
-The `FastMCP.as_proxy()` classmethod is deprecated. Use the `create_proxy()` function instead ([#2829](https://github.com/jlowin/fastmcp/pull/2829)):
-
-<CodeGroup>
-```python Before
-proxy = FastMCP.as_proxy("http://example.com/mcp")
-```
-
-```python After
-from fastmcp.server import create_proxy
-
-proxy = create_proxy("http://example.com/mcp")
-```
-</CodeGroup>
-
-`as_proxy()` continues to work but forwards to `create_proxy()`.
-
-### Mount Namespace Parameter
-
-The `prefix` parameter for `mount()` has been renamed to `namespace`:
-
-<CodeGroup>
-```python Before
-main.mount(subserver, prefix="api")
-```
-
-```python After
-main.mount(subserver, namespace="api")
-```
-</CodeGroup>
-
-### Component Enable/Disable
-
-The `enable()`/`disable()` methods have moved from component objects to the server and provider level:
-
-<CodeGroup>
-```python Before
-tool = await server.get_tool("my_tool")
-tool.disable()
-tool.enable()
-```
-
-```python After
-server.disable(names={"my_tool"}, components=["tool"])
-server.enable(names={"my_tool"}, components=["tool"])
-```
-</CodeGroup>
-
-Components describe capabilities; servers and providers control availability. This ensures enabled state works correctly even when components pass through transforming providers.
-
-**Override semantics:**
-
-Multiple `enable()`/`disable()` calls are additive. Later calls override earlier ones for matching components:
-
-```python
-server.disable(tags={"internal"})  # Hide all internal
-server.enable(names={"safe_tool"})    # Show safe_tool (overrides the disable)
-# Result: safe_tool is visible, other internal tools are hidden
-```
-
-**Allowlist mode:**
-
-Use `only=True` to restrict access to specific components:
-
-```python
-# Show ONLY tools with "public" tag
-server.enable(tags={"public"}, only=True)
-```
-
-**`FastMCP(include_tags=..., exclude_tags=...)` deprecated:**
-
-These init parameters emit deprecation warnings. Use the new methods instead:
-
-<CodeGroup>
-```python Before
-mcp = FastMCP("server", exclude_tags={"internal"})
-```
-
-```python After
-mcp = FastMCP("server")
-mcp.disable(tags={"internal"})
-```
-</CodeGroup>
-
-**No automatic notifications:**
-
-Component `enable()`/`disable()` in v2 sent `ToolListChangedNotification` automatically. The new server-level methods don't - they're treated as startup configuration. To notify clients of enabled state changes at runtime, send notifications explicitly:
-
-```python
-import mcp.types
-
-@server.tool
-async def hide_admin_tools(ctx: Context):
-    ctx.fastmcp.disable(tags={"admin"})
-    await ctx.send_notification(mcp.types.ToolListChangedNotification())
-```
-
-### Component Lookup Method Parameter Names
-
-The server lookup methods now use semantic parameter names instead of generic `key`:
-
-- `FastMCP.get_tool(name=...)` (was `key`)
-- `FastMCP.get_resource(uri=...)` (was `key`)
-- `FastMCP.get_resource_template(uri=...)` (was `key`)
-- `FastMCP.get_prompt(name=...)` (was `key`)
-
-If you were passing arguments positionally, no change is needed. If you were using keyword arguments:
-
-<CodeGroup>
-```python Before
-tool = await mcp.get_tool(key="my_tool")
-```
-
-```python After
-tool = await mcp.get_tool(name="my_tool")
-```
-</CodeGroup>
-
-### Component Listing Methods Return Lists
-
-The `get_tools()`, `get_resources()`, `get_prompts()`, and `get_resource_templates()` methods now return lists instead of dicts:
-
-<CodeGroup>
-```python Before
-tools = await server.get_tools()
-if "my_tool" in tools:
-    tool = tools["my_tool"]
-```
-
-```python After
-tools = await server.get_tools()
-tool = next((t for t in tools if t.name == "my_tool"), None)
-```
-</CodeGroup>
-
-The dict key was redundant since components already have `.name` or `.uri` attributes. Use list comprehensions or `next()` for lookups.
-
-### Prompt Return Types
-
-Prompt functions now use `Message` instead of `mcp.types.PromptMessage`. The `Message` class provides auto-serialization and a simpler API:
-
-<CodeGroup>
-```python Before
-from mcp.types import PromptMessage, TextContent
-
-@mcp.prompt
-def my_prompt() -> PromptMessage:
-    return PromptMessage(
-        role="user",
-        content=TextContent(type="text", text="Hello")
-    )
-```
-
-```python After
-from fastmcp.prompts import Message
-
-@mcp.prompt
-def my_prompt() -> Message:
-    return Message("Hello")  # role defaults to "user"
-```
-</CodeGroup>
-
-**Key changes:**
-
-- Use `Message(content, role="user")` instead of `PromptMessage(role=..., content=TextContent(...))`
-- `Message` auto-serializes dicts, lists, and Pydantic models to JSON
-- `PromptResult` now accepts `str | list[Message]` (no single `Message`)
-- Returning `mcp.types.PromptMessage` directly is no longer supported
-
-See [Prompts documentation](/servers/prompts#return-values) for full details.
-
-### Tool Serializer Deprecated
-
-The `tool_serializer` parameter on `FastMCP` is deprecated. Return `ToolResult` from your tools for explicit control over serialization. See [Custom Serialization](/servers/tools#custom-serialization) for examples.
-
-### Auth Provider Automatic Environment Variable Loading Removed
-
-Auth providers no longer automatically read configuration from environment variables. You can still use environment variables, but you must read them yourself:
-
-<CodeGroup>
-```python Before
-# Relied on FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID, etc.
-auth = GitHubProvider()
-```
-
-```python After
 import os
 
 auth = GitHubProvider(
     client_id=os.environ["GITHUB_CLIENT_ID"],
     client_secret=os.environ["GITHUB_CLIENT_SECRET"],
-    base_url=os.environ["GITHUB_BASE_URL"],
 )
 ```
-</CodeGroup>
 
-This applies to all auth providers: `GitHubProvider`, `GoogleProvider`, `AzureProvider`, `Auth0Provider`, `AWSProvider`, `WorkOSProvider`, `DescopeProvider`, `DiscordProvider`, `ScalekitProvider`, `SupabaseProvider`, `OCIProvider`, `JWTVerifier`, and `IntrospectionVerifier`.
+#### Component enable()/disable() Moved to Server
 
-The `FastMCPSettings` class has also been simplified - it no longer includes auth-related settings that were previously loaded from environment variables.
-
-### Server Banner Environment Variable Renamed
-
-The environment variable for controlling the server banner has been renamed:
-
-- **Before:** `FASTMCP_SHOW_CLI_BANNER`
-- **After:** `FASTMCP_SHOW_SERVER_BANNER`
-
-This change reflects that the setting now applies to all server startup methods, not just the CLI. The banner is now suppressed when running `python server.py` directly, not just when using `fastmcp run`.
-
-### Context State Methods Are Async
-
-<Warning>
-**Breaking Change:** `ctx.set_state()` and `ctx.get_state()` are now async methods. Synchronous calls will fail.
-</Warning>
-
-Context state has changed from request-scoped to session-scoped, persisting across multiple tool calls within the same MCP session. The methods are now async because they interact with a pluggable storage backend.
-
-<CodeGroup>
-```python Before
-@mcp.tool
-def my_tool(ctx: Context) -> str:
-    ctx.set_state("key", "value")
-    value = ctx.get_state("key")
-    return value
-```
-
-```python After
-@mcp.tool
-async def my_tool(ctx: Context) -> str:
-    await ctx.set_state("key", "value")
-    value = await ctx.get_state("key")
-    return value
-```
-</CodeGroup>
-
-**What changed:**
-- State now persists across requests within a session (not just within a single request)
-- Different clients have isolated state (keyed by session ID)
-- State expires after 1 day to prevent unbounded memory growth
-- New method: `await ctx.delete_state(key)`
-
-**Custom storage backends:**
-
-By default, state uses an in-memory store. For distributed deployments, provide a custom backend:
+These methods moved from component objects to the server:
 
 ```python
-from key_value.aio.stores.redis import RedisStore
+# Before
+tool = await server.get_tool("my_tool")
+tool.disable()
 
-mcp = FastMCP("server", session_state_store=RedisStore(...))
+# After
+server.disable(names={"my_tool"}, components=["tool"])
 ```
 
-See [Session State](/servers/context#session-state) for full documentation.
+#### Listing Methods Return Lists
+
+`get_tools()`, `get_resources()`, `get_prompts()`, and `get_resource_templates()` now return lists instead of dicts:
+
+```python
+# Before
+tools = await server.get_tools()
+tool = tools["my_tool"]
+
+# After
+tools = await server.get_tools()
+tool = next((t for t in tools if t.name == "my_tool"), None)
+```
+
+#### Prompts Use Message Class
+
+Use `Message` instead of `mcp.types.PromptMessage`:
+
+```python
+# Before
+from mcp.types import PromptMessage, TextContent
+
+@mcp.prompt
+def my_prompt() -> PromptMessage:
+    return PromptMessage(role="user", content=TextContent(type="text", text="Hello"))
+
+# After
+from fastmcp.prompts import Message
+
+@mcp.prompt
+def my_prompt() -> Message:
+    return Message("Hello")
+```
+
+#### Context State Methods Are Async
+
+`ctx.set_state()` and `ctx.get_state()` are now async. State persists across the session:
+
+```python
+# Before
+ctx.set_state("key", "value")
+value = ctx.get_state("key")
+
+# After
+await ctx.set_state("key", "value")
+value = await ctx.get_state("key")
+```
+
+#### Server Banner Environment Variable Renamed
+
+`FASTMCP_SHOW_CLI_BANNER` is now `FASTMCP_SHOW_SERVER_BANNER`.
+
+#### Metadata Namespace Renamed
+
+The FastMCP metadata namespace changed from `_fastmcp` to `fastmcp`, and metadata is now always included. The `include_fastmcp_meta` parameter has been removed from `FastMCP()` and `to_mcp_tool()`—remove any usage of this parameter.
+
+```python
+# Before
+tags = tool.meta.get("_fastmcp", {}).get("tags", [])
+
+# After
+tags = tool.meta.get("fastmcp", {}).get("tags", [])
+```
+
+### Behavior Changes
+
+#### Decorators Return Functions
+
+Decorators now return your original function instead of a component object. This means functions stay callable for testing:
+
+```python
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+greet("World")  # Works! Returns "Hello, World!"
+```
+
+If you relied on the old behavior (treating `greet` as a `FunctionTool`), set `FASTMCP_DECORATOR_MODE=object` for v2 compatibility.
+
+### Deprecated Features
+
+These still work but emit warnings. Update when convenient.
+
+#### mount() prefix → namespace
+
+```python
+# Deprecated
+main.mount(subserver, prefix="api")
+
+# New
+main.mount(subserver, namespace="api")
+```
+
+#### include_tags/exclude_tags → enable()/disable()
+
+```python
+# Deprecated
+mcp = FastMCP("server", exclude_tags={"internal"})
+
+# New
+mcp = FastMCP("server")
+mcp.disable(tags={"internal"})
+```
+
+#### tool_serializer → ToolResult
+
+Return `ToolResult` from your tools for explicit serialization control instead of using the `tool_serializer` parameter.
+
+#### add_tool_transformation() → add_transform()
+
+```python
+# Deprecated
+mcp.add_tool_transformation("name", config)
+
+# New
+from fastmcp.server.transforms import ToolTransform
+mcp.add_transform(ToolTransform({"name": config}))
+```
+
+#### FastMCP.as_proxy() → create_proxy()
+
+```python
+# Deprecated
+proxy = FastMCP.as_proxy("http://example.com/mcp")
+
+# New
+from fastmcp.server import create_proxy
+proxy = create_proxy("http://example.com/mcp")
+```
 
 ## v2.14.0
 
 ### OpenAPI Parser Promotion
 
-The experimental OpenAPI parser is now the standard implementation. The legacy parser has been removed.
+The experimental OpenAPI parser is now standard. Update imports:
 
-**If you were using the legacy parser:** No code changes required. The new parser is a drop-in replacement with improved architecture.
+```python
+# Before
+from fastmcp.experimental.server.openapi import FastMCPOpenAPI
 
-**If you were using the experimental parser:** Update your imports from the experimental module to the standard location:
-
-<CodeGroup>
-```python Before
-from fastmcp.experimental.server.openapi import FastMCPOpenAPI, RouteMap, MCPType
+# After
+from fastmcp.server.openapi import FastMCPOpenAPI
 ```
 
-```python After
-from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap, MCPType
-```
-</CodeGroup>
+### Removed Deprecated Features
 
-The experimental imports will continue working temporarily but will show deprecation warnings. The `FASTMCP_EXPERIMENTAL_ENABLE_NEW_OPENAPI_PARSER` environment variable is no longer needed and can be removed.
-
-### Deprecated Features Removed
-
-The following deprecated features have been removed in v2.14.0:
-
-**BearerAuthProvider** (deprecated in v2.11):
-<CodeGroup>
-```python Before
-from fastmcp.server.auth.providers.bearer import BearerAuthProvider
-```
-
-```python After
-from fastmcp.server.auth.providers.jwt import JWTVerifier
-```
-</CodeGroup>
-
-**Context.get_http_request()** (deprecated in v2.2.11):
-<CodeGroup>
-```python Before
-request = context.get_http_request()
-```
-
-```python After
-from fastmcp.server.dependencies import get_http_request
-request = get_http_request()
-```
-</CodeGroup>
-
-**Top-level Image import** (deprecated in v2.8.1):
-<CodeGroup>
-```python Before
-from fastmcp import Image
-```
-
-```python After
-from fastmcp.utilities.types import Image
-```
-</CodeGroup>
-
-**FastMCP dependencies parameter** (deprecated in v2.11.4):
-<CodeGroup>
-```python Before
-mcp = FastMCP("server", dependencies=["requests", "pandas"])
-```
-
-```json After
-{
-  "environment": {
-    "dependencies": ["requests", "pandas"]
-  }
-}
-```
-</CodeGroup>
-
-**Legacy resource prefix format**: The `resource_prefix_format` parameter and "protocol" format have been removed. Only the "path" format is supported (this was already the default).
-
-**FastMCPProxy client parameter**:
-<CodeGroup>
-```python Before
-proxy = FastMCPProxy(client=my_client)
-```
-
-```python After
-proxy = FastMCPProxy(client_factory=lambda: my_client)
-```
-</CodeGroup>
-
-**output_schema=False**:
-<CodeGroup>
-```python Before
-@mcp.tool(output_schema=False)
-def my_tool() -> str:
-    return "result"
-```
-
-```python After
-@mcp.tool(output_schema=None)
-def my_tool() -> str:
-    return "result"
-```
-</CodeGroup>
+- `BearerAuthProvider` → use `JWTVerifier`
+- `Context.get_http_request()` → use `get_http_request()` from dependencies
+- `from fastmcp import Image` → use `from fastmcp.utilities.types import Image`
+- `FastMCP(dependencies=[...])` → use `fastmcp.json` configuration
+- `FastMCPProxy(client=...)` → use `client_factory=lambda: ...`
+- `output_schema=False` → use `output_schema=None`
 
 ## v2.13.0
 
 ### OAuth Token Key Management
 
-The OAuth proxy now issues its own JWT tokens to clients instead of forwarding upstream provider tokens. This improves security by maintaining proper token audience boundaries.
-
-**What changed:**
-
-The OAuth proxy now implements a token factory pattern - it receives tokens from your OAuth provider (GitHub, Google, etc.), encrypts and stores them, then issues its own FastMCP JWT tokens to clients. This requires cryptographic keys for JWT signing and token encryption.
-
-**Default behavior (development):**
-
-By default, FastMCP automatically manages keys based on your platform:
-- **Mac/Windows**: Keys are auto-managed via system keyring, surviving server restarts with zero configuration. Suitable **only** for development and local testing.
-- **Linux**: Keys are ephemeral (random salt at startup, regenerated on each restart).
-
-This works fine for development and testing where re-authentication after restart is acceptable.
-
-**For production:**
-
-Production deployments must provide explicit keys and use persistent storage. Add these three things:
+The OAuth proxy now issues its own JWT tokens. For production, provide explicit keys:
 
 ```python
 auth = GitHubProvider(
     client_id=os.environ["GITHUB_CLIENT_ID"],
     client_secret=os.environ["GITHUB_CLIENT_SECRET"],
     base_url="https://your-server.com",
-
-    # Explicit keys (required for production)
     jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
-
-    # Persistent network storage (required for production)
-    client_storage=RedisStore(host="redis.example.com", port=6379)
+    client_storage=RedisStore(host="redis.example.com"),
 )
 ```
 
-**More information:**
-- [OAuth Token Security](/deployment/http#oauth-token-security) - Complete production setup guide
-- [Key and Storage Management](/servers/auth/oauth-proxy#key-and-storage-management) - Detailed explanation of defaults and production requirements
-- [OAuth Proxy Parameters](/servers/auth/oauth-proxy#configuration-parameters) - Parameter documentation
+See [OAuth Token Security](/deployment/http#oauth-token-security) for details.

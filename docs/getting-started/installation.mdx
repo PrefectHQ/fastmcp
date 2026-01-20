@@ -7,32 +7,29 @@ icon: arrow-down-to-line
 We recommend using [uv](https://docs.astral.sh/uv/getting-started/installation/) to install and manage FastMCP.
 
 <Note>
-FastMCP 3.0 is currently in beta. You must explicitly opt in to pre-release versions using the flags shown below.
+FastMCP 3.0 is currently in beta. Install by specifying the version explicitly.
 </Note>
 
-If you plan to use FastMCP in your project, you can add it as a dependency with:
+```bash
+pip install fastmcp==3.0.0b1
+```
+
+<Warning>
+Avoid using `pip install --pre` as it enables prereleases for all dependencies, which may install incompatible versions of packages like httpx.
+</Warning>
+
+If you plan to use FastMCP in a uv-managed project, you can add it as a dependency with:
 
 ```bash
 uv add fastmcp --prerelease=allow
 ```
-
-Alternatively, you can install it directly with `pip` or `uv pip`:
-<CodeGroup>
-    ```bash uv
-    uv pip install fastmcp --prerelease=allow
-    ```
-
-    ```bash pip
-    pip install fastmcp --pre
-    ```
-</CodeGroup>
 
 ### Optional Dependencies
 
 FastMCP provides optional extras for specific features. For example, to install the background tasks extra:
 
 ```bash
-pip install "fastmcp[tasks]" --pre
+pip install "fastmcp[tasks]==3.0.0b1"
 ```
 
 See [Background Tasks](/servers/tasks) for details on the task system.
@@ -70,10 +67,15 @@ pip install "cyclopts>=5.0.0a1"
 
 Alternatively, wait for the stable v5 release. See [this issue](https://github.com/BrianPugh/cyclopts/issues/672) for details.
 </Info>
-## Upgrading from the Official MCP SDK
+## Upgrading
+
+### From FastMCP 2.x
+
+See the [Upgrade Guide](/development/upgrade-guide) for a complete list of breaking changes and migration steps.
+
+### From the Official MCP SDK
 
 Upgrading from the official MCP SDK's FastMCP 1.0 to FastMCP 3.0 is generally straightforward. The core server API is highly compatible, and in many cases, changing your import statement from `from mcp.server.fastmcp import FastMCP` to `from fastmcp import FastMCP` will be sufficient.
-
 
 ```python {5}
 # Before

@@ -5,6 +5,26 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 3.0.0b1" description="January 20, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP 3.0.0b1: This Beta Work"
+href="https://github.com/jlowin/fastmcp/releases/tag/v3.0.0b1"
+cta="Read the release notes"
+>
+FastMCP 3.0 rebuilds the framework around three primitives: components, providers, and transforms. Providers source components dynamically—from decorators, filesystems, OpenAPI specs, remote servers, or anywhere else. Transforms modify components as they flow to clients. The features that required specialized subsystems in v2 now compose naturally from these building blocks.
+
+🔌 **Provider Architecture** unifies how components are sourced with `FileSystemProvider`, `SkillsProvider`, `OpenAPIProvider`, and `ProxyProvider`.
+
+🔄 **Transforms** add middleware for components—namespace, rename, filter by version, control visibility.
+
+📋 **Component Versioning** lets you register multiple versions of the same tool with automatic highest-version selection.
+
+💾 **Session-Scoped State** persists across requests, with per-session visibility control.
+
+⚡ **DX Improvements** include `--reload` for development, automatic threadpool dispatch, tool timeouts, pagination, and OpenTelemetry tracing.
+</Card>
+</Update>
+
 <Update label="FastMCP 2.14.3" description="January 12, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP 2.14.3: Time After Timeout"

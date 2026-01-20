@@ -90,6 +90,7 @@
                 "pages": [
                   "getting-started/welcome",
                   "getting-started/installation",
+                  "development/upgrade-guide",
                   "getting-started/quickstart",
                   "updates"
                 ]
@@ -275,7 +276,6 @@
                   "development/contributing",
                   "development/tests",
                   "development/releases",
-                  "development/upgrade-guide",
                   "changelog",
                   "patterns/contrib"
                 ]
@@ -822,6 +822,14 @@
     ]
   },
   "redirects": [
+    {
+      "destination": "/v2/clients/messages",
+      "source": "/clients/messages"
+    },
+    {
+      "destination": "/v2/patterns/decorating-methods",
+      "source": "/patterns/decorating-methods"
+    },
     {
       "destination": "/servers/providers/proxy",
       "source": "/patterns/proxy"
