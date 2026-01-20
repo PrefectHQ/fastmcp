@@ -390,14 +390,14 @@ def get_user(user_id: int):
 When mounting MCP servers, always pass the lifespan context:
 
 ```python
-# Correct - lifespan passed
-mcp_app = mcp.http_app(path='/mcp')
+# Correct - lifespan passed, path="/" since we mount at /mcp
+mcp_app = mcp.http_app(path="/")
 app = FastAPI(lifespan=mcp_app.lifespan)
-app.mount("/mcp", mcp_app)
+app.mount("/mcp", mcp_app)  # MCP endpoint at /mcp
 
 # Incorrect - missing lifespan
 app = FastAPI()
-app.mount("/mcp", mcp.http_app())  # Session manager won't initialize
+app.mount("/mcp", mcp.http_app(path="/"))  # Session manager won't initialize
 ```
 
 If you're mounting an authenticated MCP server under a path prefix, see [Mounting Authenticated Servers](/deployment/http#mounting-authenticated-servers) for important OAuth routing considerations.
@@ -427,7 +427,7 @@ async def app_lifespan(app: FastAPI):
 
 # Create MCP server
 mcp = FastMCP("Tools")
-mcp_app = mcp.http_app()
+mcp_app = mcp.http_app(path="/")
 
 # Combine both lifespans
 app = FastAPI(lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan))

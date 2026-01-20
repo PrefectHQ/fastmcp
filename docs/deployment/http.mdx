@@ -344,13 +344,6 @@ Here's a quick example showing how to add MCP to an existing FastAPI application
 from fastapi import FastAPI
 from fastmcp import FastMCP
 
-# Your existing API
-api = FastAPI()
-
-@api.get("/api/status")
-def status():
-    return {"status": "ok"}
-
 # Create your MCP server
 mcp = FastMCP("API Tools")
 
@@ -359,13 +352,27 @@ def query_database(query: str) -> dict:
     """Run a database query"""
     return {"result": "data"}
 
+# Create the MCP ASGI app with path="/" since we'll mount at /mcp
+mcp_app = mcp.http_app(path="/")
+
+# Create FastAPI app with MCP lifespan (required for session management)
+api = FastAPI(lifespan=mcp_app.lifespan)
+
+@api.get("/api/status")
+def status():
+    return {"status": "ok"}
+
 # Mount MCP at /mcp
-api.mount("/mcp", mcp.http_app())
+api.mount("/mcp", mcp_app)
 
 # Run with: uvicorn app:api --host 0.0.0.0 --port 8000
 ```
 
 Your existing API remains at `http://localhost:8000/api` while MCP is available at `http://localhost:8000/mcp`.
+
+<Warning>
+Just like with Starlette, you **must** pass the lifespan from the MCP app to FastAPI. Without this, the session manager won't initialize properly and requests will fail.
+</Warning>
 
 ## Mounting Authenticated Servers
 
