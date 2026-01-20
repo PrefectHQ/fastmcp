@@ -13,7 +13,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 <Warning>
 **This is an extremely advanced pattern that most users should avoid.** Building a secure OAuth 2.1 server requires deep expertise in authentication protocols, cryptography, and security best practices. The complexity extends far beyond initial implementation to include ongoing security monitoring, threat response, and compliance maintenance.
 
-**Use [Remote OAuth](/servers/auth/remote-oauth) instead** unless you have compelling requirements that external identity providers cannot meet, such as air-gapped environments or specialized compliance needs.
+**Use [Remote OAuth](/v2/servers/auth/remote-oauth) instead** unless you have compelling requirements that external identity providers cannot meet, such as air-gapped environments or specialized compliance needs.
 </Warning>
 
 The Full OAuth Server pattern exists to support the MCP protocol specification's requirements. Your FastMCP server becomes both an Authorization Server and Resource Server, handling the complete authentication lifecycle from user login to token validation.

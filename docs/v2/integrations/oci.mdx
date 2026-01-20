@@ -10,7 +10,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.13.0" />
 
-This guide shows you how to secure your FastMCP server using **OCI IAM OAuth**. Since OCI IAM doesn't support Dynamic Client Registration, this integration uses the [**OIDC Proxy**](/servers/auth/oidc-proxy) pattern to bridge OCI's traditional OAuth with MCP's authentication requirements.
+This guide shows you how to secure your FastMCP server using **OCI IAM OAuth**. Since OCI IAM doesn't support Dynamic Client Registration, this integration uses the [**OIDC Proxy**](/v2/servers/auth/oidc-proxy) pattern to bridge OCI's traditional OAuth with MCP's authentication requirements.
 
 ## Configuration
 
@@ -248,7 +248,7 @@ mcp = FastMCP(name="Production OCI App", auth=auth_provider)
 <Note>
 Parameters (`jwt_signing_key` and `client_storage`) work together to ensure tokens and client registrations survive server restarts. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at Rest** - without it, tokens are stored in plaintext. Store secrets in environment variables and use a persistent storage backend like Redis for distributed deployments.
 
-For complete details on these parameters, see the [OAuth Proxy documentation](/servers/auth/oauth-proxy#configuration-parameters).
+For complete details on these parameters, see the [OAuth Proxy documentation](/v2/servers/auth/oauth-proxy#configuration-parameters).
 </Note>
 
 <Info>

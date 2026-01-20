@@ -42,7 +42,7 @@ sequenceDiagram
 
 When using proxy servers, especially those connecting to HTTP-based backend servers, be aware that latency can be significant. Operations like `list_tools()` may take hundreds of milliseconds compared to 1-2ms for local tools. When mounting proxy servers, this latency affects all operations on the parent server, not just interactions with the proxied tools.
 
-If low latency is a requirement for your use-case, consider using [`import_server()`](/servers/composition#importing-static-composition) to copy tools at startup rather than proxying them at runtime.
+If low latency is a requirement for your use-case, consider using [`import_server()`](/v2/servers/composition#importing-static-composition) to copy tools at startup rather than proxying them at runtime.
 
 ## Quick Start
 
@@ -71,7 +71,7 @@ This single setup gives you:
 - Session isolation to prevent context mixing
 - Full compatibility with all MCP clients
 
-You can also pass a FastMCP [client transport](/clients/transports) (or parameter that can be inferred to a transport) to `as_proxy()`. This will automatically create a `ProxyClient` instance for you.
+You can also pass a FastMCP [client transport](/v2/clients/transports) (or parameter that can be inferred to a transport) to `as_proxy()`. This will automatically create a `ProxyClient` instance for you.
 
 Finally, you can pass a regular FastMCP `Client` instance to `as_proxy()`. This will work for many use cases, but may break if advanced MCP features like sampling or elicitation are invoked by the server. 
 

@@ -10,7 +10,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.12.4" />
 
-This guide shows you how to secure your FastMCP server using **Auth0 OAuth**. While Auth0 does have support for Dynamic Client Registration, it is not enabled by default so this integration uses the [**OIDC Proxy**](/servers/auth/oidc-proxy) pattern to bridge Auth0's dynamic OIDC configuration with MCP's authentication requirements.
+This guide shows you how to secure your FastMCP server using **Auth0 OAuth**. While Auth0 does have support for Dynamic Client Registration, it is not enabled by default so this integration uses the [**OIDC Proxy**](/v2/servers/auth/oidc-proxy) pattern to bridge Auth0's dynamic OIDC configuration with MCP's authentication requirements.
 
 ## Configuration
 
@@ -188,7 +188,7 @@ mcp = FastMCP(name="Production Auth0 App", auth=auth_provider)
 <Note>
 Parameters (`jwt_signing_key` and `client_storage`) work together to ensure tokens and client registrations survive server restarts. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without it, tokens are stored in plaintext. Store secrets in environment variables and use a persistent storage backend like Redis for distributed deployments.
 
-For complete details on these parameters, see the [OAuth Proxy documentation](/servers/auth/oauth-proxy#configuration-parameters).
+For complete details on these parameters, see the [OAuth Proxy documentation](/v2/servers/auth/oauth-proxy#configuration-parameters).
 </Note>
 
 <Info>
@@ -235,7 +235,7 @@ Public URL where OAuth endpoints will be accessible (includes any mount path)
 </ParamField>
 
 <ParamField path="FASTMCP_SERVER_AUTH_AUTH0_ISSUER_URL" default="Uses BASE_URL">
-Issuer URL for OAuth metadata (defaults to `BASE_URL`). Set to root-level URL when mounting under a path prefix to avoid 404 logs. See [HTTP Deployment guide](/deployment/http#mounting-authenticated-servers) for details.
+Issuer URL for OAuth metadata (defaults to `BASE_URL`). Set to root-level URL when mounting under a path prefix to avoid 404 logs. See [HTTP Deployment guide](/v2/deployment/http#mounting-authenticated-servers) for details.
 </ParamField>
 
 <ParamField path="FASTMCP_SERVER_AUTH_AUTH0_REDIRECT_PATH" default="/auth/callback">

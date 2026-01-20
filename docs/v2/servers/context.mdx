@@ -6,7 +6,7 @@ icon: rectangle-code
 ---
 import { VersionBadge } from '/snippets/version-badge.mdx'
 
-When defining FastMCP [tools](/servers/tools), [resources](/servers/resources), resource templates, or [prompts](/servers/prompts), your functions might need to interact with the underlying MCP session or access advanced server capabilities. FastMCP provides the `Context` object for this purpose.
+When defining FastMCP [tools](/v2/servers/tools), [resources](/v2/servers/resources), resource templates, or [prompts](/v2/servers/prompts), your functions might need to interact with the underlying MCP session or access advanced server capabilities. FastMCP provides the `Context` object for this purpose.
 
 <Note>
 FastMCP uses [Docket](https://github.com/chrisguidry/docket)'s dependency injection system for managing runtime dependencies. This page covers Context and the built-in dependencies; see [Custom Dependencies](#custom-dependencies) for creating your own.
@@ -135,7 +135,7 @@ await ctx.warning("Deprecated parameter used")
 await ctx.error("Processing failed")
 ```
 
-See [Server Logging](/servers/logging) for complete documentation and examples.
+See [Server Logging](/v2/servers/logging) for complete documentation and examples.
 ### Client Elicitation
 
 <VersionBadge version="2.10.0" />
@@ -148,7 +148,7 @@ if result.action == "accept":
     name = result.data
 ```
 
-See [User Elicitation](/servers/elicitation) for detailed examples and supported response types.
+See [User Elicitation](/v2/servers/elicitation) for detailed examples and supported response types.
 
 ### LLM Sampling
 
@@ -160,7 +160,7 @@ Request the client's LLM to generate text based on provided messages, useful for
 response = await ctx.sample("Analyze this data", temperature=0.7)
 ```
 
-See [LLM Sampling](/servers/sampling) for comprehensive usage and advanced techniques.
+See [LLM Sampling](/v2/servers/sampling) for comprehensive usage and advanced techniques.
 
 
 ### Progress Reporting
@@ -171,7 +171,7 @@ Update clients on the progress of long-running operations, enabling progress ind
 await ctx.report_progress(progress=50, total=100)  # 50% complete
 ```
 
-See [Progress Reporting](/servers/progress) for detailed patterns and examples.
+See [Progress Reporting](/v2/servers/progress) for detailed patterns and examples.
 
 ### Resource Access
 
@@ -213,7 +213,7 @@ messages = result.messages
 
 <VersionBadge version="2.11.0" />
 
-Store and share data between middleware and handlers within a single MCP request. Each MCP request (such as calling a tool, reading a resource, listing tools, or listing resources) receives its own context object with isolated state. Context state is particularly useful for passing information from [middleware](/servers/middleware) to your handlers.
+Store and share data between middleware and handlers within a single MCP request. Each MCP request (such as calling a tool, reading a resource, listing tools, or listing resources) receives its own context object with isolated state. Context state is particularly useful for passing information from [middleware](/v2/servers/middleware) to your handlers.
 
 To store a value in the context state, use `ctx.set_state(key, value)`. To retrieve a value, use `ctx.get_state(key)`.
 

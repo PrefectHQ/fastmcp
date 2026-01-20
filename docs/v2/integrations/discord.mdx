@@ -10,7 +10,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.13.2" />
 
-This guide shows you how to secure your FastMCP server using **Discord OAuth**. Since Discord doesn't support Dynamic Client Registration, this integration uses the [**OAuth Proxy**](/servers/auth/oauth-proxy) pattern to bridge Discord's traditional OAuth with MCP's authentication requirements.
+This guide shows you how to secure your FastMCP server using **Discord OAuth**. Since Discord doesn't support Dynamic Client Registration, this integration uses the [**OAuth Proxy**](/v2/servers/auth/oauth-proxy) pattern to bridge Discord's traditional OAuth with MCP's authentication requirements.
 
 ## Configuration
 
@@ -180,7 +180,7 @@ mcp = FastMCP(name="Production Discord App", auth=auth_provider)
 <Note>
 Parameters (`jwt_signing_key` and `client_storage`) work together to ensure tokens and client registrations survive server restarts. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without it, tokens are stored in plaintext. Store secrets in environment variables and use a persistent storage backend like Redis for distributed deployments.
 
-For complete details on these parameters, see the [OAuth Proxy documentation](/servers/auth/oauth-proxy#configuration-parameters).
+For complete details on these parameters, see the [OAuth Proxy documentation](/v2/servers/auth/oauth-proxy#configuration-parameters).
 </Note>
 
 ## Environment Variables
@@ -215,7 +215,7 @@ Public URL where OAuth endpoints will be accessible (includes any mount path)
 </ParamField>
 
 <ParamField path="FASTMCP_SERVER_AUTH_DISCORD_ISSUER_URL" default="Uses BASE_URL">
-Issuer URL for OAuth metadata (defaults to `BASE_URL`). Set to root-level URL when mounting under a path prefix to avoid 404 logs. See [HTTP Deployment guide](/deployment/http#mounting-authenticated-servers) for details.
+Issuer URL for OAuth metadata (defaults to `BASE_URL`). Set to root-level URL when mounting under a path prefix to avoid 404 logs. See [HTTP Deployment guide](/v2/deployment/http#mounting-authenticated-servers) for details.
 </ParamField>
 
 <ParamField path="FASTMCP_SERVER_AUTH_DISCORD_REDIRECT_PATH" default="/auth/callback">

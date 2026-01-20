@@ -151,7 +151,7 @@ Before using these backends in production, review the [py-key-value documentatio
 
 ### Server-Side OAuth Token Storage
 
-The [OAuth Proxy](/servers/auth/oauth-proxy) and OAuth auth providers use storage for persisting OAuth client registrations and upstream tokens. **By default, storage is automatically encrypted using `FernetEncryptionWrapper`.** When providing custom storage, wrap it in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest.
+The [OAuth Proxy](/v2/servers/auth/oauth-proxy) and OAuth auth providers use storage for persisting OAuth client registrations and upstream tokens. **By default, storage is automatically encrypted using `FernetEncryptionWrapper`.** When providing custom storage, wrap it in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest.
 
 **Development (default behavior):**
 
@@ -196,11 +196,11 @@ auth = GitHubProvider(
 )
 ```
 
-Both parameters are required for production. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without it, tokens are stored in plaintext. See [OAuth Token Security](/deployment/http#oauth-token-security) and [Key and Storage Management](/servers/auth/oauth-proxy#key-and-storage-management) for complete setup details.
+Both parameters are required for production. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without it, tokens are stored in plaintext. See [OAuth Token Security](/v2/deployment/http#oauth-token-security) and [Key and Storage Management](/v2/servers/auth/oauth-proxy#key-and-storage-management) for complete setup details.
 
 ### Response Caching Middleware
 
-The [Response Caching Middleware](/servers/middleware#caching-middleware) caches tool calls, resource reads, and prompt requests. Storage configuration is passed via the `cache_storage` parameter:
+The [Response Caching Middleware](/v2/servers/middleware#caching-middleware) caches tool calls, resource reads, and prompt requests. Storage configuration is passed via the `cache_storage` parameter:
 
 ```python
 from fastmcp import FastMCP
@@ -233,7 +233,7 @@ middleware = ResponseCachingMiddleware(cache_storage=namespaced_store)
 
 ### Client-Side OAuth Token Storage
 
-The [FastMCP Client](/clients/client) uses storage for persisting OAuth tokens locally. By default, tokens are stored in memory:
+The [FastMCP Client](/v2/clients/client) uses storage for persisting OAuth tokens locally. By default, tokens are stored in memory:
 
 ```python
 from fastmcp.client.auth import OAuthClientProvider
@@ -270,6 +270,6 @@ This allows clients to reconnect without re-authenticating after restarts.
 ## More Resources
 
 - [py-key-value-aio GitHub](https://github.com/strawgate/py-key-value) - Full library documentation
-- [Response Caching Middleware](/servers/middleware#caching-middleware) - Using storage for caching
-- [OAuth Token Security](/deployment/http#oauth-token-security) - Production OAuth configuration
-- [HTTP Deployment](/deployment/http) - Complete deployment guide
+- [Response Caching Middleware](/v2/servers/middleware#caching-middleware) - Using storage for caching
+- [OAuth Token Security](/v2/deployment/http#oauth-token-security) - Production OAuth configuration
+- [HTTP Deployment](/v2/deployment/http) - Complete deployment guide

@@ -5,7 +5,7 @@ description: Learn how to run your FastMCP server locally for development and te
 icon: circle-play
 ---
 
-FastMCP servers can be run in different ways depending on your needs. This guide focuses on running servers locally for development and testing. For production deployment to a URL, see the [HTTP Deployment](/deployment/http) guide.
+FastMCP servers can be run in different ways depending on your needs. This guide focuses on running servers locally for development and testing. For production deployment to a URL, see the [HTTP Deployment](/v2/deployment/http) guide.
 
 ## The `run()` Method
 
@@ -89,7 +89,7 @@ Your server is now accessible at `http://localhost:8000/mcp`. This URL is the MC
 - Integration with web infrastructure
 - Remote deployment capabilities
 
-For production HTTP deployment with authentication and advanced configuration, see the [HTTP Deployment](/deployment/http) guide.
+For production HTTP deployment with authentication and advanced configuration, see the [HTTP Deployment](/v2/deployment/http) guide.
 
 ### SSE Transport (Legacy)
 
@@ -155,7 +155,7 @@ fastmcp run database_server.py -- --database-path /tmp/db.sqlite --debug
 
 This is useful for servers that need configuration files, database paths, API keys, or other runtime options.
 
-For more CLI features including development mode with the MCP Inspector, see the [CLI documentation](/patterns/cli).
+For more CLI features including development mode with the MCP Inspector, see the [CLI documentation](/v2/patterns/cli).
 
 ### Async Usage
 
@@ -212,7 +212,7 @@ if __name__ == "__main__":
     mcp.run(transport="http")  # Health check at http://localhost:8000/health
 ```
 
-Custom routes are served by the same web server as your MCP endpoint. They're available at the root of your domain while the MCP endpoint is at `/mcp/`. For more complex web applications, consider [mounting your MCP server into a FastAPI or Starlette app](/deployment/http#integration-with-web-frameworks).
+Custom routes are served by the same web server as your MCP endpoint. They're available at the root of your domain while the MCP endpoint is at `/mcp/`. For more complex web applications, consider [mounting your MCP server into a FastAPI or Starlette app](/v2/deployment/http#integration-with-web-frameworks).
 
 ## Alternative Initialization Patterns
 
@@ -255,4 +255,4 @@ def create_app():
 app = create_app()  # Uvicorn will use this
 ```
 
-See the [HTTP Deployment](/deployment/http) guide for more ASGI deployment patterns.
+See the [HTTP Deployment](/v2/deployment/http) guide for more ASGI deployment patterns.

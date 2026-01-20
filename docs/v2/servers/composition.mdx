@@ -35,11 +35,11 @@ The choice of importing or mounting depends on your use case and requirements.
 
 ### Proxy Servers
 
-FastMCP supports [MCP proxying](/servers/proxy), which allows you to mirror a local or remote server in a local FastMCP instance. Proxies are fully compatible with both importing and mounting.
+FastMCP supports [MCP proxying](/v2/servers/proxy), which allows you to mirror a local or remote server in a local FastMCP instance. Proxies are fully compatible with both importing and mounting.
 
 <VersionBadge version="2.4.0" />
 
-You can also create proxies from configuration dictionaries that follow the MCPConfig schema, which is useful for quickly connecting to one or more remote servers. See the [Proxy Servers documentation](/servers/proxy#configuration-based-proxies) for details on configuration-based proxying. Note that MCPConfig follows an emerging standard and its format may evolve over time.
+You can also create proxies from configuration dictionaries that follow the MCPConfig schema, which is useful for quickly connecting to one or more remote servers. See the [Proxy Servers documentation](/v2/servers/proxy#configuration-based-proxies) for details on configuration-based proxying. Note that MCPConfig follows an emerging standard and its format may evolve over time.
 
 Prefixing rules for tools, prompts, resources, and templates are identical across importing, mounting, and proxies. When prefixes are used, resource URIs are prefixed using path format (since 2.4.0): `resource://prefix/path/to/resource`.
 

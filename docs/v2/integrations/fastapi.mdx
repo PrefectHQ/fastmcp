@@ -211,7 +211,7 @@ if __name__ == "__main__":
 
 ### Custom Route Mapping
 
-Because FastMCP's FastAPI integration is based on its [OpenAPI integration](/integrations/openapi), you can customize how endpoints are converted to MCP components in exactly the same way. For example, here we use a `RouteMap` to map all GET requests to MCP resources, and all POST/PUT/DELETE requests to MCP tools:
+Because FastMCP's FastAPI integration is based on its [OpenAPI integration](/v2/integrations/openapi), you can customize how endpoints are converted to MCP components in exactly the same way. For example, here we use a `RouteMap` to map all GET requests to MCP resources, and all POST/PUT/DELETE requests to MCP tools:
 
 ```python
 # Assumes the FastAPI app from above is already defined
@@ -245,7 +245,7 @@ mcp = FastMCP.from_fastapi(
 ```
 
 <Tip>
-To learn more about customizing the conversion process, see the [OpenAPI Integration guide](/integrations/openapi).
+To learn more about customizing the conversion process, see the [OpenAPI Integration guide](/v2/integrations/openapi).
 </Tip>
 
 ### Authentication and Headers
@@ -396,7 +396,7 @@ app = FastAPI()
 app.mount("/mcp", mcp.http_app())  # Session manager won't initialize
 ```
 
-If you're mounting an authenticated MCP server under a path prefix, see [Mounting Authenticated Servers](/deployment/http#mounting-authenticated-servers) for important OAuth routing considerations.
+If you're mounting an authenticated MCP server under a path prefix, see [Mounting Authenticated Servers](/v2/deployment/http#mounting-authenticated-servers) for important OAuth routing considerations.
 
 ### CORS Middleware
 
@@ -448,4 +448,4 @@ This pattern ensures both your app's initialization logic and the MCP server's s
 2. **Design purpose-built MCP tools** - Better than auto-converting complex APIs
 3. **Keep tool parameters simple** - LLMs perform better with focused interfaces
 
-For more details on configuration options, see the [OpenAPI Integration guide](/integrations/openapi).
+For more details on configuration options, see the [OpenAPI Integration guide](/v2/integrations/openapi).

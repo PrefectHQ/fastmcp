@@ -179,7 +179,7 @@ async with client:
     print(result.data)  # 15
 ```
 
-See [Tools](/clients/tools) for detailed documentation.
+See [Tools](/v2/clients/tools) for detailed documentation.
 
 ### Resources
 
@@ -195,7 +195,7 @@ async with client:
     print(content[0].text)
 ```
 
-See [Resources](/clients/resources) for detailed documentation.
+See [Resources](/v2/clients/resources) for detailed documentation.
 
 ### Prompts
 
@@ -211,7 +211,7 @@ async with client:
     print(messages.messages)
 ```
 
-See [Prompts](/clients/prompts) for detailed documentation.
+See [Prompts](/v2/clients/prompts) for detailed documentation.
 
 ### Server Connectivity
 
@@ -314,26 +314,26 @@ The `Client` constructor accepts several configuration options:
 
 ### Transport Configuration
 
-For detailed transport configuration (headers, authentication, environment variables), see the [Transports](/clients/transports) documentation.
+For detailed transport configuration (headers, authentication, environment variables), see the [Transports](/v2/clients/transports) documentation.
 
 ## Next Steps
 
 Explore the detailed documentation for each operation type:
 
 ### Core Operations
-- **[Tools](/clients/tools)** - Execute server-side functions and handle results
-- **[Resources](/clients/resources)** - Access static and templated resources  
-- **[Prompts](/clients/prompts)** - Work with message templates and argument serialization
+- **[Tools](/v2/clients/tools)** - Execute server-side functions and handle results
+- **[Resources](/v2/clients/resources)** - Access static and templated resources  
+- **[Prompts](/v2/clients/prompts)** - Work with message templates and argument serialization
 
 ### Advanced Features
-- **[Logging](/clients/logging)** - Handle server log messages
-- **[Progress](/clients/progress)** - Monitor long-running operations
-- **[Sampling](/clients/sampling)** - Respond to server LLM requests
-- **[Roots](/clients/roots)** - Provide local context to servers
+- **[Logging](/v2/clients/logging)** - Handle server log messages
+- **[Progress](/v2/clients/progress)** - Monitor long-running operations
+- **[Sampling](/v2/clients/sampling)** - Respond to server LLM requests
+- **[Roots](/v2/clients/roots)** - Provide local context to servers
 
 ### Connection Details
-- **[Transports](/clients/transports)** - Configure connection methods and parameters
-- **[Authentication](/clients/auth/oauth)** - Set up OAuth and bearer token authentication
+- **[Transports](/v2/clients/transports)** - Configure connection methods and parameters
+- **[Authentication](/v2/clients/auth/oauth)** - Set up OAuth and bearer token authentication
 
 <Tip>
 The FastMCP Client is designed as a foundational tool. Use it directly for deterministic operations, or build higher-level agentic systems on top of its reliable, type-safe interface.

@@ -10,9 +10,9 @@ import { VersionBadge } from "/snippets/version-badge.mdx";
 
 <VersionBadge version="2.12.4" />
 
-The OIDC proxy enables FastMCP servers to authenticate with OIDC providers that **don't support Dynamic Client Registration (DCR)** out of the box. This includes OAuth providers like: Auth0, Google, Azure, AWS, etc. For providers that do support DCR (like WorkOS AuthKit), use [`RemoteAuthProvider`](/servers/auth/remote-oauth) instead.
+The OIDC proxy enables FastMCP servers to authenticate with OIDC providers that **don't support Dynamic Client Registration (DCR)** out of the box. This includes OAuth providers like: Auth0, Google, Azure, AWS, etc. For providers that do support DCR (like WorkOS AuthKit), use [`RemoteAuthProvider`](/v2/servers/auth/remote-oauth) instead.
 
-The OIDC proxy is built upon [`OAuthProxy`](/servers/auth/oauth-proxy) so it has all the same functionality under the covers.
+The OIDC proxy is built upon [`OAuthProxy`](/v2/servers/auth/oauth-proxy) so it has all the same functionality under the covers.
 
 ## Implementation
 
@@ -161,7 +161,7 @@ Set this if your provider requires a specific authentication method and the defa
 
   By default on Mac/Windows, clients are automatically persisted to encrypted disk storage, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly. On Linux where keyring isn't available, ephemeral storage is used to match the ephemeral key strategy.
 
-For production deployments with multiple servers or cloud deployments, use a network-accessible storage backend rather than local disk storage. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest.** See [Storage Backends](/servers/storage-backends) for available options.
+For production deployments with multiple servers or cloud deployments, use a network-accessible storage backend rather than local disk storage. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest.** See [Storage Backends](/v2/servers/storage-backends) for available options.
 
 Testing with in-memory storage (unencrypted):
 
@@ -193,7 +193,7 @@ auth = OIDCProxy(
 </ParamField>
 
 <ParamField body="require_authorization_consent" type="bool" default="True">
-  Whether to require user consent before authorizing MCP clients. When enabled (default), users see a consent screen that displays which client is requesting access. See [OAuthProxy documentation](/servers/auth/oauth-proxy#confused-deputy-attacks) for details on confused deputy attack protection.
+  Whether to require user consent before authorizing MCP clients. When enabled (default), users see a consent screen that displays which client is requesting access. See [OAuthProxy documentation](/v2/servers/auth/oauth-proxy#confused-deputy-attacks) for details on confused deputy attack protection.
 </ParamField>
 
 <ParamField body="consent_csp_policy" type="str | None" default="None">

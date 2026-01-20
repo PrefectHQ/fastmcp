@@ -100,7 +100,7 @@ def data_analysis_prompt(
 <ParamField body="icons" type="list[Icon] | None">
   <VersionBadge version="2.13.0" />
 
-  Optional list of icon representations for this prompt. See [Icons](/servers/icons) for detailed examples
+  Optional list of icon representations for this prompt. See [Icons](/v2/servers/icons) for detailed examples
 </ParamField>
 
 <ParamField body="meta" type="dict[str, Any] | None">
@@ -297,7 +297,7 @@ async def generate_report_request(report_type: str, ctx: Context) -> str:
     return f"Please create a {report_type} report. Request ID: {ctx.request_id}"
 ```
 
-For full documentation on the Context object and all its capabilities, see the [Context documentation](/servers/context).
+For full documentation on the Context object and all its capabilities, see the [Context documentation](/v2/servers/context).
 
 ### Notifications
 
@@ -318,7 +318,7 @@ example_prompt.enable()         # Sends prompts/list_changed notification
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
 
-Clients can handle these notifications using a [message handler](/clients/messages) to automatically refresh their prompt lists or update their interfaces.
+Clients can handle these notifications using a [message handler](/v2/clients/messages) to automatically refresh their prompt lists or update their interfaces.
 
 ## Server Behavior
 

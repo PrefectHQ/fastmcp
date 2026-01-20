@@ -443,7 +443,7 @@ tool_result = ToolResultContent(
 
 Client support for sampling is optional—some clients may not implement it. To ensure your tools work regardless of client capabilities, configure a `sampling_handler` that sends requests directly to an LLM provider.
 
-FastMCP provides built-in handlers for [OpenAI and Anthropic APIs](/clients/sampling#built-in-handlers). These handlers support the full sampling API including tools, automatically converting your Python functions to each provider's format.
+FastMCP provides built-in handlers for [OpenAI and Anthropic APIs](/v2/clients/sampling#built-in-handlers). These handlers support the full sampling API including tools, automatically converting your Python functions to each provider's format.
 
 <Note>
 Install handlers with `pip install fastmcp[openai]` or `pip install fastmcp[anthropic]`.

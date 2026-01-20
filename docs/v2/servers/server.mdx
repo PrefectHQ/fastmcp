@@ -53,11 +53,11 @@ The `FastMCP` constructor accepts several arguments:
 <ParamField body="icons" type="list[Icon] | None">
   <VersionBadge version="2.13.0" />
 
-  List of icon representations for your server. Icons help users visually identify your server in client applications. See [Icons](/servers/icons) for detailed examples
+  List of icon representations for your server. Icons help users visually identify your server in client applications. See [Icons](/v2/servers/icons) for detailed examples
 </ParamField>
 
 <ParamField body="auth" type="OAuthProvider | TokenVerifier | None">
-  Authentication provider for securing HTTP-based transports. See [Authentication](/servers/auth/authentication) for configuration options
+  Authentication provider for securing HTTP-based transports. See [Authentication](/v2/servers/auth/authentication) for configuration options
 </ParamField>
 
 <ParamField body="lifespan" type="AsyncContextManager | None">
@@ -92,7 +92,7 @@ The `FastMCP` constructor accepts several arguments:
 
 <ParamField body="strict_input_validation" type="bool" default="False">
   <VersionBadge version="2.13.0" />
-  Controls how tool input parameters are validated. When `False` (default), FastMCP uses Pydantic's flexible validation that coerces compatible inputs (e.g., `"10"` → `10` for int parameters). When `True`, uses the MCP SDK's JSON Schema validation to validate inputs against the exact schema before passing them to your function, rejecting any type mismatches. The default mode improves compatibility with LLM clients while maintaining type safety. See [Input Validation Modes](/servers/tools#input-validation-modes) for details
+  Controls how tool input parameters are validated. When `False` (default), FastMCP uses Pydantic's flexible validation that coerces compatible inputs (e.g., `"10"` → `10` for int parameters). When `True`, uses the MCP SDK's JSON Schema validation to validate inputs against the exact schema before passing them to your function, rejecting any type mismatches. The default mode improves compatibility with LLM clients while maintaining type safety. See [Input Validation Modes](/v2/servers/tools#input-validation-modes) for details
 </ParamField>
 
 <ParamField body="include_fastmcp_meta" type="bool" default="True">
@@ -116,7 +116,7 @@ def multiply(a: float, b: float) -> float:
     return a * b
 ```
 
-See [Tools](/servers/tools) for detailed documentation.
+See [Tools](/v2/servers/tools) for detailed documentation.
 
 ### Resources
 
@@ -129,7 +129,7 @@ def get_config() -> dict:
     return {"theme": "dark", "version": "1.0"}
 ```
 
-See [Resources & Templates](/servers/resources) for detailed documentation.
+See [Resources & Templates](/v2/servers/resources) for detailed documentation.
 
 ### Resource Templates
 
@@ -143,7 +143,7 @@ def get_user_profile(user_id: int) -> dict:
     return {"id": user_id, "name": f"User {user_id}", "status": "active"}
 ```
 
-See [Resources & Templates](/servers/resources) for detailed documentation.
+See [Resources & Templates](/v2/servers/resources) for detailed documentation.
 
 ### Prompts
 
@@ -157,7 +157,7 @@ def analyze_data(data_points: list[float]) -> str:
     return f"Please analyze these data points: {formatted_data}"
 ```
 
-See [Prompts](/servers/prompts) for detailed documentation.
+See [Prompts](/v2/servers/prompts) for detailed documentation.
 
 ## Tag-Based Filtering
 
@@ -232,7 +232,7 @@ FastMCP supports several transport options:
 
 The server can also be run using the FastMCP CLI.
 
-For detailed information on each transport, how to configure them (host, port, paths), and when to use which, please refer to the [**Running Your FastMCP Server**](/deployment/running-server) guide.
+For detailed information on each transport, how to configure them (host, port, paths), and when to use which, please refer to the [**Running Your FastMCP Server**](/v2/deployment/running-server) guide.
 
 ## Custom Routes
 
@@ -258,7 +258,7 @@ Custom routes are served alongside your MCP endpoint and are useful for:
 - Simple status or info endpoints
 - Basic webhooks or callbacks
 
-For more complex web applications, consider [mounting your MCP server into a FastAPI or Starlette app](/deployment/http#integration-with-web-frameworks).
+For more complex web applications, consider [mounting your MCP server into a FastAPI or Starlette app](/v2/deployment/http#integration-with-web-frameworks).
 
 ## Composing Servers
 
@@ -266,7 +266,7 @@ For more complex web applications, consider [mounting your MCP server into a Fas
 
 FastMCP supports composing multiple servers together using `import_server` (static copy) and `mount` (live link). This allows you to organize large applications into modular components or reuse existing servers.
 
-See the [Server Composition](/servers/composition) guide for full details, best practices, and examples.
+See the [Server Composition](/v2/servers/composition) guide for full details, best practices, and examples.
 
 ```python
 # Example: Importing a subserver
@@ -292,7 +292,7 @@ FastMCP can act as a proxy for any MCP server (local or remote) using `FastMCP.a
 
 Proxies automatically handle concurrent operations safely by creating fresh sessions for each request when using disconnected clients.
 
-See the [Proxying Servers](/servers/proxy) guide for details and advanced usage.
+See the [Proxying Servers](/v2/servers/proxy) guide for details and advanced usage.
 
 ```python
 from fastmcp import FastMCP, Client
@@ -308,7 +308,7 @@ proxy = FastMCP.as_proxy(backend, name="ProxyServer")
 
 FastMCP can automatically generate servers from OpenAPI specifications or existing FastAPI applications using `FastMCP.from_openapi()` and `FastMCP.from_fastapi()`. This allows you to instantly convert existing APIs into MCP servers without manual tool creation.
 
-See the [FastAPI Integration](/integrations/fastapi) and [OpenAPI Integration](/integrations/openapi) guides for detailed examples and configuration options.
+See the [FastAPI Integration](/v2/integrations/fastapi) and [OpenAPI Integration](/v2/integrations/openapi) guides for detailed examples and configuration options.
 
 ```python
 import httpx
@@ -364,7 +364,7 @@ print(fastmcp.settings.include_fastmcp_meta)   # Default: True
 Common global settings include:
 - **`log_level`**: Logging level ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"), set with `FASTMCP_LOG_LEVEL`
 - **`mask_error_details`**: Whether to hide detailed error information from clients, set with `FASTMCP_MASK_ERROR_DETAILS`
-- **`strict_input_validation`**: Controls tool input validation mode (default: False for flexible coercion), set with `FASTMCP_STRICT_INPUT_VALIDATION`. See [Input Validation Modes](/servers/tools#input-validation-modes)
+- **`strict_input_validation`**: Controls tool input validation mode (default: False for flexible coercion), set with `FASTMCP_STRICT_INPUT_VALIDATION`. See [Input Validation Modes](/v2/servers/tools#input-validation-modes)
 - **`include_fastmcp_meta`**: Whether to include FastMCP metadata in component responses (default: True), set with `FASTMCP_INCLUDE_FASTMCP_META`
 - **`env_file`**: Path to the environment file to load settings from (default: ".env"), set with `FASTMCP_ENV_FILE`. Useful when your project uses a `.env` file with syntax incompatible with python-dotenv
 

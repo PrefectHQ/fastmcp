@@ -46,7 +46,7 @@ The key insight is that middleware forms a chain where each piece decides whethe
 
 If you're familiar with ASGI middleware, the basic structure of FastMCP middleware will feel familiar. At its core, middleware is a callable class that receives a context object containing information about the current JSON-RPC message and a handler function to continue the middleware chain.
 
-It's important to understand that MCP operates on the [JSON-RPC specification](https://spec.modelcontextprotocol.io/specification/basic/transports/). While FastMCP presents requests and responses in a familiar way, these are fundamentally JSON-RPC messages, not HTTP request/response pairs like you might be used to in web applications. FastMCP middleware works with all [transport types](/clients/transports), including local stdio transport and HTTP transports, though not all middleware implementations are compatible across all transports (e.g., middleware that inspects HTTP headers won't work with stdio transport).
+It's important to understand that MCP operates on the [JSON-RPC specification](https://spec.modelcontextprotocol.io/specification/basic/transports/). While FastMCP presents requests and responses in a familiar way, these are fundamentally JSON-RPC messages, not HTTP request/response pairs like you might be used to in web applications. FastMCP middleware works with all [transport types](/v2/clients/transports), including local stdio transport and HTTP transports, though not all middleware implementations are compatible across all transports (e.g., middleware that inspects HTTP headers won't work with stdio transport).
 
 The most fundamental way to implement middleware is by overriding the `__call__` method on the `Middleware` base class:
 
@@ -166,7 +166,7 @@ class SessionAwareMiddleware(Middleware):
         return await call_next(context)
 ```
 
-For HTTP request data (headers, client IP, etc.) when using HTTP transports, use `get_http_request()` or `get_http_headers()` from `fastmcp.server.dependencies`, which work regardless of MCP session availability. See [HTTP Requests](/servers/context#http-requests) for details.
+For HTTP request data (headers, client IP, etc.) when using HTTP transports, use `get_http_request()` or `get_http_headers()` from `fastmcp.server.dependencies`, which work regardless of MCP session availability. See [HTTP Requests](/v2/servers/context#http-requests) for details.
 
 ## Component Access in Middleware
 
@@ -324,7 +324,7 @@ class ToolCallMiddleware(Middleware):
 ```
 
 <Tip>
-For more complex tool rewriting scenarios, consider using [Tool Transformation](/patterns/tool-transformation) patterns which provide a more structured approach to creating modified tool variants.
+For more complex tool rewriting scenarios, consider using [Tool Transformation](/v2/patterns/tool-transformation) patterns which provide a more structured approach to creating modified tool variants.
 </Tip>
 
 ### Anatomy of a Hook
@@ -373,7 +373,7 @@ You have complete control over the request flow:
 
 <VersionBadge version="2.11.0" />
 
-In addition to modifying the request and response, you can also store state data that your tools can (optionally) access later. To do so, use the FastMCP Context to either `set_state` or `get_state` as appropriate. For more information, see the [Context State Management](/servers/context#state-management) docs.
+In addition to modifying the request and response, you can also store state data that your tools can (optionally) access later. To do so, use the FastMCP Context to either `set_state` or `get_state` as appropriate. For more information, see the [Context State Management](/v2/servers/context#state-management) docs.
 
 ## Creating Middleware
 
@@ -436,7 +436,7 @@ This creates the following execution flow:
 
 ## Server Composition and Middleware
 
-When using [Server Composition](/servers/composition) with `mount` or `import_server`, middleware behavior follows these rules:
+When using [Server Composition](/v2/servers/composition) with `mount` or `import_server`, middleware behavior follows these rules:
 
 1. **Parent server middleware** runs for all requests, including those routed to mounted servers
 2. **Mounted server middleware** only runs for requests handled by that specific server
@@ -556,7 +556,7 @@ from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 mcp.add_middleware(ResponseCachingMiddleware())
 ```
 
-Out of the box, it caches call/list tool, resources, and prompts to an in-memory cache with TTL-based expiration. Cache entries expire based on their TTL; there is no event-based cache invalidation. List calls are stored under global keys—when sharing a storage backend across multiple servers, consider namespacing collections to prevent conflicts. See [Storage Backends](/servers/storage-backends) for advanced configuration options.
+Out of the box, it caches call/list tool, resources, and prompts to an in-memory cache with TTL-based expiration. Cache entries expire based on their TTL; there is no event-based cache invalidation. List calls are stored under global keys—when sharing a storage backend across multiple servers, consider namespacing collections to prevent conflicts. See [Storage Backends](/v2/servers/storage-backends) for advanced configuration options.
 
 Each method can be configured individually, for example, caching list tools for 30 seconds, limiting caching to specific tools, and disabling caching for resource reads:
 
@@ -578,7 +578,7 @@ mcp.add_middleware(ResponseCachingMiddleware(
 
 #### Storage Backends
 
-By default, caching uses in-memory storage, which is fast but doesn't persist across restarts. For production or persistent caching across server restarts, configure a different storage backend. See [Storage Backends](/servers/storage-backends) for complete options including disk, Redis, DynamoDB, and custom implementations.
+By default, caching uses in-memory storage, which is fast but doesn't persist across restarts. For production or persistent caching across server restarts, configure a different storage backend. See [Storage Backends](/v2/servers/storage-backends) for complete options including disk, Redis, DynamoDB, and custom implementations.
 
 Disk-based caching example:
 

@@ -401,7 +401,7 @@ mcp.enable(keys={"resource:data://example"})         # Sends resources/list_chan
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
 
-Clients can handle these notifications using a [message handler](/clients/messages) to automatically refresh their resource lists or update their interfaces.
+Clients can handle these notifications using a [message handler](/clients/notifications) to automatically refresh their resource lists or update their interfaces.
 
 ### Annotations
 
