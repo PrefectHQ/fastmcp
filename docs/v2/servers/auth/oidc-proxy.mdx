@@ -1,0 +1,269 @@
+---
+title: OIDC Proxy
+sidebarTitle: OIDC Proxy
+description: Bridge OIDC providers to work seamlessly with MCP's authentication flow.
+icon: share
+tag: NEW
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx";
+
+<VersionBadge version="2.12.4" />
+
+The OIDC proxy enables FastMCP servers to authenticate with OIDC providers that **don't support Dynamic Client Registration (DCR)** out of the box. This includes OAuth providers like: Auth0, Google, Azure, AWS, etc. For providers that do support DCR (like WorkOS AuthKit), use [`RemoteAuthProvider`](/servers/auth/remote-oauth) instead.
+
+The OIDC proxy is built upon [`OAuthProxy`](/servers/auth/oauth-proxy) so it has all the same functionality under the covers.
+
+## Implementation
+
+### Provider Setup Requirements
+
+Before using the OIDC proxy, you need to register your application with your OAuth provider:
+
+1. **Register your application** in the provider's developer console (Auth0 Applications, Google Cloud Console, Azure Portal, etc.)
+2. **Configure the redirect URI** as your FastMCP server URL plus your chosen callback path:
+   - Default: `https://your-server.com/auth/callback`
+   - Custom: `https://your-server.com/your/custom/path` (if you set `redirect_path`)
+   - Development: `http://localhost:8000/auth/callback`
+3. **Obtain your credentials**: Client ID and Client Secret
+
+<Warning>
+  The redirect URI you configure with your provider must exactly match your
+  FastMCP server's URL plus the callback path. If you customize `redirect_path`
+  in the OIDC proxy, update your provider's redirect URI accordingly.
+</Warning>
+
+### Basic Setup
+
+Here's how to implement the OIDC proxy with any provider:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.oidc_proxy import OIDCProxy
+
+# Create the OIDC proxy
+auth = OIDCProxy(
+    # Provider's configuration URL
+    config_url="https://provider.com/.well-known/openid-configuration",
+
+    # Your registered app credentials
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+
+    # Your FastMCP server's public URL
+    base_url="https://your-server.com",
+
+    # Optional: customize the callback path (default is "/auth/callback")
+    # redirect_path="/custom/callback",
+)
+
+mcp = FastMCP(name="My Server", auth=auth)
+```
+
+### Configuration Parameters
+
+<Card icon="code" title="OIDCProxy Parameters">
+<ParamField body="config_url" type="str" required>
+  URL of your OAuth provider's OIDC configuration
+</ParamField>
+
+<ParamField body="client_id" type="str" required>
+  Client ID from your registered OAuth application
+</ParamField>
+
+<ParamField body="client_secret" type="str" required>
+  Client secret from your registered OAuth application
+</ParamField>
+
+<ParamField body="base_url" type="AnyHttpUrl | str" required>
+  Public URL of your FastMCP server (e.g., `https://your-server.com`)
+</ParamField>
+
+<ParamField body="strict" type="bool | None">
+  Strict flag for configuration validation. When True, requires all OIDC
+  mandatory fields.
+</ParamField>
+
+<ParamField body="audience" type="str | None">
+  Audience parameter for OIDC providers that require it (e.g., Auth0). This is
+  typically your API identifier.
+</ParamField>
+
+<ParamField body="timeout_seconds" type="int | None" default="10">
+  HTTP request timeout in seconds for fetching OIDC configuration
+</ParamField>
+
+<ParamField body="token_verifier" type="TokenVerifier | None">
+
+<VersionBadge version="2.13.1" />
+  Custom token verifier for validating tokens. When provided, FastMCP uses your custom verifier instead of creating a default `JWTVerifier`.
+
+  Cannot be used with `algorithm` or `required_scopes` parameters - configure these on your verifier instead. The verifier's `required_scopes` are automatically loaded and advertised.
+</ParamField>
+
+<ParamField body="algorithm" type="str | None">
+  JWT algorithm to use for token verification (e.g., "RS256"). If not specified,
+  uses the provider's default. Only used when `token_verifier` is not provided.
+</ParamField>
+
+<ParamField body="required_scopes" type="list[str] | None">
+  List of OAuth scopes for token validation. These are automatically
+  included in authorization requests. Only used when `token_verifier` is not provided.
+</ParamField>
+
+<ParamField body="redirect_path" type="str" default="/auth/callback">
+  Path for OAuth callbacks. Must match the redirect URI configured in your OAuth
+  application
+</ParamField>
+
+<ParamField body="allowed_client_redirect_uris" type="list[str] | None">
+  List of allowed redirect URI patterns for MCP clients. Patterns support wildcards (e.g., `"http://localhost:*"`, `"https://*.example.com/*"`).
+  - `None` (default): All redirect URIs allowed (for MCP/DCR compatibility)
+  - Empty list `[]`: No redirect URIs allowed
+  - Custom list: Only matching patterns allowed
+
+These patterns apply to MCP client loopback redirects, NOT the upstream OAuth app redirect URI.
+
+</ParamField>
+
+<ParamField body="token_endpoint_auth_method" type="str | None">
+  Token endpoint authentication method for the upstream OAuth server. Controls how the proxy authenticates when exchanging authorization codes and refresh tokens with the upstream provider.
+  - `"client_secret_basic"`: Send credentials in Authorization header (most common)
+  - `"client_secret_post"`: Send credentials in request body (required by some providers)
+  - `"none"`: No authentication (for public clients)
+  - `None` (default): Uses authlib's default (typically `"client_secret_basic"`)
+
+Set this if your provider requires a specific authentication method and the default doesn't work.
+
+</ParamField>
+
+<ParamField body="jwt_signing_key" type="str | bytes | None">
+
+<VersionBadge version="2.13.0" />
+  Secret used to sign FastMCP JWT tokens issued to clients. Accepts any string or bytes - will be derived into a proper 32-byte cryptographic key using HKDF.
+
+  **Default behavior (`None`):**
+  - **Mac/Windows**: Auto-managed via system keyring. Keys are generated once and persisted, surviving server restarts with zero configuration. Keys are automatically derived from server attributes, so this approach, while convenient, is **only** suitable for development and local testing. For production, you must provide an explicit secret.
+  - **Linux**: Ephemeral (random salt at startup). Tokens become invalid on server restart, triggering client re-authentication.
+
+  **For production:**
+  Provide an explicit secret (e.g., from environment variable) to use a fixed key instead of the auto-generated one.
+</ParamField>
+
+<ParamField body="client_storage" type="AsyncKeyValue | None">
+
+<VersionBadge version="2.13.0" />
+  Storage backend for persisting OAuth client registrations and upstream tokens.
+
+  **Default behavior:**
+  - **Mac/Windows**: Encrypted DiskStore in your platform's data directory (derived from `platformdirs`)
+  - **Linux**: MemoryStore (ephemeral - clients lost on restart)
+
+  By default on Mac/Windows, clients are automatically persisted to encrypted disk storage, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly. On Linux where keyring isn't available, ephemeral storage is used to match the ephemeral key strategy.
+
+For production deployments with multiple servers or cloud deployments, use a network-accessible storage backend rather than local disk storage. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest.** See [Storage Backends](/servers/storage-backends) for available options.
+
+Testing with in-memory storage (unencrypted):
+
+```python
+from key_value.aio.stores.memory import MemoryStore
+
+# Use in-memory storage for testing (clients lost on restart)
+auth = OIDCProxy(..., client_storage=MemoryStore())
+```
+
+Production with encrypted Redis storage:
+
+```python
+from key_value.aio.stores.redis import RedisStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from cryptography.fernet import Fernet
+import os
+
+auth = OIDCProxy(
+    ...,
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    client_storage=FernetEncryptionWrapper(
+        key_value=RedisStore(host="redis.example.com", port=6379),
+        fernet=Fernet(os.environ["STORAGE_ENCRYPTION_KEY"])
+    )
+)
+```
+
+</ParamField>
+
+<ParamField body="require_authorization_consent" type="bool" default="True">
+  Whether to require user consent before authorizing MCP clients. When enabled (default), users see a consent screen that displays which client is requesting access. See [OAuthProxy documentation](/servers/auth/oauth-proxy#confused-deputy-attacks) for details on confused deputy attack protection.
+</ParamField>
+
+<ParamField body="consent_csp_policy" type="str | None" default="None">
+  Content Security Policy for the consent page.
+
+  - `None` (default): Uses the built-in CSP policy with appropriate directives for form submission
+  - Empty string `""`: Disables CSP entirely (no meta tag rendered)
+  - Custom string: Uses the provided value as the CSP policy
+
+  This is useful for organizations that have their own CSP policies and need to override or disable FastMCP's built-in CSP directives.
+</ParamField>
+</Card>
+
+### Using Built-in Providers
+
+FastMCP includes pre-configured OIDC providers for common services:
+
+```python
+from fastmcp.server.auth.providers.auth0 import Auth0Provider
+
+auth = Auth0Provider(
+    config_url="https://.../.well-known/openid-configuration",
+    client_id="your-auth0-client-id",
+    client_secret="your-auth0-client-secret",
+    audience="https://...",
+    base_url="https://localhost:8000"
+)
+
+mcp = FastMCP(name="My Server", auth=auth)
+```
+
+Available providers include `Auth0Provider` at present.
+
+### Scope Configuration
+
+OAuth scopes are configured with `required_scopes` to automatically request the permissions your application needs.
+
+Dynamic clients created by the proxy will automatically include these scopes in their authorization requests.
+
+## Environment Configuration
+
+<VersionBadge version="2.13.0" />
+
+For production deployments, configure the OIDC proxy through environment variables instead of hardcoding credentials:
+
+```bash
+# Specify the provider implementation
+export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.auth0.Auth0Provider
+
+# Provider-specific credentials
+export FASTMCP_SERVER_AUTH_AUTH0_CONFIG_URL=https://.../.well-known/openid-configuration
+export FASTMCP_SERVER_AUTH_AUTH0_CLIENT_ID=tv2ObNgaZAWWhhycr7Bz1LU2mxlnsmsB
+export FASTMCP_SERVER_AUTH_AUTH0_CLIENT_SECRET=vPYqbjemq...
+export FASTMCP_SERVER_AUTH_AUTH0_AUDIENCE=https://...
+export FASTMCP_SERVER_AUTH_AUTH0_BASE_URL=https://localhost:8000
+```
+
+With environment configuration, your server code simplifies to:
+
+```python
+from fastmcp import FastMCP
+
+# Authentication automatically configured from environment
+mcp = FastMCP(name="My Server")
+
+@mcp.tool
+def protected_tool(data: str) -> str:
+    """This tool is now protected by OAuth."""
+    return f"Processed: {data}"
+
+if __name__ == "__main__":
+    mcp.run(transport="http", port=8000)
+```

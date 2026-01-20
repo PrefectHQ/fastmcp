@@ -3,6 +3,7 @@ title: Skills Provider
 sidebarTitle: Skills
 description: Expose agent skills as MCP resources
 icon: wand-magic-sparkles
+tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -246,45 +247,6 @@ With `reload=True`, the provider re-discovers skills on each `list_resources()` 
 <Warning>
 Reload mode adds overhead to every request. Use it during development when you're actively editing skills, but disable it in production.
 </Warning>
-
-## Complete Example
-
-This example creates a server that exposes Claude Code skills, then uses a client to discover and read them.
-
-```python
-import asyncio
-import json
-
-from fastmcp import Client, FastMCP
-from fastmcp.server.providers.skills import ClaudeSkillsProvider
-
-async def main():
-    # Create server with Claude skills
-    mcp = FastMCP("Skills Demo")
-    mcp.add_provider(ClaudeSkillsProvider(reload=True))
-
-    async with Client(mcp) as client:
-        # List available skill resources
-        resources = await client.list_resources()
-        print("Available skills:")
-        for r in resources:
-            if r.uri.path and r.uri.path.endswith("SKILL.md"):
-                print(f"  - {r.name}: {r.description}")
-
-        # Read a specific skill's manifest
-        manifest_result = await client.read_resource("skill://pdf-processing/_manifest")
-        manifest = json.loads(manifest_result[0].text)
-        print(f"\nFiles in pdf-processing skill:")
-        for f in manifest["files"]:
-            print(f"  - {f['path']} ({f['size']} bytes)")
-
-        # Read the main skill file
-        skill_result = await client.read_resource("skill://pdf-processing/SKILL.md")
-        print(f"\nSkill content:\n{skill_result[0].text[:500]}...")
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
 
 ## Client Utilities
 

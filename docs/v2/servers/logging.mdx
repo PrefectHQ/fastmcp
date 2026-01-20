@@ -1,0 +1,249 @@
+---
+title: Client Logging
+sidebarTitle: Logging
+description: Send log messages back to MCP clients through the context.
+icon: receipt
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<Tip>
+This documentation covers **MCP client logging** - sending messages from your server to MCP clients. For standard server-side logging (e.g., writing to files, console), use `fastmcp.utilities.logging.get_logger()` or Python's built-in `logging` module.
+</Tip>
+
+Server logging allows MCP tools to send debug, info, warning, and error messages back to the client. This provides visibility into function execution and helps with debugging during development and operation.
+
+## Why Use Server Logging?
+
+Server logging is essential for:
+
+- **Debugging**: Send detailed execution information to help diagnose issues
+- **Progress visibility**: Keep users informed about what the tool is doing
+- **Error reporting**: Communicate problems and their context to clients
+- **Audit trails**: Create records of tool execution for compliance or analysis
+
+Unlike standard Python logging, MCP server logging sends messages directly to the client, making them visible in the client's interface or logs.
+
+### Basic Usage
+
+Use the context logging methods within any tool function:
+
+```python {8-9, 13, 17, 21}
+from fastmcp import FastMCP, Context
+
+mcp = FastMCP("LoggingDemo")
+
+@mcp.tool
+async def analyze_data(data: list[float], ctx: Context) -> dict:
+    """Analyze numerical data with comprehensive logging."""
+    await ctx.debug("Starting analysis of numerical data")
+    await ctx.info(f"Analyzing {len(data)} data points")
+    
+    try:
+        if not data:
+            await ctx.warning("Empty data list provided")
+            return {"error": "Empty data list"}
+        
+        result = sum(data) / len(data)
+        await ctx.info(f"Analysis complete, average: {result}")
+        return {"average": result, "count": len(data)}
+        
+    except Exception as e:
+        await ctx.error(f"Analysis failed: {str(e)}")
+        raise
+```
+
+## Structured Logging with `extra`
+
+All logging methods (`debug`, `info`, `warning`, `error`, `log`) now accept an `extra` parameter, which is a dictionary of arbitrary data. This allows you to send structured data to the client, which is useful for creating rich, queryable logs.
+
+```python
+@mcp.tool
+async def process_transaction(transaction_id: str, amount: float, ctx: Context):
+    await ctx.info(
+        f"Processing transaction {transaction_id}",
+        extra={
+            "transaction_id": transaction_id,
+            "amount": amount,
+            "currency": "USD"
+        }
+    )
+    # ... processing logic ...
+```
+
+## Server Logs
+
+Client Logging in the form of `ctx.log()` and its convenience methods (`debug`, `info`, `warning`, `error`) are meant for sending messages to the MCP clients. Messages sent to clients are also logged to the server's log at `DEBUG` level. Enable debug logging on the server or enable debug logging on the `fastmcp.server.context.to_client` logger to see these messages in the server's log.
+
+```python
+import logging
+
+from fastmcp.utilities.logging import get_logger
+
+to_client_logger = get_logger(name="fastmcp.server.context.to_client")
+to_client_logger.setLevel(level=logging.DEBUG)
+```
+
+## Logging Methods
+
+<Card icon="code" title="Context Logging Methods">
+<ResponseField name="ctx.debug" type="async method">
+  Send debug-level messages for detailed execution information
+
+  <Expandable title="parameters">
+    <ResponseField name="message" type="str">
+      The debug message to send to the client
+    </ResponseField>
+    <ResponseField name="extra" type="dict | None" default="None">
+      Optional dictionary for structured logging data
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="ctx.info" type="async method">
+  Send informational messages about normal execution
+
+  <Expandable title="parameters">
+    <ResponseField name="message" type="str">
+      The information message to send to the client
+    </ResponseField>
+    <ResponseField name="extra" type="dict | None" default="None">
+      Optional dictionary for structured logging data
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="ctx.warning" type="async method">
+  Send warning messages for potential issues that didn't prevent execution
+
+  <Expandable title="parameters">
+    <ResponseField name="message" type="str">
+      The warning message to send to the client
+    </ResponseField>
+    <ResponseField name="extra" type="dict | None" default="None">
+      Optional dictionary for structured logging data
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="ctx.error" type="async method">
+  Send error messages for problems that occurred during execution
+
+  <Expandable title="parameters">
+    <ResponseField name="message" type="str">
+      The error message to send to the client
+    </ResponseField>
+    <ResponseField name="extra" type="dict | None" default="None">
+      Optional dictionary for structured logging data
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="ctx.log" type="async method">
+  Generic logging method with custom level and logger name
+
+  <Expandable title="parameters">
+    <ResponseField name="level" type="Literal['debug', 'info', 'warning', 'error']">
+      The log level for the message
+    </ResponseField>
+
+    <ResponseField name="message" type="str">
+      The message to send to the client
+    </ResponseField>
+
+    <ResponseField name="logger_name" type="str | None" default="None">
+      Optional custom logger name for categorizing messages
+    </ResponseField>
+    <ResponseField name="extra" type="dict | None" default="None">
+      Optional dictionary for structured logging data
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+</Card>
+
+## Log Levels
+
+### Debug
+Use for detailed information that's typically only useful when diagnosing problems:
+
+```python 
+@mcp.tool
+async def process_file(file_path: str, ctx: Context) -> str:
+    """Process a file with detailed debug logging."""
+    await ctx.debug(f"Starting to process file: {file_path}")
+    await ctx.debug("Checking file permissions")
+    
+    # File processing logic
+    await ctx.debug("File processing completed successfully")
+    return "File processed"
+```
+
+### Info
+Use for general information about normal program execution:
+
+```python
+@mcp.tool
+async def backup_database(ctx: Context) -> str:
+    """Backup database with progress information."""
+    await ctx.info("Starting database backup")
+    await ctx.info("Connecting to database")
+    await ctx.info("Backup completed successfully")
+    return "Database backed up"
+```
+
+### Warning
+Use for potentially harmful situations that don't prevent execution:
+
+```python
+@mcp.tool
+async def validate_config(config: dict, ctx: Context) -> dict:
+    """Validate configuration with warnings for deprecated options."""
+    if "old_api_key" in config:
+        await ctx.warning(
+            "Using deprecated 'old_api_key' field. Please use 'api_key' instead",
+            extra={"deprecated_field": "old_api_key"}
+        )
+    
+    if config.get("timeout", 30) > 300:
+        await ctx.warning(
+            "Timeout value is very high (>5 minutes), this may cause issues",
+            extra={"timeout_value": config.get("timeout")}
+        )
+    
+    return {"status": "valid", "warnings": "see logs"}
+```
+
+### Error
+Use for error events that might still allow the application to continue:
+
+```python
+@mcp.tool
+async def batch_process(items: list[str], ctx: Context) -> dict:
+    """Process multiple items, logging errors for failed items."""
+    successful = 0
+    failed = 0
+    
+    for item in items:
+        try:
+            # Process item
+            successful += 1
+        except Exception as e:
+            await ctx.error(
+                f"Failed to process item '{item}': {str(e)}",
+                extra={"failed_item": item}
+            )
+            failed += 1
+    
+    return {"successful": successful, "failed": failed}
+```
+
+
+## Client Handling
+
+Log messages are sent to the client through the MCP protocol. How clients handle these messages depends on their implementation:
+
+- **Development clients**: May display logs in real-time for debugging
+- **Production clients**: May store logs for later analysis or display to users
+- **Integration clients**: May forward logs to external logging systems
+
+See [Client Logging](/clients/logging) for details on how clients can handle server log messages.

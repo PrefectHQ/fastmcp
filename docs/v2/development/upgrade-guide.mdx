@@ -1,0 +1,153 @@
+---
+title: Upgrade Guide
+sidebarTitle: Upgrade Guide
+description: Migration instructions for upgrading between FastMCP versions
+icon: up
+tag: NEW
+---
+
+This guide provides migration instructions for breaking changes and major updates when upgrading between FastMCP versions.
+
+## v2.14.0
+
+### OpenAPI Parser Promotion
+
+The experimental OpenAPI parser is now the standard implementation. The legacy parser has been removed.
+
+**If you were using the legacy parser:** No code changes required. The new parser is a drop-in replacement with improved architecture.
+
+**If you were using the experimental parser:** Update your imports from the experimental module to the standard location:
+
+<CodeGroup>
+```python Before
+from fastmcp.experimental.server.openapi import FastMCPOpenAPI, RouteMap, MCPType
+```
+
+```python After
+from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap, MCPType
+```
+</CodeGroup>
+
+The experimental imports will continue working temporarily but will show deprecation warnings. The `FASTMCP_EXPERIMENTAL_ENABLE_NEW_OPENAPI_PARSER` environment variable is no longer needed and can be removed.
+
+### Deprecated Features Removed
+
+The following deprecated features have been removed in v2.14.0:
+
+**BearerAuthProvider** (deprecated in v2.11):
+<CodeGroup>
+```python Before
+from fastmcp.server.auth.providers.bearer import BearerAuthProvider
+```
+
+```python After
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+```
+</CodeGroup>
+
+**Context.get_http_request()** (deprecated in v2.2.11):
+<CodeGroup>
+```python Before
+request = context.get_http_request()
+```
+
+```python After
+from fastmcp.server.dependencies import get_http_request
+request = get_http_request()
+```
+</CodeGroup>
+
+**Top-level Image import** (deprecated in v2.8.1):
+<CodeGroup>
+```python Before
+from fastmcp import Image
+```
+
+```python After
+from fastmcp.utilities.types import Image
+```
+</CodeGroup>
+
+**FastMCP dependencies parameter** (deprecated in v2.11.4):
+<CodeGroup>
+```python Before
+mcp = FastMCP("server", dependencies=["requests", "pandas"])
+```
+
+```json After
+{
+  "environment": {
+    "dependencies": ["requests", "pandas"]
+  }
+}
+```
+</CodeGroup>
+
+**Legacy resource prefix format**: The `resource_prefix_format` parameter and "protocol" format have been removed. Only the "path" format is supported (this was already the default).
+
+**FastMCPProxy client parameter**:
+<CodeGroup>
+```python Before
+proxy = FastMCPProxy(client=my_client)
+```
+
+```python After
+proxy = FastMCPProxy(client_factory=lambda: my_client)
+```
+</CodeGroup>
+
+**output_schema=False**:
+<CodeGroup>
+```python Before
+@mcp.tool(output_schema=False)
+def my_tool() -> str:
+    return "result"
+```
+
+```python After
+@mcp.tool(output_schema=None)
+def my_tool() -> str:
+    return "result"
+```
+</CodeGroup>
+
+## v2.13.0
+
+### OAuth Token Key Management
+
+The OAuth proxy now issues its own JWT tokens to clients instead of forwarding upstream provider tokens. This improves security by maintaining proper token audience boundaries.
+
+**What changed:**
+
+The OAuth proxy now implements a token factory pattern - it receives tokens from your OAuth provider (GitHub, Google, etc.), encrypts and stores them, then issues its own FastMCP JWT tokens to clients. This requires cryptographic keys for JWT signing and token encryption.
+
+**Default behavior (development):**
+
+By default, FastMCP automatically manages keys based on your platform:
+- **Mac/Windows**: Keys are auto-managed via system keyring, surviving server restarts with zero configuration. Suitable **only** for development and local testing.
+- **Linux**: Keys are ephemeral (random salt at startup, regenerated on each restart).
+
+This works fine for development and testing where re-authentication after restart is acceptable.
+
+**For production:**
+
+Production deployments must provide explicit keys and use persistent storage. Add these three things:
+
+```python
+auth = GitHubProvider(
+    client_id=os.environ["GITHUB_CLIENT_ID"],
+    client_secret=os.environ["GITHUB_CLIENT_SECRET"],
+    base_url="https://your-server.com",
+
+    # Explicit keys (required for production)
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+
+    # Persistent network storage (required for production)
+    client_storage=RedisStore(host="redis.example.com", port=6379)
+)
+```
+
+**More information:**
+- [OAuth Token Security](/deployment/http#oauth-token-security) - Complete production setup guide
+- [Key and Storage Management](/servers/auth/oauth-proxy#key-and-storage-management) - Detailed explanation of defaults and production requirements
+- [OAuth Proxy Parameters](/servers/auth/oauth-proxy#configuration-parameters) - Parameter documentation

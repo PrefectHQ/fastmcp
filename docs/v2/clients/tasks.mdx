@@ -1,0 +1,138 @@
+---
+title: Background Tasks
+sidebarTitle: Background Tasks
+description: Execute operations asynchronously and track their progress
+icon: clock
+tag: "NEW"
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.14.0" />
+
+The [MCP task protocol](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks) lets you request operations to run asynchronously. This returns a Task object immediately, letting you track progress, cancel operations, or await results.
+
+See [Server Background Tasks](/servers/tasks) for how to enable this on the server side.
+
+## Requesting Background Execution
+
+Pass `task=True` to run an operation as a background task. The call returns immediately with a Task object while the work executes on the server.
+
+```python
+from fastmcp import Client
+
+async with Client(server) as client:
+    # Start a background task
+    task = await client.call_tool("slow_computation", {"duration": 10}, task=True)
+
+    print(f"Task started: {task.task_id}")
+
+    # Do other work while it runs...
+
+    # Get the result when ready
+    result = await task.result()
+```
+
+This works with tools, resources, and prompts:
+
+```python
+tool_task = await client.call_tool("my_tool", args, task=True)
+resource_task = await client.read_resource("file://large.txt", task=True)
+prompt_task = await client.get_prompt("my_prompt", args, task=True)
+```
+
+## Working with Task Objects
+
+All task types share a common interface for retrieving results, checking status, and receiving updates.
+
+To get the result, call `await task.result()` or simply `await task`. This blocks until the task completes and returns the result. You can also check status without blocking using `await task.status()`, which returns the current state (`"working"`, `"completed"`, `"failed"`, or `"cancelled"`) along with any progress message from the server.
+
+```python
+task = await client.call_tool("analyze", {"text": "hello"}, task=True)
+
+# Check current status (non-blocking)
+status = await task.status()
+print(f"{status.status}: {status.statusMessage}")
+
+# Wait for result (blocking)
+result = await task.result()
+```
+
+For more control over waiting, use `task.wait()` with an optional timeout or target state:
+
+```python
+# Wait up to 30 seconds for completion
+status = await task.wait(timeout=30.0)
+
+# Wait for a specific state
+status = await task.wait(state="completed", timeout=30.0)
+```
+
+To cancel a running task, call `await task.cancel()`.
+
+### Real-Time Status Updates
+
+Register callbacks to receive status updates as the server reports progress. Both sync and async callbacks are supported.
+
+```python
+def on_status_change(status):
+    print(f"Task {status.taskId}: {status.status} - {status.statusMessage}")
+
+task.on_status_change(on_status_change)
+
+# Async callbacks work too
+async def on_status_async(status):
+    await log_status(status)
+
+task.on_status_change(on_status_async)
+```
+
+## Graceful Degradation
+
+You can always pass `task=True` regardless of whether the server supports background tasks. Per the MCP specification, servers without task support execute the operation immediately and return the result inline. The Task API provides a consistent interface either way.
+
+```python
+task = await client.call_tool("my_tool", args, task=True)
+
+if task.returned_immediately:
+    print("Server executed immediately (no background support)")
+else:
+    print("Running in background")
+
+# Either way, this works
+result = await task.result()
+```
+
+This means you can write task-aware client code without worrying about server capabilities.
+
+## Complete Example
+
+```python
+import asyncio
+from fastmcp import Client
+
+async def main():
+    async with Client(server) as client:
+        # Start background task
+        task = await client.call_tool(
+            "slow_computation",
+            {"duration": 10},
+            task=True,
+        )
+
+        # Subscribe to updates
+        def on_update(status):
+            print(f"Progress: {status.statusMessage}")
+
+        task.on_status_change(on_update)
+
+        # Do other work while task runs
+        print("Doing other work...")
+        await asyncio.sleep(2)
+
+        # Wait for completion and get result
+        result = await task.result()
+        print(f"Result: {result.content}")
+
+asyncio.run(main())
+```

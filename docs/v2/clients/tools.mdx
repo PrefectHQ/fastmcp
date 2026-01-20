@@ -1,0 +1,295 @@
+---
+title: Tool Operations
+sidebarTitle: Tools
+description: Discover and execute server-side tools with the FastMCP client.
+icon: wrench
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="2.0.0" />
+
+Tools are executable functions exposed by MCP servers. The FastMCP client provides methods to discover available tools and execute them with arguments.
+
+## Discovering Tools
+
+Use `list_tools()` to retrieve all tools available on the server:
+
+```python
+async with client:
+    tools = await client.list_tools()
+    # tools -> list[mcp.types.Tool]
+    
+    for tool in tools:
+        print(f"Tool: {tool.name}")
+        print(f"Description: {tool.description}")
+        if tool.inputSchema:
+            print(f"Parameters: {tool.inputSchema}")
+        # Access tags and other metadata
+        if hasattr(tool, 'meta') and tool.meta:
+            fastmcp_meta = tool.meta.get('_fastmcp', {})
+            print(f"Tags: {fastmcp_meta.get('tags', [])}")
+```
+
+### Filtering by Tags
+
+<VersionBadge version="2.11.0" />
+
+You can use the `meta` field to filter tools based on their tags:
+
+```python
+async with client:
+    tools = await client.list_tools()
+    
+    # Filter tools by tag
+    analysis_tools = [
+        tool for tool in tools 
+        if hasattr(tool, 'meta') and tool.meta and
+           tool.meta.get('_fastmcp', {}) and
+           'analysis' in tool.meta.get('_fastmcp', {}).get('tags', [])
+    ]
+    
+    print(f"Found {len(analysis_tools)} analysis tools")
+```
+
+<Note>
+The `meta` field is part of the standard MCP specification. FastMCP servers include tags and other metadata within a `_fastmcp` namespace (e.g., `meta._fastmcp.tags`) to avoid conflicts with user-defined metadata. This behavior can be controlled with the server's `include_fastmcp_meta` setting - when disabled, the `_fastmcp` namespace won't be included. Other MCP server implementations may not provide this metadata structure.
+</Note>
+
+## Executing Tools
+
+### Basic Execution
+
+Execute a tool using `call_tool()` with the tool name and arguments:
+
+```python
+async with client:
+    # Simple tool call
+    result = await client.call_tool("add", {"a": 5, "b": 3})
+    # result -> CallToolResult with structured and unstructured data
+    
+    # Access structured data (automatically deserialized)
+    print(result.data)  # 8 (int) or {"result": 8} for primitive types
+    
+    # Access traditional content blocks  
+    print(result.content[0].text)  # "8" (TextContent)
+```
+
+### Advanced Execution Options
+
+The `call_tool()` method supports additional parameters for timeout control and progress monitoring:
+
+```python
+async with client:
+    # With timeout (aborts if execution takes longer than 2 seconds)
+    result = await client.call_tool(
+        "long_running_task", 
+        {"param": "value"}, 
+        timeout=2.0
+    )
+    
+    # With progress handler (to track execution progress)
+    result = await client.call_tool(
+        "long_running_task",
+        {"param": "value"},
+        progress_handler=my_progress_handler
+    )
+```
+
+**Parameters:**
+- `name`: The tool name (string)
+- `arguments`: Dictionary of arguments to pass to the tool (optional)
+- `timeout`: Maximum execution time in seconds (optional, overrides client-level timeout)
+- `progress_handler`: Progress callback function (optional, overrides client-level handler)
+- `meta`: Dictionary of metadata to send with the request (optional, see below)
+
+## Sending Metadata
+
+<VersionBadge version="2.13.1" />
+
+The `meta` parameter sends ancillary information alongside tool calls. This can be used for various purposes like observability, debugging, client identification, or any context the server may need beyond the tool's primary arguments.
+
+```python
+async with client:
+    result = await client.call_tool(
+        name="send_email",
+        arguments={
+            "to": "user@example.com",
+            "subject": "Hello",
+            "body": "Welcome!"
+        },
+        meta={
+            "trace_id": "abc-123",
+            "request_source": "mobile_app"
+        }
+    )
+```
+
+The structure and usage of `meta` is determined by your application. See [Client Metadata](/servers/context#client-metadata) in the server documentation to learn how to access this data in your tool implementations.
+
+## Handling Results
+
+<VersionBadge version="2.10.0" />
+
+Tool execution returns a `CallToolResult` object with both structured and traditional content. FastMCP's standout feature is the `.data` property, which doesn't just provide raw JSON but actually hydrates complete Python objects including complex types like datetimes, UUIDs, and custom classes.
+
+### CallToolResult Properties
+
+<Card icon="code" title="CallToolResult Properties">
+<ResponseField name=".data" type="Any">
+  **FastMCP exclusive**: Fully hydrated Python objects with complex type support (datetimes, UUIDs, custom classes). Goes beyond JSON to provide complete object reconstruction from output schemas.
+</ResponseField>
+
+<ResponseField name=".content" type="list[mcp.types.ContentBlock]">
+  Standard MCP content blocks (`TextContent`, `ImageContent`, `AudioContent`, etc.) available from all MCP servers.
+</ResponseField>
+
+<ResponseField name=".structured_content" type="dict[str, Any] | None">
+  Standard MCP structured JSON data as sent by the server, available from all MCP servers that support structured outputs.
+</ResponseField>
+
+<ResponseField name=".is_error" type="bool">
+  Boolean indicating if the tool execution failed.
+</ResponseField>
+</Card>
+
+### Structured Data Access
+
+FastMCP's `.data` property provides fully hydrated Python objects, not just JSON dictionaries. This includes complex type reconstruction:
+
+```python
+from datetime import datetime
+from uuid import UUID
+
+async with client:
+    result = await client.call_tool("get_weather", {"city": "London"})
+    
+    # FastMCP reconstructs complete Python objects from the server's output schema
+    weather = result.data  # Server-defined WeatherReport object
+    print(f"Temperature: {weather.temperature}°C at {weather.timestamp}")
+    print(f"Station: {weather.station_id}")
+    print(f"Humidity: {weather.humidity}%")
+    
+    # The timestamp is a real datetime object, not a string!
+    assert isinstance(weather.timestamp, datetime)
+    assert isinstance(weather.station_id, UUID)
+    
+    # Compare with raw structured JSON (standard MCP)
+    print(f"Raw JSON: {result.structured_content}")
+    # {"temperature": 20, "timestamp": "2024-01-15T14:30:00Z", "station_id": "123e4567-..."}
+    
+    # Traditional content blocks (standard MCP)  
+    print(f"Text content: {result.content[0].text}")
+```
+
+### Fallback Behavior
+
+For tools without output schemas or when deserialization fails, `.data` will be `None`:
+
+```python
+async with client:
+    result = await client.call_tool("legacy_tool", {"param": "value"})
+    
+    if result.data is not None:
+        # Structured output available and successfully deserialized
+        print(f"Structured: {result.data}")
+    else:
+        # No structured output or deserialization failed - use content blocks
+        for content in result.content:
+            if hasattr(content, 'text'):
+                print(f"Text result: {content.text}")
+            elif hasattr(content, 'data'):
+                print(f"Binary data: {len(content.data)} bytes")
+```
+
+### Primitive Type Unwrapping
+
+<Tip>
+FastMCP servers automatically wrap non-object results (like `int`, `str`, `bool`) in a `{"result": value}` structure to create valid structured outputs. FastMCP clients understand this convention and automatically unwrap the value in `.data` for convenience, so you get the original primitive value instead of a wrapper object.
+</Tip>
+
+```python
+async with client:
+    result = await client.call_tool("calculate_sum", {"a": 5, "b": 3})
+    
+    # FastMCP client automatically unwraps for convenience
+    print(result.data)  # 8 (int) - the original value
+    
+    # Raw structured content shows the server-side wrapping
+    print(result.structured_content)  # {"result": 8}
+    
+    # Other MCP clients would need to manually access ["result"]
+    # value = result.structured_content["result"]  # Not needed with FastMCP!
+```
+
+## Error Handling
+
+### Exception-Based Error Handling
+
+By default, `call_tool()` raises a `ToolError` if the tool execution fails:
+
+```python
+from fastmcp.exceptions import ToolError
+
+async with client:
+    try:
+        result = await client.call_tool("potentially_failing_tool", {"param": "value"})
+        print("Tool succeeded:", result.data)
+    except ToolError as e:
+        print(f"Tool failed: {e}")
+```
+
+### Manual Error Checking
+
+You can disable automatic error raising and manually check the result:
+
+```python
+async with client:
+    result = await client.call_tool(
+        "potentially_failing_tool", 
+        {"param": "value"}, 
+        raise_on_error=False
+    )
+    
+    if result.is_error:
+        print(f"Tool failed: {result.content[0].text}")
+    else:
+        print(f"Tool succeeded: {result.data}")
+```
+
+### Raw MCP Protocol Access
+
+For complete control, use `call_tool_mcp()` which returns the raw MCP protocol object:
+
+```python
+async with client:
+    result = await client.call_tool_mcp("potentially_failing_tool", {"param": "value"})
+    # result -> mcp.types.CallToolResult
+    
+    if result.isError:
+        print(f"Tool failed: {result.content}")
+    else:
+        print(f"Tool succeeded: {result.content}")
+        # Note: No automatic deserialization with call_tool_mcp()
+```
+
+## Argument Handling
+
+Arguments are passed as a dictionary to the tool:
+
+```python
+async with client:
+    # Simple arguments
+    result = await client.call_tool("greet", {"name": "World"})
+    
+    # Complex arguments
+    result = await client.call_tool("process_data", {
+        "config": {"format": "json", "validate": True},
+        "items": [1, 2, 3, 4, 5],
+        "metadata": {"source": "api", "version": "1.0"}
+    })
+```
+
+<Tip>
+For multi-server clients, tool names are automatically prefixed with the server name (e.g., `weather_get_forecast` for a tool named `get_forecast` on the `weather` server).
+</Tip>

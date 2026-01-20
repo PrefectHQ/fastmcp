@@ -1,0 +1,349 @@
+---
+title: Proxy Servers
+sidebarTitle: Proxy Servers
+description: Use FastMCP to act as an intermediary or change transport for other MCP servers.
+icon: arrows-retweet
+---
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="2.0.0" />
+
+FastMCP provides a powerful proxying capability that allows one FastMCP server instance to act as a frontend for another MCP server (which could be remote, running on a different transport, or even another FastMCP instance). This is achieved using the `FastMCP.as_proxy()` class method.
+
+## What is Proxying?
+
+Proxying means setting up a FastMCP server that doesn't implement its own tools or resources directly. Instead, when it receives a request (like `tools/call` or `resources/read`), it forwards that request to a *backend* MCP server, receives the response, and then relays that response back to the original client.
+
+```mermaid
+sequenceDiagram
+    participant ClientApp as Your Client (e.g., Claude Desktop)
+    participant FastMCPProxy as FastMCP Proxy Server
+    participant BackendServer as Backend MCP Server (e.g., remote SSE)
+
+    ClientApp->>FastMCPProxy: MCP Request (e.g. stdio)
+    Note over FastMCPProxy, BackendServer: Proxy forwards the request
+    FastMCPProxy->>BackendServer: MCP Request (e.g. sse)
+    BackendServer-->>FastMCPProxy: MCP Response (e.g. sse)
+    Note over ClientApp, FastMCPProxy: Proxy relays the response
+    FastMCPProxy-->>ClientApp: MCP Response (e.g. stdio)
+```
+
+### Key Benefits
+
+<VersionBadge version="2.10.3" />
+
+- **Session Isolation**: Each request gets its own isolated session, ensuring safe concurrent operations
+- **Transport Bridging**: Expose servers running on one transport via a different transport
+- **Advanced MCP Features**: Automatic forwarding of sampling, elicitation, logging, and progress
+- **Security**: Acts as a controlled gateway to backend servers
+- **Simplicity**: Single endpoint even if backend location or transport changes
+
+### Performance Considerations
+
+When using proxy servers, especially those connecting to HTTP-based backend servers, be aware that latency can be significant. Operations like `list_tools()` may take hundreds of milliseconds compared to 1-2ms for local tools. When mounting proxy servers, this latency affects all operations on the parent server, not just interactions with the proxied tools.
+
+If low latency is a requirement for your use-case, consider using [`import_server()`](/servers/composition#importing-static-composition) to copy tools at startup rather than proxying them at runtime.
+
+## Quick Start
+
+<VersionBadge version="2.10.3" />
+
+The recommended way to create a proxy is using `ProxyClient`, which provides full MCP feature support with automatic session isolation:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.proxy import ProxyClient
+
+# Create a proxy with full MCP feature support
+proxy = FastMCP.as_proxy(
+    ProxyClient("backend_server.py"),
+    name="MyProxy"
+)
+
+# Run the proxy (e.g., via stdio for Claude Desktop)
+if __name__ == "__main__":
+    proxy.run()
+```
+
+This single setup gives you:
+- Safe concurrent request handling
+- Automatic forwarding of advanced MCP features (sampling, elicitation, etc.)
+- Session isolation to prevent context mixing
+- Full compatibility with all MCP clients
+
+You can also pass a FastMCP [client transport](/clients/transports) (or parameter that can be inferred to a transport) to `as_proxy()`. This will automatically create a `ProxyClient` instance for you.
+
+Finally, you can pass a regular FastMCP `Client` instance to `as_proxy()`. This will work for many use cases, but may break if advanced MCP features like sampling or elicitation are invoked by the server. 
+
+## Session Isolation & Concurrency
+
+<VersionBadge version="2.10.3" />
+
+FastMCP proxies provide session isolation to ensure safe concurrent operations. The session strategy depends on how the proxy is configured:
+
+### Fresh Sessions
+
+When you pass a disconnected client (which is the normal case), each request gets its own isolated backend session:
+
+```python
+from fastmcp.server.proxy import ProxyClient
+
+# Each request creates a fresh backend session (recommended)
+proxy = FastMCP.as_proxy(ProxyClient("backend_server.py"))
+
+# Multiple clients can use this proxy simultaneously without interference:
+# - Client A calls a tool -> gets isolated backend session
+# - Client B calls a tool -> gets different isolated backend session  
+# - No context mixing between requests
+```
+
+### Session Reuse with Connected Clients
+
+When you pass an already-connected client, the proxy will reuse that session for all requests:
+
+```python
+from fastmcp import Client
+
+# Create and connect a client
+async with Client("backend_server.py") as connected_client:
+    # This proxy will reuse the connected session for all requests
+    proxy = FastMCP.as_proxy(connected_client)
+    
+    # ⚠️ Warning: All requests share the same backend session
+    # This may cause context mixing in concurrent scenarios
+```
+
+**Important**: Using shared sessions with concurrent requests from multiple clients may lead to context mixing and race conditions. This approach should only be used in single-threaded scenarios or when you have explicit synchronization.
+
+## Transport Bridging
+
+A common use case is bridging transports - exposing a server running on one transport via a different transport. For example, making a remote SSE server available locally via stdio:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.proxy import ProxyClient
+
+# Bridge remote SSE server to local stdio
+remote_proxy = FastMCP.as_proxy(
+    ProxyClient("http://example.com/mcp/sse"),
+    name="Remote-to-Local Bridge"
+)
+
+# Run locally via stdio for Claude Desktop
+if __name__ == "__main__":
+    remote_proxy.run()  # Defaults to stdio transport
+```
+
+Or expose a local server via HTTP for remote access:
+
+```python
+# Bridge local server to HTTP
+local_proxy = FastMCP.as_proxy(
+    ProxyClient("local_server.py"),
+    name="Local-to-HTTP Bridge"
+)
+
+# Run via HTTP for remote clients
+if __name__ == "__main__":
+    local_proxy.run(transport="http", host="0.0.0.0", port=8080)
+```
+
+
+## Advanced MCP Features
+
+<VersionBadge version="2.10.3" />
+
+`ProxyClient` automatically forwards advanced MCP protocol features between the backend server and clients connected to the proxy, ensuring full MCP compatibility.
+
+### Supported Features
+
+- **Roots**: Forwards filesystem root access requests to the client
+- **Sampling**: Forwards LLM completion requests from backend to client  
+- **Elicitation**: Forwards user input requests to the client
+- **Logging**: Forwards log messages from backend through to client
+- **Progress**: Forwards progress notifications during long operations
+
+```python
+from fastmcp.server.proxy import ProxyClient
+
+# ProxyClient automatically handles all these features
+backend = ProxyClient("advanced_backend.py")
+proxy = FastMCP.as_proxy(backend)
+
+# When the backend server:
+# - Requests LLM sampling -> forwarded to your client
+# - Logs messages -> appear in your client
+# - Reports progress -> shown in your client
+# - Needs user input -> prompts your client
+```
+
+### Customizing Feature Support
+
+You can selectively disable forwarding by passing `None` for specific handlers:
+
+```python
+# Disable sampling but keep other features
+backend = ProxyClient(
+    "backend_server.py",
+    sampling_handler=None,  # Disable LLM sampling forwarding
+    log_handler=None        # Disable log forwarding
+)
+```
+
+When you use a transport string directly with `FastMCP.as_proxy()`, it automatically creates a `ProxyClient` internally to ensure full feature support.
+
+## Configuration-Based Proxies
+
+<VersionBadge version="2.4.0" />
+
+You can create a proxy directly from a configuration dictionary that follows the MCPConfig schema. This is useful for quickly setting up proxies to remote servers without manually configuring each connection detail.
+
+```python
+from fastmcp import FastMCP
+
+# Create a proxy directly from a config dictionary
+config = {
+    "mcpServers": {
+        "default": {  # For single server configs, 'default' is commonly used
+            "url": "https://example.com/mcp",
+            "transport": "http"
+        }
+    }
+}
+
+# Create a proxy to the configured server (auto-creates ProxyClient)
+proxy = FastMCP.as_proxy(config, name="Config-Based Proxy")
+
+# Run the proxy with stdio transport for local access
+if __name__ == "__main__":
+    proxy.run()
+```
+
+<Note>
+The MCPConfig format follows an emerging standard for MCP server configuration and may evolve as the specification matures. While FastMCP aims to maintain compatibility with future versions, be aware that field names or structure might change.
+</Note>
+
+### Multi-Server Configurations
+
+You can create a proxy to multiple servers by specifying multiple entries in the config. They are automatically mounted with their config names as prefixes:
+
+```python
+# Multi-server configuration
+config = {
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather-api.example.com/mcp",
+            "transport": "http"
+        },
+        "calendar": {
+            "url": "https://calendar-api.example.com/mcp",
+            "transport": "http"
+        }
+    }
+}
+
+# Create a unified proxy to multiple servers
+composite_proxy = FastMCP.as_proxy(config, name="Composite Proxy")
+
+# Tools, resources, prompts, and templates are accessible with prefixes:
+# - Tools: weather_get_forecast, calendar_add_event
+# - Prompts: weather_daily_summary, calendar_quick_add
+# - Resources: weather://weather/icons/sunny, calendar://calendar/events/today
+# - Templates: weather://weather/locations/{id}, calendar://calendar/events/{date}
+```
+
+## Component Prefixing
+
+When proxying one or more servers, component names are prefixed the same way as with mounting and importing:
+
+- Tools: `{prefix}_{tool_name}`
+- Prompts: `{prefix}_{prompt_name}`
+- Resources: `protocol://{prefix}/path/to/resource` (default path format)
+- Resource templates: `protocol://{prefix}/...` and template names are also prefixed
+
+These rules apply uniformly whether you:
+- Mount a proxy on another server
+- Create a multi-server proxy from an `MCPConfig`
+- Use `FastMCP.as_proxy()` directly
+
+## Mirrored Components
+
+<VersionBadge version="2.10.5" />
+
+When you access tools, resources, or prompts from a proxy server, they are "mirrored" from the remote server. Mirrored components cannot be modified directly since they reflect the state of the remote server. For example, you can not simply "disable" a mirrored component.
+
+However, you can create a copy of a mirrored component and store it as a new locally-defined component. Local components always take precedence over mirrored ones because the proxy server will check its own registry before it attempts to engage the remote server.
+
+Therefore, to enable or disable a proxy tool, resource, or prompt, you should first create a local copy and add it to your own server. Here's an example of how to do that for a tool:
+
+```python
+# Create your own server
+my_server = FastMCP("MyServer")
+
+# Get a proxy server
+proxy = FastMCP.as_proxy("backend_server.py")
+
+# Get mirrored components from proxy
+mirrored_tool = await proxy.get_tool("useful_tool")
+
+# Create a local copy that you can modify
+local_tool = mirrored_tool.copy()
+
+# Add the local copy to your server
+my_server.add_tool(local_tool)
+
+# Now you can disable YOUR copy
+local_tool.disable()
+```
+
+
+## `FastMCPProxy` Class
+
+Internally, `FastMCP.as_proxy()` uses the `FastMCPProxy` class. You generally don't need to interact with this class directly, but it's available if needed for advanced scenarios.
+
+### Direct Usage
+
+```python
+from fastmcp.server.proxy import FastMCPProxy, ProxyClient
+
+# Provide a client factory for explicit session control
+def create_client():
+    return ProxyClient("backend_server.py")
+
+proxy = FastMCPProxy(client_factory=create_client)
+```
+
+### Parameters
+
+- **`client_factory`**: A callable that returns a `Client` instance when called. This gives you full control over session creation and reuse strategies.
+
+### Explicit Session Management
+
+`FastMCPProxy` requires explicit session management - no automatic detection is performed. You must choose your session strategy:
+
+```python
+# Share session across all requests (be careful with concurrency)
+shared_client = ProxyClient("backend_server.py")
+def shared_session_factory():
+    return shared_client
+
+proxy = FastMCPProxy(client_factory=shared_session_factory)
+
+# Create fresh sessions per request (recommended)
+def fresh_session_factory():
+    return ProxyClient("backend_server.py")
+
+proxy = FastMCPProxy(client_factory=fresh_session_factory)
+```
+
+For automatic session strategy selection, use the convenience method `FastMCP.as_proxy()` instead.
+
+```python
+# Custom factory with specific configuration
+def custom_client_factory():
+    client = ProxyClient("backend_server.py")
+    # Add any custom configuration here
+    return client
+
+proxy = FastMCPProxy(client_factory=custom_client_factory)
+```

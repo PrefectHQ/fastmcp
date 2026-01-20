@@ -1,0 +1,132 @@
+---
+title: OAuth Authentication
+sidebarTitle: OAuth
+description: Authenticate your FastMCP client via OAuth 2.1.
+icon: window
+tag: NEW
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.6.0" />
+
+<Tip>
+OAuth authentication is only relevant for HTTP-based transports and requires user interaction via a web browser.
+</Tip>
+
+When your FastMCP client needs to access an MCP server protected by OAuth 2.1, and the process requires user interaction (like logging in and granting consent), you should use the Authorization Code Flow. FastMCP provides the `fastmcp.client.auth.OAuth` helper to simplify this entire process.
+
+This flow is common for user-facing applications where the application acts on behalf of the user.
+
+## Client Usage
+
+
+### Default Configuration
+
+The simplest way to use OAuth is to pass the string `"oauth"` to the `auth` parameter of the `Client` or transport instance. FastMCP will automatically configure the client to use OAuth with default settings:
+
+```python {4}
+from fastmcp import Client
+
+# Uses default OAuth settings
+async with Client("https://fastmcp.cloud/mcp", auth="oauth") as client:
+    await client.ping()
+```
+
+
+### `OAuth` Helper
+
+To fully configure the OAuth flow, use the `OAuth` helper and pass it to the `auth` parameter of the `Client` or transport instance. `OAuth` manages the complexities of the OAuth 2.1 Authorization Code Grant with PKCE (Proof Key for Code Exchange) for enhanced security, and implements the full `httpx.Auth` interface.
+
+```python {2, 4, 6}
+from fastmcp import Client
+from fastmcp.client.auth import OAuth
+
+oauth = OAuth(mcp_url="https://fastmcp.cloud/mcp")
+
+async with Client("https://fastmcp.cloud/mcp", auth=oauth) as client:
+    await client.ping()
+```
+
+#### `OAuth` Parameters
+
+- **`mcp_url`** (`str`): The full URL of the target MCP server endpoint. Used to discover OAuth server metadata
+- **`scopes`** (`str | list[str]`, optional): OAuth scopes to request. Can be space-separated string or list of strings
+- **`client_name`** (`str`, optional): Client name for dynamic registration. Defaults to `"FastMCP Client"`
+- **`token_storage`** (`AsyncKeyValue`, optional): Storage backend for persisting OAuth tokens. Defaults to in-memory storage (tokens lost on restart). See [Token Storage](#token-storage) for encrypted storage options
+- **`additional_client_metadata`** (`dict[str, Any]`, optional): Extra metadata for client registration
+- **`callback_port`** (`int`, optional): Fixed port for OAuth callback server. If not specified, uses a random available port
+
+
+## OAuth Flow
+
+The OAuth flow is triggered when you use a FastMCP `Client` configured to use OAuth.
+
+<Steps>
+<Step title="Token Check">
+The client first checks the configured `token_storage` backend for existing, valid tokens for the target server. If one is found, it will be used to authenticate the client.
+</Step>
+<Step title="OAuth Server Discovery">
+If no valid tokens exist, the client attempts to discover the OAuth server's endpoints using a well-known URI (e.g., `/.well-known/oauth-authorization-server`) based on the `mcp_url`.
+</Step>
+<Step title="Dynamic Client Registration">
+If the OAuth server supports it and the client isn't already registered (or credentials aren't cached), the client performs dynamic client registration according to RFC 7591.
+</Step>
+<Step title="Local Callback Server">
+A temporary local HTTP server is started on an available port (or the port specified via `callback_port`). This server's address (e.g., `http://127.0.0.1:<port>/callback`) acts as the `redirect_uri` for the OAuth flow.
+</Step>
+<Step title="Browser Interaction">
+The user's default web browser is automatically opened, directing them to the OAuth server's authorization endpoint. The user logs in and grants (or denies) the requested `scopes`.
+</Step>
+<Step title="Authorization Code & Token Exchange">
+Upon approval, the OAuth server redirects the user's browser to the local callback server with an `authorization_code`. The client captures this code and exchanges it with the OAuth server's token endpoint for an `access_token` (and often a `refresh_token`) using PKCE for security.
+</Step>
+<Step title="Token Caching">
+The obtained tokens are saved to the configured `token_storage` backend for future use, eliminating the need for repeated browser interactions.
+</Step>
+<Step title="Authenticated Requests">
+The access token is automatically included in the `Authorization` header for requests to the MCP server.
+</Step>
+<Step title="Refresh Token">
+If the access token expires, the client will automatically use the refresh token to get a new access token.
+</Step>
+</Steps>
+
+## Token Storage
+
+<VersionBadge version="2.13.0" />
+
+By default, tokens are stored in memory and lost when your application restarts. For persistent storage, pass an `AsyncKeyValue`-compatible storage backend to the `token_storage` parameter.
+
+<Warning>
+**Security Consideration**: Use encrypted storage for production. MCP clients can accumulate OAuth credentials for many servers over time, and a compromised token store could expose access to multiple services.
+</Warning>
+
+```python
+from fastmcp import Client
+from fastmcp.client.auth import OAuth
+from key_value.aio.stores.disk import DiskStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from cryptography.fernet import Fernet
+import os
+
+# Create encrypted disk storage
+encrypted_storage = FernetEncryptionWrapper(
+    key_value=DiskStore(directory="~/.fastmcp/oauth-tokens"),
+    fernet=Fernet(os.environ["OAUTH_STORAGE_ENCRYPTION_KEY"])
+)
+
+oauth = OAuth(
+    mcp_url="https://fastmcp.cloud/mcp",
+    token_storage=encrypted_storage
+)
+
+async with Client("https://fastmcp.cloud/mcp", auth=oauth) as client:
+    await client.ping()
+```
+
+You can use any `AsyncKeyValue`-compatible backend from the [key-value library](https://github.com/strawgate/py-key-value) including Redis, DynamoDB, and more. Wrap your storage in `FernetEncryptionWrapper` for encryption.
+
+<Note>
+When selecting a storage backend, review the [py-key-value documentation](https://github.com/strawgate/py-key-value) to understand the maturity level and limitations of your chosen backend. Some backends may be in preview or have constraints that affect production suitability.
+</Note>

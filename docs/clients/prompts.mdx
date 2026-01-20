@@ -1,7 +1,7 @@
 ---
-title: Prompts
+title: Getting Prompts
 sidebarTitle: Prompts
-description: Use server-side prompt templates with automatic argument serialization.
+description: Retrieve rendered message templates with automatic argument serialization.
 icon: message-lines
 ---
 
@@ -9,112 +9,44 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="2.0.0" />
 
+Use this when you need to retrieve server-defined message templates for LLM interactions.
+
 Prompts are reusable message templates exposed by MCP servers. They can accept arguments to generate personalized message sequences for LLM interactions.
 
-## Listing Prompts
+## Basic Usage
 
-Use `list_prompts()` to retrieve all available prompt templates. When the server paginates results, the client automatically fetches all pages and returns the complete list.
-
-```python
-async with client:
-    prompts = await client.list_prompts()
-    # prompts -> list[mcp.types.Prompt]
-
-    for prompt in prompts:
-        print(f"Prompt: {prompt.name}")
-        print(f"Description: {prompt.description}")
-        if prompt.arguments:
-            print(f"Arguments: {[arg.name for arg in prompt.arguments]}")
-        # Access tags and other metadata
-        if prompt.meta:
-            fastmcp_meta = prompt.meta.get('fastmcp', {})
-            print(f"Tags: {fastmcp_meta.get('tags', [])}")
-```
-
-For manual pagination control, use `list_prompts_mcp()` with the `cursor` parameter. See [Pagination](/servers/pagination#manual-pagination) for details.
-
-### Filtering by Tags
-
-<VersionBadge version="2.11.0" />
-
-You can use the `meta` field to filter prompts based on their tags:
-
-```python
-async with client:
-    prompts = await client.list_prompts()
-    
-    # Filter prompts by tag
-    analysis_prompts = [
-        prompt for prompt in prompts 
-        if prompt.meta and
-           prompt.meta.get('fastmcp', {}) and
-           'analysis' in prompt.meta.get('fastmcp', {}).get('tags', [])
-    ]
-    
-    print(f"Found {len(analysis_prompts)} analysis prompts")
-```
-
-<Note>
-The `meta` field is part of the standard MCP specification. FastMCP servers always include tags and other metadata within a `fastmcp` namespace (e.g., `meta.fastmcp.tags`) to avoid conflicts with user-defined metadata. Component versions are also included in the metadata when available (e.g., `meta.fastmcp.version`). Other MCP server implementations may not provide this metadata structure.
-</Note>
-
-## Using Prompts
-
-### Basic Usage
-
-Request a rendered prompt using `get_prompt()` with the prompt name and arguments:
+Request a rendered prompt with `get_prompt()`:
 
 ```python
 async with client:
     # Simple prompt without arguments
     result = await client.get_prompt("welcome_message")
     # result -> mcp.types.GetPromptResult
-    
+
     # Access the generated messages
     for message in result.messages:
         print(f"Role: {message.role}")
         print(f"Content: {message.content}")
 ```
 
-### Prompts with Arguments
-
-Pass arguments as a dictionary to customize the prompt:
+Pass arguments to customize the prompt:
 
 ```python
 async with client:
-    # Prompt with simple arguments
     result = await client.get_prompt("user_greeting", {
         "name": "Alice",
         "role": "administrator"
     })
 
-    # Access the personalized messages
     for message in result.messages:
         print(f"Generated message: {message.content}")
 ```
 
-### Requesting Specific Versions
-
-<VersionBadge version="3.0.0" />
-
-When a server has multiple versions of a prompt, you can request a specific version instead of the default (highest) version.
-
-```python
-async with client:
-    # Get the highest version (default)
-    result = await client.get_prompt("summarize", {"text": "..."})
-
-    # Get a specific version
-    result_v1 = await client.get_prompt("summarize", {"text": "..."}, version="1.0")
-```
-
-To discover available versions, check the `meta.fastmcp.versions` field when listing prompts. See [Version Selection](#version-selection) below for more details.
-
-## Automatic Argument Serialization
+## Argument Serialization
 
 <VersionBadge version="2.9.0" />
 
-FastMCP automatically serializes complex arguments to JSON strings as required by the MCP specification. This allows you to pass typed objects directly:
+FastMCP automatically serializes complex arguments to JSON strings as required by the MCP specification. You can pass typed objects directly:
 
 ```python
 from dataclasses import dataclass
@@ -125,82 +57,31 @@ class UserData:
     age: int
 
 async with client:
-    # Complex arguments are automatically serialized
     result = await client.get_prompt("analyze_user", {
-        "user": UserData(name="Alice", age=30),     # Automatically serialized to JSON
-        "preferences": {"theme": "dark"},           # Dict serialized to JSON string
-        "scores": [85, 92, 78],                     # List serialized to JSON string
-        "simple_name": "Bob"                        # Strings passed through unchanged
+        "user": UserData(name="Alice", age=30),     # Automatically serialized
+        "preferences": {"theme": "dark"},           # Dict serialized
+        "scores": [85, 92, 78],                     # List serialized
+        "simple_name": "Bob"                        # Strings unchanged
     })
 ```
 
-The client handles serialization using `pydantic_core.to_json()` for consistent formatting. FastMCP servers can automatically deserialize these JSON strings back to the expected types.
+The client handles serialization using `pydantic_core.to_json()` for consistent formatting. FastMCP servers automatically deserialize these JSON strings back to the expected types.
 
-### Serialization Examples
+## Working with Results
 
-```python
-async with client:
-    result = await client.get_prompt("data_analysis", {
-        # These will be automatically serialized to JSON strings:
-        "config": {
-            "format": "csv",
-            "include_headers": True,
-            "delimiter": ","
-        },
-        "filters": [
-            {"field": "age", "operator": ">", "value": 18},
-            {"field": "status", "operator": "==", "value": "active"}
-        ],
-        # This remains a string:
-        "report_title": "Monthly Analytics Report"
-    })
-```
-
-## Working with Prompt Results
-
-The `get_prompt()` method returns a `GetPromptResult` object containing a list of messages:
+The `get_prompt()` method returns a `GetPromptResult` containing a list of messages:
 
 ```python
 async with client:
     result = await client.get_prompt("conversation_starter", {"topic": "climate"})
-    
-    # Access individual messages
+
     for i, message in enumerate(result.messages):
         print(f"Message {i + 1}:")
         print(f"  Role: {message.role}")
         print(f"  Content: {message.content.text if hasattr(message.content, 'text') else message.content}")
 ```
 
-## Raw MCP Protocol Access
-
-For access to the complete MCP protocol objects, use the `*_mcp` methods:
-
-```python
-async with client:
-    # Raw MCP method returns full protocol object
-    prompts_result = await client.list_prompts_mcp()
-    # prompts_result -> mcp.types.ListPromptsResult
-    
-    prompt_result = await client.get_prompt_mcp("example_prompt", {"arg": "value"})
-    # prompt_result -> mcp.types.GetPromptResult
-```
-
-## Multi-Server Clients
-
-When using multi-server clients, prompts are accessible without prefixing (unlike tools):
-
-```python
-async with client:  # Multi-server client
-    # Prompts from any server are directly accessible
-    result1 = await client.get_prompt("weather_prompt", {"city": "London"})
-    result2 = await client.get_prompt("assistant_prompt", {"query": "help"})
-```
-
-## Common Prompt Patterns
-
-### System Messages
-
-Many prompts generate system messages for LLM configuration:
+Prompts can generate different message types. System messages configure LLM behavior:
 
 ```python
 async with client:
@@ -208,15 +89,13 @@ async with client:
         "role": "helpful assistant",
         "expertise": "python programming"
     })
-    
+
     # Typically returns messages with role="system"
     system_message = result.messages[0]
     print(f"System prompt: {system_message.content}")
 ```
 
-### Conversation Templates
-
-Prompts can generate multi-turn conversation templates:
+Conversation templates generate multi-turn flows:
 
 ```python
 async with client:
@@ -224,56 +103,45 @@ async with client:
         "candidate_name": "Alice",
         "position": "Senior Developer"
     })
-    
+
     # Multiple messages for a conversation flow
     for message in result.messages:
         print(f"{message.role}: {message.content}")
 ```
 
-<Tip>
-Prompt arguments and their expected types depend on the specific prompt implementation. Check the server's documentation or use `list_prompts()` to see available arguments for each prompt.
-</Tip>
-
 ## Version Selection
 
 <VersionBadge version="3.0.0" />
 
-FastMCP servers can expose multiple versions of the same prompt. By default, clients receive and request the highest version, but you can request a specific version when needed.
-
-### Discovering Versions
-
-When a server registers multiple versions of a prompt, the `list_prompts()` response includes version information in the metadata. The `meta.fastmcp.version` field shows which version is being returned, while `meta.fastmcp.versions` lists all available versions sorted from highest to lowest.
-
-```python
-async with client:
-    prompts = await client.list_prompts()
-
-    for prompt in prompts:
-        if prompt.meta:
-            fastmcp_meta = prompt.meta.get("fastmcp", {})
-            version = fastmcp_meta.get("version")
-            all_versions = fastmcp_meta.get("versions")
-            if all_versions:
-                print(f"{prompt.name}: v{version} (available: {all_versions})")
-```
-
-Unversioned prompts omit these metadata fields entirely.
-
-### Getting Specific Versions
-
-Pass the `version` parameter to `get_prompt()` to render a specific version instead of the highest.
+When a server exposes multiple versions of a prompt, you can request a specific version:
 
 ```python
 async with client:
     # Get the highest version (default)
     result = await client.get_prompt("summarize", {"text": "..."})
 
-    # Get version 1.0 specifically
+    # Get a specific version
     result_v1 = await client.get_prompt("summarize", {"text": "..."}, version="1.0")
 ```
 
-If the requested version doesn't exist, the server raises a `NotFoundError`. This ensures you get exactly what you asked for rather than silently falling back to a different version.
+See [Metadata](/servers/versioning#version-discovery) for how to discover available versions.
 
-<Note>
-Version selection is a FastMCP extension to the MCP protocol. See [Versioning](/servers/versioning#requesting-specific-versions) for details on how this works at the protocol level for non-FastMCP clients.
-</Note>
+## Multi-Server Clients
+
+When using multi-server clients, prompts are accessible directly without prefixing:
+
+```python
+async with client:  # Multi-server client
+    result1 = await client.get_prompt("weather_prompt", {"city": "London"})
+    result2 = await client.get_prompt("assistant_prompt", {"query": "help"})
+```
+
+## Raw Protocol Access
+
+For complete control, use `get_prompt_mcp()` which returns the full MCP protocol object:
+
+```python
+async with client:
+    result = await client.get_prompt_mcp("example_prompt", {"arg": "value"})
+    # result -> mcp.types.GetPromptResult
+```

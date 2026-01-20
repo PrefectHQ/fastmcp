@@ -1,0 +1,736 @@
+---
+title: HTTP Deployment
+sidebarTitle: HTTP Deployment
+description: Deploy your FastMCP server over HTTP for remote access
+icon: server
+tag: NEW
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx";
+
+<Tip>
+STDIO transport is perfect for local development and desktop applications. But to unlock the full potential of MCP—centralized services, multi-client access, and network availability—you need remote HTTP deployment.
+</Tip>
+
+This guide walks you through deploying your FastMCP server as a remote MCP service that's accessible via a URL. Once deployed, your MCP server will be available over the network, allowing multiple clients to connect simultaneously and enabling integration with cloud-based LLM applications. This guide focuses specifically on remote MCP deployment, not local STDIO servers.
+
+## Choosing Your Approach
+
+FastMCP provides two ways to deploy your server as an HTTP service. Understanding the trade-offs helps you choose the right approach for your needs.
+
+The **direct HTTP server** approach is simpler and perfect for getting started quickly. You modify your server's `run()` method to use HTTP transport, and FastMCP handles all the web server configuration. This approach works well for standalone deployments where you want your MCP server to be the only service running on a port.
+
+The **ASGI application** approach gives you more control and flexibility. Instead of running the server directly, you create an ASGI application that can be served by Uvicorn. This approach is better when you need advanced server features like multiple workers, custom middleware, or when you're integrating with existing web applications.
+
+### Direct HTTP Server
+
+The simplest way to get your MCP server online is to use the built-in `run()` method with HTTP transport. This approach handles all the server configuration for you and is ideal when you want a standalone MCP server without additional complexity.
+
+```python server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server")
+
+@mcp.tool
+def process_data(input: str) -> str:
+    """Process data on the server"""
+    return f"Processed: {input}"
+
+if __name__ == "__main__":
+    mcp.run(transport="http", host="0.0.0.0", port=8000)
+```
+
+Run your server with a simple Python command:
+```bash
+python server.py
+```
+
+Your server is now accessible at `http://localhost:8000/mcp` (or use your server's actual IP address for remote access).
+
+This approach is ideal when you want to get online quickly with minimal configuration. It's perfect for internal tools, development environments, or simple deployments where you don't need advanced server features. The built-in server handles all the HTTP details, letting you focus on your MCP implementation.
+
+### ASGI Application
+
+For production deployments, you'll often want more control over how your server runs. FastMCP can create a standard ASGI application that works with any ASGI server like Uvicorn, Gunicorn, or Hypercorn. This approach is particularly useful when you need to configure advanced server options, run multiple workers, or integrate with existing infrastructure.
+
+```python app.py
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server")
+
+@mcp.tool
+def process_data(input: str) -> str:
+    """Process data on the server"""
+    return f"Processed: {input}"
+
+# Create ASGI application
+app = mcp.http_app()
+```
+
+Run with any ASGI server - here's an example with Uvicorn:
+```bash
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+Your server is accessible at the same URL: `http://localhost:8000/mcp` (or use your server's actual IP address for remote access).
+
+The ASGI approach shines in production environments where you need reliability and performance. You can run multiple worker processes to handle concurrent requests, add custom middleware for logging or monitoring, integrate with existing deployment pipelines, or mount your MCP server as part of a larger application.
+
+## Configuring Your Server
+
+### Custom Path
+
+By default, your MCP server is accessible at `/mcp/` on your domain. You can customize this path to fit your URL structure or avoid conflicts with existing endpoints. This is particularly useful when integrating MCP into an existing application or following specific API conventions.
+
+```python
+# Option 1: With mcp.run()
+mcp.run(transport="http", host="0.0.0.0", port=8000, path="/api/mcp/")
+
+# Option 2: With ASGI app
+app = mcp.http_app(path="/api/mcp/")
+```
+
+Now your server is accessible at `http://localhost:8000/api/mcp/`.
+
+### Authentication
+
+<Warning>
+Authentication is **highly recommended** for remote MCP servers. Some LLM clients require authentication for remote servers and will refuse to connect without it.
+</Warning>
+
+FastMCP supports multiple authentication methods to secure your remote server. See the [Authentication Overview](/servers/auth/authentication) for complete configuration options including Bearer tokens, JWT, and OAuth.
+
+If you're mounting an authenticated server under a path prefix, see [Mounting Authenticated Servers](#mounting-authenticated-servers) below for important routing considerations.
+
+### Health Checks
+
+Health check endpoints are essential for monitoring your deployed server and ensuring it's responding correctly. FastMCP allows you to add custom routes alongside your MCP endpoints, making it easy to implement health checks that work with both deployment approaches.
+
+```python
+from starlette.responses import JSONResponse
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request):
+    return JSONResponse({"status": "healthy", "service": "mcp-server"})
+```
+
+This health endpoint will be available at `http://localhost:8000/health` and can be used by load balancers, monitoring systems, or deployment platforms to verify your server is running.
+
+### Custom Middleware
+
+
+<VersionBadge version="2.3.2" />
+
+Add custom Starlette middleware to your FastMCP ASGI apps:
+
+```python
+from fastmcp import FastMCP
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+
+# Create your FastMCP server
+mcp = FastMCP("MyServer")
+
+# Define middleware
+middleware = [
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+]
+
+# Create ASGI app with middleware
+http_app = mcp.http_app(middleware=middleware)
+```
+
+### CORS for Browser-Based Clients
+
+<Tip>
+Most MCP clients, including those that you access through a browser like ChatGPT or Claude, don't need CORS configuration. Only enable CORS if you're working with an MCP client that connects directly from a browser, such as debugging tools or inspectors.
+</Tip>
+
+CORS (Cross-Origin Resource Sharing) is needed when JavaScript running in a web browser connects directly to your MCP server. This is different from using an LLM through a browser—in that case, the browser connects to the LLM service, and the LLM service connects to your MCP server (no CORS needed).
+
+Browser-based MCP clients that need CORS include:
+
+- **MCP Inspector** - Browser-based debugging tool for testing MCP servers
+- **Custom browser-based MCP clients** - If you're building a web app that directly connects to MCP servers
+
+For these scenarios, add CORS middleware with the specific headers required for MCP protocol:
+
+```python
+from fastmcp import FastMCP
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+
+mcp = FastMCP("MyServer")
+
+# Configure CORS for browser-based clients
+middleware = [
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Allow all origins; use specific origins for security
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "mcp-protocol-version",
+            "mcp-session-id",
+            "Authorization",
+            "Content-Type",
+        ],
+        expose_headers=["mcp-session-id"],
+    )
+]
+
+app = mcp.http_app(middleware=middleware)
+```
+
+**Key configuration details:**
+
+- **`allow_origins`**: Specify exact origins (e.g., `["http://localhost:3000"]`) rather than `["*"]` for production deployments
+- **`allow_headers`**: Must include `mcp-protocol-version`, `mcp-session-id`, and `Authorization` (for authenticated servers)
+- **`expose_headers`**: Must include `mcp-session-id` so JavaScript can read the session ID from responses and send it in subsequent requests
+
+Without `expose_headers=["mcp-session-id"]`, browsers will receive the session ID but JavaScript won't be able to access it, causing session management to fail.
+
+<Warning>
+**Production Security**: Never use `allow_origins=["*"]` in production. Specify the exact origins of your browser-based clients. Using wildcards exposes your server to unauthorized access from any website.
+</Warning>
+
+### SSE Polling for Long-Running Operations
+
+<VersionBadge version="2.14.0" />
+
+<Note>
+This feature only applies to the **StreamableHTTP transport** (the default for `http_app()`). It does not apply to the legacy SSE transport (`transport="sse"`).
+</Note>
+
+When running tools that take a long time to complete, you may encounter issues with load balancers or proxies terminating connections that stay idle too long. [SEP-1699](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699) introduces SSE polling to solve this by allowing the server to gracefully close connections and have clients automatically reconnect.
+
+To enable SSE polling, configure an `EventStore` when creating your HTTP application:
+
+```python
+from fastmcp import FastMCP, Context
+from fastmcp.server.event_store import EventStore
+
+mcp = FastMCP("My Server")
+
+@mcp.tool
+async def long_running_task(ctx: Context) -> str:
+    """A task that takes several minutes to complete."""
+    for i in range(100):
+        await ctx.report_progress(i, 100)
+
+        # Periodically close the connection to avoid load balancer timeouts
+        # Client will automatically reconnect and resume receiving progress
+        if i % 30 == 0 and i > 0:
+            await ctx.close_sse_stream()
+
+        await do_expensive_work()
+
+    return "Done!"
+
+# Configure with EventStore for resumability
+event_store = EventStore()
+app = mcp.http_app(
+    event_store=event_store,
+    retry_interval=2000,  # Client reconnects after 2 seconds
+)
+```
+
+**How it works:**
+
+1. When `event_store` is configured, the server stores all events (progress updates, results) with unique IDs
+2. Calling `ctx.close_sse_stream()` gracefully closes the HTTP connection
+3. The client automatically reconnects with a `Last-Event-ID` header
+4. The server replays any events the client missed during the disconnection
+
+The `retry_interval` parameter (in milliseconds) controls how long clients wait before reconnecting. Choose a value that balances responsiveness with server load.
+
+<Note>
+`close_sse_stream()` is a no-op if called without an `EventStore` configured, so you can safely include it in tools that may run in different deployment configurations.
+</Note>
+
+#### Custom Storage Backends
+
+By default, `EventStore` uses in-memory storage. For production deployments with multiple server instances, you can provide a custom storage backend using the `key_value` package:
+
+```python
+from fastmcp.server.event_store import EventStore
+from key_value.aio.stores.redis import RedisStore
+
+# Use Redis for distributed deployments
+redis_store = RedisStore(url="redis://localhost:6379")
+event_store = EventStore(
+    storage=redis_store,
+    max_events_per_stream=100,  # Keep last 100 events per stream
+    ttl=3600,  # Events expire after 1 hour
+)
+
+app = mcp.http_app(event_store=event_store)
+```
+
+## Integration with Web Frameworks
+
+If you already have a web application running, you can add MCP capabilities by mounting a FastMCP server as a sub-application. This allows you to expose MCP tools alongside your existing API endpoints, sharing the same domain and infrastructure. The MCP server becomes just another route in your application, making it easy to manage and deploy.
+
+### Mounting in Starlette
+
+Mount your FastMCP server in a Starlette application:
+
+```python
+from fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.routing import Mount
+
+# Create your FastMCP server
+mcp = FastMCP("MyServer")
+
+@mcp.tool
+def analyze(data: str) -> dict:
+    return {"result": f"Analyzed: {data}"}
+
+# Create the ASGI app
+mcp_app = mcp.http_app(path='/mcp')
+
+# Create a Starlette app and mount the MCP server
+app = Starlette(
+    routes=[
+        Mount("/mcp-server", app=mcp_app),
+        # Add other routes as needed
+    ],
+    lifespan=mcp_app.lifespan,
+)
+```
+
+The MCP endpoint will be available at `/mcp-server/mcp/` of the resulting Starlette app.
+
+<Warning>
+For Streamable HTTP transport, you **must** pass the lifespan context from the FastMCP app to the resulting Starlette app, as nested lifespans are not recognized. Otherwise, the FastMCP server's session manager will not be properly initialized.
+</Warning>
+
+#### Nested Mounts
+
+You can create complex routing structures by nesting mounts:
+
+```python
+from fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.routing import Mount
+
+# Create your FastMCP server
+mcp = FastMCP("MyServer")
+
+# Create the ASGI app
+mcp_app = mcp.http_app(path='/mcp')
+
+# Create nested application structure
+inner_app = Starlette(routes=[Mount("/inner", app=mcp_app)])
+app = Starlette(
+    routes=[Mount("/outer", app=inner_app)],
+    lifespan=mcp_app.lifespan,
+)
+```
+
+In this setup, the MCP server is accessible at the `/outer/inner/mcp/` path.
+
+### FastAPI Integration
+
+For FastAPI-specific integration patterns including both mounting MCP servers into FastAPI apps and generating MCP servers from FastAPI apps, see the [FastAPI Integration guide](/integrations/fastapi).
+
+Here's a quick example showing how to add MCP to an existing FastAPI application:
+
+```python
+from fastapi import FastAPI
+from fastmcp import FastMCP
+
+# Your existing API
+api = FastAPI()
+
+@api.get("/api/status")
+def status():
+    return {"status": "ok"}
+
+# Create your MCP server
+mcp = FastMCP("API Tools")
+
+@mcp.tool
+def query_database(query: str) -> dict:
+    """Run a database query"""
+    return {"result": "data"}
+
+# Mount MCP at /mcp
+api.mount("/mcp", mcp.http_app())
+
+# Run with: uvicorn app:api --host 0.0.0.0 --port 8000
+```
+
+Your existing API remains at `http://localhost:8000/api` while MCP is available at `http://localhost:8000/mcp`.
+
+## Mounting Authenticated Servers
+
+<VersionBadge version="2.13.0" />
+
+<Tip>
+This section only applies if you're **mounting an OAuth-protected FastMCP server under a path prefix** (like `/api`) inside another application using `Mount()`.
+
+If you're deploying your FastMCP server at root level without any `Mount()` prefix, the well-known routes are automatically included in `mcp.http_app()` and you don't need to do anything special.
+</Tip>
+
+OAuth specifications (RFC 8414 and RFC 9728) require discovery metadata to be accessible at well-known paths under the root level of your domain. When you mount an OAuth-protected FastMCP server under a path prefix like `/api`, this creates a routing challenge: your operational OAuth endpoints move under the prefix, but discovery endpoints must remain at the root.
+
+<Warning>
+**Common Mistakes to Avoid:**
+
+1. **Forgetting to mount `.well-known` routes at root** - FastMCP cannot do this automatically when your server is mounted under a path prefix. You must explicitly mount well-known routes at the root level.
+
+2. **Including mount prefix in both base_url AND mcp_path** - The mount prefix (like `/api`) should only be in `base_url`, not in `mcp_path`. Otherwise you'll get double paths.
+
+   ✅ **Correct:**
+   ```python
+   base_url = "http://localhost:8000/api"
+   mcp_path = "/mcp"
+   # Result: /api/mcp
+   ```
+
+   ❌ **Wrong:**
+   ```python
+   base_url = "http://localhost:8000/api"
+   mcp_path = "/api/mcp"
+   # Result: /api/api/mcp (double prefix!)
+   ```
+
+Follow the configuration instructions below to set up mounting correctly.
+</Warning>
+
+<Warning>
+**CORS Middleware Conflicts:**
+
+If you're integrating FastMCP into an existing application with its own CORS middleware, be aware that layering CORS middleware can cause conflicts (such as 404 errors on `.well-known` routes or OPTIONS requests).
+
+FastMCP and the MCP SDK already handle CORS for OAuth routes. If you need CORS on your own application routes, consider using the sub-app pattern: mount FastMCP and your routes as separate apps, each with their own middleware, rather than adding application-wide CORS middleware.
+</Warning>
+
+### Route Types
+
+OAuth-protected MCP servers expose two categories of routes:
+
+**Operational routes** handle the OAuth flow and MCP protocol:
+- `/authorize` - OAuth authorization endpoint
+- `/token` - Token exchange endpoint
+- `/auth/callback` - OAuth callback handler
+- `/mcp` - MCP protocol endpoint
+
+**Discovery routes** provide metadata for OAuth clients:
+- `/.well-known/oauth-authorization-server` - Authorization server metadata
+- `/.well-known/oauth-protected-resource/*` - Protected resource metadata
+
+When you mount your MCP app under a prefix, operational routes move with it, but discovery routes must stay at root level for RFC compliance.
+
+### Configuration Parameters
+
+Three parameters control where routes are located and how they combine:
+
+**`base_url`** tells clients where to find operational endpoints. This includes any Starlette `Mount()` path prefix (e.g., `/api`):
+
+```python
+base_url="http://localhost:8000/api"  # Includes mount prefix
+```
+
+**`mcp_path`** is the internal FastMCP endpoint path, which gets appended to `base_url`:
+
+```python
+mcp_path="/mcp"  # Internal MCP path, NOT the mount prefix
+```
+
+**`issuer_url`** (optional) controls the authorization server identity for OAuth discovery. Defaults to `base_url`.
+
+```python
+# Usually not needed - just set base_url and it works
+issuer_url="http://localhost:8000"  # Only if you want root-level discovery
+```
+
+When `issuer_url` has a path (either explicitly or by defaulting from `base_url`), FastMCP creates path-aware discovery routes per RFC 8414. For example, if `base_url` is `http://localhost:8000/api`, the authorization server metadata will be at `/.well-known/oauth-authorization-server/api`.
+
+**Key Invariant:** `base_url + mcp_path = actual externally-accessible MCP URL`
+
+Example:
+- `base_url`: `http://localhost:8000/api` (mount prefix `/api`)
+- `mcp_path`: `/mcp` (internal path)
+- Result: `http://localhost:8000/api/mcp` (final MCP endpoint)
+
+Note that the mount prefix (`/api` from `Mount("/api", ...)`) goes in `base_url`, while `mcp_path` is just the internal MCP route. Don't include the mount prefix in both places or you'll get `/api/api/mcp`.
+
+### Mounting Strategy
+
+When mounting an OAuth-protected server under a path prefix, declare your URLs upfront to make the relationships clear:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.github import GitHubProvider
+from starlette.applications import Starlette
+from starlette.routing import Mount
+
+# Define the routing structure
+ROOT_URL = "http://localhost:8000"
+MOUNT_PREFIX = "/api"
+MCP_PATH = "/mcp"
+```
+
+Create the auth provider with `base_url`:
+
+```python
+auth = GitHubProvider(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    base_url=f"{ROOT_URL}{MOUNT_PREFIX}",  # Operational endpoints under prefix
+    # issuer_url defaults to base_url - path-aware discovery works automatically
+)
+```
+
+Create the MCP app, which generates operational routes at the specified path:
+
+```python
+mcp = FastMCP("Protected Server", auth=auth)
+mcp_app = mcp.http_app(path=MCP_PATH)
+```
+
+Retrieve the discovery routes from the auth provider. The `mcp_path` argument should match the path used when creating the MCP app:
+
+```python
+well_known_routes = auth.get_well_known_routes(mcp_path=MCP_PATH)
+```
+
+Finally, mount everything in the Starlette app with discovery routes at root and the MCP app under the prefix:
+
+```python
+app = Starlette(
+    routes=[
+        *well_known_routes,  # Discovery routes at root level
+        Mount(MOUNT_PREFIX, app=mcp_app),  # Operational routes under prefix
+    ],
+    lifespan=mcp_app.lifespan,
+)
+```
+
+This configuration produces the following URL structure:
+
+- MCP endpoint: `http://localhost:8000/api/mcp`
+- OAuth authorization: `http://localhost:8000/api/authorize`
+- OAuth callback: `http://localhost:8000/api/auth/callback`
+- Authorization server metadata: `http://localhost:8000/.well-known/oauth-authorization-server/api`
+- Protected resource metadata: `http://localhost:8000/.well-known/oauth-protected-resource/api/mcp`
+
+Both discovery endpoints use path-aware URLs per RFC 8414 and RFC 9728, matching the `base_url` path.
+
+### Complete Example
+
+Here's a complete working example showing all the pieces together:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.github import GitHubProvider
+from starlette.applications import Starlette
+from starlette.routing import Mount
+import uvicorn
+
+# Define routing structure
+ROOT_URL = "http://localhost:8000"
+MOUNT_PREFIX = "/api"
+MCP_PATH = "/mcp"
+
+# Create OAuth provider
+auth = GitHubProvider(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    base_url=f"{ROOT_URL}{MOUNT_PREFIX}",
+    # issuer_url defaults to base_url - path-aware discovery works automatically
+)
+
+# Create MCP server
+mcp = FastMCP("Protected Server", auth=auth)
+
+@mcp.tool
+def analyze(data: str) -> dict:
+    return {"result": f"Analyzed: {data}"}
+
+# Create MCP app
+mcp_app = mcp.http_app(path=MCP_PATH)
+
+# Get discovery routes for root level
+well_known_routes = auth.get_well_known_routes(mcp_path=MCP_PATH)
+
+# Assemble the application
+app = Starlette(
+    routes=[
+        *well_known_routes,
+        Mount(MOUNT_PREFIX, app=mcp_app),
+    ],
+    lifespan=mcp_app.lifespan,
+)
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+```
+
+For more details on OAuth authentication, see the [Authentication guide](/servers/auth).
+
+## Production Deployment
+
+### Running with Uvicorn
+
+When deploying to production, you'll want to optimize your server for performance and reliability. Uvicorn provides several options to improve your server's capabilities:
+
+```bash
+# Run with basic configuration
+uvicorn app:app --host 0.0.0.0 --port 8000
+
+# Run with multiple workers for production (requires stateless mode - see below)
+uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+### Horizontal Scaling
+
+<VersionBadge version="2.10.2" />
+
+When deploying FastMCP behind a load balancer or running multiple server instances, you need to understand how the HTTP transport handles sessions and configure your server appropriately.
+
+#### Understanding Sessions
+
+By default, FastMCP's Streamable HTTP transport maintains server-side sessions. Sessions enable stateful MCP features like [elicitation](/servers/elicitation) and [sampling](/servers/sampling), where the server needs to maintain context across multiple requests from the same client.
+
+This works perfectly for single-instance deployments. However, sessions are stored in memory on each server instance, which creates challenges when scaling horizontally.
+
+#### Without Stateless Mode
+
+When running multiple server instances behind a load balancer (Traefik, nginx, HAProxy, Kubernetes, etc.), requests from the same client may be routed to different instances:
+
+1. Client connects to Instance A → session created on Instance A
+2. Next request routes to Instance B → session doesn't exist → **request fails**
+
+You might expect sticky sessions (session affinity) to solve this, but they don't work reliably with MCP clients.
+
+<Warning>
+**Why sticky sessions don't work:** Most MCP clients—including Cursor and Claude Code—use `fetch()` internally and don't properly forward `Set-Cookie` headers. Without cookies, load balancers can't identify which instance should handle subsequent requests. This is a limitation in how these clients implement HTTP, not something you can fix with load balancer configuration.
+</Warning>
+
+#### Enabling Stateless Mode
+
+For horizontally scaled deployments, enable stateless HTTP mode. In stateless mode, each request creates a fresh transport context, eliminating the need for session affinity entirely.
+
+**Option 1: Via constructor**
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server", stateless_http=True)
+
+@mcp.tool
+def process(data: str) -> str:
+    return f"Processed: {data}"
+
+app = mcp.http_app()
+```
+
+**Option 2: Via `run()`**
+
+```python
+if __name__ == "__main__":
+    mcp.run(transport="http", stateless_http=True)
+```
+
+**Option 3: Via environment variable**
+
+```bash
+FASTMCP_STATELESS_HTTP=true uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+### Environment Variables
+
+Production deployments should never hardcode sensitive information like API keys or authentication tokens. Instead, use environment variables to configure your server at runtime. This keeps your code secure and makes it easy to deploy the same code to different environments with different configurations.
+
+Here's an example using bearer token authentication (though OAuth is recommended for production):
+
+```python
+import os
+from fastmcp import FastMCP
+from fastmcp.server.auth import BearerTokenAuth
+
+# Read configuration from environment
+auth_token = os.environ.get("MCP_AUTH_TOKEN")
+if auth_token:
+    auth = BearerTokenAuth(token=auth_token)
+    mcp = FastMCP("Production Server", auth=auth)
+else:
+    mcp = FastMCP("Production Server")
+
+app = mcp.http_app()
+```
+
+Deploy with your secrets safely stored in environment variables:
+```bash
+MCP_AUTH_TOKEN=secret uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+### OAuth Token Security
+
+<VersionBadge version="2.13.0" />
+
+If you're using the [OAuth Proxy](/servers/auth/oauth-proxy), FastMCP issues its own JWT tokens to clients instead of forwarding upstream provider tokens. This maintains proper OAuth 2.0 token boundaries.
+
+**Default Behavior (Development Only):**
+
+By default, FastMCP automatically manages cryptographic keys:
+- **Mac/Windows**: Keys are generated and stored in your system keyring, surviving server restarts. Suitable **only** for development and local testing.
+- **Linux**: Keys are ephemeral (random salt at startup), so tokens are invalidated on restart.
+
+This automatic approach is convenient for development but not suitable for production deployments.
+
+**For Production:**
+
+Production requires explicit key management to ensure tokens survive restarts and can be shared across multiple server instances. This requires the following two things working together:
+
+1. **Explicit JWT signing key** for signing tokens issued to clients
+3. **Persistent network-accessible storage** for upstream tokens (wrapped in `FernetEncryptionWrapper` to encrypt sensitive data at rest)
+
+**Configuration:**
+
+Add two parameters to your auth provider:
+
+```python {8-12}
+from key_value.aio.stores.redis import RedisStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from cryptography.fernet import Fernet
+
+auth = GitHubProvider(
+    client_id=os.environ["GITHUB_CLIENT_ID"],
+    client_secret=os.environ["GITHUB_CLIENT_SECRET"],
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    client_storage=FernetEncryptionWrapper(
+        key_value=RedisStore(host="redis.example.com", port=6379),
+        fernet=Fernet(os.environ["STORAGE_ENCRYPTION_KEY"])
+    ),
+    base_url="https://your-server.com"  # use HTTPS
+)
+```
+
+Both parameters are required for production. Without an explicit signing key, keys are signed using a key derived from the client_secret, which will cause invalidation upon rotation of the client secret. Without persistent storage, tokens are local to the server and won't be trusted across hosts. **Wrap your storage backend in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without encryption, tokens are stored in plaintext.
+
+For more details on the token architecture and key management, see [OAuth Proxy Key and Storage Management](/servers/auth/oauth-proxy#key-and-storage-management).
+
+## Testing Your Deployment
+
+Once your server is deployed, you'll need to verify it's accessible and functioning correctly. For comprehensive testing strategies including connectivity tests, client testing, and authentication testing, see the [Testing Your Server](/development/tests) guide.
+
+## Hosting Your Server
+
+This guide has shown you how to create an HTTP-accessible MCP server, but you'll still need a hosting provider to make it available on the internet. Your FastMCP server can run anywhere that supports Python web applications:
+
+- **Cloud VMs** (AWS EC2, Google Compute Engine, Azure VMs)
+- **Container platforms** (Cloud Run, Container Instances, ECS)  
+- **Platform-as-a-Service** (Railway, Render, Vercel)
+- **Edge platforms** (Cloudflare Workers)
+- **Kubernetes clusters** (self-managed or managed)
+
+The key requirements are Python 3.10+ support and the ability to expose an HTTP port. Most providers will require you to package your server (requirements.txt, Dockerfile, etc.) according to their deployment format. For managed, zero-configuration deployment, see [FastMCP Cloud](/deployment/fastmcp-cloud).

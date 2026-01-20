@@ -47,7 +47,7 @@ You should see output like the following:
 ```bash
 $ fastmcp version
 
-FastMCP version:                           2.11.3
+FastMCP version:                           3.0.0
 MCP version:                               1.12.4
 Python version:                            3.12.2
 Platform:            macOS-15.3.1-arm64-arm-64bit
@@ -69,7 +69,7 @@ Alternatively, wait for the stable v5 release. See [this issue](https://github.c
 </Info>
 ## Upgrading from the Official MCP SDK
 
-Upgrading from the official MCP SDK's FastMCP 1.0 to FastMCP 2.0 is generally straightforward. The core server API is highly compatible, and in many cases, changing your import statement from `from mcp.server.fastmcp import FastMCP` to `from fastmcp import FastMCP` will be sufficient. 
+Upgrading from the official MCP SDK's FastMCP 1.0 to FastMCP 3.0 is generally straightforward. The core server API is highly compatible, and in many cases, changing your import statement from `from mcp.server.fastmcp import FastMCP` to `from fastmcp import FastMCP` will be sufficient.
 
 
 ```python {5}
@@ -83,7 +83,7 @@ mcp = FastMCP("My MCP Server")
 ```
 
 <Warning>
-Prior to `fastmcp==2.3.0` and `mcp==1.8.0`, the 2.x API always mirrored the official 1.0 API. However, as the projects diverge, this can not be guaranteed. You may see deprecation warnings if you attempt to use 1.0 APIs in FastMCP 2.x. Please refer to this documentation for details on new capabilities.
+Prior to `fastmcp==2.3.0` and `mcp==1.8.0`, the 2.x API always mirrored the official 1.0 API. However, as the projects diverge, this can not be guaranteed. You may see deprecation warnings if you attempt to use 1.0 APIs in FastMCP 3.x. Please refer to this documentation for details on new capabilities.
 </Warning>
 
 ## Versioning Policy
@@ -92,8 +92,8 @@ FastMCP follows semantic versioning with pragmatic adaptations for the rapidly e
 
 For production use, always pin to exact versions:
 ```
-fastmcp==2.11.0  # Good
-fastmcp>=2.11.0  # Bad - will install breaking changes
+fastmcp==3.0.0  # Good
+fastmcp>=3.0.0  # Bad - may install breaking changes
 ```
 
 See the full [versioning and release policy](/development/releases#versioning-policy) for details on our public API, deprecation practices, and breaking change philosophy.

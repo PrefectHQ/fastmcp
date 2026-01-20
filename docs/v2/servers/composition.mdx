@@ -1,0 +1,326 @@
+---
+title: Server Composition
+sidebarTitle: Composition
+description: Combine multiple FastMCP servers into a single, larger application using mounting and importing.
+icon: puzzle-piece
+---
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="2.2.0" />
+
+As your MCP applications grow, you might want to organize your tools, resources, and prompts into logical modules or reuse existing server components. FastMCP supports composition through two methods:
+
+- **`import_server`**: For a one-time copy of components with prefixing (static composition).
+- **`mount`**: For creating a live link where the main server delegates requests to the subserver (dynamic composition).
+
+## Why Compose Servers?
+
+-   **Modularity**: Break down large applications into smaller, focused servers (e.g., a `WeatherServer`, a `DatabaseServer`, a `CalendarServer`).
+-   **Reusability**: Create common utility servers (e.g., a `TextProcessingServer`) and mount them wherever needed.
+-   **Teamwork**: Different teams can work on separate FastMCP servers that are later combined.
+-   **Organization**: Keep related functionality grouped together logically.
+
+### Importing vs Mounting
+
+The choice of importing or mounting depends on your use case and requirements.
+
+| Feature | Importing | Mounting |
+|---------|----------------|---------|
+| **Method** | `FastMCP.import_server(server, prefix=None)` | `FastMCP.mount(server, prefix=None)` |
+| **Composition Type** | One-time copy (static) | Live link (dynamic) |
+| **Updates** | Changes to subserver NOT reflected | Changes to subserver immediately reflected |
+| **Performance** | Fast - no runtime delegation | Slower - affected by slowest mounted server |
+| **Prefix** | Optional - omit for original names | Optional - omit for original names |
+| **Best For** | Bundling finalized components, performance-critical setups | Modular runtime composition |
+
+### Proxy Servers
+
+FastMCP supports [MCP proxying](/servers/proxy), which allows you to mirror a local or remote server in a local FastMCP instance. Proxies are fully compatible with both importing and mounting.
+
+<VersionBadge version="2.4.0" />
+
+You can also create proxies from configuration dictionaries that follow the MCPConfig schema, which is useful for quickly connecting to one or more remote servers. See the [Proxy Servers documentation](/servers/proxy#configuration-based-proxies) for details on configuration-based proxying. Note that MCPConfig follows an emerging standard and its format may evolve over time.
+
+Prefixing rules for tools, prompts, resources, and templates are identical across importing, mounting, and proxies. When prefixes are used, resource URIs are prefixed using path format (since 2.4.0): `resource://prefix/path/to/resource`.
+
+## Importing (Static Composition)
+
+The `import_server()` method copies all components (tools, resources, templates, prompts) from one `FastMCP` instance (the *subserver*) into another (the *main server*). An optional `prefix` can be provided to avoid naming conflicts. If no prefix is provided, components are imported without modification. When multiple servers are imported with the same prefix (or no prefix), the most recently imported server's components take precedence.
+
+```python
+from fastmcp import FastMCP
+import asyncio
+
+# Define subservers
+weather_mcp = FastMCP(name="WeatherService")
+
+@weather_mcp.tool
+def get_forecast(city: str) -> dict:
+    """Get weather forecast."""
+    return {"city": city, "forecast": "Sunny"}
+
+@weather_mcp.resource("data://cities/supported")
+def list_supported_cities() -> list[str]:
+    """List cities with weather support."""
+    return ["London", "Paris", "Tokyo"]
+
+# Define main server
+main_mcp = FastMCP(name="MainApp")
+
+# Import subserver
+async def setup():
+    await main_mcp.import_server(weather_mcp, prefix="weather")
+
+# Result: main_mcp now contains prefixed components:
+# - Tool: "weather_get_forecast"
+# - Resource: "data://weather/cities/supported" 
+
+if __name__ == "__main__":
+    asyncio.run(setup())
+    main_mcp.run()
+```
+
+### How Importing Works
+
+When you call `await main_mcp.import_server(subserver, prefix={whatever})`:
+
+1.  **Tools**: All tools from `subserver` are added to `main_mcp` with names prefixed using `{prefix}_`.
+    -   `subserver.tool(name="my_tool")` becomes `main_mcp.tool(name="{prefix}_my_tool")`.
+2.  **Resources**: All resources are added with both URIs and names prefixed.
+    -   URI: `subserver.resource(uri="data://info")` becomes `main_mcp.resource(uri="data://{prefix}/info")`.
+    -   Name: `resource.name` becomes `"{prefix}_{resource.name}"`.
+3.  **Resource Templates**: Templates are prefixed similarly to resources.
+    -   URI: `subserver.resource(uri="data://{id}")` becomes `main_mcp.resource(uri="data://{prefix}/{id}")`.
+    -   Name: `template.name` becomes `"{prefix}_{template.name}"`.
+4.  **Prompts**: All prompts are added with names prefixed using `{prefix}_`.
+    -   `subserver.prompt(name="my_prompt")` becomes `main_mcp.prompt(name="{prefix}_my_prompt")`.
+
+Note that `import_server` performs a **one-time copy** of components. Changes made to the `subserver` *after* importing **will not** be reflected in `main_mcp`. The `subserver`'s `lifespan` context is also **not** executed by the main server.
+
+<Tip>
+The `prefix` parameter is optional. If omitted, components are imported without modification.
+</Tip>
+
+#### Importing Without Prefixes
+
+<VersionBadge version="2.9.0" />
+
+You can also import servers without specifying a prefix, which copies components using their original names:
+
+```python
+
+from fastmcp import FastMCP
+import asyncio
+
+# Define subservers
+weather_mcp = FastMCP(name="WeatherService")
+
+@weather_mcp.tool
+def get_forecast(city: str) -> dict:
+    """Get weather forecast."""
+    return {"city": city, "forecast": "Sunny"}
+
+@weather_mcp.resource("data://cities/supported")
+def list_supported_cities() -> list[str]:
+    """List cities with weather support."""
+    return ["London", "Paris", "Tokyo"]
+
+# Define main server
+main_mcp = FastMCP(name="MainApp")
+
+# Import subserver
+async def setup():
+    # Import without prefix - components keep original names
+    await main_mcp.import_server(weather_mcp)
+
+# Result: main_mcp now contains:
+# - Tool: "get_forecast" (original name preserved)
+# - Resource: "data://cities/supported" (original URI preserved)
+
+if __name__ == "__main__":
+    asyncio.run(setup())
+    main_mcp.run()
+```
+
+#### Conflict Resolution
+
+<VersionBadge version="2.9.0" />
+
+When importing multiple servers with the same prefix, or no prefix, components from the **most recently imported** server take precedence.
+
+
+
+
+## Mounting (Live Linking)
+
+The `mount()` method creates a **live link** between the `main_mcp` server and the `subserver`. Instead of copying components, requests for components matching the optional `prefix` are **delegated** to the `subserver` at runtime. If no prefix is provided, the subserver's components are accessible without prefixing. When multiple servers are mounted with the same prefix (or no prefix), the most recently mounted server takes precedence for conflicting component names.
+
+```python
+import asyncio
+from fastmcp import FastMCP, Client
+
+# Define subserver
+dynamic_mcp = FastMCP(name="DynamicService")
+
+@dynamic_mcp.tool
+def initial_tool():
+    """Initial tool demonstration."""
+    return "Initial Tool Exists"
+
+# Mount subserver (synchronous operation)
+main_mcp = FastMCP(name="MainAppLive")
+main_mcp.mount(dynamic_mcp, prefix="dynamic")
+
+# Add a tool AFTER mounting - it will be accessible through main_mcp
+@dynamic_mcp.tool
+def added_later():
+    """Tool added after mounting."""
+    return "Tool Added Dynamically!"
+
+# Testing access to mounted tools
+async def test_dynamic_mount():
+    tools = await main_mcp.get_tools()
+    print("Available tools:", list(tools.keys()))
+    # Shows: ['dynamic_initial_tool', 'dynamic_added_later']
+    
+    async with Client(main_mcp) as client:
+        result = await client.call_tool("dynamic_added_later")
+        print("Result:", result.data)
+        # Shows: "Tool Added Dynamically!"
+
+if __name__ == "__main__":
+    asyncio.run(test_dynamic_mount())
+```
+
+### How Mounting Works
+
+When mounting is configured:
+
+1. **Live Link**: The parent server establishes a connection to the mounted server.
+2. **Dynamic Updates**: Changes to the mounted server are immediately reflected when accessed through the parent.
+3. **Prefixed Access**: The parent server uses prefixes to route requests to the mounted server.
+4. **Delegation**: Requests for components matching the prefix are delegated to the mounted server at runtime.
+
+The same prefixing rules apply as with `import_server` for naming tools, resources, templates, and prompts. This includes prefixing both the URIs/keys and the names of resources and templates for better identification in multi-server configurations.
+
+<Tip>
+    The `prefix` parameter is optional. If omitted, components are mounted without modification.
+</Tip>
+
+<Note>
+When mounting servers, custom HTTP routes defined with `@server.custom_route()` are also forwarded to the parent server, making them accessible through the parent's HTTP application.
+</Note>
+
+#### Performance Considerations
+
+Due to the "live link", operations like `list_tools()` on the parent server will be impacted by the speed of the slowest mounted server. In particular, HTTP-based mounted servers can introduce significant latency (300-400ms vs 1-2ms for local tools), and this slowdown affects the whole server, not just interactions with the HTTP-proxied tools. If performance is important, importing tools via [`import_server()`](#importing-static-composition) may be a more appropriate solution as it copies components once at startup rather than delegating requests at runtime.
+
+#### Mounting Without Prefixes
+
+<VersionBadge version="2.9.0" />
+
+You can also mount servers without specifying a prefix, which makes components accessible without prefixing. This works identically to [importing without prefixes](#importing-without-prefixes), including [conflict resolution](#conflict-resolution).
+
+
+
+
+### Direct vs. Proxy Mounting
+
+<VersionBadge version="2.2.7" />
+
+FastMCP supports two mounting modes:
+
+1. **Direct Mounting** (default): The parent server directly accesses the mounted server's objects in memory.
+   - No client lifecycle events occur on the mounted server
+   - The mounted server's lifespan context is not executed
+   - Communication is handled through direct method calls
+   
+2. **Proxy Mounting**: The parent server treats the mounted server as a separate entity and communicates with it through a client interface.
+   - Full client lifecycle events occur on the mounted server
+   - The mounted server's lifespan is executed when a client connects
+   - Communication happens via an in-memory Client transport
+
+```python
+# Direct mounting (default when no custom lifespan)
+main_mcp.mount(api_server, prefix="api")
+
+# Proxy mounting (preserves full client lifecycle)
+main_mcp.mount(api_server, prefix="api", as_proxy=True)
+
+# Mounting without a prefix (components accessible without prefixing)
+main_mcp.mount(api_server)
+```
+
+FastMCP automatically uses proxy mounting when the mounted server has a custom lifespan, but you can override this behavior with the `as_proxy` parameter.
+
+#### Interaction with Proxy Servers
+
+When using `FastMCP.as_proxy()` to create a proxy server, mounting that server will always use proxy mounting:
+
+```python
+# Create a proxy for a remote server
+remote_proxy = FastMCP.as_proxy(Client("http://example.com/mcp"))
+
+# Mount the proxy (always uses proxy mounting)
+main_server.mount(remote_proxy, prefix="remote")
+```
+
+
+
+## Tag Filtering with Composition
+
+<VersionBadge version="2.9.0" />
+
+When using `include_tags` or `exclude_tags` on a parent server, these filters apply **recursively** to all components, including those from mounted or imported servers. This allows you to control which components are exposed at the parent level, regardless of how your application is composed.
+
+```python
+import asyncio
+from fastmcp import FastMCP, Client
+
+# Create a subserver with tools tagged for different environments
+api_server = FastMCP(name="APIServer")
+
+@api_server.tool(tags={"production"})
+def prod_endpoint() -> str:
+    """Production-ready endpoint."""
+    return "Production data"
+
+@api_server.tool(tags={"development"})
+def dev_endpoint() -> str:
+    """Development-only endpoint."""
+    return "Debug data"
+
+# Mount the subserver with production tag filtering at parent level
+prod_app = FastMCP(name="ProductionApp", include_tags={"production"})
+prod_app.mount(api_server, prefix="api")
+
+# Test the filtering
+async def test_filtering():
+    async with Client(prod_app) as client:
+        tools = await client.list_tools()
+        print("Available tools:", [t.name for t in tools])
+        # Shows: ['api_prod_endpoint']
+        # The 'api_dev_endpoint' is filtered out
+
+        # Calling the filtered tool raises an error
+        try:
+            await client.call_tool("api_dev_endpoint")
+        except Exception as e:
+            print(f"Filtered tool not accessible: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(test_filtering())
+```
+
+### How Recursive Filtering Works
+
+Tag filters apply in the following order:
+
+1. **Child Server Filters**: Each mounted/imported server first applies its own `include_tags`/`exclude_tags` to its components.
+2. **Parent Server Filters**: The parent server then applies its own `include_tags`/`exclude_tags` to all components, including those from child servers.
+
+This ensures that parent server tag policies act as a global policy for everything the parent server exposes, no matter how your application is composed.
+
+<Note>
+This filtering applies to both **listing** (e.g., `list_tools()`) and **execution** (e.g., `call_tool()`). Filtered components are neither visible nor executable through the parent server.
+</Note>

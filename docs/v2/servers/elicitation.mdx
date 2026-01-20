@@ -1,0 +1,462 @@
+---
+title: User Elicitation
+sidebarTitle: Elicitation
+description: Request structured input from users during tool execution through the MCP context.
+icon: message-question
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="2.10.0" />
+
+User elicitation allows MCP servers to request structured input from users during tool execution. Instead of requiring all inputs upfront, tools can interactively ask for missing parameters, clarification, or additional context as needed.
+
+<Tip>
+Most of the examples in this document assume you have a FastMCP server instance named `mcp` and show how to use the `ctx.elicit` method to request user input from an `@mcp.tool`-decorated function.
+</Tip>
+
+## What is Elicitation?
+
+Elicitation enables tools to pause execution and request specific information from users. This is particularly useful for:
+
+- **Missing parameters**: Ask for required information not provided initially
+- **Clarification requests**: Get user confirmation or choices for ambiguous scenarios  
+- **Progressive disclosure**: Collect complex information step-by-step
+- **Dynamic workflows**: Adapt tool behavior based on user responses
+
+For example, a file management tool might ask "Which directory should I create?" or a data analysis tool might request "What date range should I analyze?"
+
+### Basic Usage
+
+Use the `ctx.elicit()` method within any tool function to request user input:
+
+```python {14-17}
+from fastmcp import FastMCP, Context
+from dataclasses import dataclass
+
+mcp = FastMCP("Elicitation Server")
+
+@dataclass
+class UserInfo:
+    name: str
+    age: int
+
+@mcp.tool
+async def collect_user_info(ctx: Context) -> str:
+    """Collect user information through interactive prompts."""
+    result = await ctx.elicit(
+        message="Please provide your information",
+        response_type=UserInfo
+    )
+    
+    if result.action == "accept":
+        user = result.data
+        return f"Hello {user.name}, you are {user.age} years old"
+    elif result.action == "decline":
+        return "Information not provided"
+    else:  # cancel
+        return "Operation cancelled"
+```
+
+## Method Signature
+
+<Card icon="code" title="Context Elicitation Method">
+<ResponseField name="ctx.elicit" type="async method">
+  <Expandable title="Parameters">
+    <ResponseField name="message" type="str">
+      The prompt message to display to the user
+    </ResponseField>
+    
+    <ResponseField name="response_type" type="type" default="None">
+      The Python type defining the expected response structure (dataclass, primitive type, etc.) Note that elicitation responses are subject to a restricted subset of JSON Schema types. See [Supported Response Types](#supported-response-types) for more details. 
+    </ResponseField>
+  </Expandable>
+  
+  <Expandable title="Response">
+    <ResponseField name="ElicitationResult" type="object">
+      Result object containing the user's response
+      
+      <Expandable title="properties">
+        <ResponseField name="action" type="Literal['accept', 'decline', 'cancel']">
+          How the user responded to the request
+        </ResponseField>
+        
+        <ResponseField name="data" type="response_type | None">
+          The user's input data (only present when action is "accept")
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+</Card>
+
+## Elicitation Actions
+
+The elicitation result contains an `action` field indicating how the user responded:
+
+- **`accept`**: User provided valid input - data is available in the `data` field
+- **`decline`**: User chose not to provide the requested information and the data field is `None`
+- **`cancel`**: User cancelled the entire operation and the data field is `None`
+
+```python {5, 7}
+@mcp.tool
+async def my_tool(ctx: Context) -> str:
+    result = await ctx.elicit("Choose an action")
+
+    if result.action == "accept":
+        return "Accepted!"
+    elif result.action == "decline":
+        return "Declined!"
+    else:
+        return "Cancelled!"
+```
+
+FastMCP also provides typed result classes for pattern matching on the `action` field:
+
+```python {1-5, 12, 14, 16}
+from fastmcp.server.elicitation import (
+    AcceptedElicitation, 
+    DeclinedElicitation, 
+    CancelledElicitation,
+)
+
+@mcp.tool
+async def pattern_example(ctx: Context) -> str:
+    result = await ctx.elicit("Enter your name:", response_type=str)
+    
+    match result:
+        case AcceptedElicitation(data=name):
+            return f"Hello {name}!"
+        case DeclinedElicitation():
+            return "No name provided"
+        case CancelledElicitation():
+            return "Operation cancelled"
+```
+
+## Response Types
+
+The server must send a schema to the client indicating the type of data it expects in response to the elicitation request. If the request is `accept`-ed, the client must send a response that matches the schema.
+
+The MCP spec only supports a limited subset of JSON Schema types for elicitation responses. Specifically, it only supports JSON  **objects** with **primitive** properties including `string`, `number` (or `integer`), `boolean` and `enum` fields.
+
+FastMCP makes it easy to request a broader range of types, including scalars (e.g. `str`) or no response at all, by automatically wrapping them in MCP-compatible object schemas.
+
+
+### Scalar Types
+
+You can request simple scalar data types for basic input, such as a string, integer, or boolean.
+
+When you request a scalar type, FastMCP automatically wraps it in an object schema for MCP spec compatibility. Clients will see a corresponding schema requesting a single "value" field of the requested type. Once clients respond, the provided object is "unwrapped" and the scalar value is returned to your tool function as the `data` field of the `ElicitationResult` object.
+
+As a developer, this means you do not have to worry about creating or accessing a structured object when you only need a scalar value.
+
+<CodeGroup>
+```python {4} title="Request a string"
+@mcp.tool
+async def get_user_name(ctx: Context) -> str:
+    """Get the user's name."""
+    result = await ctx.elicit("What's your name?", response_type=str)
+    
+    if result.action == "accept":
+        return f"Hello, {result.data}!"
+    return "No name provided"
+```
+```python {4} title="Request an integer"
+@mcp.tool
+async def pick_a_number(ctx: Context) -> str:
+    """Pick a number."""
+    result = await ctx.elicit("Pick a number!", response_type=int)
+    
+    if result.action == "accept":
+        return f"You picked {result.data}"
+    return "No number provided"
+```
+```python {4} title="Request a boolean"
+@mcp.tool
+async def pick_a_boolean(ctx: Context) -> str:
+    """Pick a boolean."""
+    result = await ctx.elicit("True or false?", response_type=bool)
+    
+    if result.action == "accept":
+        return f"You picked {result.data}"
+    return "No boolean provided"
+```
+</CodeGroup>
+
+### No Response
+
+Sometimes, the goal of an elicitation is to simply get a user to approve or reject an action. In this case, you can pass `None` as the response type to indicate that no response is expected. In order to comply with the MCP spec, the client will see a schema requesting an empty object in response. In this case, the `data` field of the `ElicitationResult` object will be `None` when the user accepts the elicitation.
+
+```python {4} title="No response"
+@mcp.tool
+async def approve_action(ctx: Context) -> str:
+    """Approve an action."""
+    result = await ctx.elicit("Approve this action?", response_type=None)
+
+    if result.action == "accept":
+        return do_action()
+    else:
+        raise ValueError("Action rejected")
+```
+
+### Constrained Options
+
+Often you'll want to constrain the user's response to a specific set of values. You can do this by using a `Literal` type or a Python enum as the response type, or by passing a list of strings to the `response_type` parameter as a convenient shortcut.
+
+<CodeGroup>
+```python {6} title="Using a list of strings"
+@mcp.tool
+async def set_priority(ctx: Context) -> str:
+    """Set task priority level."""
+    result = await ctx.elicit(
+        "What priority level?",
+        response_type=["low", "medium", "high"],
+    )
+
+    if result.action == "accept":
+        return f"Priority set to: {result.data}"
+```
+```python {1, 8} title="Using a Literal type"
+from typing import Literal
+
+@mcp.tool
+async def set_priority(ctx: Context) -> str:
+    """Set task priority level."""
+    result = await ctx.elicit(
+        "What priority level?",
+        response_type=Literal["low", "medium", "high"]
+    )
+
+    if result.action == "accept":
+        return f"Priority set to: {result.data}"
+    return "No priority set"
+```
+```python {1, 11} title="Using a Python enum"
+from enum import Enum
+
+class Priority(Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+@mcp.tool
+async def set_priority(ctx: Context) -> str:
+    """Set task priority level."""
+    result = await ctx.elicit("What priority level?", response_type=Priority)
+
+    if result.action == "accept":
+        return f"Priority set to: {result.data.value}"
+    return "No priority set"
+```
+</CodeGroup>
+
+#### Multi-Select
+
+<VersionBadge version="2.14.0" />
+
+Enable multi-select by wrapping your choices in an additional list level. This allows users to select multiple values from the available options.
+
+<CodeGroup>
+```python {6-8} title="List of a list of strings"
+@mcp.tool
+async def select_tags(ctx: Context) -> str:
+    """Select multiple tags."""
+    result = await ctx.elicit(
+        "Choose tags",
+        response_type=[["bug", "feature", "documentation"]]  # Note: list of a list
+    )
+
+    if result.action == "accept":
+        tags = result.data  # List of selected strings
+        return f"Selected tags: {', '.join(tags)}"
+```
+
+```python {1, 3-6, 11-14} title="list[Enum] type annotation"
+from enum import Enum
+
+class Tag(Enum):
+    BUG = "bug"
+    FEATURE = "feature"
+    DOCS = "documentation"
+
+@mcp.tool
+async def select_tags(ctx: Context) -> str:
+    result = await ctx.elicit(
+        "Choose tags",
+        response_type=list[Tag]  # Type annotation for multi-select
+    )
+    if result.action == "accept":
+        tags = [tag.value for tag in result.data]
+        return f"Selected: {', '.join(tags)}"
+```
+</CodeGroup>
+
+For titled multi-select, wrap a dict in a list (see [Titled Options](#titled-options) for dict syntax):
+
+```python {6-12}
+@mcp.tool
+async def select_priorities(ctx: Context) -> str:
+    """Select multiple priorities."""
+    result = await ctx.elicit(
+        "Choose priorities",
+        response_type=[{  # Note: list containing a dict
+            "low": {"title": "Low Priority"},
+            "medium": {"title": "Medium Priority"},
+            "high": {"title": "High Priority"}
+        }]
+    )
+
+    if result.action == "accept":
+        priorities = result.data  # List of selected strings
+        return f"Selected: {', '.join(priorities)}"
+```
+
+#### Titled Options
+
+<VersionBadge version="2.14.0" />
+
+For better UI display, you can provide human-readable titles for enum options. FastMCP generates SEP-1330 compliant schemas using the `oneOf` pattern with `const` and `title` fields.
+
+Use a dict to specify titles for enum values:
+
+```python {6-10}
+@mcp.tool
+async def set_priority(ctx: Context) -> str:
+    """Set task priority level."""
+    result = await ctx.elicit(
+        "What priority level?",
+        response_type={
+            "low": {"title": "Low Priority"},
+            "medium": {"title": "Medium Priority"},
+            "high": {"title": "High Priority"}
+        }
+    )
+
+    if result.action == "accept":
+        return f"Priority set to: {result.data}"
+```
+
+For multi-select with titles, wrap the dict in a list:
+
+```python {6-12}
+@mcp.tool
+async def select_priorities(ctx: Context) -> str:
+    """Select multiple priorities."""
+    result = await ctx.elicit(
+        "Choose priorities",
+        response_type=[{  # List containing a dict for multi-select
+            "low": {"title": "Low Priority"},
+            "medium": {"title": "Medium Priority"},
+            "high": {"title": "High Priority"}
+        }]
+    )
+
+    if result.action == "accept":
+        priorities = result.data  # List of selected strings
+        return f"Selected: {', '.join(priorities)}"
+```
+
+### Structured Responses
+
+You can request structured data with multiple fields by using a dataclass, typed dict, or Pydantic model as the response type. Note that the MCP spec only supports shallow objects with scalar (string, number, boolean) or enum properties.
+
+```python {1, 16, 20}
+from dataclasses import dataclass
+from typing import Literal
+
+@dataclass
+class TaskDetails:
+    title: str
+    description: str
+    priority: Literal["low", "medium", "high"]
+    due_date: str
+
+@mcp.tool
+async def create_task(ctx: Context) -> str:
+    """Create a new task with user-provided details."""
+    result = await ctx.elicit(
+        "Please provide task details",
+        response_type=TaskDetails
+    )
+    
+    if result.action == "accept":
+        task = result.data
+        return f"Created task: {task.title} (Priority: {task.priority})"
+    return "Task creation cancelled"
+```
+
+### Default Values
+
+<VersionBadge version="2.14.0" />
+
+You can provide default values for elicitation fields using Pydantic's `Field(default=...)`. Clients will pre-populate form fields with these defaults, making it easier for users to provide input.
+
+Default values are supported for all primitive types:
+- Strings: `Field(default="[email protected]")`
+- Integers: `Field(default=50)`
+- Numbers: `Field(default=3.14)`
+- Booleans: `Field(default=False)`
+- Enums: `Field(default=EnumValue.A)`
+
+Fields with default values are automatically marked as optional (not included in the `required` list), so users can accept the default or provide their own value.
+
+```python
+from pydantic import BaseModel, Field
+from enum import Enum
+
+class Priority(Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+class TaskDetails(BaseModel):
+    title: str = Field(description="Task title")
+    description: str = Field(default="", description="Task description")
+    priority: Priority = Field(default=Priority.MEDIUM, description="Task priority")
+
+@mcp.tool
+async def create_task(ctx: Context) -> str:
+    result = await ctx.elicit("Please provide task details", response_type=TaskDetails)
+    if result.action == "accept":
+        return f"Created: {result.data.title}"
+    return "Task creation cancelled"
+```
+
+## Multi-Turn Elicitation
+
+Tools can make multiple elicitation calls to gather information progressively:
+
+```python {6, 11, 16-19}
+@mcp.tool
+async def plan_meeting(ctx: Context) -> str:
+    """Plan a meeting by gathering details step by step."""
+    
+    # Get meeting title
+    title_result = await ctx.elicit("What's the meeting title?", response_type=str)
+    if title_result.action != "accept":
+        return "Meeting planning cancelled"
+    
+    # Get duration
+    duration_result = await ctx.elicit("Duration in minutes?", response_type=int)
+    if duration_result.action != "accept":
+        return "Meeting planning cancelled"
+    
+    # Get priority
+    priority_result = await ctx.elicit(
+        "Is this urgent?", 
+        response_type=Literal["yes", "no"]
+    )
+    if priority_result.action != "accept":
+        return "Meeting planning cancelled"
+    
+    urgent = priority_result.data == "yes"
+    return f"Meeting '{title_result.data}' planned for {duration_result.data} minutes (Urgent: {urgent})"
+```
+
+
+## Client Requirements
+
+Elicitation requires the client to implement an elicitation handler. See [Client Elicitation](/clients/elicitation) for details on how clients can handle these requests.
+
+If a client doesn't support elicitation, calls to `ctx.elicit()` will raise an error indicating that elicitation is not supported.

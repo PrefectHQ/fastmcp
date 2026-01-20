@@ -1,7 +1,7 @@
 ---
-title: Resource Operations
+title: Reading Resources
 sidebarTitle: Resources
-description: Access static and templated resources from MCP servers.
+description: Access static and templated data sources from MCP servers.
 icon: folder-open
 ---
 
@@ -9,226 +9,102 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="2.0.0" />
 
-Resources are data sources exposed by MCP servers. They can be static files or dynamic templates that generate content based on parameters.
+Use this when you need to read data from server-exposed resources like configuration files, generated content, or external data sources.
 
-## Types of Resources
-
-MCP servers expose two types of resources:
-
-- **Static Resources**: Fixed content accessible via URI (e.g., configuration files, documentation)
-- **Resource Templates**: Dynamic resources that accept parameters to generate content (e.g., API endpoints, database queries)
-
-## Listing Resources
-
-### Static Resources
-
-Use `list_resources()` to retrieve all static resources available on the server. When the server paginates results, the client automatically fetches all pages and returns the complete list.
-
-```python
-async with client:
-    resources = await client.list_resources()
-    # resources -> list[mcp.types.Resource]
-
-    for resource in resources:
-        print(f"Resource URI: {resource.uri}")
-        print(f"Name: {resource.name}")
-        print(f"Description: {resource.description}")
-        print(f"MIME Type: {resource.mimeType}")
-        # Access tags and other metadata
-        if resource.meta:
-            fastmcp_meta = resource.meta.get('fastmcp', {})
-            print(f"Tags: {fastmcp_meta.get('tags', [])}")
-```
-
-For manual pagination control, use `list_resources_mcp()` with the `cursor` parameter. See [Pagination](/servers/pagination#manual-pagination) for details.
-
-### Resource Templates
-
-Use `list_resource_templates()` to retrieve available resource templates. When the server paginates results, the client automatically fetches all pages and returns the complete list.
-
-```python
-async with client:
-    templates = await client.list_resource_templates()
-    # templates -> list[mcp.types.ResourceTemplate]
-
-    for template in templates:
-        print(f"Template URI: {template.uriTemplate}")
-        print(f"Name: {template.name}")
-        print(f"Description: {template.description}")
-        # Access tags and other metadata
-        if template.meta:
-            fastmcp_meta = template.meta.get('fastmcp', {})
-            print(f"Tags: {fastmcp_meta.get('tags', [])}")
-```
-
-For manual pagination control, use `list_resource_templates_mcp()` with the `cursor` parameter. See [Pagination](/servers/pagination#manual-pagination) for details.
-
-### Filtering by Tags
-
-<VersionBadge version="2.11.0" />
-
-You can use the `meta` field to filter resources based on their tags:
-
-```python
-async with client:
-    resources = await client.list_resources()
-    
-    # Filter resources by tag
-    config_resources = [
-        resource for resource in resources 
-        if resource.meta and
-           resource.meta.get('fastmcp', {}) and
-           'config' in resource.meta.get('fastmcp', {}).get('tags', [])
-    ]
-    
-    print(f"Found {len(config_resources)} config resources")
-```
-
-<Note>
-The `meta` field is part of the standard MCP specification. FastMCP servers always include tags and other metadata within a `fastmcp` namespace (e.g., `meta.fastmcp.tags`) to avoid conflicts with user-defined metadata. For versioned resources, `meta.fastmcp.version` shows the current version and `meta.fastmcp.versions` lists all available versions. Other MCP server implementations may not provide this metadata structure.
-</Note>
-
-### Version Information
-
-<VersionBadge version="3.0.0" />
-
-When a server registers multiple versions of a resource, the metadata includes version information.
-
-```python
-async with client:
-    resources = await client.list_resources()
-
-    for resource in resources:
-        if resource.meta:
-            fastmcp_meta = resource.meta.get("fastmcp", {})
-            version = fastmcp_meta.get("version")
-            all_versions = fastmcp_meta.get("versions")
-            if all_versions:
-                print(f"{resource.uri}: v{version} (available: {all_versions})")
-```
-
-To read a specific version, use the `version` parameter:
-
-```python
-# Read a specific version
-content = await client.read_resource("data://config", version="1.0")
-```
+Resources are data sources exposed by MCP servers. They can be static files with fixed content, or dynamic templates that generate content based on parameters in the URI.
 
 ## Reading Resources
 
-### Static Resources
-
-Read a static resource using its URI:
+Read a resource using its URI:
 
 ```python
 async with client:
-    # Read a static resource
     content = await client.read_resource("file:///path/to/README.md")
-    # content -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]
-    
+    # content -> list[TextResourceContents | BlobResourceContents]
+
     # Access text content
     if hasattr(content[0], 'text'):
         print(content[0].text)
-    
+
     # Access binary content
     if hasattr(content[0], 'blob'):
         print(f"Binary data: {len(content[0].blob)} bytes")
 ```
 
-### Resource Templates
-
-Read from a resource template by providing the URI with parameters:
+Resource templates generate content based on URI parameters. The template defines a pattern like `weather://{{city}}/current`, and you fill in the parameters when reading:
 
 ```python
 async with client:
-    # Read a resource generated from a template
-    # For example, a template like "weather://{{city}}/current"
+    # Read from a resource template
     weather_content = await client.read_resource("weather://london/current")
-    
-    # Access the generated content
-    print(weather_content[0].text)  # Assuming text JSON response
+    print(weather_content[0].text)
 ```
 
 ## Content Types
 
-Resources can return different content types:
+Resources return different content types depending on what they expose.
 
-### Text Resources
+Text resources include configuration files, JSON data, and other human-readable content:
 
 ```python
 async with client:
     content = await client.read_resource("resource://config/settings.json")
-    
+
     for item in content:
         if hasattr(item, 'text'):
             print(f"Text content: {item.text}")
             print(f"MIME type: {item.mimeType}")
 ```
 
-### Binary Resources
+Binary resources include images, PDFs, and other non-text data:
 
 ```python
 async with client:
     content = await client.read_resource("resource://images/logo.png")
-    
+
     for item in content:
         if hasattr(item, 'blob'):
             print(f"Binary content: {len(item.blob)} bytes")
             print(f"MIME type: {item.mimeType}")
-            
+
             # Save to file
             with open("downloaded_logo.png", "wb") as f:
                 f.write(item.blob)
 ```
 
-## Working with Multi-Server Clients
+## Multi-Server Clients
 
-When using multi-server clients, resource URIs are automatically prefixed with the server name:
+When using multi-server clients, resource URIs are prefixed with the server name:
 
 ```python
 async with client:  # Multi-server client
-    # Access resources from different servers
     weather_icons = await client.read_resource("weather://weather/icons/sunny")
     templates = await client.read_resource("resource://assistant/templates/list")
-    
-    print(f"Weather icon: {weather_icons[0].blob}")
-    print(f"Templates: {templates[0].text}")
 ```
 
-## Raw MCP Protocol Access
+## Version Selection
 
-For access to the complete MCP protocol objects, use the `*_mcp` methods:
+<VersionBadge version="3.0.0" />
+
+When a server exposes multiple versions of a resource, you can request a specific version:
 
 ```python
 async with client:
-    # Raw MCP methods return full protocol objects
-    resources_result = await client.list_resources_mcp()
-    # resources_result -> mcp.types.ListResourcesResult
-    
-    templates_result = await client.list_resource_templates_mcp()
-    # templates_result -> mcp.types.ListResourceTemplatesResult
-    
-    content_result = await client.read_resource_mcp("resource://example")
-    # content_result -> mcp.types.ReadResourceResult
+    # Read the highest version (default)
+    content = await client.read_resource("data://config")
+
+    # Read a specific version
+    content_v1 = await client.read_resource("data://config", version="1.0")
 ```
 
-## Common Resource URI Patterns
+See [Metadata](/servers/versioning#version-discovery) for how to discover available versions.
 
-Different MCP servers may use various URI schemes:
+## Raw Protocol Access
+
+For complete control, use `read_resource_mcp()` which returns the full MCP protocol object:
 
 ```python
-# File system resources
-"file:///path/to/file.txt"
-
-# Custom protocol resources  
-"weather://london/current"
-"database://users/123"
-
-# Generic resource protocol
-"resource://config/settings"
-"resource://templates/email"
+async with client:
+    result = await client.read_resource_mcp("resource://example")
+    # result -> mcp.types.ReadResourceResult
 ```
-
-<Tip>
-Resource URIs and their formats depend on the specific MCP server implementation. Check the server's documentation for available resources and their URI patterns.
-</Tip>

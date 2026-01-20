@@ -17,4 +17,43 @@ h6 code:not(pre code) {
   background-color: rgba(247, 37, 133, 0.09);
 }
 
+/* V2 banner - inside content-container, breaks out of padding with negative margins */
+#v2-banner {
+  display: block;
+  background: linear-gradient(135deg, #4cc9f0 0%, #2d00f7 100%);
+  color: white;
+  text-align: center;
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin: -2rem -2rem 1.5rem -2rem;
+  width: calc(100% + 4rem);
+  border-radius: 8px 8px 0 0;
+}
+
+#v2-banner a {
+  color: white;
+  text-decoration: underline;
+  font-weight: 700;
+}
+
+#v2-banner a:hover {
+  opacity: 0.9;
+}
+
+@media (min-width: 1024px) {
+  #v2-banner {
+    margin: -3rem -4rem 1.5rem -4rem;
+    width: calc(100% + 8rem);
+  }
+}
+
+.dark #v2-banner {
+  background: linear-gradient(135deg, #2d00f7 0%, #4cc9f0 100%);
+}
+
+
+
+
 

@@ -1,7 +1,7 @@
 ---
-title: Remote Proxies
-sidebarTitle: Proxying
-description: Expose remote MCP servers through your local server
+title: MCP Proxy Provider
+sidebarTitle: MCP Proxy
+description: Source components from other MCP servers
 icon: arrows-retweet
 ---
 
@@ -9,25 +9,25 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="2.0.0" />
 
-Proxying lets you expose a remote MCP server's tools, resources, and prompts through your local server. Under the hood, FastMCP uses `ProxyProvider` (v3.0.0+) to source components from a client connection.
+The Proxy Provider sources components from another MCP server through a client connection. This lets you expose any MCP server's tools, resources, and prompts through your own server, whether the source is local or accessed over the network.
 
-## Why Proxy Servers
+## Why Use Proxy Provider
 
-Proxying lets you:
+The Proxy Provider enables:
 
-- **Bridge transports**: Expose a remote SSE server via local stdio
-- **Aggregate servers**: Combine multiple remote servers into one
-- **Add security**: Act as a controlled gateway to backend servers
-- **Simplify access**: Single endpoint even if backends change
+- **Bridge transports**: Make an HTTP server available via stdio, or vice versa
+- **Aggregate servers**: Combine multiple source servers into one unified server
+- **Add security**: Act as a controlled gateway with authentication and authorization
+- **Simplify access**: Provide a stable endpoint even if backend servers change
 
 ```mermaid
 sequenceDiagram
     participant Client as Your Client
     participant Proxy as FastMCP Proxy
-    participant Backend as Remote Server
+    participant Backend as Source Server
 
     Client->>Proxy: MCP Request (stdio)
-    Proxy->>Backend: MCP Request (HTTP)
+    Proxy->>Backend: MCP Request (HTTP/stdio/SSE)
     Backend-->>Proxy: MCP Response
     Proxy-->>Client: MCP Response
 ```
@@ -59,17 +59,17 @@ To mount a proxy inside another FastMCP server, see [Mounting External Servers](
 
 ## Transport Bridging
 
-A common use case is bridging transports - making a remote server available locally:
+A common use case is bridging transports between servers:
 
 ```python
 from fastmcp.server import create_proxy
 
-# Bridge remote HTTP to local stdio
-remote_proxy = create_proxy("http://example.com/mcp/sse", name="Remote-to-Local")
+# Bridge HTTP server to local stdio
+http_proxy = create_proxy("http://example.com/mcp/sse", name="HTTP-to-stdio")
 
 # Run locally via stdio for Claude Desktop
 if __name__ == "__main__":
-    remote_proxy.run()  # Defaults to stdio
+    http_proxy.run()  # Defaults to stdio
 ```
 
 Or expose a local server via HTTP:
@@ -78,7 +78,7 @@ Or expose a local server via HTTP:
 from fastmcp.server import create_proxy
 
 # Bridge local server to HTTP
-local_proxy = create_proxy("local_server.py", name="Local-to-HTTP")
+local_proxy = create_proxy("local_server.py", name="stdio-to-HTTP")
 
 if __name__ == "__main__":
     local_proxy.run(transport="http", host="0.0.0.0", port=8080)
@@ -280,7 +280,7 @@ This gives you full control over session creation and reuse strategies.
 
 ### Adding Proxied Components to Existing Server
 
-Mount a proxy to add remote components to an existing server:
+Mount a proxy to add components from another server:
 
 ```python
 from fastmcp import FastMCP
@@ -293,9 +293,9 @@ server = FastMCP("My Server")
 def local_tool() -> str:
     return "Local result"
 
-# Mount proxied tools from remote server
-remote = create_proxy("http://remote-server/mcp")
-server.mount(remote)
+# Mount proxied tools from another server
+external = create_proxy("http://external-server/mcp")
+server.mount(external)
 
 # Now server has both local and proxied tools
 ```

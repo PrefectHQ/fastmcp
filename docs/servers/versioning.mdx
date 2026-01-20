@@ -3,6 +3,7 @@ title: Versioning
 sidebarTitle: Versioning
 description: Serve multiple API versions from a single codebase
 icon: code-branch
+tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -15,7 +16,7 @@ The primary use case is serving different API versions from one codebase. Instea
 
 ## Versioned API Surfaces
 
-Consider a server that needs to support both v1 and v2 clients. The v2 API adds new parameters to existing tools, and you want both versions to coexist cleanly. You define your components on a shared provider, then create separate servers with different version filters.
+Consider a server that needs to support both v1 and v2 clients. The v2 API adds new parameters to existing tools, and you want both versions to coexist cleanly. Define your components on a shared provider, then create separate servers with different version filters.
 
 ```python
 from fastmcp import FastMCP
@@ -59,7 +60,7 @@ VersionFilter(version_gte="2.0", version_lt="3.0")
 ```
 
 <Note>
-**Unversioned components are exempt from version filtering.** A `VersionFilter` only affects versioned components—unversioned components always pass through regardless of the filter's constraints. This ensures that adding version filtering to a server with mixed versioned and unversioned tools doesn't accidentally hide the unversioned ones. To prevent confusion, FastMCP forbids mixing versioned and unversioned components with the same name.
+**Unversioned components are exempt from version filtering.** A `VersionFilter` only affects versioned components - unversioned components always pass through regardless of the filter's constraints. This ensures that adding version filtering to a server with mixed versioned and unversioned tools doesn't accidentally hide the unversioned ones. To prevent confusion, FastMCP forbids mixing versioned and unversioned components with the same name.
 </Note>
 
 ### Filtering Mounted Servers
@@ -138,6 +139,8 @@ def calculate(x: int, y: int, z: int = 0) -> int:
 The error message explains the conflict: "Cannot add versioned tool 'calculate' (version='2.0'): an unversioned tool with this name already exists. Either version all components or none."
 
 This restriction exists because unversioned components always pass through version filters. If you could mix versioned and unversioned components, you'd have no way to filter out the unversioned one using `VersionFilter`. By enforcing consistency at registration, FastMCP ensures version filtering behaves predictably.
+
+Resources and prompts follow the same pattern.
 
 ```python
 @mcp.resource("config://app", version="1.0")
@@ -243,8 +246,8 @@ For [PEP 440](https://peps.python.org/pep-0440/) versions (like `"1.0"`, `"2.1.3
 
 ```python
 # PEP 440 versions compare semantically
-"1" < "2" < "10"           # Not string order ("1" < "10" < "2")
-"1.9" < "1.10"             # Not string order ("1.10" < "1.9")
+"1" < "2" < "10"           # Numeric order (not "1" < "10" < "2")
+"1.9" < "1.10"             # Numeric order (not "1.10" < "1.9")
 "1.0a1" < "1.0b1" < "1.0"  # Pre-releases sort before releases
 ```
 

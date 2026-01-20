@@ -1,6 +1,6 @@
 ---
 title: Component Visibility
-sidebarTitle: Component Visibility
+sidebarTitle: Visibility
 description: Control which components are available to clients
 icon: toggle-on
 tag: NEW
@@ -257,33 +257,6 @@ mcp = FastMCP("Server", providers=[provider])
 mcp.disable(tags={"beta"})
 
 # new_feature is disabled (server's later disable overrides provider's enable)
-```
-
-## Dynamic Changes
-
-Visibility state changes take effect immediately. You can adjust during request handling based on context.
-
-```python
-from fastmcp import FastMCP
-from fastmcp.server import Context
-
-mcp = FastMCP("Server")
-
-@mcp.tool(tags={"admin"})
-def admin_action() -> str:
-    return "Admin action performed"
-
-@mcp.tool
-def check_permissions(ctx: Context) -> str:
-    """Check if admin tools should be available."""
-    user = ctx.request_context.get_user()
-
-    if user and user.is_admin:
-        mcp.enable(tags={"admin"})
-        return "Admin tools enabled"
-    else:
-        mcp.disable(tags={"admin"})
-        return "Admin tools disabled"
 ```
 
 ## Per-Session Visibility

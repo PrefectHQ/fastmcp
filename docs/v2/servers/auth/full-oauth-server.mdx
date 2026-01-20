@@ -1,0 +1,229 @@
+---
+title: Full OAuth Server
+sidebarTitle: Full OAuth Server
+description: Build a self-contained authentication system where your FastMCP server manages users, issues tokens, and validates them.
+icon: users-between-lines
+
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.11.0" />
+
+<Warning>
+**This is an extremely advanced pattern that most users should avoid.** Building a secure OAuth 2.1 server requires deep expertise in authentication protocols, cryptography, and security best practices. The complexity extends far beyond initial implementation to include ongoing security monitoring, threat response, and compliance maintenance.
+
+**Use [Remote OAuth](/servers/auth/remote-oauth) instead** unless you have compelling requirements that external identity providers cannot meet, such as air-gapped environments or specialized compliance needs.
+</Warning>
+
+The Full OAuth Server pattern exists to support the MCP protocol specification's requirements. Your FastMCP server becomes both an Authorization Server and Resource Server, handling the complete authentication lifecycle from user login to token validation.
+
+This documentation exists for completeness - the vast majority of applications should use external identity providers instead.
+
+## OAuthProvider
+
+FastMCP provides the `OAuthProvider` abstract class that implements the OAuth 2.1 specification. To use this pattern, you must subclass `OAuthProvider` and implement all required abstract methods.
+
+<Note>
+`OAuthProvider` handles OAuth endpoints, protocol flows, and security requirements, but delegates all storage, user management, and business logic to your implementation of the abstract methods.
+</Note>
+
+## Required Implementation
+
+You must implement these abstract methods to create a functioning OAuth server:
+
+### Client Management
+
+<Card icon="code" title="Client Management Methods">
+<ParamField body="get_client" type="async method">
+  Retrieve client information by ID from your database.
+  
+  <Expandable title="Parameters">
+    <ParamField body="client_id" type="str">
+      Client identifier to look up
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ParamField body="OAuthClientInformationFull | None" type="return type">
+      Client information object or `None` if client not found
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="register_client" type="async method">
+  Store new client registration information in your database.
+  
+  <Expandable title="Parameters">
+    <ParamField body="client_info" type="OAuthClientInformationFull">
+      Complete client registration information to store
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ParamField body="None" type="return type">
+      No return value
+    </ParamField>
+  </Expandable>
+</ParamField>
+</Card>
+
+### Authorization Flow
+
+<Card icon="code" title="Authorization Flow Methods">
+<ParamField body="authorize" type="async method">
+  Handle authorization request and return redirect URL. Must implement user authentication and consent collection.
+  
+  <Expandable title="Parameters">
+    <ParamField body="client" type="OAuthClientInformationFull">
+      OAuth client making the authorization request
+    </ParamField>
+    <ParamField body="params" type="AuthorizationParams">
+      Authorization request parameters from the client
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ParamField body="str" type="return type">
+      Redirect URL to send the client to
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="load_authorization_code" type="async method">
+  Load authorization code from storage by code string. Return `None` if code is invalid or expired.
+  
+  <Expandable title="Parameters">
+    <ParamField body="client" type="OAuthClientInformationFull">
+      OAuth client attempting to use the authorization code
+    </ParamField>
+    <ParamField body="authorization_code" type="str">
+      Authorization code string to look up
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ParamField body="AuthorizationCode | None" type="return type">
+      Authorization code object or `None` if not found
+    </ParamField>
+  </Expandable>
+</ParamField>
+</Card>
+
+### Token Management
+
+<Card icon="code" title="Token Management Methods">
+<ParamField body="exchange_authorization_code" type="async method">
+  Exchange authorization code for access and refresh tokens. Must validate code and create new tokens.
+  
+  <Expandable title="Parameters">
+    <ParamField body="client" type="OAuthClientInformationFull">
+      OAuth client exchanging the authorization code
+    </ParamField>
+    <ParamField body="authorization_code" type="AuthorizationCode">
+      Valid authorization code object to exchange
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ParamField body="OAuthToken" type="return type">
+      New OAuth token containing access and refresh tokens
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="load_refresh_token" type="async method">
+  Load refresh token from storage by token string. Return `None` if token is invalid or expired.
+  
+  <Expandable title="Parameters">
+    <ParamField body="client" type="OAuthClientInformationFull">
+      OAuth client attempting to use the refresh token
+    </ParamField>
+    <ParamField body="refresh_token" type="str">
+      Refresh token string to look up
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ParamField body="RefreshToken | None" type="return type">
+      Refresh token object or `None` if not found
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="exchange_refresh_token" type="async method">
+  Exchange refresh token for new access/refresh token pair. Must validate scopes and token.
+  
+  <Expandable title="Parameters">
+    <ParamField body="client" type="OAuthClientInformationFull">
+      OAuth client using the refresh token
+    </ParamField>
+    <ParamField body="refresh_token" type="RefreshToken">
+      Valid refresh token object to exchange
+    </ParamField>
+    <ParamField body="scopes" type="list[str]">
+      Requested scopes for the new access token
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ParamField body="OAuthToken" type="return type">
+      New OAuth token with updated access and refresh tokens
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="load_access_token" type="async method">
+  Load an access token by its token string.
+  
+  <Expandable title="Parameters">
+    <ParamField body="token" type="str">
+      The access token to verify
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ParamField body="AccessToken | None" type="return type">
+      The access token object, or `None` if the token is invalid
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="revoke_token" type="async method">
+  Revoke access or refresh token, marking it as invalid in storage.
+  
+  <Expandable title="Parameters">
+    <ParamField body="token" type="AccessToken | RefreshToken">
+      Token object to revoke and mark invalid
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ParamField body="None" type="return type">
+      No return value
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="verify_token" type="async method">
+  Verify bearer token for incoming requests. Return `AccessToken` if valid, `None` if invalid.
+  
+  <Expandable title="Parameters">
+    <ParamField body="token" type="str">
+      Bearer token string from incoming request
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ParamField body="AccessToken | None" type="return type">
+      Access token object if valid, `None` if invalid or expired
+    </ParamField>
+  </Expandable>
+</ParamField>
+</Card>
+
+Each method must handle storage, validation, security, and error cases according to the OAuth 2.1 specification. The implementation complexity is substantial and requires expertise in OAuth security considerations.
+
+<Warning>
+**Security Notice:** OAuth server implementation involves numerous security considerations including PKCE, state parameters, redirect URI validation, token binding, replay attack prevention, and secure storage requirements. Mistakes can lead to serious security vulnerabilities.
+</Warning>
