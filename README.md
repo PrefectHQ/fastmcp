@@ -3,9 +3,9 @@
 <!-- omit in toc -->
 
 <picture>
-  <source width="550" media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/wordmark-watercolor-waves-dark.png">
-  <source width="550" media="(prefers-color-scheme: light)" srcset="docs/assets/brand/wordmark-watercolor-waves.png">
-  <img width="550" alt="FastMCP Logo" src="docs/assets/brand/wordmark-watercolor-waves.png">
+  <source width="550" media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/f-watercolor-waves-dark-2.png">
+  <source width="550" media="(prefers-color-scheme: light)" srcset="docs/assets/brand/f-watercolor-waves-2.png">
+  <img width="550" alt="FastMCP Logo" src="docs/assets/brand/f-watercolor-waves-2.png">
 </picture>
 
 # FastMCP v2 🚀
@@ -82,7 +82,7 @@ There are two ways to access the LLM-friendly documentation:
 ## Table of Contents
 
 - [FastMCP v2 🚀](#fastmcp-v2-)
-    - [📚 Documentation](#-documentation)
+  - [📚 Documentation](#-documentation)
   - [What is MCP?](#what-is-mcp)
   - [Why FastMCP?](#why-fastmcp)
   - [Installation](#installation)
