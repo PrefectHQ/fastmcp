@@ -15,7 +15,7 @@ Final filtering happens at the Provider level.
 
 ## Functions
 
-### `is_enabled` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L269" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `is_enabled` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L271" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_enabled(component: FastMCPComponent) -> bool
@@ -37,7 +37,7 @@ Returns False if visibility mark is False.
 - True if component should be enabled/visible to clients.
 
 
-### `get_visibility_rules` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_visibility_rules` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L300" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_visibility_rules(context: Context) -> list[dict[str, Any]]
@@ -47,7 +47,7 @@ get_visibility_rules(context: Context) -> list[dict[str, Any]]
 Load visibility rule dicts from session state.
 
 
-### `save_visibility_rules` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L303" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `save_visibility_rules` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L305" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 save_visibility_rules(context: Context, rules: list[dict[str, Any]]) -> None
@@ -64,7 +64,7 @@ If None, sends notifications for all types (safe default).
 If provided, only sends notifications for specified types.
 
 
-### `create_visibility_transforms` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L330" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_visibility_transforms` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L332" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_visibility_transforms(rules: list[dict[str, Any]]) -> list[Visibility]
@@ -74,7 +74,7 @@ create_visibility_transforms(rules: list[dict[str, Any]]) -> list[Visibility]
 Convert rule dicts to Visibility transforms.
 
 
-### `get_session_transforms` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L358" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_session_transforms` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L360" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_session_transforms(context: Context) -> list[Visibility]
@@ -84,7 +84,7 @@ get_session_transforms(context: Context) -> list[Visibility]
 Get session-specific Visibility transforms from state store.
 
 
-### `enable_components` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L370" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `enable_components` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L372" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 enable_components(context: Context) -> None
@@ -110,7 +110,7 @@ ResourceListChangedNotification, and PromptListChangedNotification.
 - `match_all`: If True, matches all components regardless of other criteria.
 
 
-### `disable_components` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L424" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `disable_components` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L426" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 disable_components(context: Context) -> None
@@ -136,7 +136,7 @@ ResourceListChangedNotification, and PromptListChangedNotification.
 - `match_all`: If True, matches all components regardless of other criteria.
 
 
-### `reset_visibility` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L478" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `reset_visibility` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L480" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 reset_visibility(context: Context) -> None
@@ -154,7 +154,7 @@ ResourceListChangedNotification, and PromptListChangedNotification.
 - `context`: The context for this session.
 
 
-### `apply_session_transforms` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L495" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `apply_session_transforms` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L497" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 apply_session_transforms(components: Sequence[ComponentT]) -> Sequence[ComponentT]
@@ -188,7 +188,7 @@ Final filtering happens at the Provider level after all transforms run.
 
 **Methods:**
 
-#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L194" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
@@ -197,7 +197,7 @@ list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
 Mark tools by visibility state.
 
 
-#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
@@ -206,7 +206,7 @@ get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
 Mark tool if found.
 
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L211" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]
@@ -215,7 +215,7 @@ list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]
 Mark resources by visibility state.
 
 
-#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L215" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L217" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource(self, uri: str, call_next: GetResourceNext) -> Resource | None
@@ -224,7 +224,7 @@ get_resource(self, uri: str, call_next: GetResourceNext) -> Resource | None
 Mark resource if found.
 
 
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L232" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L234" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resource_templates(self, templates: Sequence[ResourceTemplate]) -> Sequence[ResourceTemplate]
@@ -233,7 +233,7 @@ list_resource_templates(self, templates: Sequence[ResourceTemplate]) -> Sequence
 Mark resource templates by visibility state.
 
 
-#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L240" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource_template(self, uri: str, call_next: GetResourceTemplateNext) -> ResourceTemplate | None
@@ -242,7 +242,7 @@ get_resource_template(self, uri: str, call_next: GetResourceTemplateNext) -> Res
 Mark resource template if found.
 
 
-#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L255" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L257" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]
@@ -251,10 +251,11 @@ list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]
 Mark prompts by visibility state.
 
 
-#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L259" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/visibility.py#L261" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, call_next: GetPromptNext) -> Prompt | None
 ```
 
 Mark prompt if found.
+
