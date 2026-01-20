@@ -44,7 +44,7 @@ Most users only interact with `LocalProvider` (through decorators) and occasiona
 
 ## Transforms
 
-[Transforms](/servers/providers/transforms) modify components as they flow from providers to clients. Each transform sits in a chain, intercepting queries and modifying results before passing them along.
+[Transforms](/servers/transforms/transforms) modify components as they flow from providers to clients. Each transform sits in a chain, intercepting queries and modifying results before passing them along.
 
 | Transform | Purpose |
 |-----------|---------|
@@ -53,7 +53,7 @@ Most users only interact with `LocalProvider` (through decorators) and occasiona
 
 The most common use is namespacing mounted servers to prevent name collisions. When you call `mount(server, namespace="api")`, FastMCP creates a `Namespace` transform automatically.
 
-Transforms can be added to individual providers (affecting just that source) or to the server itself (affecting all components). See [Transforms](/servers/providers/transforms) for the full picture.
+Transforms can be added to individual providers (affecting just that source) or to the server itself (affecting all components). See [Transforms](/servers/transforms/transforms) for the full picture.
 
 ## Provider Order
 
@@ -76,6 +76,6 @@ When a client requests a tool, FastMCP queries providers in registration order. 
 - [Local](/servers/providers/local) - How decorators work
 - [Mounting](/servers/providers/mounting) - Compose servers together
 - [Proxying](/servers/providers/proxy) - Connect to remote servers
-- [Transforms](/servers/providers/transforms) - Namespace, rename, and modify components
+- [Transforms](/servers/transforms/transforms) - Namespace, rename, and modify components
 - [Visibility](/servers/visibility) - Control which components clients can access
 - [Custom](/servers/providers/custom) - Build your own providers

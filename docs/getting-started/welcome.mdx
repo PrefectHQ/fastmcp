@@ -41,16 +41,15 @@ if __name__ == "__main__":
 
 ## Production-Ready MCP
 
-FastMCP pioneered Python MCP development—FastMCP 1.0 was incorporated into the [official MCP SDK](https://github.com/modelcontextprotocol/python-sdk) in 2024. Today, roughly 70% of MCP servers run on some version of FastMCP.
+FastMCP has pioneered MCP development since FastMCP 1.0 was incorporated into the [official MCP SDK](https://github.com/modelcontextprotocol/python-sdk) in 2024. Today, 70% of MCP servers across all languages run on some version of FastMCP. 
 
-**FastMCP 3.0 is built for enterprise MCP applications.** When you need to compose multiple servers, proxy remote APIs, add enterprise auth, or deploy multi-tenant systems, FastMCP provides the right abstractions:
+**FastMCP 3.0 was built from the ground up for production MCP applications.** When you need to compose multiple servers, proxy remote APIs, add enterprise auth, or deploy multi-tenant systems, FastMCP provides the right abstractions:
 
-- **[Providers](/servers/providers/overview)** let you source components from anywhere—decorated functions, filesystem discovery, remote servers, OpenAPI specs, or your own custom sources.
-- **[Transforms](/servers/providers/transforms)** control what clients see—namespace for composition, filter by version or user permissions, convert resources to tools for compatibility.
-- **[Servers](/servers/server)** expose everything over stdio, HTTP, or WebSocket with session management and protocol handling built in.
-- **[Middleware](/servers/middleware)** handles cross-cutting concerns—authentication, authorization, logging, rate limiting, custom business logic.
+- **[Components](/servers/tools)** define the logic—tools, resources, and prompts that wrap your Python functions and data.
+- **[Providers](/servers/providers/overview)** source the components—from decorated functions, filesystem discovery, remote servers, OpenAPI specs, or your own custom sources.
+- **[Transforms](/servers/transforms/transforms)** shape the components—namespace for composition, filter by version or user permissions, convert resources to tools for compatibility.
 
-Mount a weather API and a calendar server together with automatic namespacing. Proxy your company's internal MCP servers through a single authenticated gateway. Build a SaaS product where each tenant gets their own isolated component set. These aren't edge cases—they're what production MCP looks like.
+Compose these into **[Servers](/servers/server)** to expose your logic to clients, and use **[Middleware](/servers/middleware)** for cross-cutting concerns like authentication, logging, and rate limiting.
 
 Ready to build? Start with our [installation guide](/getting-started/installation) or jump straight to the [quickstart](/getting-started/quickstart).
 
@@ -60,8 +59,8 @@ FastMCP is made with 💙 by [Prefect](https://www.prefect.io/).
 
 The Model Context Protocol lets you build servers that expose data and functionality to LLM applications in a secure, standardized way. It is often described as "the USB-C port for AI", providing a uniform way to connect LLMs to resources they can use. It may be easier to think of it as an API, but specifically designed for LLM interactions. MCP servers can:
 
-- Expose data through `Resources` (think of these sort of like GET endpoints; they are used to load information into the LLM's context)
 - Provide functionality through `Tools` (sort of like POST endpoints; they are used to execute code or otherwise produce a side effect)
+- Expose data through `Resources` (think of these sort of like GET endpoints; they are used to load information into the LLM's context)
 - Define interaction patterns through `Prompts` (reusable templates for LLM interactions)
 - And more!
 
@@ -77,9 +76,9 @@ FastMCP handles all the complex protocol details so you can focus on building. I
 
 🐍 **Pythonic**: Feels natural to Python developers
 
-🔍 **Complete**: Everything for production—enterprise auth (Google, GitHub, Azure, Auth0, WorkOS), deployment tools, testing frameworks, client libraries, and more
+🔍 **Complete**: Everything you need to build production MCP applications
 
-🔧 **Composable**: The v3 architecture scales from a single tool to complex multi-server deployments
+🔧 **Composable**: The v3 architecture is designed for maximum flexibility
 
 FastMCP provides the shortest path from idea to production. Deploy locally, to the cloud with [FastMCP Cloud](https://fastmcp.cloud) (free for personal servers), or to your own infrastructure.
 

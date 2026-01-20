@@ -157,12 +157,12 @@
               {
                 "group": "MCP Transforms",
                 "pages": [
-                  "servers/providers/transforms",
-                  "servers/providers/namespace",
-                  "servers/providers/tool-transformation",
+                  "servers/transforms/transforms",
+                  "servers/transforms/namespace",
+                  "servers/transforms/tool-transformation",
                   "servers/visibility",
-                  "servers/providers/resources-as-tools",
-                  "servers/providers/prompts-as-tools"
+                  "servers/transforms/resources-as-tools",
+                  "servers/transforms/prompts-as-tools"
                 ]
               },
               {
@@ -846,14 +846,14 @@
       "destination": "/servers/providers/mounting",
       "source": "/servers/composition"
     },
-    {
-      "destination": "/servers/providers/transforms",
-      "source": "/servers/providers/namespacing"
-    },
-    {
-      "destination": "/servers/providers/transforms",
-      "source": "/patterns/tool-transformation"
-    }
+      {
+        "destination": "/servers/transforms/transforms",
+        "source": "/servers/providers/namespacing"
+      },
+      {
+        "destination": "/servers/transforms/transforms",
+        "source": "/patterns/tool-transformation"
+      }
   ],
   "search": {
     "prompt": "Search the docs..."
