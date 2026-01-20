@@ -285,3 +285,55 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 ```
+
+## Client Utilities
+
+FastMCP provides utilities for downloading skills from any MCP server that exposes them. These are standalone functions in `fastmcp.utilities.skills`.
+
+### Discovering Skills
+
+Use `list_skills()` to see what skills are available on a server.
+
+```python
+from fastmcp import Client
+from fastmcp.utilities.skills import list_skills
+
+async with Client("http://skills-server/mcp") as client:
+    skills = await list_skills(client)
+    for skill in skills:
+        print(f"{skill.name}: {skill.description}")
+```
+
+### Downloading Skills
+
+Use `download_skill()` to download a single skill, or `sync_skills()` to download all available skills.
+
+```python
+from pathlib import Path
+
+from fastmcp import Client
+from fastmcp.utilities.skills import download_skill, sync_skills
+
+async with Client("http://skills-server/mcp") as client:
+    # Download one skill
+    path = await download_skill(client, "pdf-processing", Path.home() / ".claude" / "skills")
+
+    # Or download all skills
+    paths = await sync_skills(client, Path.home() / ".claude" / "skills")
+```
+
+Both functions accept an `overwrite` parameter. When `False` (default), existing skills are skipped. When `True`, existing files are replaced.
+
+### Inspecting Manifests
+
+Use `get_skill_manifest()` to see what files a skill contains before downloading.
+
+```python
+from fastmcp import Client
+from fastmcp.utilities.skills import get_skill_manifest
+
+async with Client("http://skills-server/mcp") as client:
+    manifest = await get_skill_manifest(client, "pdf-processing")
+    for file in manifest.files:
+        print(f"{file.path} ({file.size} bytes, {file.hash})")
+```
