@@ -591,7 +591,7 @@ Enable components matching criteria for this session only.
 
 Session rules override global transforms. Rules accumulate - each call
 adds a new rule to the session. Later marks override earlier ones
-(Enabled transform semantics).
+(Visibility transform semantics).
 
 Sends notifications to this session only: ToolListChangedNotification,
 ResourceListChangedNotification, and PromptListChangedNotification.
@@ -615,7 +615,7 @@ Disable components matching criteria for this session only.
 
 Session rules override global transforms. Rules accumulate - each call
 adds a new rule to the session. Later marks override earlier ones
-(Enabled transform semantics).
+(Visibility transform semantics).
 
 Sends notifications to this session only: ToolListChangedNotification,
 ResourceListChangedNotification, and PromptListChangedNotification.
@@ -629,10 +629,10 @@ ResourceListChangedNotification, and PromptListChangedNotification.
 - `match_all`: If True, matches all components regardless of other criteria.
 
 
-#### `reset_components` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1073" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `reset_visibility` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L1073" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-reset_components(self) -> None
+reset_visibility(self) -> None
 ```
 
 Clear all session visibility rules.

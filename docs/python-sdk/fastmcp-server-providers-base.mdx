@@ -121,7 +121,7 @@ get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None
 Get tool by transformed name with all transforms applied.
 
 Note: This method does NOT filter disabled components. The Server
-(FastMCP) performs enabled filtering after all transforms complete,
+(FastMCP) performs visibility filtering after all transforms complete,
 allowing session-level transforms to override provider-level disables.
 
 **Args:**
@@ -152,7 +152,7 @@ get_resource(self, uri: str, version: VersionSpec | None = None) -> Resource | N
 Get resource by transformed URI with all transforms applied.
 
 Note: This method does NOT filter disabled components. The Server
-(FastMCP) performs enabled filtering after all transforms complete.
+(FastMCP) performs visibility filtering after all transforms complete.
 
 **Args:**
 - `uri`: The transformed resource URI to look up.
@@ -182,7 +182,7 @@ get_resource_template(self, uri: str, version: VersionSpec | None = None) -> Res
 Get resource template by transformed URI with all transforms applied.
 
 Note: This method does NOT filter disabled components. The Server
-(FastMCP) performs enabled filtering after all transforms complete.
+(FastMCP) performs visibility filtering after all transforms complete.
 
 **Args:**
 - `uri`: The transformed template URI to look up.
@@ -212,7 +212,7 @@ get_prompt(self, name: str, version: VersionSpec | None = None) -> Prompt | None
 Get prompt by transformed name with all transforms applied.
 
 Note: This method does NOT filter disabled components. The Server
-(FastMCP) performs enabled filtering after all transforms complete.
+(FastMCP) performs visibility filtering after all transforms complete.
 
 **Args:**
 - `name`: The transformed prompt name to look up.
@@ -289,7 +289,7 @@ disable(self) -> Self
 
 Disable components matching all specified criteria.
 
-Adds an enabled transform that marks matching components as disabled.
+Adds a visibility transform that marks matching components as disabled.
 Components can be re-enabled by calling enable() with matching criteria
 (the later transform wins).
 

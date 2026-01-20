@@ -1,7 +1,7 @@
-"""Enabled transform for marking component enabled state.
+"""Visibility transform for marking component visibility state.
 
-Each Enabled instance marks components via internal metadata. Multiple
-enabled transforms can be stacked - later transforms override earlier ones.
+Each Visibility instance marks components via internal metadata. Multiple
+visibility transforms can be stacked - later transforms override earlier ones.
 Final filtering happens at the Provider level.
 """
 
@@ -31,29 +31,29 @@ if TYPE_CHECKING:
 
 T = TypeVar("T", bound="FastMCPComponent")
 
-# Enabled state stored at meta["fastmcp"]["_internal"]["enabled"]
+# Visibility state stored at meta["fastmcp"]["_internal"]["visibility"]
 _FASTMCP_KEY = "fastmcp"
 _INTERNAL_KEY = "_internal"
 
 
-class Enabled(Transform):
-    """Sets enabled state on matching components.
+class Visibility(Transform):
+    """Sets visibility state on matching components.
 
-    Does NOT filter inline - just marks components with enabled state.
+    Does NOT filter inline - just marks components with visibility state.
     Later transforms in the chain can override earlier marks.
     Final filtering happens at the Provider level after all transforms run.
 
     Example:
         ```python
         # Disable components tagged "internal"
-        Enabled(False, tags={"internal"})
+        Visibility(False, tags={"internal"})
 
         # Re-enable specific tool (override earlier disable)
-        Enabled(True, names={"safe_tool"})
+        Visibility(True, names={"safe_tool"})
 
         # Allowlist via composition:
-        Enabled(False, match_all=True)  # disable everything
-        Enabled(True, tags={"public"})  # enable public
+        Visibility(False, match_all=True)  # disable everything
+        Visibility(True, tags={"public"})  # enable public
         ```
     """
 
@@ -69,7 +69,7 @@ class Enabled(Transform):
         | None = None,
         match_all: bool = False,
     ) -> None:
-        """Initialize an enabled marker.
+        """Initialize a visibility marker.
 
         Args:
             enabled: If True, mark matching as enabled; if False, mark as disabled.
@@ -92,7 +92,7 @@ class Enabled(Transform):
     def __repr__(self) -> str:
         action = "enable" if self._enabled else "disable"
         if self.match_all:
-            return f"Enabled({self._enabled}, match_all=True)"
+            return f"Visibility({self._enabled}, match_all=True)"
         parts = []
         if self.names:
             parts.append(f"names={set(self.names)}")
@@ -105,8 +105,8 @@ class Enabled(Transform):
         if self.tags:
             parts.append(f"tags={set(self.tags)}")
         if parts:
-            return f"Enabled({action}, {', '.join(parts)})"
-        return f"Enabled({action})"
+            return f"Visibility({action}, {', '.join(parts)})"
+        return f"Visibility({action})"
 
     def _matches(self, component: FastMCPComponent) -> bool:
         """Check if this transform applies to the component.
@@ -171,18 +171,20 @@ class Enabled(Transform):
         return self.tags is None or bool(component.tags & self.tags)
 
     def _mark_component(self, component: T) -> T:
-        """Set enabled state in component metadata if rule matches."""
+        """Set visibility state in component metadata if rule matches."""
         if not self._matches(component):
             return component
 
         # Create new dicts to avoid mutating shared dicts
         # (e.g., when Tool.from_tool shares the meta dict between tools)
         if component.meta is None:
-            component.meta = {_FASTMCP_KEY: {_INTERNAL_KEY: {"enabled": self._enabled}}}
+            component.meta = {
+                _FASTMCP_KEY: {_INTERNAL_KEY: {"visibility": self._enabled}}
+            }
         else:
             old_fastmcp = component.meta.get(_FASTMCP_KEY, {})
             old_internal = old_fastmcp.get(_INTERNAL_KEY, {})
-            new_internal = {**old_internal, "enabled": self._enabled}
+            new_internal = {**old_internal, "visibility": self._enabled}
             new_fastmcp = {**old_fastmcp, _INTERNAL_KEY: new_internal}
             component.meta = {**component.meta, _FASTMCP_KEY: new_fastmcp}
         return component
@@ -192,7 +194,7 @@ class Enabled(Transform):
     # -------------------------------------------------------------------------
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
-        """Mark tools by enabled state."""
+        """Mark tools by visibility state."""
         return [self._mark_component(t) for t in tools]
 
     async def get_tool(
@@ -209,7 +211,7 @@ class Enabled(Transform):
     # -------------------------------------------------------------------------
 
     async def list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]:
-        """Mark resources by enabled state."""
+        """Mark resources by visibility state."""
         return [self._mark_component(r) for r in resources]
 
     async def get_resource(
@@ -232,7 +234,7 @@ class Enabled(Transform):
     async def list_resource_templates(
         self, templates: Sequence[ResourceTemplate]
     ) -> Sequence[ResourceTemplate]:
-        """Mark resource templates by enabled state."""
+        """Mark resource templates by visibility state."""
         return [self._mark_component(t) for t in templates]
 
     async def get_resource_template(
@@ -253,7 +255,7 @@ class Enabled(Transform):
     # -------------------------------------------------------------------------
 
     async def list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]:
-        """Mark prompts by enabled state."""
+        """Mark prompts by visibility state."""
         return [self._mark_component(p) for p in prompts]
 
     async def get_prompt(
@@ -270,10 +272,10 @@ def is_enabled(component: FastMCPComponent) -> bool:
     """Check if component is enabled.
 
     Returns True if:
-    - No enabled mark exists (default is enabled)
-    - Enabled mark is True
+    - No visibility mark exists (default is enabled)
+    - Visibility mark is True
 
-    Returns False if enabled mark is False.
+    Returns False if visibility mark is False.
 
     Args:
         component: Component to check.
@@ -284,7 +286,7 @@ def is_enabled(component: FastMCPComponent) -> bool:
     meta = component.meta or {}
     fastmcp = meta.get(_FASTMCP_KEY, {})
     internal = fastmcp.get(_INTERNAL_KEY, {})
-    return internal.get("enabled", True)  # Default True if not set
+    return internal.get("visibility", True)  # Default True if not set
 
 
 # -------------------------------------------------------------------------
@@ -327,8 +329,8 @@ async def save_visibility_rules(
         await context.send_notification(mcp.types.PromptListChangedNotification())
 
 
-def create_enabled_transforms(rules: list[dict[str, Any]]) -> list[Enabled]:
-    """Convert rule dicts to Enabled transforms."""
+def create_visibility_transforms(rules: list[dict[str, Any]]) -> list[Visibility]:
+    """Convert rule dicts to Visibility transforms."""
     transforms = []
     for params in rules:
         version = None
@@ -340,7 +342,7 @@ def create_enabled_transforms(rules: list[dict[str, Any]]) -> list[Enabled]:
                 eq=version_dict.get("eq"),
             )
         transforms.append(
-            Enabled(
+            Visibility(
                 params["enabled"],
                 names=set(params["names"]) if params.get("names") else None,
                 keys=set(params["keys"]) if params.get("keys") else None,
@@ -355,8 +357,8 @@ def create_enabled_transforms(rules: list[dict[str, Any]]) -> list[Enabled]:
     return transforms
 
 
-async def get_session_transforms(context: Context) -> list[Enabled]:
-    """Get session-specific Enabled transforms from state store."""
+async def get_session_transforms(context: Context) -> list[Visibility]:
+    """Get session-specific Visibility transforms from state store."""
     try:
         # Will raise RuntimeError if no session available
         _ = context.session_id
@@ -364,7 +366,7 @@ async def get_session_transforms(context: Context) -> list[Enabled]:
         return []
 
     rules = await get_visibility_rules(context)
-    return create_enabled_transforms(rules)
+    return create_visibility_transforms(rules)
 
 
 async def enable_components(
@@ -381,7 +383,7 @@ async def enable_components(
 
     Session rules override global transforms. Rules accumulate - each call
     adds a new rule to the session. Later marks override earlier ones
-    (Enabled transform semantics).
+    (Visibility transform semantics).
 
     Sends notifications to this session only: ToolListChangedNotification,
     ResourceListChangedNotification, and PromptListChangedNotification.
@@ -435,7 +437,7 @@ async def disable_components(
 
     Session rules override global transforms. Rules accumulate - each call
     adds a new rule to the session. Later marks override earlier ones
-    (Enabled transform semantics).
+    (Visibility transform semantics).
 
     Sends notifications to this session only: ToolListChangedNotification,
     ResourceListChangedNotification, and PromptListChangedNotification.
@@ -475,7 +477,7 @@ async def disable_components(
     await save_visibility_rules(context, rules, components=components)
 
 
-async def reset_components(context: Context) -> None:
+async def reset_visibility(context: Context) -> None:
     """Clear all session visibility rules.
 
     Use this to reset session visibility back to global defaults.
@@ -498,7 +500,7 @@ async def apply_session_transforms(
     """Apply session-specific visibility transforms to components.
 
     This helper applies session-level enable/disable rules by marking
-    components with their enabled state. Session transforms override
+    components with their visibility state. Session transforms override
     global transforms due to mark-based semantics (later marks win).
 
     Args:

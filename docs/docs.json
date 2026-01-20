@@ -137,7 +137,7 @@
                   "servers/tasks",
                   "servers/telemetry",
                   "servers/versioning",
-                  "servers/enabled"
+                  "servers/visibility"
                 ]
               },
               {
@@ -563,7 +563,7 @@
                     "group": "transforms",
                     "pages": [
                       "python-sdk/fastmcp-server-transforms-__init__",
-                      "python-sdk/fastmcp-server-transforms-enabled",
+                      "python-sdk/fastmcp-server-transforms-visibility",
                       "python-sdk/fastmcp-server-transforms-namespace",
                       "python-sdk/fastmcp-server-transforms-prompts_as_tools",
                       "python-sdk/fastmcp-server-transforms-resources_as_tools",

@@ -220,7 +220,7 @@ class Transform:
 
 
 # Re-export built-in transforms (must be after Transform class to avoid circular imports)
-from fastmcp.server.transforms.enabled import Enabled, is_enabled  # noqa: E402
+from fastmcp.server.transforms.visibility import Visibility, is_enabled  # noqa: E402
 from fastmcp.server.transforms.namespace import Namespace  # noqa: E402
 from fastmcp.server.transforms.prompts_as_tools import PromptsAsTools  # noqa: E402
 from fastmcp.server.transforms.resources_as_tools import ResourcesAsTools  # noqa: E402
@@ -228,7 +228,6 @@ from fastmcp.server.transforms.tool_transform import ToolTransform  # noqa: E402
 from fastmcp.server.transforms.version_filter import VersionFilter  # noqa: E402
 
 __all__ = [
-    "Enabled",
     "GetPromptNext",
     "GetResourceNext",
     "GetResourceTemplateNext",
@@ -240,5 +239,6 @@ __all__ = [
     "Transform",
     "VersionFilter",
     "VersionSpec",
+    "Visibility",
     "is_enabled",
 ]

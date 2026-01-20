@@ -72,7 +72,7 @@ from fastmcp.server.transforms import (
     ToolTransform,
     Transform,
 )
-from fastmcp.server.transforms.enabled import apply_session_transforms, is_enabled
+from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.settings import Settings
 from fastmcp.tools.function_tool import FunctionTool
@@ -604,7 +604,7 @@ class FastMCP(
     async def list_tools(self, *, run_middleware: bool = True) -> Sequence[Tool]:
         """List all enabled tools from providers.
 
-        Overrides Provider.list_tools() to add enabled filtering, auth filtering,
+        Overrides Provider.list_tools() to add visibility filtering, auth filtering,
         and middleware execution. Returns all versions (no deduplication).
         Protocol handlers deduplicate for MCP wire format.
         """
@@ -676,7 +676,7 @@ class FastMCP(
     ) -> Tool | None:
         """Get a tool by name, filtering disabled tools.
 
-        Overrides Provider.get_tool() to add enabled filtering after all
+        Overrides Provider.get_tool() to add visibility filtering after all
         transforms (including session-level) have been applied. This ensures
         session transforms can override provider-level disables.
 
@@ -702,7 +702,7 @@ class FastMCP(
     ) -> Sequence[Resource]:
         """List all enabled resources from providers.
 
-        Overrides Provider.list_resources() to add enabled filtering, auth filtering,
+        Overrides Provider.list_resources() to add visibility filtering, auth filtering,
         and middleware execution. Returns all versions (no deduplication).
         Protocol handlers deduplicate for MCP wire format.
         """
@@ -774,7 +774,7 @@ class FastMCP(
     ) -> Resource | None:
         """Get a resource by URI, filtering disabled resources.
 
-        Overrides Provider.get_resource() to add enabled filtering after all
+        Overrides Provider.get_resource() to add visibility filtering after all
         transforms (including session-level) have been applied.
 
         Args:
@@ -799,7 +799,7 @@ class FastMCP(
     ) -> Sequence[ResourceTemplate]:
         """List all enabled resource templates from providers.
 
-        Overrides Provider.list_resource_templates() to add enabled filtering,
+        Overrides Provider.list_resource_templates() to add visibility filtering,
         auth filtering, and middleware execution. Returns all versions (no deduplication).
         Protocol handlers deduplicate for MCP wire format.
         """
@@ -873,7 +873,7 @@ class FastMCP(
     ) -> ResourceTemplate | None:
         """Get a resource template by URI, filtering disabled templates.
 
-        Overrides Provider.get_resource_template() to add enabled filtering after
+        Overrides Provider.get_resource_template() to add visibility filtering after
         all transforms (including session-level) have been applied.
 
         Args:
@@ -896,7 +896,7 @@ class FastMCP(
     async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
         """List all enabled prompts from providers.
 
-        Overrides Provider.list_prompts() to add enabled filtering, auth filtering,
+        Overrides Provider.list_prompts() to add visibility filtering, auth filtering,
         and middleware execution. Returns all versions (no deduplication).
         Protocol handlers deduplicate for MCP wire format.
         """
@@ -968,7 +968,7 @@ class FastMCP(
     ) -> Prompt | None:
         """Get a prompt by name, filtering disabled prompts.
 
-        Overrides Provider.get_prompt() to add enabled filtering after all
+        Overrides Provider.get_prompt() to add visibility filtering after all
         transforms (including session-level) have been applied.
 
         Args:

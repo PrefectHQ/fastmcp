@@ -336,7 +336,7 @@ class TestLocalProviderDecorators:
         assert "tool:direct_tool@" in provider._components
 
     def test_tool_enabled_false(self):
-        """Tool with enabled=False should add an Enabled transform."""
+        """Tool with enabled=False should add a Visibility transform."""
         provider = LocalProvider()
 
         @provider.tool(enabled=False)
@@ -344,10 +344,12 @@ class TestLocalProviderDecorators:
             return "should be disabled"
 
         assert "tool:disabled_tool@" in provider._components
-        # enabled=False adds an Enabled transform to disable the tool
-        from fastmcp.server.transforms.enabled import Enabled
+        # enabled=False adds a Visibility transform to disable the tool
+        from fastmcp.server.transforms.visibility import Visibility
 
-        enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
+        enabled_transforms = [
+            t for t in provider.transforms if isinstance(t, Visibility)
+        ]
         assert len(enabled_transforms) == 1
         assert enabled_transforms[0]._enabled is False
         assert enabled_transforms[0].keys == {"tool:disabled_tool@"}
@@ -425,7 +427,7 @@ class TestLocalProviderDecorators:
         assert provider._components["resource:resource://test@"].name == "custom_name"
 
     def test_resource_enabled_false(self):
-        """Resource with enabled=False should add an Enabled transform."""
+        """Resource with enabled=False should add a Visibility transform."""
         provider = LocalProvider()
 
         @provider.resource("resource://test", enabled=False)
@@ -433,10 +435,12 @@ class TestLocalProviderDecorators:
             return "should be disabled"
 
         assert "resource:resource://test@" in provider._components
-        # enabled=False adds an Enabled transform to disable the resource
-        from fastmcp.server.transforms.enabled import Enabled
+        # enabled=False adds a Visibility transform to disable the resource
+        from fastmcp.server.transforms.visibility import Visibility
 
-        enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
+        enabled_transforms = [
+            t for t in provider.transforms if isinstance(t, Visibility)
+        ]
         assert len(enabled_transforms) == 1
         assert enabled_transforms[0]._enabled is False
         assert enabled_transforms[0].keys == {"resource:resource://test@"}
@@ -461,7 +465,7 @@ class TestLocalProviderDecorators:
         assert "resource://disabled" not in uris
 
     def test_template_enabled_false(self):
-        """Template with enabled=False should add an Enabled transform."""
+        """Template with enabled=False should add a Visibility transform."""
         provider = LocalProvider()
 
         @provider.resource("data://{id}", enabled=False)
@@ -469,10 +473,12 @@ class TestLocalProviderDecorators:
             return f"Data {id}"
 
         assert "template:data://{id}@" in provider._components
-        # enabled=False adds an Enabled transform to disable the template
-        from fastmcp.server.transforms.enabled import Enabled
+        # enabled=False adds a Visibility transform to disable the template
+        from fastmcp.server.transforms.visibility import Visibility
 
-        enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
+        enabled_transforms = [
+            t for t in provider.transforms if isinstance(t, Visibility)
+        ]
         assert len(enabled_transforms) == 1
         assert enabled_transforms[0]._enabled is False
         assert enabled_transforms[0].keys == {"template:data://{id}@"}
@@ -532,7 +538,7 @@ class TestLocalProviderDecorators:
         assert "prompt:my_prompt@" not in provider._components
 
     def test_prompt_enabled_false(self):
-        """Prompt with enabled=False should add an Enabled transform."""
+        """Prompt with enabled=False should add a Visibility transform."""
         provider = LocalProvider()
 
         @provider.prompt(enabled=False)
@@ -540,10 +546,12 @@ class TestLocalProviderDecorators:
             return "should be disabled"
 
         assert "prompt:disabled_prompt@" in provider._components
-        # enabled=False adds an Enabled transform to disable the prompt
-        from fastmcp.server.transforms.enabled import Enabled
+        # enabled=False adds a Visibility transform to disable the prompt
+        from fastmcp.server.transforms.visibility import Visibility
 
-        enabled_transforms = [t for t in provider.transforms if isinstance(t, Enabled)]
+        enabled_transforms = [
+            t for t in provider.transforms if isinstance(t, Visibility)
+        ]
         assert len(enabled_transforms) == 1
         assert enabled_transforms[0]._enabled is False
         assert enabled_transforms[0].keys == {"prompt:disabled_prompt@"}

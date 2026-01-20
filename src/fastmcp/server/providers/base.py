@@ -38,7 +38,7 @@ from typing_extensions import Self
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.transforms.enabled import Enabled
+from fastmcp.server.transforms.visibility import Visibility
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.components import FastMCPComponent
@@ -502,7 +502,7 @@ class Provider:
     ) -> Self:
         """Enable components matching all specified criteria.
 
-        Adds an enabled transform that marks matching components as enabled.
+        Adds a visibility transform that marks matching components as enabled.
         Later transforms override earlier ones, so enable after disable makes
         the component enabled.
 
@@ -524,9 +524,9 @@ class Provider:
         if only:
             # Allowlist: disable everything, then enable matching
             # The enable transform runs later on return path, so it overrides
-            self._transforms.append(Enabled(False, match_all=True))
+            self._transforms.append(Visibility(False, match_all=True))
         self._transforms.append(
-            Enabled(
+            Visibility(
                 True,
                 names=names,
                 keys=keys,
@@ -550,7 +550,7 @@ class Provider:
     ) -> Self:
         """Disable components matching all specified criteria.
 
-        Adds an enabled transform that marks matching components as disabled.
+        Adds a visibility transform that marks matching components as disabled.
         Components can be re-enabled by calling enable() with matching criteria
         (the later transform wins).
 
@@ -566,7 +566,7 @@ class Provider:
             Self for method chaining.
         """
         self._transforms.append(
-            Enabled(
+            Visibility(
                 False,
                 names=names,
                 keys=keys,

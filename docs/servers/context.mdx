@@ -23,7 +23,7 @@ The `Context` object provides a clean interface to access MCP features within yo
 - **LLM Sampling**: Request the client's LLM to generate text based on provided messages
 - **User Elicitation**: Request structured input from users during tool execution
 - **Session State**: Store data that persists across requests within an MCP session
-- **Session Visibility**: [Control which components are visible](/servers/enabled#per-session-visibility) to the current session
+- **Session Visibility**: [Control which components are visible](/servers/visibility#per-session-visibility) to the current session
 - **Request Information**: Access metadata about the current request
 - **Server Access**: When needed, access the underlying FastMCP server instance
 
@@ -266,7 +266,7 @@ State set during `on_initialize` middleware persists to subsequent tool calls wh
 
 <VersionBadge version="3.0.0" />
 
-Tools can customize which components are visible to their current session using `ctx.enable_components()`, `ctx.disable_components()`, and `ctx.reset_components()`. These methods apply visibility rules that affect only the calling session, leaving other sessions unchanged. See [Per-Session Visibility](/servers/enabled#per-session-visibility) for complete documentation, filter criteria, and patterns like namespace activation.
+Tools can customize which components are visible to their current session using `ctx.enable_components()`, `ctx.disable_components()`, and `ctx.reset_visibility()`. These methods apply visibility rules that affect only the calling session, leaving other sessions unchanged. See [Per-Session Visibility](/servers/visibility#per-session-visibility) for complete documentation, filter criteria, and patterns like namespace activation.
 
 ### Change Notifications
 

@@ -23,7 +23,7 @@ class Provider:
 
 Providers support:
 - **Lifecycle management**: `async def lifespan()` for setup/teardown
-- **Enabled control**: `enable()` / `disable()` with name, version, tags, components, and allowlist mode
+- **Visibility control**: `enable()` / `disable()` with name, version, tags, components, and allowlist mode
 - **Transform stacking**: `provider.add_transform(Namespace(...))`, `provider.add_transform(ToolTransform(...))`
 
 ### LocalProvider
@@ -106,7 +106,7 @@ Transforms modify components (tools, resources, prompts) as they flow from provi
 
 - `Namespace` - adds prefixes to names (`tool` → `api_tool`) and path segments to URIs (`data://x` → `data://api/x`)
 - `ToolTransform` - modifies tool schemas (rename, description, tags, argument transforms)
-- `Enabled` - sets enabled state on components by key or tag (backs `enable()`/`disable()` API)
+- `Visibility` - sets visibility state on components by key or tag (backs `enable()`/`disable()` API)
 - `VersionFilter` - filters components by version range (`version_gte`, `version_lt`)
 - `ResourcesAsTools` - exposes resources as tools for tool-only clients
 - `PromptsAsTools` - exposes prompts as tools for tool-only clients
@@ -149,7 +149,7 @@ Transforms apply at two levels:
 - **Provider-level**: `provider.add_transform()` - affects only that provider's components
 - **Server-level**: `server.add_transform()` - affects all components from all providers
 
-Documentation: `docs/servers/providers/transforms.mdx`, `docs/servers/enabled.mdx`
+Documentation: `docs/servers/providers/transforms.mdx`, `docs/servers/visibility.mdx`
 
 ### ResourcesAsTools and PromptsAsTools
 
@@ -232,9 +232,9 @@ Documentation: `docs/servers/context.mdx`
 
 ---
 
-## Enabled System
+## Visibility System
 
-Components can be enabled/disabled using the enabled system. Each `enable()` or `disable()` call adds a stateless Enabled transform that marks components via internal metadata. Later transforms override earlier ones.
+Components can be enabled/disabled using the visibility system. Each `enable()` or `disable()` call adds a stateless Visibility transform that marks components via internal metadata. Later transforms override earlier ones.
 
 ```python
 mcp = FastMCP("Server")
@@ -261,7 +261,7 @@ Works at both server and provider level. Supports:
 - **Allowlist mode** (`only=True`): Only explicitly enabled components visible
 - **Tag-based filtering**: Enable/disable groups of components by tag
 - **Override semantics**: Later transforms override earlier marks (enable after disable = enabled)
-- **Transform ordering**: Enabled transforms are injected at the point you call them, so component state is known
+- **Transform ordering**: Visibility transforms are injected at the point you call them, so component state is known
 
 ### Per-Session Visibility
 
@@ -286,7 +286,7 @@ async def unlock_premium(ctx: Context) -> str:
 @mcp.tool
 async def reset_features(ctx: Context) -> str:
     """Reset to default feature set."""
-    await ctx.reset_components()
+    await ctx.reset_visibility()
     return "Features reset to defaults"
 
 # Globally disabled - sessions unlock individually
@@ -296,11 +296,11 @@ mcp.disable(tags={"premium"})
 Session visibility methods:
 - `await ctx.enable_components(...)`: Enable components for this session
 - `await ctx.disable_components(...)`: Disable components for this session
-- `await ctx.reset_components()`: Clear session rules, return to global defaults
+- `await ctx.reset_visibility()`: Clear session rules, return to global defaults
 
 Session rules override global transforms. FastMCP automatically sends `ToolListChangedNotification` (and resource/prompt equivalents) to affected sessions when visibility changes.
 
-Documentation: `docs/servers/enabled.mdx`
+Documentation: `docs/servers/visibility.mdx`
 
 ---
 

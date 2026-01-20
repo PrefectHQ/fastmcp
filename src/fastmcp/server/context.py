@@ -39,23 +39,23 @@ from fastmcp.server.sampling.run import (
     sample_step_impl,
 )
 from fastmcp.server.server import FastMCP, StateValue
-from fastmcp.server.transforms.enabled import (
-    Enabled,
+from fastmcp.server.transforms.visibility import (
+    Visibility,
 )
-from fastmcp.server.transforms.enabled import (
+from fastmcp.server.transforms.visibility import (
     disable_components as _disable_components,
 )
-from fastmcp.server.transforms.enabled import (
+from fastmcp.server.transforms.visibility import (
     enable_components as _enable_components,
 )
-from fastmcp.server.transforms.enabled import (
+from fastmcp.server.transforms.visibility import (
     get_session_transforms as _get_session_transforms,
 )
-from fastmcp.server.transforms.enabled import (
+from fastmcp.server.transforms.visibility import (
     get_visibility_rules as _get_visibility_rules,
 )
-from fastmcp.server.transforms.enabled import (
-    reset_components as _reset_components,
+from fastmcp.server.transforms.visibility import (
+    reset_visibility as _reset_visibility,
 )
 from fastmcp.utilities.logging import _clamp_logger, get_logger
 from fastmcp.utilities.versions import VersionSpec
@@ -990,8 +990,8 @@ class Context:
         """Load visibility rule dicts from session state."""
         return await _get_visibility_rules(self)
 
-    async def _get_session_transforms(self) -> list[Enabled]:
-        """Get session-specific Enabled transforms from state store."""
+    async def _get_session_transforms(self) -> list[Visibility]:
+        """Get session-specific Visibility transforms from state store."""
         return await _get_session_transforms(self)
 
     async def enable_components(
@@ -1009,7 +1009,7 @@ class Context:
 
         Session rules override global transforms. Rules accumulate - each call
         adds a new rule to the session. Later marks override earlier ones
-        (Enabled transform semantics).
+        (Visibility transform semantics).
 
         Sends notifications to this session only: ToolListChangedNotification,
         ResourceListChangedNotification, and PromptListChangedNotification.
@@ -1047,7 +1047,7 @@ class Context:
 
         Session rules override global transforms. Rules accumulate - each call
         adds a new rule to the session. Later marks override earlier ones
-        (Enabled transform semantics).
+        (Visibility transform semantics).
 
         Sends notifications to this session only: ToolListChangedNotification,
         ResourceListChangedNotification, and PromptListChangedNotification.
@@ -1070,7 +1070,7 @@ class Context:
             match_all=match_all,
         )
 
-    async def reset_components(self) -> None:
+    async def reset_visibility(self) -> None:
         """Clear all session visibility rules.
 
         Use this to reset session visibility back to global defaults.
@@ -1078,7 +1078,7 @@ class Context:
         Sends notifications to this session only: ToolListChangedNotification,
         ResourceListChangedNotification, and PromptListChangedNotification.
         """
-        await _reset_components(self)
+        await _reset_visibility(self)
 
 
 async def _log_to_server_and_client(

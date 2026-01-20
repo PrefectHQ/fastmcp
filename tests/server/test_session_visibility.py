@@ -229,7 +229,7 @@ class TestSessionVisibility:
             assert not any(t.name == "old_tool" for t in tools)
 
     async def test_clear_visibility_rules(self):
-        """Test that reset_components removes all session rules."""
+        """Test that reset_visibility removes all session rules."""
         from fastmcp import Client
 
         mcp = FastMCP("test")
@@ -245,7 +245,7 @@ class TestSessionVisibility:
 
         @mcp.tool
         async def clear_rules(ctx: Context) -> str:
-            await ctx.reset_components()
+            await ctx.reset_visibility()
             rules = await ctx._get_visibility_rules()
             assert len(rules) == 0
             return "cleared"
@@ -449,14 +449,14 @@ class TestSessionVisibilityNotifications:
             )
 
     async def test_clear_visibility_rules_sends_notifications(self):
-        """Test that reset_components sends notifications."""
+        """Test that reset_visibility sends notifications."""
         from fastmcp import Client
 
         mcp = FastMCP("test")
 
         @mcp.tool
         async def clear(ctx: Context) -> str:
-            await ctx.reset_components()
+            await ctx.reset_visibility()
             return "cleared"
 
         handler = RecordingMessageHandler()

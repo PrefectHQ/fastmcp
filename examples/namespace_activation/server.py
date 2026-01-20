@@ -61,7 +61,7 @@ async def activate_admin(ctx: Context) -> str:
 @server.tool
 async def deactivate_all(ctx: Context) -> str:
     """Deactivate all namespaces, returning to defaults."""
-    await ctx.reset_components()
+    await ctx.reset_visibility()
     return "All namespaces deactivated"
 
 
