@@ -6,30 +6,33 @@ icon: arrow-down-to-line
 
 We recommend using [uv](https://docs.astral.sh/uv/getting-started/installation/) to install and manage FastMCP.
 
+<Note>
+FastMCP 3.0 is currently in beta. You must explicitly opt in to pre-release versions using the flags shown below.
+</Note>
+
 If you plan to use FastMCP in your project, you can add it as a dependency with:
 
 ```bash
-uv add fastmcp
+uv add fastmcp --prerelease=allow
 ```
 
 Alternatively, you can install it directly with `pip` or `uv pip`:
 <CodeGroup>
     ```bash uv
-    uv pip install fastmcp
+    uv pip install fastmcp --prerelease=allow
     ```
 
     ```bash pip
-    pip install fastmcp
+    pip install fastmcp --pre
     ```
 </CodeGroup>
 
 ### Optional Dependencies
 
-FastMCP provides optional extras for specific features:
+FastMCP provides optional extras for specific features. For example, to install the background tasks extra:
 
 ```bash
-# Background tasks (Docket-based distributed task scheduling)
-pip install "fastmcp[tasks]"
+pip install "fastmcp[tasks]" --pre
 ```
 
 See [Background Tasks](/servers/tasks) for details on the task system.

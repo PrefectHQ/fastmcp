@@ -10,6 +10,10 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.14.0" />
 
+<Tip>
+Background tasks require the `tasks` optional extra. See [installation instructions](#enabling-background-tasks) below.
+</Tip>
+
 FastMCP implements the MCP background task protocol ([SEP-1686](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks)), giving your servers a production-ready distributed task scheduler with a single decorator change.
 
 <Tip>
@@ -39,9 +43,9 @@ MCP background tasks are different: they're **protocol-native**. This means MCP 
 <VersionBadge version="3.0.0" /> Background tasks require the `tasks` extra:
 
 ```bash
-pip install "fastmcp[tasks]"
+pip install "fastmcp[tasks]" --pre
 # or with uv
-uv add "fastmcp[tasks]"
+uv add "fastmcp[tasks]" --prerelease=allow
 ```
 
 Add `task=True` to any tool, resource, resource template, or prompt decorator. This marks the component as capable of background execution.
