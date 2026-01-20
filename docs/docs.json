@@ -79,7 +79,7 @@
   "navigation": {
     "versions": [
       {
-        "version": "v3",
+        "version": "v3.0.0 (beta 1)",
         "dropdowns": [
           {
             "dropdown": "Documentation",
@@ -623,7 +623,7 @@
         ]
       },
       {
-        "version": "v2",
+        "version": "v2.14.3",
         "dropdowns": [
           {
             "dropdown": "Documentation",
