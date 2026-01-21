@@ -41,9 +41,9 @@ if __name__ == "__main__":
 
 FastMCP is made with 💙 by [Prefect](https://www.prefect.io/).
 
-## Why FastMCP
+## Move Fast and Make Things
 
-MCP lets you give agents access to your tools and data. But building an effective MCP server is harder than it looks.
+The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) lets you give agents access to your tools and data. But building an effective MCP server is harder than it looks.
 
 Give your agent too much—hundreds of tools, verbose responses—and it gets overwhelmed. Give it too little and it can't do its job. The protocol itself is complex, with layers of serialization, validation, and error handling that have nothing to do with your business logic. And the spec keeps evolving; what worked last month might already need updating.
 
@@ -55,23 +55,11 @@ The framework is built on three abstractions that map to the decisions you actua
 
 - **[Components](/servers/tools)** are what you expose: tools, resources, and prompts. Wrap a Python function, and FastMCP handles the schema, validation, and docs.
 - **[Providers](/servers/providers/overview)** are where components come from: decorated functions, files on disk, OpenAPI specs, remote servers—your logic can live anywhere.
-- **[Transforms](/servers/transforms/overview)** shape what clients see: namespacing, filtering, authorization, versioning. The same server can present differently to different users.
+- **[Transforms](/servers/transforms/transforms)** shape what clients see: namespacing, filtering, authorization, versioning. The same server can present differently to different users.
 
 These compose cleanly, so complex patterns don't require complex code. And because FastMCP is opinionated about the details, like serialization, error handling, and protocol compliance, **best practices are the path of least resistance**. You focus on your logic; the MCP part just works.
 
-**Move fast and make things.**
-
 Ready to build? Start with the [installation guide](/getting-started/installation) or jump straight to the [quickstart](/getting-started/quickstart).
-
-## What is MCP?
-
-The [Model Context Protocol](https://modelcontextprotocol.io/) lets you build servers that expose data and functionality to LLM applications in a secure, standardized way. Think of it as an API designed specifically for LLM interactions. The core primitives are:
-
-- **Tools** — functions the agent can call to take actions or produce side effects
-- **Resources** — data the agent can read to inform its context
-- **Prompts** — reusable templates for LLM interactions
-
-The protocol also supports bidirectional communication, sampling, and other advanced patterns—but these three are what you'll work with most.
 
 <Tip>
 **This documentation reflects FastMCP's `main` branch**, meaning it always reflects the latest development version. Features are generally marked with version badges (e.g. `New in version: 3.0.0`) to indicate when they were introduced. Note that this may include features that are not yet released.
