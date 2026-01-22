@@ -170,3 +170,75 @@ def test_tool_transform_config_removes_meta(sample_tool):
     config = ToolTransformConfig(name="config_tool", meta=None)
     transformed = config.apply(sample_tool)
     assert transformed.meta is None
+
+
+# Enabled field tests
+def test_tool_transform_config_enabled_defaults_to_true(sample_tool):
+    """Test that enabled defaults to True and no visibility metadata is set."""
+    config = ToolTransformConfig(name="enabled_tool")
+    transformed = config.apply(sample_tool)
+
+    # No visibility metadata should be set when enabled=True (default)
+    meta = transformed.meta or {}
+    internal = meta.get("fastmcp", {}).get("_internal", {})
+    assert "visibility" not in internal
+
+
+def test_tool_transform_config_enabled_false_sets_visibility_metadata(sample_tool):
+    """Test that enabled=False sets visibility metadata to hide the tool."""
+    from fastmcp.server.transforms.visibility import is_enabled
+
+    config = ToolTransformConfig(name="disabled_tool", enabled=False)
+    transformed = config.apply(sample_tool)
+
+    # The is_enabled helper should return False
+    assert is_enabled(transformed) is False
+
+    # Check the raw metadata structure
+    assert transformed.meta is not None
+    assert transformed.meta["fastmcp"]["_internal"]["visibility"] is False
+
+
+def test_tool_transform_config_enabled_true_explicit_sets_visibility(sample_tool):
+    """Test that enabled=True explicitly sets visibility metadata to allow overriding earlier disables."""
+    from fastmcp.server.transforms.visibility import is_enabled
+
+    config = ToolTransformConfig(name="explicit_enabled", enabled=True)
+    transformed = config.apply(sample_tool)
+
+    # Visibility metadata should be set to True when enabled=True is explicit
+    # This allows later transforms to override earlier disables
+    assert is_enabled(transformed) is True
+    assert transformed.meta is not None
+    assert transformed.meta["fastmcp"]["_internal"]["visibility"] is True
+
+
+def test_tool_transform_config_enabled_false_preserves_existing_meta(sample_tool):
+    """Test that enabled=False preserves existing meta while adding visibility."""
+    from fastmcp.server.transforms.visibility import is_enabled
+
+    sample_tool.meta = {"custom_key": "custom_value"}
+    config = ToolTransformConfig(enabled=False)
+    transformed = config.apply(sample_tool)
+
+    # Original meta should be preserved
+    assert transformed.meta is not None
+    assert transformed.meta["custom_key"] == "custom_value"
+    # Visibility should be set
+    assert is_enabled(transformed) is False
+
+
+def test_tool_transform_config_enabled_false_merges_with_config_meta(sample_tool):
+    """Test that enabled=False works with explicit meta override."""
+    from fastmcp.server.transforms.visibility import is_enabled
+
+    sample_tool.meta = {"original": True}
+    config = ToolTransformConfig(meta={"overridden": True}, enabled=False)
+    transformed = config.apply(sample_tool)
+
+    # Config meta should override original
+    assert transformed.meta is not None
+    assert "original" not in transformed.meta
+    assert transformed.meta["overridden"] is True
+    # But visibility should still be set
+    assert is_enabled(transformed) is False
