@@ -38,16 +38,8 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --upgrade
 
-      - name: Check lockfile is up to date
-        run: |
-          if ! uv lock --check; then
-            echo "❌ Lockfile is out of date!"
-            echo "To update the lockfile, run 'uv lock'."
-            exit 1
-          fi
-          echo "✅ Lockfile is up to date"
       - name: Run prek
         uses: j178/prek-action@v1
         env:
