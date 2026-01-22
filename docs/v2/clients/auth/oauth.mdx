@@ -29,7 +29,7 @@ The simplest way to use OAuth is to pass the string `"oauth"` to the `auth` para
 from fastmcp import Client
 
 # Uses default OAuth settings
-async with Client("https://fastmcp.cloud/mcp", auth="oauth") as client:
+async with Client("https://your-server.fastmcp.app/mcp", auth="oauth") as client:
     await client.ping()
 ```
 
@@ -42,9 +42,9 @@ To fully configure the OAuth flow, use the `OAuth` helper and pass it to the `au
 from fastmcp import Client
 from fastmcp.client.auth import OAuth
 
-oauth = OAuth(mcp_url="https://fastmcp.cloud/mcp")
+oauth = OAuth(mcp_url="https://your-server.fastmcp.app/mcp")
 
-async with Client("https://fastmcp.cloud/mcp", auth=oauth) as client:
+async with Client("https://your-server.fastmcp.app/mcp", auth=oauth) as client:
     await client.ping()
 ```
 
@@ -117,11 +117,11 @@ encrypted_storage = FernetEncryptionWrapper(
 )
 
 oauth = OAuth(
-    mcp_url="https://fastmcp.cloud/mcp",
+    mcp_url="https://your-server.fastmcp.app/mcp",
     token_storage=encrypted_storage
 )
 
-async with Client("https://fastmcp.cloud/mcp", auth=oauth) as client:
+async with Client("https://your-server.fastmcp.app/mcp", auth=oauth) as client:
     await client.ping()
 ```
 

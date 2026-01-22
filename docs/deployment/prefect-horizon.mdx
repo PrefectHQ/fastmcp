@@ -1,0 +1,120 @@
+---
+title: Prefect Horizon
+sidebarTitle: Prefect Horizon
+description: Managed hosting and governance for MCP servers
+icon: cloud
+---
+
+[Prefect Horizon](https://www.prefect.io/horizon) is a platform for deploying and managing MCP servers. Built by the FastMCP team at [Prefect](https://www.prefect.io), Horizon provides managed hosting, authentication, access control, and a registry of MCP capabilities.
+
+Horizon includes a **free personal tier for FastMCP users**, making it the fastest way to get a secure, production-ready server URL with built-in OAuth authentication.
+
+<Info>
+Horizon is free for personal projects. Enterprise governance features are available for teams deploying to thousands of users.
+</Info>
+
+## The Platform
+
+Horizon is organized into four integrated pillars:
+
+- **Deploy**: Managed hosting with CI/CD, scaling, monitoring, and rollbacks. Push code and get a live, governed endpoint in 60 seconds.
+- **Registry**: A central catalog of MCP servers across your organization—first-party, third-party, and curated remix servers composed from multiple sources.
+- **Gateway**: Role-based access control, authentication, and audit logs. Define what agents can see and do at the tool level.
+- **Agents**: A permissioned chat interface for interacting with any MCP server or curated combination of servers.
+
+This guide focuses on **Horizon Deploy**, the managed hosting layer that gives you the fastest path from a FastMCP server to a production URL.
+
+## Prerequisites
+
+To use Horizon, you'll need a [GitHub](https://github.com) account and a GitHub repo containing a FastMCP server. If you don't have one yet, Horizon can create a starter repo for you during onboarding.
+
+Your repo can be public or private, but must include at least a Python file containing a FastMCP server instance.
+
+<Tip>
+To verify your file is compatible with Horizon, run `fastmcp inspect <file.py:server_object>` to see what Horizon will see when it runs your server.
+</Tip>
+
+If you have a `requirements.txt` or `pyproject.toml` in the repo, Horizon will automatically detect your server's dependencies and install them. Your file *can* have an `if __name__ == "__main__"` block, but it will be ignored by Horizon.
+
+For example, a minimal server file might look like:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
+@mcp.tool
+def hello(name: str) -> str:
+    return f"Hello, {name}!"
+```
+
+## Getting Started
+
+There are just three steps to deploying a server to Horizon:
+
+### Step 1: Select a Repository
+
+Visit [horizon.prefect.io](https://horizon.prefect.io) and sign in with your GitHub account. Connect your GitHub account to grant Horizon access to your repositories, then select the repo you want to deploy.
+
+<img src="/assets/images/horizon/select-repo.png" alt="Horizon repository selection" />
+
+### Step 2: Configure Your Server
+
+Next, you'll configure how Horizon should build and deploy your server.
+
+<img src="/assets/images/horizon/configure-server.png" alt="Horizon server configuration" />
+
+The configuration screen lets you specify:
+- **Server name**: A unique name for your server. This determines your server's URL.
+- **Description**: A brief description of what your server does.
+- **Entrypoint**: The Python file containing your FastMCP server (e.g., `main.py`). This field has the same syntax as the `fastmcp run` command—use `main.py:mcp` to specify a specific object in the file.
+- **Authentication**: When enabled, only authenticated users in your organization can connect. Horizon handles all the OAuth complexity for you.
+
+Horizon will automatically detect your server's Python dependencies from either a `requirements.txt` or `pyproject.toml` file.
+
+### Step 3: Deploy and Connect
+
+Click **Deploy Server** and Horizon will clone your repository, build your server, and deploy it to a unique URL—typically in under 60 seconds.
+
+<img src="/assets/images/horizon/deployment-live.png" alt="Horizon deployment view showing live server" />
+
+Once deployed, your server is accessible at a URL like:
+
+```
+https://your-server-name.fastmcp.app/mcp
+```
+
+Horizon monitors your repo and redeploys automatically whenever you push to `main`. It also builds preview deployments for every PR, so you can test changes before they go live.
+
+## Testing Your Server
+
+Horizon provides two ways to verify your server is working before connecting external clients.
+
+### Inspector
+
+The Inspector gives you a structured view of everything your server exposes—tools, resources, and prompts. You can click any tool, fill in the inputs, execute it, and see the output. This is useful for systematically validating each capability and debugging specific behaviors.
+
+### ChatMCP
+
+For quick end-to-end testing, ChatMCP lets you interact with your server conversationally. It uses a fast model optimized for rapid iteration—you can verify the server works, test tool calls in context, and confirm the overall behavior before sharing it with others.
+
+<img src="/assets/images/horizon/chat.png" alt="Horizon ChatMCP interface" />
+
+ChatMCP is designed for testing, not as a daily work environment. Once you've confirmed your server works, you can copy connection snippets for Claude Desktop, Cursor, Claude Code, and other MCP clients—or use the FastMCP client library to connect programmatically.
+
+## Horizon Agents
+
+Beyond testing individual servers, Horizon lets you create **Agents**—chat interfaces backed by one or more MCP servers. While ChatMCP tests a single server, Agents let you compose capabilities from multiple servers into a unified experience.
+
+<img src="/assets/images/horizon/agent-detail.png" alt="Horizon Agent configuration" />
+
+To create an agent:
+1. Navigate to **Agents** in the sidebar
+2. Click **Create Agent** and give it a name and description
+3. Add MCP servers to the agent—these can be servers you've deployed to Horizon or external servers in the registry
+
+Once configured, you can chat with your agent directly in Horizon:
+
+<img src="/assets/images/horizon/agent-chat.png" alt="Chatting with a Horizon Agent" />
+
+Agents are useful for creating purpose-built interfaces that combine tools from different servers. For example, you might create an agent that has access to both your company's internal data server and a general-purpose utilities server.

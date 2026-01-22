@@ -34,7 +34,7 @@ If you're using a string token, do not include the `Bearer` prefix. FastMCP will
 from fastmcp import Client
 
 async with Client(
-    "https://fastmcp.cloud/mcp", 
+    "https://your-server.fastmcp.app/mcp", 
     auth="<your-token>",
 ) as client:
     await client.ping()
@@ -47,7 +47,7 @@ from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
 transport = StreamableHttpTransport(
-    "http://fastmcp.cloud/mcp", 
+    "http://your-server.fastmcp.app/mcp", 
     auth="<your-token>",
 )
 
@@ -64,7 +64,7 @@ from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
 
 async with Client(
-    "https://fastmcp.cloud/mcp", 
+    "https://your-server.fastmcp.app/mcp", 
     auth=BearerAuth(token="<your-token>"),
 ) as client:
     await client.ping()
@@ -80,7 +80,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 
 async with Client(
     transport=StreamableHttpTransport(
-        "https://fastmcp.cloud/mcp", 
+        "https://your-server.fastmcp.app/mcp", 
         headers={"X-API-Key": "<your-token>"},
     ),
 ) as client:

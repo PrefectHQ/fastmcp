@@ -3,7 +3,7 @@ title: Quickstart
 icon: rocket-launch
 ---
 
-Welcome! This guide will help you quickly set up FastMCP, run your first MCP server, and deploy a server to FastMCP Cloud.
+Welcome! This guide will help you quickly set up FastMCP, run your first MCP server, and deploy a server to Prefect Horizon.
 
 If you haven't already installed FastMCP, follow the [installation instructions](/v2/getting-started/installation).
 
@@ -117,20 +117,20 @@ Note that:
 - We must enter a client context (`async with client:`) before using the client
 - You can make multiple client calls within the same context
 
-## Deploy to FastMCP Cloud
+## Deploy to Prefect Horizon
 
-[FastMCP Cloud](https://fastmcp.cloud) is a hosting service run by the FastMCP team at [Prefect](https://www.prefect.io/fastmcp). It is optimized to deploy authenticated FastMCP servers as quickly as possible, giving you a secure URL that you can plug into any LLM client.
+[Prefect Horizon](https://horizon.prefect.io) is the enterprise MCP platform built by the FastMCP team at [Prefect](https://www.prefect.io). It provides managed hosting, authentication, access control, and observability for MCP servers.
 
 <Info>
-FastMCP Cloud is **free for personal servers** and offers simple pay-as-you-go pricing for teams.
+Horizon is **free for personal projects** and offers enterprise governance for teams.
 </Info>
 
 To deploy your server, you'll need a [GitHub account](https://github.com). Once you have one, you can deploy your server in three steps:
 
 1. Push your `my_server.py` file to a GitHub repository
-2. Sign in to [FastMCP Cloud](https://fastmcp.cloud) with your GitHub account
+2. Sign in to [Prefect Horizon](https://horizon.prefect.io) with your GitHub account
 3. Create a new project from your repository and enter `my_server.py:mcp` as the server entrypoint
 
-That's it! FastMCP Cloud will build and deploy your server, making it available at a URL like `https://your-project.fastmcp.app/mcp`. You can chat with it to test its functionality, or connect to it from any LLM client that supports the MCP protocol.
+That's it! Horizon will build and deploy your server, making it available at a URL like `https://your-project.fastmcp.app/mcp`. You can chat with it to test its functionality, or connect to it from any LLM client that supports the MCP protocol.
 
-For more details, see the [FastMCP Cloud guide](/v2/deployment/fastmcp-cloud).
+For more details, see the [Prefect Horizon guide](/deployment/prefect-horizon).

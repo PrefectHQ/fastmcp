@@ -34,8 +34,8 @@
     }
   },
   "favicon": {
-    "dark": "/assets/brand/favicon.svg",
-    "light": "/assets/brand/favicon.svg"
+    "dark": "/assets/brand/favicon-dark.svg",
+    "light": "/assets/brand/favicon-light.svg"
   },
   "footer": {
     "socials": {
@@ -61,14 +61,14 @@
   "navbar": {
     "links": [
       {
-        "href": "https://fastmcp.cloud",
-        "icon": "cloud",
-        "label": "FastMCP Cloud"
-      },
-      {
         "href": "https://discord.gg/uu8dJCgttd",
         "icon": "discord",
-        "label": "Discord"
+        "label": ""
+      },
+      {
+        "href": "https://prefect.io/horizon",
+        "icon": "cloud",
+        "label": "Prefect Horizon"
       }
     ],
     "primary": {
@@ -207,7 +207,7 @@
                 "pages": [
                   "deployment/running-server",
                   "deployment/http",
-                  "deployment/fastmcp-cloud",
+                  "deployment/prefect-horizon",
                   "deployment/server-configuration",
                   "patterns/cli",
                   "patterns/testing"
@@ -686,7 +686,7 @@
                     "pages": [
                       "v2/deployment/running-server",
                       "v2/deployment/http",
-                      "v2/deployment/fastmcp-cloud",
+                      "deployment/prefect-horizon",
                       "v2/deployment/server-configuration"
                     ]
                   }
@@ -822,6 +822,14 @@
     ]
   },
   "redirects": [
+    {
+      "destination": "/deployment/prefect-horizon",
+      "source": "/deployment/fastmcp-cloud"
+    },
+    {
+      "destination": "/deployment/prefect-horizon",
+      "source": "/v2/deployment/fastmcp-cloud"
+    },
     {
       "destination": "/v2/clients/messages",
       "source": "/clients/messages"
