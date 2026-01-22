@@ -65,34 +65,38 @@ class GitHubClient:
         }
         self.base_url = f"https://api.github.com/repos/{owner}/{repo}"
 
-    def get_open_issues(
-        self, created_before: datetime, page: int = 1, per_page: int = 100
-    ) -> list[Issue]:
-        """Fetch open issues created before a certain date."""
+    def get_potential_duplicate_issues(self) -> list[Issue]:
+        """Fetch open issues with the potential-duplicate label."""
         url = f"{self.base_url}/issues"
         issues = []
 
         with httpx.Client() as client:
-            response = client.get(
-                url,
-                headers=self.headers,
-                params={"state": "open", "per_page": per_page, "page": page},
-            )
-
-            if response.status_code != 200:
-                print(f"Error fetching issues: {response.status_code}")
-                return issues
-
-            data = response.json()
-            for item in data:
-                # Skip pull requests
-                if "pull_request" in item:
-                    continue
-
-                created_at = datetime.fromisoformat(
-                    item["created_at"].replace("Z", "+00:00")
+            page = 1
+            while page <= 10:  # Safety limit
+                response = client.get(
+                    url,
+                    headers=self.headers,
+                    params={
+                        "state": "open",
+                        "labels": "potential-duplicate",
+                        "per_page": 100,
+                        "page": page,
+                    },
                 )
-                if created_at <= created_before:
+
+                if response.status_code != 200:
+                    print(f"Error fetching issues: {response.status_code}")
+                    break
+
+                data = response.json()
+                if not data:
+                    break
+
+                for item in data:
+                    # Skip pull requests
+                    if "pull_request" in item:
+                        continue
+
                     issues.append(
                         Issue(
                             number=item["number"],
@@ -103,6 +107,8 @@ class GitHubClient:
                             user_login=item["user"]["login"],
                         )
                     )
+
+                page += 1
 
         return issues
 
@@ -168,6 +174,13 @@ class GitHubClient:
 
         return reactions
 
+    def remove_label(self, issue_number: int, label: str) -> bool:
+        """Remove a label from an issue."""
+        url = f"{self.base_url}/issues/{issue_number}/labels/{label}"
+        with httpx.Client() as client:
+            response = client.delete(url, headers=self.headers)
+            return response.status_code in [200, 204]
+
     def close_issue(self, issue_number: int, comment: str) -> bool:
         """Close an issue with a comment and add duplicate label."""
         # First add the comment
@@ -181,7 +194,9 @@ class GitHubClient:
                 print(f"Failed to add comment to issue #{issue_number}")
                 return False
 
-        # Add the duplicate label
+        # Swap labels: remove potential-duplicate, add duplicate
+        self.remove_label(issue_number, "potential-duplicate")
+
         labels_url = f"{self.base_url}/issues/{issue_number}/labels"
         with httpx.Client() as client:
             response = client.post(
@@ -213,22 +228,36 @@ def find_duplicate_comment(comments: list[Comment]) -> Comment | None:
     return None
 
 
-def should_close_as_duplicate(
+def was_already_auto_closed(comments: list[Comment]) -> bool:
+    """Check if this issue was already auto-closed once."""
+    for comment in comments:
+        if (
+            comment.user_type == "Bot"
+            and "closing this issue as a duplicate" in comment.body.lower()
+        ):
+            return True
+    return False
+
+
+def is_past_cooldown(duplicate_comment: Comment) -> bool:
+    """Check if the 3-day cooldown period has passed."""
+    comment_date = datetime.fromisoformat(
+        duplicate_comment.created_at.replace("Z", "+00:00")
+    )
+    three_days_ago = datetime.now(timezone.utc) - timedelta(days=3)
+    return comment_date <= three_days_ago
+
+
+def has_human_activity(
     issue: Issue,
     duplicate_comment: Comment,
     all_comments: list[Comment],
     reactions: list[Reaction],
 ) -> bool:
-    """Determine if an issue should be closed as duplicate."""
-
-    # Check if comment is old enough (3 days)
+    """Check if there's human activity that should prevent auto-closure."""
     comment_date = datetime.fromisoformat(
         duplicate_comment.created_at.replace("Z", "+00:00")
     )
-    three_days_ago = datetime.now(timezone.utc) - timedelta(days=3)
-
-    if comment_date > three_days_ago:
-        return False
 
     # Check for preventing reactions (thumbs down)
     for reaction in reactions:
@@ -236,22 +265,21 @@ def should_close_as_duplicate(
             print(
                 f"Issue #{issue.number}: Has preventing reaction from {reaction.user_login}"
             )
-            return False
+            return True
 
-    # Check for user activity after the duplicate comment
+    # Check for any human comment after the duplicate marking
     for comment in all_comments:
         comment_date_check = datetime.fromisoformat(
             comment.created_at.replace("Z", "+00:00")
         )
         if comment_date_check > comment_date:
-            # Issue author commented after duplicate marking
-            if comment.user_id == issue.user_id:
+            if comment.user_type != "Bot":
                 print(
-                    f"Issue #{issue.number}: Author commented after duplicate marking"
+                    f"Issue #{issue.number}: {comment.user_login} commented after duplicate marking"
                 )
-                return False
+                return True
 
-    return True
+    return False
 
 
 def main():
@@ -271,60 +299,72 @@ def main():
     # Initialize client
     client = GitHubClient(token, owner, repo)
 
-    # Get issues created more than 3 days ago
-    three_days_ago = datetime.now(timezone.utc) - timedelta(days=3)
+    # Only fetch issues with the potential-duplicate label
+    all_issues = client.get_potential_duplicate_issues()
 
-    all_issues = []
-    page = 1
+    print(f"[DEBUG] Found {len(all_issues)} open issues with potential-duplicate label")
 
-    while page <= 20:  # Safety limit
-        issues = client.get_open_issues(three_days_ago, page=page)
-        if not issues:
-            break
-        all_issues.extend(issues)
-        page += 1
-
-    print(f"[DEBUG] Found {len(all_issues)} open issues created more than 3 days ago")
-
-    processed_count = 0
     closed_count = 0
+    cleared_count = 0
 
     for issue in all_issues:
-        processed_count += 1
-
-        if processed_count % 10 == 0:
-            print(f"[DEBUG] Processed {processed_count}/{len(all_issues)} issues")
-
         # Get comments for this issue
         comments = client.get_issue_comments(issue.number)
 
         # Look for duplicate marking comment
         duplicate_comment = find_duplicate_comment(comments)
         if not duplicate_comment:
+            # Label exists but no bot comment - clean up the label
+            print(f"[DEBUG] Issue #{issue.number} has label but no duplicate comment")
+            client.remove_label(issue.number, "potential-duplicate")
+            cleared_count += 1
+            continue
+
+        # Skip if already auto-closed once (someone reopened it intentionally)
+        if was_already_auto_closed(comments):
+            print(
+                f"[DEBUG] Issue #{issue.number} was already auto-closed, removing label"
+            )
+            client.remove_label(issue.number, "potential-duplicate")
+            cleared_count += 1
             continue
 
         print(f"[DEBUG] Issue #{issue.number} has duplicate comment")
 
+        # Still in cooldown period - skip for now, check again later
+        if not is_past_cooldown(duplicate_comment):
+            print(f"[DEBUG] Issue #{issue.number} still in 3-day cooldown period")
+            continue
+
         # Get reactions on the duplicate comment
         reactions = client.get_comment_reactions(issue.number, duplicate_comment.id)
 
-        # Check if we should close
-        if should_close_as_duplicate(issue, duplicate_comment, comments, reactions):
-            close_message = (
-                "Closing this issue as a duplicate based on the automated analysis above.\n\n"
-                "The duplicate issues identified contain existing discussions and potential solutions. "
-                "Please add your 👍 to those issues if they match your use case.\n\n"
-                "If this was closed in error, please leave a comment explaining why this is not "
-                "a duplicate and we'll reopen it."
-            )
+        # Check for human activity that prevents closure
+        if has_human_activity(issue, duplicate_comment, comments, reactions):
+            print(f"[DEBUG] Issue #{issue.number} has human activity, removing label")
+            client.remove_label(issue.number, "potential-duplicate")
+            cleared_count += 1
+            continue
 
-            if client.close_issue(issue.number, close_message):
-                print(f"[SUCCESS] Closed issue #{issue.number} as duplicate")
-                closed_count += 1
-            else:
-                print(f"[ERROR] Failed to close issue #{issue.number}")
+        # No human activity after cooldown - close as duplicate
+        close_message = (
+            "Closing this issue as a duplicate based on the automated analysis above.\n\n"
+            "The duplicate issues identified contain existing discussions and potential solutions. "
+            "Please add your 👍 to those issues if they match your use case.\n\n"
+            "If this was closed in error, please leave a comment explaining why this is not "
+            "a duplicate and we'll reopen it."
+        )
 
-    print(f"[DEBUG] Processing complete. Closed {closed_count} duplicate issues")
+        if client.close_issue(issue.number, close_message):
+            print(f"[SUCCESS] Closed issue #{issue.number} as duplicate")
+            closed_count += 1
+        else:
+            print(f"[ERROR] Failed to close issue #{issue.number}")
+
+    print(
+        f"[DEBUG] Processing complete. Closed {closed_count} duplicates, "
+        f"cleared {cleared_count} from review"
+    )
 
 
 if __name__ == "__main__":

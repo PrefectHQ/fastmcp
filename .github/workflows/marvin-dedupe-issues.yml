@@ -47,7 +47,7 @@ jobs:
 
           4. Next, consider the results from steps 2 and 3 and filter out false positives that are likely not actually duplicates of the original issue. If there are no duplicates remaining, do not proceed.
 
-          5. Finally, comment back on the issue with a list of up to three duplicate issues (or zero, if there are no likely duplicates). If there are no duplicates, DO NOT COMMENT. Just exit.
+          5. Finally, comment back on the issue with a list of up to three duplicate issues (or zero, if there are no likely duplicates). If there are no duplicates, DO NOT COMMENT. Just exit. After commenting, add the `potential-duplicate` label to the issue using `gh issue edit`.
 
           Notes for your agents:
           - Use `gh` to interact with GitHub, rather than web fetch
@@ -85,7 +85,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
           allowed_non_write_users: "*"
           claude_args: |
-            --allowedTools Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh api:*),Bash(gh issue comment:*),Task
+            --allowedTools Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh api:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Task
           settings: |
             {
               "model": "claude-sonnet-4-5-20250929",
