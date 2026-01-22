@@ -1,11 +1,5 @@
 version: 2
 updates:
-  - package-ecosystem: "uv"
-    directory: "/"
-    schedule:
-      interval: "daily"
-    labels:
-      - "dependencies"
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
