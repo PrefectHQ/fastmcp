@@ -17,18 +17,24 @@ except ImportError:
 
 
 from fastmcp.server.dependencies import (
+    CurrentAccessToken,
     CurrentContext,
     CurrentDocket,
     CurrentFastMCP,
+    CurrentHeaders,
+    CurrentRequest,
     CurrentWorker,
     Progress,
     ProgressLike,
 )
 
 __all__ = [
+    "CurrentAccessToken",
     "CurrentContext",
     "CurrentDocket",
     "CurrentFastMCP",
+    "CurrentHeaders",
+    "CurrentRequest",
     "CurrentWorker",
     "Depends",
     "Progress",

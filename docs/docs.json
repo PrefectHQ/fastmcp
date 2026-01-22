@@ -114,6 +114,7 @@
                     "icon": "stars",
                     "pages": [
                       "servers/tasks",
+                      "servers/dependency-injection",
                       "servers/elicitation",
                       "servers/icons",
                       "servers/lifespan",

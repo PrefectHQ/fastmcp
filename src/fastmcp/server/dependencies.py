@@ -42,9 +42,12 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AccessToken",
+    "CurrentAccessToken",
     "CurrentContext",
     "CurrentDocket",
     "CurrentFastMCP",
+    "CurrentHeaders",
+    "CurrentRequest",
     "CurrentWorker",
     "Progress",
     "get_access_token",
@@ -782,6 +785,116 @@ def CurrentFastMCP() -> FastMCP:
     from fastmcp.server.server import FastMCP
 
     return cast(FastMCP, _CurrentFastMCP())
+
+
+class _CurrentRequest(Dependency):  # type: ignore[misc]
+    """Async context manager for HTTP Request dependency."""
+
+    async def __aenter__(self) -> Request:
+        return get_http_request()
+
+    async def __aexit__(self, *args: object) -> None:
+        pass
+
+
+def CurrentRequest() -> Request:
+    """Get the current HTTP request.
+
+    This dependency provides access to the Starlette Request object for the
+    current HTTP request. Only available when running over HTTP transports
+    (SSE or Streamable HTTP).
+
+    Returns:
+        A dependency that resolves to the active Starlette Request
+
+    Raises:
+        RuntimeError: If no HTTP request in context (e.g., STDIO transport)
+
+    Example:
+        ```python
+        from fastmcp.server.dependencies import CurrentRequest
+        from starlette.requests import Request
+
+        @mcp.tool()
+        async def get_client_ip(request: Request = CurrentRequest()) -> str:
+            return request.client.host if request.client else "Unknown"
+        ```
+    """
+    return cast(Request, _CurrentRequest())
+
+
+class _CurrentHeaders(Dependency):  # type: ignore[misc]
+    """Async context manager for HTTP Headers dependency."""
+
+    async def __aenter__(self) -> dict[str, str]:
+        return get_http_headers()
+
+    async def __aexit__(self, *args: object) -> None:
+        pass
+
+
+def CurrentHeaders() -> dict[str, str]:
+    """Get the current HTTP request headers.
+
+    This dependency provides access to the HTTP headers for the current request.
+    Returns an empty dictionary when no HTTP request is available, making it
+    safe to use in code that might run over any transport.
+
+    Returns:
+        A dependency that resolves to a dictionary of header name -> value
+
+    Example:
+        ```python
+        from fastmcp.server.dependencies import CurrentHeaders
+
+        @mcp.tool()
+        async def get_auth_type(headers: dict = CurrentHeaders()) -> str:
+            auth = headers.get("authorization", "")
+            return "Bearer" if auth.startswith("Bearer ") else "None"
+        ```
+    """
+    return cast(dict[str, str], _CurrentHeaders())
+
+
+class _CurrentAccessToken(Dependency):  # type: ignore[misc]
+    """Async context manager for AccessToken dependency."""
+
+    async def __aenter__(self) -> AccessToken:
+        token = get_access_token()
+        if token is None:
+            raise RuntimeError(
+                "No access token found. Ensure authentication is configured "
+                "and the request is authenticated."
+            )
+        return token
+
+    async def __aexit__(self, *args: object) -> None:
+        pass
+
+
+def CurrentAccessToken() -> AccessToken:
+    """Get the current access token for the authenticated user.
+
+    This dependency provides access to the AccessToken for the current
+    authenticated request. Raises an error if no authentication is present.
+
+    Returns:
+        A dependency that resolves to the active AccessToken
+
+    Raises:
+        RuntimeError: If no authenticated user (use get_access_token() for optional)
+
+    Example:
+        ```python
+        from fastmcp.server.dependencies import CurrentAccessToken
+        from fastmcp.server.auth import AccessToken
+
+        @mcp.tool()
+        async def get_user_id(token: AccessToken = CurrentAccessToken()) -> str:
+            return token.claims.get("sub", "unknown")
+        ```
+    """
+    return cast(AccessToken, _CurrentAccessToken())
 
 
 # --- Progress dependency ---
