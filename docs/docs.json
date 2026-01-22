@@ -79,11 +79,9 @@
   "navigation": {
     "versions": [
       {
-        "version": "v3.0.0 (beta 1)",
         "dropdowns": [
           {
             "dropdown": "Documentation",
-            "icon": "book",
             "groups": [
               {
                 "group": "Get Started",
@@ -281,7 +279,8 @@
                   "patterns/contrib"
                 ]
               }
-            ]
+            ],
+            "icon": "book"
           },
           {
             "anchors": [
@@ -332,10 +331,18 @@
                       "python-sdk/fastmcp-client-elicitation",
                       "python-sdk/fastmcp-client-logging",
                       "python-sdk/fastmcp-client-messages",
+                      {
+                        "group": "mixins",
+                        "pages": [
+                          "python-sdk/fastmcp-client-mixins-__init__",
+                          "python-sdk/fastmcp-client-mixins-prompts",
+                          "python-sdk/fastmcp-client-mixins-resources",
+                          "python-sdk/fastmcp-client-mixins-task_management",
+                          "python-sdk/fastmcp-client-mixins-tools"
+                        ]
+                      },
                       "python-sdk/fastmcp-client-oauth_callback",
                       "python-sdk/fastmcp-client-progress",
-                      "python-sdk/fastmcp-client-prompts",
-                      "python-sdk/fastmcp-client-resources",
                       "python-sdk/fastmcp-client-roots",
                       {
                         "group": "sampling",
@@ -351,10 +358,8 @@
                           }
                         ]
                       },
-                      "python-sdk/fastmcp-client-task_management",
                       "python-sdk/fastmcp-client-tasks",
                       "python-sdk/fastmcp-client-telemetry",
-                      "python-sdk/fastmcp-client-tools_client",
                       {
                         "group": "transports",
                         "pages": [
@@ -458,6 +463,15 @@
                         ]
                       },
                       {
+                        "group": "mixins",
+                        "pages": [
+                          "python-sdk/fastmcp-server-mixins-__init__",
+                          "python-sdk/fastmcp-server-mixins-lifespan",
+                          "python-sdk/fastmcp-server-mixins-mcp_operations",
+                          "python-sdk/fastmcp-server-mixins-transport"
+                        ]
+                      },
+                      {
                         "group": "openapi",
                         "pages": [
                           "python-sdk/fastmcp-server-openapi-__init__",
@@ -501,6 +515,16 @@
                             ]
                           },
                           "python-sdk/fastmcp-server-providers-proxy",
+                          {
+                            "group": "skills",
+                            "pages": [
+                              "python-sdk/fastmcp-server-providers-skills-__init__",
+                              "python-sdk/fastmcp-server-providers-skills-claude_provider",
+                              "python-sdk/fastmcp-server-providers-skills-directory_provider",
+                              "python-sdk/fastmcp-server-providers-skills-skill_provider",
+                              "python-sdk/fastmcp-server-providers-skills-vendor_providers"
+                            ]
+                          },
                           "python-sdk/fastmcp-server-providers-wrapped_provider"
                         ]
                       },
@@ -532,10 +556,12 @@
                         "group": "transforms",
                         "pages": [
                           "python-sdk/fastmcp-server-transforms-__init__",
-                          "python-sdk/fastmcp-server-transforms-enabled",
                           "python-sdk/fastmcp-server-transforms-namespace",
+                          "python-sdk/fastmcp-server-transforms-prompts_as_tools",
+                          "python-sdk/fastmcp-server-transforms-resources_as_tools",
                           "python-sdk/fastmcp-server-transforms-tool_transform",
-                          "python-sdk/fastmcp-server-transforms-version_filter"
+                          "python-sdk/fastmcp-server-transforms-version_filter",
+                          "python-sdk/fastmcp-server-transforms-visibility"
                         ]
                       }
                     ]
@@ -607,6 +633,7 @@
                         ]
                       },
                       "python-sdk/fastmcp-utilities-pagination",
+                      "python-sdk/fastmcp-utilities-skills",
                       "python-sdk/fastmcp-utilities-tests",
                       "python-sdk/fastmcp-utilities-timeout",
                       "python-sdk/fastmcp-utilities-types",
@@ -621,14 +648,13 @@
             "dropdown": "SDK Reference",
             "icon": "code"
           }
-        ]
+        ],
+        "version": "v3.0.0 (beta 1)"
       },
       {
-        "version": "v2.14.3",
         "dropdowns": [
           {
             "dropdown": "Documentation",
-            "icon": "book",
             "groups": [
               {
                 "group": "Get Started",
@@ -816,9 +842,11 @@
                   "v2/changelog"
                 ]
               }
-            ]
+            ],
+            "icon": "book"
           }
-        ]
+        ],
+        "version": "v2.14.3"
       }
     ]
   },
@@ -855,14 +883,14 @@
       "destination": "/servers/providers/mounting",
       "source": "/servers/composition"
     },
-      {
-        "destination": "/servers/transforms/transforms",
-        "source": "/servers/providers/namespacing"
-      },
-      {
-        "destination": "/servers/transforms/transforms",
-        "source": "/patterns/tool-transformation"
-      }
+    {
+      "destination": "/servers/transforms/transforms",
+      "source": "/servers/providers/namespacing"
+    },
+    {
+      "destination": "/servers/transforms/transforms",
+      "source": "/patterns/tool-transformation"
+    }
   ],
   "search": {
     "prompt": "Search the docs..."
