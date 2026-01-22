@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   label-issue-or-pr:
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
