@@ -39,7 +39,7 @@ class LoggingAnthropicHandler(AnthropicSamplingHandler):
 class SentimentAnalysis(BaseModel):
     sentiment: str  # "positive", "negative", or "neutral"
     confidence: float  # 0.0 to 1.0
-    keywords: list[str]  # Key words that influenced the analysis
+    keywords: list[str]  # Keywords that influenced the analysis
     explanation: str  # Brief explanation of the analysis
 
 
