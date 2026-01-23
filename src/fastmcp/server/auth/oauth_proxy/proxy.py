@@ -23,7 +23,7 @@ import secrets
 import time
 from base64 import urlsafe_b64encode
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 from authlib.common.security import generate_token
@@ -76,6 +76,30 @@ from fastmcp.server.auth.oauth_proxy.ui import create_error_html
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _normalize_resource_url(url: str) -> str:
+    """Normalize a resource URL by removing query parameters and trailing slashes.
+
+    RFC 8707 allows clients to include query parameters in resource URLs, but the
+    server's configured resource URL typically doesn't include them. This function
+    normalizes URLs for comparison by stripping query params and fragments.
+
+    Args:
+        url: The URL to normalize
+
+    Returns:
+        Normalized URL with scheme, host, and path only (no query/fragment)
+    """
+    parsed = urlparse(str(url))
+    return urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", "")
+    )
+
+
+def _server_url_has_query(url: str) -> bool:
+    """Check if a URL has query parameters."""
+    return bool(urlparse(str(url)).query)
 
 
 class OAuthProxy(OAuthProvider, ConsentMixin):
@@ -617,9 +641,32 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         """
         # Security check: validate client's requested resource matches this server
         # This prevents tokens intended for one server from being used on another
+        #
+        # Per RFC 8707, clients may include query parameters in resource URLs (e.g.,
+        # ChatGPT sends ?kb_name=X). We handle two cases:
+        #
+        # 1. Server URL has NO query params: normalize both URLs (strip query/fragment)
+        #    to allow clients like ChatGPT that add query params to still match.
+        #
+        # 2. Server URL HAS query params (e.g., multi-tenant ?tenant=X): require exact
+        #    match to prevent clients from bypassing tenant isolation by changing params.
+        #
+        # Claude doesn't send a resource parameter at all, so this check is skipped.
         client_resource = getattr(params, "resource", None)
         if client_resource and self._resource_url:
-            if str(client_resource) != str(self._resource_url):
+            server_url = str(self._resource_url)
+            client_url = str(client_resource)
+
+            if _server_url_has_query(server_url):
+                # Server has query params - require exact match for security
+                urls_match = client_url.rstrip("/") == server_url.rstrip("/")
+            else:
+                # Server has no query params - normalize both for comparison
+                urls_match = _normalize_resource_url(
+                    client_url
+                ) == _normalize_resource_url(server_url)
+
+            if not urls_match:
                 logger.warning(
                     "Resource mismatch: client requested %s but server is %s",
                     client_resource,
