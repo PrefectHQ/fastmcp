@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -765,7 +765,7 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.0.0" },
     { name = "py-key-value-aio", extras = ["disk", "keyring", "memory"], specifier = ">=0.3.0,<0.4.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
-    { name = "pydocket", marker = "extra == 'tasks'", git = "https://github.com/chrisguidry/docket?rev=fix-cancellation-handling" },
+    { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.17.2b1" },
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "rich", specifier = ">=13.9.4" },
@@ -1918,8 +1918,8 @@ wheels = [
 
 [[package]]
 name = "pydocket"
-version = "0.17.2.dev11+gd3d5360cc"
-source = { git = "https://github.com/chrisguidry/docket?rev=fix-cancellation-handling#d3d5360cc65a942fa593396dcf5506cc0b0444e7" }
+version = "0.17.2b1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cloudpickle" },
     { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
@@ -1933,6 +1933,10 @@ dependencies = [
     { name = "taskgroup", marker = "python_full_version < '3.11'" },
     { name = "typer" },
     { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/87/3d/9fd9ecbf96e07f68a2e306037b320cd70760e540575cb76f4fbae37a6ffc/pydocket-0.17.2b1.tar.gz", hash = "sha256:cc5cbb5d891f5b751cc775a4df34173db56b840f4f5e6b980b2d776733c5073f", size = 325355, upload-time = "2026-01-24T13:07:35.034Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/a5/77152518f0759aba55d03b56939259b83cd9ecb52de2f4df5fc10f55668c/pydocket-0.17.2b1-py3-none-any.whl", hash = "sha256:42c2ffac7da7745d3d76f4b58ab93cb3514551995b168f3d0521e58d0a23eb0d", size = 88969, upload-time = "2026-01-24T13:07:33.713Z" },
 ]
 
 [[package]]

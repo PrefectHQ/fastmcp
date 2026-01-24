@@ -52,7 +52,7 @@ classifiers = [
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40.0"]
 openai = ["openai>=1.102.0"]
-tasks = ["pydocket @ git+https://github.com/chrisguidry/docket@fix-cancellation-handling"]
+tasks = ["pydocket>=0.17.2b1"]
 
 [dependency-groups]
 dev = [
