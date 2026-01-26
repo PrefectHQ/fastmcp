@@ -52,7 +52,7 @@ classifiers = [
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40.0"]
 openai = ["openai>=1.102.0"]
-tasks = ["pydocket>=0.16.4"]
+tasks = ["pydocket>=0.17.2"]
 
 [dependency-groups]
 dev = [
