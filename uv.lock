@@ -765,7 +765,7 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.0.0" },
     { name = "py-key-value-aio", extras = ["disk", "keyring", "memory"], specifier = ">=0.3.0,<0.4.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
-    { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.17.2b2" },
+    { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.17.2b3" },
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "rich", specifier = ">=13.9.4" },
@@ -1918,7 +1918,7 @@ wheels = [
 
 [[package]]
 name = "pydocket"
-version = "0.17.2b2"
+version = "0.17.2b3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cloudpickle" },
@@ -1934,9 +1934,9 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9a/8e/680fdc3f40476926565e51b88060613b558e34eed99b8942a815ccffef3f/pydocket-0.17.2b2.tar.gz", hash = "sha256:21bd3dfae8ff694ca181727b18a76393fe52eca3325c814fc389c3054c10d8cc", size = 328757, upload-time = "2026-01-25T21:10:33.001Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/35/fd/b2789629c35bc08074a223725738d2d8fe4df4b4eefe5ed8c5ad3668430e/pydocket-0.17.2b3.tar.gz", hash = "sha256:08c94837fe45494b1b442f7248ffeaf33c043786e7c14770c8320d666244e067", size = 329299, upload-time = "2026-01-26T01:53:38.112Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6e/85/20a8ed837622b2b880e56642b5df8d8abcafd1793ab500ed834a47b4b652/pydocket-0.17.2b2-py3-none-any.whl", hash = "sha256:233d6a7e8a995d19188ec89fefae7703875a12b4dddf1454fc1b037216aad64c", size = 91193, upload-time = "2026-01-25T21:10:31.854Z" },
+    { url = "https://files.pythonhosted.org/packages/70/da/0fe46d7aa3a6084c3715c462d9b16dffca18092fac0eec7d9299d7b46a83/pydocket-0.17.2b3-py3-none-any.whl", hash = "sha256:f54ab37ded42120201d22faad1acbfee53cc413bb35fe2064d557ff8007f9fb9", size = 91656, upload-time = "2026-01-26T01:53:36.518Z" },
 ]
 
 [[package]]
