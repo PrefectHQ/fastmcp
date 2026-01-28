@@ -1,0 +1,33 @@
+name: "Setup UV Environment"
+description: "Install uv and dependencies (requires checkout first)"
+
+inputs:
+  python-version:
+    description: "Python version to use"
+    required: false
+    default: "3.10"
+  resolution:
+    description: "Dependency resolution: locked, upgrade, or lowest-direct"
+    required: false
+    default: "locked"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+        cache-dependency-glob: "uv.lock"
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        if [ "${{ inputs.resolution }}" == "locked" ]; then
+          uv sync --locked
+        elif [ "${{ inputs.resolution }}" == "upgrade" ]; then
+          uv sync --upgrade
+        else
+          uv sync --resolution ${{ inputs.resolution }}
+        fi

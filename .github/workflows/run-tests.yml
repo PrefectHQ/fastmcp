@@ -1,7 +1,6 @@
 name: Tests
 
 env:
-  # enable colored output
   PY_COLORS: 1
 
 on:
@@ -24,7 +23,7 @@ permissions:
 
 jobs:
   run_tests:
-    name: "Run tests: Python ${{ matrix.python-version }} on ${{ matrix.os }}"
+    name: "Tests: Python ${{ matrix.python-version }} on ${{ matrix.os }}"
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -39,76 +38,50 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
+      - uses: ./.github/actions/setup-uv
         with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
           python-version: ${{ matrix.python-version }}
+          resolution: locked
 
-      - name: Install FastMCP
-        # run with upgrade to always test against the latest compatible versions
-        run: uv sync --upgrade
+      - uses: ./.github/actions/run-pytest
 
-      - name: Run tests (excluding integration and client_process)
-        run: |
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            uv run pytest --inline-snapshot=disable tests -m "not integration and not client_process"
-          else
-            uv run pytest --inline-snapshot=disable tests -m "not integration and not client_process" --numprocesses auto --maxprocesses 4 --dist worksteal
-          fi
-        shell: bash
-
-      - name: Run client process tests separately
-        run: uv run pytest --inline-snapshot=disable tests -m "client_process" -x
+      - uses: ./.github/actions/run-pytest
+        with:
+          test-type: client_process
 
   run_tests_lowest_direct:
-    name: "Run tests with lowest-direct dependencies"
+    name: "Tests with lowest-direct dependencies"
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
+      - uses: ./.github/actions/setup-uv
         with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-          python-version: "3.10"
+          resolution: lowest-direct
 
-      - name: Install FastMCP with lowest-direct resolution
-        # run with lowest-direct to test against the minimum allowed dependency versions
-        run: uv sync --resolution lowest-direct
+      - uses: ./.github/actions/run-pytest
 
-      - name: Run tests (excluding integration and client_process)
-        run: uv run --resolution lowest-direct pytest --inline-snapshot=disable tests -m "not integration and not client_process" --numprocesses auto --maxprocesses 4 --dist worksteal
-
-      - name: Run client process tests separately
-        run: uv run --resolution lowest-direct pytest --inline-snapshot=disable tests -m "client_process" -x
+      - uses: ./.github/actions/run-pytest
+        with:
+          test-type: client_process
 
   run_integration_tests:
-    name: "Run integration tests"
+    name: "Integration tests"
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
+      - uses: ./.github/actions/setup-uv
         with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-          python-version: "3.10"
+          resolution: locked
 
-      - name: Install FastMCP
-        # run with upgrade to always test against the latest compatible versions
-        run: uv sync --upgrade
-
-      - name: Run integration tests
-        # use longer per-test timeout for remote API calls (default is 5s)
-        run: uv run pytest tests -m "integration" --timeout=30 --numprocesses auto --maxprocesses 2 --dist worksteal
+      - uses: ./.github/actions/run-pytest
+        with:
+          test-type: integration
         env:
           FASTMCP_GITHUB_TOKEN: ${{ secrets.FASTMCP_GITHUB_TOKEN }}
           FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID: ${{ secrets.FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID }}
