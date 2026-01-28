@@ -19,16 +19,22 @@ permissions:
 
 jobs:
   marvin:
+    # Restrict all triggers to repo members (OWNER, MEMBER, COLLABORATOR)
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/marvin')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '/marvin')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/marvin')) ||
-      (github.event_name == 'pull_request' && contains(github.event.pull_request.body, '/marvin')) ||
-      (github.event_name == 'issues' && contains(github.event.issue.body, '/marvin')) ||
-      (github.event_name == 'discussion' && contains(github.event.discussion.body, '/marvin')) ||
-      (github.event_name == 'discussion_comment' && contains(github.event.comment.body, '/marvin')) ||
-      (github.event_name == 'issues' && github.event.action == 'assigned' && github.event.assignee.login == 'Marvin Context Protocol') ||
-      (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'marvin')
+      (
+        (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment' || github.event_name == 'discussion_comment') &&
+        contains(github.event.comment.body, '/marvin') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+      ) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/marvin') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)) ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.body, '/marvin') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)) ||
+      (github.event_name == 'issues' && contains(github.event.issue.body, '/marvin') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)) ||
+      (github.event_name == 'discussion' && contains(github.event.discussion.body, '/marvin') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.discussion.author_association)) ||
+      (
+        github.event_name == 'issues' &&
+        ((github.event.action == 'assigned' && github.event.assignee.login == 'Marvin Context Protocol') || (github.event.action == 'labeled' && github.event.label.name == 'marvin')) &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.sender.author_association)
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

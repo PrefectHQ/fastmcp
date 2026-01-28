@@ -1,5 +1,5 @@
 from mcp.types import ToolAnnotations
-from phue2 import Bridge
+from phue import Bridge
 
 from fastmcp import FastMCP
 from smart_home.lights.server import lights_mcp
