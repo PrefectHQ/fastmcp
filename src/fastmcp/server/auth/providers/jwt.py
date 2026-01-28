@@ -15,7 +15,7 @@ from pydantic import AnyHttpUrl, SecretStr
 from typing_extensions import TypedDict
 
 from fastmcp.server.auth import AccessToken, TokenVerifier
-from fastmcp.utilities.auth import parse_scopes
+from fastmcp.utilities.auth import decode_jwt_header, parse_scopes
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -235,14 +235,8 @@ class JWTVerifier(TokenVerifier):
 
         # Extract kid from token header for JWKS lookup
         try:
-            import base64
-            import json
-
-            header_b64 = token.split(".")[0]
-            header_b64 += "=" * (4 - len(header_b64) % 4)  # Add padding
-            header = json.loads(base64.urlsafe_b64decode(header_b64))
+            header = decode_jwt_header(token)
             kid = header.get("kid")
-
             return await self._get_jwks_key(kid)
 
         except Exception as e:

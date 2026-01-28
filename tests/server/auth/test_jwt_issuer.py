@@ -228,3 +228,60 @@ class TestJWTIssuer:
 
         with pytest.raises(JoseError):
             issuer.verify_token("header.payload")  # Missing signature
+
+    def test_issue_access_token_with_upstream_claims(self, issuer):
+        """Test that upstream claims are included when provided."""
+        upstream_claims = {
+            "sub": "user-123",
+            "oid": "object-id-456",
+            "name": "Test User",
+            "email": "test@example.com",
+            "roles": ["Admin", "Reader"],
+        }
+        token = issuer.issue_access_token(
+            client_id="client-abc",
+            scopes=["read", "write"],
+            jti="token-id-123",
+            expires_in=3600,
+            upstream_claims=upstream_claims,
+        )
+
+        payload = issuer.verify_token(token)
+        assert "upstream_claims" in payload
+        assert payload["upstream_claims"]["sub"] == "user-123"
+        assert payload["upstream_claims"]["oid"] == "object-id-456"
+        assert payload["upstream_claims"]["name"] == "Test User"
+        assert payload["upstream_claims"]["email"] == "test@example.com"
+        assert payload["upstream_claims"]["roles"] == ["Admin", "Reader"]
+
+    def test_issue_access_token_without_upstream_claims(self, issuer):
+        """Test that upstream_claims is not present when not provided."""
+        token = issuer.issue_access_token(
+            client_id="client-abc",
+            scopes=["read"],
+            jti="token-id-123",
+            expires_in=3600,
+        )
+
+        payload = issuer.verify_token(token)
+        assert "upstream_claims" not in payload
+
+    def test_issue_refresh_token_with_upstream_claims(self, issuer):
+        """Test that refresh tokens also include upstream claims when provided."""
+        upstream_claims = {
+            "sub": "user-123",
+            "name": "Test User",
+        }
+        token = issuer.issue_refresh_token(
+            client_id="client-abc",
+            scopes=["read"],
+            jti="refresh-token-id",
+            expires_in=60 * 60 * 24 * 30,
+            upstream_claims=upstream_claims,
+        )
+
+        payload = issuer.verify_token(token)
+        assert "upstream_claims" in payload
+        assert payload["upstream_claims"]["sub"] == "user-123"
+        assert payload["upstream_claims"]["name"] == "Test User"
+        assert payload["token_use"] == "refresh"
