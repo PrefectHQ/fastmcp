@@ -1,0 +1,44 @@
+name: "Run Pytest"
+description: "Run pytest with appropriate flags for the test type and platform"
+
+inputs:
+  test-type:
+    description: "Type of tests to run: unit, integration, or client_process"
+    required: false
+    default: "unit"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run pytest
+      shell: bash
+      run: |
+        if [ "${{ inputs.test-type }}" == "integration" ]; then
+          MARKER="integration"
+          TIMEOUT="30"
+          MAX_PROCS="2"
+          EXTRA_FLAGS=""
+        elif [ "${{ inputs.test-type }}" == "client_process" ]; then
+          MARKER="client_process"
+          TIMEOUT="5"
+          MAX_PROCS="0"
+          EXTRA_FLAGS="-x"
+        else
+          MARKER="not integration and not client_process"
+          TIMEOUT="5"
+          MAX_PROCS="4"
+          EXTRA_FLAGS=""
+        fi
+
+        PARALLEL_FLAGS=""
+        if [ "$MAX_PROCS" != "0" ] && [ "${{ runner.os }}" != "Windows" ]; then
+          PARALLEL_FLAGS="--numprocesses auto --maxprocesses $MAX_PROCS --dist worksteal"
+        fi
+
+        uv run --no-sync pytest \
+          --inline-snapshot=disable \
+          --timeout=$TIMEOUT \
+          -m "$MARKER" \
+          $PARALLEL_FLAGS \
+          $EXTRA_FLAGS \
+          tests

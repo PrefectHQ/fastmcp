@@ -1,8 +1,6 @@
 name: Run static analysis
 
 env:
-  # enable colored output
-  # https://github.com/pytest-dev/pytest/issues/7443
   PY_COLORS: 1
 
 on:
@@ -26,19 +24,14 @@ permissions:
 jobs:
   static_analysis:
     timeout-minutes: 2
-
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v6
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
 
-      - name: Install dependencies
-        run: uv sync --upgrade
+      - uses: ./.github/actions/setup-uv
+        with:
+          resolution: locked
 
       - name: Run prek
         uses: j178/prek-action@v1
