@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from typing import Any, TypeVar
 
@@ -10,7 +10,7 @@ AppT = TypeVar("AppT")
 
 
 def combine_lifespans(
-    *lifespans: Callable[[AppT], AbstractAsyncContextManager[dict[str, Any] | None]],
+    *lifespans: Callable[[AppT], AbstractAsyncContextManager[Mapping[str, Any] | None]],
 ) -> Callable[[AppT], AbstractAsyncContextManager[dict[str, Any]]]:
     """Combine multiple lifespans into a single lifespan.
 

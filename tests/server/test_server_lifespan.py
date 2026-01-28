@@ -462,3 +462,46 @@ class TestCombineLifespans:
 
         async with combined("mock_app") as result:
             assert result == {}
+
+    async def test_combine_lifespans_with_mapping_return_type(self):
+        """Test combining lifespans that return Mapping (like Starlette's Lifespan).
+
+        This verifies that combine_lifespans accepts lifespans returning Mapping[str, Any],
+        which is the type that Starlette's Lifespan uses, not just dict[str, Any].
+        """
+        from collections.abc import Mapping
+
+        events: list[str] = []
+
+        @asynccontextmanager
+        async def mapping_lifespan(app: Any) -> AsyncIterator[Mapping[str, Any]]:
+            """Simulates a Starlette-style lifespan that yields a Mapping."""
+            events.append("mapping_enter")
+            try:
+                yield {"starlette_state": "initialized"}
+            finally:
+                events.append("mapping_exit")
+
+        @asynccontextmanager
+        async def dict_lifespan(app: Any) -> AsyncIterator[dict[str, Any]]:
+            events.append("dict_enter")
+            try:
+                yield {"fastmcp_state": "ready"}
+            finally:
+                events.append("dict_exit")
+
+        combined = combine_lifespans(mapping_lifespan, dict_lifespan)
+
+        async with combined("mock_app") as result:
+            assert result == {
+                "starlette_state": "initialized",
+                "fastmcp_state": "ready",
+            }
+            assert events == ["mapping_enter", "dict_enter"]
+
+        assert events == [
+            "mapping_enter",
+            "dict_enter",
+            "dict_exit",
+            "mapping_exit",
+        ]
