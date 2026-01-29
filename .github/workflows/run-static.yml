@@ -29,7 +29,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: ./.github/actions/setup-uv
+      - name: Setup uv
+        uses: ./.github/actions/setup-uv
         with:
           resolution: locked
 
