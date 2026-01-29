@@ -12,7 +12,7 @@ from key_value.aio.protocols import AsyncKeyValue
 
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.utilities.auth import parse_scopes
+from fastmcp.utilities.auth import decode_jwt_payload, parse_scopes
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -356,3 +356,75 @@ class AzureProvider(OAuthProxy):
 
         logger.debug("Scopes for Azure token endpoint: %s", deduplicated_scopes)
         return deduplicated_scopes
+
+    async def _extract_upstream_claims(
+        self, idp_tokens: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Extract claims from Azure token response to embed in FastMCP JWT.
+
+        Decodes the Azure access token (which is a JWT) to extract user identity
+        claims. This allows gateways to inspect upstream identity information by
+        decoding the FastMCP JWT without needing server-side storage lookups.
+
+        Azure access tokens contain claims like:
+        - sub: Subject identifier (unique per user per application)
+        - oid: Object ID (unique user identifier across Azure AD)
+        - tid: Tenant ID
+        - azp: Authorized party (client ID that requested the token)
+        - name: Display name
+        - given_name: First name
+        - family_name: Last name
+        - preferred_username: User principal name (email format)
+        - upn: User Principal Name
+        - email: Email address (if available)
+        - roles: Application roles assigned to the user
+        - groups: Group memberships (if configured)
+
+        Args:
+            idp_tokens: Full token response from Azure, containing access_token
+                and potentially id_token.
+
+        Returns:
+            Dict of extracted claims, or None if extraction fails.
+        """
+        access_token = idp_tokens.get("access_token")
+        if not access_token:
+            return None
+
+        try:
+            # Azure access tokens are JWTs - decode without verification
+            # (already validated by token_verifier during token exchange)
+            payload = decode_jwt_payload(access_token)
+
+            # Extract useful identity claims
+            claims: dict[str, Any] = {}
+            claim_keys = [
+                "sub",
+                "oid",
+                "tid",
+                "azp",
+                "name",
+                "given_name",
+                "family_name",
+                "preferred_username",
+                "upn",
+                "email",
+                "roles",
+                "groups",
+            ]
+            for claim in claim_keys:
+                if claim in payload:
+                    claims[claim] = payload[claim]
+
+            if claims:
+                logger.debug(
+                    "Extracted %d Azure claims for embedding in FastMCP JWT",
+                    len(claims),
+                )
+                return claims
+
+            return None
+
+        except Exception as e:
+            logger.debug("Failed to extract Azure claims: %s", e)
+            return None
