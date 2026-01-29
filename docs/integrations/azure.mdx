@@ -125,7 +125,7 @@ auth_provider = AzureProvider(
     # identifier_uri defaults to api://{client_id}
     # identifier_uri="api://your-api-id",
     # Optional: request additional upstream scopes in the authorize request
-    # additional_authorize_scopes=["User.Read", "offline_access", "openid", "email"],
+    # additional_authorize_scopes=["User.Read", "openid", "email"],
     # redirect_path="/auth/callback"                  # Default value, customize if needed
     # base_authority="login.microsoftonline.us"      # For Azure Government (default: login.microsoftonline.com)
 )
@@ -182,6 +182,10 @@ FastMCP automatically prefixes `required_scopes` with your `identifier_uri` (e.g
 |-----------|---------------|---------------------|
 | `User.Read` | `User.Read` | ✗ |
 | `Mail.Send` | `Mail.Send` | ✗ |
+
+<Note>
+`offline_access` is automatically included to obtain refresh tokens. FastMCP manages token refreshing automatically.
+</Note>
 
 <Info>
 **Why aren't `additional_authorize_scopes` validated?** Azure issues separate tokens per resource. The access token FastMCP receives is for *your API*—Graph scopes aren't in its `scp` claim. To call Graph APIs, your server uses the upstream Azure token in an on-behalf-of (OBO) flow.

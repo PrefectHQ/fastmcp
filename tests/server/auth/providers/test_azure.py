@@ -48,6 +48,36 @@ class TestAzureProvider:
         assert provider._redirect_path == "/auth/callback"
         # Azure provider defaults are set but we can't easily verify them without accessing internals
 
+    def test_offline_access_automatically_included(self):
+        """Test that offline_access is automatically added to get refresh tokens."""
+        # Without specifying offline_access
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+
+        assert "offline_access" in provider.additional_authorize_scopes
+
+    def test_offline_access_not_duplicated(self):
+        """Test that offline_access is not duplicated if already specified."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            additional_authorize_scopes=["User.Read", "offline_access"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Should appear exactly once
+        assert provider.additional_authorize_scopes.count("offline_access") == 1
+        assert "User.Read" in provider.additional_authorize_scopes
+
     def test_oauth_endpoints_configured_correctly(self):
         """Test that OAuth endpoints are configured correctly."""
         provider = AzureProvider(
@@ -414,7 +444,8 @@ class TestAzureProvider:
 
         assert "api://my-api/read" in result
         assert "api://my-api/write" in result
-        assert len(result) == 2
+        assert "offline_access" in result  # Auto-included for refresh tokens
+        assert len(result) == 3
 
     def test_prepare_scopes_for_upstream_refresh_already_prefixed(self):
         """Test that already-prefixed scopes remain unchanged."""
@@ -435,7 +466,8 @@ class TestAzureProvider:
 
         assert "api://my-api/read" in result
         assert "api://other-api/admin" in result
-        assert len(result) == 2
+        assert "offline_access" in result  # Auto-included for refresh tokens
+        assert len(result) == 3
 
     def test_prepare_scopes_for_upstream_refresh_with_additional_scopes(self):
         """Test that only OIDC scopes from additional_authorize_scopes are added.
@@ -491,12 +523,13 @@ class TestAzureProvider:
             ["read", "User.Read", "openid"]
         )
 
-        # Should have: api://my-api/read (prefixed) + openid (OIDC, added once)
+        # Should have: api://my-api/read (prefixed) + openid + offline_access (OIDC scopes)
         # User.Read is filtered from storage AND not added (not OIDC)
         assert "api://my-api/read" in result
         assert "User.Read" not in result  # Not OIDC
         assert result.count("openid") == 1
-        assert len(result) == 2
+        assert "offline_access" in result  # Auto-included and is OIDC
+        assert len(result) == 3
 
     def test_prepare_scopes_for_upstream_refresh_mixed_scopes(self):
         """Test mixed scenario with both prefixed and unprefixed scopes."""
@@ -520,7 +553,8 @@ class TestAzureProvider:
         assert "api://other-api/admin" in result  # Already prefixed, unchanged
         assert "api://my-api/write" in result
         assert "openid" in result
-        assert len(result) == 4
+        assert "offline_access" in result  # Auto-included
+        assert len(result) == 5
 
     def test_prepare_scopes_for_upstream_refresh_scope_with_slash(self):
         """Test that scopes containing '/' are not prefixed."""
@@ -562,7 +596,8 @@ class TestAzureProvider:
 
         assert "User.Read" not in result  # Not OIDC
         assert "openid" in result
-        assert len(result) == 1  # Only openid (the only OIDC scope)
+        assert "offline_access" in result  # Auto-included
+        assert len(result) == 2  # Only OIDC scopes: openid + offline_access
 
     def test_prepare_scopes_for_upstream_refresh_no_additional_scopes(self):
         """Test behavior when no additional_authorize_scopes are configured."""
@@ -576,12 +611,13 @@ class TestAzureProvider:
             jwt_signing_key="test-secret",
         )
 
-        # Should only prefix base scopes, no additional scopes added
+        # Should prefix base scopes, plus auto-added offline_access
         result = provider._prepare_scopes_for_upstream_refresh(["read", "write"])
 
         assert "api://my-api/read" in result
         assert "api://my-api/write" in result
-        assert len(result) == 2
+        assert "offline_access" in result  # Auto-included
+        assert len(result) == 3
 
     def test_prepare_scopes_for_upstream_refresh_deduplicates_scopes(self):
         """Test that duplicate scopes are deduplicated while preserving order."""
@@ -601,14 +637,15 @@ class TestAzureProvider:
             ["read", "write", "read", "openid"]
         )
 
-        # Should have deduplicated results in order (User.Read filtered, openid added once)
+        # Should have deduplicated results in order (OIDC scopes added, offline_access auto-added)
         assert result == [
             "api://my-api/read",
             "api://my-api/write",
             "openid",
             "profile",
+            "offline_access",
         ]
-        assert len(result) == 4
+        assert len(result) == 5
 
     def test_prepare_scopes_for_upstream_refresh_deduplicates_prefixed_variants(self):
         """Test that both prefixed and unprefixed variants are deduplicated."""
@@ -630,8 +667,9 @@ class TestAzureProvider:
         # Should deduplicate - first occurrence wins (api://my-api/read from "read")
         assert "api://my-api/read" in result
         assert "api://my-api/write" in result
-        # Should only have 2 items (read processed twice, but deduplicated)
-        assert len(result) == 2
+        assert "offline_access" in result  # Auto-included
+        # Should have 3 items (read deduplicated, plus offline_access)
+        assert len(result) == 3
         assert result.count("api://my-api/read") == 1
 
 
