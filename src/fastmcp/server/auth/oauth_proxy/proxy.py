@@ -978,6 +978,20 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     # Refresh Token Flow
     # -------------------------------------------------------------------------
 
+    def _prepare_scopes_for_token_exchange(self, scopes: list[str]) -> list[str]:
+        """Prepare scopes for initial token exchange (auth code -> tokens).
+
+        Override this method to provide scopes during the authorization
+        code exchange. Some providers (like Azure) require scopes to be sent.
+
+        Args:
+            scopes: Scopes from the authorization request
+
+        Returns:
+            List of scopes to send, or empty list to omit scope parameter
+        """
+        return scopes
+
     def _prepare_scopes_for_upstream_refresh(self, scopes: list[str]) -> list[str]:
         """Prepare scopes for upstream token refresh request.
 
@@ -1531,6 +1545,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "Including proxy code_verifier in token exchange for transaction %s",
                         txn_id,
                     )
+
+                # Allow providers to specify scope for token exchange
+                exchange_scopes = self._prepare_scopes_for_token_exchange(
+                    transaction.get("scopes") or []
+                )
+                if exchange_scopes:
+                    token_params["scope"] = " ".join(exchange_scopes)
 
                 # Add any extra token parameters configured for this proxy
                 if self._extra_token_params:

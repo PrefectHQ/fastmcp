@@ -193,6 +193,8 @@ class AzureProvider(OAuthProxy):
         token_endpoint = f"https://{base_authority}/{tenant_id}/oauth2/v2.0/token"
 
         # Initialize OAuth proxy with Azure endpoints
+        # Remember there's hooks called, such as _prepare_scopes_for_token_exchange
+        # and _prepare_scopes_for_upstream_refresh
         super().__init__(
             upstream_authorization_endpoint=authorization_endpoint,
             upstream_token_endpoint=token_endpoint,
@@ -206,7 +208,6 @@ class AzureProvider(OAuthProxy):
             client_storage=client_storage,
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
-            # Advertise full scopes including OIDC (even though we only validate non-OIDC)
             valid_scopes=parsed_required_scopes,
         )
 
@@ -318,16 +319,37 @@ class AzureProvider(OAuthProxy):
         # Let parent build the URL with prefixed scopes
         return super()._build_upstream_authorize_url(txn_id, modified_transaction)
 
+    def _prepare_scopes_for_token_exchange(self, scopes: list[str]) -> list[str]:
+        """Prepare scopes for Azure authorization code exchange.
+
+        Azure requires scopes during token exchange (AADSTS28003 error if missing).
+        Azure only allows ONE resource per token request (AADSTS28000), so we only
+        include scopes for this API plus OIDC scopes.
+
+        Args:
+            scopes: Scopes from the authorization request (unprefixed)
+
+        Returns:
+            List of scopes for Azure token endpoint
+        """
+        # Prefix scopes for this API
+        prefixed_scopes = self._prefix_scopes_for_azure(scopes or [])
+
+        # Add OIDC scopes only (not other API scopes) to avoid AADSTS28000
+        if self.additional_authorize_scopes:
+            prefixed_scopes.extend(
+                s for s in self.additional_authorize_scopes if s in OIDC_SCOPES
+            )
+
+        deduplicated = list(dict.fromkeys(prefixed_scopes))
+        logger.debug("Token exchange scopes: %s", deduplicated)
+        return deduplicated
+
     def _prepare_scopes_for_upstream_refresh(self, scopes: list[str]) -> list[str]:
         """Prepare scopes for Azure token refresh.
 
-        Azure requires:
-        1. Fully-qualified custom scopes (e.g., "api://xxx/read" not "read")
-        2. Microsoft Graph scopes (e.g., "User.Read", "openid") sent as-is
-        3. Additional scopes from provider config (additional_authorize_scopes)
-
-        This method transforms base client scopes for Azure while keeping them
-        unprefixed in storage to prevent accumulation.
+        Azure requires fully-qualified scopes and only allows ONE resource per
+        token request (AADSTS28000). We include scopes for this API plus OIDC scopes.
 
         Args:
             scopes: Base scopes from RefreshToken (unprefixed, e.g., ["read"])
@@ -338,22 +360,19 @@ class AzureProvider(OAuthProxy):
         logger.debug("Base scopes from storage: %s", scopes)
 
         # Filter out any additional_authorize_scopes that may have been stored
-        # (they shouldn't be in storage, but clean them up if they are)
         additional_scopes_set = set(self.additional_authorize_scopes or [])
         base_scopes = [s for s in scopes if s not in additional_scopes_set]
 
-        # Prefix base scopes with identifier_uri for Azure using shared helper
+        # Prefix base scopes with identifier_uri for Azure
         prefixed_scopes = self._prefix_scopes_for_azure(base_scopes)
 
-        # Add additional scopes (Graph + OIDC) for the Azure request
-        # These are NOT stored in RefreshToken, only sent to Azure
+        # Add OIDC scopes only (not other API scopes) to avoid AADSTS28000
         if self.additional_authorize_scopes:
-            prefixed_scopes.extend(self.additional_authorize_scopes)
+            prefixed_scopes.extend(
+                s for s in self.additional_authorize_scopes if s in OIDC_SCOPES
+            )
 
-        # Deduplicate while preserving order (in case older tokens have duplicates)
-        # Use dict.fromkeys() for O(n) deduplication with order preservation
         deduplicated_scopes = list(dict.fromkeys(prefixed_scopes))
-
         logger.debug("Scopes for Azure token endpoint: %s", deduplicated_scopes)
         return deduplicated_scopes
 
