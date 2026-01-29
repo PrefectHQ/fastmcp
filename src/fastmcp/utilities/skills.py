@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import mcp.types
+
 if TYPE_CHECKING:
     from fastmcp.client import Client
 
@@ -101,7 +103,7 @@ async def get_skill_manifest(client: Client, skill_name: str) -> SkillManifest:
         raise ValueError(f"Could not read manifest for skill: {skill_name}")
 
     content = result[0]
-    if hasattr(content, "text"):
+    if isinstance(content, mcp.types.TextResourceContents):
         try:
             manifest_data = json.loads(content.text)
         except json.JSONDecodeError as e:
@@ -197,9 +199,9 @@ async def download_skill(
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Write content
-        if hasattr(content, "text"):
+        if isinstance(content, mcp.types.TextResourceContents):
             file_path.write_text(content.text)
-        elif hasattr(content, "blob"):
+        elif isinstance(content, mcp.types.BlobResourceContents):
             # Handle base64-encoded binary content
             import base64
 
