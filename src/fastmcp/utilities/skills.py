@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -202,9 +203,6 @@ async def download_skill(
         if isinstance(content, mcp.types.TextResourceContents):
             file_path.write_text(content.text)
         elif isinstance(content, mcp.types.BlobResourceContents):
-            # Handle base64-encoded binary content
-            import base64
-
             file_path.write_bytes(base64.b64decode(content.blob))
         else:
             # Skip unknown content types

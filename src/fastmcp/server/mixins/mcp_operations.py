@@ -154,6 +154,7 @@ class MCPOperationsMixin:
 
         tools = _dedupe_with_versions(list(await server.list_tools()), lambda t: t.name)
         sdk_tools = [tool.to_mcp_tool(name=tool.name) for tool in tools]
+
         # SDK may pass None for internal cache refresh despite type hint
         cursor = (
             request.params.cursor if request is not None and request.params else None
@@ -177,6 +178,7 @@ class MCPOperationsMixin:
         sdk_resources = [
             resource.to_mcp_resource(uri=str(resource.uri)) for resource in resources
         ]
+
         cursor = request.params.cursor if request.params else None
         page, next_cursor = _apply_pagination(
             sdk_resources, cursor, server._list_page_size
