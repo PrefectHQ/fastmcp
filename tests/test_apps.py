@@ -12,6 +12,8 @@ from fastmcp import Client, FastMCP
 from fastmcp.server.apps import (
     UI_EXTENSION_ID,
     UI_MIME_TYPE,
+    ResourceCSP,
+    ResourcePermissions,
     ResourceUI,
     ToolUI,
     ui_to_meta_dict,
@@ -38,8 +40,8 @@ class TestToolUI:
         ui = ToolUI(
             resource_uri="ui://app",
             visibility=["app", "model"],
-            csp="default-src 'self'",
-            permissions=["clipboard-read"],
+            csp=ResourceCSP(resource_domains=["https://cdn.example.com"]),
+            permissions=ResourcePermissions(camera={}, clipboard_write={}),
             domain="example.com",
             prefers_border=True,
         )
@@ -47,8 +49,8 @@ class TestToolUI:
         assert d == {
             "resourceUri": "ui://app",
             "visibility": ["app", "model"],
-            "csp": "default-src 'self'",
-            "permissions": ["clipboard-read"],
+            "csp": {"resourceDomains": ["https://cdn.example.com"]},
+            "permissions": {"camera": {}, "clipboardWrite": {}},
             "domain": "example.com",
             "prefersBorder": True,
         }
@@ -58,16 +60,123 @@ class TestToolUI:
         assert ui.resource_uri == "ui://app"
 
 
+class TestResourceCSP:
+    def test_serializes_with_aliases(self):
+        csp = ResourceCSP(
+            connect_domains=["https://api.example.com"],
+            resource_domains=["https://cdn.example.com"],
+        )
+        d = csp.model_dump(by_alias=True, exclude_none=True)
+        assert d == {
+            "connectDomains": ["https://api.example.com"],
+            "resourceDomains": ["https://cdn.example.com"],
+        }
+
+    def test_excludes_none_fields(self):
+        csp = ResourceCSP(resource_domains=["https://unpkg.com"])
+        d = csp.model_dump(by_alias=True, exclude_none=True)
+        assert d == {"resourceDomains": ["https://unpkg.com"]}
+
+    def test_all_fields(self):
+        csp = ResourceCSP(
+            connect_domains=["https://api.example.com"],
+            resource_domains=["https://cdn.example.com"],
+            frame_domains=["https://embed.example.com"],
+            base_uri_domains=["https://base.example.com"],
+        )
+        d = csp.model_dump(by_alias=True, exclude_none=True)
+        assert d == {
+            "connectDomains": ["https://api.example.com"],
+            "resourceDomains": ["https://cdn.example.com"],
+            "frameDomains": ["https://embed.example.com"],
+            "baseUriDomains": ["https://base.example.com"],
+        }
+
+    def test_populate_by_name(self):
+        csp = ResourceCSP(connect_domains=["https://api.example.com"])
+        assert csp.connect_domains == ["https://api.example.com"]
+
+    def test_empty(self):
+        csp = ResourceCSP()
+        d = csp.model_dump(by_alias=True, exclude_none=True)
+        assert d == {}
+
+    def test_extra_fields_preserved(self):
+        """Unknown CSP directives from future spec versions pass through."""
+        csp = ResourceCSP(
+            resource_domains=["https://cdn.example.com"],
+            **{"workerDomains": ["https://worker.example.com"]},
+        )
+        d = csp.model_dump(by_alias=True, exclude_none=True)
+        assert d["resourceDomains"] == ["https://cdn.example.com"]
+        assert d["workerDomains"] == ["https://worker.example.com"]
+
+
+class TestResourcePermissions:
+    def test_serializes_with_aliases(self):
+        perms = ResourcePermissions(microphone={}, clipboard_write={})
+        d = perms.model_dump(by_alias=True, exclude_none=True)
+        assert d == {"microphone": {}, "clipboardWrite": {}}
+
+    def test_excludes_none_fields(self):
+        perms = ResourcePermissions(camera={})
+        d = perms.model_dump(by_alias=True, exclude_none=True)
+        assert d == {"camera": {}}
+
+    def test_all_fields(self):
+        perms = ResourcePermissions(
+            camera={}, microphone={}, geolocation={}, clipboard_write={}
+        )
+        d = perms.model_dump(by_alias=True, exclude_none=True)
+        assert d == {
+            "camera": {},
+            "microphone": {},
+            "geolocation": {},
+            "clipboardWrite": {},
+        }
+
+    def test_populate_by_name(self):
+        perms = ResourcePermissions(clipboard_write={})
+        assert perms.clipboard_write == {}
+
+    def test_extra_fields_preserved(self):
+        """Unknown permissions from future spec versions pass through."""
+        perms = ResourcePermissions(camera={}, **{"midi": {}})
+        d = perms.model_dump(by_alias=True, exclude_none=True)
+        assert d["camera"] == {}
+        assert d["midi"] == {}
+
+    def test_empty(self):
+        perms = ResourcePermissions()
+        d = perms.model_dump(by_alias=True, exclude_none=True)
+        assert d == {}
+
+
 class TestResourceUI:
     def test_serializes_with_aliases(self):
-        ui = ResourceUI(prefers_border=True, csp="default-src 'self'")
+        ui = ResourceUI(
+            prefers_border=True,
+            csp=ResourceCSP(resource_domains=["https://cdn.example.com"]),
+        )
         d = ui.model_dump(by_alias=True, exclude_none=True)
-        assert d == {"prefersBorder": True, "csp": "default-src 'self'"}
+        assert d == {
+            "prefersBorder": True,
+            "csp": {"resourceDomains": ["https://cdn.example.com"]},
+        }
 
     def test_excludes_none_fields(self):
         ui = ResourceUI()
         d = ui.model_dump(by_alias=True, exclude_none=True)
         assert d == {}
+
+    def test_with_permissions(self):
+        ui = ResourceUI(
+            permissions=ResourcePermissions(microphone={}, clipboard_write={}),
+        )
+        d = ui.model_dump(by_alias=True, exclude_none=True)
+        assert d == {
+            "permissions": {"microphone": {}, "clipboardWrite": {}},
+        }
 
 
 class TestUIToMetaDict:
@@ -303,6 +412,19 @@ class TestIntegration:
             assert str(resources[0].uri) == "ui://my-app/view.html"
             assert resources[0].mimeType == UI_MIME_TYPE
 
+    async def test_ui_resource_read_preserves_mime_type(self):
+        """Reading a ui:// resource returns content with the correct MIME type."""
+        server = FastMCP("test")
+
+        @server.resource("ui://my-app/view.html")
+        def app_html() -> str:
+            return "<html><body>Hello</body></html>"
+
+        async with Client(server) as client:
+            result = await client.read_resource_mcp("ui://my-app/view.html")
+            assert len(result.contents) == 1
+            assert result.contents[0].mimeType == UI_MIME_TYPE
+
     async def test_ui_tool_callable(self):
         """A tool registered with ui= is still callable normally."""
         server = FastMCP("test")
@@ -332,3 +454,72 @@ class TestIntegration:
         async with Client(server) as client:
             extras = client.initialize_result.capabilities.model_extra or {}
             assert UI_EXTENSION_ID in extras.get("extensions", {})
+
+    async def test_csp_and_permissions_roundtrip(self):
+        """CSP and permissions metadata flows through to clients correctly."""
+        server = FastMCP("test")
+
+        @server.resource(
+            "ui://secure-app/view.html",
+            ui=ResourceUI(
+                csp=ResourceCSP(
+                    resource_domains=["https://unpkg.com"],
+                    connect_domains=["https://api.example.com"],
+                ),
+                permissions=ResourcePermissions(microphone={}, clipboard_write={}),
+            ),
+        )
+        def secure_app() -> str:
+            return "<html>secure</html>"
+
+        @server.tool(
+            ui=ToolUI(
+                resource_uri="ui://secure-app/view.html",
+                csp=ResourceCSP(resource_domains=["https://cdn.example.com"]),
+                permissions=ResourcePermissions(camera={}),
+            )
+        )
+        def secure_tool() -> str:
+            return "result"
+
+        async with Client(server) as client:
+            # Verify resource metadata
+            resources = await client.list_resources()
+            assert len(resources) == 1
+            meta = resources[0].meta
+            assert meta is not None
+            assert meta["ui"]["csp"]["resourceDomains"] == ["https://unpkg.com"]
+            assert meta["ui"]["csp"]["connectDomains"] == ["https://api.example.com"]
+            assert meta["ui"]["permissions"]["microphone"] == {}
+            assert meta["ui"]["permissions"]["clipboardWrite"] == {}
+
+            # Verify tool metadata
+            tools = await client.list_tools()
+            assert len(tools) == 1
+            tool_meta = tools[0].meta
+            assert tool_meta is not None
+            assert tool_meta["ui"]["csp"]["resourceDomains"] == [
+                "https://cdn.example.com"
+            ]
+            assert tool_meta["ui"]["permissions"]["camera"] == {}
+
+    async def test_resource_read_propagates_meta_to_content_items(self):
+        """resources/read must include _meta on content items so hosts can read CSP."""
+        server = FastMCP("test")
+
+        @server.resource(
+            "ui://csp-app/view.html",
+            ui=ResourceUI(
+                csp=ResourceCSP(resource_domains=["https://unpkg.com"]),
+            ),
+        )
+        def app_view() -> str:
+            return "<html>app</html>"
+
+        async with Client(server) as client:
+            read_result = await client.read_resource_mcp("ui://csp-app/view.html")
+            content_item = read_result.contents[0]
+            assert content_item.meta is not None
+            assert content_item.meta["ui"]["csp"]["resourceDomains"] == [
+                "https://unpkg.com"
+            ]

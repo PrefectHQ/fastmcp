@@ -1,0 +1,13 @@
+{
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "source": {
+    "path": "qr_server.py"
+  },
+  "environment": {
+    "dependencies": [
+      "fastmcp",
+      "qrcode[pil]>=8.0",
+      "pillow"
+    ]
+  }
+}

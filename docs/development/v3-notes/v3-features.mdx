@@ -24,6 +24,75 @@ fastmcp install stdio server.py
 
 The command automatically detects the project directory and generates the appropriate `uv run` invocation, making it easy to integrate FastMCP servers with MCP clients.
 
+### MCP Apps (SDK Compatibility)
+
+Support for [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) — the spec extension that lets MCP servers deliver interactive UIs via sandboxed iframes. Extension negotiation, typed UI metadata on tools and resources, and the `ui://` resource scheme. No component DSL, renderer, or `FastMCPApp` class yet — those are future phases.
+
+**Registering tools with UI metadata:**
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.apps import ToolUI, ResourceUI, ResourceCSP, ResourcePermissions
+
+mcp = FastMCP("My Server")
+
+# Register the HTML bundle as a ui:// resource with CSP
+@mcp.resource(
+    "ui://my-app/view.html",
+    ui=ResourceUI(
+        csp=ResourceCSP(resource_domains=["https://unpkg.com"]),
+        permissions=ResourcePermissions(clipboard_write={}),
+    ),
+)
+def app_html() -> str:
+    from pathlib import Path
+    return Path("./dist/index.html").read_text()
+
+# Tool with UI — clients render an iframe alongside the result
+@mcp.tool(ui=ToolUI(resource_uri="ui://my-app/view.html"))
+async def list_users() -> list[dict]:
+    return [{"id": "1", "name": "Alice"}]
+
+# App-only tool — visible to the UI but hidden from the model
+@mcp.tool(ui=ToolUI(resource_uri="ui://my-app/view.html", visibility=["app"]))
+async def delete_user(id: str) -> dict:
+    return {"deleted": True}
+```
+
+The `ui=` parameter accepts either a typed model (`ToolUI`, `ResourceUI`) or a raw dict for forward compatibility. It merges into `meta["ui"]` — alongside any other metadata you set.
+
+**`ui://` resources** automatically get the correct MIME type (`text/html;profile=mcp-app`) unless you override it explicitly.
+
+**Extension negotiation**: The server advertises `io.modelcontextprotocol/ui` in `capabilities.extensions`. UI metadata (`_meta.ui`) always flows through to clients — the MCP Apps spec assigns visibility enforcement to the host, not the server. Tools can check whether the connected client supports a given extension at runtime via `ctx.client_supports_extension()`:
+
+```python
+from fastmcp import Context
+from fastmcp.server.apps import ToolUI, UI_EXTENSION_ID
+
+@mcp.tool(ui=ToolUI(resource_uri="ui://dashboard"))
+async def dashboard(ctx: Context) -> dict:
+    data = compute_dashboard()
+    if ctx.client_supports_extension(UI_EXTENSION_ID):
+        return data
+    return {"summary": format_text(data)}
+```
+
+**Key details:**
+- `ToolUI` fields: `resource_uri`, `visibility`, `csp`, `permissions`, `domain`, `prefers_border` (all optional except for typical usage of `resource_uri`)
+- `ResourceUI` fields: `csp`, `permissions`, `domain`, `prefers_border` — metadata for the resource itself when it's a UI bundle
+- `csp` accepts a `ResourceCSP` model with structured domain lists: `connect_domains`, `resource_domains`, `frame_domains`, `base_uri_domains`
+- `permissions` accepts a `ResourcePermissions` model: `camera`, `microphone`, `geolocation`, `clipboard_write` (each set to `{}` to request)
+- Both models use `extra="allow"` for forward compatibility with future spec additions
+- Models use Pydantic aliases for wire format (`resourceUri`, `prefersBorder`, `connectDomains`, `clipboardWrite`)
+- Resource metadata (including CSP/permissions) is propagated to `resources/read` response content items so hosts can read it when rendering the iframe
+- `ctx.client_supports_extension(id)` is a general-purpose method — works for any extension, not just MCP Apps
+- `structuredContent` in tool results already works via `ToolResult` — MCP Apps clients use this to pass data into the iframe
+- The server does not strip `_meta.ui` for non-UI clients; per the spec, visibility enforcement is the host's responsibility
+
+**Future phases** will add a component DSL for building UIs declaratively, an in-repo renderer, and a `FastMCPApp` class.
+
+Implementation: `src/fastmcp/server/apps.py` (models and constants), with integration points in `server.py` (decorator parameters), `low_level.py` (extension advertisement), and `context.py` (`client_supports_extension` method).
+
 ---
 
 ## 3.0.0beta1
@@ -655,70 +724,6 @@ def custom_check(ctx: AuthContext) -> bool:
 ```
 
 STDIO transport bypasses all auth checks (no OAuth concept).
-
----
-
-### MCP Apps (SDK Compatibility)
-
-v3.0 adds Phase 1 support for [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) — the spec extension that lets MCP servers deliver interactive UIs via sandboxed iframes. Phase 1 is SDK compatibility only: extension negotiation, typed UI metadata on tools and resources, and the `ui://` resource scheme. No component DSL, renderer, or `FastMCPApp` class yet — those are future phases.
-
-**Registering tools with UI metadata:**
-
-```python
-from fastmcp import FastMCP
-from fastmcp.server.apps import ToolUI, ResourceUI, UI_MIME_TYPE
-
-mcp = FastMCP("My Server")
-
-# Register the HTML bundle as a ui:// resource
-@mcp.resource("ui://my-app/view.html")
-def app_html() -> str:
-    from pathlib import Path
-    return Path("./dist/index.html").read_text()
-
-# Tool with UI — clients render an iframe alongside the result
-@mcp.tool(ui=ToolUI(resource_uri="ui://my-app/view.html"))
-async def list_users() -> list[dict]:
-    return [{"id": "1", "name": "Alice"}]
-
-# App-only tool — visible to the UI but hidden from the model
-@mcp.tool(ui=ToolUI(resource_uri="ui://my-app/view.html", visibility=["app"]))
-async def delete_user(id: str) -> dict:
-    return {"deleted": True}
-```
-
-The `ui=` parameter accepts either a typed model (`ToolUI`, `ResourceUI`) or a raw dict for forward compatibility. It merges into `meta["ui"]` — alongside any other metadata you set.
-
-**`ui://` resources** automatically get the correct MIME type (`text/html;profile=mcp-app`) unless you override it explicitly.
-
-**Extension negotiation**: The server advertises `io.modelcontextprotocol/ui` in `capabilities.extensions`. UI metadata (`_meta.ui`) always flows through to clients — the MCP Apps spec assigns visibility enforcement to the host, not the server. Tools can check whether the connected client supports a given extension at runtime via `ctx.client_supports_extension()`:
-
-```python
-from fastmcp import Context
-from fastmcp.server.apps import ToolUI, UI_EXTENSION_ID
-
-@mcp.tool(ui=ToolUI(resource_uri="ui://dashboard"))
-async def dashboard(ctx: Context) -> dict:
-    data = compute_dashboard()
-    if ctx.client_supports_extension(UI_EXTENSION_ID):
-        # Client will render the iframe with structured data
-        return data
-    # Fallback: text-only summary
-    return {"summary": format_text(data)}
-```
-
-**Key details:**
-- `ToolUI` fields: `resource_uri`, `visibility`, `csp`, `permissions`, `domain`, `prefers_border` (all optional except for typical usage of `resource_uri`)
-- `ResourceUI` fields: `csp`, `permissions`, `domain`, `prefers_border` — metadata for the resource itself when it's a UI bundle
-- Models use Pydantic aliases for wire format (`resourceUri`, `prefersBorder`)
-- `ctx.client_supports_extension(id)` is a general-purpose method — works for any extension, not just MCP Apps
-- `structuredContent` in tool results already works via `ToolResult` — MCP Apps clients use this to pass data into the iframe
-- Text content fallback already works — tools return both `content` and `structured_content`
-- The server does not strip `_meta.ui` for non-UI clients; per the spec, visibility enforcement is the host's responsibility
-
-**Future phases** will add a component DSL for building UIs declaratively, an in-repo renderer, and a `FastMCPApp` class.
-
-Implementation: `src/fastmcp/server/apps.py` (models and constants), with integration points in `server.py` (decorator parameters), `low_level.py` (extension advertisement), and `context.py` (`client_supports_extension` method).
 
 ---
 

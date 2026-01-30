@@ -83,6 +83,8 @@ async def process_common_args(
         file = (config_path.parent / source_path).resolve()
     else:
         file = source_path.resolve()
+    # Update the source path so load_server() resolves correctly
+    config.source.path = str(file)
     server_object = (
         config.source.entrypoint if hasattr(config.source, "entrypoint") else None
     )

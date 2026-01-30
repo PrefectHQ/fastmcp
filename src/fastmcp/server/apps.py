@@ -15,6 +15,65 @@ UI_EXTENSION_ID = "io.modelcontextprotocol/ui"
 UI_MIME_TYPE = "text/html;profile=mcp-app"
 
 
+class ResourceCSP(BaseModel):
+    """Content Security Policy for MCP App resources.
+
+    Declares which external origins the app is allowed to connect to or
+    load resources from.  Hosts use these declarations to build the
+    ``Content-Security-Policy`` header for the sandboxed iframe.
+    """
+
+    connect_domains: list[str] | None = Field(
+        default=None,
+        alias="connectDomains",
+        description="Origins allowed for fetch/XHR/WebSocket (connect-src)",
+    )
+    resource_domains: list[str] | None = Field(
+        default=None,
+        alias="resourceDomains",
+        description="Origins allowed for scripts, images, styles, fonts (script-src etc.)",
+    )
+    frame_domains: list[str] | None = Field(
+        default=None,
+        alias="frameDomains",
+        description="Origins allowed for nested iframes (frame-src)",
+    )
+    base_uri_domains: list[str] | None = Field(
+        default=None,
+        alias="baseUriDomains",
+        description="Allowed base URIs for the document (base-uri)",
+    )
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+
+class ResourcePermissions(BaseModel):
+    """Iframe sandbox permissions for MCP App resources.
+
+    Each field, when set (typically to ``{}``), requests that the host
+    grant the corresponding Permission Policy feature to the sandboxed
+    iframe.  Hosts MAY honour these; apps should use JS feature detection
+    as a fallback.
+    """
+
+    camera: dict[str, Any] | None = Field(
+        default=None, description="Request camera access"
+    )
+    microphone: dict[str, Any] | None = Field(
+        default=None, description="Request microphone access"
+    )
+    geolocation: dict[str, Any] | None = Field(
+        default=None, description="Request geolocation access"
+    )
+    clipboard_write: dict[str, Any] | None = Field(
+        default=None,
+        alias="clipboardWrite",
+        description="Request clipboard-write access",
+    )
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+
 class ToolUI(BaseModel):
     """Typed ``_meta.ui`` for tools — links a tool to its UI resource.
 
@@ -32,9 +91,11 @@ class ToolUI(BaseModel):
         default=None,
         description="Where this tool is visible: 'app', 'model', or both",
     )
-    csp: str | None = Field(default=None, description="Content Security Policy")
-    permissions: list[str] | None = Field(
-        default=None, description="iframe permissions"
+    csp: ResourceCSP | None = Field(
+        default=None, description="Content Security Policy for the app iframe"
+    )
+    permissions: ResourcePermissions | None = Field(
+        default=None, description="Iframe sandbox permissions"
     )
     domain: str | None = Field(default=None, description="Domain for the iframe")
     prefers_border: bool | None = Field(
@@ -49,9 +110,11 @@ class ToolUI(BaseModel):
 class ResourceUI(BaseModel):
     """Typed ``_meta.ui`` for resources — rendering hints for UI-capable clients."""
 
-    csp: str | None = Field(default=None, description="Content Security Policy")
-    permissions: list[str] | None = Field(
-        default=None, description="iframe permissions"
+    csp: ResourceCSP | None = Field(
+        default=None, description="Content Security Policy for the app iframe"
+    )
+    permissions: ResourcePermissions | None = Field(
+        default=None, description="Iframe sandbox permissions"
     )
     domain: str | None = Field(default=None, description="Domain for the iframe")
     prefers_border: bool | None = Field(

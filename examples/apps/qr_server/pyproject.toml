@@ -1,0 +1,13 @@
+[project]
+name = "fastmcp-app-examples"
+version = "0.1.0"
+description = "MCP App examples for FastMCP"
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp",
+    "qrcode[pil]>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
