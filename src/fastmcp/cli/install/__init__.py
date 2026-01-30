@@ -7,6 +7,7 @@ from .claude_desktop import claude_desktop_command
 from .cursor import cursor_command
 from .gemini_cli import gemini_cli_command
 from .mcp_json import mcp_json_command
+from .stdio import stdio_command
 
 # Create a cyclopts app for install subcommands
 install_app = cyclopts.App(
@@ -20,3 +21,4 @@ install_app.command(claude_desktop_command, name="claude-desktop")
 install_app.command(cursor_command, name="cursor")
 install_app.command(gemini_cli_command, name="gemini-cli")
 install_app.command(mcp_json_command, name="mcp-json")
+install_app.command(stdio_command, name="stdio")
