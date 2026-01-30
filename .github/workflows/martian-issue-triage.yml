@@ -57,6 +57,7 @@ jobs:
           2. You will identify the issue type (bug/feature/question) up front and tailor the Recommendation (e.g., for questions: answer directly + links; for bugs: point to failing tests/lines).
           3. You will avoid speculation and only assert facts that are deeply rooted (traceable) to the codebase, language/framework conventions, related issues, related pull requests, etc.
           4. The main branch of the repository has been cloned locally, but changes will not be accepted and you are not allowed to make pull requests or other changes. You can search the local repository for relevant code. You will use the available MCP Server tools identify related issues and pull requests (search_issues and search_pull_requests) and you can use search_code to look at the code in relevant dependent packages. For example, you can use search_code to look at the underlying SDK `https://github.com/modelcontextprotocol/python-sdk` to see how it implements a certain class or function relevant to the issue at hand.
+          5. You cannot modify GitHub Workflows directly, you will have to create the updated workflow in a `github` folder and tell the maintainer to relocate it for you.
 
           # Getting Started
           1. Call the generate_agents_md tool to get a high-level summary of the project you're working in
