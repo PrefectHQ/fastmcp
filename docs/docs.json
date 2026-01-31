@@ -254,6 +254,7 @@
                       "integrations/claude-desktop",
                       "integrations/cursor",
                       "integrations/gemini-cli",
+                      "integrations/goose",
                       "integrations/mcp-json-configuration"
                     ]
                   },
@@ -307,6 +308,7 @@
                           "python-sdk/fastmcp-cli-install-claude_desktop",
                           "python-sdk/fastmcp-cli-install-cursor",
                           "python-sdk/fastmcp-cli-install-gemini_cli",
+                          "python-sdk/fastmcp-cli-install-goose",
                           "python-sdk/fastmcp-cli-install-mcp_json",
                           "python-sdk/fastmcp-cli-install-shared"
                         ]

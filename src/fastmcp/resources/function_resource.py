@@ -14,6 +14,7 @@ from pydantic import AnyUrl
 import fastmcp
 from fastmcp.decorators import resolve_task_config
 from fastmcp.resources.resource import Resource, ResourceResult
+from fastmcp.server.apps import resolve_ui_mime_type
 from fastmcp.server.dependencies import (
     transform_context_annotations,
     without_injected_parameters,
@@ -180,6 +181,9 @@ class FunctionResource(Resource):
         # Wrap fn to handle dependency resolution internally
         wrapped_fn = without_injected_parameters(fn)
 
+        # Apply ui:// MIME default, then fall back to text/plain
+        resolved_mime = resolve_ui_mime_type(metadata.uri, metadata.mime_type)
+
         return cls(
             fn=wrapped_fn,
             uri=uri_obj,
@@ -188,7 +192,7 @@ class FunctionResource(Resource):
             title=metadata.title,
             description=metadata.description or inspect.getdoc(fn),
             icons=metadata.icons,
-            mime_type=metadata.mime_type or "text/plain",
+            mime_type=resolved_mime or "text/plain",
             tags=metadata.tags or set(),
             annotations=metadata.annotations,
             meta=metadata.meta,

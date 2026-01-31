@@ -48,6 +48,36 @@ class TestAzureProvider:
         assert provider._redirect_path == "/auth/callback"
         # Azure provider defaults are set but we can't easily verify them without accessing internals
 
+    def test_offline_access_automatically_included(self):
+        """Test that offline_access is automatically added to get refresh tokens."""
+        # Without specifying offline_access
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+
+        assert "offline_access" in provider.additional_authorize_scopes
+
+    def test_offline_access_not_duplicated(self):
+        """Test that offline_access is not duplicated if already specified."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            additional_authorize_scopes=["User.Read", "offline_access"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Should appear exactly once
+        assert provider.additional_authorize_scopes.count("offline_access") == 1
+        assert "User.Read" in provider.additional_authorize_scopes
+
     def test_oauth_endpoints_configured_correctly(self):
         """Test that OAuth endpoints are configured correctly."""
         provider = AzureProvider(
@@ -414,7 +444,8 @@ class TestAzureProvider:
 
         assert "api://my-api/read" in result
         assert "api://my-api/write" in result
-        assert len(result) == 2
+        assert "offline_access" in result  # Auto-included for refresh tokens
+        assert len(result) == 3
 
     def test_prepare_scopes_for_upstream_refresh_already_prefixed(self):
         """Test that already-prefixed scopes remain unchanged."""
@@ -435,10 +466,15 @@ class TestAzureProvider:
 
         assert "api://my-api/read" in result
         assert "api://other-api/admin" in result
-        assert len(result) == 2
+        assert "offline_access" in result  # Auto-included for refresh tokens
+        assert len(result) == 3
 
     def test_prepare_scopes_for_upstream_refresh_with_additional_scopes(self):
-        """Test that additional_authorize_scopes are added during token refresh."""
+        """Test that only OIDC scopes from additional_authorize_scopes are added.
+
+        Azure only allows ONE resource per token request (AADSTS28000), so
+        non-OIDC scopes like User.Read are excluded from refresh requests.
+        """
         provider = AzureProvider(
             client_id="test_client",
             client_secret="test_secret",
@@ -447,7 +483,7 @@ class TestAzureProvider:
             identifier_uri="api://my-api",
             required_scopes=["read"],
             additional_authorize_scopes=[
-                "User.Read",
+                "User.Read",  # Not OIDC - excluded
                 "openid",
                 "profile",
                 "offline_access",
@@ -455,16 +491,16 @@ class TestAzureProvider:
             jwt_signing_key="test-secret",
         )
 
-        # Base scopes should be prefixed, additional scopes appended
+        # Base scopes should be prefixed, only OIDC scopes appended
         result = provider._prepare_scopes_for_upstream_refresh(["read", "write"])
 
         assert "api://my-api/read" in result
         assert "api://my-api/write" in result
-        assert "User.Read" in result
+        assert "User.Read" not in result  # Not OIDC, excluded
         assert "openid" in result
         assert "profile" in result
         assert "offline_access" in result
-        assert len(result) == 6
+        assert len(result) == 5
 
     def test_prepare_scopes_for_upstream_refresh_filters_duplicate_additional_scopes(
         self,
@@ -482,15 +518,17 @@ class TestAzureProvider:
         )
 
         # If additional scopes were accidentally stored, they should be filtered
-        # to prevent accumulation
+        # User.Read is not OIDC so won't be added
         result = provider._prepare_scopes_for_upstream_refresh(
             ["read", "User.Read", "openid"]
         )
 
-        # Should have: api://my-api/read (prefixed) + User.Read + openid (added once)
+        # Should have: api://my-api/read (prefixed) + openid + offline_access (OIDC scopes)
+        # User.Read is filtered from storage AND not added (not OIDC)
         assert "api://my-api/read" in result
-        assert result.count("User.Read") == 1
+        assert "User.Read" not in result  # Not OIDC
         assert result.count("openid") == 1
+        assert "offline_access" in result  # Auto-included and is OIDC
         assert len(result) == 3
 
     def test_prepare_scopes_for_upstream_refresh_mixed_scopes(self):
@@ -502,7 +540,7 @@ class TestAzureProvider:
             base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
-            additional_authorize_scopes=["User.Read"],
+            additional_authorize_scopes=["openid"],  # OIDC scope
             jwt_signing_key="test-secret",
         )
 
@@ -514,8 +552,9 @@ class TestAzureProvider:
         assert "api://my-api/read" in result
         assert "api://other-api/admin" in result  # Already prefixed, unchanged
         assert "api://my-api/write" in result
-        assert "User.Read" in result
-        assert len(result) == 4
+        assert "openid" in result
+        assert "offline_access" in result  # Auto-included
+        assert len(result) == 5
 
     def test_prepare_scopes_for_upstream_refresh_scope_with_slash(self):
         """Test that scopes containing '/' are not prefixed."""
@@ -552,12 +591,13 @@ class TestAzureProvider:
             jwt_signing_key="test-secret",
         )
 
-        # Empty scopes should still add additional_authorize_scopes
+        # Empty scopes should still add OIDC scopes (not User.Read)
         result = provider._prepare_scopes_for_upstream_refresh([])
 
-        assert "User.Read" in result
+        assert "User.Read" not in result  # Not OIDC
         assert "openid" in result
-        assert len(result) == 2
+        assert "offline_access" in result  # Auto-included
+        assert len(result) == 2  # Only OIDC scopes: openid + offline_access
 
     def test_prepare_scopes_for_upstream_refresh_no_additional_scopes(self):
         """Test behavior when no additional_authorize_scopes are configured."""
@@ -571,12 +611,13 @@ class TestAzureProvider:
             jwt_signing_key="test-secret",
         )
 
-        # Should only prefix base scopes, no additional scopes added
+        # Should prefix base scopes, plus auto-added offline_access
         result = provider._prepare_scopes_for_upstream_refresh(["read", "write"])
 
         assert "api://my-api/read" in result
         assert "api://my-api/write" in result
-        assert len(result) == 2
+        assert "offline_access" in result  # Auto-included
+        assert len(result) == 3
 
     def test_prepare_scopes_for_upstream_refresh_deduplicates_scopes(self):
         """Test that duplicate scopes are deduplicated while preserving order."""
@@ -587,23 +628,24 @@ class TestAzureProvider:
             base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
-            additional_authorize_scopes=["User.Read", "openid"],
+            additional_authorize_scopes=["openid", "profile"],  # OIDC scopes only
             jwt_signing_key="test-secret",
         )
 
-        # Test with duplicate base scopes and duplicate additional scopes
+        # Test with duplicate base scopes
         result = provider._prepare_scopes_for_upstream_refresh(
-            ["read", "write", "read", "User.Read", "openid"]
+            ["read", "write", "read", "openid"]
         )
 
-        # Should have deduplicated results in order
+        # Should have deduplicated results in order (OIDC scopes added, offline_access auto-added)
         assert result == [
             "api://my-api/read",
             "api://my-api/write",
-            "User.Read",
             "openid",
+            "profile",
+            "offline_access",
         ]
-        assert len(result) == 4
+        assert len(result) == 5
 
     def test_prepare_scopes_for_upstream_refresh_deduplicates_prefixed_variants(self):
         """Test that both prefixed and unprefixed variants are deduplicated."""
@@ -625,8 +667,9 @@ class TestAzureProvider:
         # Should deduplicate - first occurrence wins (api://my-api/read from "read")
         assert "api://my-api/read" in result
         assert "api://my-api/write" in result
-        # Should only have 2 items (read processed twice, but deduplicated)
-        assert len(result) == 2
+        assert "offline_access" in result  # Auto-included
+        # Should have 3 items (read deduplicated, plus offline_access)
+        assert len(result) == 3
         assert result.count("api://my-api/read") == 1
 
 
@@ -807,3 +850,136 @@ class TestOIDCScopeHandling:
         assert "profile" in result
         assert "api://my-api/openid" not in result
         assert "api://my-api/profile" not in result
+
+
+class TestAzureTokenExchangeScopes:
+    """Tests for Azure provider's token exchange scope handling.
+
+    Azure requires scopes to be sent during the authorization code exchange.
+    The provider overrides _prepare_scopes_for_token_exchange to return
+    properly prefixed scopes.
+    """
+
+    def test_prepare_scopes_returns_prefixed_scopes(self):
+        """Test that _prepare_scopes_for_token_exchange returns prefixed scopes."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            jwt_signing_key="test-secret",
+        )
+
+        scopes = provider._prepare_scopes_for_token_exchange(["read", "write"])
+        assert len(scopes) > 0
+        assert "api://my-api/read" in scopes
+        assert "api://my-api/write" in scopes
+
+    def test_prepare_scopes_includes_additional_oidc_scopes(self):
+        """Test that _prepare_scopes_for_token_exchange includes OIDC scopes."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            additional_authorize_scopes=["openid", "profile", "offline_access"],
+            jwt_signing_key="test-secret",
+        )
+
+        scopes = provider._prepare_scopes_for_token_exchange(["read"])
+        assert len(scopes) > 0
+        assert "api://my-api/read" in scopes
+        assert "openid" in scopes
+        assert "profile" in scopes
+        assert "offline_access" in scopes
+
+    def test_prepare_scopes_excludes_other_api_scopes(self):
+        """Test token exchange excludes other API scopes (Azure AADSTS28000).
+
+        Azure only allows ONE resource per token exchange. Other API scopes
+        are requested during authorization but excluded from token exchange.
+        """
+        provider = AzureProvider(
+            client_id="00000000-1111-2222-3333-444444444444",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            required_scopes=["user_impersonation"],
+            additional_authorize_scopes=[
+                "openid",
+                "profile",
+                "offline_access",
+                "api://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/user_impersonation",
+                "api://11111111-2222-3333-4444-555555555555/user_impersonation",
+            ],
+            jwt_signing_key="test-secret",
+        )
+
+        scopes = provider._prepare_scopes_for_token_exchange(["user_impersonation"])
+        assert len(scopes) > 0
+        # Primary API scope should be prefixed with the provider's identifier_uri
+        assert "api://00000000-1111-2222-3333-444444444444/user_impersonation" in scopes
+        # OIDC scopes should be included
+        assert "openid" in scopes
+        assert "profile" in scopes
+        assert "offline_access" in scopes
+        # Other API scopes should NOT be included (Azure multi-resource limitation)
+        assert not any("api://aaaaaaaa" in s for s in scopes)
+        assert not any("api://11111111" in s for s in scopes)
+
+    def test_prepare_scopes_deduplicates_scopes(self):
+        """Test that duplicate scopes are deduplicated."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            additional_authorize_scopes=["api://my-api/read", "openid"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Pass a scope that will be prefixed to match one in additional_authorize_scopes
+        scopes = provider._prepare_scopes_for_token_exchange(["read"])
+        assert len(scopes) > 0
+        # Should be deduplicated - api://my-api/read appears only once
+        assert scopes.count("api://my-api/read") == 1
+        assert "openid" in scopes
+
+    def test_extra_token_params_does_not_contain_scope(self):
+        """Test that extra_token_params doesn't contain scope to avoid TypeError.
+
+        Previously, Azure provider set extra_token_params={"scope": ...} during init.
+        This caused a TypeError in exchange_refresh_token because it passes both
+        scope=... AND **self._extra_token_params, resulting in:
+        "got multiple values for keyword argument 'scope'"
+
+        The fix uses the _prepare_scopes_for_token_exchange hook instead.
+        """
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            additional_authorize_scopes=["openid", "profile", "offline_access"],
+            jwt_signing_key="test-secret",
+        )
+
+        # extra_token_params should NOT contain "scope" to avoid TypeError during refresh
+        assert "scope" not in provider._extra_token_params
+
+        # Instead, scopes should be provided via the hook methods
+        exchange_scopes = provider._prepare_scopes_for_token_exchange(["read", "write"])
+        assert len(exchange_scopes) > 0
+
+        refresh_scopes = provider._prepare_scopes_for_upstream_refresh(
+            ["read", "write"]
+        )
+        assert len(refresh_scopes) > 0

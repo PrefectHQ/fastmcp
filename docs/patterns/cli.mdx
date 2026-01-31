@@ -300,13 +300,19 @@ Install a MCP server in MCP client applications. FastMCP currently supports the 
 - **Claude Code** - Installs via Claude Code's built-in MCP management system
 - **Claude Desktop** - Installs via direct configuration file modification
 - **Cursor** - Installs via deeplink that opens Cursor for user confirmation
+- **Gemini CLI** - Installs via Gemini CLI's built-in MCP management system
+- **Goose** - Installs via deeplink that opens Goose for user confirmation (uses `uvx`)
 - **MCP JSON** - Generates standard MCP JSON configuration for manual use
+- **Stdio** - Outputs the shell command to run a server over stdio transport
 
 ```bash
 fastmcp install claude-code server.py
 fastmcp install claude-desktop server.py
 fastmcp install cursor server.py
+fastmcp install gemini-cli server.py
+fastmcp install goose server.py
 fastmcp install mcp-json server.py
+fastmcp install stdio server.py
 ```
 
 Note that for security reasons, MCP clients usually run every server in a completely isolated environment. Therefore, all dependencies must be explicitly specified using the `--with` and/or `--with-editable` options (following `uv` conventions) or by attaching them to your server in code via the `dependencies` parameter. You should not assume that the MCP server will have access to your local environment.
@@ -380,6 +386,9 @@ fastmcp install cursor server.py --env API_KEY=secret --env DEBUG=true
 # Install with environment file
 fastmcp install cursor server.py --env-file .env
 
+# Install in Goose (uses uvx deeplink)
+fastmcp install goose server.py --with pandas
+
 # Install with specific Python version
 fastmcp install claude-desktop server.py --python 3.11
 
@@ -394,6 +403,15 @@ fastmcp install mcp-json server.py --name "My Server" --with pandas
 
 # Copy JSON configuration to clipboard
 fastmcp install mcp-json server.py --copy
+
+# Output the stdio command for running a server
+fastmcp install stdio server.py
+
+# Output the stdio command from a fastmcp.json (includes configured dependencies)
+fastmcp install stdio fastmcp.json
+
+# Copy the stdio command to clipboard
+fastmcp install stdio server.py --copy
 ```
 
 ### MCP JSON Generation
@@ -435,6 +453,38 @@ To use this configuration with your MCP client, you'll typically need to add it 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
 | Copy to Clipboard | `--copy` | Copy configuration to clipboard instead of printing to stdout |
+
+### Stdio Command
+
+The `stdio` subcommand outputs the shell command an MCP host uses to start your server over stdio transport. Use it when you need a ready-to-paste `uv run --with fastmcp fastmcp run ...` command for a tool or script without a dedicated install target.
+
+```bash
+# Print the command to stdout
+fastmcp install stdio server.py
+
+# Output: uv run --with fastmcp fastmcp run /absolute/path/to/server.py
+```
+
+When you pass a `fastmcp.json`, FastMCP automatically includes dependencies from the configuration:
+
+```bash
+fastmcp install stdio fastmcp.json
+
+# Output: uv run --with fastmcp --with pillow --with 'qrcode[pil]>=8.0' fastmcp run /absolute/path/to/qr_server.py
+```
+
+Use `--copy` to send the command directly to your clipboard:
+
+```bash
+fastmcp install stdio server.py --copy
+# ✓ Command copied to clipboard
+```
+
+**Options specific to stdio:**
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Copy to Clipboard | `--copy` | Copy command to clipboard instead of printing to stdout |
 
 ## `fastmcp inspect`
 

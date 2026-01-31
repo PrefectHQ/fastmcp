@@ -103,6 +103,7 @@ class JWTIssuer:
         scopes: list[str],
         jti: str,
         expires_in: int = 3600,
+        upstream_claims: dict[str, Any] | None = None,
     ) -> str:
         """Issue a minimal FastMCP access token.
 
@@ -115,6 +116,7 @@ class JWTIssuer:
             scopes: Token scopes
             jti: Unique token identifier (maps to upstream token)
             expires_in: Token lifetime in seconds
+            upstream_claims: Optional claims from upstream IdP token to include
 
         Returns:
             Signed JWT token
@@ -122,7 +124,7 @@ class JWTIssuer:
         now = int(time.time())
 
         header = {"alg": "HS256", "typ": "JWT"}
-        payload = {
+        payload: dict[str, Any] = {
             "iss": self.issuer,
             "aud": self.audience,
             "client_id": client_id,
@@ -131,6 +133,9 @@ class JWTIssuer:
             "iat": now,
             "jti": jti,
         }
+
+        if upstream_claims:
+            payload["upstream_claims"] = upstream_claims
 
         token_bytes = self._jwt.encode(header, payload, self._signing_key)
         token = token_bytes.decode("utf-8")
@@ -150,6 +155,7 @@ class JWTIssuer:
         scopes: list[str],
         jti: str,
         expires_in: int,
+        upstream_claims: dict[str, Any] | None = None,
     ) -> str:
         """Issue a minimal FastMCP refresh token.
 
@@ -162,6 +168,7 @@ class JWTIssuer:
             scopes: Token scopes
             jti: Unique token identifier (maps to upstream token)
             expires_in: Token lifetime in seconds (should match upstream refresh expiry)
+            upstream_claims: Optional claims from upstream IdP token to include
 
         Returns:
             Signed JWT token
@@ -169,7 +176,7 @@ class JWTIssuer:
         now = int(time.time())
 
         header = {"alg": "HS256", "typ": "JWT"}
-        payload = {
+        payload: dict[str, Any] = {
             "iss": self.issuer,
             "aud": self.audience,
             "client_id": client_id,
@@ -179,6 +186,9 @@ class JWTIssuer:
             "jti": jti,
             "token_use": "refresh",
         }
+
+        if upstream_claims:
+            payload["upstream_claims"] = upstream_claims
 
         token_bytes = self._jwt.encode(header, payload, self._signing_key)
         token = token_bytes.decode("utf-8")
