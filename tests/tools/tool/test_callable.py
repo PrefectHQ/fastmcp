@@ -47,7 +47,7 @@ class TestSyncToolConcurrency:
 
         Uses a threading barrier to prove concurrent execution: all calls must
         reach the barrier simultaneously for any to proceed. If they ran
-        sequentially, only one would reach the barrier and it would timeout.
+        sequentially, only one would reach the barrier and it would time out.
         """
         num_calls = 3
         # Barrier requires all threads to arrive before any proceed

@@ -29,7 +29,7 @@ class MCPConfigTransport(ClientTransport):
     2. If the MCPConfig contains multiple servers, it creates a composite client by mounting
        all servers on a single FastMCP instance, with each server's name, by default, used as its mounting prefix.
 
-    In the multi-server case, tools are accessible with the prefix pattern `{server_name}_{tool_name}`
+    In the multiserver case, tools are accessible with the prefix pattern `{server_name}_{tool_name}`
     and resources with the pattern `protocol://{server_name}/path/to/resource`.
 
     This is particularly useful for creating clients that need to interact with multiple specialized
