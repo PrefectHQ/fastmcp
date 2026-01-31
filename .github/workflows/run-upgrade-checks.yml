@@ -112,7 +112,7 @@ jobs:
 
             The upgrade checks workflow has failed on the main branch.
 
-            **Workflow Run**: [#{{runNumber}}]({{serverUrl}}/{{repo}}/actions/runs/{{runId}})
+            **Workflow Run**: [#{{runNumber}}]({{serverUrl}}/{{repo.owner}}/{{repo.repo}}/actions/runs/{{runId}})
             **Commit**: {{sha}}
             **Branch**: {{ref}}
             **Event**: {{eventName}}
