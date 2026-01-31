@@ -1,12 +1,10 @@
 """Cursor integration for FastMCP install using Cyclopts."""
 
 import base64
-import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Annotated
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 import cyclopts
 from rich import print
@@ -15,6 +13,7 @@ from fastmcp.mcp_config import StdioMCPServer, update_config_file
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
+from .shared import open_deeplink as _shared_open_deeplink
 from .shared import process_common_args
 
 logger = get_logger(__name__)
@@ -46,7 +45,7 @@ def generate_cursor_deeplink(
 
 
 def open_deeplink(deeplink: str) -> bool:
-    """Attempt to open a deeplink URL using the system's default handler.
+    """Attempt to open a Cursor deeplink URL using the system's default handler.
 
     Args:
         deeplink: The deeplink URL to open
@@ -54,21 +53,7 @@ def open_deeplink(deeplink: str) -> bool:
     Returns:
         True if the command succeeded, False otherwise
     """
-    parsed = urlparse(deeplink)
-    if parsed.scheme != "cursor":
-        logger.warning(f"Invalid deeplink scheme: {parsed.scheme}")
-        return False
-
-    try:
-        if sys.platform == "darwin":  # macOS
-            subprocess.run(["open", deeplink], check=True, capture_output=True)
-        elif sys.platform == "win32":  # Windows
-            os.startfile(deeplink)
-        else:  # Linux and others
-            subprocess.run(["xdg-open", deeplink], check=True, capture_output=True)
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
-        return False
+    return _shared_open_deeplink(deeplink, expected_scheme="cursor")
 
 
 def install_cursor_workspace(

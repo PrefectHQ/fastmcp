@@ -33,6 +33,7 @@ from fastmcp.server.elicitation import (
     handle_elicit_accept,
     parse_elicit_response_type,
 )
+from fastmcp.server.low_level import MiddlewareServerSession
 from fastmcp.server.sampling import SampleStep, SamplingResult, SamplingTool
 from fastmcp.server.sampling.run import (
     sample_impl,
@@ -454,6 +455,33 @@ class Context:
         or "streamable-http". Returns None if called outside of a server context.
         """
         return _current_transport.get()
+
+    def client_supports_extension(self, extension_id: str) -> bool:
+        """Check whether the connected client supports a given MCP extension.
+
+        Inspects the ``extensions`` extra field on ``ClientCapabilities``
+        sent by the client during initialization.
+
+        Returns ``False`` when no session is available (e.g., outside a
+        request context) or when the client did not advertise the extension.
+
+        Example::
+
+            from fastmcp.server.apps import UI_EXTENSION_ID
+
+            @mcp.tool
+            async def my_tool(ctx: Context) -> str:
+                if ctx.client_supports_extension(UI_EXTENSION_ID):
+                    return "UI-capable client"
+                return "text-only client"
+        """
+        rc = self.request_context
+        if rc is None:
+            return False
+        session = rc.session
+        if not isinstance(session, MiddlewareServerSession):
+            return False
+        return session.client_supports_extension(extension_id)
 
     @property
     def client_id(self) -> str | None:

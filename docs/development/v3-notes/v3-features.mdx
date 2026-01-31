@@ -4,7 +4,100 @@ title: v3.0 Feature Tracking
 
 This document tracks major features in FastMCP v3.0 for release notes preparation.
 
-## Provider-Based Architecture
+## 3.0.0beta2
+
+### CLI: Expanded Reload File Watching
+
+The `--reload` flag now watches a comprehensive set of file types, making it suitable for MCP apps with frontend bundles ([#3028](https://github.com/jlowin/fastmcp/pull/3028)). Previously limited to `.py` files, it now watches JavaScript, TypeScript, HTML, CSS, config files, and media assets.
+
+### CLI: fastmcp install stdio
+
+The new `fastmcp install stdio` command generates full `uv run` commands for running FastMCP servers over stdio ([#3032](https://github.com/jlowin/fastmcp/pull/3032)).
+
+```bash
+# Generate command for a server
+fastmcp install stdio server.py
+
+# Outputs:
+# uv run --directory /path/to/project fastmcp run server.py
+```
+
+The command automatically detects the project directory and generates the appropriate `uv run` invocation, making it easy to integrate FastMCP servers with MCP clients.
+
+### MCP Apps (SDK Compatibility)
+
+Support for [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) — the spec extension that lets MCP servers deliver interactive UIs via sandboxed iframes. Extension negotiation, typed UI metadata on tools and resources, and the `ui://` resource scheme. No component DSL, renderer, or `FastMCPApp` class yet — those are future phases.
+
+**Registering tools with UI metadata:**
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.apps import ToolUI, ResourceUI, ResourceCSP, ResourcePermissions
+
+mcp = FastMCP("My Server")
+
+# Register the HTML bundle as a ui:// resource with CSP
+@mcp.resource(
+    "ui://my-app/view.html",
+    ui=ResourceUI(
+        csp=ResourceCSP(resource_domains=["https://unpkg.com"]),
+        permissions=ResourcePermissions(clipboard_write={}),
+    ),
+)
+def app_html() -> str:
+    from pathlib import Path
+    return Path("./dist/index.html").read_text()
+
+# Tool with UI — clients render an iframe alongside the result
+@mcp.tool(ui=ToolUI(resource_uri="ui://my-app/view.html"))
+async def list_users() -> list[dict]:
+    return [{"id": "1", "name": "Alice"}]
+
+# App-only tool — visible to the UI but hidden from the model
+@mcp.tool(ui=ToolUI(resource_uri="ui://my-app/view.html", visibility=["app"]))
+async def delete_user(id: str) -> dict:
+    return {"deleted": True}
+```
+
+The `ui=` parameter accepts either a typed model (`ToolUI`, `ResourceUI`) or a raw dict for forward compatibility. It merges into `meta["ui"]` — alongside any other metadata you set.
+
+**`ui://` resources** automatically get the correct MIME type (`text/html;profile=mcp-app`) unless you override it explicitly.
+
+**Extension negotiation**: The server advertises `io.modelcontextprotocol/ui` in `capabilities.extensions`. UI metadata (`_meta.ui`) always flows through to clients — the MCP Apps spec assigns visibility enforcement to the host, not the server. Tools can check whether the connected client supports a given extension at runtime via `ctx.client_supports_extension()`:
+
+```python
+from fastmcp import Context
+from fastmcp.server.apps import ToolUI, UI_EXTENSION_ID
+
+@mcp.tool(ui=ToolUI(resource_uri="ui://dashboard"))
+async def dashboard(ctx: Context) -> dict:
+    data = compute_dashboard()
+    if ctx.client_supports_extension(UI_EXTENSION_ID):
+        return data
+    return {"summary": format_text(data)}
+```
+
+**Key details:**
+- `ToolUI` fields: `resource_uri`, `visibility`, `csp`, `permissions`, `domain`, `prefers_border` (all optional except for typical usage of `resource_uri`)
+- `ResourceUI` fields: `csp`, `permissions`, `domain`, `prefers_border` — metadata for the resource itself when it's a UI bundle
+- `csp` accepts a `ResourceCSP` model with structured domain lists: `connect_domains`, `resource_domains`, `frame_domains`, `base_uri_domains`
+- `permissions` accepts a `ResourcePermissions` model: `camera`, `microphone`, `geolocation`, `clipboard_write` (each set to `{}` to request)
+- Both models use `extra="allow"` for forward compatibility with future spec additions
+- Models use Pydantic aliases for wire format (`resourceUri`, `prefersBorder`, `connectDomains`, `clipboardWrite`)
+- Resource metadata (including CSP/permissions) is propagated to `resources/read` response content items so hosts can read it when rendering the iframe
+- `ctx.client_supports_extension(id)` is a general-purpose method — works for any extension, not just MCP Apps
+- `structuredContent` in tool results already works via `ToolResult` — MCP Apps clients use this to pass data into the iframe
+- The server does not strip `_meta.ui` for non-UI clients; per the spec, visibility enforcement is the host's responsibility
+
+**Future phases** will add a component DSL for building UIs declaratively, an in-repo renderer, and a `FastMCPApp` class.
+
+Implementation: `src/fastmcp/server/apps.py` (models and constants), with integration points in `server.py` (decorator parameters), `low_level.py` (extension advertisement), and `context.py` (`client_supports_extension` method).
+
+---
+
+## 3.0.0beta1
+
+### Provider-Based Architecture
 
 v3.0 introduces a provider-based component system that replaces v2's static-only registration ([#2622](https://github.com/jlowin/fastmcp/pull/2622)). Providers dynamically source tools, resources, templates, and prompts at runtime.
 
@@ -201,7 +294,7 @@ Documentation: `docs/servers/transforms/resources-as-tools.mdx`, `docs/servers/t
 
 ---
 
-## Session-Scoped State
+### Session-Scoped State
 
 v3.0 changes context state from request-scoped to session-scoped. State now persists across multiple tool calls within the same MCP session.
 
@@ -232,7 +325,7 @@ Documentation: `docs/servers/context.mdx`
 
 ---
 
-## Visibility System
+### Visibility System
 
 Components can be enabled/disabled using the visibility system. Each `enable()` or `disable()` call adds a stateless Visibility transform that marks components via internal metadata. Later transforms override earlier ones.
 
@@ -263,7 +356,7 @@ Works at both server and provider level. Supports:
 - **Override semantics**: Later transforms override earlier marks (enable after disable = enabled)
 - **Transform ordering**: Visibility transforms are injected at the point you call them, so component state is known
 
-### Per-Session Visibility
+#### Per-Session Visibility
 
 Server-level visibility changes affect all connected clients. For per-session control, use `Context` methods that apply rules only to the current session ([#2917](https://github.com/jlowin/fastmcp/pull/2917)):
 
@@ -304,7 +397,7 @@ Documentation: `docs/servers/visibility.mdx`
 
 ---
 
-## Component Versioning
+### Component Versioning
 
 v3.0 introduces versioning support for tools, resources, and prompts. Components can declare a version, and when multiple versions of the same component exist, the highest version is automatically exposed to clients.
 
@@ -422,11 +515,11 @@ The `@` is always present (even for unversioned components) to enable unambiguou
 
 ---
 
-## Type-Safe Canonical Results
+### Type-Safe Canonical Results
 
 v3.0 introduces type-safe result classes that provide explicit control over component responses while supporting MCP runtime metadata: `ToolResult` ([#2736](https://github.com/jlowin/fastmcp/pull/2736)), `ResourceResult` ([#2734](https://github.com/jlowin/fastmcp/pull/2734)), and `PromptResult` ([#2738](https://github.com/jlowin/fastmcp/pull/2738)).
 
-### ToolResult
+#### ToolResult
 
 `ToolResult` (`src/fastmcp/tools/tool.py:79`) provides structured tool responses:
 
@@ -447,7 +540,7 @@ Fields:
 - `structured_content`: Dict matching tool's output schema
 - `meta`: Runtime metadata passed to MCP as `_meta`
 
-### ResourceResult
+#### ResourceResult
 
 `ResourceResult` (`src/fastmcp/resources/resource.py:117`) provides structured resource responses:
 
@@ -467,7 +560,7 @@ def get_items() -> ResourceResult:
 
 Accepts strings, bytes, or `list[ResourceContent]` for flexible content handling.
 
-### PromptResult
+#### PromptResult
 
 `PromptResult` (`src/fastmcp/prompts/prompt.py:109`) provides structured prompt responses:
 
@@ -487,7 +580,7 @@ def conversation() -> PromptResult:
 
 ---
 
-## Background Tasks (SEP-1686)
+### Background Tasks (SEP-1686)
 
 v3.0 implements MCP SEP-1686 for background task execution via Docket integration.
 
@@ -520,7 +613,7 @@ Requires Docket server for task scheduling and result polling.
 
 ---
 
-## Decorators Return Functions
+### Decorators Return Functions
 
 v3.0 changes what decorators (`@tool`, `@resource`, `@prompt`) return ([#2856](https://github.com/jlowin/fastmcp/pull/2856)). Decorators now return the original function unchanged, rather than transforming it into a component object.
 
@@ -552,7 +645,7 @@ Environment variable: `FASTMCP_DECORATOR_MODE=object`
 
 ---
 
-## CLI Auto-Reload
+### CLI Auto-Reload
 
 The `--reload` flag enables file watching with automatic server restarts for development ([#2816](https://github.com/jlowin/fastmcp/pull/2816)).
 
@@ -581,7 +674,7 @@ fastmcp dev server.py  # Includes --reload by default
 
 ---
 
-## Component Authorization
+### Component Authorization
 
 v3.0 introduces callable-based authorization for tools, resources, and prompts ([#2855](https://github.com/jlowin/fastmcp/pull/2855)).
 
@@ -634,7 +727,7 @@ STDIO transport bypasses all auth checks (no OAuth concept).
 
 ---
 
-## FileSystemProvider
+### FileSystemProvider
 
 v3.0 introduces `FileSystemProvider`, a fundamentally different approach to organizing MCP servers. Instead of importing a server instance and decorating functions with `@server.tool`, you use standalone decorators in separate files and let the provider discover them.
 
@@ -672,7 +765,7 @@ Documentation: [FileSystemProvider](/servers/providers/filesystem)
 
 ---
 
-## SkillsProvider
+### SkillsProvider
 
 v3.0 introduces `SkillsProvider` for exposing agent skills as MCP resources ([#2944](https://github.com/jlowin/fastmcp/pull/2944)). Skills are directories containing instructions and supporting files that teach AI assistants how to perform tasks—used by Claude Code, Cursor, VS Code Copilot, and other AI coding tools.
 
@@ -715,7 +808,7 @@ Documentation: [Skills Provider](/servers/providers/skills)
 
 ---
 
-## OpenTelemetry Tracing
+### OpenTelemetry Tracing
 
 v3.0 adds OpenTelemetry instrumentation for observability into server and client operations ([#2869](https://github.com/jlowin/fastmcp/pull/2869)).
 
@@ -743,7 +836,7 @@ Documentation: [Telemetry](/servers/telemetry)
 
 ---
 
-## Pagination
+### Pagination
 
 v3.0 adds pagination support for list operations when servers expose many components ([#2903](https://github.com/jlowin/fastmcp/pull/2903)).
 
@@ -769,7 +862,7 @@ Documentation: [Pagination](/servers/pagination)
 
 ---
 
-## Composable Lifespans
+### Composable Lifespans
 
 Lifespans can be combined with the `|` operator for modular setup/teardown ([#2828](https://github.com/jlowin/fastmcp/pull/2828)):
 
@@ -810,7 +903,7 @@ Documentation: [Lifespan](/servers/lifespan)
 
 ---
 
-## Tool Timeout
+### Tool Timeout
 
 Tools can limit foreground execution time with a `timeout` parameter ([#2872](https://github.com/jlowin/fastmcp/pull/2872)):
 
@@ -827,7 +920,7 @@ Note: This timeout applies to foreground execution only. Background tasks (`task
 
 ---
 
-## PingMiddleware
+### PingMiddleware
 
 Sends periodic server-to-client pings to keep long-lived connections alive ([#2838](https://github.com/jlowin/fastmcp/pull/2838)):
 
@@ -843,7 +936,7 @@ The middleware starts a background ping task on first message from each session,
 
 ---
 
-## Context.transport Property
+### Context.transport Property
 
 Tools can detect which transport is active ([#2850](https://github.com/jlowin/fastmcp/pull/2850)):
 
@@ -863,7 +956,7 @@ Returns `Literal["stdio", "sse", "streamable-http"]` when running, or `None` out
 
 ---
 
-## Automatic Threadpool for Sync Functions
+### Automatic Threadpool for Sync Functions
 
 Synchronous tools, resources, and prompts now automatically run in a threadpool, preventing event loop blocking during concurrent requests ([#2865](https://github.com/jlowin/fastmcp/pull/2865)):
 
@@ -880,7 +973,7 @@ Three concurrent calls now execute in parallel (~10s) rather than sequentially (
 
 ---
 
-## CLI Update Notifications
+### CLI Update Notifications
 
 The CLI notifies users when a newer FastMCP version is available on PyPI ([#2840](https://github.com/jlowin/fastmcp/pull/2840)).
 
@@ -893,11 +986,11 @@ The CLI notifies users when a newer FastMCP version is available on PyPI ([#2840
 
 ---
 
-## Deprecated Features
+### Deprecated Features
 
 These emit deprecation warnings but continue to work.
 
-### Mount Prefix Parameter
+#### Mount Prefix Parameter
 
 The `prefix` parameter for `mount()` renamed to `namespace`:
 
@@ -909,7 +1002,7 @@ main.mount(subserver, prefix="api")
 main.mount(subserver, namespace="api")
 ```
 
-### Tag Filtering Init Parameters
+#### Tag Filtering Init Parameters
 
 `FastMCP(include_tags=..., exclude_tags=...)` deprecated. Use `enable()`/`disable()` methods:
 
@@ -922,11 +1015,11 @@ mcp = FastMCP("server")
 mcp.disable(tags={"internal"})
 ```
 
-### Tool Serializer Parameter
+#### Tool Serializer Parameter
 
 The `tool_serializer` parameter on `FastMCP` is deprecated. Return `ToolResult` for explicit serialization control.
 
-### Tool Transformation Methods
+#### Tool Transformation Methods
 
 `add_tool_transformation()`, `remove_tool_transformation()`, and `tool_transformations` constructor parameter are deprecated. Use `add_transform(ToolTransform({...}))` instead:
 
@@ -941,13 +1034,13 @@ mcp.add_transform(ToolTransform({"name": config}))
 
 ---
 
-## Breaking Changes
+### Breaking Changes
 
-### WSTransport Removed
+#### WSTransport Removed
 
 The deprecated `WSTransport` client transport has been removed ([#2826](https://github.com/jlowin/fastmcp/pull/2826)). Use `StreamableHttpTransport` instead.
 
-### Decorators Return Functions
+#### Decorators Return Functions
 
 Decorators (`@tool`, `@resource`, `@prompt`) now return the original function instead of component objects. Code that treats the decorated function as a `FunctionTool`, `FunctionResource`, or `FunctionPrompt` will break.
 
@@ -971,7 +1064,7 @@ greet("World")                   # "Hello, World!"
 
 Set `FASTMCP_DECORATOR_MODE=object` or `fastmcp.settings.decorator_mode = "object"` for v2 behavior.
 
-### Component Enable/Disable Moved to Server/Provider
+#### Component Enable/Disable Moved to Server/Provider
 
 The `enabled` field and `enable()`/`disable()` methods removed from component objects:
 
@@ -984,7 +1077,7 @@ tool.disable()
 server.disable(names={"my_tool"}, components=["tool"])
 ```
 
-### Component Lookup Methods
+#### Component Lookup Methods
 
 Server lookup and listing methods have updated signatures:
 
@@ -1001,7 +1094,7 @@ tools = await server.get_tools()
 tool = next((t for t in tools if t.name == "my_tool"), None)
 ```
 
-### Prompt Return Types
+#### Prompt Return Types
 
 Prompt functions now use `Message` instead of `mcp.types.PromptMessage`:
 
@@ -1021,7 +1114,7 @@ def my_prompt() -> Message:
     return Message("Hello")  # role defaults to "user"
 ```
 
-### Auth Provider Environment Variables Removed
+#### Auth Provider Environment Variables Removed
 
 Auth providers no longer auto-load from environment variables ([#2752](https://github.com/jlowin/fastmcp/pull/2752)):
 
@@ -1039,13 +1132,13 @@ auth = GitHubProvider(
 
 See `docs/development/v3-notes/auth-provider-env-vars.mdx` for rationale.
 
-### Server Banner Environment Variable
+#### Server Banner Environment Variable
 
 `FASTMCP_SHOW_CLI_BANNER` → `FASTMCP_SHOW_SERVER_BANNER` ([#2771](https://github.com/jlowin/fastmcp/pull/2771))
 
 Now applies to all server startup methods, not just the CLI.
 
-### Context State Methods Are Async
+#### Context State Methods Are Async
 
 `ctx.set_state()` and `ctx.get_state()` are now async and session-scoped:
 

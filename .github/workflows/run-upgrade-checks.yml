@@ -32,7 +32,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: ./.github/actions/setup-uv
+      - name: Setup uv (upgrade)
+        uses: ./.github/actions/setup-uv
         with:
           resolution: upgrade
 
@@ -57,14 +58,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: ./.github/actions/setup-uv
+      - name: Setup uv (upgrade)
+        uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
           resolution: upgrade
 
-      - uses: ./.github/actions/run-pytest
+      - name: Run unit tests
+        uses: ./.github/actions/run-pytest
 
-      - uses: ./.github/actions/run-pytest
+      - name: Run client process tests
+        uses: ./.github/actions/run-pytest
         with:
           test-type: client_process
 
@@ -76,11 +80,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: ./.github/actions/setup-uv
+      - name: Setup uv (upgrade)
+        uses: ./.github/actions/setup-uv
         with:
           resolution: upgrade
 
-      - uses: ./.github/actions/run-pytest
+      - name: Run integration tests
+        uses: ./.github/actions/run-pytest
         with:
           test-type: integration
         env:

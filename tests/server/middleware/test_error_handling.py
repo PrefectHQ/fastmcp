@@ -101,87 +101,95 @@ class TestErrorHandlingMiddleware:
 
         assert "Error in error callback: callback error" in caplog.text
 
-    def test_transform_error_mcp_error(self):
+    def test_transform_error_mcp_error(self, mock_context):
         """Test that MCP errors are not transformed."""
         middleware = ErrorHandlingMiddleware()
         from mcp.types import ErrorData
 
         error = McpError(ErrorData(code=-32001, message="test error"))
 
-        result = middleware._transform_error(error)
+        result = middleware._transform_error(error, mock_context)
 
         assert result is error
 
-    def test_transform_error_disabled(self):
+    def test_transform_error_disabled(self, mock_context):
         """Test error transformation when disabled."""
         middleware = ErrorHandlingMiddleware(transform_errors=False)
         error = ValueError("test error")
 
-        result = middleware._transform_error(error)
+        result = middleware._transform_error(error, mock_context)
 
         assert result is error
 
-    def test_transform_error_value_error(self):
+    def test_transform_error_value_error(self, mock_context):
         """Test transforming ValueError."""
         middleware = ErrorHandlingMiddleware()
         error = ValueError("test error")
 
-        result = middleware._transform_error(error)
+        result = middleware._transform_error(error, mock_context)
 
         assert isinstance(result, McpError)
         assert result.error.code == -32602
         assert "Invalid params: test error" in result.error.message
 
-    def test_transform_error_file_not_found(self):
-        """Test transforming FileNotFoundError."""
+    def test_transform_error_not_found_for_resource_method(self):
+        """Test that not-found errors use -32002 for resource methods."""
         middleware = ErrorHandlingMiddleware()
-        error = FileNotFoundError("test error")
+        resource_context = MagicMock(spec=MiddlewareContext)
+        resource_context.method = "resources/read"
 
-        result = middleware._transform_error(error)
+        for error in [
+            FileNotFoundError("test error"),
+            NotFoundError("test error"),
+        ]:
+            result = middleware._transform_error(error, resource_context)
 
-        assert isinstance(result, McpError)
-        assert result.error.code == -32001
-        assert "Resource not found: test error" in result.error.message
+            assert isinstance(result, McpError)
+            assert result.error.code == -32002
+            assert "Resource not found: test error" in result.error.message
 
-    def test_transform_error_not_found_error(self):
-        """Test transforming NotFoundError."""
+    def test_transform_error_not_found_for_non_resource_method(self, mock_context):
+        """Test that not-found errors use -32001 for non-resource methods."""
         middleware = ErrorHandlingMiddleware()
-        error = NotFoundError("test error")
 
-        result = middleware._transform_error(error)
+        for error in [
+            FileNotFoundError("test error"),
+            NotFoundError("test error"),
+        ]:
+            result = middleware._transform_error(error, mock_context)
 
-        assert isinstance(result, McpError)
-        assert result.error.code == -32001
-        assert "Resource not found: test error" in result.error.message
+            assert isinstance(result, McpError)
+            assert result.error.code == -32001
+            assert "Not found: test error" in result.error.message
 
-    def test_transform_error_permission_error(self):
+    def test_transform_error_permission_error(self, mock_context):
         """Test transforming PermissionError."""
         middleware = ErrorHandlingMiddleware()
         error = PermissionError("test error")
 
-        result = middleware._transform_error(error)
+        result = middleware._transform_error(error, mock_context)
 
         assert isinstance(result, McpError)
         assert result.error.code == -32000
         assert "Permission denied: test error" in result.error.message
 
-    def test_transform_error_timeout_error(self):
+    def test_transform_error_timeout_error(self, mock_context):
         """Test transforming TimeoutError."""
         middleware = ErrorHandlingMiddleware()
         error = TimeoutError("test error")
 
-        result = middleware._transform_error(error)
+        result = middleware._transform_error(error, mock_context)
 
         assert isinstance(result, McpError)
         assert result.error.code == -32000
         assert "Request timeout: test error" in result.error.message
 
-    def test_transform_error_generic(self):
+    def test_transform_error_generic(self, mock_context):
         """Test transforming generic error."""
         middleware = ErrorHandlingMiddleware()
         error = RuntimeError("test error")
 
-        result = middleware._transform_error(error)
+        result = middleware._transform_error(error, mock_context)
 
         assert isinstance(result, McpError)
         assert result.error.code == -32603

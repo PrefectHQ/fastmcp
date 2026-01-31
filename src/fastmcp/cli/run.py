@@ -25,6 +25,57 @@ logger = get_logger("cli.run")
 TransportType = Literal["stdio", "http", "sse", "streamable-http"]
 LogLevelType = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
+# File extensions to watch for reload
+WATCHED_EXTENSIONS: set[str] = {
+    # Python
+    ".py",
+    # JavaScript/TypeScript
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    # Markup/Content
+    ".html",
+    ".md",
+    ".mdx",
+    ".txt",
+    ".xml",
+    # Styles
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    # Data/Config
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    # Framework-specific
+    ".vue",
+    ".svelte",
+    # GraphQL
+    ".graphql",
+    ".gql",
+    # Images
+    ".svg",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".ico",
+    ".webp",
+    # Media
+    ".mp3",
+    ".mp4",
+    ".wav",
+    ".webm",
+    # Fonts
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+}
+
 
 def is_url(path: str) -> bool:
     """Check if a string is a URL."""
@@ -231,9 +282,9 @@ async def run_v1_server_async(
             await server.run_sse_async()
 
 
-def _python_file_filter(change: Change, path: str) -> bool:
-    """Filter for Python files only."""
-    return path.endswith(".py")
+def _watch_filter(_change: Change, path: str) -> bool:
+    """Filter for files that should trigger reload."""
+    return any(path.endswith(ext) for ext in WATCHED_EXTENSIONS)
 
 
 async def _terminate_process(process: asyncio.subprocess.Process) -> None:
@@ -300,7 +351,7 @@ async def run_with_reload(
 
             # Watch for either: file changes OR process death
             watch_task = asyncio.create_task(
-                anext(aiter(awatch(*watch_paths, watch_filter=_python_file_filter)))
+                anext(aiter(awatch(*watch_paths, watch_filter=_watch_filter)))
             )
             wait_task = asyncio.create_task(process.wait())
             shutdown_task = asyncio.create_task(shutdown_event.wait())
@@ -331,7 +382,7 @@ async def run_with_reload(
 
                 # Wait for file change or shutdown (avoid hot loop on crash)
                 watch_task = asyncio.create_task(
-                    anext(aiter(awatch(*watch_paths, watch_filter=_python_file_filter)))
+                    anext(aiter(awatch(*watch_paths, watch_filter=_watch_filter)))
                 )
                 shutdown_task = asyncio.create_task(shutdown_event.wait())
                 done, pending = await asyncio.wait(

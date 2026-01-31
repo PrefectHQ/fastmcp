@@ -181,7 +181,7 @@ class TestOpenDeeplink:
         """Test opening deeplink on Windows."""
         with patch("sys.platform", "win32"):
             with patch(
-                "fastmcp.cli.install.cursor.os.startfile", create=True
+                "fastmcp.cli.install.shared.os.startfile", create=True
             ) as mock_startfile:
                 result = open_deeplink("cursor://test")
 
@@ -251,7 +251,7 @@ class TestOpenDeeplink:
         """Test handling of OSError on Windows."""
         with patch("sys.platform", "win32"):
             with patch(
-                "fastmcp.cli.install.cursor.os.startfile", create=True
+                "fastmcp.cli.install.shared.os.startfile", create=True
             ) as mock_startfile:
                 mock_startfile.side_effect = OSError("File not found")
                 result = open_deeplink("cursor://test")

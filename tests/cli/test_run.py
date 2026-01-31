@@ -605,24 +605,93 @@ mcp = fastmcp.FastMCP("TestServer")
 class TestReloadFunctionality:
     """Test reload functionality."""
 
-    def test_python_file_filter_accepts_py_files(self):
-        """Test that Python file filter accepts .py files."""
+    def test_watch_filter_accepts_watched_extensions(self):
+        """Test that watch filter accepts common source file extensions."""
         from watchfiles import Change
 
-        from fastmcp.cli.run import _python_file_filter
+        from fastmcp.cli.run import _watch_filter
 
-        assert _python_file_filter(Change.modified, "/path/to/file.py") is True
-        assert _python_file_filter(Change.added, "server.py") is True
-        assert _python_file_filter(Change.deleted, "/some/dir/module.py") is True
+        # Python
+        assert _watch_filter(Change.modified, "/path/to/file.py") is True
+        assert _watch_filter(Change.added, "server.py") is True
+        # JavaScript/TypeScript
+        assert _watch_filter(Change.modified, "/path/to/file.js") is True
+        assert _watch_filter(Change.modified, "/path/to/file.ts") is True
+        assert _watch_filter(Change.modified, "/path/to/file.jsx") is True
+        assert _watch_filter(Change.modified, "/path/to/file.tsx") is True
+        # Markup/Content
+        assert _watch_filter(Change.modified, "/path/to/file.html") is True
+        assert _watch_filter(Change.modified, "/path/to/file.md") is True
+        assert _watch_filter(Change.modified, "/path/to/file.txt") is True
+        # Styles
+        assert _watch_filter(Change.modified, "/path/to/file.css") is True
+        assert _watch_filter(Change.modified, "/path/to/file.scss") is True
+        # Data/Config
+        assert _watch_filter(Change.modified, "/path/to/file.json") is True
+        assert _watch_filter(Change.modified, "/path/to/file.yaml") is True
+        # Images
+        assert _watch_filter(Change.modified, "/path/to/file.png") is True
+        assert _watch_filter(Change.modified, "/path/to/file.svg") is True
 
-    def test_python_file_filter_rejects_non_py_files(self):
-        """Test that Python file filter rejects non-.py files."""
+    def test_watch_filter_rejects_unwatched_extensions(self):
+        """Test that watch filter rejects files not in the watched set."""
         from watchfiles import Change
 
-        from fastmcp.cli.run import _python_file_filter
+        from fastmcp.cli.run import _watch_filter
 
-        assert _python_file_filter(Change.modified, "/path/to/file.txt") is False
-        assert _python_file_filter(Change.modified, "/path/to/file.js") is False
-        assert _python_file_filter(Change.modified, "/path/to/file.pyc") is False
-        assert _python_file_filter(Change.modified, "/path/to/.py") is True  # Edge case
-        assert _python_file_filter(Change.modified, "Dockerfile") is False
+        assert _watch_filter(Change.modified, "/path/to/file.pyc") is False
+        assert _watch_filter(Change.modified, "/path/to/file.pyo") is False
+        assert _watch_filter(Change.modified, "Dockerfile") is False
+        assert _watch_filter(Change.modified, "/path/to/file.lock") is False
+        assert _watch_filter(Change.modified, "/path/to/.gitignore") is False
+
+    def test_all_watched_extensions_are_accepted(self):
+        """Test that every extension in WATCHED_EXTENSIONS is accepted."""
+        from watchfiles import Change
+
+        from fastmcp.cli.run import WATCHED_EXTENSIONS, _watch_filter
+
+        for ext in WATCHED_EXTENSIONS:
+            path = f"/path/to/file{ext}"
+            assert _watch_filter(Change.modified, path) is True, (
+                f"Expected {ext} to be watched"
+            )
+
+    def test_watched_extensions_includes_frontend_types(self):
+        """Verify WATCHED_EXTENSIONS contains the expected frontend file types."""
+        from fastmcp.cli.run import WATCHED_EXTENSIONS
+
+        # Core frontend extensions that must be present
+        expected = {
+            # Python
+            ".py",
+            # JavaScript/TypeScript
+            ".js",
+            ".ts",
+            ".jsx",
+            ".tsx",
+            # Markup
+            ".html",
+            ".md",
+            ".mdx",
+            ".xml",
+            # Styles
+            ".css",
+            ".scss",
+            ".sass",
+            ".less",
+            # Data/Config
+            ".json",
+            ".yaml",
+            ".yml",
+            ".toml",
+            # Images
+            ".png",
+            ".jpg",
+            ".svg",
+            # Media
+            ".mp4",
+            ".mp3",
+        }
+        for ext in expected:
+            assert ext in WATCHED_EXTENSIONS, f"Expected {ext} in WATCHED_EXTENSIONS"
