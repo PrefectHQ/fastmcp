@@ -58,7 +58,7 @@ def get_current_time() -> str:
 
 
 def roll_dice(sides: int = 6) -> str:
-    """Roll a dice with the specified number of sides."""
+    """Roll a die with the specified number of sides."""
     result = random.randint(1, sides)
     console.print(f"        [bold magenta]TOOL[/] roll_dice({sides}) = {result}")
     return str(result)

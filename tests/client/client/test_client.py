@@ -93,7 +93,7 @@ async def test_call_tool_with_meta():
         assert context.request_context is not None
         meta = context.request_context.meta
 
-        # Return the meta data as a dict
+        # Return the metadata as a dict
         if meta is not None:
             return {
                 "has_meta": True,

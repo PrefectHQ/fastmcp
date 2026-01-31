@@ -167,7 +167,7 @@ LOGO_ASCII_2 = (
     "\x1b[38;2;0;120;255m█\x1b[38;2;0;117;255m▀\x1b[38;2;0;114;255m▀\x1b[39m"
 ).strip()
 
-# Prints the below in a blue gradient - sylized F
+# Prints the below in a blue gradient - stylized F
 #  ▄▀▀▀
 #  █▀▀
 # ▀
