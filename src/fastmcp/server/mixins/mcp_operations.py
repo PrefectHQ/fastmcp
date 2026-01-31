@@ -336,9 +336,15 @@ class MCPOperationsMixin:
                 return result
             return result.to_mcp_result(uri)
         except DisabledError as e:
-            raise NotFoundError(f"Unknown resource: {str(uri)!r}") from e
-        except NotFoundError:
-            raise
+            raise McpError(
+                mcp.types.ErrorData(
+                    code=-32002, message=f"Resource not found: {str(uri)!r}"
+                )
+            ) from e
+        except NotFoundError as e:
+            raise McpError(
+                mcp.types.ErrorData(code=-32002, message=f"Resource not found: {e}")
+            ) from e
 
     async def _get_prompt_mcp(
         self, name: str, arguments: dict[str, Any] | None
