@@ -1,8 +1,11 @@
 """Shared utilities for install commands."""
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import dotenv_values
 from pydantic import ValidationError
@@ -140,3 +143,32 @@ async def process_common_args(
             env_dict[key] = value
 
     return file, server_object, name, with_packages, env_dict
+
+
+def open_deeplink(url: str, *, expected_scheme: str) -> bool:
+    """Attempt to open a deeplink URL using the system's default handler.
+
+    Args:
+        url: The deeplink URL to open.
+        expected_scheme: The URL scheme to validate (e.g. "cursor", "goose").
+
+    Returns:
+        True if the command succeeded, False otherwise.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != expected_scheme:
+        logger.warning(
+            f"Invalid deeplink scheme: {parsed.scheme}, expected {expected_scheme}"
+        )
+        return False
+
+    try:
+        if sys.platform == "darwin":
+            subprocess.run(["open", url], check=True, capture_output=True)
+        elif sys.platform == "win32":
+            os.startfile(url)
+        else:
+            subprocess.run(["xdg-open", url], check=True, capture_output=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return False
