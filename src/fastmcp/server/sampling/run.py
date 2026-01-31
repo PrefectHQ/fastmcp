@@ -634,7 +634,8 @@ async def sample_impl(
         # Continue with the updated history
         current_messages = step.history
 
-        # After first iteration, reset tool_choice to auto
-        tool_choice = None
+        # After first iteration, reset tool_choice to auto (unless structured output is required)
+        if result_type is None or result_type is str:
+            tool_choice = None
 
     raise RuntimeError(f"Sampling exceeded maximum iterations ({max_iterations})")
