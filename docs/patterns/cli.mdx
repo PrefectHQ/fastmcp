@@ -18,12 +18,146 @@ fastmcp --help
 
 | Command | Purpose | Dependency Management |
 | ------- | ------- | --------------------- |
+| `list` | List tools on any MCP server | **Supports:** URLs, local files, MCPConfig JSON, stdio commands. **Deps:** N/A (connects to existing servers) |
+| `call` | Call a tool on any MCP server | **Supports:** URLs, local files, MCPConfig JSON, stdio commands. **Deps:** N/A (connects to existing servers) |
 | `run` | Run a FastMCP server directly | **Supports:** Local files, factory functions, URLs, fastmcp.json configs, MCP configs. **Deps:** Uses your local environment directly. With `--python`, `--with`, `--project`, or `--with-requirements`: Runs via `uv run` subprocess. With fastmcp.json: Automatically manages dependencies based on configuration |
 | `dev` | Run a server with the MCP Inspector for testing | **Supports:** Local files and fastmcp.json configs. **Deps:** Always runs via `uv run` subprocess (never uses your local environment); dependencies must be specified or available in a uv-managed project. With fastmcp.json: Uses configured dependencies |
 | `install` | Install a server in MCP client applications | **Supports:** Local files and fastmcp.json configs. **Deps:** Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable`. With fastmcp.json: Uses configured dependencies |
 | `inspect` | Generate a JSON report about a FastMCP server | **Supports:** Local files and fastmcp.json configs. **Deps:** Uses your current environment; you are responsible for ensuring all dependencies are available |
 | `project prepare` | Create a persistent uv project from fastmcp.json environment config | **Supports:** fastmcp.json configs only. **Deps:** Creates a uv project directory with all dependencies pre-installed for reuse with `--project` flag |
 | `version` | Display version information | N/A |
+
+## `fastmcp list`
+
+List tools available on any MCP server. This works with remote URLs, local Python files, MCPConfig JSON files, and arbitrary stdio commands. Together with `fastmcp call`, these commands are especially useful for giving LLMs that don't have built-in MCP support access to MCP tools via shell commands.
+
+```bash
+fastmcp list http://localhost:8000/mcp
+fastmcp list server.py
+fastmcp list mcp.json
+fastmcp list --command 'npx -y @modelcontextprotocol/server-github'
+```
+
+By default, the output shows each tool's signature and description. Use `--input-schema` or `--output-schema` to include full JSON schemas, or `--json` for machine-readable output.
+
+### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Command | `--command` | Connect to a stdio server command (e.g. `'npx -y @mcp/server'`) |
+| Transport | `--transport`, `-t` | Force transport type for URL targets (`http` or `sse`) |
+| Resources | `--resources` | Also list resources |
+| Prompts | `--prompts` | Also list prompts |
+| Input Schema | `--input-schema` | Show full input schemas |
+| Output Schema | `--output-schema` | Show full output schemas |
+| JSON | `--json` | Output as JSON |
+| Timeout | `--timeout` | Connection timeout in seconds |
+| Auth | `--auth` | Auth method: `oauth` (default for HTTP), a bearer token, or `none` to disable |
+
+### Server Targets
+
+The `<server>` argument accepts:
+
+1. **URLs** — `http://` or `https://` endpoints. Uses Streamable HTTP by default; pass `--transport sse` for SSE servers.
+2. **Python files** — `.py` files are run via `fastmcp run` automatically.
+3. **MCPConfig JSON** — `.json` files with an `mcpServers` key are treated as multi-server configs.
+4. **Stdio commands** — Use `--command` to connect to any MCP server via stdio (e.g. `npx`, `uvx`).
+
+### Examples
+
+```bash
+# List tools on a remote server
+fastmcp list http://localhost:8000/mcp
+
+# List tools from a local Python file
+fastmcp list server.py
+
+# Include full input schemas
+fastmcp list server.py --input-schema
+
+# Machine-readable JSON
+fastmcp list server.py --json
+
+# SSE server
+fastmcp list http://localhost:8000/mcp --transport sse
+
+# Stdio command
+fastmcp list --command 'npx -y @modelcontextprotocol/server-github'
+
+# Include resources and prompts
+fastmcp list server.py --resources --prompts
+```
+
+## `fastmcp call`
+
+Call a tool on any MCP server. Arguments can be passed as `key=value` pairs, a single JSON object, or via `--input-json`.
+
+```bash
+fastmcp call server.py greet name=World
+fastmcp call http://localhost:8000/mcp search query=hello limit=5
+fastmcp call server.py create_item '{"name": "x", "tags": ["a", "b"]}'
+```
+
+Tool arguments are automatically coerced to the correct type based on the tool's input schema — string values like `limit=5` become integers when the schema expects one.
+
+### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Command | `--command` | Connect to a stdio server command (e.g. `'npx -y @mcp/server'`) |
+| Transport | `--transport`, `-t` | Force transport type for URL targets (`http` or `sse`) |
+| Input JSON | `--input-json` | JSON string of tool arguments (merged with key=value args) |
+| JSON | `--json` | Output raw JSON result |
+| Timeout | `--timeout` | Connection timeout in seconds |
+| Auth | `--auth` | Auth method: `oauth` (default for HTTP), a bearer token, or `none` to disable |
+
+### Argument Passing
+
+There are three ways to pass arguments:
+
+**Key=value pairs** are the simplest for flat arguments. Values are coerced using the tool's JSON schema (strings become ints, bools, etc.):
+
+```bash
+fastmcp call server.py search query=hello limit=5 verbose=true
+```
+
+**A single JSON object** works when you have structured or nested arguments:
+
+```bash
+fastmcp call server.py create_item '{"name": "Widget", "tags": ["new", "sale"]}'
+```
+
+**`--input-json`** provides a base dict that key=value pairs can override:
+
+```bash
+fastmcp call server.py search --input-json '{"query": "hello", "limit": 5}' limit=10
+```
+
+### Examples
+
+```bash
+# Call a tool with simple args
+fastmcp call server.py greet name=World
+
+# Call with JSON object
+fastmcp call server.py create '{"name": "x", "tags": ["a"]}'
+
+# Get JSON output for scripting
+fastmcp call server.py add a=3 b=4 --json
+
+# Call a tool on a remote server
+fastmcp call http://localhost:8000/mcp search query=hello
+
+# Call via stdio command
+fastmcp call --command 'npx -y @mcp/server' tool_name arg=value
+
+# Disable OAuth for HTTP targets
+fastmcp call http://localhost:8000/mcp search query=hello --auth none
+```
+
+<Tip>
+If you call a tool that doesn't exist, FastMCP will suggest similar tool names. Use `fastmcp list` to see all available tools on a server.
+</Tip>
 
 ## `fastmcp run`
 
