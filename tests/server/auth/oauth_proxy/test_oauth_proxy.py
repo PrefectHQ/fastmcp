@@ -1,5 +1,7 @@
 """Tests for OAuth proxy initialization and configuration."""
 
+from key_value.aio.stores.memory import MemoryStore
+
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 
 
@@ -16,6 +18,7 @@ class TestOAuthProxyInitialization:
             token_verifier=jwt_verifier,
             base_url="https://api.example.com",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
         assert (
@@ -45,6 +48,7 @@ class TestOAuthProxyInitialization:
             forward_pkce=False,
             token_endpoint_auth_method="client_secret_post",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
         assert proxy._upstream_revocation_endpoint == "https://auth.example.com/revoke"
@@ -65,5 +69,6 @@ class TestOAuthProxyInitialization:
             base_url="https://api.com",
             redirect_path="auth/callback",  # No leading slash
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
         assert proxy._redirect_path == "/auth/callback"
