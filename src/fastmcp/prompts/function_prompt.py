@@ -297,13 +297,27 @@ class FunctionPrompt(Prompt):
             # Convert string arguments to expected types BEFORE validation
             kwargs = self._convert_string_arguments(kwargs)
 
+            # Filter out arguments that aren't in the function signature
+            # This is important for security: dependencies should not be overridable
+            # from external callers. self.fn is wrapped by without_injected_parameters,
+            # so we only accept arguments that are in the wrapped function's signature.
+            sig = inspect.signature(self.fn)
+            valid_params = set(sig.parameters.keys())
+            kwargs = {k: v for k, v in kwargs.items() if k in valid_params}
+
+            # Use type adapter to validate arguments and handle Field() defaults
+            # This matches the behavior of tools in function_tool
+            type_adapter = get_cached_typeadapter(self.fn)
+
             # self.fn is wrapped by without_injected_parameters which handles
             # dependency resolution internally
             if inspect.iscoroutinefunction(self.fn):
-                result = await self.fn(**kwargs)
+                result = await type_adapter.validate_python(kwargs)
             else:
                 # Run sync functions in threadpool to avoid blocking the event loop
-                result = await call_sync_fn_in_threadpool(self.fn, **kwargs)
+                result = await call_sync_fn_in_threadpool(
+                    type_adapter.validate_python, kwargs
+                )
                 # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
                 if inspect.isawaitable(result):
                     result = await result

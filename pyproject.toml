@@ -16,6 +16,7 @@ dependencies = [
     "cyclopts>=4.0.0",
     "authlib>=1.6.5",
     "pydantic[email]>=2.11.7",
+    "pyyaml>=6.0,<7.0",
     "pyperclip>=1.9.0",
     "py-key-value-aio[disk,keyring,memory]>=0.3.0,<0.4.0",
     "uvicorn>=0.35",

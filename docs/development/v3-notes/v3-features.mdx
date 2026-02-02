@@ -6,6 +6,55 @@ This document tracks major features in FastMCP v3.0 for release notes preparatio
 
 ## 3.0.0beta2
 
+### CLI: `fastmcp list` and `fastmcp call`
+
+New client-side CLI commands for querying and invoking tools on any MCP server — remote URLs, local Python files, MCPConfig JSON, or arbitrary stdio commands. Especially useful for giving LLMs that don't have built-in MCP support access to MCP tools via shell commands.
+
+```bash
+# Discover tools on a server
+fastmcp list http://localhost:8000/mcp
+fastmcp list server.py
+fastmcp list --command 'npx -y @modelcontextprotocol/server-github'
+
+# Call a tool
+fastmcp call server.py greet name=World
+fastmcp call http://localhost:8000/mcp search query=hello limit=5
+fastmcp call server.py create_item '{"name": "Widget", "tags": ["a", "b"]}'
+```
+
+Key features:
+- Tool arguments are auto-coerced using the tool's JSON schema (`limit=5` → int)
+- Single JSON objects work as positional args alongside `key=value` and `--input-json`
+- `--input-schema` / `--output-schema` for full JSON schemas, `--json` for machine-readable output
+- `--transport sse` for SSE servers, `--command` for stdio servers
+- Auto OAuth for HTTP targets (no-ops if server doesn't require auth)
+- Fuzzy tool name matching suggests alternatives on typos
+- Interactive terminal elicitation for tools that request user input mid-execution
+
+Documentation: [Client CLI](/clients/cli)
+
+### CLI: `fastmcp discover` and name-based resolution
+
+`fastmcp discover` scans editor configs (Claude Desktop, Claude Code, Cursor, Gemini CLI, Goose) and project-level `mcp.json` files for MCP server definitions. Discovered servers can be referenced by name — or `source:name` for precision — in `fastmcp list` and `fastmcp call`.
+
+```bash
+# See all configured servers
+fastmcp discover
+
+# Use a server by name
+fastmcp list weather
+fastmcp call weather get_forecast city=London
+
+# Target a specific source with source:name
+fastmcp list claude-code:my-server
+fastmcp call cursor:weather get_forecast city=London
+
+# Filter discovery to specific sources
+fastmcp discover --source claude-code --source cursor
+```
+
+Documentation: [Client CLI](/clients/cli)
+
 ### CLI: Expanded Reload File Watching
 
 The `--reload` flag now watches a comprehensive set of file types, making it suitable for MCP apps with frontend bundles ([#3028](https://github.com/jlowin/fastmcp/pull/3028)). Previously limited to `.py` files, it now watches JavaScript, TypeScript, HTML, CSS, config files, and media assets.

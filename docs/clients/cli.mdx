@@ -1,0 +1,161 @@
+---
+title: Client CLI
+sidebarTitle: CLI
+description: Query and invoke MCP server tools directly from the terminal with fastmcp list and fastmcp call.
+icon: terminal
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.0.0" />
+
+MCP servers are designed for programmatic consumption by AI assistants and applications. But during development, you often want to poke at a server directly: check what tools it exposes, call one with test arguments, or verify that a deployment is responding correctly. The FastMCP CLI gives you that direct access with two commands, `fastmcp list` and `fastmcp call`, so you can query and invoke any MCP server without writing a single line of Python.
+
+These commands are also valuable for LLM-based agents that lack native MCP support. An agent that can execute shell commands can use `fastmcp list --json` to discover available tools and `fastmcp call --json` to invoke them, with structured JSON output designed for programmatic consumption.
+
+## Server Targets
+
+Both commands need to know which server to talk to. You provide a "server spec" as the first argument, and FastMCP figures out the transport automatically. You can point at an HTTP URL for a running server, a Python file that defines one, a JSON configuration file that describes one, or a JavaScript file. The CLI resolves the right connection mechanism so you can focus on the query.
+
+```bash
+fastmcp list http://localhost:8000/mcp
+fastmcp list server.py
+fastmcp list mcp-config.json
+```
+
+Python files are handled with particular care. Rather than requiring your script to call `mcp.run()` at the bottom, the CLI routes it through `fastmcp run` internally, which means any Python file that defines a FastMCP server object works as a target with no boilerplate.
+
+For servers that communicate over stdio (common with Node.js-based MCP servers), use the `--command` flag instead of a positional server spec. The string is shell-split into a command and arguments.
+
+```bash
+fastmcp list --command 'npx -y @modelcontextprotocol/server-github'
+```
+
+### Name-Based Resolution
+
+If your MCP servers are already configured in an editor or tool, you can refer to them by name instead of spelling out URLs or file paths. The CLI scans config files from Claude Desktop, Claude Code, Cursor, Gemini CLI, and Goose, and matches the name you provide.
+
+```bash
+fastmcp list weather
+fastmcp call weather get_forecast city=London
+```
+
+You can also use the `source:name` form to target a specific source directly, which is useful when the same server name appears in multiple configs or when you want to be explicit about which config you mean.
+
+```bash
+fastmcp list claude-code:my-server
+fastmcp call cursor:weather get_forecast city=London
+```
+
+The available source names are `claude-desktop`, `claude-code`, `cursor`, `gemini`, `goose`, and `project` (for `./mcp.json`). Run `fastmcp discover` to see what's available.
+
+## Discovering Configured Servers
+
+`fastmcp discover` scans your local editor and project configurations for MCP server definitions. It checks Claude Desktop, Claude Code (`~/.claude.json`), Cursor workspace configs (walking up from the current directory), Gemini CLI (`~/.gemini/settings.json`), Goose (`~/.config/goose/config.yaml`), and `mcp.json` in the current directory.
+
+```bash
+fastmcp discover
+```
+
+The output groups servers by source, showing each server's name and transport. Use `--source` to filter to specific sources, and `--json` for machine-readable output.
+
+```bash
+fastmcp discover --source claude-code
+fastmcp discover --source cursor --source gemini --json
+```
+
+Any server that appears here can be used by name (or `source:name`) with `fastmcp list` and `fastmcp call`, which means you can go from "I have a server configured in Claude Code" to querying it without copying any URLs or paths.
+
+## Discovering Tools
+
+`fastmcp list` connects to a server and prints every tool it exposes. The default output is compact: each tool appears as a function signature with its parameter names, types, and a description.
+
+```bash
+fastmcp list http://localhost:8000/mcp
+```
+
+The output looks like a Python function signature, making it easy to see at a glance what a tool expects and what it returns. Required parameters appear with just their type annotation, while optional ones show their defaults.
+
+When you need the full JSON Schema for a tool's inputs or outputs -- useful for understanding nested object structures or enum constraints -- opt into them with `--input-schema` or `--output-schema`. These print the raw schema beneath each tool signature.
+
+### Beyond Tools
+
+MCP servers can expose resources and prompts alongside tools. By default, `fastmcp list` only shows tools because they are the most common interaction point. Add `--resources` or `--prompts` to include those in the output.
+
+```bash
+fastmcp list server.py --resources --prompts
+```
+
+Resources appear with their URIs and descriptions. Prompts appear with their argument names so you can see what parameters they accept.
+
+### Machine-Readable Output
+
+The `--json` flag switches from human-friendly text to structured JSON. Each tool includes its name, description, and full input schema (and output schema when present). When combined with `--resources` or `--prompts`, those are included as additional top-level keys.
+
+```bash
+fastmcp list server.py --json
+```
+
+This is the format to use when building automation around MCP servers or feeding tool definitions to an LLM agent that needs to decide which tool to call.
+
+## Calling Tools
+
+`fastmcp call` invokes a single tool on a server. You provide the server spec, the tool name, and arguments as `key=value` pairs. The CLI fetches the tool's schema, coerces your string values to the correct types (integers, floats, booleans, arrays, objects), and makes the call.
+
+```bash
+fastmcp call http://localhost:8000/mcp search query=hello limit=5
+```
+
+Type coercion is driven by the tool's JSON Schema. If a parameter is declared as an integer, the string `"5"` becomes the integer `5`. Booleans accept `true`/`false`, `yes`/`no`, and `1`/`0`. Array and object parameters are parsed as JSON.
+
+For tools with complex or deeply nested arguments, the `key=value` syntax gets unwieldy. You can pass a single JSON object as the argument instead, and the CLI treats it as the full input dictionary.
+
+```bash
+fastmcp call server.py create_item '{"name": "Widget", "tags": ["sale", "new"], "metadata": {"color": "blue"}}'
+```
+
+Alternatively, `--input-json` provides the base argument dictionary. Any `key=value` pairs you add alongside it override keys from the JSON, which is useful for templating a complex call and varying one parameter at a time.
+
+### Error Handling
+
+The CLI validates your call before sending it. If you misspell a tool name, it uses fuzzy matching to suggest corrections. If you omit a required argument, it tells you which ones are missing and prints the tool's signature as a reminder.
+
+When a tool call itself returns an error (the server executed the tool but it failed), the error message is printed and the CLI exits with a non-zero status code, making it straightforward to use in scripts.
+
+### Structured Output
+
+Like `fastmcp list`, the `--json` flag on `fastmcp call` emits structured JSON instead of formatted text. The output includes the content blocks, error status, and structured content when the server provides it. Use this when you need to parse tool results programmatically.
+
+```bash
+fastmcp call server.py get_weather city=London --json
+```
+
+## Authentication
+
+When the server target is an HTTP URL, the CLI automatically enables OAuth authentication. If the server requires it, you will be guided through the OAuth flow (typically opening a browser for authorization). If the server has no auth requirements, the OAuth setup is a silent no-op.
+
+To explicitly disable authentication -- for example, when connecting to a local development server where OAuth setup would just slow you down -- pass `--auth none`.
+
+```bash
+fastmcp call http://localhost:8000/mcp my_tool --auth none
+```
+
+## Transport Override
+
+FastMCP defaults to Streamable HTTP for URL targets. If you are connecting to a server that only supports Server-Sent Events (SSE), use `--transport sse` to force the older transport. This appends `/sse` to the URL path automatically so the client picks the correct protocol.
+
+```bash
+fastmcp list http://localhost:8000 --transport sse
+```
+
+## Interactive Elicitation
+
+Some MCP tools request additional input from the user during execution through a mechanism called elicitation. When a tool sends an elicitation request, the CLI prints the server's question to the terminal and prompts you to respond. Each field in the elicitation schema is presented with its name and expected type, and required fields are clearly marked.
+
+You can type `decline` to skip a question or `cancel` to abort the tool call entirely. This interactive behavior means the CLI works naturally with tools that have multi-step or conversational workflows.
+
+## LLM Agent Integration
+
+For LLM agents that can execute shell commands but lack built-in MCP support, the CLI provides a clean integration path. The agent calls `fastmcp list --json` to get a structured description of every available tool, including full input schemas, and then calls `fastmcp call --json` with the chosen tool and arguments. Both commands return well-formed JSON that is straightforward to parse.
+
+Because the CLI handles connection management, transport selection, and type coercion internally, the agent does not need to understand MCP protocol details. It just needs to read JSON and construct shell commands.
