@@ -86,6 +86,9 @@ class FastMCPProviderTool(Tool):
             tags=tool.tags,
             annotations=tool.annotations,
             task_config=tool.task_config,
+            meta=tool.meta,
+            title=tool.title,
+            icons=tool.icons,
         )
 
     @overload
@@ -183,6 +186,9 @@ class FastMCPProviderResource(Resource):
             tags=resource.tags,
             annotations=resource.annotations,
             task_config=resource.task_config,
+            meta=resource.meta,
+            title=resource.title,
+            icons=resource.icons,
         )
 
     @overload
@@ -249,6 +255,9 @@ class FastMCPProviderPrompt(Prompt):
             arguments=prompt.arguments,
             tags=prompt.tags,
             task_config=prompt.task_config,
+            meta=prompt.meta,
+            title=prompt.title,
+            icons=prompt.icons,
         )
 
     @overload
@@ -350,6 +359,9 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             tags=template.tags,
             annotations=template.annotations,
             task_config=template.task_config,
+            meta=template.meta,
+            title=template.title,
+            icons=template.icons,
         )
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
