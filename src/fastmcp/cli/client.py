@@ -12,8 +12,12 @@ import cyclopts
 import mcp.types
 from rich.console import Console
 
+from fastmcp.cli.discovery import DiscoveredServer, discover_servers, resolve_name
 from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client.elicitation import ElicitResult
+from fastmcp.client.transports.base import ClientTransport
+from fastmcp.client.transports.http import StreamableHttpTransport
+from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import StdioTransport
 from fastmcp.utilities.logging import get_logger
 
@@ -41,7 +45,7 @@ def resolve_server_spec(
     *,
     command: str | None = None,
     transport: str | None = None,
-) -> str | dict[str, Any] | StdioTransport:
+) -> str | dict[str, Any] | ClientTransport:
     """Turn CLI inputs into something ``Client()`` accepts.
 
     Exactly one of ``server_spec`` or ``command`` should be provided.
@@ -51,7 +55,7 @@ def resolve_server_spec(
        If ``--transport`` is ``sse``, the URL is rewritten to end with ``/sse``
        so ``infer_transport`` picks the right transport.
     2. Existing file paths, or strings ending in ``.py``/``.js``/``.json``.
-    3. Anything else — error with guidance.
+    3. Anything else — name-based resolution via ``resolve_name``.
 
     When ``command`` is provided, the string is shell-split into a
     ``StdioTransport(command, args)``.
@@ -101,16 +105,12 @@ def resolve_server_spec(
         # .js — pass through for Client's infer_transport
         return spec
 
-    # 3. Unrecognised
-    console.print(
-        f"[bold red]Error:[/bold red] Could not resolve server spec: [cyan]{spec}[/cyan]\n\n"
-        "Expected one of:\n"
-        "  • A URL            (e.g. http://localhost:8000/mcp)\n"
-        "  • A Python file    (e.g. server.py)\n"
-        "  • An MCPConfig     (e.g. mcp.json)\n"
-        "  • --command        (e.g. --command 'npx -y @mcp/server')\n"
-    )
-    sys.exit(1)
+    # 3. Name-based resolution (bare name or source:name)
+    try:
+        return resolve_name(spec)
+    except ValueError as exc:
+        console.print(f"[bold red]Error:[/bold red] {exc}")
+        sys.exit(1)
 
 
 def _build_stdio_from_command(command_str: str) -> StdioTransport:
@@ -156,7 +156,7 @@ def _resolve_json_spec(path: Path) -> str | dict[str, Any]:
     sys.exit(1)
 
 
-def _is_http_target(resolved: str | dict[str, Any] | StdioTransport) -> bool:
+def _is_http_target(resolved: str | dict[str, Any] | ClientTransport) -> bool:
     """Return True if the resolved target will use an HTTP-based transport.
 
     MCPConfig dicts are excluded because ``MCPConfigTransport`` manages
@@ -164,7 +164,7 @@ def _is_http_target(resolved: str | dict[str, Any] | StdioTransport) -> bool:
     """
     if isinstance(resolved, str):
         return resolved.startswith(("http://", "https://"))
-    return False
+    return isinstance(resolved, (StreamableHttpTransport, SSETransport))
 
 
 async def _terminal_elicitation_handler(
@@ -227,7 +227,7 @@ async def _terminal_elicitation_handler(
 
 
 def _build_client(
-    resolved: str | dict[str, Any] | StdioTransport,
+    resolved: str | dict[str, Any] | ClientTransport,
     *,
     timeout: float | None = None,
     auth: str | None = None,
@@ -870,3 +870,95 @@ async def call_command(
     except Exception as exc:
         console.print(f"[bold red]Error:[/bold red] {exc}")
         sys.exit(1)
+
+
+async def discover_command(
+    *,
+    source: Annotated[
+        list[str] | None,
+        cyclopts.Parameter(
+            "--source",
+            help="Only show servers from these sources (e.g. claude-code, cursor, gemini)",
+        ),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        cyclopts.Parameter("--json", help="Output as JSON"),
+    ] = False,
+) -> None:
+    """Discover MCP servers configured in editor and project configs.
+
+    Scans Claude Desktop, Claude Code, Cursor, Gemini CLI, Goose, and
+    project-level mcp.json files for MCP server definitions.
+
+    Discovered server names can be used directly with ``fastmcp list``
+    and ``fastmcp call`` instead of specifying a URL or file path.
+
+    Examples:
+        fastmcp discover
+        fastmcp discover --source claude-code
+        fastmcp discover --source cursor --source gemini --json
+        fastmcp list weather
+        fastmcp call cursor:weather get_forecast city=London
+    """
+
+    servers = discover_servers()
+
+    if source:
+        servers = [s for s in servers if s.source in source]
+
+    if json_output:
+        data: list[dict[str, Any]] = [
+            {
+                "name": s.name,
+                "source": s.source,
+                "qualified_name": s.qualified_name,
+                "transport_summary": s.transport_summary,
+                "config_path": str(s.config_path),
+            }
+            for s in servers
+        ]
+        console.print_json(json.dumps(data))
+        return
+
+    if not servers:
+        console.print("[dim]No MCP servers found.[/dim]")
+        console.print()
+        console.print("Searched:")
+        console.print("  • Claude Desktop config")
+        console.print("  • ~/.claude.json (Claude Code)")
+        console.print("  • .cursor/mcp.json (walked up from cwd)")
+        console.print("  • ~/.gemini/settings.json (Gemini CLI)")
+        console.print("  • ~/.config/goose/config.yaml (Goose)")
+        console.print("  • ./mcp.json")
+        return
+
+    from rich.table import Table
+
+    # Group by source
+    by_source: dict[str, list[DiscoveredServer]] = {}
+    for s in servers:
+        by_source.setdefault(s.source, []).append(s)
+
+    for source_name, group in by_source.items():
+        console.print()
+        console.print(f"[bold]Source:[/bold]  {source_name}")
+        console.print(f"[bold]Config:[/bold]  [dim]{group[0].config_path}[/dim]")
+        console.print()
+
+        table = Table(
+            show_header=True,
+            header_style="bold",
+            show_edge=False,
+            pad_edge=False,
+            box=None,
+            padding=(0, 2),
+        )
+        table.add_column("Server", style="cyan")
+        table.add_column("Transport", style="dim")
+
+        for s in group:
+            table.add_row(s.name, s.transport_summary)
+
+        console.print(table)
+        console.print()

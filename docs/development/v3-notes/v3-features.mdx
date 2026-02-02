@@ -33,6 +33,28 @@ Key features:
 
 Documentation: [Client CLI](/clients/cli)
 
+### CLI: `fastmcp discover` and name-based resolution
+
+`fastmcp discover` scans editor configs (Claude Desktop, Claude Code, Cursor, Gemini CLI, Goose) and project-level `mcp.json` files for MCP server definitions. Discovered servers can be referenced by name — or `source:name` for precision — in `fastmcp list` and `fastmcp call`.
+
+```bash
+# See all configured servers
+fastmcp discover
+
+# Use a server by name
+fastmcp list weather
+fastmcp call weather get_forecast city=London
+
+# Target a specific source with source:name
+fastmcp list claude-code:my-server
+fastmcp call cursor:weather get_forecast city=London
+
+# Filter discovery to specific sources
+fastmcp discover --source claude-code --source cursor
+```
+
+Documentation: [Client CLI](/clients/cli)
+
 ### CLI: Expanded Reload File Watching
 
 The `--reload` flag now watches a comprehensive set of file types, making it suitable for MCP apps with frontend bundles ([#3028](https://github.com/jlowin/fastmcp/pull/3028)). Previously limited to `.py` files, it now watches JavaScript, TypeScript, HTML, CSS, config files, and media assets.

@@ -63,6 +63,9 @@ All commands accept the same server targets:
 | Python file | `server.py` |
 | MCPConfig JSON | `mcp.json` (must have `mcpServers` key) |
 | Stdio command | `--command 'npx -y @mcp/server'` |
+| Discovered name | `weather` or `source:name` |
+
+Servers configured in editor configs (Claude Desktop, Claude Code, Cursor, Gemini CLI, Goose) or project-level `mcp.json` can be referenced by name. Use `source:name` (e.g. `claude-code:my-server`, `cursor:weather`) to target a specific source. Run `fastmcp discover` to see available names.
 
 For SSE servers, pass `--transport sse`:
 
@@ -78,16 +81,34 @@ HTTP targets automatically use OAuth (no-ops if the server doesn't require auth)
 fastmcp call http://server/mcp tool --auth none
 ```
 
+## Discovering Configured Servers
+
+```bash
+# See all MCP servers in editor/project configs
+fastmcp discover
+
+# Filter by source
+fastmcp discover --source claude-code
+
+# JSON output
+fastmcp discover --json
+```
+
+Scans Claude Desktop, Claude Code, Cursor, Gemini CLI, Goose, and `./mcp.json`. Sources: `claude-desktop`, `claude-code`, `cursor`, `gemini`, `goose`, `project`.
+
 ## Workflow Pattern
 
 Discover tools first, then call them:
 
 ```bash
-# 1. See what's available
-fastmcp list server.py
+# 1. See what servers are configured
+fastmcp discover
 
-# 2. Call a tool
-fastmcp call server.py tool_name arg=value
+# 2. See what tools a server has
+fastmcp list weather
+
+# 3. Call a tool
+fastmcp call weather get_forecast city=London
 ```
 
 If you call a nonexistent tool, FastMCP suggests close matches.

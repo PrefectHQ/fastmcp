@@ -19,7 +19,7 @@ from rich.table import Table
 
 import fastmcp
 from fastmcp.cli import run as run_module
-from fastmcp.cli.client import call_command, list_command
+from fastmcp.cli.client import call_command, discover_command, list_command
 from fastmcp.cli.install import install_app
 from fastmcp.cli.tasks import tasks_app
 from fastmcp.utilities.cli import is_already_in_uv_subprocess, load_and_merge_config
@@ -956,6 +956,7 @@ app.command(tasks_app)
 # Add client query commands
 app.command(list_command, name="list")
 app.command(call_command, name="call")
+app.command(discover_command, name="discover")
 
 
 if __name__ == "__main__":

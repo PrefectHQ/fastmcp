@@ -31,6 +31,41 @@ For servers that communicate over stdio (common with Node.js-based MCP servers),
 fastmcp list --command 'npx -y @modelcontextprotocol/server-github'
 ```
 
+### Name-Based Resolution
+
+If your MCP servers are already configured in an editor or tool, you can refer to them by name instead of spelling out URLs or file paths. The CLI scans config files from Claude Desktop, Claude Code, Cursor, Gemini CLI, and Goose, and matches the name you provide.
+
+```bash
+fastmcp list weather
+fastmcp call weather get_forecast city=London
+```
+
+You can also use the `source:name` form to target a specific source directly, which is useful when the same server name appears in multiple configs or when you want to be explicit about which config you mean.
+
+```bash
+fastmcp list claude-code:my-server
+fastmcp call cursor:weather get_forecast city=London
+```
+
+The available source names are `claude-desktop`, `claude-code`, `cursor`, `gemini`, `goose`, and `project` (for `./mcp.json`). Run `fastmcp discover` to see what's available.
+
+## Discovering Configured Servers
+
+`fastmcp discover` scans your local editor and project configurations for MCP server definitions. It checks Claude Desktop, Claude Code (`~/.claude.json`), Cursor workspace configs (walking up from the current directory), Gemini CLI (`~/.gemini/settings.json`), Goose (`~/.config/goose/config.yaml`), and `mcp.json` in the current directory.
+
+```bash
+fastmcp discover
+```
+
+The output groups servers by source, showing each server's name and transport. Use `--source` to filter to specific sources, and `--json` for machine-readable output.
+
+```bash
+fastmcp discover --source claude-code
+fastmcp discover --source cursor --source gemini --json
+```
+
+Any server that appears here can be used by name (or `source:name`) with `fastmcp list` and `fastmcp call`, which means you can go from "I have a server configured in Claude Code" to querying it without copying any URLs or paths.
+
 ## Discovering Tools
 
 `fastmcp list` connects to a server and prints every tool it exposes. The default output is compact: each tool appears as a function signature with its parameter names, types, and a description.
