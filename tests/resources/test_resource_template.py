@@ -1007,3 +1007,83 @@ class TestQueryParameterWithWildcards:
         assert result["path"] == "src/test/data.txt"
         assert result["encoding"] == "utf-8"  # default
         assert result["lines"] == 50  # provided
+
+
+class TestResourceTemplateFieldDefaults:
+    """Test resource templates with Field() defaults."""
+
+    async def test_field_with_default(self):
+        """Test that Field(default=...) correctly provides default values in resource templates."""
+        from pydantic import Field
+
+        def get_data(
+            id: str = Field(description="Resource ID"),
+            format: str = Field(default="json", description="Output format"),
+        ) -> str:
+            return f"id={id}, format={format}"
+
+        template = ResourceTemplate.from_function(
+            fn=get_data,
+            uri_template="data://{id}{?format}",
+            name="test",
+        )
+
+        # Test with only required parameter
+        resource = await template.create_resource("data://123", {"id": "123"})
+        result = await resource.read()
+        assert result == "id=123, format=json"
+
+        # Test with override
+        resource = await template.create_resource(
+            "data://123?format=xml", {"id": "123", "format": "xml"}
+        )
+        result = await resource.read()
+        assert result == "id=123, format=xml"
+
+    async def test_multiple_field_defaults(self):
+        """Test multiple query parameters with Field() defaults."""
+        from typing import Any
+
+        from pydantic import Field
+
+        def fetch_data(
+            resource_id: str = Field(description="Resource ID"),
+            limit: int = Field(default=10, description="Result limit"),
+            offset: int = Field(default=0, description="Result offset"),
+            format: str = Field(default="json", description="Output format"),
+        ) -> dict[str, Any]:
+            return {
+                "resource_id": resource_id,
+                "limit": limit,
+                "offset": offset,
+                "format": format,
+            }
+
+        template = ResourceTemplate.from_function(
+            fn=fetch_data,
+            uri_template="api://{resource_id}{?limit,offset,format}",
+            name="test",
+        )
+
+        # Test with only required parameter - all defaults should apply
+        resource1 = await template.create_resource(
+            "api://user123", {"resource_id": "user123"}
+        )
+        result1 = await resource1.read()
+        assert isinstance(result1, dict)
+        assert result1["resource_id"] == "user123"
+        assert result1["limit"] == 10
+        assert result1["offset"] == 0
+        assert result1["format"] == "json"
+
+        # Test with some overrides
+        resource2 = await template.create_resource(
+            "api://user123?limit=50&format=xml",
+            {"resource_id": "user123", "limit": "50", "format": "xml"},
+        )
+        result2 = await resource2.read()
+        assert isinstance(result2, dict)
+        assert result2["resource_id"] == "user123"
+        assert result2["limit"] == 50  # overridden
+        assert result2["offset"] == 0  # default
+        assert result2["format"] == "xml"  # overridden
