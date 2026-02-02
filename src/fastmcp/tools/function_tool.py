@@ -20,6 +20,7 @@ import anyio
 import mcp.types
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, Icon, ToolAnnotations, ToolExecution
+from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
@@ -81,7 +82,7 @@ class ToolMeta:
 
 
 class FunctionTool(Tool):
-    fn: Callable[..., Any]
+    fn: SkipJsonSchema[Callable[..., Any]]
 
     def to_mcp_tool(
         self,

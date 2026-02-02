@@ -24,6 +24,7 @@ from mcp.types import (
 )
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
@@ -140,13 +141,13 @@ class Tool(FastMCPComponent):
         Field(description="Task execution configuration (SEP-1686)"),
     ] = None
     serializer: Annotated[
-        ToolResultSerializerType | None,
+        SkipJsonSchema[ToolResultSerializerType | None],
         Field(
             description="Deprecated. Return ToolResult from your tools for full control over serialization."
         ),
     ] = None
     auth: Annotated[
-        AuthCheckCallable | list[AuthCheckCallable] | None,
+        SkipJsonSchema[AuthCheckCallable | list[AuthCheckCallable] | None],
         Field(description="Authorization checks for this tool", exclude=True),
     ] = None
     timeout: Annotated[

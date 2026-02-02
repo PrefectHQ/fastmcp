@@ -25,6 +25,7 @@ from mcp.types import (
 from mcp.types import Prompt as SDKPrompt
 from mcp.types import PromptArgument as SDKPromptArgument
 from pydantic import Field
+from pydantic.json_schema import SkipJsonSchema
 
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.tools.tool import AuthCheckCallable
@@ -194,7 +195,7 @@ class Prompt(FastMCPComponent):
     arguments: list[PromptArgument] | None = Field(
         default=None, description="Arguments that can be passed to the prompt"
     )
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = Field(
+    auth: SkipJsonSchema[AuthCheckCallable | list[AuthCheckCallable] | None] = Field(
         default=None, description="Authorization checks for this prompt", exclude=True
     )
 

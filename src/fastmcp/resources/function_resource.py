@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar, runtime_check
 
 from mcp.types import Annotations, Icon
 from pydantic import AnyUrl
+from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
@@ -73,7 +74,7 @@ class FunctionResource(Resource):
     - other types will be converted to JSON
     """
 
-    fn: Callable[..., Any]
+    fn: SkipJsonSchema[Callable[..., Any]]
 
     @classmethod
     def from_function(

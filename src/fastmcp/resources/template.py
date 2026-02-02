@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, unquote
 
 import mcp.types
 from mcp.types import Annotations, Icon
+from pydantic.json_schema import SkipJsonSchema
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -116,7 +117,7 @@ class ResourceTemplate(FastMCPComponent):
     annotations: Annotations | None = Field(
         default=None, description="Optional annotations about the resource's behavior"
     )
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = Field(
+    auth: SkipJsonSchema[AuthCheckCallable | list[AuthCheckCallable] | None] = Field(
         default=None,
         description="Authorization checks for this resource template",
         exclude=True,
@@ -327,7 +328,7 @@ class ResourceTemplate(FastMCPComponent):
 class FunctionResourceTemplate(ResourceTemplate):
     """A template for dynamically creating resources."""
 
-    fn: Callable[..., Any]
+    fn: SkipJsonSchema[Callable[..., Any]]
 
     @overload
     async def _read(
