@@ -19,6 +19,7 @@ from typing import (
 
 import pydantic_core
 from mcp.types import Icon
+from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
@@ -73,7 +74,7 @@ class PromptMeta:
 class FunctionPrompt(Prompt):
     """A prompt that is a function."""
 
-    fn: Callable[..., Any]
+    fn: SkipJsonSchema[Callable[..., Any]]
 
     @classmethod
     def from_function(

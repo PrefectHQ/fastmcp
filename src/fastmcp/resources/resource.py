@@ -26,6 +26,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic.json_schema import SkipJsonSchema
 from typing_extensions import Self
 
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
@@ -226,7 +227,7 @@ class Resource(FastMCPComponent):
         Field(description="Optional annotations about the resource's behavior"),
     ] = None
     auth: Annotated[
-        AuthCheckCallable | list[AuthCheckCallable] | None,
+        SkipJsonSchema[AuthCheckCallable | list[AuthCheckCallable] | None],
         Field(description="Authorization checks for this resource", exclude=True),
     ] = None
 
