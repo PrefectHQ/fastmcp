@@ -4,6 +4,239 @@ icon: "list-check"
 rss: true
 ---
 
+<Update label="v3.0.0b1" description="2026-01-20">
+
+**[v3.0.0b1: This Beta Work](https://github.com/jlowin/fastmcp/releases/tag/v3.0.0b1)**
+
+FastMCP 3.0 rebuilds the framework around three primitives: components, providers, and transforms. Providers source components dynamically—from decorators, filesystems, OpenAPI specs, remote servers, or anywhere else. Transforms modify components as they flow to clients—renaming, namespacing, filtering, securing. The features that required specialized subsystems in v2 now compose naturally from these building blocks.
+
+🔌 **Provider Architecture** unifies how components are sourced. `FileSystemProvider` discovers decorated functions from directories with optional hot-reload. `SkillsProvider` exposes agent skill files as MCP resources. `OpenAPIProvider` and `ProxyProvider` get cleaner integrations. Providers are composable—share one across servers, or attach many to one server.
+
+🔄 **Transforms** add middleware for components. Namespace mounted servers, rename verbose tools, filter by version, control visibility—all without touching source code. `ResourcesAsTools` and `PromptsAsTools` expose non-tool components to tool-only clients.
+
+📋 **Component Versioning** lets you register `@tool(version="2.0")` alongside older versions. Clients see the highest version by default but can request specific versions. `VersionFilter` serves different API versions from one codebase.
+
+💾 **Session-Scoped State** persists across requests. `await ctx.set_state()` and `await ctx.get_state()` now survive the full session. Per-session visibility via `ctx.enable_components()` lets servers adapt dynamically to each client.
+
+⚡ **DX Improvements** include `--reload` for auto-restart during development, automatic threadpool dispatch for sync functions, tool timeouts, pagination for large component lists, and OpenTelemetry tracing.
+
+🔐 **Component Authorization** via `@tool(auth=require_scopes("admin"))` and `AuthMiddleware` for server-wide policies.
+
+Breaking changes are minimal: for most servers, updating the import statement is all you need. See the [migration guide](https://github.com/jlowin/fastmcp/blob/main/docs/development/upgrade-guide.mdx) for details.
+
+## What's Changed
+### New Features 🎉
+* Refactor resource behavior and add meta support by [@jlowin](https://github.com/jlowin) in [#2611](https://github.com/jlowin/fastmcp/pull/2611)
+* Refactor prompt behavior and add meta support by [@jlowin](https://github.com/jlowin) in [#2610](https://github.com/jlowin/fastmcp/pull/2610)
+* feat: Provider abstraction for dynamic MCP components by [@jlowin](https://github.com/jlowin) in [#2622](https://github.com/jlowin/fastmcp/pull/2622)
+* Unify component storage in LocalProvider by [@jlowin](https://github.com/jlowin) in [#2680](https://github.com/jlowin/fastmcp/pull/2680)
+* Introduce ResourceResult as canonical resource return type by [@jlowin](https://github.com/jlowin) in [#2734](https://github.com/jlowin/fastmcp/pull/2734)
+* Introduce Message and PromptResult as canonical prompt types by [@jlowin](https://github.com/jlowin) in [#2738](https://github.com/jlowin/fastmcp/pull/2738)
+* Add --reload flag for auto-restart on file changes by [@jlowin](https://github.com/jlowin) in [#2816](https://github.com/jlowin/fastmcp/pull/2816)
+* Add FileSystemProvider for filesystem-based component discovery by [@jlowin](https://github.com/jlowin) in [#2823](https://github.com/jlowin/fastmcp/pull/2823)
+* Add standalone decorators and eliminate fastmcp.fs module by [@jlowin](https://github.com/jlowin) in [#2832](https://github.com/jlowin/fastmcp/pull/2832)
+* Add authorization checks to components and servers by [@jlowin](https://github.com/jlowin) in [#2855](https://github.com/jlowin/fastmcp/pull/2855)
+* Decorators return functions instead of component objects by [@jlowin](https://github.com/jlowin) in [#2856](https://github.com/jlowin/fastmcp/pull/2856)
+* Add transform system for modifying components in provider chains by [@jlowin](https://github.com/jlowin) in [#2836](https://github.com/jlowin/fastmcp/pull/2836)
+* Add OpenTelemetry tracing support by [@chrisguidry](https://github.com/chrisguidry) in [#2869](https://github.com/jlowin/fastmcp/pull/2869)
+* Add component versioning and VersionFilter transform by [@jlowin](https://github.com/jlowin) in [#2894](https://github.com/jlowin/fastmcp/pull/2894)
+* Add version discovery and calling a certain version for components by [@jlowin](https://github.com/jlowin) in [#2897](https://github.com/jlowin/fastmcp/pull/2897)
+* Refactor visibility to mark-based enabled system by [@jlowin](https://github.com/jlowin) in [#2912](https://github.com/jlowin/fastmcp/pull/2912)
+* Add session-specific visibility control via Context by [@jlowin](https://github.com/jlowin) in [#2917](https://github.com/jlowin/fastmcp/pull/2917)
+* Add Skills Provider for exposing agent skills as MCP resources by [@jlowin](https://github.com/jlowin) in [#2944](https://github.com/jlowin/fastmcp/pull/2944)
+### Enhancements 🔧
+* Convert mounted servers to MountedProvider by [@jlowin](https://github.com/jlowin) in [#2635](https://github.com/jlowin/fastmcp/pull/2635)
+* Simplify .key as computed property by [@jlowin](https://github.com/jlowin) in [#2648](https://github.com/jlowin/fastmcp/pull/2648)
+* Refactor MountedProvider into FastMCPProvider + TransformingProvider by [@jlowin](https://github.com/jlowin) in [#2653](https://github.com/jlowin/fastmcp/pull/2653)
+* Enable background task support for custom component subclasses by [@jlowin](https://github.com/jlowin) in [#2657](https://github.com/jlowin/fastmcp/pull/2657)
+* Use CreateTaskResult for background task creation by [@jlowin](https://github.com/jlowin) in [#2660](https://github.com/jlowin/fastmcp/pull/2660)
+* Refactor provider execution: components own their execution by [@jlowin](https://github.com/jlowin) in [#2663](https://github.com/jlowin/fastmcp/pull/2663)
+* Add supports_tasks() method to replace string mode checks by [@jlowin](https://github.com/jlowin) in [#2664](https://github.com/jlowin/fastmcp/pull/2664)
+* Replace type: ignore[attr-defined] with isinstance assertions in tests by [@jlowin](https://github.com/jlowin) in [#2665](https://github.com/jlowin/fastmcp/pull/2665)
+* Add poll_interval to TaskConfig by [@jlowin](https://github.com/jlowin) in [#2666](https://github.com/jlowin/fastmcp/pull/2666)
+* Refactor task module: rename protocol.py to requests.py and reduce redundancy by [@jlowin](https://github.com/jlowin) in [#2667](https://github.com/jlowin/fastmcp/pull/2667)
+* Refactor FastMCPProxy into ProxyProvider by [@jlowin](https://github.com/jlowin) in [#2669](https://github.com/jlowin/fastmcp/pull/2669)
+* Move OpenAPI to providers/openapi submodule by [@jlowin](https://github.com/jlowin) in [#2672](https://github.com/jlowin/fastmcp/pull/2672)
+* Use ergonomic provider initialization pattern by [@jlowin](https://github.com/jlowin) in [#2675](https://github.com/jlowin/fastmcp/pull/2675)
+* Fix ty 0.0.5 type errors by [@jlowin](https://github.com/jlowin) in [#2676](https://github.com/jlowin/fastmcp/pull/2676)
+* Remove execution methods from Provider base class by [@jlowin](https://github.com/jlowin) in [#2681](https://github.com/jlowin/fastmcp/pull/2681)
+* Add type-prefixed keys for globally unique component identification by [@jlowin](https://github.com/jlowin) in [#2704](https://github.com/jlowin/fastmcp/pull/2704)
+* Skip parallel MCP config test on Windows by [@jlowin](https://github.com/jlowin) in [#2711](https://github.com/jlowin/fastmcp/pull/2711)
+* Consolidate notification system with unified API by [@jlowin](https://github.com/jlowin) in [#2710](https://github.com/jlowin/fastmcp/pull/2710)
+* Skip test_multi_client on Windows by [@jlowin](https://github.com/jlowin) in [#2714](https://github.com/jlowin/fastmcp/pull/2714)
+* Parallelize provider operations by [@jlowin](https://github.com/jlowin) in [#2716](https://github.com/jlowin/fastmcp/pull/2716)
+* Consolidate get_* and _list_* methods into single API by [@jlowin](https://github.com/jlowin) in [#2719](https://github.com/jlowin/fastmcp/pull/2719)
+* Consolidate execution method chains into single public API by [@jlowin](https://github.com/jlowin) in [#2728](https://github.com/jlowin/fastmcp/pull/2728)
+* Add documentation check to required PR workflow by [@jlowin](https://github.com/jlowin) in [#2730](https://github.com/jlowin/fastmcp/pull/2730)
+* Parallelize list_* calls in Provider.get_tasks() by [@jlowin](https://github.com/jlowin) in [#2731](https://github.com/jlowin/fastmcp/pull/2731)
+* Consistent decorator-based MCP handler registration by [@jlowin](https://github.com/jlowin) in [#2732](https://github.com/jlowin/fastmcp/pull/2732)
+* Make ToolResult a BaseModel for serialization support by [@jlowin](https://github.com/jlowin) in [#2736](https://github.com/jlowin/fastmcp/pull/2736)
+* Align prompt handler with resource pattern by [@jlowin](https://github.com/jlowin) in [#2740](https://github.com/jlowin/fastmcp/pull/2740)
+* Update classes to inherit from FastMCPBaseModel instead of BaseModel by [@jlowin](https://github.com/jlowin) in [#2739](https://github.com/jlowin/fastmcp/pull/2739)
+* Convert provider tests to use direct server calls by [@jlowin](https://github.com/jlowin) in [#2748](https://github.com/jlowin/fastmcp/pull/2748)
+* Add explicit task_meta parameter to FastMCP.call_tool() by [@jlowin](https://github.com/jlowin) in [#2749](https://github.com/jlowin/fastmcp/pull/2749)
+* Add task_meta parameter to read_resource() for explicit task control by [@jlowin](https://github.com/jlowin) in [#2750](https://github.com/jlowin/fastmcp/pull/2750)
+* Add task_meta to prompts and centralize fn_key enrichment by [@jlowin](https://github.com/jlowin) in [#2751](https://github.com/jlowin/fastmcp/pull/2751)
+* Remove unused include_tags/exclude_tags settings by [@jlowin](https://github.com/jlowin) in [#2756](https://github.com/jlowin/fastmcp/pull/2756)
+* Parallelize provider access when executing components by [@jlowin](https://github.com/jlowin) in [#2744](https://github.com/jlowin/fastmcp/pull/2744)
+* Add tests for OAuth generator cleanup and use aclosing by [@jlowin](https://github.com/jlowin) in [#2759](https://github.com/jlowin/fastmcp/pull/2759)
+* Deprecate tool_serializer parameter by [@jlowin](https://github.com/jlowin) in [#2753](https://github.com/jlowin/fastmcp/pull/2753)
+* Feature/supabase custom auth route by [@EloiZalczer](https://github.com/EloiZalczer) in [#2632](https://github.com/jlowin/fastmcp/pull/2632)
+* Add regression tests for caching with mounted server prefixes by [@jlowin](https://github.com/jlowin) in [#2762](https://github.com/jlowin/fastmcp/pull/2762)
+* Update CLI banner with FastMCP 3.0 notice by [@jlowin](https://github.com/jlowin) in [#2766](https://github.com/jlowin/fastmcp/pull/2766)
+* Make FASTMCP_SHOW_SERVER_BANNER apply to all server startup methods by [@jlowin](https://github.com/jlowin) in [#2771](https://github.com/jlowin/fastmcp/pull/2771)
+* Add MCP tool annotations to smart_home example by [@triepod-ai](https://github.com/triepod-ai) in [#2777](https://github.com/jlowin/fastmcp/pull/2777)
+* Cherry-pick debug logging for OAuth token expiry to main by [@jlowin](https://github.com/jlowin) in [#2797](https://github.com/jlowin/fastmcp/pull/2797)
+* Turn off negative CLI flags by default by [@jlowin](https://github.com/jlowin) in [#2801](https://github.com/jlowin/fastmcp/pull/2801)
+* Configure ty to fail on warnings by [@jlowin](https://github.com/jlowin) in [#2804](https://github.com/jlowin/fastmcp/pull/2804)
+* Dereference $ref in tool schemas for MCP client compatibility by [@jlowin](https://github.com/jlowin) in [#2814](https://github.com/jlowin/fastmcp/pull/2814)
+* Add v3.0 feature tracking document by [@jlowin](https://github.com/jlowin) in [#2822](https://github.com/jlowin/fastmcp/pull/2822)
+* Remove deprecated WSTransport by [@jlowin](https://github.com/jlowin) in [#2826](https://github.com/jlowin/fastmcp/pull/2826)
+* Add composable lifespans by [@jlowin](https://github.com/jlowin) in [#2828](https://github.com/jlowin/fastmcp/pull/2828)
+* Replace FastMCP.as_proxy() with create_proxy() function by [@jlowin](https://github.com/jlowin) in [#2829](https://github.com/jlowin/fastmcp/pull/2829)
+* Add docs-broken-links command and fix docstring markdown parsing by [@jlowin](https://github.com/jlowin) in [#2830](https://github.com/jlowin/fastmcp/pull/2830)
+* Add PingMiddleware for keepalive connections by [@jlowin](https://github.com/jlowin) in [#2838](https://github.com/jlowin/fastmcp/pull/2838)
+* Add CLI update notifications by [@jlowin](https://github.com/jlowin) in [#2840](https://github.com/jlowin/fastmcp/pull/2840)
+* Add agent skills for testing and code review by [@jlowin](https://github.com/jlowin) in [#2846](https://github.com/jlowin/fastmcp/pull/2846)
+* Add loq pre-commit hook for file size enforcement by [@jlowin](https://github.com/jlowin) in [#2847](https://github.com/jlowin/fastmcp/pull/2847)
+* Add transport property to Context by [@jlowin](https://github.com/jlowin) in [#2850](https://github.com/jlowin/fastmcp/pull/2850)
+* Add loq file size limits and clean up type ignores by [@jlowin](https://github.com/jlowin) in [#2859](https://github.com/jlowin/fastmcp/pull/2859)
+* Run sync tools/resources/prompts in threadpool automatically by [@jlowin](https://github.com/jlowin) in [#2865](https://github.com/jlowin/fastmcp/pull/2865)
+* Add timeout parameter for tool foreground execution by [@jlowin](https://github.com/jlowin) in [#2872](https://github.com/jlowin/fastmcp/pull/2872)
+* Adopt OpenTelemetry MCP semantic conventions by [@chrisguidry](https://github.com/chrisguidry) in [#2886](https://github.com/jlowin/fastmcp/pull/2886)
+* Add client_secret_post authentication to IntrospectionTokenVerifier by [@shulkx](https://github.com/shulkx) in [#2884](https://github.com/jlowin/fastmcp/pull/2884)
+* Add enable_rich_logging setting to disable rich formatting by [@strawgate](https://github.com/strawgate) in [#2893](https://github.com/jlowin/fastmcp/pull/2893)
+* Rename _fastmcp metadata namespace to fastmcp and make non-optional by [@jlowin](https://github.com/jlowin) in [#2895](https://github.com/jlowin/fastmcp/pull/2895)
+* Refactor FastMCP to inherit from Provider by [@jlowin](https://github.com/jlowin) in [#2901](https://github.com/jlowin/fastmcp/pull/2901)
+* Swap public/private method naming in Provider by [@jlowin](https://github.com/jlowin) in [#2902](https://github.com/jlowin/fastmcp/pull/2902)
+* Add MCP-compliant pagination support by [@jlowin](https://github.com/jlowin) in [#2903](https://github.com/jlowin/fastmcp/pull/2903)
+* Support VersionSpec in enable/disable for range-based filtering by [@jlowin](https://github.com/jlowin) in [#2914](https://github.com/jlowin/fastmcp/pull/2914)
+* Remove sync notification infrastructure by [@jlowin](https://github.com/jlowin) in [#2915](https://github.com/jlowin/fastmcp/pull/2915)
+* Immutable transform wrapping for providers by [@jlowin](https://github.com/jlowin) in [#2913](https://github.com/jlowin/fastmcp/pull/2913)
+* Unify discovery API: deduplicate at protocol layer only by [@jlowin](https://github.com/jlowin) in [#2919](https://github.com/jlowin/fastmcp/pull/2919)
+* Split transports.py into modular structure by [@jlowin](https://github.com/jlowin) in [#2921](https://github.com/jlowin/fastmcp/pull/2921)
+* Move session visibility logic to enabled.py by [@jlowin](https://github.com/jlowin) in [#2924](https://github.com/jlowin/fastmcp/pull/2924)
+* Refactor Client class into mixins and add timeout utilities by [@jlowin](https://github.com/jlowin) in [#2933](https://github.com/jlowin/fastmcp/pull/2933)
+* Refactor OAuthProxy into focused modules by [@jlowin](https://github.com/jlowin) in [#2935](https://github.com/jlowin/fastmcp/pull/2935)
+* Refactor LocalProvider into mixin modules by [@jlowin](https://github.com/jlowin) in [#2936](https://github.com/jlowin/fastmcp/pull/2936)
+* Refactor server.py into mixins by [@jlowin](https://github.com/jlowin) in [#2939](https://github.com/jlowin/fastmcp/pull/2939)
+* Consolidate test fixtures and refactor large test files by [@jlowin](https://github.com/jlowin) in [#2941](https://github.com/jlowin/fastmcp/pull/2941)
+* Refactor transform list methods to pure function pattern by [@jlowin](https://github.com/jlowin) in [#2942](https://github.com/jlowin/fastmcp/pull/2942)
+* Add ResourcesAsTools transform by [@jlowin](https://github.com/jlowin) in [#2943](https://github.com/jlowin/fastmcp/pull/2943)
+* Add PromptsAsTools transform by [@jlowin](https://github.com/jlowin) in [#2946](https://github.com/jlowin/fastmcp/pull/2946)
+* Add client utilities for downloading skills by [@jlowin](https://github.com/jlowin) in [#2948](https://github.com/jlowin/fastmcp/pull/2948)
+* Rename Enabled transform to Visibility by [@jlowin](https://github.com/jlowin) in [#2950](https://github.com/jlowin/fastmcp/pull/2950)
+### Fixes 🐞
+* Let FastMCPError propagate from dependencies by [@chrisguidry](https://github.com/chrisguidry) in [#2646](https://github.com/jlowin/fastmcp/pull/2646)
+* Fix task execution for tools with custom names by [@chrisguidry](https://github.com/chrisguidry) in [#2645](https://github.com/jlowin/fastmcp/pull/2645)
+* fix: check the cause of the tool error by [@rjolaverria](https://github.com/rjolaverria) in [#2674](https://github.com/jlowin/fastmcp/pull/2674)
+* Bump pydocket to 0.16.3 for task cancellation support by [@chrisguidry](https://github.com/chrisguidry) in [#2683](https://github.com/jlowin/fastmcp/pull/2683)
+* Fix uvicorn 0.39+ test timeouts and FastMCPError propagation by [@jlowin](https://github.com/jlowin) in [#2699](https://github.com/jlowin/fastmcp/pull/2699)
+* Fix Prefect website URL in docs footer by [@mgoldsborough](https://github.com/mgoldsborough) in [#2701](https://github.com/jlowin/fastmcp/pull/2701)
+* Fix: resolve root-level $ref in outputSchema for MCP spec compliance by [@majiayu000](https://github.com/majiayu000) in [#2720](https://github.com/jlowin/fastmcp/pull/2720)
+* Fix Provider.get_tasks() to include custom component subclasses by [@jlowin](https://github.com/jlowin) in [#2729](https://github.com/jlowin/fastmcp/pull/2729)
+* Fix Proxy provider to return all resource contents by [@jlowin](https://github.com/jlowin) in [#2742](https://github.com/jlowin/fastmcp/pull/2742)
+* Fix prompt return type documentation by [@jlowin](https://github.com/jlowin) in [#2741](https://github.com/jlowin/fastmcp/pull/2741)
+* fix: Client OAuth async_auth_flow() method causing MCP-SDK self.context.lock error. by [@lgndluke](https://github.com/lgndluke) in [#2644](https://github.com/jlowin/fastmcp/pull/2644)
+* Fix rate limit detection during teardown phase by [@jlowin](https://github.com/jlowin) in [#2757](https://github.com/jlowin/fastmcp/pull/2757)
+* fix: set pytest-asyncio default fixture loop scope to function by [@jlowin](https://github.com/jlowin) in [#2758](https://github.com/jlowin/fastmcp/pull/2758)
+* Fix OAuth Proxy resource parameter validation by [@jlowin](https://github.com/jlowin) in [#2764](https://github.com/jlowin/fastmcp/pull/2764)
+* [BugFix] Fix `openapi_version` Check So 3.1 Is Included by [@deeleeramone](https://github.com/deeleeramone) in [#2768](https://github.com/jlowin/fastmcp/pull/2768)
+* Fix titled enum elicitation schema to comply with MCP spec by [@jlowin](https://github.com/jlowin) in [#2773](https://github.com/jlowin/fastmcp/pull/2773)
+* Fix base_url fallback when url is not set by [@bhbs](https://github.com/bhbs) in [#2776](https://github.com/jlowin/fastmcp/pull/2776)
+* Lazy import DiskStore to avoid sqlite3 dependency on import by [@jlowin](https://github.com/jlowin) in [#2784](https://github.com/jlowin/fastmcp/pull/2784)
+* Fix OAuth token storage TTL calculation by [@jlowin](https://github.com/jlowin) in [#2796](https://github.com/jlowin/fastmcp/pull/2796)
+* Use consistent refresh_ttl for JTI mapping store by [@jlowin](https://github.com/jlowin) in [#2799](https://github.com/jlowin/fastmcp/pull/2799)
+* Return 401 for invalid_grant token errors per MCP spec by [@jlowin](https://github.com/jlowin) in [#2800](https://github.com/jlowin/fastmcp/pull/2800)
+* Fix client hanging on HTTP 4xx/5xx errors by [@jlowin](https://github.com/jlowin) in [#2803](https://github.com/jlowin/fastmcp/pull/2803)
+* Fix unawaited coroutine warning and treat as test error by [@jlowin](https://github.com/jlowin) in [#2806](https://github.com/jlowin/fastmcp/pull/2806)
+* Fix keep_alive passthrough in StdioMCPServer.to_transport() by [@jlowin](https://github.com/jlowin) in [#2791](https://github.com/jlowin/fastmcp/pull/2791)
+* Dereference $ref in tool schemas for MCP client compatibility by [@jlowin](https://github.com/jlowin) in [#2808](https://github.com/jlowin/fastmcp/pull/2808)
+* Prefix Redis keys with docket name for ACL isolation by [@chrisguidry](https://github.com/chrisguidry) in [#2811](https://github.com/jlowin/fastmcp/pull/2811)
+* fix smart_home example: HueAttributes schema and deprecated prefix by [@zzstoatzz](https://github.com/zzstoatzz) in [#2818](https://github.com/jlowin/fastmcp/pull/2818)
+* Fix redirect URI validation docs to match implementation by [@jlowin](https://github.com/jlowin) in [#2824](https://github.com/jlowin/fastmcp/pull/2824)
+* Fix timeout not propagating to proxy clients in multi-server MCPConfig by [@jlowin](https://github.com/jlowin) in [#2809](https://github.com/jlowin/fastmcp/pull/2809)
+* Fix ContextVar propagation for ASGI-mounted servers with tasks by [@chrisguidry](https://github.com/chrisguidry) in [#2844](https://github.com/jlowin/fastmcp/pull/2844)
+* Fix HTTP transport timeout defaulting to 5 seconds by [@jlowin](https://github.com/jlowin) in [#2849](https://github.com/jlowin/fastmcp/pull/2849)
+* Fix decorator error messages to link to correct doc pages by [@jlowin](https://github.com/jlowin) in [#2858](https://github.com/jlowin/fastmcp/pull/2858)
+* Fix task capabilities location (issue #2870) by [@jlowin](https://github.com/jlowin) in [#2875](https://github.com/jlowin/fastmcp/pull/2875)
+* Bump the uv group across 1 directory with 2 updates by [@dependabot](https://github.com/dependabot)\[bot\] in [#2890](https://github.com/jlowin/fastmcp/pull/2890)
+### Breaking Changes 🛫
+* Add VisibilityFilter for hierarchical enable/disable by [@jlowin](https://github.com/jlowin) in [#2708](https://github.com/jlowin/fastmcp/pull/2708)
+* Remove automatic environment variable loading from auth providers by [@jlowin](https://github.com/jlowin) in [#2752](https://github.com/jlowin/fastmcp/pull/2752)
+* Make pydocket optional and unify DI systems by [@jlowin](https://github.com/jlowin) in [#2835](https://github.com/jlowin/fastmcp/pull/2835)
+* Add session-scoped state persistence by [@jlowin](https://github.com/jlowin) in [#2873](https://github.com/jlowin/fastmcp/pull/2873)
+### Docs 📚
+* Undocumented `McpError` exceptions by [@ivanbelenky](https://github.com/ivanbelenky) in [#2656](https://github.com/jlowin/fastmcp/pull/2656)
+* docs(server): add http to transport options in run() method docstring by [@Ashif4354](https://github.com/Ashif4354) in [#2707](https://github.com/jlowin/fastmcp/pull/2707)
+* Add v3 breaking changes notice to README by [@jlowin](https://github.com/jlowin) in [#2712](https://github.com/jlowin/fastmcp/pull/2712)
+* Add changelog entries for v2.13.1 through v2.14.1 by [@jlowin](https://github.com/jlowin) in [#2725](https://github.com/jlowin/fastmcp/pull/2725)
+* Reorganize docs around provider architecture by [@jlowin](https://github.com/jlowin) in [#2723](https://github.com/jlowin/fastmcp/pull/2723)
+* Fix documentation to use 'meta' instead of '_meta' for MCP spec field by [@jlowin](https://github.com/jlowin) in [#2735](https://github.com/jlowin/fastmcp/pull/2735)
+* Enhance documentation on tool transformation by [@shea-parkes](https://github.com/shea-parkes) in [#2781](https://github.com/jlowin/fastmcp/pull/2781)
+* Add FastMCP 4.0 preview to documentation by [@jlowin](https://github.com/jlowin) in [#2831](https://github.com/jlowin/fastmcp/pull/2831)
+* Add release notes for v2.14.2 and v2.14.3 by [@jlowin](https://github.com/jlowin) in [#2852](https://github.com/jlowin/fastmcp/pull/2852)
+* Add missing 3.0.0 version badges and document tasks extra by [@jlowin](https://github.com/jlowin) in [#2866](https://github.com/jlowin/fastmcp/pull/2866)
+* Fix custom provider docs to show correct interface by [@jlowin](https://github.com/jlowin) in [#2920](https://github.com/jlowin/fastmcp/pull/2920)
+* Update v3 features that were missed in PRs by [@jlowin](https://github.com/jlowin) in [#2947](https://github.com/jlowin/fastmcp/pull/2947)
+* Restructure documentation for FastMCP 3.0 by [@jlowin](https://github.com/jlowin) in [#2951](https://github.com/jlowin/fastmcp/pull/2951)
+* Fix broken documentation links by [@jlowin](https://github.com/jlowin) in [#2952](https://github.com/jlowin/fastmcp/pull/2952)
+* Clarify installation for FastMCP 3.0 beta by [@jlowin](https://github.com/jlowin) in [#2953](https://github.com/jlowin/fastmcp/pull/2953)
+### Dependencies 📦
+* Bump peter-evans/create-pull-request from 7 to 8 by [@dependabot](https://github.com/dependabot)\[bot\] in [#2623](https://github.com/jlowin/fastmcp/pull/2623)
+* Bump ty to 0.0.7+ by [@jlowin](https://github.com/jlowin) in [#2737](https://github.com/jlowin/fastmcp/pull/2737)
+* Bump the uv group across 1 directory with 4 updates by [@dependabot](https://github.com/dependabot)\[bot\] in [#2891](https://github.com/jlowin/fastmcp/pull/2891)
+
+## New Contributors
+* [@ivanbelenky](https://github.com/ivanbelenky) made their first contribution in [#2656](https://github.com/jlowin/fastmcp/pull/2656)
+* [@rjolaverria](https://github.com/rjolaverria) made their first contribution in [#2674](https://github.com/jlowin/fastmcp/pull/2674)
+* [@mgoldsborough](https://github.com/mgoldsborough) made their first contribution in [#2701](https://github.com/jlowin/fastmcp/pull/2701)
+* [@Ashif4354](https://github.com/Ashif4354) made their first contribution in [#2707](https://github.com/jlowin/fastmcp/pull/2707)
+* [@majiayu000](https://github.com/majiayu000) made their first contribution in [#2720](https://github.com/jlowin/fastmcp/pull/2720)
+* [@lgndluke](https://github.com/lgndluke) made their first contribution in [#2644](https://github.com/jlowin/fastmcp/pull/2644)
+* [@EloiZalczer](https://github.com/EloiZalczer) made their first contribution in [#2632](https://github.com/jlowin/fastmcp/pull/2632)
+* [@deeleeramone](https://github.com/deeleeramone) made their first contribution in [#2768](https://github.com/jlowin/fastmcp/pull/2768)
+* [@shea-parkes](https://github.com/shea-parkes) made their first contribution in [#2781](https://github.com/jlowin/fastmcp/pull/2781)
+* [@triepod-ai](https://github.com/triepod-ai) made their first contribution in [#2777](https://github.com/jlowin/fastmcp/pull/2777)
+* [@bhbs](https://github.com/bhbs) made their first contribution in [#2776](https://github.com/jlowin/fastmcp/pull/2776)
+* [@shulkx](https://github.com/shulkx) made their first contribution in [#2884](https://github.com/jlowin/fastmcp/pull/2884)
+
+**Full Changelog**: [v2.14.1...v3.0.0b1](https://github.com/jlowin/fastmcp/compare/v2.14.1...v3.0.0b1)
+
+</Update>
+
+<Update label="v2.14.5" description="2026-02-03">
+
+**[v2.14.5: Sealed Docket](https://github.com/jlowin/fastmcp/releases/tag/v2.14.5)**
+
+Fixes a memory leak in the memory:// docket broker where cancelled tasks accumulated instead of being cleaned up. Bumps pydocket to ≥0.17.2.
+
+## What's Changed
+### Enhancements 🔧
+* Bump pydocket to 0.17.2 (memory leak fix) by [@chrisguidry](https://github.com/chrisguidry) in [#2992](https://github.com/jlowin/fastmcp/pull/2992)
+
+**Full Changelog**: [v2.14.4...v2.14.5](https://github.com/jlowin/fastmcp/compare/v2.14.4...v2.14.5)
+
+</Update>
+
+<Update label="v2.14.4" description="2026-01-22">
+
+**[v2.14.4: Package Deal](https://github.com/jlowin/fastmcp/releases/tag/v2.14.4)**
+
+Fixes a fresh install bug where the packaging library was missing as a direct dependency, plus backports from 3.x for $ref dereferencing in tool schemas and a task capabilities location fix.
+
+## What's Changed
+### Enhancements 🔧
+* Add release notes for v2.14.2 and v2.14.3 by [@jlowin](https://github.com/jlowin) in [#2851](https://github.com/jlowin/fastmcp/pull/2851)
+### Fixes 🐞
+* Backport: Dereference $ref in tool schemas for MCP client compatibility by [@jlowin](https://github.com/jlowin) in [#2861](https://github.com/jlowin/fastmcp/pull/2861)
+* Fix task capabilities location (issue #2870) by [@jlowin](https://github.com/jlowin) in [#2874](https://github.com/jlowin/fastmcp/pull/2874)
+* Add missing packaging dependency by [@jlowin](https://github.com/jlowin) in [#2989](https://github.com/jlowin/fastmcp/pull/2989)
+
+**Full Changelog**: [v2.14.3...v2.14.4](https://github.com/jlowin/fastmcp/compare/v2.14.3...v2.14.4)
+
+</Update>
+
 <Update label="v2.14.3" description="2026-01-12">
 
 **[v2.14.3: Time After Timeout](https://github.com/jlowin/fastmcp/releases/tag/v2.14.3)**
