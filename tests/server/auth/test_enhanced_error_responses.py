@@ -29,6 +29,8 @@ class TestEnhancedAuthorizationHandler:
     @pytest.fixture
     def oauth_proxy(self, rsa_key_pair):
         """Create OAuth proxy for testing."""
+        from key_value.aio.stores.memory import MemoryStore
+
         return OAuthProxy(
             upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
             upstream_token_endpoint="https://github.com/login/oauth/access_token",
@@ -42,6 +44,7 @@ class TestEnhancedAuthorizationHandler:
             ),
             base_url="https://myserver.com",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
     def test_unregistered_client_returns_html_for_browser(self, oauth_proxy):
@@ -290,6 +293,8 @@ class TestContentNegotiation:
     @pytest.fixture
     def oauth_proxy(self):
         """Create OAuth proxy for testing."""
+        from key_value.aio.stores.memory import MemoryStore
+
         return OAuthProxy(
             upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
             upstream_token_endpoint="https://github.com/login/oauth/access_token",
@@ -303,6 +308,7 @@ class TestContentNegotiation:
             ),
             base_url="https://myserver.com",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
     def test_html_preferred_when_both_accepted(self, oauth_proxy):
