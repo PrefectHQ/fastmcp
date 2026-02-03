@@ -452,3 +452,103 @@ class AzureProvider(OAuthProxy):
         except Exception as e:
             logger.debug("Failed to extract Azure claims: %s", e)
             return None
+
+
+class AzureJWTVerifier(JWTVerifier):
+    """JWT verifier pre-configured for Azure AD / Microsoft Entra ID.
+
+    Auto-configures JWKS URI, issuer, audience, and scope handling from your
+    Azure app registration details. Designed for Managed Identity and other
+    token-verification-only scenarios where AzureProvider's full OAuth proxy
+    isn't needed.
+
+    Handles Azure's scope format automatically:
+    - Validates tokens using short-form scopes (what Azure puts in ``scp`` claims)
+    - Advertises full-URI scopes in OAuth metadata (what clients need to request)
+
+    Example::
+
+        from fastmcp.server.auth import RemoteAuthProvider
+        from fastmcp.server.auth.providers.azure import AzureJWTVerifier
+        from pydantic import AnyHttpUrl
+
+        verifier = AzureJWTVerifier(
+            client_id="your-client-id",
+            tenant_id="your-tenant-id",
+            required_scopes=["access_as_user"],
+        )
+
+        auth = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[
+                AnyHttpUrl("https://login.microsoftonline.com/your-tenant-id/v2.0")
+            ],
+            base_url="https://my-server.com",
+        )
+    """
+
+    def __init__(
+        self,
+        *,
+        client_id: str,
+        tenant_id: str,
+        required_scopes: list[str] | None = None,
+        identifier_uri: str | None = None,
+        base_authority: str = "login.microsoftonline.com",
+    ):
+        """Initialize Azure JWT verifier.
+
+        Args:
+            client_id: Azure application (client) ID from your App registration
+            tenant_id: Azure tenant ID (specific tenant GUID, "organizations", or "consumers").
+                For multi-tenant apps ("organizations" or "consumers"), issuer validation
+                is skipped since Azure tokens carry the actual tenant GUID as issuer.
+            required_scopes: Scope names as they appear in Azure Portal under "Expose an API"
+                (e.g., ["access_as_user", "read"]). These are validated against
+                the short-form scopes in token ``scp`` claims, and automatically
+                prefixed with identifier_uri for OAuth metadata.
+            identifier_uri: Application ID URI (defaults to ``api://{client_id}``).
+                Used to prefix scopes in OAuth metadata so clients know the full
+                scope URIs to request from Azure.
+            base_authority: Azure authority base URL (defaults to "login.microsoftonline.com").
+                For Azure Government, use "login.microsoftonline.us".
+        """
+        self._identifier_uri = identifier_uri or f"api://{client_id}"
+
+        # For multi-tenant apps, Azure tokens carry the actual tenant GUID as
+        # issuer, not the literal "organizations" or "consumers" string. Skip
+        # issuer validation for these — audience still protects against wrong-app tokens.
+        multi_tenant_values = {"organizations", "consumers", "common"}
+        issuer: str | None = (
+            None
+            if tenant_id in multi_tenant_values
+            else f"https://{base_authority}/{tenant_id}/v2.0"
+        )
+
+        super().__init__(
+            jwks_uri=f"https://{base_authority}/{tenant_id}/discovery/v2.0/keys",
+            issuer=issuer,
+            audience=client_id,
+            algorithm="RS256",
+            required_scopes=required_scopes,
+        )
+
+    @property
+    def scopes_supported(self) -> list[str]:
+        """Return scopes with Azure URI prefix for OAuth metadata.
+
+        Azure tokens contain short-form scopes (e.g., ``read``) in the ``scp``
+        claim, but clients must request full URI scopes (e.g.,
+        ``api://client-id/read``) from the Azure authorization endpoint. This
+        property returns the full-URI form for OAuth metadata while
+        ``required_scopes`` retains the short form for token validation.
+        """
+        if not self.required_scopes:
+            return []
+        prefixed = []
+        for scope in self.required_scopes:
+            if scope in OIDC_SCOPES or "://" in scope or "/" in scope:
+                prefixed.append(scope)
+            else:
+                prefixed.append(f"{self._identifier_uri}/{scope}")
+        return prefixed

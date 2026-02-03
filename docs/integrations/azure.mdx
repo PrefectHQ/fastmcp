@@ -282,3 +282,47 @@ Parameters (`jwt_signing_key` and `client_storage`) work together to ensure toke
 
 For complete details on these parameters, see the [OAuth Proxy documentation](/servers/auth/oauth-proxy#configuration-parameters).
 </Note>
+
+## Token Verification Only (Managed Identity)
+
+<VersionBadge version="2.15.0" />
+
+For deployments where your server only needs to **validate incoming tokens** — such as Azure Container Apps with Managed Identity — use `AzureJWTVerifier` with `RemoteAuthProvider` instead of the full `AzureProvider`.
+
+This pattern is ideal when:
+- Your infrastructure handles authentication (e.g., Managed Identity)
+- You don't need the OAuth proxy flow (no `client_secret` required)
+- You just need to verify that incoming Azure AD tokens are valid
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.providers.azure import AzureJWTVerifier
+from pydantic import AnyHttpUrl
+
+tenant_id = "your-tenant-id"
+client_id = "your-client-id"
+
+# AzureJWTVerifier auto-configures JWKS, issuer, and audience
+verifier = AzureJWTVerifier(
+    client_id=client_id,
+    tenant_id=tenant_id,
+    required_scopes=["access_as_user"],  # Scope names from Azure Portal
+)
+
+auth = RemoteAuthProvider(
+    token_verifier=verifier,
+    authorization_servers=[
+        AnyHttpUrl(f"https://login.microsoftonline.com/{tenant_id}/v2.0")
+    ],
+    base_url="https://your-container-app.azurecontainerapps.io",
+)
+
+mcp = FastMCP(name="Azure MI App", auth=auth)
+```
+
+`AzureJWTVerifier` handles Azure's scope format automatically. You write scope names exactly as they appear in Azure Portal under **Expose an API** (e.g., `access_as_user`). The verifier validates tokens using the short-form scopes that Azure puts in the `scp` claim, while advertising the full URI scopes (e.g., `api://your-client-id/access_as_user`) in OAuth metadata so MCP clients know what to request.
+
+<Note>
+For Azure Government, pass `base_authority="login.microsoftonline.us"` to `AzureJWTVerifier`.
+</Note>

@@ -1099,3 +1099,20 @@ class TestJWTVerifierImport:
         except ImportError as e:
             # If PyJWT not available, should get helpful error
             assert "PyJWT is required" in str(e)
+
+
+class TestScopesSupported:
+    """Tests for the scopes_supported property on TokenVerifier."""
+
+    def test_defaults_to_required_scopes(self, rsa_key_pair: RSAKeyPair):
+        provider = JWTVerifier(
+            public_key=rsa_key_pair.public_key,
+            required_scopes=["read", "write"],
+        )
+        assert provider.scopes_supported == ["read", "write"]
+
+    def test_empty_when_no_required_scopes(self, rsa_key_pair: RSAKeyPair):
+        provider = JWTVerifier(
+            public_key=rsa_key_pair.public_key,
+        )
+        assert provider.scopes_supported == []

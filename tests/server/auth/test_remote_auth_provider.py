@@ -483,3 +483,60 @@ class TestRemoteAuthProviderIntegration:
                 data["resource_documentation"]
                 == "https://doc.my-server.com/resource-docs"
             )
+
+    async def test_scopes_supported_overrides_metadata(self):
+        """Test that scopes_supported parameter overrides what's in metadata."""
+        token_verifier = StaticTokenVerifier(
+            tokens={
+                "test": {"client_id": "c", "scopes": ["read"]},
+            },
+            required_scopes=["read"],
+        )
+
+        provider = RemoteAuthProvider(
+            token_verifier=token_verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://my-server.com",
+            scopes_supported=["api://my-api/read"],
+        )
+
+        mcp = FastMCP("test-server", auth=provider)
+        mcp_http_app = mcp.http_app()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=mcp_http_app),
+            base_url="https://my-server.com",
+        ) as client:
+            response = await client.get("/.well-known/oauth-protected-resource/mcp")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["scopes_supported"] == ["api://my-api/read"]
+
+    async def test_scopes_supported_defaults_to_verifier(self):
+        """Test that metadata uses verifier scopes_supported when parameter not set."""
+        token_verifier = StaticTokenVerifier(
+            tokens={
+                "test": {"client_id": "c", "scopes": ["read"]},
+            },
+            required_scopes=["read"],
+        )
+
+        provider = RemoteAuthProvider(
+            token_verifier=token_verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://my-server.com",
+        )
+
+        mcp = FastMCP("test-server", auth=provider)
+        mcp_http_app = mcp.http_app()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=mcp_http_app),
+            base_url="https://my-server.com",
+        ) as client:
+            response = await client.get("/.well-known/oauth-protected-resource/mcp")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["scopes_supported"] == ["read"]
