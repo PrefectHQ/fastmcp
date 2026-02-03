@@ -6,8 +6,12 @@ from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
-from fastmcp.server.auth.providers.azure import OIDC_SCOPES, AzureProvider
-from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.auth.providers.azure import (
+    OIDC_SCOPES,
+    AzureJWTVerifier,
+    AzureProvider,
+)
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 
 
 class TestAzureProvider:
@@ -983,3 +987,138 @@ class TestAzureTokenExchangeScopes:
             ["read", "write"]
         )
         assert len(refresh_scopes) > 0
+
+
+class TestAzureJWTVerifier:
+    """Tests for AzureJWTVerifier pre-configured JWT verifier."""
+
+    def test_auto_configures_from_client_and_tenant(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["access_as_user"],
+        )
+        assert (
+            verifier.jwks_uri
+            == "https://login.microsoftonline.com/my-tenant-id/discovery/v2.0/keys"
+        )
+        assert verifier.issuer == "https://login.microsoftonline.com/my-tenant-id/v2.0"
+        assert verifier.audience == "my-client-id"
+        assert verifier.algorithm == "RS256"
+        assert verifier.required_scopes == ["access_as_user"]
+
+    async def test_validates_short_form_scopes(self):
+        key_pair = RSAKeyPair.generate()
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["access_as_user"],
+        )
+        # Override to use our test key instead of JWKS
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://login.microsoftonline.com/my-tenant-id/v2.0",
+            audience="my-client-id",
+            additional_claims={"scp": "access_as_user"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is not None
+        assert "access_as_user" in result.scopes
+
+    def test_scopes_supported_returns_prefixed_form(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["read", "write"],
+        )
+        assert verifier.scopes_supported == [
+            "api://my-client-id/read",
+            "api://my-client-id/write",
+        ]
+
+    def test_already_prefixed_scopes_pass_through(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["api://my-client-id/read"],
+        )
+        assert verifier.scopes_supported == ["api://my-client-id/read"]
+
+    def test_oidc_scopes_not_prefixed(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["openid", "read"],
+        )
+        assert verifier.scopes_supported == ["openid", "api://my-client-id/read"]
+
+    def test_custom_identifier_uri(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["read"],
+            identifier_uri="api://custom-uri",
+        )
+        assert verifier.scopes_supported == ["api://custom-uri/read"]
+
+    def test_custom_base_authority_for_gov_cloud(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["read"],
+            base_authority="login.microsoftonline.us",
+        )
+        assert (
+            verifier.jwks_uri
+            == "https://login.microsoftonline.us/my-tenant-id/discovery/v2.0/keys"
+        )
+        assert verifier.issuer == "https://login.microsoftonline.us/my-tenant-id/v2.0"
+
+    def test_scopes_supported_empty_when_no_required_scopes(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+        )
+        assert verifier.scopes_supported == []
+
+    def test_default_identifier_uri_uses_client_id(self):
+        verifier = AzureJWTVerifier(
+            client_id="abc-123",
+            tenant_id="my-tenant-id",
+            required_scopes=["read"],
+        )
+        assert verifier.scopes_supported == ["api://abc-123/read"]
+
+    def test_multi_tenant_organizations_skips_issuer(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="organizations",
+        )
+        assert verifier.issuer is None
+
+    def test_multi_tenant_consumers_skips_issuer(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="consumers",
+        )
+        assert verifier.issuer is None
+
+    def test_multi_tenant_common_skips_issuer(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="common",
+        )
+        assert verifier.issuer is None
+
+    def test_specific_tenant_sets_issuer(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="12345678-1234-1234-1234-123456789012",
+        )
+        assert (
+            verifier.issuer
+            == "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0"
+        )

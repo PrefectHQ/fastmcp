@@ -274,6 +274,17 @@ class TokenVerifier(AuthProvider):
         """
         super().__init__(base_url=base_url, required_scopes=required_scopes)
 
+    @property
+    def scopes_supported(self) -> list[str]:
+        """Scopes to advertise in OAuth metadata.
+
+        Defaults to required_scopes. Override in subclasses when the
+        advertised scopes differ from the validation scopes (e.g., Azure AD
+        where tokens contain short-form scopes but clients request full URI
+        scopes).
+        """
+        return self.required_scopes or []
+
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a bearer token and return access info if valid."""
         raise NotImplementedError("Subclasses must implement verify_token")
@@ -299,6 +310,7 @@ class RemoteAuthProvider(AuthProvider):
         token_verifier: TokenVerifier,
         authorization_servers: list[AnyHttpUrl],
         base_url: AnyHttpUrl | str,
+        scopes_supported: list[str] | None = None,
         resource_name: str | None = None,
         resource_documentation: AnyHttpUrl | None = None,
     ):
@@ -308,6 +320,10 @@ class RemoteAuthProvider(AuthProvider):
             token_verifier: TokenVerifier instance for token validation
             authorization_servers: List of authorization servers that issue valid tokens
             base_url: The base URL of this server
+            scopes_supported: Scopes to advertise in OAuth metadata. If None,
+                uses the token verifier's scopes_supported property. Use this
+                when the scopes clients request differ from the scopes that
+                appear in tokens (e.g., Azure AD full URI scopes vs short-form).
             resource_name: Optional name for the protected resource
             resource_documentation: Optional documentation URL for the protected resource
         """
@@ -317,6 +333,7 @@ class RemoteAuthProvider(AuthProvider):
         )
         self.token_verifier = token_verifier
         self.authorization_servers = authorization_servers
+        self._scopes_supported = scopes_supported
         self.resource_name = resource_name
         self.resource_documentation = resource_documentation
 
@@ -343,7 +360,11 @@ class RemoteAuthProvider(AuthProvider):
                 create_protected_resource_routes(
                     resource_url=resource_url,
                     authorization_servers=self.authorization_servers,
-                    scopes_supported=self.token_verifier.required_scopes,
+                    scopes_supported=(
+                        self._scopes_supported
+                        if self._scopes_supported is not None
+                        else self.token_verifier.scopes_supported
+                    ),
                     resource_name=self.resource_name,
                     resource_documentation=self.resource_documentation,
                 )
