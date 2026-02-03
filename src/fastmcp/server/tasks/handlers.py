@@ -101,6 +101,14 @@ async def submit_to_docket(
         await redis.set(created_at_key, created_at.isoformat(), ex=ttl_seconds)
         await redis.set(poll_interval_key, str(poll_interval_ms), ex=ttl_seconds)
 
+    # Register session for Context access in background workers (SEP-1686)
+    # This enables elicitation/sampling from background tasks via weakref
+    # Skip for "internal" sessions (programmatic calls without MCP session)
+    if session_id != "internal":
+        from fastmcp.server.dependencies import register_task_session
+
+        register_task_session(session_id, ctx.session)
+
     # Send notifications/tasks/created per SEP-1686 (mandatory)
     # Send BEFORE queuing to avoid race where task completes before notification
     notification = mcp.types.JSONRPCNotification(

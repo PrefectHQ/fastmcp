@@ -7,7 +7,6 @@ handle task-augmented execution as specified in SEP-1686.
 from __future__ import annotations
 
 import inspect
-import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
@@ -136,17 +135,6 @@ class TaskConfig:
                 "Background tasks require async functions."
             )
 
-        # Warn if function uses Context - it won't be available in workers
-        from fastmcp.server.context import Context
-        from fastmcp.utilities.types import find_kwarg_by_type
-
-        context_kwarg = find_kwarg_by_type(fn_to_check, Context)
-        if context_kwarg:
-            warnings.warn(
-                f"'{name}' uses Context but has task execution enabled. "
-                "Context is not available in background task workers because "
-                "there is no active MCP session. Consider using Docket dependencies "
-                "like Progress() instead for worker-compatible functionality.",
-                UserWarning,
-                stacklevel=4,
-            )
+        # Note: Context IS now available in background task workers (SEP-1686)
+        # The wiring in _CurrentContext creates a task-aware Context with task_id
+        # and session from the registry. No warning needed.
