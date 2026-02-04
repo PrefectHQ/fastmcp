@@ -49,7 +49,7 @@ Setup:
 
 **Methods:**
 
-#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L224" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L230" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str
@@ -67,4 +67,56 @@ scopes to determine the resource/audience instead of a separate parameter.
 
 **Returns:**
 - Authorization URL to redirect the user to Azure AD
+
+
+### `AzureJWTVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L457" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+JWT verifier pre-configured for Azure AD / Microsoft Entra ID.
+
+Auto-configures JWKS URI, issuer, audience, and scope handling from your
+Azure app registration details. Designed for Managed Identity and other
+token-verification-only scenarios where AzureProvider's full OAuth proxy
+isn't needed.
+
+Handles Azure's scope format automatically:
+- Validates tokens using short-form scopes (what Azure puts in ``scp`` claims)
+- Advertises full-URI scopes in OAuth metadata (what clients need to request)
+
+Example::
+
+    from fastmcp.server.auth import RemoteAuthProvider
+    from fastmcp.server.auth.providers.azure import AzureJWTVerifier
+    from pydantic import AnyHttpUrl
+
+    verifier = AzureJWTVerifier(
+        client_id="your-client-id",
+        tenant_id="your-tenant-id",
+        required_scopes=["access_as_user"],
+    )
+
+    auth = RemoteAuthProvider(
+        token_verifier=verifier,
+        authorization_servers=[
+            AnyHttpUrl("https://login.microsoftonline.com/your-tenant-id/v2.0")
+        ],
+        base_url="https://my-server.com",
+    )
+
+
+**Methods:**
+
+#### `scopes_supported` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L537" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+scopes_supported(self) -> list[str]
+```
+
+Return scopes with Azure URI prefix for OAuth metadata.
+
+Azure tokens contain short-form scopes (e.g., ``read``) in the ``scp``
+claim, but clients must request full URI scopes (e.g.,
+``api://client-id/read``) from the Azure authorization endpoint. This
+property returns the full-URI form for OAuth metadata while
+``required_scopes`` retains the short form for token validation.
 

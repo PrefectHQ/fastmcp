@@ -42,7 +42,7 @@ a key derived from the upstream client secret.
 #### `issue_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-issue_access_token(self, client_id: str, scopes: list[str], jti: str, expires_in: int = 3600) -> str
+issue_access_token(self, client_id: str, scopes: list[str], jti: str, expires_in: int = 3600, upstream_claims: dict[str, Any] | None = None) -> str
 ```
 
 Issue a minimal FastMCP access token.
@@ -56,15 +56,16 @@ which contains actual user identity and authorization data.
 - `scopes`: Token scopes
 - `jti`: Unique token identifier (maps to upstream token)
 - `expires_in`: Token lifetime in seconds
+- `upstream_claims`: Optional claims from upstream IdP token to include
 
 **Returns:**
 - Signed JWT token
 
 
-#### `issue_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L147" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `issue_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L152" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-issue_refresh_token(self, client_id: str, scopes: list[str], jti: str, expires_in: int) -> str
+issue_refresh_token(self, client_id: str, scopes: list[str], jti: str, expires_in: int, upstream_claims: dict[str, Any] | None = None) -> str
 ```
 
 Issue a minimal FastMCP refresh token.
@@ -78,12 +79,13 @@ token which contains actual user identity and authorization data.
 - `scopes`: Token scopes
 - `jti`: Unique token identifier (maps to upstream token)
 - `expires_in`: Token lifetime in seconds (should match upstream refresh expiry)
+- `upstream_claims`: Optional claims from upstream IdP token to include
 
 **Returns:**
 - Signed JWT token
 
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L195" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> dict[str, Any]

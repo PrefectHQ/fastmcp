@@ -1,0 +1,74 @@
+---
+title: elicitation
+sidebarTitle: elicitation
+---
+
+# `fastmcp.server.tasks.elicitation`
+
+
+Background task elicitation support (SEP-1686).
+
+This module provides elicitation capabilities for background tasks running
+in Docket workers. Unlike regular MCP requests, background tasks don't have
+an active request context, so elicitation requires special handling:
+
+1. Set task status to "input_required" via Redis
+2. Send notifications/tasks/updated with elicitation metadata
+3. Wait for client to send input via tasks/sendInput
+4. Resume task execution with the provided input
+
+This uses the public MCP SDK APIs where possible, with minimal use of
+internal APIs for background task coordination.
+
+
+## Functions
+
+### `elicit_for_task` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+elicit_for_task(task_id: str, session: ServerSession, message: str, schema: dict[str, Any], fastmcp: FastMCP) -> mcp.types.ElicitResult
+```
+
+
+Send an elicitation request from a background task.
+
+This function handles the complexity of eliciting user input when running
+in a Docket worker context where there's no active MCP request.
+
+**Args:**
+- `task_id`: The background task ID
+- `session`: The MCP ServerSession for this task
+- `message`: The message to display to the user
+- `schema`: The JSON schema for the expected response
+- `fastmcp`: The FastMCP server instance
+
+**Returns:**
+- ElicitResult containing the user's response
+
+**Raises:**
+- `RuntimeError`: If Docket is not available
+- `McpError`: If the elicitation request fails
+
+
+### `handle_task_input` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+handle_task_input(task_id: str, session_id: str, action: str, content: dict[str, Any] | None, fastmcp: FastMCP) -> bool
+```
+
+
+Handle input sent to a background task via tasks/sendInput.
+
+This is called when a client sends input in response to an elicitation
+request from a background task.
+
+**Args:**
+- `task_id`: The background task ID
+- `session_id`: The MCP session ID
+- `action`: The elicitation action ("accept", "decline", "cancel")
+- `content`: The response content (for "accept" action)
+- `fastmcp`: The FastMCP server instance
+
+**Returns:**
+- True if the input was successfully stored, False otherwise
+
