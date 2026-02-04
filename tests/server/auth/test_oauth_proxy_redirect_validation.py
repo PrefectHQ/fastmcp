@@ -67,6 +67,38 @@ class TestProxyDCRClient:
         # Not allowed by patterns - will fallback to base validation
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(AnyUrl("http://127.0.0.1:3000"))
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(
+                AnyUrl("cursor://anysphere.cursor-mcp/oauth/callback")
+            )
+
+    def test_default_not_applied_when_custom_patterns_supplied(self):
+        """Test that default validation is not applied when custom patterns are supplied."""
+        allowed_patterns = [
+            "cursor://anysphere.cursor-mcp/oauth/callback",
+            "https://app.example.com/*",
+        ]
+
+        client = ProxyDCRClient(
+            client_id="test",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("http://localhost:3000")],
+            allowed_redirect_uri_patterns=allowed_patterns,
+        )
+
+        assert client.validate_redirect_uri(
+            AnyUrl("https://app.example.com/oauth/callback")
+        )
+        assert client.validate_redirect_uri(
+            AnyUrl("cursor://anysphere.cursor-mcp/oauth/callback")
+        )
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("http://localhost:3000"))
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("http://127.0.0.1:3000"))
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("https://example.com"))
 
     def test_empty_list_allows_none(self):
         """Test that empty pattern list allows no URIs."""
@@ -77,7 +109,7 @@ class TestProxyDCRClient:
             allowed_redirect_uri_patterns=[],
         )
 
-        # Nothing should be allowed (except the pre-registered one via fallback)
+        # Nothing should be allowed (except the pre-registered redirect_uris via fallback)
         # Pre-registered URI should work via fallback to base validation
         assert client.validate_redirect_uri(AnyUrl("http://localhost:3000"))
 
@@ -86,6 +118,8 @@ class TestProxyDCRClient:
             client.validate_redirect_uri(AnyUrl("http://example.com"))
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(AnyUrl("https://anywhere.com:9999/path"))
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("http://localhost:5000"))
 
     def test_none_redirect_uri(self):
         """Test that None redirect URI uses default behavior."""
