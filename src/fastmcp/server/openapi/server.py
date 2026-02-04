@@ -60,14 +60,13 @@ class FastMCPOpenAPI(FastMCP):
     def __init__(
         self,
         openapi_spec: dict[str, Any],
-        client: httpx.AsyncClient,
+        client: httpx.AsyncClient | None = None,
         name: str | None = None,
         route_maps: list[RouteMap] | None = None,
         route_map_fn: RouteMapFn | None = None,
         mcp_component_fn: ComponentFn | None = None,
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
-        timeout: float | None = None,
         **settings: Any,
     ):
         """Initialize a FastMCP server from an OpenAPI schema.
@@ -77,14 +76,14 @@ class FastMCPOpenAPI(FastMCP):
 
         Args:
             openapi_spec: OpenAPI schema as a dictionary
-            client: httpx AsyncClient for making HTTP requests
+            client: Optional httpx AsyncClient for making HTTP requests.
+                If not provided, a default client is created from the spec.
             name: Optional name for the server
             route_maps: Optional list of RouteMap objects defining route mappings
             route_map_fn: Optional callable for advanced route type mapping
             mcp_component_fn: Optional callable for component customization
             mcp_names: Optional dictionary mapping operationId to component names
             tags: Optional set of tags to add to all components
-            timeout: Optional timeout (in seconds) for all requests
             **settings: Additional settings for FastMCP
         """
         warnings.warn(
@@ -99,7 +98,6 @@ class FastMCPOpenAPI(FastMCP):
 
         # Store references for backwards compatibility
         self._client = client
-        self._timeout = timeout
         self._mcp_component_fn = mcp_component_fn
 
         # Create provider with the client
@@ -111,7 +109,6 @@ class FastMCPOpenAPI(FastMCP):
             mcp_component_fn=mcp_component_fn,
             mcp_names=mcp_names,
             tags=tags,
-            timeout=timeout,
         )
 
         self.add_provider(provider)

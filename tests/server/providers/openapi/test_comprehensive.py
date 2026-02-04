@@ -739,3 +739,27 @@ class TestOpenAPIComprehensive:
         assert provider is not None
         assert hasattr(provider, "_director")
         assert hasattr(provider, "_spec")
+
+    async def test_timeout_error_produces_useful_message(
+        self, comprehensive_openapi_spec
+    ):
+        """ReadTimeout should surface a clear error, not an empty string."""
+        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
+
+        # httpx internally raises ReadTimeout with an empty message
+        mock_client.send = AsyncMock(side_effect=httpx.ReadTimeout(""))
+
+        server = create_openapi_server(
+            openapi_spec=comprehensive_openapi_spec,
+            client=mock_client,
+        )
+
+        async with Client(server) as mcp_client:
+            with pytest.raises(Exception) as exc_info:
+                await mcp_client.call_tool("get_user", {"id": 1})
+
+            error_message = str(exc_info.value)
+            assert "timed out" in error_message
+            assert "ReadTimeout" in error_message

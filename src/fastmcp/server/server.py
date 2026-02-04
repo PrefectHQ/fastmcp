@@ -1969,14 +1969,13 @@ class FastMCP(
     def from_openapi(
         cls,
         openapi_spec: dict[str, Any],
-        client: httpx.AsyncClient,
+        client: httpx.AsyncClient | None = None,
         name: str = "OpenAPI Server",
         route_maps: list[RouteMap] | None = None,
         route_map_fn: OpenAPIRouteMapFn | None = None,
         mcp_component_fn: OpenAPIComponentFn | None = None,
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
-        timeout: float | None = None,
         **settings: Any,
     ) -> Self:
         """
@@ -1984,14 +1983,15 @@ class FastMCP(
 
         Args:
             openapi_spec: OpenAPI schema as a dictionary
-            client: httpx AsyncClient for making HTTP requests
+            client: Optional httpx AsyncClient for making HTTP requests.
+                If not provided, a default client is created using the first
+                server URL from the OpenAPI spec with a 30-second timeout.
             name: Name for the MCP server
             route_maps: Optional list of RouteMap objects defining route mappings
             route_map_fn: Optional callable for advanced route type mapping
             mcp_component_fn: Optional callable for component customization
             mcp_names: Optional dictionary mapping operationId to component names
             tags: Optional set of tags to add to all components
-            timeout: Optional timeout (in seconds) for all requests
             **settings: Additional settings passed to FastMCP
 
         Returns:
@@ -2007,7 +2007,6 @@ class FastMCP(
             mcp_component_fn=mcp_component_fn,
             mcp_names=mcp_names,
             tags=tags,
-            timeout=timeout,
         )
         return cls(name=name, providers=[provider], **settings)
 
@@ -2022,7 +2021,6 @@ class FastMCP(
         mcp_names: dict[str, str] | None = None,
         httpx_client_kwargs: dict[str, Any] | None = None,
         tags: set[str] | None = None,
-        timeout: float | None = None,
         **settings: Any,
     ) -> Self:
         """
@@ -2035,9 +2033,9 @@ class FastMCP(
             route_map_fn: Optional callable for advanced route type mapping
             mcp_component_fn: Optional callable for component customization
             mcp_names: Optional dictionary mapping operationId to component names
-            httpx_client_kwargs: Optional kwargs passed to httpx.AsyncClient
+            httpx_client_kwargs: Optional kwargs passed to httpx.AsyncClient.
+                Use this to configure timeout and other client settings.
             tags: Optional set of tags to add to all components
-            timeout: Optional timeout (in seconds) for all requests
             **settings: Additional settings passed to FastMCP
 
         Returns:
@@ -2064,7 +2062,6 @@ class FastMCP(
             mcp_component_fn=mcp_component_fn,
             mcp_names=mcp_names,
             tags=tags,
-            timeout=timeout,
         )
         return cls(name=server_name, providers=[provider], **settings)
 

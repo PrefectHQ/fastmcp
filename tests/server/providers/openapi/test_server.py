@@ -6,6 +6,7 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.providers.openapi import OpenAPIProvider
+from fastmcp.server.providers.openapi.provider import DEFAULT_TIMEOUT
 
 
 class TestOpenAPIProviderBasicFunctionality:
@@ -146,16 +147,21 @@ class TestOpenAPIProviderBasicFunctionality:
             assert get_user_tool is not None
             assert get_user_tool.description is not None
 
-    def test_provider_with_timeout(self, simple_openapi_spec):
-        """Test provider initialization with timeout setting."""
-        client = httpx.AsyncClient(base_url="https://api.example.com")
-        provider = OpenAPIProvider(
-            openapi_spec=simple_openapi_spec,
-            client=client,
-            timeout=30.0,
-        )
+    def test_provider_creates_default_client_from_spec(self, simple_openapi_spec):
+        """Test that omitting client creates one from the spec's servers URL."""
+        provider = OpenAPIProvider(openapi_spec=simple_openapi_spec)
+        assert str(provider._client.base_url).rstrip("/") == "https://api.example.com"
+        assert provider._client.timeout == httpx.Timeout(DEFAULT_TIMEOUT)
 
-        assert provider._timeout == 30.0
+    def test_provider_default_client_requires_servers(self):
+        """Test that omitting client without servers in spec raises."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "No Servers", "version": "1.0.0"},
+            "paths": {},
+        }
+        with pytest.raises(ValueError, match="No server URL"):
+            OpenAPIProvider(openapi_spec=spec)
 
     def test_provider_with_empty_spec(self):
         """Test provider with minimal OpenAPI spec."""

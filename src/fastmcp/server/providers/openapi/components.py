@@ -76,7 +76,6 @@ class OpenAPITool(Tool):
         parameters: dict[str, Any],
         output_schema: dict[str, Any] | None = None,
         tags: set[str] | None = None,
-        timeout: float | None = None,
         annotations: ToolAnnotations | None = None,
         serializer: Callable[[Any], str] | None = None,  # Deprecated
     ):
@@ -100,7 +99,6 @@ class OpenAPITool(Tool):
         self._client = client
         self._route = route
         self._director = director
-        self._timeout = timeout
 
     def __repr__(self) -> str:
         return f"OpenAPITool(name={self.name!r}, method={self._route.method}, path={self._route.path})"
@@ -160,8 +158,11 @@ class OpenAPITool(Tool):
                     error_message += f" - {e.response.text}"
             raise ValueError(error_message) from e
 
+        except httpx.TimeoutException as e:
+            raise ValueError(f"HTTP request timed out ({type(e).__name__})") from e
+
         except httpx.RequestError as e:
-            raise ValueError(f"Request error: {e!s}") from e
+            raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
 
 
 class OpenAPIResource(Resource):
@@ -179,7 +180,6 @@ class OpenAPIResource(Resource):
         description: str,
         mime_type: str = "application/json",
         tags: set[str] | None = None,
-        timeout: float | None = None,
     ):
         super().__init__(
             uri=AnyUrl(uri),
@@ -191,7 +191,6 @@ class OpenAPIResource(Resource):
         self._client = client
         self._route = route
         self._director = director
-        self._timeout = timeout
 
     def __repr__(self) -> str:
         return f"OpenAPIResource(name={self.name!r}, uri={self.uri!r}, path={self._route.path})"
@@ -232,7 +231,6 @@ class OpenAPIResource(Resource):
                 method=self._route.method,
                 url=path,
                 headers=headers,
-                timeout=self._timeout,
             )
             response.raise_for_status()
 
@@ -274,8 +272,11 @@ class OpenAPIResource(Resource):
                     error_message += f" - {e.response.text}"
             raise ValueError(error_message) from e
 
+        except httpx.TimeoutException as e:
+            raise ValueError(f"HTTP request timed out ({type(e).__name__})") from e
+
         except httpx.RequestError as e:
-            raise ValueError(f"Request error: {e!s}") from e
+            raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
 
 
 class OpenAPIResourceTemplate(ResourceTemplate):
@@ -293,7 +294,6 @@ class OpenAPIResourceTemplate(ResourceTemplate):
         description: str,
         parameters: dict[str, Any],
         tags: set[str] | None = None,
-        timeout: float | None = None,
     ):
         super().__init__(
             uri_template=uri_template,
@@ -305,7 +305,6 @@ class OpenAPIResourceTemplate(ResourceTemplate):
         self._client = client
         self._route = route
         self._director = director
-        self._timeout = timeout
 
     def __repr__(self) -> str:
         return f"OpenAPIResourceTemplate(name={self.name!r}, uri_template={self.uri_template!r}, path={self._route.path})"
@@ -328,5 +327,4 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             description=self.description or f"Resource for {self._route.path}",
             mime_type="application/json",
             tags=set(self._route.tags or []),
-            timeout=self._timeout,
         )
