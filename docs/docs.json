@@ -169,6 +169,7 @@
                 "pages": [
                   "clients/client",
                   "clients/cli",
+                  "clients/generate-cli",
                   "clients/transports",
                   {
                     "group": "Core Operations",
