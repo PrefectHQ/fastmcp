@@ -304,6 +304,7 @@
                       "python-sdk/fastmcp-cli-cli",
                       "python-sdk/fastmcp-cli-client",
                       "python-sdk/fastmcp-cli-discovery",
+                      "python-sdk/fastmcp-cli-generate",
                       {
                         "group": "install",
                         "pages": [
