@@ -1095,6 +1095,18 @@ class FastMCP(
                     raise
                 except Exception as e:
                     logger.exception(f"Error calling tool {name!r}")
+                    # Handle actionable errors that should reach the LLM
+                    # even when masking is enabled
+                    if isinstance(e, httpx.HTTPStatusError):
+                        if e.response.status_code == 429:
+                            raise ToolError(
+                                "Rate limited by upstream API, please retry later"
+                            ) from e
+                    if isinstance(e, httpx.TimeoutException):
+                        raise ToolError(
+                            "Upstream request timed out, please retry"
+                        ) from e
+                    # Standard masking logic
                     if self._mask_error_details:
                         raise ToolError(f"Error calling tool {name!r}") from e
                     raise ToolError(f"Error calling tool {name!r}: {e}") from e
@@ -1198,6 +1210,17 @@ class FastMCP(
                         raise
                     except Exception as e:
                         logger.exception(f"Error reading resource {uri!r}")
+                        # Handle actionable errors that should reach the LLM
+                        if isinstance(e, httpx.HTTPStatusError):
+                            if e.response.status_code == 429:
+                                raise ResourceError(
+                                    "Rate limited by upstream API, please retry later"
+                                ) from e
+                        if isinstance(e, httpx.TimeoutException):
+                            raise ResourceError(
+                                "Upstream request timed out, please retry"
+                            ) from e
+                        # Standard masking logic
                         if self._mask_error_details:
                             raise ResourceError(
                                 f"Error reading resource {uri!r}"
@@ -1226,6 +1249,17 @@ class FastMCP(
                     raise
                 except Exception as e:
                     logger.exception(f"Error reading resource {uri!r}")
+                    # Handle actionable errors that should reach the LLM
+                    if isinstance(e, httpx.HTTPStatusError):
+                        if e.response.status_code == 429:
+                            raise ResourceError(
+                                "Rate limited by upstream API, please retry later"
+                            ) from e
+                    if isinstance(e, httpx.TimeoutException):
+                        raise ResourceError(
+                            "Upstream request timed out, please retry"
+                        ) from e
+                    # Standard masking logic
                     if self._mask_error_details:
                         raise ResourceError(f"Error reading resource {uri!r}") from e
                     raise ResourceError(f"Error reading resource {uri!r}: {e}") from e
