@@ -416,7 +416,7 @@ sequenceDiagram
 
     Note over Client, Proxy: Token Exchange
     Client->>Proxy: 11. POST /token with code<br/>code_verifier=CLIENT_VERIFIER
-    Proxy-->>Client: 12. Returns stored provider tokens
+    Proxy-->>Client: 12. Returns FastMCP JWT tokens
 ```
 
 The flow diagram above illustrates the complete OAuth proxy pattern. Let's understand each phase:
@@ -447,7 +447,7 @@ After user authorization, the provider redirects back to the proxy's fixed callb
 
 ### Token Exchange Phase
 
-Finally, the client exchanges its authorization code with the proxy to receive the provider's tokens. The proxy validates the client's PKCE verifier before returning the stored tokens.
+Finally, the client exchanges its authorization code with the proxy. The proxy validates the client's PKCE verifier, then issues its own FastMCP JWT tokens (rather than forwarding the upstream provider's tokens). See [Token Architecture](#token-architecture) for details on this design.
 
 This entire flow is transparent to the MCP client—it experiences a standard OAuth flow with dynamic registration, unaware that a proxy is managing the complexity behind the scenes.
 
@@ -474,6 +474,8 @@ When a client makes an MCP request with its FastMCP token:
 3. **Decrypts and validates** the upstream token with the provider
 
 This two-tier validation ensures that FastMCP tokens can only be used with this server (via audience validation) while maintaining full upstream token security.
+
+This architecture also prevents [token passthrough](#token-passthrough) — see the [Security](#security) section for details.
 
 **Token expiry alignment:**
 
@@ -627,6 +629,20 @@ The consent page automatically displays your server's name, icon, and website UR
 **Learn more:**
 - [MCP Security Best Practices](https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices#confused-deputy-problem) - Official specification guidance
 - [Confused Deputy Attacks Explained](https://den.dev/blog/mcp-confused-deputy-api-management/) - Detailed walkthrough by Den Delimarsky
+
+### Token Passthrough
+
+[Token passthrough](https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices#token-passthrough) occurs when an intermediary exposes upstream tokens to downstream clients, allowing those clients to impersonate the intermediary or access services they shouldn't reach.
+
+#### Client-facing mitigation
+
+The OAuth proxy's [token factory architecture](#token-architecture) prevents this by design. MCP clients only ever receive FastMCP-issued JWTs — the upstream provider token is never sent to the client. A FastMCP JWT is scoped to your server and cannot be used to access the upstream provider directly, even if intercepted.
+
+#### Calling downstream services
+
+When your MCP server needs to call other APIs on behalf of the authenticated user, avoid forwarding the upstream token directly — this reintroduces the token passthrough problem in the other direction. Instead, use a token exchange flow like [OAuth 2.0 Token Exchange (RFC 8693)](https://datatracker.ietf.org/doc/html/rfc8693) or your provider's equivalent (such as Azure's [On-Behalf-Of flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-on-behalf-of-flow)) to obtain a new token scoped to the downstream service.
+
+The upstream token is available in your tool functions via `get_access_token()` or the `CurrentAccessToken` dependency, which you can use as the assertion for a token exchange. The exchanged token will be scoped to the specific downstream service and identify your MCP server as the authorized intermediary, maintaining proper audience boundaries throughout the chain.
 
 ## Production Configuration
 
