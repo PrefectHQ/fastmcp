@@ -112,7 +112,7 @@ class TestOAuthProxyStorage:
     async def test_proxy_dcr_client_redirect_validation(
         self, jwt_verifier: TokenVerifier, temp_storage: AsyncKeyValue
     ):
-        """Test that ProxyDCRClient is created with redirect URI patterns."""
+        """Test that OAuthProxyClient is created with redirect URI patterns."""
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
             upstream_token_endpoint="https://github.com/login/oauth/access_token",
@@ -132,11 +132,11 @@ class TestOAuthProxyStorage:
         )
         await proxy.register_client(client_info)
 
-        # Get client back - should be ProxyDCRClient
+        # Get client back - should be OAuthProxyClient
         client = await proxy.get_client("test-proxy-client")
         assert client is not None
 
-        # ProxyDCRClient should validate dynamic localhost ports
+        # OAuthProxyClient should validate dynamic localhost ports
         validated = client.validate_redirect_uri(
             AnyUrl("http://localhost:12345/callback")
         )
@@ -205,5 +205,7 @@ class TestOAuthProxyStorage:
                 "client_id_issued_at": None,
                 "client_secret_expires_at": None,
                 "allowed_redirect_uri_patterns": None,
+                "cimd_document": None,
+                "cimd_fetched_at": None,
             }
         )

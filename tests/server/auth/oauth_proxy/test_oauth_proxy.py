@@ -1,6 +1,8 @@
 """Tests for OAuth proxy initialization and configuration."""
 
+import httpx
 from key_value.aio.stores.memory import MemoryStore
+from starlette.applications import Starlette
 
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 
@@ -72,3 +74,29 @@ class TestOAuthProxyInitialization:
             client_storage=MemoryStore(),
         )
         assert proxy._redirect_path == "/auth/callback"
+
+    async def test_metadata_advertises_cimd_support(self, jwt_verifier):
+        """OAuth metadata should advertise CIMD support when enabled."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+            enable_cimd=True,
+        )
+
+        app = Starlette(routes=proxy.get_routes())
+        transport = httpx.ASGITransport(app=app)
+
+        async with httpx.AsyncClient(
+            transport=transport, base_url="https://api.example.com"
+        ) as client:
+            response = await client.get("/.well-known/oauth-authorization-server")
+
+        assert response.status_code == 200
+        metadata = response.json()
+        assert metadata.get("client_id_metadata_document_supported") is True

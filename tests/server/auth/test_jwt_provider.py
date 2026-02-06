@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 from typing import Any
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -9,6 +10,9 @@ from fastmcp import Client, FastMCP
 from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.server.auth.providers.jwt import JWKData, JWKSData, JWTVerifier, RSAKeyPair
 from fastmcp.utilities.tests import run_server_async
+
+# Standard public IP used for DNS mocking in tests
+TEST_PUBLIC_IP = "93.184.216.34"
 
 
 class SymmetricKeyHelper:
@@ -378,7 +382,11 @@ class TestSymmetricKeyJWT:
 
 
 class TestBearerTokenJWKS:
-    """Tests for JWKS URI functionality."""
+    """Tests for JWKS URI functionality.
+
+    Note: With SSRF protection, JWKS fetches validate DNS and connect to the
+    resolved IP. Tests mock DNS resolution to return a public IP.
+    """
 
     @pytest.fixture
     def jwks_provider(self, rsa_key_pair: RSAKeyPair) -> JWTVerifier:
@@ -402,18 +410,25 @@ class TestBearerTokenJWKS:
 
         return {"keys": [jwk_data]}
 
+    @pytest.fixture
+    def mock_dns(self):
+        """Mock DNS resolution to return test public IP."""
+        with patch(
+            "fastmcp.server.auth.ssrf.resolve_hostname",
+            return_value=[TEST_PUBLIC_IP],
+        ):
+            yield
+
     async def test_jwks_token_validation(
         self,
         rsa_key_pair: RSAKeyPair,
         jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
+        mock_dns,
     ):
         """Test token validation using JWKS URI."""
-        httpx_mock.add_response(
-            url="https://test.example.com/.well-known/jwks.json",
-            json=mock_jwks_data,
-        )
+        httpx_mock.add_response(json=mock_jwks_data)
 
         username = "test-user"
         issuer = "https://test.example.com"
@@ -440,11 +455,9 @@ class TestBearerTokenJWKS:
         jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
+        mock_dns,
     ):
-        httpx_mock.add_response(
-            url="https://test.example.com/.well-known/jwks.json",
-            json=mock_jwks_data,
-        )
+        httpx_mock.add_response(json=mock_jwks_data)
         token = RSAKeyPair.generate().create_token(
             subject="test-user",
             issuer="https://test.example.com",
@@ -460,12 +473,10 @@ class TestBearerTokenJWKS:
         jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
+        mock_dns,
     ):
         mock_jwks_data["keys"][0]["kid"] = "test-key-1"
-        httpx_mock.add_response(
-            url="https://test.example.com/.well-known/jwks.json",
-            json=mock_jwks_data,
-        )
+        httpx_mock.add_response(json=mock_jwks_data)
         token = rsa_key_pair.create_token(
             subject="test-user",
             issuer="https://test.example.com",
@@ -483,12 +494,10 @@ class TestBearerTokenJWKS:
         jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
+        mock_dns,
     ):
         mock_jwks_data["keys"][0]["kid"] = "test-key-1"
-        httpx_mock.add_response(
-            url="https://test.example.com/.well-known/jwks.json",
-            json=mock_jwks_data,
-        )
+        httpx_mock.add_response(json=mock_jwks_data)
         token = rsa_key_pair.create_token(
             subject="test-user",
             issuer="https://test.example.com",
@@ -505,12 +514,10 @@ class TestBearerTokenJWKS:
         jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
+        mock_dns,
     ):
         mock_jwks_data["keys"][0]["kid"] = "test-key-1"
-        httpx_mock.add_response(
-            url="https://test.example.com/.well-known/jwks.json",
-            json=mock_jwks_data,
-        )
+        httpx_mock.add_response(json=mock_jwks_data)
         token = rsa_key_pair.create_token(
             subject="test-user",
             issuer="https://test.example.com",
@@ -527,12 +534,10 @@ class TestBearerTokenJWKS:
         jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
+        mock_dns,
     ):
         mock_jwks_data["keys"][0]["kid"] = "test-key-1"
-        httpx_mock.add_response(
-            url="https://test.example.com/.well-known/jwks.json",
-            json=mock_jwks_data,
-        )
+        httpx_mock.add_response(json=mock_jwks_data)
         token = rsa_key_pair.create_token(
             subject="test-user",
             issuer="https://test.example.com",
@@ -549,6 +554,7 @@ class TestBearerTokenJWKS:
         jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
+        mock_dns,
     ):
         mock_jwks_data["keys"] = [  # type: ignore[typeddict-item]
             {
@@ -561,10 +567,7 @@ class TestBearerTokenJWKS:
             },
         ]
 
-        httpx_mock.add_response(
-            url="https://test.example.com/.well-known/jwks.json",
-            json=mock_jwks_data,
-        )
+        httpx_mock.add_response(json=mock_jwks_data)
         token = rsa_key_pair.create_token(
             subject="test-user",
             issuer="https://test.example.com",

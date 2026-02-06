@@ -41,20 +41,25 @@ To fully configure the OAuth flow, use the `OAuth` helper and pass it to the `au
 from fastmcp import Client
 from fastmcp.client.auth import OAuth
 
-oauth = OAuth(mcp_url="https://your-server.fastmcp.app/mcp")
+oauth = OAuth(scopes=["user"])
 
 async with Client("https://your-server.fastmcp.app/mcp", auth=oauth) as client:
     await client.ping()
 ```
 
+<Note>
+You don't need to pass `mcp_url` when using `OAuth` with `Client(auth=...)` — the transport provides the server URL automatically.
+</Note>
+
 #### `OAuth` Parameters
 
-- **`mcp_url`** (`str`): The full URL of the target MCP server endpoint. Used to discover OAuth server metadata
 - **`scopes`** (`str | list[str]`, optional): OAuth scopes to request. Can be space-separated string or list of strings
 - **`client_name`** (`str`, optional): Client name for dynamic registration. Defaults to `"FastMCP Client"`
+- **`client_metadata_url`** (`str`, optional): URL-based client identity (CIMD). See [CIMD Authentication](/clients/auth/cimd) for details
 - **`token_storage`** (`AsyncKeyValue`, optional): Storage backend for persisting OAuth tokens. Defaults to in-memory storage (tokens lost on restart). See [Token Storage](#token-storage) for encrypted storage options
 - **`additional_client_metadata`** (`dict[str, Any]`, optional): Extra metadata for client registration
 - **`callback_port`** (`int`, optional): Fixed port for OAuth callback server. If not specified, uses a random available port
+- **`httpx_client_factory`** (`McpHttpClientFactory`, optional): Factory for creating httpx clients
 
 
 ## OAuth Flow
@@ -68,8 +73,8 @@ The client first checks the configured `token_storage` backend for existing, val
 <Step title="OAuth Server Discovery">
 If no valid tokens exist, the client attempts to discover the OAuth server's endpoints using a well-known URI (e.g., `/.well-known/oauth-authorization-server`) based on the `mcp_url`.
 </Step>
-<Step title="Dynamic Client Registration">
-If the OAuth server supports it and the client isn't already registered (or credentials aren't cached), the client performs dynamic client registration according to RFC 7591.
+<Step title="Client Registration">
+If the OAuth server supports it and the client isn't already registered (or credentials aren't cached), the client performs dynamic client registration according to RFC 7591. Alternatively, if a `client_metadata_url` is configured and the server supports CIMD, the client uses its metadata URL as its identity instead of registering.
 </Step>
 <Step title="Local Callback Server">
 A temporary local HTTP server is started on an available port (or the port specified via `callback_port`). This server's address (e.g., `http://127.0.0.1:<port>/callback`) acts as the `redirect_uri` for the OAuth flow.
@@ -115,10 +120,7 @@ encrypted_storage = FernetEncryptionWrapper(
     fernet=Fernet(os.environ["OAUTH_STORAGE_ENCRYPTION_KEY"])
 )
 
-oauth = OAuth(
-    mcp_url="https://your-server.fastmcp.app/mcp",
-    token_storage=encrypted_storage
-)
+oauth = OAuth(token_storage=encrypted_storage)
 
 async with Client("https://your-server.fastmcp.app/mcp", auth=oauth) as client:
     await client.ping()
@@ -129,3 +131,24 @@ You can use any `AsyncKeyValue`-compatible backend from the [key-value library](
 <Note>
 When selecting a storage backend, review the [py-key-value documentation](https://github.com/strawgate/py-key-value) to understand the maturity level and limitations of your chosen backend. Some backends may be in preview or have constraints that affect production suitability.
 </Note>
+
+## CIMD Authentication
+
+<VersionBadge version="3.0.0" />
+
+Client ID Metadata Documents (CIMD) provide an alternative to Dynamic Client Registration. Instead of registering with each server, your client hosts a static JSON document at an HTTPS URL. That URL becomes your client's identity, and servers can verify who you are through your domain ownership.
+
+```python
+from fastmcp import Client
+from fastmcp.client.auth import OAuth
+
+async with Client(
+    "https://mcp-server.example.com/mcp",
+    auth=OAuth(
+        client_metadata_url="https://myapp.example.com/oauth/client.json",
+    ),
+) as client:
+    await client.ping()
+```
+
+See the [CIMD Authentication](/clients/auth/cimd) page for complete documentation on creating, hosting, and validating CIMD documents.

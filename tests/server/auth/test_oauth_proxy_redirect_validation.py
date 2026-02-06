@@ -1,13 +1,19 @@
 """Tests for OAuth proxy redirect URI validation."""
 
+from unittest.mock import patch
+
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp.shared.auth import InvalidRedirectUriError
-from pydantic import AnyUrl
+from pydantic import AnyHttpUrl, AnyUrl
 
 from fastmcp.server.auth.auth import TokenVerifier
+from fastmcp.server.auth.cimd import CIMDDocument
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
+
+# Standard public IP used for DNS mocking in tests
+TEST_PUBLIC_IP = "93.184.216.34"
 
 
 class MockTokenVerifier(TokenVerifier):
@@ -133,6 +139,38 @@ class TestProxyDCRClient:
         result = client.validate_redirect_uri(None)
         assert result == AnyUrl("http://localhost:3000")
 
+    def test_cimd_none_redirect_uri_single_exact(self):
+        """CIMD clients may omit redirect_uri only when a single exact URI exists."""
+        cimd_doc = CIMDDocument(
+            client_id=AnyHttpUrl("https://example.com/client.json"),
+            redirect_uris=["http://localhost:3000/callback"],
+        )
+        client = ProxyDCRClient(
+            client_id="https://example.com/client.json",
+            client_secret=None,
+            redirect_uris=None,
+            cimd_document=cimd_doc,
+        )
+
+        result = client.validate_redirect_uri(None)
+        assert result == AnyUrl("http://localhost:3000/callback")
+
+    def test_cimd_none_redirect_uri_wildcard_rejected(self):
+        """CIMD clients must specify redirect_uri when only wildcard patterns exist."""
+        cimd_doc = CIMDDocument(
+            client_id=AnyHttpUrl("https://example.com/client.json"),
+            redirect_uris=["http://localhost:*/callback"],
+        )
+        client = ProxyDCRClient(
+            client_id="https://example.com/client.json",
+            client_secret=None,
+            redirect_uris=None,
+            cimd_document=cimd_doc,
+        )
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(None)
+
 
 class TestOAuthProxyRedirectValidation:
     """Test OAuth proxy with redirect URI validation."""
@@ -240,3 +278,90 @@ class TestOAuthProxyRedirectValidation:
         # Get an unregistered client
         client = await proxy.get_client("unknown-client")
         assert client is None
+
+
+class TestOAuthProxyCIMDClient:
+    """Test that CIMD clients obtained via proxy carry their document and apply dual validation."""
+
+    @pytest.fixture
+    def mock_dns(self):
+        """Mock DNS resolution to return test public IP."""
+        with patch(
+            "fastmcp.server.auth.ssrf.resolve_hostname",
+            return_value=[TEST_PUBLIC_IP],
+        ):
+            yield
+
+    async def test_proxy_get_client_returns_cimd_client(self, httpx_mock, mock_dns):
+        """CIMD client obtained via proxy's get_client has cimd_document attached."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "CIMD App",
+            "redirect_uris": ["http://localhost:*/callback"],
+            "token_endpoint_auth_method": "none",
+        }
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={"content-length": "200"},
+        )
+
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=MockTokenVerifier(),
+            base_url="http://localhost:8000",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+
+        client = await proxy.get_client(url)
+        assert isinstance(client, ProxyDCRClient)
+        assert client.cimd_document is not None
+        assert client.cimd_document.client_name == "CIMD App"
+        assert client.client_id == url
+
+    async def test_proxy_cimd_dual_redirect_validation(self, httpx_mock, mock_dns):
+        """CIMD client from proxy enforces both CIMD redirect_uris and proxy patterns."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "Dual Validation App",
+            "redirect_uris": [
+                "http://localhost:3000/callback",
+                "https://evil.com/callback",
+            ],
+            "token_endpoint_auth_method": "none",
+        }
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={"content-length": "200"},
+        )
+
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=MockTokenVerifier(),
+            base_url="http://localhost:8000",
+            allowed_client_redirect_uris=["http://localhost:*"],
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+
+        client = await proxy.get_client(url)
+        assert client is not None
+
+        # In CIMD AND matches proxy pattern → accepted
+        assert client.validate_redirect_uri(AnyUrl("http://localhost:3000/callback"))
+
+        # In CIMD but NOT in proxy pattern → rejected
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("https://evil.com/callback"))
+
+        # NOT in CIMD but matches proxy pattern → rejected
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("http://localhost:9999/other"))

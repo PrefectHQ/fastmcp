@@ -25,6 +25,7 @@ fastmcp --help
 | `install` | Install a server in MCP client applications | **Supports:** Local files and fastmcp.json configs. **Deps:** Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable`. With fastmcp.json: Uses configured dependencies |
 | `inspect` | Generate a JSON report about a FastMCP server | **Supports:** Local files and fastmcp.json configs. **Deps:** Uses your current environment; you are responsible for ensuring all dependencies are available |
 | `project prepare` | Create a persistent uv project from fastmcp.json environment config | **Supports:** fastmcp.json configs only. **Deps:** Creates a uv project directory with all dependencies pre-installed for reuse with `--project` flag |
+| `auth cimd` | Create and validate CIMD documents for OAuth authentication | N/A |
 | `version` | Display version information | N/A |
 
 ## `fastmcp list`
@@ -749,6 +750,87 @@ The prepare command creates a uv project with:
 - A `uv.lock` file for reproducible environments
 
 This is useful when you want to separate environment setup from server execution, such as in deployment scenarios where dependencies are installed once and the server is run multiple times.
+
+## `fastmcp auth`
+
+<VersionBadge version="3.0.0" />
+
+Authentication-related utilities and configuration commands.
+
+### `fastmcp auth cimd create`
+
+Generate a CIMD (Client ID Metadata Document) for hosting. This creates a JSON document that you can host at an HTTPS URL to use as your OAuth client identity.
+
+```bash
+fastmcp auth cimd create --name "My App" --redirect-uri "http://localhost:*/callback"
+```
+
+#### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Name | `--name` | **Required.** Human-readable name of the client application |
+| Redirect URI | `--redirect-uri` | **Required.** Allowed redirect URIs (can specify multiple) |
+| Client URI | `--client-uri` | URL of the client's home page |
+| Logo URI | `--logo-uri` | URL of the client's logo image |
+| Scope | `--scope` | Space-separated list of scopes the client may request |
+| Output | `--output`, `-o` | Output file path (default: stdout) |
+| Pretty | `--pretty` | Pretty-print JSON output (default: true) |
+
+#### Example
+
+```bash
+# Generate document to stdout
+fastmcp auth cimd create \
+    --name "My Production App" \
+    --redirect-uri "http://localhost:*/callback" \
+    --redirect-uri "https://myapp.example.com/callback" \
+    --client-uri "https://myapp.example.com" \
+    --scope "read write"
+
+# Save to file
+fastmcp auth cimd create \
+    --name "My App" \
+    --redirect-uri "http://localhost:*/callback" \
+    --output client.json
+```
+
+The generated document includes a placeholder `client_id` that you must update to match the URL where you'll host the document before deploying.
+
+### `fastmcp auth cimd validate`
+
+Validate a hosted CIMD document by fetching it from its URL and checking that it conforms to the CIMD specification.
+
+```bash
+fastmcp auth cimd validate https://myapp.example.com/oauth/client.json
+```
+
+#### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Timeout | `--timeout`, `-t` | HTTP request timeout in seconds (default: 10) |
+
+The validator checks:
+
+- The URL is a valid CIMD URL (HTTPS with non-root path)
+- The document is valid JSON and conforms to the CIMD schema
+- The `client_id` field in the document matches the URL
+- No shared-secret authentication methods are used
+
+On success, it displays the document details:
+
+```
+→ Fetching https://myapp.example.com/oauth/client.json...
+✓ Valid CIMD document
+
+Document details:
+  client_id: https://myapp.example.com/oauth/client.json
+  client_name: My App
+  token_endpoint_auth_method: none
+  redirect_uris:
+    • http://localhost:*/callback
+```
 
 ## `fastmcp version`
 

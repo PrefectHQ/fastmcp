@@ -198,6 +198,7 @@
                     "icon": "key",
                     "pages": [
                       "clients/auth/oauth",
+                      "clients/auth/cimd",
                       "clients/auth/bearer"
                     ]
                   }

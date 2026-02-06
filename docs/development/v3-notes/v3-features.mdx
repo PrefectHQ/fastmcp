@@ -73,6 +73,53 @@ fastmcp install stdio server.py
 
 The command automatically detects the project directory and generates the appropriate `uv run` invocation, making it easy to integrate FastMCP servers with MCP clients.
 
+### CIMD (Client ID Metadata Documents)
+
+CIMD provides an alternative to Dynamic Client Registration for OAuth-authenticated MCP servers. Instead of registering with each server dynamically, clients host a static JSON document at an HTTPS URL. That URL becomes the client's `client_id`, and servers verify identity through domain ownership.
+
+**Client usage:**
+
+```python
+from fastmcp import Client
+from fastmcp.client.auth import OAuth
+
+async with Client(
+    "https://mcp-server.example.com/mcp",
+    auth=OAuth(
+        client_metadata_url="https://myapp.example.com/oauth/client.json",
+    ),
+) as client:
+    await client.ping()
+```
+
+The `OAuth` helper now supports deferred binding — `mcp_url` is optional when using `OAuth` with `Client(auth=...)`, since the transport provides the server URL automatically.
+
+**CLI tools for document management:**
+
+```bash
+# Generate a CIMD document
+fastmcp auth cimd create --name "My App" \
+  --redirect-uri "http://localhost:*/callback" \
+  --client-id "https://myapp.example.com/oauth/client.json" \
+  --output client.json
+
+# Validate a hosted document
+fastmcp auth cimd validate https://myapp.example.com/oauth/client.json
+```
+
+**Server-side support:**
+
+CIMD is enabled by default on `OAuthProxy` and its provider subclasses (GitHub, Google, etc.). The server-side implementation includes SSRF-hardened document fetching with DNS pinning, dual redirect URI validation (both CIMD document patterns and proxy patterns must match), HTTP cache-aware revalidation, and `private_key_jwt` assertion validation for clients that need stronger authentication than public client auth.
+
+Key details:
+- CIMD URLs must be HTTPS with a non-root path
+- `token_endpoint_auth_method` limited to `none` or `private_key_jwt` (no shared secrets)
+- `redirect_uris` in CIMD documents support wildcard port patterns (`http://localhost:*/callback`)
+- Servers fetch and cache documents with standard HTTP caching (ETag, Last-Modified, Cache-Control)
+- CIMD is a protocol-level feature — any auth provider implementing the spec can support it
+
+Documentation: [CIMD Authentication](/clients/auth/cimd), [OAuth Proxy CIMD config](/servers/auth/oauth-proxy#cimd-support)
+
 ### MCP Apps (SDK Compatibility)
 
 Support for [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) — the spec extension that lets MCP servers deliver interactive UIs via sandboxed iframes. Extension negotiation, typed UI metadata on tools and resources, and the `ui://` resource scheme. No component DSL, renderer, or `FastMCPApp` class yet — those are future phases.

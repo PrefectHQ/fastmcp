@@ -524,6 +524,74 @@ auth = OAuthProxy(
 
 Check your server logs for "Client registered with redirect_uri" messages to identify what URLs your clients use.
 
+## CIMD Support
+
+<VersionBadge version="3.0.0" />
+
+The OAuth proxy supports **Client ID Metadata Documents (CIMD)**, an alternative to Dynamic Client Registration where clients host a static JSON document at an HTTPS URL. Instead of registering dynamically, clients simply provide their CIMD URL as their `client_id`, and the server fetches and validates the metadata.
+
+CIMD clients appear in the consent screen with a verified domain badge, giving users confidence about which application is requesting access. This provides stronger identity verification than DCR, where any client can claim any name.
+
+### How CIMD Works
+
+When a client presents an HTTPS URL as its `client_id` (for example, `https://myapp.example.com/oauth/client.json`), the OAuth proxy recognizes it as a CIMD client and:
+
+1. Fetches the JSON document from that URL
+2. Validates that the document's `client_id` field matches the URL
+3. Extracts client metadata (name, redirect URIs, scopes, etc.)
+4. Stores the client persistently alongside DCR clients
+5. Shows the verified domain in the consent screen
+
+This flow happens transparently. MCP clients that support CIMD simply provide their metadata URL instead of registering, and the OAuth proxy handles the rest.
+
+### CIMD Configuration
+
+CIMD support is enabled by default for `OAuthProxy`.
+
+<Card icon="code" title="CIMD Parameters">
+<ParamField body="enable_cimd" type="bool" default="True">
+  Whether to accept CIMD URLs as client identifiers. When enabled, clients can use HTTPS URLs pointing to metadata documents as their `client_id` instead of registering via DCR.
+</ParamField>
+</Card>
+
+### Private Key JWT Authentication
+
+CIMD clients can authenticate using `private_key_jwt` instead of the default `none` authentication method. This provides cryptographic proof of client identity by signing JWT assertions with a private key, while the server verifies using the client's public key from their CIMD document.
+
+To use `private_key_jwt`, the CIMD document must include either a `jwks_uri` (URL to fetch the public key set) or inline `jwks` (the key set directly in the document):
+
+```json
+{
+  "client_id": "https://myapp.example.com/oauth/client.json",
+  "client_name": "My Secure App",
+  "redirect_uris": ["http://localhost:*/callback"],
+  "token_endpoint_auth_method": "private_key_jwt",
+  "jwks_uri": "https://myapp.example.com/.well-known/jwks.json"
+}
+```
+
+The OAuth proxy validates JWT assertions according to RFC 7523, checking the signature, issuer, audience, subject claims, and preventing replay attacks via JTI tracking.
+
+### Security Considerations
+
+CIMD provides several security advantages over DCR:
+
+- **Verified identity**: The domain in the `client_id` URL is verified by HTTPS, so users know which organization is requesting access
+- **No registration required**: Clients don't need to store or manage dynamically-issued credentials
+- **Redirect URI enforcement**: CIMD documents must declare `redirect_uris`, which are enforced by the proxy (wildcard patterns supported)
+- **SSRF protection**: The OAuth proxy blocks fetches to localhost, private IPs, and reserved addresses
+- **Replay prevention**: For `private_key_jwt` clients, JTI claims are tracked to prevent assertion replay
+- **Cache-aware fetching**: CIMD documents are cached according to HTTP cache headers and revalidated when required
+
+To disable CIMD support entirely (for example, to require all clients to register via DCR):
+
+```python
+auth = OAuthProxy(
+    ...,
+    enable_cimd=False,
+)
+```
+
 ## Security
 
 ### Key and Storage Management
