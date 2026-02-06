@@ -585,6 +585,10 @@ def search(query: str) -> str:
 
 When a response exceeds the limit, the middleware extracts all text content, joins it together, truncates to fit within the limit, and returns a single `TextContent` block. For non-text responses, the serialized JSON is used as the text source.
 
+<Note>
+If a tool defines an `output_schema`, truncated responses will no longer conform to that schema — the client will receive a plain `TextContent` block instead of the expected structured output. Keep this in mind when setting size limits for tools with structured responses.
+</Note>
+
 ```python
 # Limit only specific tools
 mcp.add_middleware(ResponseLimitingMiddleware(
