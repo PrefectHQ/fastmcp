@@ -364,7 +364,7 @@ def _single_pass_optimize(
 def compress_schema(
     schema: dict[str, Any],
     prune_params: list[str] | None = None,
-    prune_additional_properties: bool = True,
+    prune_additional_properties: bool = False,
     prune_titles: bool = False,
 ) -> dict[str, Any]:
     """
@@ -378,7 +378,9 @@ def compress_schema(
     Args:
         schema: The schema to compress
         prune_params: List of parameter names to remove from properties
-        prune_additional_properties: Whether to remove additionalProperties: false
+        prune_additional_properties: Whether to remove additionalProperties: false.
+            Defaults to False to maintain MCP client compatibility, as some clients
+            (e.g., Claude) require additionalProperties: false for strict validation.
         prune_titles: Whether to remove title fields from the schema
     """
     # Dereference $ref - this inlines all definitions and removes $defs

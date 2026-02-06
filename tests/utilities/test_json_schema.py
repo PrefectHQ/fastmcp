@@ -228,13 +228,14 @@ class TestCompressSchema:
         assert result["required"] == ["bar"]
 
     def test_pruning_additional_properties(self):
-        """Test pruning additionalProperties when False."""
+        """Test pruning additionalProperties when explicitly enabled."""
         schema = {
             "type": "object",
             "properties": {"foo": {"type": "string"}},
             "additionalProperties": False,
         }
-        result = compress_schema(schema)
+        # Must explicitly enable pruning now (default changed for MCP compatibility)
+        result = compress_schema(schema, prune_additional_properties=True)
         assert "additionalProperties" not in result
 
     def test_disable_pruning_additional_properties(self):
@@ -263,7 +264,9 @@ class TestCompressSchema:
                 "unused_def": {"type": "number"},
             },
         }
-        result = compress_schema(schema, prune_params=["remove"])
+        result = compress_schema(
+            schema, prune_params=["remove"], prune_additional_properties=True
+        )
         # Check that parameter was removed
         assert "remove" not in result["properties"]
         # Check that required list was updated
@@ -296,7 +299,7 @@ class TestCompressSchema:
         assert "title" not in result["properties"]["bar"]["properties"]["nested"]
 
     def test_prune_nested_additional_properties(self):
-        """Test pruning additionalProperties: false at all levels."""
+        """Test pruning additionalProperties: false at all levels when explicitly enabled."""
         schema = {
             "type": "object",
             "additionalProperties": False,
@@ -313,7 +316,7 @@ class TestCompressSchema:
                 },
             },
         }
-        result = compress_schema(schema)
+        result = compress_schema(schema, prune_additional_properties=True)
         assert "additionalProperties" not in result
         assert "additionalProperties" not in result["properties"]["foo"]
         assert (
@@ -392,6 +395,51 @@ class TestCompressSchema:
             "title" not in compressed["properties"]["title"]["properties"]["subtitle"]
         )
         assert "title" not in compressed["properties"]["normal_field"]
+
+    def test_mcp_client_compatibility_requires_additional_properties(self):
+        """Test that compress_schema preserves additionalProperties: false for MCP clients.
+
+        MCP clients like Claude require strict JSON schemas with additionalProperties: false.
+        When tools use Pydantic models with extra="forbid", this constraint must be preserved.
+
+        Without this, MCP clients return:
+        "Invalid schema for function 'X': In context=('properties', 'Y'),
+        'additionalProperties' is required to be supplied and to be false"
+
+        See: https://github.com/jlowin/fastmcp/issues/3008
+        """
+        # Schema representing a Pydantic model with extra="forbid"
+        schema = {
+            "type": "object",
+            "properties": {
+                "graph_table": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "columns": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["name"],
+                    "additionalProperties": False,
+                }
+            },
+            "required": ["graph_table"],
+            "additionalProperties": False,
+        }
+
+        # By default, compress_schema should NOT strip additionalProperties: false
+        # This is the new expected behavior for MCP compatibility
+        result = compress_schema(schema)
+
+        # Root level should preserve additionalProperties: false
+        assert result.get("additionalProperties") is False, (
+            "Root additionalProperties: false was removed, breaking MCP compatibility"
+        )
+
+        # Nested object should also preserve additionalProperties: false
+        graph_table = result["properties"]["graph_table"]
+        assert graph_table.get("additionalProperties") is False, (
+            "Nested additionalProperties: false was removed, breaking MCP compatibility"
+        )
 
 
 class TestResolveRootRef:

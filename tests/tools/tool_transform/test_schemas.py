@@ -383,6 +383,7 @@ class TestInputSchema:
                     "field2": {"type": "boolean"},
                 },
                 "required": [],
+                "additionalProperties": False,
             }
         )
 
@@ -424,6 +425,7 @@ class TestInputSchema:
                     }
                 },
                 "required": ["used_param"],
+                "additionalProperties": False,
             }
         )
 
@@ -464,6 +466,7 @@ class TestInputSchema:
                     }
                 },
                 "required": ["renamed_input"],
+                "additionalProperties": False,
             }
         )
 
@@ -508,6 +511,7 @@ class TestInputSchema:
                     },
                 },
                 "required": IsList("param_b", "param_a", check_order=False),
+                "additionalProperties": False,
             }
         )
 
@@ -530,5 +534,6 @@ class TestInputSchema:
                     }
                 },
                 "required": ["param_a"],
+                "additionalProperties": False,
             }
         )
