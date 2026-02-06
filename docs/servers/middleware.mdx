@@ -555,6 +555,50 @@ my_tool = Tool.from_function(fn=my_tool_fn, name="my_tool")
 mcp.add_middleware(ToolInjectionMiddleware(tools=[my_tool]))
 ```
 
+### Response Limiting
+
+<VersionBadge version="3.0.0" />
+
+```python
+from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
+```
+
+Large tool responses can overwhelm LLM context windows or cause memory issues. You can add response-limiting middleware to enforce size constraints on tool outputs.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
+
+mcp = FastMCP("MyServer")
+
+# Limit all tool responses to 500KB
+mcp.add_middleware(ResponseLimitingMiddleware(max_size=500_000))
+
+@mcp.tool
+def search(query: str) -> str:
+    # This could return a very large result
+    return "x" * 1_000_000  # 1MB response
+
+# When called, the response will be truncated to ~500KB with:
+# "...\n\n[Response truncated due to size limit]"
+```
+
+When a response exceeds the limit, the middleware extracts all text content, joins it together, truncates to fit within the limit, and returns a single `TextContent` block. For non-text responses, the serialized JSON is used as the text source.
+
+```python
+# Limit only specific tools
+mcp.add_middleware(ResponseLimitingMiddleware(
+    max_size=100_000,
+    tools=["search", "fetch_data"],
+))
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `max_size` | `int` | `1_000_000` | Maximum response size in bytes (1MB default) |
+| `truncation_suffix` | `str` | `"\n\n[Response truncated due to size limit]"` | Suffix appended to truncated responses |
+| `tools` | `list[str] \| None` | `None` | Limit only these tools (None = all tools) |
+
 ### Combining Middleware
 
 Order matters. Place middleware that should run first (on the way in) earliest:
