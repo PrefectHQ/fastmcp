@@ -120,6 +120,85 @@ Key details:
 
 Documentation: [CIMD Authentication](/clients/auth/cimd), [OAuth Proxy CIMD config](/servers/auth/oauth-proxy#cimd-support)
 
+### CLI: `fastmcp generate-cli`
+
+`fastmcp generate-cli` connects to any MCP server, reads its tool schemas, and writes a standalone Python CLI script where every tool becomes a typed subcommand with flags, help text, and tab completion ([#3065](https://github.com/jlowin/fastmcp/pull/3065)). The insight is that MCP tool schemas already contain everything a CLI framework needs — parameter names, types, descriptions, required/optional status — so the generator maps JSON Schema directly into [cyclopts](https://cyclopts.readthedocs.io/) commands.
+
+```bash
+# Generate from any server spec
+fastmcp generate-cli weather
+fastmcp generate-cli http://localhost:8000/mcp
+fastmcp generate-cli server.py my_weather_cli.py
+
+# Use the generated script
+python my_weather_cli.py call-tool get_forecast --city London --days 3
+python my_weather_cli.py list-tools
+python my_weather_cli.py read-resource docs://readme
+```
+
+The generated script embeds the resolved transport (URL or stdio command), so it's self-contained — users don't need to know about MCP or FastMCP to use it. Supports `-f` to overwrite existing files, and name-based resolution via `fastmcp discover`.
+
+Documentation: [Generate CLI](/clients/generate-cli)
+
+### CLI: Goose Integration
+
+New `fastmcp install goose` command that generates a `goose://extension?...` deeplink URL and opens it, prompting Goose to install the server as a STDIO extension ([#3040](https://github.com/jlowin/fastmcp/pull/3040)). Goose requires `uvx` rather than `uv run`, so the command builds the appropriate invocation automatically.
+
+```bash
+fastmcp install goose server.py
+fastmcp install goose server.py --with pandas --python 3.11
+```
+
+Also adds a full integration guide at [Goose Integration](/integrations/goose).
+
+### ResponseLimitingMiddleware
+
+New middleware for controlling tool response sizes, preventing large outputs from overwhelming LLM context windows ([#3072](https://github.com/jlowin/fastmcp/pull/3072)). Text responses are truncated at UTF-8 character boundaries; structured responses (tools with `output_schema`) raise `ToolError` since truncation would corrupt the schema.
+
+```python
+from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
+
+# Limit all tool responses to 500KB
+mcp.add_middleware(ResponseLimitingMiddleware(max_size=500_000))
+
+# Limit only specific tools, raise errors instead of truncating
+mcp.add_middleware(ResponseLimitingMiddleware(
+    max_size=100_000,
+    tools=["search", "fetch_data"],
+    raise_on_unstructured=True,
+))
+```
+
+Key features:
+- Configurable size limit (default 1MB)
+- Tool-specific filtering via `tools` parameter
+- Size metadata added to result's `meta` field for monitoring
+- Configurable `raise_on_structured` and `raise_on_unstructured` behavior
+
+Documentation: [Middleware](/servers/middleware)
+
+### Background Task Context (SEP-1686)
+
+`Context` now works transparently in background tasks running in Docket workers ([#2905](https://github.com/jlowin/fastmcp/pull/2905)). Previously, tools running as background tasks couldn't use `ctx.elicit()` because there was no active request context. Now, when a tool executes in a Docket worker, `Context` detects this via its `task_id` and routes elicitation through Redis-based coordination: the task sets its status to `input_required`, sends a `notifications/tasks/updated` notification with elicitation metadata, and waits for the client to respond via `tasks/sendInput`.
+
+```python
+@mcp.tool(task=True)
+async def interactive_task(ctx: Context) -> str:
+    # Works transparently in both foreground and background task modes
+    result = await ctx.elicit("Please provide additional input", str)
+
+    if isinstance(result, AcceptedElicitation):
+        return f"You provided: {result.data}"
+    else:
+        return "Elicitation was declined or cancelled"
+```
+
+`ctx.is_background_task` and `ctx.task_id` are available for tools that need to branch on execution mode.
+
+### `require_auth` Removed
+
+The `require_auth` authorization check introduced in beta1 has been removed in favor of scope-based authorization via `require_scopes` ([#3103](https://github.com/jlowin/fastmcp/pull/3103)). Since configuring an `AuthProvider` already rejects unauthenticated requests at the transport level, `require_auth` was redundant — `require_scopes` provides the same guarantee with better granularity. The beta1 Component Authorization section has been updated to reflect this.
+
 ### MCP Apps (SDK Compatibility)
 
 Support for [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) — the spec extension that lets MCP servers deliver interactive UIs via sandboxed iframes. Extension negotiation, typed UI metadata on tools and resources, and the `ui://` resource scheme. No component DSL, renderer, or `FastMCPApp` class yet — those are future phases.
