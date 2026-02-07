@@ -17,6 +17,7 @@ from fastmcp.server.providers.openapi.components import (
     OpenAPIResource,
     OpenAPIResourceTemplate,
     OpenAPITool,
+    _extract_mime_type_from_route,
     _slugify,
 )
 from fastmcp.server.providers.openapi.routing import (
@@ -288,6 +289,7 @@ class OpenAPIProvider(Provider):
             uri=resource_uri,
             name=resource_name,
             description=enhanced_description,
+            mime_type=_extract_mime_type_from_route(route),
             tags=set(route.tags or []) | tags,
         )
 
@@ -356,6 +358,7 @@ class OpenAPIProvider(Provider):
             description=enhanced_description,
             parameters=template_params_schema,
             tags=set(route.tags or []) | tags,
+            mime_type=_extract_mime_type_from_route(route),
         )
 
         if self._mcp_component_fn is not None:

@@ -6,6 +6,9 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.providers.openapi import OpenAPIProvider
+from fastmcp.server.providers.openapi.components import _extract_mime_type_from_route
+from fastmcp.server.providers.openapi.routing import MCPType, RouteMap
+from fastmcp.utilities.openapi.models import HTTPRoute, ResponseInfo
 
 
 def create_openapi_server(
@@ -412,3 +415,357 @@ class TestResponseSchemas:
                 # Let's just check the tool exists and has basic properties
                 assert get_user_tool.description is not None
                 assert get_user_tool.name == "get_user"
+
+
+class TestMimeTypeExtraction:
+    """Test MIME type extraction from route responses."""
+
+    def test_json_response(self):
+        """JSON content type is correctly extracted."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            responses={
+                "200": ResponseInfo(
+                    content_schema={"application/json": {"type": "object"}}
+                )
+            },
+        )
+        assert _extract_mime_type_from_route(route) == "application/json"
+
+    def test_text_plain_response(self):
+        """Plain text content type is correctly extracted."""
+        route = HTTPRoute(
+            path="/health",
+            method="GET",
+            responses={
+                "200": ResponseInfo(content_schema={"text/plain": {"type": "string"}})
+            },
+        )
+        assert _extract_mime_type_from_route(route) == "text/plain"
+
+    def test_text_html_response(self):
+        """HTML content type is correctly extracted."""
+        route = HTTPRoute(
+            path="/page",
+            method="GET",
+            responses={
+                "200": ResponseInfo(content_schema={"text/html": {"type": "string"}})
+            },
+        )
+        assert _extract_mime_type_from_route(route) == "text/html"
+
+    def test_image_response(self):
+        """Image content type is correctly extracted."""
+        route = HTTPRoute(
+            path="/avatar",
+            method="GET",
+            responses={
+                "200": ResponseInfo(
+                    content_schema={"image/png": {"type": "string", "format": "binary"}}
+                )
+            },
+        )
+        assert _extract_mime_type_from_route(route) == "image/png"
+
+    def test_no_responses_defaults_to_json(self):
+        """Empty responses default to application/json."""
+        route = HTTPRoute(path="/items", method="GET", responses={})
+        assert _extract_mime_type_from_route(route) == "application/json"
+
+    def test_no_content_schema_defaults_to_json(self):
+        """Response without content_schema defaults to application/json."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            responses={"204": ResponseInfo(description="No content")},
+        )
+        assert _extract_mime_type_from_route(route) == "application/json"
+
+    def test_prefers_json_when_multiple_types(self):
+        """When both JSON and other types exist, JSON is preferred."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            responses={
+                "200": ResponseInfo(
+                    content_schema={
+                        "text/html": {"type": "string"},
+                        "application/json": {"type": "object"},
+                    }
+                )
+            },
+        )
+        assert _extract_mime_type_from_route(route) == "application/json"
+
+    def test_non_standard_2xx_code(self):
+        """Falls back to any 2xx status code when standard ones are missing."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            responses={
+                "206": ResponseInfo(
+                    content_schema={
+                        "application/octet-stream": {
+                            "type": "string",
+                            "format": "binary",
+                        }
+                    }
+                )
+            },
+        )
+        assert _extract_mime_type_from_route(route) == "application/octet-stream"
+
+    def test_ignores_error_responses(self):
+        """Only error responses (no 2xx) results in default."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            responses={
+                "404": ResponseInfo(
+                    content_schema={"application/json": {"type": "object"}}
+                )
+            },
+        )
+        assert _extract_mime_type_from_route(route) == "application/json"
+
+    def test_201_response(self):
+        """201 Created response content type is extracted."""
+        route = HTTPRoute(
+            path="/items",
+            method="POST",
+            responses={
+                "201": ResponseInfo(content_schema={"text/plain": {"type": "string"}})
+            },
+        )
+        assert _extract_mime_type_from_route(route) == "text/plain"
+
+    def test_media_type_without_schema(self):
+        """Media type declared without a schema still infers MIME type."""
+        route = HTTPRoute(
+            path="/health",
+            method="GET",
+            responses={"200": ResponseInfo(content_schema={"text/plain": {}})},
+        )
+        assert _extract_mime_type_from_route(route) == "text/plain"
+
+
+class TestResourceTemplateMimeType:
+    """Test that OpenAPIResourceTemplate uses inferred MIME types."""
+
+    @pytest.fixture
+    def text_plain_spec(self):
+        """OpenAPI spec with a text/plain resource template endpoint."""
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "Text API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/documents/{id}": {
+                    "get": {
+                        "operationId": "get_document",
+                        "summary": "Get document content",
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "Document content",
+                                "content": {
+                                    "text/plain": {"schema": {"type": "string"}}
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+    @pytest.fixture
+    def html_spec(self):
+        """OpenAPI spec with a text/html resource endpoint."""
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "HTML API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/pages/{slug}": {
+                    "get": {
+                        "operationId": "get_page",
+                        "summary": "Get HTML page",
+                        "parameters": [
+                            {
+                                "name": "slug",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "HTML page",
+                                "content": {
+                                    "text/html": {"schema": {"type": "string"}}
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+    async def test_resource_template_text_plain_mime_type(self, text_plain_spec):
+        """Resource template should reflect text/plain from OpenAPI spec."""
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+            provider = OpenAPIProvider(
+                openapi_spec=text_plain_spec, client=client, route_maps=route_maps
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+            async with Client(mcp) as mcp_client:
+                templates = await mcp_client.list_resource_templates()
+                assert len(templates) == 1
+                assert templates[0].mimeType == "text/plain"
+
+    async def test_resource_template_html_mime_type(self, html_spec):
+        """Resource template should reflect text/html from OpenAPI spec."""
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+            provider = OpenAPIProvider(
+                openapi_spec=html_spec, client=client, route_maps=route_maps
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+            async with Client(mcp) as mcp_client:
+                templates = await mcp_client.list_resource_templates()
+                assert len(templates) == 1
+                assert templates[0].mimeType == "text/html"
+
+    async def test_resource_template_defaults_json_mime_type(self):
+        """Resource template defaults to application/json for JSON responses."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "JSON API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/users/{id}": {
+                    "get": {
+                        "operationId": "get_user",
+                        "summary": "Get user",
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "integer"},
+                            }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "User data",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {"type": "integer"},
+                                                "name": {"type": "string"},
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec, client=client, route_maps=route_maps
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+            async with Client(mcp) as mcp_client:
+                templates = await mcp_client.list_resource_templates()
+                assert len(templates) == 1
+                assert templates[0].mimeType == "application/json"
+
+
+class TestResourceMimeType:
+    """Test that OpenAPIResource uses inferred MIME types."""
+
+    async def test_resource_text_plain_mime_type(self):
+        """Static resource should reflect text/plain from OpenAPI spec."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Health API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/health": {
+                    "get": {
+                        "operationId": "healthcheck",
+                        "summary": "Health check",
+                        "responses": {
+                            "200": {
+                                "description": "Health status",
+                                "content": {
+                                    "text/plain": {"schema": {"type": "string"}}
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE)]
+        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec, client=client, route_maps=route_maps
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+            async with Client(mcp) as mcp_client:
+                resources = await mcp_client.list_resources()
+                assert len(resources) == 1
+                assert resources[0].mimeType == "text/plain"
+
+    async def test_resource_mime_type_without_schema(self):
+        """Resource with media type but no schema still infers MIME type."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Health API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/health": {
+                    "get": {
+                        "operationId": "healthcheck",
+                        "summary": "Health check",
+                        "responses": {
+                            "200": {
+                                "description": "Health status",
+                                "content": {"text/plain": {}},
+                            }
+                        },
+                    }
+                }
+            },
+        }
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE)]
+        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec, client=client, route_maps=route_maps
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+            async with Client(mcp) as mcp_client:
+                resources = await mcp_client.list_resources()
+                assert len(resources) == 1
+                assert resources[0].mimeType == "text/plain"
