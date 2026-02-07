@@ -19,36 +19,24 @@ Auth checks can also raise exceptions:
 Example:
     ```python
     from fastmcp import FastMCP
-    from fastmcp.server.auth import require_auth, require_scopes
+    from fastmcp.server.auth import require_scopes
 
     mcp = FastMCP()
 
-    @mcp.tool(auth=require_auth)
+    @mcp.tool(auth=require_scopes("write"))
     def protected_tool(): ...
 
     @mcp.resource("data://secret", auth=require_scopes("read"))
     def secret_data(): ...
 
-    @mcp.prompt(auth=require_auth)
+    @mcp.prompt(auth=require_scopes("admin"))
     def admin_prompt(): ...
     ```
 
 
 ## Functions
 
-### `require_auth` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-require_auth(ctx: AuthContext) -> bool
-```
-
-
-Require any valid authentication.
-
-Returns True if the request has a valid token, False otherwise.
-
-
-### `require_scopes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L91" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `require_scopes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 require_scopes(*scopes: str) -> AuthCheck
@@ -64,7 +52,7 @@ in the token (AND logic).
 - `*scopes`: One or more scope strings that must all be present.
 
 
-### `restrict_tag` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L119" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `restrict_tag` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 restrict_tag(tag: str) -> AuthCheck
@@ -81,7 +69,7 @@ required scopes. If the component doesn't have the tag, access is allowed.
 - `scopes`: List of scopes required when the tag is present.
 
 
-### `run_auth_checks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L147" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `run_auth_checks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L133" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run_auth_checks(checks: AuthCheck | list[AuthCheck], ctx: AuthContext) -> bool

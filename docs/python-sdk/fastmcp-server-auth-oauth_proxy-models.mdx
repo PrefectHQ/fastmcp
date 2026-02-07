@@ -13,7 +13,7 @@ This module contains all Pydantic models and constants used by the OAuth proxy.
 
 ## Classes
 
-### `OAuthTransaction` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `OAuthTransaction` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth transaction state for consent flow.
@@ -22,7 +22,7 @@ Stored server-side to track active authorization flows with client context.
 Includes CSRF tokens for consent protection per MCP security best practices.
 
 
-### `ClientCode` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClientCode` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Client authorization code with PKCE and upstream tokens.
@@ -31,7 +31,7 @@ Stored server-side after upstream IdP callback. Contains the upstream
 tokens bound to the client's PKCE challenge for secure token exchange.
 
 
-### `UpstreamTokenSet` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `UpstreamTokenSet` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L79" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Stored upstream OAuth tokens from identity provider.
@@ -41,7 +41,7 @@ and stored in plaintext within this model. Encryption is handled transparently
 at the storage layer via FernetEncryptionWrapper. Tokens are never exposed to MCP clients.
 
 
-### `JTIMapping` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L97" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `JTIMapping` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L101" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Maps FastMCP token JTI to upstream token ID.
@@ -50,7 +50,7 @@ This allows stateless JWT validation while still being able to look up
 the corresponding upstream token when tools need to access upstream APIs.
 
 
-### `RefreshTokenMetadata` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L109" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `RefreshTokenMetadata` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L113" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Metadata for a refresh token, stored keyed by token hash.
@@ -59,7 +59,7 @@ We store only metadata (not the token itself) for security - if storage
 is compromised, attackers get hashes they can't reverse into usable tokens.
 
 
-### `ProxyDCRClient` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L131" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ProxyDCRClient` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L135" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Client for DCR proxy with configurable redirect URI validation.
@@ -89,16 +89,17 @@ arise from accepting arbitrary redirect URIs.
 
 **Methods:**
 
-#### `validate_redirect_uri` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L160" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `validate_redirect_uri` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/models.py#L166" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl
 ```
 
-Validate redirect URI against allowed patterns.
+Validate redirect URI against proxy patterns and optionally CIMD redirect_uris.
 
-Since we're acting as a proxy and clients register dynamically,
-we validate their redirect URIs against configurable patterns.
-This is essential for cached token scenarios where the client may
-reconnect with a different port.
+For CIMD clients: validates against BOTH the CIMD document's redirect_uris
+AND the proxy's allowed patterns (if configured). Both must pass.
+
+For DCR clients: validates against proxy patterns first, falling back to
+base validation (registered redirect_uris) if patterns don't match.
 

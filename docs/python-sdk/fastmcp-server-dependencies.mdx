@@ -169,7 +169,7 @@ By default, strips problematic headers like `content-length` that cause issues
 if forwarded to downstream clients. If `include_all` is True, all headers are returned.
 
 
-### `get_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L474" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L475" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_access_token() -> AccessToken | None
@@ -187,7 +187,7 @@ request is available.
 - The access token if an authenticated user is available, None otherwise.
 
 
-### `without_injected_parameters` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L532" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `without_injected_parameters` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L533" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]
@@ -212,7 +212,7 @@ Handles:
 - Async wrapper function without injected parameters
 
 
-### `resolve_dependencies` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L673" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resolve_dependencies` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L674" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_dependencies(fn: Callable[..., Any], arguments: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]
@@ -238,7 +238,7 @@ time, so all injection goes through the unified DI system.
       which will be filtered out)
 
 
-### `CurrentContext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L769" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentContext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L770" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentContext() -> Context
@@ -257,7 +257,7 @@ current MCP operation (tool/resource/prompt call).
 - `RuntimeError`: If no active context found (during resolution)
 
 
-### `CurrentDocket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L812" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentDocket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L813" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentDocket() -> Docket
@@ -277,7 +277,7 @@ automatically creates for background task scheduling.
 - `ImportError`: If fastmcp[tasks] not installed
 
 
-### `CurrentWorker` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L857" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentWorker` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L858" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentWorker() -> Worker
@@ -297,7 +297,7 @@ automatically creates for background task processing.
 - `ImportError`: If fastmcp[tasks] not installed
 
 
-### `CurrentFastMCP` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L899" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentFastMCP` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L900" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentFastMCP() -> FastMCP
@@ -315,7 +315,7 @@ This dependency provides access to the active FastMCP server.
 - `RuntimeError`: If no server in context (during resolution)
 
 
-### `CurrentRequest` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L934" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentRequest` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L935" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentRequest() -> Request
@@ -335,7 +335,7 @@ current HTTP request. Only available when running over HTTP transports
 - `RuntimeError`: If no HTTP request in context (e.g., STDIO transport)
 
 
-### `CurrentHeaders` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L970" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentHeaders` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L971" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentHeaders() -> dict[str, str]
@@ -352,7 +352,7 @@ safe to use in code that might run over any transport.
 - A dependency that resolves to a dictionary of header name -> value
 
 
-### `CurrentAccessToken` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1009" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentAccessToken` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1010" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentAccessToken() -> AccessToken
@@ -382,7 +382,7 @@ Returned by ``get_task_context()`` when running inside a Docket worker.
 Contains identifiers needed to communicate with the MCP session.
 
 
-### `ProgressLike` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1038" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ProgressLike` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1039" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Protocol for progress tracking interface.
@@ -393,7 +393,7 @@ and Docket's Progress (worker context).
 
 **Methods:**
 
-#### `current` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1046" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `current` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1047" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 current(self) -> int | None
@@ -402,7 +402,7 @@ current(self) -> int | None
 Current progress value.
 
 
-#### `total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1051" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1052" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 total(self) -> int
@@ -411,7 +411,7 @@ total(self) -> int
 Total/target progress value.
 
 
-#### `message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1056" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1057" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 message(self) -> str | None
@@ -420,7 +420,7 @@ message(self) -> str | None
 Current progress message.
 
 
-#### `set_total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1060" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1061" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_total(self, total: int) -> None
@@ -429,7 +429,7 @@ set_total(self, total: int) -> None
 Set the total/target value for progress tracking.
 
 
-#### `increment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1064" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `increment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1065" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 increment(self, amount: int = 1) -> None
@@ -438,7 +438,7 @@ increment(self, amount: int = 1) -> None
 Atomically increment the current progress value.
 
 
-#### `set_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1068" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1069" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_message(self, message: str | None) -> None
@@ -447,7 +447,7 @@ set_message(self, message: str | None) -> None
 Update the progress status message.
 
 
-### `InMemoryProgress` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1073" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `InMemoryProgress` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1074" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 In-memory progress tracker for immediate tool execution.
@@ -459,25 +459,25 @@ progress doesn't need to be observable across processes.
 
 **Methods:**
 
-#### `current` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1093" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `current` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1094" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 current(self) -> int | None
 ```
 
-#### `total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1097" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1098" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 total(self) -> int
 ```
 
-#### `message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1101" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1102" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 message(self) -> str | None
 ```
 
-#### `set_total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1104" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_total` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_total(self, total: int) -> None
@@ -486,7 +486,7 @@ set_total(self, total: int) -> None
 Set the total/target value for progress tracking.
 
 
-#### `increment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `increment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 increment(self, amount: int = 1) -> None
@@ -495,7 +495,7 @@ increment(self, amount: int = 1) -> None
 Atomically increment the current progress value.
 
 
-#### `set_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1119" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1120" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_message(self, message: str | None) -> None
@@ -504,7 +504,7 @@ set_message(self, message: str | None) -> None
 Update the progress status message.
 
 
-### `Progress` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1124" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Progress` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 FastMCP Progress dependency that works in both server and worker contexts.

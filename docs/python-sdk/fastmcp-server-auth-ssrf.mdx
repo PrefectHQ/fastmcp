@@ -1,0 +1,172 @@
+---
+title: ssrf
+sidebarTitle: ssrf
+---
+
+# `fastmcp.server.auth.ssrf`
+
+
+SSRF-safe HTTP utilities for FastMCP.
+
+This module provides SSRF-protected HTTP fetching with:
+- DNS resolution and IP validation before requests
+- DNS pinning to prevent rebinding TOCTOU attacks
+- Support for both CIMD and JWKS fetches
+
+
+## Functions
+
+### `format_ip_for_url` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+format_ip_for_url(ip_str: str) -> str
+```
+
+
+Format IP address for use in URL (bracket IPv6 addresses).
+
+IPv6 addresses must be bracketed in URLs to distinguish the address from
+the port separator. For example: https://[2001:db8::1]:443/path
+
+**Args:**
+- `ip_str`: IP address string
+
+**Returns:**
+- IP string suitable for URL (IPv6 addresses are bracketed)
+
+
+### `is_ip_allowed` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L55" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_ip_allowed(ip_str: str) -> bool
+```
+
+
+Check if an IP address is allowed (must be globally routable unicast).
+
+Uses ip.is_global which catches:
+- Private (10.x, 172.16-31.x, 192.168.x)
+- Loopback (127.x, ::1)
+- Link-local (169.254.x, fe80::) - includes AWS metadata!
+- Reserved, unspecified
+- RFC6598 Carrier-Grade NAT (100.64.0.0/10) - can point to internal networks
+
+Additionally blocks multicast addresses (not caught by is_global).
+
+**Args:**
+- `ip_str`: IP address string to check
+
+**Returns:**
+- True if the IP is allowed (public unicast internet), False if blocked
+
+
+### `resolve_hostname` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+resolve_hostname(hostname: str, port: int = 443) -> list[str]
+```
+
+
+Resolve hostname to IP addresses using DNS.
+
+**Args:**
+- `hostname`: Hostname to resolve
+- `port`: Port number (used for getaddrinfo)
+
+**Returns:**
+- List of resolved IP addresses
+
+**Raises:**
+- `SSRFError`: If resolution fails
+
+
+### `validate_url` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L147" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate_url(url: str, require_path: bool = False) -> ValidatedURL
+```
+
+
+Validate URL for SSRF and resolve to IPs.
+
+**Args:**
+- `url`: URL to validate
+- `require_path`: If True, require non-root path (for CIMD)
+
+**Returns:**
+- ValidatedURL with resolved IPs
+
+**Raises:**
+- `SSRFError`: If URL is invalid or resolves to blocked IPs
+
+
+### `ssrf_safe_fetch` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+ssrf_safe_fetch(url: str) -> bytes
+```
+
+
+Fetch URL with comprehensive SSRF protection and DNS pinning.
+
+Security measures:
+1. HTTPS only
+2. DNS resolution with IP validation
+3. Connects to validated IP directly (DNS pinning prevents rebinding)
+4. Response size limit
+5. Redirects disabled
+6. Overall timeout
+
+**Args:**
+- `url`: URL to fetch
+- `require_path`: If True, require non-root path
+- `max_size`: Maximum response size in bytes (default 5KB)
+- `timeout`: Per-operation timeout in seconds
+- `overall_timeout`: Overall timeout for entire operation
+
+**Returns:**
+- Response body as bytes
+
+**Raises:**
+- `SSRFError`: If SSRF validation fails
+- `SSRFFetchError`: If fetch fails
+
+
+### `ssrf_safe_fetch_response` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L239" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+ssrf_safe_fetch_response(url: str) -> SSRFFetchResponse
+```
+
+
+Fetch URL with SSRF protection and return response metadata.
+
+This is equivalent to :func:`ssrf_safe_fetch` but returns response headers
+and status code, and supports conditional request headers.
+
+
+## Classes
+
+### `SSRFError` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when an SSRF protection check fails.
+
+
+### `SSRFFetchError` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when SSRF-safe fetch fails.
+
+
+### `ValidatedURL` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A URL that has been validated for SSRF with resolved IPs.
+
+
+### `SSRFFetchResponse` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L139" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Response payload from an SSRF-safe fetch.
+

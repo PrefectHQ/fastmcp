@@ -8,22 +8,32 @@ sidebarTitle: redirect_validation
 
 Utilities for validating client redirect URIs in OAuth flows.
 
+This module provides secure redirect URI validation with wildcard support,
+protecting against userinfo-based bypass attacks like http://localhost@evil.com.
+
+
 ## Functions
 
-### `matches_allowed_pattern` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/redirect_validation.py#L8" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `matches_allowed_pattern` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/redirect_validation.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 matches_allowed_pattern(uri: str, pattern: str) -> bool
 ```
 
 
-Check if a URI matches an allowed pattern with wildcard support.
+Securely check if a URI matches an allowed pattern with wildcard support.
 
-Patterns support * wildcard matching:
+This function parses both the URI and pattern as URLs, comparing each
+component separately to prevent bypass attacks like userinfo injection.
+
+Patterns support wildcards:
 - http://localhost:* matches any localhost port
 - http://127.0.0.1:* matches any 127.0.0.1 port
 - https://*.example.com/* matches any subdomain of example.com
 - https://app.example.com/auth/* matches any path under /auth/
+
+Security: Rejects URIs with userinfo (user:pass@host) which could bypass
+naive string matching (e.g., http://localhost@evil.com).
 
 **Args:**
 - `uri`: The redirect URI to validate
@@ -33,7 +43,7 @@ Patterns support * wildcard matching:
 - True if the URI matches the pattern
 
 
-### `validate_redirect_uri` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/redirect_validation.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `validate_redirect_uri` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/redirect_validation.py#L175" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_redirect_uri(redirect_uri: str | AnyUrl | None, allowed_patterns: list[str] | None) -> bool
