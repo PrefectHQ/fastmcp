@@ -441,6 +441,7 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
         exclude_headers = {
             "host",
             "content-length",
+            "content-type",
             "connection",
             "transfer-encoding",
             "upgrade",
