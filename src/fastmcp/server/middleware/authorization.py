@@ -6,12 +6,12 @@ AuthMiddleware applies auth checks globally to all components on the server.
 Example:
     ```python
     from fastmcp import FastMCP
-    from fastmcp.server.auth import require_auth, require_scopes, restrict_tag
+    from fastmcp.server.auth import require_scopes, restrict_tag
     from fastmcp.server.middleware import AuthMiddleware
 
-    # Require auth for all components
+    # Require specific scope for all components
     mcp = FastMCP(middleware=[
-        AuthMiddleware(auth=require_auth)
+        AuthMiddleware(auth=require_scopes("api"))
     ])
 
     # Tag-based: components tagged "admin" require "admin" scope
@@ -67,17 +67,14 @@ class AuthMiddleware(Middleware):
     Example:
         ```python
         from fastmcp import FastMCP
-        from fastmcp.server.auth import require_auth, require_scopes
-
-        # Require any authentication for all components
-        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_auth)])
+        from fastmcp.server.auth import require_scopes
 
         # Require specific scope for all components
         mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("api"))])
 
-        # Combined checks (AND logic)
+        # Multiple scopes (AND logic)
         mcp = FastMCP(middleware=[
-            AuthMiddleware(auth=[require_auth, require_scopes("api")])
+            AuthMiddleware(auth=require_scopes("read", "api"))
         ])
         ```
     """

@@ -11,17 +11,17 @@ Auth checks can also raise exceptions:
 Example:
     ```python
     from fastmcp import FastMCP
-    from fastmcp.server.auth import require_auth, require_scopes
+    from fastmcp.server.auth import require_scopes
 
     mcp = FastMCP()
 
-    @mcp.tool(auth=require_auth)
+    @mcp.tool(auth=require_scopes("write"))
     def protected_tool(): ...
 
     @mcp.resource("data://secret", auth=require_scopes("read"))
     def secret_data(): ...
 
-    @mcp.prompt(auth=require_auth)
+    @mcp.prompt(auth=require_scopes("admin"))
     def admin_prompt(): ...
     ```
 """
@@ -72,20 +72,6 @@ class AuthContext:
 
 # Type alias for auth check functions
 AuthCheck = Callable[[AuthContext], bool]
-
-
-def require_auth(ctx: AuthContext) -> bool:
-    """Require any valid authentication.
-
-    Returns True if the request has a valid token, False otherwise.
-
-    Example:
-        ```python
-        @mcp.tool(auth=require_auth)
-        def protected_tool(): ...
-        ```
-    """
-    return ctx.token is not None
 
 
 def require_scopes(*scopes: str) -> AuthCheck:

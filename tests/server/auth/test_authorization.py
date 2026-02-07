@@ -12,7 +12,6 @@ from fastmcp.client import Client
 from fastmcp.server.auth import (
     AccessToken,
     AuthContext,
-    require_auth,
     require_scopes,
     restrict_tag,
     run_auth_checks,
@@ -40,21 +39,6 @@ def make_tool() -> Mock:
     tool = Mock()
     tool.tags = set()
     return tool
-
-
-# =============================================================================
-# Tests for require_auth
-# =============================================================================
-
-
-class TestRequireAuth:
-    def test_returns_true_with_token(self):
-        ctx = AuthContext(token=make_token(), component=make_tool())
-        assert require_auth(ctx) is True
-
-    def test_returns_false_without_token(self):
-        ctx = AuthContext(token=None, component=make_tool())
-        assert require_auth(ctx) is False
 
 
 # =============================================================================
@@ -137,23 +121,23 @@ class TestRestrictTag:
 
 class TestRunAuthChecks:
     def test_single_check_passes(self):
-        ctx = AuthContext(token=make_token(), component=make_tool())
-        assert run_auth_checks(require_auth, ctx) is True
+        ctx = AuthContext(token=make_token(scopes=["test"]), component=make_tool())
+        assert run_auth_checks(require_scopes("test"), ctx) is True
 
     def test_single_check_fails(self):
         ctx = AuthContext(token=None, component=make_tool())
-        assert run_auth_checks(require_auth, ctx) is False
+        assert run_auth_checks(require_scopes("test"), ctx) is False
 
     def test_multiple_checks_all_pass(self):
-        token = make_token(scopes=["admin"])
+        token = make_token(scopes=["test", "admin"])
         ctx = AuthContext(token=token, component=make_tool())
-        checks = [require_auth, require_scopes("admin")]
+        checks = [require_scopes("test"), require_scopes("admin")]
         assert run_auth_checks(checks, ctx) is True
 
     def test_multiple_checks_one_fails(self):
         token = make_token(scopes=["read"])
         ctx = AuthContext(token=token, component=make_tool())
-        checks = [require_auth, require_scopes("admin")]
+        checks = [require_scopes("read"), require_scopes("admin")]
         assert run_auth_checks(checks, ctx) is False
 
     def test_empty_list_passes(self):
@@ -244,7 +228,7 @@ class TestToolLevelAuth:
     async def test_tool_with_auth_hidden_without_token(self):
         mcp = FastMCP()
 
-        @mcp.tool(auth=require_auth)
+        @mcp.tool(auth=require_scopes("test"))
         def protected_tool() -> str:
             return "protected"
 
@@ -255,12 +239,12 @@ class TestToolLevelAuth:
     async def test_tool_with_auth_visible_with_token(self):
         mcp = FastMCP()
 
-        @mcp.tool(auth=require_auth)
+        @mcp.tool(auth=require_scopes("test"))
         def protected_tool() -> str:
             return "protected"
 
         # Set token in context
-        token = make_token()
+        token = make_token(scopes=["test"])
         tok = set_token(token)
         try:
             tools = await mcp.list_tools()
@@ -306,7 +290,7 @@ class TestToolLevelAuth:
         """get_tool() returns None for unauthorized tools (consistent with list filtering)."""
         mcp = FastMCP()
 
-        @mcp.tool(auth=require_auth)
+        @mcp.tool(auth=require_scopes("test"))
         def protected_tool() -> str:
             return "protected"
 
@@ -317,11 +301,11 @@ class TestToolLevelAuth:
     async def test_get_tool_returns_tool_with_auth(self):
         mcp = FastMCP()
 
-        @mcp.tool(auth=require_auth)
+        @mcp.tool(auth=require_scopes("test"))
         def protected_tool() -> str:
             return "protected"
 
-        token = make_token()
+        token = make_token(scopes=["test"])
         tok = set_token(token)
         try:
             tool = await mcp.get_tool("protected_tool")
@@ -344,7 +328,7 @@ class TestAuthMiddleware:
     """
 
     async def test_middleware_filters_tools_without_token(self):
-        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_auth)])
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("test"))])
 
         @mcp.tool
         def public_tool() -> str:
@@ -355,13 +339,13 @@ class TestAuthMiddleware:
         assert len(result.tools) == 0
 
     async def test_middleware_allows_tools_with_token(self):
-        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_auth)])
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("test"))])
 
         @mcp.tool
         def public_tool() -> str:
             return "public"
 
-        token = make_token()
+        token = make_token(scopes=["test"])
         tok = set_token(token)
         try:
             result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
@@ -435,7 +419,7 @@ class TestAuthIntegration:
         def public_tool() -> str:
             return "public"
 
-        @mcp.tool(auth=require_auth)
+        @mcp.tool(auth=require_scopes("test"))
         def protected_tool() -> str:
             return "protected"
 
@@ -452,12 +436,12 @@ class TestAuthIntegration:
         def public_tool() -> str:
             return "public"
 
-        @mcp.tool(auth=require_auth)
+        @mcp.tool(auth=require_scopes("test"))
         def protected_tool() -> str:
             return "protected"
 
         # Set token before creating client
-        token = make_token()
+        token = make_token(scopes=["test"])
         tok = set_token(token)
         try:
             async with Client(mcp) as client:
@@ -482,7 +466,7 @@ class TestTransformedToolAuth:
 
         mcp = FastMCP()
 
-        @mcp.tool(auth=require_auth)
+        @mcp.tool(auth=require_scopes("test"))
         def protected_tool(x: int) -> str:
             return str(x)
 
@@ -507,7 +491,7 @@ class TestTransformedToolAuth:
 
         mcp = FastMCP()
 
-        @mcp.tool(auth=require_auth)
+        @mcp.tool(auth=require_scopes("test"))
         def protected_tool(x: int) -> str:
             return str(x)
 
@@ -526,7 +510,7 @@ class TestTransformedToolAuth:
 
         mcp = FastMCP()
 
-        @mcp.tool(auth=require_auth)
+        @mcp.tool(auth=require_scopes("test"))
         def protected_tool(x: int) -> str:
             return str(x)
 
@@ -536,7 +520,7 @@ class TestTransformedToolAuth:
         )
 
         # With token, transformed tool should be visible
-        token = make_token()
+        token = make_token(scopes=["test"])
         tok = set_token(token)
         try:
             tools = await mcp.list_tools()
@@ -555,7 +539,7 @@ class TestAuthMiddlewareCallTool:
     async def test_middleware_blocks_call_without_auth(self):
         """AuthMiddleware should raise AuthorizationError on unauthorized call."""
 
-        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_auth)])
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("test"))])
 
         @mcp.tool
         def my_tool() -> str:
@@ -573,14 +557,14 @@ class TestAuthMiddlewareCallTool:
 
     async def test_middleware_allows_call_with_auth(self):
         """AuthMiddleware should allow tool call with valid token."""
-        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_auth)])
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("test"))])
 
         @mcp.tool
         def my_tool() -> str:
             return "result"
 
         # With token, calling the tool should succeed
-        token = make_token()
+        token = make_token(scopes=["test"])
         tok = set_token(token)
         try:
             async with Client(mcp) as client:
