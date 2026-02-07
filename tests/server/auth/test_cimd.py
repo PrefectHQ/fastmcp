@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -246,6 +247,243 @@ class TestCIMDFetcherHTTP:
 
         assert first.client_id == second.client_id
         assert len(httpx_mock.get_requests()) == 1
+
+    async def test_fetch_cache_control_max_age(
+        self, fetcher: CIMDFetcher, httpx_mock, mock_dns
+    ):
+        """Cache-Control max-age should prevent refetch before expiry."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "Max-Age App",
+            "redirect_uris": ["http://localhost:3000/callback"],
+            "token_endpoint_auth_method": "none",
+        }
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={"cache-control": "max-age=60", "content-length": "200"},
+        )
+
+        first = await fetcher.fetch(url)
+        second = await fetcher.fetch(url)
+
+        assert first.client_name == second.client_name
+        assert len(httpx_mock.get_requests()) == 1
+
+    async def test_fetch_etag_revalidation_304(
+        self, fetcher: CIMDFetcher, httpx_mock, mock_dns
+    ):
+        """Expired cache should revalidate with ETag and accept 304."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "ETag App",
+            "redirect_uris": ["http://localhost:3000/callback"],
+            "token_endpoint_auth_method": "none",
+        }
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={
+                "cache-control": "max-age=0",
+                "etag": '"v1"',
+                "content-length": "200",
+            },
+        )
+        httpx_mock.add_response(
+            status_code=304,
+            headers={
+                "cache-control": "max-age=120",
+                "etag": '"v1"',
+                "content-length": "0",
+            },
+        )
+
+        first = await fetcher.fetch(url)
+        second = await fetcher.fetch(url)
+        requests = httpx_mock.get_requests()
+
+        assert first.client_name == "ETag App"
+        assert second.client_name == "ETag App"
+        assert len(requests) == 2
+        assert requests[1].headers.get("if-none-match") == '"v1"'
+
+    async def test_fetch_last_modified_revalidation_304(
+        self, fetcher: CIMDFetcher, httpx_mock, mock_dns
+    ):
+        """Expired cache should revalidate with Last-Modified and accept 304."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "Last-Modified App",
+            "redirect_uris": ["http://localhost:3000/callback"],
+            "token_endpoint_auth_method": "none",
+        }
+        last_modified = "Wed, 21 Oct 2015 07:28:00 GMT"
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={
+                "cache-control": "max-age=0",
+                "last-modified": last_modified,
+                "content-length": "200",
+            },
+        )
+        httpx_mock.add_response(
+            status_code=304,
+            headers={"cache-control": "max-age=120", "content-length": "0"},
+        )
+
+        first = await fetcher.fetch(url)
+        second = await fetcher.fetch(url)
+        requests = httpx_mock.get_requests()
+
+        assert first.client_name == "Last-Modified App"
+        assert second.client_name == "Last-Modified App"
+        assert len(requests) == 2
+        assert requests[1].headers.get("if-modified-since") == last_modified
+
+    async def test_fetch_cache_control_no_store(
+        self, fetcher: CIMDFetcher, httpx_mock, mock_dns
+    ):
+        """Cache-Control no-store should prevent storing CIMD documents."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "No-Store App",
+            "redirect_uris": ["http://localhost:3000/callback"],
+            "token_endpoint_auth_method": "none",
+        }
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={"cache-control": "no-store", "content-length": "200"},
+        )
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={"cache-control": "no-store", "content-length": "200"},
+        )
+
+        first = await fetcher.fetch(url)
+        second = await fetcher.fetch(url)
+
+        assert first.client_name == second.client_name
+        assert len(httpx_mock.get_requests()) == 2
+
+    async def test_fetch_cache_control_no_cache(
+        self, fetcher: CIMDFetcher, httpx_mock, mock_dns
+    ):
+        """Cache-Control no-cache should force revalidation on each fetch."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "No-Cache App",
+            "redirect_uris": ["http://localhost:3000/callback"],
+            "token_endpoint_auth_method": "none",
+        }
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={
+                "cache-control": "no-cache",
+                "etag": '"v2"',
+                "content-length": "200",
+            },
+        )
+        httpx_mock.add_response(
+            status_code=304,
+            headers={
+                "cache-control": "no-cache",
+                "etag": '"v2"',
+                "content-length": "0",
+            },
+        )
+
+        first = await fetcher.fetch(url)
+        second = await fetcher.fetch(url)
+        requests = httpx_mock.get_requests()
+
+        assert first.client_name == "No-Cache App"
+        assert second.client_name == "No-Cache App"
+        assert len(requests) == 2
+        assert requests[1].headers.get("if-none-match") == '"v2"'
+
+    async def test_fetch_304_without_cache_headers_preserves_policy(
+        self, fetcher: CIMDFetcher, httpx_mock, mock_dns
+    ):
+        """304 responses without cache headers should not reset cached policy."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "No-Header-304 App",
+            "redirect_uris": ["http://localhost:3000/callback"],
+            "token_endpoint_auth_method": "none",
+        }
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={
+                "cache-control": "no-cache",
+                "etag": '"v3"',
+                "content-length": "200",
+            },
+        )
+        # Intentionally omit cache-control/expires on 304.
+        httpx_mock.add_response(
+            status_code=304,
+            headers={"content-length": "0"},
+        )
+        httpx_mock.add_response(
+            status_code=304,
+            headers={"content-length": "0"},
+        )
+
+        first = await fetcher.fetch(url)
+        second = await fetcher.fetch(url)
+        third = await fetcher.fetch(url)
+        requests = httpx_mock.get_requests()
+
+        assert first.client_name == "No-Header-304 App"
+        assert second.client_name == "No-Header-304 App"
+        assert third.client_name == "No-Header-304 App"
+        assert len(requests) == 3
+        assert requests[1].headers.get("if-none-match") == '"v3"'
+        assert requests[2].headers.get("if-none-match") == '"v3"'
+
+    async def test_fetch_304_without_cache_headers_refreshes_cached_freshness(
+        self, fetcher: CIMDFetcher, httpx_mock, mock_dns
+    ):
+        """A header-less 304 should renew freshness using cached lifetime."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "Headerless 304 Freshness App",
+            "redirect_uris": ["http://localhost:3000/callback"],
+            "token_endpoint_auth_method": "none",
+        }
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={
+                "cache-control": "max-age=60",
+                "etag": '"v4"',
+                "content-length": "200",
+            },
+        )
+        httpx_mock.add_response(
+            status_code=304,
+            headers={"content-length": "0"},
+        )
+
+        first = await fetcher.fetch(url)
+
+        # Simulate cache expiry so the next request triggers revalidation.
+        cached_entry = fetcher._cache[url]
+        cached_entry.expires_at = time.time() - 1
+
+        second = await fetcher.fetch(url)
+        third = await fetcher.fetch(url)
+        requests = httpx_mock.get_requests()
+
+        assert first.client_name == "Headerless 304 Freshness App"
+        assert second.client_name == "Headerless 304 Freshness App"
+        assert third.client_name == "Headerless 304 Freshness App"
+        assert len(requests) == 2
+        assert requests[1].headers.get("if-none-match") == '"v4"'
 
     async def test_fetch_client_id_mismatch(
         self, fetcher: CIMDFetcher, httpx_mock, mock_dns

@@ -181,11 +181,26 @@ class ProxyDCRClient(OAuthClientInformationFull):
                         "redirect_uri must be specified when CIMD redirect_uris uses wildcards."
                     )
                 try:
-                    return AnyUrl(candidate)
+                    resolved = AnyUrl(candidate)
                 except Exception as e:
                     raise InvalidRedirectUriError(
                         f"Invalid CIMD redirect_uri: {e}"
                     ) from e
+
+                # Respect proxy-level redirect URI restrictions even when the
+                # client omits redirect_uri and we fall back to CIMD defaults.
+                if (
+                    self.allowed_redirect_uri_patterns is not None
+                    and not validate_redirect_uri(
+                        redirect_uri=resolved,
+                        allowed_patterns=self.allowed_redirect_uri_patterns,
+                    )
+                ):
+                    raise InvalidRedirectUriError(
+                        f"Redirect URI '{resolved}' does not match allowed patterns."
+                    )
+
+                return resolved
 
             raise InvalidRedirectUriError(
                 "redirect_uri must be specified when CIMD lists multiple redirect_uris."
@@ -207,7 +222,7 @@ class ProxyDCRClient(OAuthClientInformationFull):
                         f"Redirect URI '{redirect_uri}' does not match CIMD redirect_uris."
                     )
 
-                if self.allowed_redirect_uri_patterns:
+                if self.allowed_redirect_uri_patterns is not None:
                     if not validate_redirect_uri(
                         redirect_uri=redirect_uri,
                         allowed_patterns=self.allowed_redirect_uri_patterns,

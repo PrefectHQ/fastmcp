@@ -155,6 +155,23 @@ class TestProxyDCRClient:
         result = client.validate_redirect_uri(None)
         assert result == AnyUrl("http://localhost:3000/callback")
 
+    def test_cimd_none_redirect_uri_respects_proxy_patterns(self):
+        """CIMD fallback redirect_uri must still satisfy proxy allowlist patterns."""
+        cimd_doc = CIMDDocument(
+            client_id=AnyHttpUrl("https://example.com/client.json"),
+            redirect_uris=["https://evil.com/callback"],
+        )
+        client = ProxyDCRClient(
+            client_id="https://example.com/client.json",
+            client_secret=None,
+            redirect_uris=None,
+            cimd_document=cimd_doc,
+            allowed_redirect_uri_patterns=["http://localhost:*"],
+        )
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(None)
+
     def test_cimd_none_redirect_uri_wildcard_rejected(self):
         """CIMD clients must specify redirect_uri when only wildcard patterns exist."""
         cimd_doc = CIMDDocument(
@@ -170,6 +187,23 @@ class TestProxyDCRClient:
 
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(None)
+
+    def test_cimd_empty_proxy_allowlist_rejects_redirect_uri(self):
+        """An explicit empty proxy allowlist should reject all CIMD redirect URIs."""
+        cimd_doc = CIMDDocument(
+            client_id=AnyHttpUrl("https://example.com/client.json"),
+            redirect_uris=["http://localhost:3000/callback"],
+        )
+        client = ProxyDCRClient(
+            client_id="https://example.com/client.json",
+            client_secret=None,
+            redirect_uris=None,
+            cimd_document=cimd_doc,
+            allowed_redirect_uri_patterns=[],
+        )
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("http://localhost:3000/callback"))
 
 
 class TestOAuthProxyRedirectValidation:

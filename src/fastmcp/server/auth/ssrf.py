@@ -12,6 +12,7 @@ import asyncio
 import ipaddress
 import socket
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -134,6 +135,15 @@ class ValidatedURL:
     resolved_ips: list[str]
 
 
+@dataclass
+class SSRFFetchResponse:
+    """Response payload from an SSRF-safe fetch."""
+
+    content: bytes
+    status_code: int
+    headers: dict[str, str]
+
+
 async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
     """Validate URL for SSRF and resolve to IPs.
 
@@ -215,12 +225,39 @@ async def ssrf_safe_fetch(
         SSRFError: If SSRF validation fails
         SSRFFetchError: If fetch fails
     """
+    response = await ssrf_safe_fetch_response(
+        url,
+        require_path=require_path,
+        max_size=max_size,
+        timeout=timeout,
+        overall_timeout=overall_timeout,
+        allowed_status_codes={200},
+    )
+    return response.content
+
+
+async def ssrf_safe_fetch_response(
+    url: str,
+    *,
+    require_path: bool = False,
+    max_size: int = 5120,
+    timeout: float = 10.0,
+    overall_timeout: float = 30.0,
+    request_headers: Mapping[str, str] | None = None,
+    allowed_status_codes: set[int] | None = None,
+) -> SSRFFetchResponse:
+    """Fetch URL with SSRF protection and return response metadata.
+
+    This is equivalent to :func:`ssrf_safe_fetch` but returns response headers
+    and status code, and supports conditional request headers.
+    """
     start_time = time.monotonic()
 
     # Validate URL and resolve DNS
     validated = await validate_url(url, require_path=require_path)
 
     last_error: Exception | None = None
+    expected_statuses = allowed_status_codes or {200}
 
     for pinned_ip in validated.resolved_ips:
         elapsed = time.monotonic() - start_time
@@ -239,6 +276,14 @@ async def ssrf_safe_fetch(
             pinned_ip,
         )
 
+        headers = {"Host": validated.hostname}
+        if request_headers:
+            for key, value in request_headers.items():
+                # Host must remain pinned to the validated hostname.
+                if key.lower() == "host":
+                    continue
+                headers[key] = value
+
         try:
             # Use httpx with streaming to enforce size limit during download
             async with (
@@ -255,14 +300,14 @@ async def ssrf_safe_fetch(
                 client.stream(
                     "GET",
                     pinned_url,
-                    headers={"Host": validated.hostname},
+                    headers=headers,
                     extensions={"sni_hostname": validated.hostname},
                 ) as response,
             ):
                 if time.monotonic() - start_time > overall_timeout:
                     raise SSRFFetchError(f"Overall timeout exceeded: {url}")
 
-                if response.status_code != 200:
+                if response.status_code not in expected_statuses:
                     raise SSRFFetchError(f"HTTP {response.status_code} fetching {url}")
 
                 # Check Content-Length header first if available
@@ -290,7 +335,11 @@ async def ssrf_safe_fetch(
                         )
                     chunks.append(chunk)
 
-                return b"".join(chunks)
+                return SSRFFetchResponse(
+                    content=b"".join(chunks),
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                )
 
         except httpx.TimeoutException as e:
             last_error = e

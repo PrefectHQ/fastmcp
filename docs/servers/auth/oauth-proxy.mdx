@@ -585,7 +585,7 @@ CIMD provides several security advantages over DCR:
 - **Replay prevention**: For `private_key_jwt` clients, JTI claims are tracked to prevent assertion replay
 - **Cache-aware fetching**: CIMD documents are cached according to HTTP cache headers and revalidated when required
 
-To disable CIMD support entirely (for example, to require all clients to register via DCR):
+CIMD is enabled by default. To disable it entirely (for example, to require all clients to register via DCR), set `enable_cimd=False` explicitly:
 
 ```python
 auth = OAuthProxy(
