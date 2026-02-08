@@ -23,7 +23,7 @@ import logging
 import weakref
 from contextlib import suppress
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import mcp.types
 
@@ -67,7 +67,7 @@ async def push_notification(
         }
     )
     async with docket.redis() as redis:
-        await redis.lpush(key, message)
+        await redis.lpush(key, message)  # type: ignore[invalid-await]  # redis-py union type (sync/async)
         await redis.expire(key, NOTIFICATION_TTL_SECONDS)
 
 
@@ -104,8 +104,8 @@ async def notification_subscriber_loop(
 
                 # Blocking wait for notification (timeout refreshes heartbeat)
                 # Using BRPOP (right pop) for FIFO order with LPUSH (left push)
-                result = await redis.brpop(
-                    queue_key, timeout=SUBSCRIBER_TIMEOUT_SECONDS
+                result = await cast(
+                    Any, redis.brpop([queue_key], timeout=SUBSCRIBER_TIMEOUT_SECONDS)
                 )
                 if not result:
                     continue  # Timeout - refresh heartbeat and retry
@@ -129,7 +129,7 @@ async def notification_subscriber_loop(
                         # Re-queue with incremented attempt (back of queue)
                         message["attempt"] = attempt + 1
                         message["last_error"] = str(send_error)
-                        await redis.lpush(queue_key, json.dumps(message))
+                        await redis.lpush(queue_key, json.dumps(message))  # type: ignore[invalid-await]
                         logger.debug(
                             "Requeued notification for session %s (attempt %d): %s",
                             session_id,
@@ -166,18 +166,20 @@ async def _send_mcp_notification(
         session: MCP ServerSession
         notification_dict: Notification as dict (method, params, _meta)
     """
-    # Build JSONRPCNotification from dict
-    notification = mcp.types.JSONRPCNotification(
-        jsonrpc="2.0",
-        method=notification_dict.get("method", "notifications/tasks/updated"),
-        params=notification_dict.get("params", {}),
+    method = notification_dict.get("method", "notifications/tasks/status")
+    if method != "notifications/tasks/status":
+        raise ValueError(f"Unsupported notification method for subscriber: {method}")
+
+    notification = mcp.types.TaskStatusNotification.model_validate(
+        {
+            "method": "notifications/tasks/status",
+            "params": notification_dict.get("params", {}),
+            "_meta": notification_dict.get("_meta"),
+        }
     )
+    server_notification = mcp.types.ServerNotification(notification)
 
-    # Preserve _meta if present (contains related-task info for elicitation)
-    if "_meta" in notification_dict:
-        notification._meta = notification_dict["_meta"]  # type: ignore[attr-defined]
-
-    await session.send_notification(notification)  # type: ignore[arg-type]
+    await session.send_notification(server_notification)
 
 
 # =============================================================================

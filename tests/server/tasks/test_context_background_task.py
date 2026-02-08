@@ -6,8 +6,10 @@ no mocking of Redis, Docket, or session internals.
 """
 
 import asyncio
+from typing import cast
 
 import pytest
+from mcp import ServerSession
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -42,7 +44,7 @@ class TestContextBackgroundTaskSupport:
         mcp = FastMCP("test")
         ctx = Context(mcp, task_id="test-task-123")
         with pytest.raises(AttributeError):
-            ctx.task_id = "new-id"  # type: ignore[misc]
+            setattr(ctx, "task_id", "new-id")
 
 
 class TestContextSessionProperty:
@@ -64,7 +66,9 @@ class TestContextSessionProperty:
             _fastmcp_state_prefix = "test-session"
 
         mock_session = MockSession()
-        ctx = Context(mcp, session=mock_session, task_id="test-task-123")  # type: ignore[arg-type]
+        ctx = Context(
+            mcp, session=cast(ServerSession, mock_session), task_id="test-task-123"
+        )
 
         assert ctx.session is mock_session
 
@@ -76,7 +80,7 @@ class TestContextSessionProperty:
             _fastmcp_state_prefix = "test-session"
 
         mock_session = MockSession()
-        ctx = Context(mcp, session=mock_session)  # type: ignore[arg-type]
+        ctx = Context(mcp, session=cast(ServerSession, mock_session))
 
         assert ctx.session is mock_session
 
@@ -92,7 +96,7 @@ class TestContextElicitBackgroundTask:
         class MockSession:
             _fastmcp_state_prefix = "test-session"
 
-        ctx._session = MockSession()  # type: ignore[assignment]
+        ctx._session = cast(ServerSession, MockSession())
 
         with pytest.raises(RuntimeError, match="Docket"):
             await ctx.elicit("Need input", str)

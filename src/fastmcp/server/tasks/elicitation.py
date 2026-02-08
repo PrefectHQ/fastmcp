@@ -5,7 +5,7 @@ in Docket workers. Unlike regular MCP requests, background tasks don't have
 an active request context, so elicitation requires special handling:
 
 1. Set task status to "input_required" via Redis
-2. Send notifications/tasks/updated with elicitation metadata
+2. Send notifications/tasks/status with elicitation metadata
 3. Wait for client to send input via tasks/sendInput
 4. Resume task execution with the provided input
 
@@ -18,7 +18,8 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import TYPE_CHECKING, Any
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, cast
 
 import mcp.types
 from mcp import ServerSession
@@ -115,15 +116,23 @@ async def elicit_for_task(
             ex=ELICIT_TTL_SECONDS,
         )
 
-    # Send task status update notification with input_required status
-    # This follows SEP-1686 for background task status updates
+    # Send task status update notification with input_required status.
+    # Use notifications/tasks/status so typed MCP clients can consume it.
     #
     # NOTE: We use the distributed notification queue instead of session.send_notification()
     # This enables notifications to work when workers run in separate processes
     # (Azure Web PubSub / Service Bus inspired pattern)
+    timestamp = datetime.now(timezone.utc).isoformat()
     notification_dict = {
-        "method": "notifications/tasks/updated",
-        "params": {},
+        "method": "notifications/tasks/status",
+        "params": {
+            "taskId": task_id,
+            "status": "input_required",
+            "statusMessage": message,
+            "createdAt": timestamp,
+            "lastUpdatedAt": timestamp,
+            "ttl": ELICIT_TTL_SECONDS * 1000,
+        },
         "_meta": {
             "modelcontextprotocol.io/related-task": {
                 "taskId": task_id,
@@ -172,9 +181,12 @@ async def elicit_for_task(
         async with docket.redis() as redis:
             # BLPOP blocks until an item is pushed to the list or timeout
             # Returns tuple of (key, value) or None on timeout
-            result = await redis.blpop(
-                docket.key(response_key),
-                timeout=max_wait_seconds,
+            result = await cast(
+                Any,
+                redis.blpop(
+                    [docket.key(response_key)],
+                    timeout=max_wait_seconds,
+                ),
             )
 
             if result:
@@ -261,7 +273,7 @@ async def handle_task_input(
 
         # Push response to list - this wakes up the BLPOP in elicit_for_task
         # Using LPUSH instead of SET enables the efficient blocking wait pattern
-        await redis.lpush(
+        await redis.lpush(  # type: ignore[invalid-await]  # redis-py union type (sync/async)
             docket.key(response_key),
             json.dumps(response),
         )

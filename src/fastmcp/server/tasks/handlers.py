@@ -112,21 +112,31 @@ async def submit_to_docket(
 
         register_task_session(session_id, ctx.session)
 
-    # Send notifications/tasks/created per SEP-1686 (mandatory)
-    # Send BEFORE queuing to avoid race where task completes before notification
-    notification = mcp.types.JSONRPCNotification(
-        jsonrpc="2.0",
-        method="notifications/tasks/created",
-        params={},  # Empty params per spec
-        _meta={  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
-            "modelcontextprotocol.io/related-task": {
+    # Send an initial tasks/status notification before queueing.
+    # This guarantees clients can observe task creation immediately.
+    notification = mcp.types.TaskStatusNotification.model_validate(
+        {
+            "method": "notifications/tasks/status",
+            "params": {
                 "taskId": server_task_id,
-            }
-        },
+                "status": "working",
+                "statusMessage": "Task submitted",
+                "createdAt": created_at,
+                "lastUpdatedAt": created_at,
+                "ttl": ttl_ms,
+                "pollInterval": poll_interval_ms,
+            },
+            "_meta": {
+                "modelcontextprotocol.io/related-task": {
+                    "taskId": server_task_id,
+                }
+            },
+        }
     )
+    server_notification = mcp.types.ServerNotification(notification)
     with suppress(Exception):
         # Don't let notification failures break task creation
-        await ctx.session.send_notification(notification)  # type: ignore[arg-type]
+        await ctx.session.send_notification(server_notification)
 
     # Queue function to Docket by key (result storage via execution_ttl)
     # Use component.add_to_docket() which handles calling conventions
