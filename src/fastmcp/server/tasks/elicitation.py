@@ -15,7 +15,6 @@ internal APIs for background task coordination.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import uuid
@@ -75,12 +74,21 @@ async def elicit_for_task(
     # Generate a unique request ID for this elicitation
     request_id = str(uuid.uuid4())
 
-    # Get session ID for Redis key construction
-    session_id = getattr(session, "_fastmcp_state_prefix", None)
-    if session_id is None:
-        # Generate a session ID if not already set
-        session_id = str(uuid.uuid4())
-        session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]
+    # Get session ID from task context (authoritative source for background tasks)
+    # This is extracted from the Docket execution key: {session_id}:{task_id}:...
+    from fastmcp.server.dependencies import get_task_context
+
+    task_context = get_task_context()
+    if task_context is not None:
+        session_id = task_context.session_id
+    else:
+        # Fallback: try to get from session attribute (shouldn't happen in background)
+        session_id = getattr(session, "_fastmcp_state_prefix", None)
+        if session_id is None:
+            raise RuntimeError(
+                "Cannot determine session_id for elicitation. "
+                "This typically means elicit_for_task() was called outside a Docket worker context."
+            )
 
     # Store elicitation request in Redis
     request_key = ELICIT_REQUEST_KEY.format(session_id=session_id, task_id=task_id)
@@ -109,11 +117,14 @@ async def elicit_for_task(
 
     # Send task status update notification with input_required status
     # This follows SEP-1686 for background task status updates
-    notification = mcp.types.JSONRPCNotification(
-        jsonrpc="2.0",
-        method="notifications/tasks/updated",
-        params={},
-        _meta={  # type: ignore[call-arg]
+    #
+    # NOTE: We use the distributed notification queue instead of session.send_notification()
+    # This enables notifications to work when workers run in separate processes
+    # (Azure Web PubSub / Service Bus inspired pattern)
+    notification_dict = {
+        "method": "notifications/tasks/updated",
+        "params": {},
+        "_meta": {
             "modelcontextprotocol.io/related-task": {
                 "taskId": task_id,
                 "status": "input_required",
@@ -125,49 +136,84 @@ async def elicit_for_task(
                 },
             }
         },
-    )
+    }
 
-    # Send notification (best effort - task status is stored in Redis)
-    # Log failures for debugging but don't fail the elicitation
+    # Push notification to Redis queue (works from any process)
+    # Server's subscriber loop will forward to client
+    from fastmcp.server.tasks.notifications import push_notification
+
     try:
-        await session.send_notification(notification)  # type: ignore[arg-type]
+        await push_notification(session_id, notification_dict, docket)
     except Exception as e:
+        # Fail fast: if notification can't be queued, client won't know to respond
+        # Return cancel immediately rather than waiting for 1-hour timeout
         logger.warning(
-            "Failed to send input_required notification for task %s: %s",
+            "Failed to queue input_required notification for task %s, cancelling elicitation: %s",
             task_id,
             e,
         )
+        # Best-effort cleanup
+        try:
+            async with docket.redis() as redis:
+                await redis.delete(
+                    docket.key(request_key),
+                    docket.key(status_key),
+                )
+        except Exception:
+            pass  # Keys will expire via TTL
+        return mcp.types.ElicitResult(action="cancel", content=None)
 
-    # Wait for response (poll Redis)
-    # In a production implementation, this could use Redis pub/sub for lower latency
+    # Wait for response using BLPOP (blocking pop)
+    # This is much more efficient than polling - single Redis round-trip
+    # that blocks until a response is pushed, vs 7,200 round-trips/hour with polling
     max_wait_seconds = ELICIT_TTL_SECONDS
-    poll_interval = 0.5  # seconds
 
-    for _ in range(int(max_wait_seconds / poll_interval)):
+    try:
         async with docket.redis() as redis:
-            response_data = await redis.get(docket.key(response_key))
-            if response_data:
+            # BLPOP blocks until an item is pushed to the list or timeout
+            # Returns tuple of (key, value) or None on timeout
+            result = await redis.blpop(
+                docket.key(response_key),
+                timeout=max_wait_seconds,
+            )
+
+            if result:
+                # result is (key, value) tuple
+                _key, response_data = result
                 response = json.loads(response_data)
+
                 # Clean up Redis keys
                 await redis.delete(
                     docket.key(request_key),
-                    docket.key(response_key),
                     docket.key(status_key),
                 )
+
                 # Convert to ElicitResult
                 return mcp.types.ElicitResult(
                     action=response.get("action", "accept"),
                     content=response.get("content"),
                 )
+    except Exception as e:
+        logger.warning(
+            "BLPOP failed for task %s elicitation, falling back to cancel: %s",
+            task_id,
+            e,
+        )
 
-        await asyncio.sleep(poll_interval)
-
-    # Timeout - treat as cancellation
-    async with docket.redis() as redis:
-        await redis.delete(
-            docket.key(request_key),
-            docket.key(response_key),
-            docket.key(status_key),
+    # Timeout or error - treat as cancellation
+    # Best-effort cleanup - if Redis is unavailable, keys will expire via TTL
+    try:
+        async with docket.redis() as redis:
+            await redis.delete(
+                docket.key(request_key),
+                docket.key(response_key),
+                docket.key(status_key),
+            )
+    except Exception as cleanup_error:
+        logger.debug(
+            "Failed to clean up elicitation keys for task %s (will expire via TTL): %s",
+            task_id,
+            cleanup_error,
         )
 
     return mcp.types.ElicitResult(action="cancel", content=None)
@@ -213,12 +259,15 @@ async def handle_task_input(
         if status is None or status.decode("utf-8") != "waiting":
             return False
 
-        # Store the response
-        await redis.set(
+        # Push response to list - this wakes up the BLPOP in elicit_for_task
+        # Using LPUSH instead of SET enables the efficient blocking wait pattern
+        await redis.lpush(
             docket.key(response_key),
             json.dumps(response),
-            ex=ELICIT_TTL_SECONDS,
         )
+        # Set TTL on the response list (in case BLPOP doesn't consume it)
+        await redis.expire(docket.key(response_key), ELICIT_TTL_SECONDS)
+
         # Update status to "responded"
         await redis.set(
             docket.key(status_key),

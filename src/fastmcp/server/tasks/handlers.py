@@ -17,12 +17,15 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 from fastmcp.server.dependencies import _current_docket, get_context
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.tasks.keys import build_task_key
+from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from fastmcp.prompts.prompt import Prompt
     from fastmcp.resources.resource import Resource
     from fastmcp.resources.template import ResourceTemplate
     from fastmcp.tools.tool import Tool
+
+logger = get_logger(__name__)
 
 # Redis mapping TTL buffer: Add 15 minutes to Docket's execution_ttl
 TASK_MAPPING_TTL_BUFFER_SECONDS = 15 * 60
@@ -150,6 +153,34 @@ async def submit_to_docket(
                 docket,
                 poll_interval_ms,
             )
+
+    # Start notification subscriber for distributed elicitation (idempotent)
+    # This enables ctx.elicit() to work when workers run in separate processes
+    # Subscriber forwards notifications from Redis queue to client session
+    from fastmcp.server.tasks.notifications import (
+        ensure_subscriber_running,
+        stop_subscriber,
+    )
+
+    try:
+        await ensure_subscriber_running(session_id, ctx.session, docket)
+
+        # Register cleanup callback on session exit (once per session)
+        # This ensures subscriber is stopped when the session disconnects
+        if (
+            hasattr(ctx.session, "_exit_stack")
+            and ctx.session._exit_stack is not None
+            and not getattr(ctx.session, "_notification_cleanup_registered", False)
+        ):
+
+            async def _cleanup_subscriber() -> None:
+                await stop_subscriber(session_id)
+
+            ctx.session._exit_stack.push_async_callback(_cleanup_subscriber)
+            ctx.session._notification_cleanup_registered = True  # type: ignore[attr-defined]
+    except Exception as e:
+        # Non-fatal: elicitation will still work via polling fallback
+        logger.debug("Failed to start notification subscriber: %s", e)
 
     # Return CreateTaskResult with proper Task object
     # Tasks MUST begin in "working" status per SEP-1686 final spec (line 381)

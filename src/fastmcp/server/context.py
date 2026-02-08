@@ -338,9 +338,13 @@ class Context:
     ) -> None:
         """Report progress for the current operation.
 
+        Works in both foreground (MCP progress notifications) and background
+        (Docket task execution) contexts.
+
         Args:
             progress: Current progress value e.g. 24
             total: Optional total value e.g. 100
+            message: Optional status message describing current progress
         """
 
         progress_token = (
@@ -349,16 +353,48 @@ class Context:
             else None
         )
 
-        if progress_token is None:
+        # Foreground: Send MCP progress notification if we have a token
+        if progress_token is not None:
+            await self.session.send_progress_notification(
+                progress_token=progress_token,
+                progress=progress,
+                total=total,
+                message=message,
+                related_request_id=self.request_id,
+            )
             return
 
-        await self.session.send_progress_notification(
-            progress_token=progress_token,
-            progress=progress,
-            total=total,
-            message=message,
-            related_request_id=self.request_id,
-        )
+        # Background: Update Docket execution progress (stored in Redis)
+        # This makes progress visible via tasks/get and notifications/tasks/status
+        from fastmcp.server.dependencies import is_docket_available
+
+        if not is_docket_available():
+            return
+
+        try:
+            from docket.dependencies import Dependency
+
+            # Get current execution from worker context
+            execution = Dependency.execution.get()
+
+            # Update progress in Redis using Docket's progress API.
+            # Docket only exposes increment() (relative), so we compute
+            # the delta from the last reported value stored on this execution.
+            if total is not None:
+                await execution.progress.set_total(int(total))
+
+            current = int(progress)
+            last: int = getattr(execution, "_fastmcp_last_progress", 0)
+            delta = current - last
+            if delta > 0:
+                await execution.progress.increment(delta)
+            execution._fastmcp_last_progress = current  # type: ignore[attr-defined]
+
+            if message is not None:
+                await execution.progress.set_message(message)
+        except LookupError:
+            # Not running in Docket worker context - no progress tracking available
+            pass
 
     async def _paginate_list(
         self,
