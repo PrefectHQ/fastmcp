@@ -13,11 +13,14 @@ from fastmcp.cli import generate as generate_module
 from fastmcp.cli.client import Client
 from fastmcp.cli.generate import (
     _derive_server_name,
+    _param_to_cli_flag,
     _schema_to_python_type,
+    _schema_type_label,
     _to_python_identifier,
     _tool_function_source,
     generate_cli_command,
     generate_cli_script,
+    generate_skill_content,
     serialize_transport,
 )
 from fastmcp.client.transports.stdio import StdioTransport
@@ -636,3 +639,280 @@ class TestGenerateCliCommand:
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
         assert output.stat().st_mode & 0o111
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_writes_skill_file(self, tmp_path: Path):
+        output = tmp_path / "cli.py"
+        await generate_cli_command("test-server", str(output))
+        skill_path = tmp_path / "SKILL.md"
+        assert skill_path.exists()
+        content = skill_path.read_text()
+        assert "---" in content
+        assert "name:" in content
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_skill_contains_tools(self, tmp_path: Path):
+        output = tmp_path / "cli.py"
+        await generate_cli_command("test-server", str(output))
+        content = (tmp_path / "SKILL.md").read_text()
+        assert "### greet" in content
+        assert "### add" in content
+        assert "--name" in content
+        assert "call-tool greet" in content
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_no_skill_flag(self, tmp_path: Path):
+        output = tmp_path / "cli.py"
+        await generate_cli_command("test-server", str(output), no_skill=True)
+        assert not (tmp_path / "SKILL.md").exists()
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_error_if_skill_exists(self, tmp_path: Path):
+        output = tmp_path / "cli.py"
+        (tmp_path / "SKILL.md").write_text("existing")
+        with pytest.raises(SystemExit):
+            await generate_cli_command("test-server", str(output))
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_force_overwrites_skill(self, tmp_path: Path):
+        output = tmp_path / "cli.py"
+        (tmp_path / "SKILL.md").write_text("existing")
+        await generate_cli_command("test-server", str(output), force=True)
+        content = (tmp_path / "SKILL.md").read_text()
+        assert content != "existing"
+        assert "### greet" in content
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_skill_references_cli_filename(self, tmp_path: Path):
+        output = tmp_path / "my_weather.py"
+        await generate_cli_command("test-server", str(output))
+        content = (tmp_path / "SKILL.md").read_text()
+        assert "uv run --with fastmcp python my_weather.py" in content
+
+
+# ---------------------------------------------------------------------------
+# _param_to_cli_flag
+# ---------------------------------------------------------------------------
+
+
+class TestParamToCliFlag:
+    def test_simple_name(self):
+        assert _param_to_cli_flag("city") == "--city"
+
+    def test_underscore_name(self):
+        assert _param_to_cli_flag("max_days") == "--max-days"
+
+    def test_hyphenated_name(self):
+        # content-type → _to_python_identifier → content_type → --content-type
+        assert _param_to_cli_flag("content-type") == "--content-type"
+
+    def test_digit_prefix(self):
+        # 3d_mode → _3d_mode → --3d-mode (leading underscore stripped)
+        assert _param_to_cli_flag("3d_mode") == "--3d-mode"
+
+    def test_trailing_underscore(self):
+        # from → from_ after identifier sanitization; Cyclopts strips trailing "-"
+        assert _param_to_cli_flag("from") == "--from"
+
+    def test_camel_case(self):
+        # camelCase → camel-case (cyclopts default_name_transform)
+        assert _param_to_cli_flag("myParam") == "--my-param"
+
+    def test_pascal_case(self):
+        assert _param_to_cli_flag("MyParam") == "--my-param"
+
+
+# ---------------------------------------------------------------------------
+# _schema_type_label
+# ---------------------------------------------------------------------------
+
+
+class TestSchemaTypeLabel:
+    def test_simple_string(self):
+        assert _schema_type_label({"type": "string"}) == "string"
+
+    def test_integer(self):
+        assert _schema_type_label({"type": "integer"}) == "integer"
+
+    def test_array_of_strings(self):
+        assert (
+            _schema_type_label({"type": "array", "items": {"type": "string"}})
+            == "array[string]"
+        )
+
+    def test_union_types(self):
+        result = _schema_type_label({"type": ["string", "null"]})
+        assert "string" in result
+        assert "null" in result
+
+    def test_object(self):
+        assert _schema_type_label({"type": "object"}) == "object"
+
+    def test_missing_type(self):
+        assert _schema_type_label({}) == "string"
+
+
+# ---------------------------------------------------------------------------
+# generate_skill_content
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateSkillContent:
+    def test_frontmatter(self):
+        content = generate_skill_content("weather", "cli.py", [])
+        assert content.startswith("---\n")
+        assert 'name: "weather-cli"' in content
+        assert "description:" in content
+
+    def test_no_tools(self):
+        content = generate_skill_content("weather", "cli.py", [])
+        assert "## Utility Commands" in content
+        assert "## Tool Commands" not in content
+
+    def test_tool_sections(self):
+        tools = [
+            mcp.types.Tool(
+                name="greet",
+                description="Say hello",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Who to greet"}
+                    },
+                    "required": ["name"],
+                },
+            ),
+        ]
+        content = generate_skill_content("test", "cli.py", tools)
+        assert "## Tool Commands" in content
+        assert "### greet" in content
+        assert "Say hello" in content
+        assert "call-tool greet" in content
+        assert "`--name`" in content
+        assert "| string |" in content
+        assert "| yes |" in content
+
+    def test_frontmatter_with_tools_starts_at_column_zero(self):
+        tools = [
+            mcp.types.Tool(
+                name="greet",
+                inputSchema={"type": "object", "properties": {}},
+            ),
+        ]
+        content = generate_skill_content("weather", "cli.py", tools)
+        assert content.splitlines()[0] == "---"
+
+    def test_optional_param(self):
+        tools = [
+            mcp.types.Tool(
+                name="search",
+                description="Search things",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "limit": {"type": "integer"},
+                    },
+                    "required": ["query"],
+                },
+            ),
+        ]
+        content = generate_skill_content("test", "cli.py", tools)
+        # query is required, limit is not
+        assert "| `--query` | string | yes |" in content
+        assert "| `--limit` | integer | no |" in content
+
+    def test_complex_json_param(self):
+        tools = [
+            mcp.types.Tool(
+                name="create",
+                description="Create item",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "data": {
+                            "type": "object",
+                            "properties": {"x": {"type": "integer"}},
+                        },
+                    },
+                    "required": ["data"],
+                },
+            ),
+        ]
+        content = generate_skill_content("test", "cli.py", tools)
+        assert "JSON string" in content
+
+    def test_no_params_tool(self):
+        tools = [
+            mcp.types.Tool(
+                name="ping",
+                description="Ping the server",
+                inputSchema={"type": "object", "properties": {}},
+            ),
+        ]
+        content = generate_skill_content("test", "cli.py", tools)
+        assert "### ping" in content
+        assert "call-tool ping" in content
+        # No parameter table
+        assert "| Flag |" not in content
+
+    def test_cli_filename_in_utility_commands(self):
+        content = generate_skill_content("test", "my_cli.py", [])
+        assert "uv run --with fastmcp python my_cli.py list-tools" in content
+        assert "uv run --with fastmcp python my_cli.py list-resources" in content
+
+    def test_pipe_in_description_escaped(self):
+        tools = [
+            mcp.types.Tool(
+                name="test",
+                description="Test",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "mode": {"type": "string", "description": "a|b|c"},
+                    },
+                },
+            ),
+        ]
+        content = generate_skill_content("test", "cli.py", tools)
+        assert "a\\|b\\|c" in content
+
+    def test_union_type_pipes_escaped(self):
+        tools = [
+            mcp.types.Tool(
+                name="test",
+                description="Test",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "val": {"type": ["string", "null"]},
+                    },
+                },
+            ),
+        ]
+        content = generate_skill_content("test", "cli.py", tools)
+        # Pipes in type label must be escaped so markdown table renders correctly
+        assert "string \\| null" in content
+
+    def test_boolean_param_no_value_placeholder(self):
+        tools = [
+            mcp.types.Tool(
+                name="run",
+                description="Run something",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "verbose": {"type": "boolean", "description": "Verbose output"},
+                        "name": {"type": "string"},
+                    },
+                },
+            ),
+        ]
+        content = generate_skill_content("test", "cli.py", tools)
+        assert "--verbose <value>" not in content
+        assert "--name <value>" in content
+
+    def test_server_name_in_header(self):
+        content = generate_skill_content("My Weather API", "cli.py", [])
+        assert "# My Weather API CLI" in content
+        assert 'name: "my-weather-api-cli"' in content
