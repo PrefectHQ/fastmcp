@@ -8,7 +8,8 @@ jobs:
   martian-issue-triage:
     # For labeled events, verify the labeler is a repo member to prevent privilege escalation
     if: |
-      (github.event.action == 'opened' && contains(fromJSON('["strawgate", "jlowin"]'), github.actor)) ||
+      (github.event.action == 'opened' && github.actor == 'strawgate') ||
+      (github.event.action == 'opened' && github.actor == 'jlowin' && contains(github.event.issue.labels.*.name, 'bug')) ||
       (github.event.action == 'labeled' && github.event.label.name == 'triage-martian' && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.sender.author_association))
 
     concurrency:
