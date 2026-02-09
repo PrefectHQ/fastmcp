@@ -74,8 +74,13 @@ class ResourcePermissions(BaseModel):
     model_config = {"populate_by_name": True, "extra": "allow"}
 
 
-class ToolUI(BaseModel):
-    """Typed ``_meta.ui`` for tools — links a tool to its UI resource.
+class AppConfig(BaseModel):
+    """Configuration for MCP App tools and resources.
+
+    Controls how a tool or resource participates in the MCP Apps extension.
+    On tools, ``resource_uri`` and ``visibility`` specify which UI resource
+    to render and where the tool appears.  On resources, those fields must
+    be left unset (the resource itself is the UI).
 
     All fields use ``exclude_none`` serialization so only explicitly-set
     values appear on the wire.  Aliases match the MCP Apps wire format
@@ -85,11 +90,11 @@ class ToolUI(BaseModel):
     resource_uri: str | None = Field(
         default=None,
         alias="resourceUri",
-        description="URI of the UI resource (typically ui:// scheme)",
+        description="URI of the UI resource (typically ui:// scheme). Tools only.",
     )
     visibility: list[str] | None = Field(
         default=None,
-        description="Where this tool is visible: 'app', 'model', or both",
+        description="Where this tool is visible: 'app', 'model', or both. Tools only.",
     )
     csp: ResourceCSP | None = Field(
         default=None, description="Content Security Policy for the app iframe"
@@ -104,33 +109,14 @@ class ToolUI(BaseModel):
         description="Whether the UI prefers a visible border",
     )
 
-    model_config = {"populate_by_name": True}
+    model_config = {"populate_by_name": True, "extra": "allow"}
 
 
-class ResourceUI(BaseModel):
-    """Typed ``_meta.ui`` for resources — rendering hints for UI-capable clients."""
-
-    csp: ResourceCSP | None = Field(
-        default=None, description="Content Security Policy for the app iframe"
-    )
-    permissions: ResourcePermissions | None = Field(
-        default=None, description="Iframe sandbox permissions"
-    )
-    domain: str | None = Field(default=None, description="Domain for the iframe")
-    prefers_border: bool | None = Field(
-        default=None,
-        alias="prefersBorder",
-        description="Whether the UI prefers a visible border",
-    )
-
-    model_config = {"populate_by_name": True}
-
-
-def ui_to_meta_dict(ui: ToolUI | ResourceUI | dict[str, Any]) -> dict[str, Any]:
-    """Convert a UI model or dict to the wire-format dict for ``meta["ui"]``."""
-    if isinstance(ui, (ToolUI, ResourceUI)):
-        return ui.model_dump(by_alias=True, exclude_none=True)
-    return ui
+def app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]:
+    """Convert an AppConfig or dict to the wire-format dict for ``meta["ui"]``."""
+    if isinstance(app, AppConfig):
+        return app.model_dump(by_alias=True, exclude_none=True)
+    return app
 
 
 def resolve_ui_mime_type(uri: str, explicit_mime_type: str | None) -> str | None:

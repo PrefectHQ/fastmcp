@@ -59,10 +59,9 @@ from fastmcp.prompts.prompt import PromptResult
 from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.apps import (
-    ResourceUI,
-    ToolUI,
+    AppConfig,
+    app_config_to_meta_dict,
     resolve_ui_mime_type,
-    ui_to_meta_dict,
 )
 from fastmcp.server.auth import AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.dependencies import get_access_token
@@ -1410,7 +1409,7 @@ class FastMCP(
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
-        ui: ToolUI | dict[str, Any] | None = None,
+        app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
         auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
@@ -1431,7 +1430,7 @@ class FastMCP(
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
-        ui: ToolUI | dict[str, Any] | None = None,
+        app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
         auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
@@ -1451,7 +1450,7 @@ class FastMCP(
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
-        ui: ToolUI | dict[str, Any] | None = None,
+        app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
         auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
@@ -1508,10 +1507,13 @@ class FastMCP(
             server.tool(my_function, name="custom_name")
             ```
         """
-        # Merge UI metadata into meta["ui"] before passing to provider
-        if ui is not None:
+        # Merge app config into meta["ui"] (wire format) before passing to provider
+        if app is not None and app is not False:
             meta = dict(meta) if meta else {}
-            meta["ui"] = ui_to_meta_dict(ui)
+            if app is True:
+                meta["ui"] = True
+            else:
+                meta["ui"] = app_config_to_meta_dict(app)
 
         # Delegate to LocalProvider with server-level defaults
         result = self._local_provider.tool(
@@ -1571,7 +1573,7 @@ class FastMCP(
         tags: set[str] | None = None,
         annotations: Annotations | dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
-        ui: ResourceUI | dict[str, Any] | None = None,
+        app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
     ) -> Callable[[AnyFunction], Resource | ResourceTemplate | AnyFunction]:
@@ -1637,10 +1639,27 @@ class FastMCP(
         # Apply default MIME type for ui:// scheme resources
         mime_type = resolve_ui_mime_type(uri, mime_type)
 
-        # Merge UI metadata into meta["ui"] before passing to provider
-        if ui is not None:
+        # Validate app config for resources — resource_uri and visibility
+        # don't apply since the resource itself is the UI
+        if isinstance(app, AppConfig):
+            if app.resource_uri is not None:
+                raise ValueError(
+                    "resource_uri cannot be set on resources — "
+                    "the resource itself is the UI. "
+                    "Use resource_uri on tools to point to a UI resource."
+                )
+            if app.visibility is not None:
+                raise ValueError(
+                    "visibility cannot be set on resources — it only applies to tools."
+                )
+
+        # Merge app config into meta["ui"] (wire format) before passing to provider
+        if app is not None and app is not False:
             meta = dict(meta) if meta else {}
-            meta["ui"] = ui_to_meta_dict(ui)
+            if app is True:
+                meta["ui"] = True
+            else:
+                meta["ui"] = app_config_to_meta_dict(app)
 
         # Delegate to LocalProvider with server-level defaults
         inner_decorator = self._local_provider.resource(
