@@ -52,13 +52,14 @@ classifiers = [
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40.0"]
+azure = ["azure-identity>=1.16.0"]
 openai = ["openai>=1.102.0"]
 tasks = ["pydocket>=0.17.2"]
 
 [dependency-groups]
 dev = [
     "dirty-equals>=0.9.0",
-    "fastmcp[anthropic,openai,tasks]",
+    "fastmcp[anthropic,azure,openai,tasks]",
     # add optional dependencies for fastmcp dev
     "fastapi>=0.115.12",
     "opentelemetry-sdk>=1.20.0",

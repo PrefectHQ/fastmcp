@@ -1122,3 +1122,99 @@ class TestAzureJWTVerifier:
             verifier.issuer
             == "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0"
         )
+
+
+class TestAzureOBOIntegration:
+    """Tests for azure.identity OBO integration (create_obo_credential, EntraOBOToken)."""
+
+    def test_create_obo_credential_returns_configured_credential(self):
+        """Test that create_obo_credential returns a properly configured credential."""
+        from unittest.mock import MagicMock, patch
+
+        provider = AzureProvider(
+            client_id="test-client-id",
+            client_secret="test-client-secret",
+            tenant_id="test-tenant-id",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+
+        mock_credential = MagicMock()
+        with patch(
+            "azure.identity.aio.OnBehalfOfCredential", return_value=mock_credential
+        ) as mock_class:
+            credential = provider.create_obo_credential(user_assertion="user-token-123")
+
+            mock_class.assert_called_once_with(
+                tenant_id="test-tenant-id",
+                client_id="test-client-id",
+                client_secret="test-client-secret",
+                user_assertion="user-token-123",
+                authority="https://login.microsoftonline.com",
+            )
+            assert credential is mock_credential
+
+    def test_create_obo_credential_with_custom_authority(self):
+        """Test that create_obo_credential uses custom base_authority."""
+        from unittest.mock import MagicMock, patch
+
+        provider = AzureProvider(
+            client_id="test-client-id",
+            client_secret="test-client-secret",
+            tenant_id="gov-tenant-id",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            base_authority="login.microsoftonline.us",
+            jwt_signing_key="test-secret",
+        )
+
+        mock_credential = MagicMock()
+        with patch(
+            "azure.identity.aio.OnBehalfOfCredential", return_value=mock_credential
+        ) as mock_class:
+            provider.create_obo_credential(user_assertion="user-token")
+
+            call_kwargs = mock_class.call_args[1]
+            assert call_kwargs["authority"] == "https://login.microsoftonline.us"
+
+    def test_tenant_and_authority_stored_as_attributes(self):
+        """Test that tenant_id and base_authority are stored for OBO credential creation."""
+        provider = AzureProvider(
+            client_id="test-client-id",
+            client_secret="test-client-secret",
+            tenant_id="my-tenant",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            base_authority="login.microsoftonline.us",
+            jwt_signing_key="test-secret",
+        )
+
+        assert provider._tenant_id == "my-tenant"
+        assert provider._base_authority == "login.microsoftonline.us"
+
+    def test_entra_obo_token_is_importable(self):
+        """Test that EntraOBOToken can be imported."""
+        from fastmcp.server.auth.providers.azure import EntraOBOToken
+
+        assert EntraOBOToken is not None
+
+    def test_entra_obo_token_creates_dependency(self):
+        """Test that EntraOBOToken creates a dependency with scopes."""
+        from fastmcp.server.auth.providers.azure import EntraOBOToken, _EntraOBOToken
+
+        dep = EntraOBOToken(["https://graph.microsoft.com/User.Read"])
+        assert isinstance(dep, _EntraOBOToken)
+        assert dep.scopes == ["https://graph.microsoft.com/User.Read"]
+
+    def test_entra_obo_token_is_dependency_instance(self):
+        """Test that EntraOBOToken is a Dependency instance."""
+        try:
+            from docket.dependencies import Dependency
+        except ImportError:
+            from fastmcp._vendor.docket_di import Dependency
+
+        from fastmcp.server.auth.providers.azure import _EntraOBOToken
+
+        dep = _EntraOBOToken(["scope"])
+        assert isinstance(dep, Dependency)
