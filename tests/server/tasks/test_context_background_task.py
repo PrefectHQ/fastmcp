@@ -13,6 +13,7 @@ from mcp import ServerSession
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.elicitation import ElicitResult
 from fastmcp.server.context import Context
 from fastmcp.server.elicitation import AcceptedElicitation, DeclinedElicitation
 from fastmcp.server.tasks.elicitation import handle_task_input
@@ -227,67 +228,31 @@ class TestBackgroundTaskIntegration:
         assert captured["is_background"] is True
 
     async def test_elicit_accept_flow(self):
-        """E2E: tool elicits input, client accepts, tool receives value.
-
-        Flow:
-        1. Tool calls ctx.elicit("name?", str) — blocks waiting for input
-        2. Client polls handle_task_input(action="accept", content={"value":"Bob"})
-        3. Tool resumes with AcceptedElicitation(data="Bob")
-        """
+        """E2E: tool elicits input, client accepts via elicitation_handler."""
         mcp = FastMCP("elicit-accept-test")
-        elicit_started = asyncio.Event()
-        captured: dict[str, str | None] = {"task_id": None, "session_id": None}
 
         @mcp.tool(task=True)
         async def ask_name(ctx: Context) -> str:
-            captured["task_id"] = ctx.task_id
-            captured["session_id"] = ctx.session_id
-            elicit_started.set()
-
             result = await ctx.elicit("What is your name?", str)
             if isinstance(result, AcceptedElicitation):
                 return f"Hello, {result.data}!"
             return "No name provided"
 
-        async with Client(mcp) as client:
+        async def handler(message, response_type, params, ctx):
+            return ElicitResult(action="accept", content={"value": "Bob"})
+
+        async with Client(mcp, elicitation_handler=handler) as client:
             task = await client.call_tool("ask_name", {}, task=True)
-            await asyncio.wait_for(elicit_started.wait(), timeout=5.0)
-
-            assert captured["task_id"] is not None
-            assert captured["session_id"] is not None
-
-            # Poll until the "waiting" status is stored in Redis
-            success = False
-            for _ in range(40):
-                success = await handle_task_input(
-                    task_id=captured["task_id"],
-                    session_id=captured["session_id"],
-                    action="accept",
-                    content={"value": "Bob"},
-                    fastmcp=mcp,
-                )
-                if success:
-                    break
-                await asyncio.sleep(0.05)
-
-            assert success is True, "handle_task_input should succeed within 2s"
-
             await task.wait(timeout=10.0)
             result = await task.result()
             assert result.data == "Hello, Bob!"
 
     async def test_elicit_decline_flow(self):
-        """E2E: tool elicits input, client declines, tool gets DeclinedElicitation."""
+        """E2E: tool elicits input, client declines via elicitation_handler."""
         mcp = FastMCP("elicit-decline-test")
-        elicit_started = asyncio.Event()
-        captured: dict[str, str | None] = {"task_id": None, "session_id": None}
 
         @mcp.tool(task=True)
         async def optional_input(ctx: Context) -> str:
-            captured["task_id"] = ctx.task_id
-            captured["session_id"] = ctx.session_id
-            elicit_started.set()
-
             result = await ctx.elicit("Want to provide a name?", str)
             if isinstance(result, DeclinedElicitation):
                 return "User declined"
@@ -295,34 +260,17 @@ class TestBackgroundTaskIntegration:
                 return f"Got: {result.data}"
             return "Cancelled"
 
-        async with Client(mcp) as client:
+        async def handler(message, response_type, params, ctx):
+            return ElicitResult(action="decline")
+
+        async with Client(mcp, elicitation_handler=handler) as client:
             task = await client.call_tool("optional_input", {}, task=True)
-            await asyncio.wait_for(elicit_started.wait(), timeout=5.0)
-
-            assert captured["task_id"] is not None
-            assert captured["session_id"] is not None
-
-            success = False
-            for _ in range(40):
-                success = await handle_task_input(
-                    task_id=captured["task_id"],
-                    session_id=captured["session_id"],
-                    action="decline",
-                    content=None,
-                    fastmcp=mcp,
-                )
-                if success:
-                    break
-                await asyncio.sleep(0.05)
-
-            assert success is True
-
             await task.wait(timeout=10.0)
             result = await task.result()
             assert result.data == "User declined"
 
     async def test_elicit_with_pydantic_model(self):
-        """E2E: tool elicits structured Pydantic input, data round-trips correctly."""
+        """E2E: tool elicits structured Pydantic input via elicitation_handler."""
         from pydantic import BaseModel
 
         class UserInfo(BaseModel):
@@ -330,43 +278,20 @@ class TestBackgroundTaskIntegration:
             age: int
 
         mcp = FastMCP("elicit-pydantic-test")
-        elicit_started = asyncio.Event()
-        captured: dict[str, str | None] = {"task_id": None, "session_id": None}
 
         @mcp.tool(task=True)
         async def get_user_info(ctx: Context) -> str:
-            captured["task_id"] = ctx.task_id
-            captured["session_id"] = ctx.session_id
-            elicit_started.set()
-
             result = await ctx.elicit("Provide user info", UserInfo)
             if isinstance(result, AcceptedElicitation):
                 assert isinstance(result.data, UserInfo)
                 return f"{result.data.name} is {result.data.age}"
             return "No info"
 
-        async with Client(mcp) as client:
+        async def handler(message, response_type, params, ctx):
+            return ElicitResult(action="accept", content={"name": "Alice", "age": 30})
+
+        async with Client(mcp, elicitation_handler=handler) as client:
             task = await client.call_tool("get_user_info", {}, task=True)
-            await asyncio.wait_for(elicit_started.wait(), timeout=5.0)
-
-            assert captured["task_id"] is not None
-            assert captured["session_id"] is not None
-
-            success = False
-            for _ in range(40):
-                success = await handle_task_input(
-                    task_id=captured["task_id"],
-                    session_id=captured["session_id"],
-                    action="accept",
-                    content={"name": "Alice", "age": 30},
-                    fastmcp=mcp,
-                )
-                if success:
-                    break
-                await asyncio.sleep(0.05)
-
-            assert success is True
-
             await task.wait(timeout=10.0)
             result = await task.result()
             assert result.data == "Alice is 30"

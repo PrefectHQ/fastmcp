@@ -41,7 +41,7 @@ ELICIT_TTL_SECONDS = 3600
 
 async def elicit_for_task(
     task_id: str,
-    session: ServerSession,
+    session: ServerSession | None,
     message: str,
     schema: dict[str, Any],
     fastmcp: FastMCP,

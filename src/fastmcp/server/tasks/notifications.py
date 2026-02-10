@@ -117,7 +117,9 @@ async def notification_subscriber_loop(
 
                 try:
                     # Reconstruct and send MCP notification
-                    await _send_mcp_notification(session, notification_dict)
+                    await _send_mcp_notification(
+                        session, notification_dict, session_id, docket
+                    )
                     logger.debug(
                         "Delivered notification to session %s (attempt %d)",
                         session_id,
@@ -159,12 +161,20 @@ async def notification_subscriber_loop(
 async def _send_mcp_notification(
     session: ServerSession,
     notification_dict: dict[str, Any],
+    session_id: str,
+    docket: Docket,
 ) -> None:
     """Reconstruct MCP notification from dict and send to session.
+
+    For input_required notifications with elicitation metadata, also sends
+    a standard elicitation/create request to the client and relays the
+    response back to the worker via Redis.
 
     Args:
         session: MCP ServerSession
         notification_dict: Notification as dict (method, params, _meta)
+        session_id: Session identifier (for elicitation relay)
+        docket: Docket instance (for elicitation relay)
     """
     method = notification_dict.get("method", "notifications/tasks/status")
     if method != "notifications/tasks/status":
@@ -180,6 +190,97 @@ async def _send_mcp_notification(
     server_notification = mcp.types.ServerNotification(notification)
 
     await session.send_notification(server_notification)
+
+    # If this is an input_required notification with elicitation metadata,
+    # relay the elicitation to the client via standard elicitation/create
+    params = notification_dict.get("params", {})
+    if params.get("status") == "input_required":
+        meta = notification_dict.get("_meta", {})
+        related_task = meta.get("modelcontextprotocol.io/related-task", {})
+        elicitation = related_task.get("elicitation")
+        if elicitation:
+            task_id = params["taskId"]
+            asyncio.create_task(  # noqa: RUF006
+                _relay_elicitation(session, session_id, task_id, elicitation, docket),
+                name=f"elicitation-relay-{task_id[:8]}",
+            )
+
+
+async def _relay_elicitation(
+    session: ServerSession,
+    session_id: str,
+    task_id: str,
+    elicitation: dict[str, Any],
+    docket: Docket,
+) -> None:
+    """Relay elicitation from a background task worker to the client.
+
+    Sends a standard elicitation/create request to the client session, then
+    pushes the response to Redis so the blocked worker can resume.
+
+    Args:
+        session: MCP ServerSession
+        session_id: Session identifier
+        task_id: Background task ID
+        elicitation: Elicitation metadata (message, requestedSchema)
+        docket: Docket instance for Redis access
+    """
+    from fastmcp.server.tasks.elicitation import (
+        ELICIT_RESPONSE_KEY,
+        ELICIT_STATUS_KEY,
+        ELICIT_TTL_SECONDS,
+    )
+
+    try:
+        result = await session.elicit(
+            message=elicitation["message"],
+            requestedSchema=elicitation["requestedSchema"],
+        )
+
+        response_key = docket.key(
+            ELICIT_RESPONSE_KEY.format(session_id=session_id, task_id=task_id)
+        )
+        status_key = docket.key(
+            ELICIT_STATUS_KEY.format(session_id=session_id, task_id=task_id)
+        )
+
+        response = {
+            "action": result.action,
+            "content": result.content,
+        }
+
+        async with docket.redis() as redis:
+            await redis.lpush(  # type: ignore[invalid-await]
+                response_key, json.dumps(response)
+            )
+            await redis.expire(response_key, ELICIT_TTL_SECONDS)
+            await redis.set(status_key, "responded", ex=ELICIT_TTL_SECONDS)
+
+        logger.debug(
+            "Relayed elicitation response for task %s (action=%s)",
+            task_id,
+            result.action,
+        )
+    except Exception as e:
+        logger.warning("Failed to relay elicitation for task %s: %s", task_id, e)
+        # Push a cancel response so the worker's BLPOP doesn't block forever
+        try:
+            response_key = docket.key(
+                ELICIT_RESPONSE_KEY.format(session_id=session_id, task_id=task_id)
+            )
+            cancel = {"action": "cancel", "content": None}
+            async with docket.redis() as redis:
+                await redis.lpush(  # type: ignore[invalid-await]
+                    response_key, json.dumps(cancel)
+                )
+                await redis.expire(response_key, ELICIT_TTL_SECONDS)
+        except Exception as cancel_error:
+            logger.warning(
+                "Failed to push cancel response for task %s "
+                "(worker may block until TTL): %s",
+                task_id,
+                cancel_error,
+            )
 
 
 # =============================================================================
