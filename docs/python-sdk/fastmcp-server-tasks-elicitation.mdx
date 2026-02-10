@@ -50,7 +50,29 @@ in a Docket worker context where there's no active MCP request.
 - `McpError`: If the elicitation request fails
 
 
-### `handle_task_input` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L234" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `relay_elicitation` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L234" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+relay_elicitation(session: ServerSession, session_id: str, task_id: str, elicitation: dict[str, Any], fastmcp: FastMCP) -> None
+```
+
+
+Relay elicitation from a background task worker to the client.
+
+Called by the notification subscriber when it detects an input_required
+notification with elicitation metadata. Sends a standard elicitation/create
+request to the client session, then uses handle_task_input() to push the
+response to Redis so the blocked worker can resume.
+
+**Args:**
+- `session`: MCP ServerSession
+- `session_id`: Session identifier
+- `task_id`: Background task ID
+- `elicitation`: Elicitation metadata (message, requestedSchema)
+- `fastmcp`: FastMCP server instance
+
+
+### `handle_task_input` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L290" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 handle_task_input(task_id: str, session_id: str, action: str, content: dict[str, Any] | None, fastmcp: FastMCP) -> bool
