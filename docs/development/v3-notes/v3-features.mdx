@@ -120,6 +120,29 @@ Key details:
 
 Documentation: [CIMD Authentication](/clients/auth/cimd), [OAuth Proxy CIMD config](/servers/auth/oauth-proxy#cimd-support)
 
+### Pre-Registered OAuth Clients
+
+The `OAuth` client helper now accepts `client_id` and `client_secret` parameters for servers where the client is already registered ([#3086](https://github.com/jlowin/fastmcp/pull/3086)). This bypasses Dynamic Client Registration entirely — useful when DCR is disabled, or when the server has pre-provisioned credentials for your application.
+
+```python
+from fastmcp import Client
+from fastmcp.client.auth import OAuth
+
+async with Client(
+    "https://mcp-server.example.com/mcp",
+    auth=OAuth(
+        client_id="my-registered-app",
+        client_secret="my-secret",
+        scopes=["read", "write"],
+    ),
+) as client:
+    await client.ping()
+```
+
+The static credentials are injected before the OAuth flow begins, so the client never attempts DCR. If the server rejects the credentials, the error surfaces immediately rather than retrying with fresh registration (which can't help for fixed credentials). Public clients can omit `client_secret`.
+
+Documentation: [Pre-Registered Clients](/clients/auth/oauth#pre-registered-clients)
+
 ### CLI: `fastmcp generate-cli`
 
 `fastmcp generate-cli` connects to any MCP server, reads its tool schemas, and writes a standalone Python CLI script where every tool becomes a typed subcommand with flags, help text, and tab completion ([#3065](https://github.com/jlowin/fastmcp/pull/3065)). The insight is that MCP tool schemas already contain everything a CLI framework needs — parameter names, types, descriptions, required/optional status — so the generator maps JSON Schema directly into [cyclopts](https://cyclopts.readthedocs.io/) commands.
@@ -203,18 +226,20 @@ The `require_auth` authorization check introduced in beta1 has been removed in f
 
 Support for [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) — the spec extension that lets MCP servers deliver interactive UIs via sandboxed iframes. Extension negotiation, typed UI metadata on tools and resources, and the `ui://` resource scheme. No component DSL, renderer, or `FastMCPApp` class yet — those are future phases.
 
-**Registering tools with UI metadata:**
+**Breaking change from beta 2:** The `ui=` parameter on `@mcp.tool()` and `@mcp.resource()` has been renamed to `app=`, and the `ToolUI`/`ResourceUI` classes have been consolidated into a single `AppConfig` class. This follows the established `task=True`/`TaskConfig` pattern. The wire format (`meta["ui"]`, `_meta.ui`) is unchanged.
+
+**Registering tools with app metadata:**
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.apps import ToolUI, ResourceUI, ResourceCSP, ResourcePermissions
+from fastmcp.server.apps import AppConfig, ResourceCSP, ResourcePermissions
 
 mcp = FastMCP("My Server")
 
 # Register the HTML bundle as a ui:// resource with CSP
 @mcp.resource(
     "ui://my-app/view.html",
-    ui=ResourceUI(
+    app=AppConfig(
         csp=ResourceCSP(resource_domains=["https://unpkg.com"]),
         permissions=ResourcePermissions(clipboard_write={}),
     ),
@@ -224,17 +249,17 @@ def app_html() -> str:
     return Path("./dist/index.html").read_text()
 
 # Tool with UI — clients render an iframe alongside the result
-@mcp.tool(ui=ToolUI(resource_uri="ui://my-app/view.html"))
+@mcp.tool(app=AppConfig(resource_uri="ui://my-app/view.html"))
 async def list_users() -> list[dict]:
     return [{"id": "1", "name": "Alice"}]
 
 # App-only tool — visible to the UI but hidden from the model
-@mcp.tool(ui=ToolUI(resource_uri="ui://my-app/view.html", visibility=["app"]))
+@mcp.tool(app=AppConfig(resource_uri="ui://my-app/view.html", visibility=["app"]))
 async def delete_user(id: str) -> dict:
     return {"deleted": True}
 ```
 
-The `ui=` parameter accepts either a typed model (`ToolUI`, `ResourceUI`) or a raw dict for forward compatibility. It merges into `meta["ui"]` — alongside any other metadata you set.
+The `app=` parameter accepts `True` (enable with defaults), an `AppConfig` instance, or a raw dict for forward compatibility. It merges into `meta["ui"]` — alongside any other metadata you set.
 
 **`ui://` resources** automatically get the correct MIME type (`text/html;profile=mcp-app`) unless you override it explicitly.
 
@@ -242,9 +267,9 @@ The `ui=` parameter accepts either a typed model (`ToolUI`, `ResourceUI`) or a r
 
 ```python
 from fastmcp import Context
-from fastmcp.server.apps import ToolUI, UI_EXTENSION_ID
+from fastmcp.server.apps import AppConfig, UI_EXTENSION_ID
 
-@mcp.tool(ui=ToolUI(resource_uri="ui://dashboard"))
+@mcp.tool(app=AppConfig(resource_uri="ui://dashboard"))
 async def dashboard(ctx: Context) -> dict:
     data = compute_dashboard()
     if ctx.client_supports_extension(UI_EXTENSION_ID):
@@ -253,11 +278,10 @@ async def dashboard(ctx: Context) -> dict:
 ```
 
 **Key details:**
-- `ToolUI` fields: `resource_uri`, `visibility`, `csp`, `permissions`, `domain`, `prefers_border` (all optional except for typical usage of `resource_uri`)
-- `ResourceUI` fields: `csp`, `permissions`, `domain`, `prefers_border` — metadata for the resource itself when it's a UI bundle
+- `AppConfig` fields: `resource_uri`, `visibility`, `csp`, `permissions`, `domain`, `prefers_border` (all optional). On resources, `resource_uri` and `visibility` are validated as not-applicable and will raise `ValueError` if set.
 - `csp` accepts a `ResourceCSP` model with structured domain lists: `connect_domains`, `resource_domains`, `frame_domains`, `base_uri_domains`
 - `permissions` accepts a `ResourcePermissions` model: `camera`, `microphone`, `geolocation`, `clipboard_write` (each set to `{}` to request)
-- Both models use `extra="allow"` for forward compatibility with future spec additions
+- `AppConfig` uses `extra="allow"` for forward compatibility with future spec additions
 - Models use Pydantic aliases for wire format (`resourceUri`, `prefersBorder`, `connectDomains`, `clipboardWrite`)
 - Resource metadata (including CSP/permissions) is propagated to `resources/read` response content items so hosts can read it when rendering the iframe
 - `ctx.client_supports_extension(id)` is a general-purpose method — works for any extension, not just MCP Apps

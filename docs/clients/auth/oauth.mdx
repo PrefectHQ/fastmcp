@@ -55,6 +55,8 @@ You don't need to pass `mcp_url` when using `OAuth` with `Client(auth=...)` — 
 
 - **`scopes`** (`str | list[str]`, optional): OAuth scopes to request. Can be space-separated string or list of strings
 - **`client_name`** (`str`, optional): Client name for dynamic registration. Defaults to `"FastMCP Client"`
+- **`client_id`** (`str`, optional): Pre-registered OAuth client ID. When provided, skips Dynamic Client Registration entirely. See [Pre-Registered Clients](#pre-registered-clients)
+- **`client_secret`** (`str`, optional): OAuth client secret for pre-registered clients. Optional — public clients that rely on PKCE can omit this
 - **`client_metadata_url`** (`str`, optional): URL-based client identity (CIMD). See [CIMD Authentication](/clients/auth/cimd) for details
 - **`token_storage`** (`AsyncKeyValue`, optional): Storage backend for persisting OAuth tokens. Defaults to in-memory storage (tokens lost on restart). See [Token Storage](#token-storage) for encrypted storage options
 - **`additional_client_metadata`** (`dict[str, Any]`, optional): Extra metadata for client registration
@@ -74,7 +76,7 @@ The client first checks the configured `token_storage` backend for existing, val
 If no valid tokens exist, the client attempts to discover the OAuth server's endpoints using a well-known URI (e.g., `/.well-known/oauth-authorization-server`) based on the `mcp_url`.
 </Step>
 <Step title="Client Registration">
-If the OAuth server supports it and the client isn't already registered (or credentials aren't cached), the client performs dynamic client registration according to RFC 7591. Alternatively, if a `client_metadata_url` is configured and the server supports CIMD, the client uses its metadata URL as its identity instead of registering.
+If a `client_id` is provided, the client uses those pre-registered credentials directly and skips this step entirely. Otherwise, if a `client_metadata_url` is configured and the server supports CIMD, the client uses its metadata URL as its identity. As a fallback, the client performs Dynamic Client Registration (RFC 7591) if the server supports it.
 </Step>
 <Step title="Local Callback Server">
 A temporary local HTTP server is started on an available port (or the port specified via `callback_port`). This server's address (e.g., `http://127.0.0.1:<port>/callback`) acts as the `redirect_uri` for the OAuth flow.
@@ -152,3 +154,33 @@ async with Client(
 ```
 
 See the [CIMD Authentication](/clients/auth/cimd) page for complete documentation on creating, hosting, and validating CIMD documents.
+
+## Pre-Registered Clients
+
+<VersionBadge version="3.0.0" />
+
+Some OAuth servers don't support Dynamic Client Registration — the MCP spec explicitly makes DCR optional. If your client has been pre-registered with the server (you already have a `client_id` and optionally a `client_secret`), you can provide them directly to skip DCR entirely.
+
+```python
+from fastmcp import Client
+from fastmcp.client.auth import OAuth
+
+async with Client(
+    "https://mcp-server.example.com/mcp",
+    auth=OAuth(
+        client_id="my-registered-client-id",
+        client_secret="my-client-secret",
+    ),
+) as client:
+    await client.ping()
+```
+
+Public clients that rely on PKCE for security can omit `client_secret`:
+
+```python
+oauth = OAuth(client_id="my-public-client-id")
+```
+
+<Note>
+When using pre-registered credentials, the client will not attempt Dynamic Client Registration. If the server rejects the credentials, the error is surfaced immediately rather than falling back to DCR.
+</Note>

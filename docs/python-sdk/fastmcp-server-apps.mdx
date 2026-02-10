@@ -15,17 +15,17 @@ UI metadata for clients that support interactive app rendering.
 
 ## Functions
 
-### `ui_to_meta_dict` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/apps.py#L129" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `app_config_to_meta_dict` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/apps.py#L115" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-ui_to_meta_dict(ui: ToolUI | ResourceUI | dict[str, Any]) -> dict[str, Any]
+app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]
 ```
 
 
-Convert a UI model or dict to the wire-format dict for ``meta["ui"]``.
+Convert an AppConfig or dict to the wire-format dict for ``meta["ui"]``.
 
 
-### `resolve_ui_mime_type` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/apps.py#L136" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resolve_ui_mime_type` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/apps.py#L122" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_ui_mime_type(uri: str, explicit_mime_type: str | None) -> str | None
@@ -70,18 +70,17 @@ iframe.  Hosts MAY honour these; apps should use JS feature detection
 as a fallback.
 
 
-### `ToolUI` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/apps.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AppConfig` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/apps.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
-Typed ``_meta.ui`` for tools — links a tool to its UI resource.
+Configuration for MCP App tools and resources.
+
+Controls how a tool or resource participates in the MCP Apps extension.
+On tools, ``resource_uri`` and ``visibility`` specify which UI resource
+to render and where the tool appears.  On resources, those fields must
+be left unset (the resource itself is the UI).
 
 All fields use ``exclude_none`` serialization so only explicitly-set
 values appear on the wire.  Aliases match the MCP Apps wire format
 (camelCase).
-
-
-### `ResourceUI` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/apps.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-
-Typed ``_meta.ui`` for resources — rendering hints for UI-capable clients.
 

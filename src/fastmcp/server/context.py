@@ -790,6 +790,7 @@ class Context:
         tool_choice: ToolChoiceOption | str | None = None,
         execute_tools: bool = True,
         mask_error_details: bool | None = None,
+        tool_concurrency: int | None = None,
     ) -> SampleStep:
         """
         Make a single LLM sampling call.
@@ -813,6 +814,12 @@ class Context:
             mask_error_details: If True, mask detailed error messages from tool
                 execution. When None (default), uses the global settings value.
                 Tools can raise ToolError to bypass masking.
+            tool_concurrency: Controls parallel execution of tools:
+                - None (default): Sequential execution (one at a time)
+                - 0: Unlimited parallel execution
+                - N > 0: Execute at most N tools concurrently
+                If any tool has sequential=True, all tools execute sequentially
+                regardless of this setting.
 
         Returns:
             SampleStep containing:
@@ -846,6 +853,7 @@ class Context:
             tool_choice=tool_choice,
             auto_execute_tools=execute_tools,
             mask_error_details=mask_error_details,
+            tool_concurrency=tool_concurrency,
         )
 
     @overload
@@ -860,6 +868,7 @@ class Context:
         tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
         result_type: type[ResultT],
         mask_error_details: bool | None = None,
+        tool_concurrency: int | None = None,
     ) -> SamplingResult[ResultT]:
         """Overload: With result_type, returns SamplingResult[ResultT]."""
 
@@ -875,6 +884,7 @@ class Context:
         tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
         result_type: None = None,
         mask_error_details: bool | None = None,
+        tool_concurrency: int | None = None,
     ) -> SamplingResult[str]:
         """Overload: Without result_type, returns SamplingResult[str]."""
 
@@ -889,6 +899,7 @@ class Context:
         tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
         result_type: type[ResultT] | None = None,
         mask_error_details: bool | None = None,
+        tool_concurrency: int | None = None,
     ) -> SamplingResult[ResultT] | SamplingResult[str]:
         """
         Send a sampling request to the client and await the response.
@@ -919,6 +930,12 @@ class Context:
             mask_error_details: If True, mask detailed error messages from tool
                 execution. When None (default), uses the global settings value.
                 Tools can raise ToolError to bypass masking.
+            tool_concurrency: Controls parallel execution of tools:
+                - None (default): Sequential execution (one at a time)
+                - 0: Unlimited parallel execution
+                - N > 0: Execute at most N tools concurrently
+                If any tool has sequential=True, all tools execute sequentially
+                regardless of this setting.
 
         Returns:
             SamplingResult[T] containing:
@@ -942,6 +959,7 @@ class Context:
             tools=tools,
             result_type=result_type,
             mask_error_details=mask_error_details,
+            tool_concurrency=tool_concurrency,
         )
 
     @overload

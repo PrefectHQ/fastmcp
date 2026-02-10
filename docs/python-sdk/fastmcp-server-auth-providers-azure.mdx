@@ -12,9 +12,38 @@ This provider implements Azure/Microsoft Entra ID OAuth authentication
 using the OAuth Proxy pattern for non-DCR OAuth flows.
 
 
+## Functions
+
+### `EntraOBOToken` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L658" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+EntraOBOToken(scopes: list[str]) -> str
+```
+
+
+Exchange the user's Entra token for a downstream API token via OBO.
+
+This dependency performs a Microsoft Entra On-Behalf-Of (OBO) token exchange,
+allowing your MCP server to call downstream APIs (like Microsoft Graph) on
+behalf of the authenticated user.
+
+**Args:**
+- `scopes`: The scopes to request for the downstream API. For Microsoft Graph,
+use scopes like ["https\://graph.microsoft.com/Mail.Read"] or
+["https\://graph.microsoft.com/.default"].
+
+**Returns:**
+- A dependency that resolves to the downstream API access token string
+
+**Raises:**
+- `ImportError`: If fastmcp[azure] is not installed
+- `RuntimeError`: If no access token is available, provider is not Azure,
+or OBO exchange fails
+
+
 ## Classes
 
-### `AzureProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L30" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AzureProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L31" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Azure (Microsoft Entra) OAuth provider for FastMCP.
@@ -49,7 +78,7 @@ Setup:
 
 **Methods:**
 
-#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L230" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L235" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str
@@ -69,7 +98,29 @@ scopes to determine the resource/audience instead of a separate parameter.
 - Authorization URL to redirect the user to Azure AD
 
 
-### `AzureJWTVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L457" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `create_obo_credential` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L461" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_obo_credential(self, user_assertion: str) -> OnBehalfOfCredential
+```
+
+Create an OnBehalfOfCredential for OBO token exchange.
+
+Uses the AzureProvider's configuration (client_id, client_secret,
+tenant_id, authority) to create a credential that can exchange the
+user's token for downstream API tokens.
+
+**Args:**
+- `user_assertion`: The user's access token to exchange via OBO.
+
+**Returns:**
+- A configured OnBehalfOfCredential ready for get_token() calls.
+
+**Raises:**
+- `ImportError`: If azure-identity is not installed (requires fastmcp[azure]).
+
+
+### `AzureJWTVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L489" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 JWT verifier pre-configured for Azure AD / Microsoft Entra ID.
@@ -106,7 +157,7 @@ Example::
 
 **Methods:**
 
-#### `scopes_supported` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L537" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `scopes_supported` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L569" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 scopes_supported(self) -> list[str]

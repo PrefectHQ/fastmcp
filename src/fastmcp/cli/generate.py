@@ -1,4 +1,4 @@
-"""Generate a standalone CLI script from an MCP server's capabilities."""
+"""Generate a standalone CLI script and agent skill from an MCP server."""
 
 import keyword
 import re
@@ -519,6 +519,152 @@ def generate_cli_script(
 
 
 # ---------------------------------------------------------------------------
+# Skill (SKILL.md) generation
+# ---------------------------------------------------------------------------
+
+_JSON_SCHEMA_TYPE_LABELS: dict[str, str] = {
+    "string": "string",
+    "integer": "integer",
+    "number": "number",
+    "boolean": "boolean",
+    "null": "null",
+    "array": "array",
+    "object": "object",
+}
+
+
+def _param_to_cli_flag(prop_name: str) -> str:
+    """Convert a JSON Schema property name to its CLI flag form.
+
+    Replicates cyclopts' default_name_transform: camelCase → snake_case,
+    lowercase, underscores → hyphens, strip leading/trailing hyphens.
+    """
+    safe = _to_python_identifier(prop_name)
+    # camelCase / PascalCase → snake_case
+    safe = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", safe)
+    safe = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", safe)
+    safe = safe.lower().replace("_", "-").strip("-")
+    return f"--{safe}" if safe else "--arg"
+
+
+def _schema_type_label(prop_schema: dict[str, Any]) -> str:
+    """Return a human-readable type label for a property schema."""
+    schema_type = prop_schema.get("type", "string")
+    if isinstance(schema_type, list):
+        labels = [_JSON_SCHEMA_TYPE_LABELS.get(t, t) for t in schema_type]
+        return " | ".join(labels)
+
+    label = _JSON_SCHEMA_TYPE_LABELS.get(schema_type, schema_type)
+
+    # For arrays, include item type if simple
+    if schema_type == "array":
+        items = prop_schema.get("items", {})
+        item_type = items.get("type", "")
+        if isinstance(item_type, str) and item_type in _JSON_SCHEMA_TYPE_LABELS:
+            return f"array[{item_type}]"
+
+    return label
+
+
+def _tool_skill_section(tool: mcp.types.Tool, cli_filename: str) -> str:
+    """Generate a SKILL.md section for a single tool."""
+    schema = tool.inputSchema
+    properties: dict[str, Any] = schema.get("properties", {})
+    required = set(schema.get("required", []))
+
+    # Build example invocation flags
+    flag_parts_list: list[str] = []
+    for p, p_schema in properties.items():
+        flag = _param_to_cli_flag(p)
+        schema_type = p_schema.get("type")
+        is_bool = schema_type == "boolean" or (
+            isinstance(schema_type, list) and "boolean" in schema_type
+        )
+        if is_bool:
+            flag_parts_list.append(flag)
+        else:
+            flag_parts_list.append(f"{flag} <value>")
+    flag_parts = " ".join(flag_parts_list)
+    invocation = f"uv run --with fastmcp python {cli_filename} call-tool {tool.name}"
+    if flag_parts:
+        invocation += f" {flag_parts}"
+
+    # Build parameter table rows
+    rows: list[str] = []
+    for prop_name, prop_schema in properties.items():
+        flag = f"`{_param_to_cli_flag(prop_name)}`"
+        type_label = _schema_type_label(prop_schema).replace("|", "\\|")
+        is_required = "yes" if prop_name in required else "no"
+        description = prop_schema.get("description", "")
+        _, needs_json = _schema_to_python_type(prop_schema)
+        if needs_json:
+            description = (
+                f"{description} (JSON string)" if description else "JSON string"
+            )
+        description = description.replace("\n", " ").replace("|", "\\|")
+        rows.append(f"| {flag} | {type_label} | {is_required} | {description} |")
+
+    param_table = ""
+    if rows:
+        header = "| Flag | Type | Required | Description |\n|------|------|----------|-------------|"
+        param_table = f"\n{header}\n" + "\n".join(rows) + "\n"
+
+    lines: list[str] = [f"### {tool.name}"]
+    if tool.description:
+        lines.extend(["", tool.description])
+    lines.extend(["", "```bash", invocation, "```"])
+    if param_table:
+        lines.extend(["", param_table.strip("\n")])
+    return "\n".join(lines)
+
+
+def generate_skill_content(
+    server_name: str,
+    cli_filename: str,
+    tools: list[mcp.types.Tool],
+) -> str:
+    """Generate a SKILL.md file for a generated CLI script."""
+    skill_name = (
+        server_name.replace(" ", "-").lower().replace("\\", "").replace('"', "")
+    )
+    safe_name = server_name.replace("\\", "").replace('"', "")
+    description = f"CLI for the {safe_name} MCP server. Call tools, list resources, and get prompts."
+
+    lines = [
+        "---",
+        f'name: "{skill_name}-cli"',
+        f'description: "{description}"',
+        "---",
+        "",
+        f"# {server_name} CLI",
+        "",
+    ]
+
+    if tools:
+        tool_bodies = "\n\n".join(
+            _tool_skill_section(tool, cli_filename) for tool in tools
+        )
+        lines.extend(["## Tool Commands", "", tool_bodies, ""])
+
+    lines.extend(
+        [
+            "## Utility Commands",
+            "",
+            "```bash",
+            f"uv run --with fastmcp python {cli_filename} list-tools",
+            f"uv run --with fastmcp python {cli_filename} list-resources",
+            f"uv run --with fastmcp python {cli_filename} read-resource <uri>",
+            f"uv run --with fastmcp python {cli_filename} list-prompts",
+            f"uv run --with fastmcp python {cli_filename} get-prompt <name> [key=value ...]",
+            "```",
+            "",
+        ]
+    )
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # CLI command
 # ---------------------------------------------------------------------------
 
@@ -555,22 +701,40 @@ async def generate_cli_command(
             help="Auth method: 'oauth', a bearer token string, or 'none' to disable",
         ),
     ] = None,
+    no_skill: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--no-skill",
+            help="Skip generating a SKILL.md agent skill alongside the CLI",
+        ),
+    ] = False,
 ) -> None:
     """Generate a standalone CLI script from an MCP server.
 
     Connects to the server, reads its tools/resources/prompts, and writes
-    a Python script that can invoke them directly.
+    a Python script that can invoke them directly. Also generates a SKILL.md
+    agent skill file unless --no-skill is passed.
 
     Examples:
         fastmcp generate-cli weather
         fastmcp generate-cli weather my_cli.py
         fastmcp generate-cli http://localhost:8000/mcp
         fastmcp generate-cli server.py output.py -f
+        fastmcp generate-cli weather --no-skill
     """
     output_path = Path(output)
+    skill_path = output_path.parent / "SKILL.md"
+
+    # Check both files up front before doing any work
+    existing: list[Path] = []
     if output_path.exists() and not force:
+        existing.append(output_path)
+    if not no_skill and skill_path.exists() and not force:
+        existing.append(skill_path)
+    if existing:
+        names = ", ".join(f"[cyan]{p}[/cyan]" for p in existing)
         console.print(
-            f"[bold red]Error:[/bold red] [cyan]{output_path}[/cyan] already exists. "
+            f"[bold red]Error:[/bold red] {names} already exist(s). "
             f"Use [cyan]-f[/cyan] to overwrite."
         )
         sys.exit(1)
@@ -612,6 +776,16 @@ async def generate_cli_command(
         f"[green]✓[/green] Wrote [cyan]{output_path}[/cyan] "
         f"with {len(tools)} tool command(s)"
     )
+
+    if not no_skill:
+        skill_content = generate_skill_content(
+            server_name=server_name,
+            cli_filename=output_path.name,
+            tools=tools,
+        )
+        skill_path.write_text(skill_content)
+        console.print(f"[green]✓[/green] Wrote [cyan]{skill_path}[/cyan]")
+
     console.print(f"[dim]Run: python {output_path} --help[/dim]")
 
 

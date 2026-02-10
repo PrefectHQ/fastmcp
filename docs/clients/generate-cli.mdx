@@ -23,7 +23,7 @@ fastmcp generate-cli http://localhost:8000/mcp
 fastmcp generate-cli server.py my_weather_cli.py
 ```
 
-The second positional argument sets the output path. When omitted, it defaults to `cli.py`. If the file already exists, the command refuses to overwrite unless you pass `-f`:
+The second positional argument sets the output path. When omitted, it defaults to `cli.py`. If either the CLI file or its companion `SKILL.md` already exists, the command refuses to overwrite unless you pass `-f`:
 
 ```bash
 fastmcp generate-cli weather -f
@@ -84,6 +84,42 @@ Options:
 ```
 
 Tool names are preserved exactly as the server defines them — underscores stay as underscores, so `call-tool get_forecast` matches what the server expects.
+
+## Agent Skill
+
+Alongside the CLI script, `generate-cli` also writes a `SKILL.md` file — a [Claude Code agent skill](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/skills) that documents the generated CLI. The skill includes every tool's exact invocation syntax, parameter flags with types and descriptions, and the utility commands, so an agent can use the CLI immediately without running `--help` or experimenting with flag names.
+
+The skill is written to the same directory as the CLI script. For a weather server, it looks something like:
+
+````markdown
+---
+name: "weather-cli"
+description: "CLI for the weather MCP server. Call tools, list resources, and get prompts."
+---
+
+# weather CLI
+
+## Tool Commands
+
+### get_forecast
+
+Get the weather forecast for a city.
+
+```bash
+uv run --with fastmcp python cli.py call-tool get_forecast --city <value> --days <value>
+```
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--city` | string | yes | City name |
+| `--days` | integer | no | Number of forecast days |
+````
+
+To skip skill generation, pass `--no-skill`:
+
+```bash
+fastmcp generate-cli weather --no-skill
+```
 
 ## How It Works
 

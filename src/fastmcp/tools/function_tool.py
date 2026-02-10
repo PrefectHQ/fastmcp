@@ -73,6 +73,7 @@ class ToolMeta:
     output_schema: dict[str, Any] | NotSetT | None = NotSet
     annotations: ToolAnnotations | None = None
     meta: dict[str, Any] | None = None
+    app: Any = None
     task: bool | TaskConfig | None = None
     exclude_args: list[str] | None = None
     serializer: Any | None = None

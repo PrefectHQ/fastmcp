@@ -1,6 +1,6 @@
 """Tests for MCP Apps Phase 1 — SDK compatibility.
 
-Covers UI metadata models, tool/resource registration with ``ui=``,
+Covers app config models, tool/resource registration with ``app=``,
 extension negotiation, and the ``Context.client_supports_extension`` method.
 """
 
@@ -8,15 +8,16 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from fastmcp import Client, FastMCP
 from fastmcp.server.apps import (
     UI_EXTENSION_ID,
     UI_MIME_TYPE,
+    AppConfig,
     ResourceCSP,
     ResourcePermissions,
-    ResourceUI,
-    ToolUI,
-    ui_to_meta_dict,
+    app_config_to_meta_dict,
 )
 from fastmcp.server.context import Context
 
@@ -25,19 +26,19 @@ from fastmcp.server.context import Context
 # ---------------------------------------------------------------------------
 
 
-class TestToolUI:
+class TestAppConfig:
     def test_serializes_with_aliases(self):
-        ui = ToolUI(resource_uri="ui://my-app/view.html", visibility=["app"])
-        d = ui.model_dump(by_alias=True, exclude_none=True)
+        cfg = AppConfig(resource_uri="ui://my-app/view.html", visibility=["app"])
+        d = cfg.model_dump(by_alias=True, exclude_none=True)
         assert d == {"resourceUri": "ui://my-app/view.html", "visibility": ["app"]}
 
     def test_excludes_none_fields(self):
-        ui = ToolUI(resource_uri="ui://foo")
-        d = ui.model_dump(by_alias=True, exclude_none=True)
+        cfg = AppConfig(resource_uri="ui://foo")
+        d = cfg.model_dump(by_alias=True, exclude_none=True)
         assert d == {"resourceUri": "ui://foo"}
 
     def test_all_fields(self):
-        ui = ToolUI(
+        cfg = AppConfig(
             resource_uri="ui://app",
             visibility=["app", "model"],
             csp=ResourceCSP(resource_domains=["https://cdn.example.com"]),
@@ -45,7 +46,7 @@ class TestToolUI:
             domain="example.com",
             prefers_border=True,
         )
-        d = ui.model_dump(by_alias=True, exclude_none=True)
+        d = cfg.model_dump(by_alias=True, exclude_none=True)
         assert d == {
             "resourceUri": "ui://app",
             "visibility": ["app", "model"],
@@ -56,8 +57,8 @@ class TestToolUI:
         }
 
     def test_populate_by_name(self):
-        ui = ToolUI(resource_uri="ui://app")
-        assert ui.resource_uri == "ui://app"
+        cfg = AppConfig(resource_uri="ui://app")
+        assert cfg.resource_uri == "ui://app"
 
 
 class TestResourceCSP:
@@ -152,61 +153,63 @@ class TestResourcePermissions:
         assert d == {}
 
 
-class TestResourceUI:
+class TestAppConfigForResources:
+    """AppConfig without resource_uri/visibility — for use on resources."""
+
     def test_serializes_with_aliases(self):
-        ui = ResourceUI(
+        cfg = AppConfig(
             prefers_border=True,
             csp=ResourceCSP(resource_domains=["https://cdn.example.com"]),
         )
-        d = ui.model_dump(by_alias=True, exclude_none=True)
+        d = cfg.model_dump(by_alias=True, exclude_none=True)
         assert d == {
             "prefersBorder": True,
             "csp": {"resourceDomains": ["https://cdn.example.com"]},
         }
 
     def test_excludes_none_fields(self):
-        ui = ResourceUI()
-        d = ui.model_dump(by_alias=True, exclude_none=True)
+        cfg = AppConfig()
+        d = cfg.model_dump(by_alias=True, exclude_none=True)
         assert d == {}
 
     def test_with_permissions(self):
-        ui = ResourceUI(
+        cfg = AppConfig(
             permissions=ResourcePermissions(microphone={}, clipboard_write={}),
         )
-        d = ui.model_dump(by_alias=True, exclude_none=True)
+        d = cfg.model_dump(by_alias=True, exclude_none=True)
         assert d == {
             "permissions": {"microphone": {}, "clipboardWrite": {}},
         }
 
 
-class TestUIToMetaDict:
-    def test_from_tool_ui(self):
-        ui = ToolUI(resource_uri="ui://app", visibility=["app"])
-        result = ui_to_meta_dict(ui)
+class TestAppConfigToMetaDict:
+    def test_from_app_config_with_tool_fields(self):
+        cfg = AppConfig(resource_uri="ui://app", visibility=["app"])
+        result = app_config_to_meta_dict(cfg)
         assert result["resourceUri"] == "ui://app"
         assert result["visibility"] == ["app"]
 
-    def test_from_resource_ui(self):
-        ui = ResourceUI(prefers_border=False)
-        result = ui_to_meta_dict(ui)
+    def test_from_app_config_resource_fields_only(self):
+        cfg = AppConfig(prefers_border=False)
+        result = app_config_to_meta_dict(cfg)
         assert result == {"prefersBorder": False}
 
     def test_passthrough_for_dict(self):
         raw: dict[str, Any] = {"resourceUri": "ui://app", "custom": "value"}
-        result = ui_to_meta_dict(raw)
+        result = app_config_to_meta_dict(raw)
         assert result is raw
 
 
 # ---------------------------------------------------------------------------
-# Tool registration with ui=
+# Tool registration with app=
 # ---------------------------------------------------------------------------
 
 
-class TestToolRegistrationWithUI:
-    async def test_tool_ui_model(self):
+class TestToolRegistrationWithApp:
+    async def test_app_config_model(self):
         server = FastMCP("test")
 
-        @server.tool(ui=ToolUI(resource_uri="ui://my-app/view.html"))
+        @server.tool(app=AppConfig(resource_uri="ui://my-app/view.html"))
         def my_tool() -> str:
             return "hello"
 
@@ -215,10 +218,10 @@ class TestToolRegistrationWithUI:
         assert tools[0].meta is not None
         assert tools[0].meta["ui"]["resourceUri"] == "ui://my-app/view.html"
 
-    async def test_tool_ui_dict(self):
+    async def test_app_dict(self):
         server = FastMCP("test")
 
-        @server.tool(ui={"resourceUri": "ui://foo", "visibility": ["app"]})
+        @server.tool(app={"resourceUri": "ui://foo", "visibility": ["app"]})
         def my_tool() -> str:
             return "hello"
 
@@ -227,10 +230,10 @@ class TestToolRegistrationWithUI:
         assert tools[0].meta["ui"]["resourceUri"] == "ui://foo"
         assert tools[0].meta["ui"]["visibility"] == ["app"]
 
-    async def test_ui_merges_with_existing_meta(self):
+    async def test_app_merges_with_existing_meta(self):
         server = FastMCP("test")
 
-        @server.tool(meta={"custom": "data"}, ui=ToolUI(resource_uri="ui://app"))
+        @server.tool(meta={"custom": "data"}, app=AppConfig(resource_uri="ui://app"))
         def my_tool() -> str:
             return "hello"
 
@@ -240,10 +243,10 @@ class TestToolRegistrationWithUI:
         assert meta["custom"] == "data"
         assert meta["ui"]["resourceUri"] == "ui://app"
 
-    async def test_ui_in_mcp_wire_format(self):
+    async def test_app_in_mcp_wire_format(self):
         server = FastMCP("test")
 
-        @server.tool(ui=ToolUI(resource_uri="ui://app", visibility=["app"]))
+        @server.tool(app=AppConfig(resource_uri="ui://app", visibility=["app"]))
         def my_tool() -> str:
             return "hello"
 
@@ -253,7 +256,7 @@ class TestToolRegistrationWithUI:
         assert mcp_tool.meta["ui"]["resourceUri"] == "ui://app"
         assert mcp_tool.meta["ui"]["visibility"] == ["app"]
 
-    async def test_tool_without_ui_has_no_ui_meta(self):
+    async def test_tool_without_app_has_no_ui_meta(self):
         server = FastMCP("test")
 
         @server.tool
@@ -266,11 +269,11 @@ class TestToolRegistrationWithUI:
 
 
 # ---------------------------------------------------------------------------
-# Resource registration with ui:// and ui=
+# Resource registration with ui:// and app=
 # ---------------------------------------------------------------------------
 
 
-class TestResourceWithUI:
+class TestResourceWithApp:
     async def test_ui_scheme_defaults_mime_type(self):
         server = FastMCP("test")
 
@@ -292,12 +295,12 @@ class TestResourceWithUI:
         resources = list(await server.list_resources())
         assert resources[0].mime_type == "text/html"
 
-    async def test_resource_ui_metadata(self):
+    async def test_resource_app_metadata(self):
         server = FastMCP("test")
 
         @server.resource(
             "ui://my-app/view.html",
-            ui=ResourceUI(prefers_border=True),
+            app=AppConfig(prefers_border=True),
         )
         def app_html() -> str:
             return "<html>hello</html>"
@@ -317,7 +320,7 @@ class TestResourceWithUI:
         assert resources[0].mime_type != UI_MIME_TYPE
 
     async def test_standalone_decorator_ui_scheme_defaults_mime_type(self):
-        """Test that the standalone @resource decorator also applies ui:// MIME default."""
+        """The standalone @resource decorator also applies ui:// MIME default."""
         from fastmcp.resources import resource
 
         @resource("ui://standalone-app/view.html")
@@ -332,7 +335,7 @@ class TestResourceWithUI:
         assert resources[0].mime_type == UI_MIME_TYPE
 
     async def test_resource_template_ui_scheme_defaults_mime_type(self):
-        """Test that resource templates also apply ui:// MIME default."""
+        """Resource templates also apply ui:// MIME default."""
         server = FastMCP("test")
 
         @server.resource("ui://template-app/{view}")
@@ -342,6 +345,30 @@ class TestResourceWithUI:
         templates = list(await server.list_resource_templates())
         assert len(templates) == 1
         assert templates[0].mime_type == UI_MIME_TYPE
+
+    async def test_resource_rejects_resource_uri(self):
+        """AppConfig with resource_uri raises ValueError on resources."""
+        server = FastMCP("test")
+        with pytest.raises(ValueError, match="resource_uri cannot be set on resources"):
+
+            @server.resource(
+                "ui://my-app/view.html",
+                app=AppConfig(resource_uri="ui://other"),
+            )
+            def app_html() -> str:
+                return "<html>hello</html>"
+
+    async def test_resource_rejects_visibility(self):
+        """AppConfig with visibility raises ValueError on resources."""
+        server = FastMCP("test")
+        with pytest.raises(ValueError, match="visibility cannot be set on resources"):
+
+            @server.resource(
+                "ui://my-app/view.html",
+                app=AppConfig(visibility=["app"]),
+            )
+            def app_html() -> str:
+                return "<html>hello</html>"
 
 
 # ---------------------------------------------------------------------------
@@ -382,11 +409,13 @@ class TestContextClientSupportsExtension:
 
 
 class TestIntegration:
-    async def test_tool_with_ui_roundtrip(self):
-        """UI metadata flows through to clients — no server-side stripping."""
+    async def test_tool_with_app_roundtrip(self):
+        """App metadata flows through to clients — no server-side stripping."""
         server = FastMCP("test")
 
-        @server.tool(ui=ToolUI(resource_uri="ui://app/view.html", visibility=["app"]))
+        @server.tool(
+            app=AppConfig(resource_uri="ui://app/view.html", visibility=["app"])
+        )
         async def my_tool() -> dict[str, str]:
             return {"result": "ok"}
 
@@ -425,11 +454,11 @@ class TestIntegration:
             assert len(result.contents) == 1
             assert result.contents[0].mimeType == UI_MIME_TYPE
 
-    async def test_ui_tool_callable(self):
-        """A tool registered with ui= is still callable normally."""
+    async def test_app_tool_callable(self):
+        """A tool registered with app= is still callable normally."""
         server = FastMCP("test")
 
-        @server.tool(ui=ToolUI(resource_uri="ui://app"))
+        @server.tool(app=AppConfig(resource_uri="ui://app"))
         async def greet(name: str) -> str:
             return f"Hello, {name}!"
 
@@ -438,19 +467,17 @@ class TestIntegration:
             assert any("Hello, Alice!" in str(c) for c in result.content)
 
     async def test_extension_and_tool_together(self):
-        """Server advertises extension AND tool has UI meta (stored on FastMCP Tool)."""
+        """Server advertises extension AND tool has app meta."""
         server = FastMCP("test")
 
-        @server.tool(ui=ToolUI(resource_uri="ui://dashboard", visibility=["app"]))
+        @server.tool(app=AppConfig(resource_uri="ui://dashboard", visibility=["app"]))
         def dashboard() -> str:
             return "data"
 
-        # Verify the stored FastMCP Tool still has full metadata
         tools = list(await server.list_tools())
         assert tools[0].meta is not None
         assert tools[0].meta["ui"]["resourceUri"] == "ui://dashboard"
 
-        # Verify the server advertises the extension
         async with Client(server) as client:
             extras = client.initialize_result.capabilities.model_extra or {}
             assert UI_EXTENSION_ID in extras.get("extensions", {})
@@ -461,7 +488,7 @@ class TestIntegration:
 
         @server.resource(
             "ui://secure-app/view.html",
-            ui=ResourceUI(
+            app=AppConfig(
                 csp=ResourceCSP(
                     resource_domains=["https://unpkg.com"],
                     connect_domains=["https://api.example.com"],
@@ -473,7 +500,7 @@ class TestIntegration:
             return "<html>secure</html>"
 
         @server.tool(
-            ui=ToolUI(
+            app=AppConfig(
                 resource_uri="ui://secure-app/view.html",
                 csp=ResourceCSP(resource_domains=["https://cdn.example.com"]),
                 permissions=ResourcePermissions(camera={}),
@@ -509,7 +536,7 @@ class TestIntegration:
 
         @server.resource(
             "ui://csp-app/view.html",
-            ui=ResourceUI(
+            app=AppConfig(
                 csp=ResourceCSP(resource_domains=["https://unpkg.com"]),
             ),
         )
