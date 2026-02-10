@@ -127,7 +127,7 @@ async def submit_to_docket(
                 "pollInterval": poll_interval_ms,
             },
             "_meta": {
-                "modelcontextprotocol.io/related-task": {
+                "io.modelcontextprotocol/related-task": {
                     "taskId": server_task_id,
                 }
             },
@@ -173,7 +173,7 @@ async def submit_to_docket(
     )
 
     try:
-        await ensure_subscriber_running(session_id, ctx.session, docket)
+        await ensure_subscriber_running(session_id, ctx.session, docket, ctx.fastmcp)
 
         # Register cleanup callback on session exit (once per session)
         # This ensures subscriber is stopped when the session disconnects

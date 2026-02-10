@@ -13,7 +13,7 @@ Handles queuing tool/prompt/resource executions to Docket as background tasks.
 
 ## Functions
 
-### `submit_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/handlers.py#L31" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `submit_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/handlers.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 submit_to_docket(task_type: Literal['tool', 'resource', 'template', 'prompt'], key: str, component: Tool | Resource | ResourceTemplate | Prompt, arguments: dict[str, Any] | None = None, task_meta: TaskMeta | None = None) -> mcp.types.CreateTaskResult

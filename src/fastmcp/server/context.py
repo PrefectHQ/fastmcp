@@ -1133,7 +1133,7 @@ class Context:
 
         return await elicit_for_task(
             task_id=self._task_id,  # type: ignore[arg-type]
-            session=self.session,
+            session=self._session,
             message=message,
             schema=schema,
             fastmcp=self.fastmcp,

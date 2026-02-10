@@ -31,6 +31,8 @@ if TYPE_CHECKING:
     from docket import Docket
     from mcp.server.session import ServerSession
 
+    from fastmcp.server.server import FastMCP
+
 logger = logging.getLogger(__name__)
 
 # Redis key patterns
@@ -75,6 +77,7 @@ async def notification_subscriber_loop(
     session_id: str,
     session: ServerSession,
     docket: Docket,
+    fastmcp: FastMCP,
 ) -> None:
     """Subscribe to notification queue and forward to session.
 
@@ -90,6 +93,7 @@ async def notification_subscriber_loop(
         session_id: Session identifier to subscribe to
         session: MCP ServerSession for sending notifications
         docket: Docket instance for Redis access
+        fastmcp: FastMCP server instance (for elicitation relay)
     """
     queue_key = docket.key(NOTIFICATION_QUEUE_KEY.format(session_id=session_id))
     active_key = docket.key(NOTIFICATION_ACTIVE_KEY.format(session_id=session_id))
@@ -117,7 +121,9 @@ async def notification_subscriber_loop(
 
                 try:
                     # Reconstruct and send MCP notification
-                    await _send_mcp_notification(session, notification_dict)
+                    await _send_mcp_notification(
+                        session, notification_dict, session_id, docket, fastmcp
+                    )
                     logger.debug(
                         "Delivered notification to session %s (attempt %d)",
                         session_id,
@@ -159,12 +165,22 @@ async def notification_subscriber_loop(
 async def _send_mcp_notification(
     session: ServerSession,
     notification_dict: dict[str, Any],
+    session_id: str,
+    docket: Docket,
+    fastmcp: FastMCP,
 ) -> None:
     """Reconstruct MCP notification from dict and send to session.
+
+    For input_required notifications with elicitation metadata, also sends
+    a standard elicitation/create request to the client and relays the
+    response back to the worker via Redis.
 
     Args:
         session: MCP ServerSession
         notification_dict: Notification as dict (method, params, _meta)
+        session_id: Session identifier (for elicitation relay)
+        docket: Docket instance (for notification delivery)
+        fastmcp: FastMCP server instance (for elicitation relay)
     """
     method = notification_dict.get("method", "notifications/tasks/status")
     if method != "notifications/tasks/status":
@@ -181,10 +197,36 @@ async def _send_mcp_notification(
 
     await session.send_notification(server_notification)
 
+    # If this is an input_required notification with elicitation metadata,
+    # relay the elicitation to the client via standard elicitation/create
+    params = notification_dict.get("params", {})
+    if params.get("status") == "input_required":
+        meta = notification_dict.get("_meta", {})
+        related_task = meta.get("io.modelcontextprotocol/related-task", {})
+        elicitation = related_task.get("elicitation")
+        if elicitation:
+            task_id = params.get("taskId")
+            if not task_id:
+                logger.warning(
+                    "input_required notification missing taskId, skipping relay"
+                )
+                return
+            from fastmcp.server.tasks.elicitation import relay_elicitation
+
+            task = asyncio.create_task(
+                relay_elicitation(session, session_id, task_id, elicitation, fastmcp),
+                name=f"elicitation-relay-{task_id[:8]}",
+            )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+
 
 # =============================================================================
 # Subscriber Management
 # =============================================================================
+
+# Strong references to fire-and-forget relay tasks (prevent GC mid-flight)
+_background_tasks: set[asyncio.Task[None]] = set()
 
 # Registry of active subscribers per session (prevents duplicates)
 # Uses weakref to session to detect disconnects
@@ -197,6 +239,7 @@ async def ensure_subscriber_running(
     session_id: str,
     session: ServerSession,
     docket: Docket,
+    fastmcp: FastMCP,
 ) -> None:
     """Start notification subscriber if not already running (idempotent).
 
@@ -207,6 +250,7 @@ async def ensure_subscriber_running(
         session_id: Session identifier
         session: MCP ServerSession
         docket: Docket instance
+        fastmcp: FastMCP server instance (for elicitation relay)
     """
     # Check if subscriber already running for this session
     if session_id in _active_subscribers:
@@ -224,7 +268,7 @@ async def ensure_subscriber_running(
 
     # Start new subscriber task
     task = asyncio.create_task(
-        notification_subscriber_loop(session_id, session, docket),
+        notification_subscriber_loop(session_id, session, docket, fastmcp),
         name=f"notification-subscriber-{session_id[:8]}",
     )
     _active_subscribers[session_id] = (task, weakref.ref(session))

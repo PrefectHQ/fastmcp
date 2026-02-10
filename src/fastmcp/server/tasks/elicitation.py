@@ -41,7 +41,7 @@ ELICIT_TTL_SECONDS = 3600
 
 async def elicit_for_task(
     task_id: str,
-    session: ServerSession,
+    session: ServerSession | None,
     message: str,
     schema: dict[str, Any],
     fastmcp: FastMCP,
@@ -134,7 +134,7 @@ async def elicit_for_task(
             "ttl": ELICIT_TTL_SECONDS * 1000,
         },
         "_meta": {
-            "modelcontextprotocol.io/related-task": {
+            "io.modelcontextprotocol/related-task": {
                 "taskId": task_id,
                 "status": "input_required",
                 "statusMessage": message,
@@ -229,6 +229,62 @@ async def elicit_for_task(
         )
 
     return mcp.types.ElicitResult(action="cancel", content=None)
+
+
+async def relay_elicitation(
+    session: ServerSession,
+    session_id: str,
+    task_id: str,
+    elicitation: dict[str, Any],
+    fastmcp: FastMCP,
+) -> None:
+    """Relay elicitation from a background task worker to the client.
+
+    Called by the notification subscriber when it detects an input_required
+    notification with elicitation metadata. Sends a standard elicitation/create
+    request to the client session, then uses handle_task_input() to push the
+    response to Redis so the blocked worker can resume.
+
+    Args:
+        session: MCP ServerSession
+        session_id: Session identifier
+        task_id: Background task ID
+        elicitation: Elicitation metadata (message, requestedSchema)
+        fastmcp: FastMCP server instance
+    """
+    try:
+        result = await session.elicit(
+            message=elicitation["message"],
+            requestedSchema=elicitation["requestedSchema"],
+        )
+        await handle_task_input(
+            task_id=task_id,
+            session_id=session_id,
+            action=result.action,
+            content=result.content,
+            fastmcp=fastmcp,
+        )
+        logger.debug(
+            "Relayed elicitation response for task %s (action=%s)",
+            task_id,
+            result.action,
+        )
+    except Exception as e:
+        logger.warning("Failed to relay elicitation for task %s: %s", task_id, e)
+        # Push a cancel response so the worker's BLPOP doesn't block forever
+        success = await handle_task_input(
+            task_id=task_id,
+            session_id=session_id,
+            action="cancel",
+            content=None,
+            fastmcp=fastmcp,
+        )
+        if not success:
+            logger.warning(
+                "Failed to push cancel response for task %s "
+                "(worker may block until TTL)",
+                task_id,
+            )
 
 
 async def handle_task_input(

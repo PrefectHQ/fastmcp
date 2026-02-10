@@ -2,7 +2,7 @@
 Tests for SEP-1686 related-task metadata in protocol responses.
 
 Per the spec, all task-related responses MUST include
-modelcontextprotocol.io/related-task in _meta.
+io.modelcontextprotocol/related-task in _meta.
 """
 
 import pytest
@@ -24,7 +24,7 @@ async def metadata_server():
 
 
 async def test_tasks_get_includes_related_task_metadata(metadata_server: FastMCP):
-    """tasks/get response includes modelcontextprotocol.io/related-task in _meta."""
+    """tasks/get response includes io.modelcontextprotocol/related-task in _meta."""
     async with Client(metadata_server) as client:
         # Submit a task
         task = await client.call_tool("test_tool", {"value": 5}, task=True)
@@ -40,7 +40,7 @@ async def test_tasks_get_includes_related_task_metadata(metadata_server: FastMCP
 
 
 async def test_tasks_result_includes_related_task_metadata(metadata_server: FastMCP):
-    """tasks/result response includes modelcontextprotocol.io/related-task in _meta."""
+    """tasks/result response includes io.modelcontextprotocol/related-task in _meta."""
     async with Client(metadata_server) as client:
         # Submit and complete a task
         task = await client.call_tool("test_tool", {"value": 7}, task=True)
@@ -53,7 +53,7 @@ async def test_tasks_result_includes_related_task_metadata(metadata_server: Fast
 
 
 async def test_tasks_list_includes_related_task_metadata(metadata_server: FastMCP):
-    """tasks/list response includes modelcontextprotocol.io/related-task in _meta."""
+    """tasks/list response includes io.modelcontextprotocol/related-task in _meta."""
     async with Client(metadata_server) as client:
         # List tasks via client (which uses protocol properly)
         result = await client.list_tasks()
