@@ -85,7 +85,7 @@ class TestNotificationIntegration:
             for candidate in reversed(candidates):
                 candidate_meta = getattr(candidate.root, "_meta", None)
                 related_task = (
-                    candidate_meta.get("modelcontextprotocol.io/related-task")
+                    candidate_meta.get("io.modelcontextprotocol/related-task")
                     if isinstance(candidate_meta, dict)
                     else None
                 )
@@ -100,7 +100,7 @@ class TestNotificationIntegration:
             task_meta = getattr(notification.root, "_meta", None)
             assert isinstance(task_meta, dict)
 
-            related_task = task_meta.get("modelcontextprotocol.io/related-task")
+            related_task = task_meta.get("io.modelcontextprotocol/related-task")
             assert isinstance(related_task, dict)
             assert related_task.get("taskId") == task.task_id
             assert related_task.get("status") == "input_required"
