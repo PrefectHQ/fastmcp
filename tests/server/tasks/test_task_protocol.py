@@ -48,7 +48,7 @@ async def test_task_metadata_includes_task_id_and_ttl(task_enabled_server):
 
 
 async def test_task_notification_sent_after_submission(task_enabled_server):
-    """Server sends notifications/tasks/created after task submission."""
+    """Server sends an initial task status notification after submission."""
 
     @task_enabled_server.tool(task=True)
     async def background_tool(message: str) -> str:

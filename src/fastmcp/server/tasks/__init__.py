@@ -11,6 +11,11 @@ from fastmcp.server.tasks.keys import (
     get_client_task_id_from_key,
     parse_task_key,
 )
+from fastmcp.server.tasks.notifications import (
+    ensure_subscriber_running,
+    push_notification,
+    stop_subscriber,
+)
 
 __all__ = [
     "TaskConfig",
@@ -18,8 +23,11 @@ __all__ = [
     "TaskMode",
     "build_task_key",
     "elicit_for_task",
+    "ensure_subscriber_running",
     "get_client_task_id_from_key",
     "get_task_capabilities",
     "handle_task_input",
     "parse_task_key",
+    "push_notification",
+    "stop_subscriber",
 ]
