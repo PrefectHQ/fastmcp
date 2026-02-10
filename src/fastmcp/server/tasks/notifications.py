@@ -199,11 +199,18 @@ async def _send_mcp_notification(
         related_task = meta.get("modelcontextprotocol.io/related-task", {})
         elicitation = related_task.get("elicitation")
         if elicitation:
-            task_id = params["taskId"]
-            asyncio.create_task(  # noqa: RUF006
+            task_id = params.get("taskId")
+            if not task_id:
+                logger.warning(
+                    "input_required notification missing taskId, skipping relay"
+                )
+                return
+            task = asyncio.create_task(
                 _relay_elicitation(session, session_id, task_id, elicitation, docket),
                 name=f"elicitation-relay-{task_id[:8]}",
             )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
 
 async def _relay_elicitation(
@@ -268,12 +275,16 @@ async def _relay_elicitation(
             response_key = docket.key(
                 ELICIT_RESPONSE_KEY.format(session_id=session_id, task_id=task_id)
             )
+            status_key = docket.key(
+                ELICIT_STATUS_KEY.format(session_id=session_id, task_id=task_id)
+            )
             cancel = {"action": "cancel", "content": None}
             async with docket.redis() as redis:
                 await redis.lpush(  # type: ignore[invalid-await]
                     response_key, json.dumps(cancel)
                 )
                 await redis.expire(response_key, ELICIT_TTL_SECONDS)
+                await redis.set(status_key, "responded", ex=ELICIT_TTL_SECONDS)
         except Exception as cancel_error:
             logger.warning(
                 "Failed to push cancel response for task %s "
@@ -286,6 +297,9 @@ async def _relay_elicitation(
 # =============================================================================
 # Subscriber Management
 # =============================================================================
+
+# Strong references to fire-and-forget relay tasks (prevent GC mid-flight)
+_background_tasks: set[asyncio.Task[None]] = set()
 
 # Registry of active subscribers per session (prevents duplicates)
 # Uses weakref to session to detect disconnects
