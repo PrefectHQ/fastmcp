@@ -1,7 +1,10 @@
 """Tests for OpenAPI feature support in OpenAPIProvider."""
 
+from unittest.mock import AsyncMock, Mock
+
 import httpx
 import pytest
+from httpx import Response
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -769,3 +772,213 @@ class TestResourceMimeType:
                 resources = await mcp_client.list_resources()
                 assert len(resources) == 1
                 assert resources[0].mimeType == "text/plain"
+
+
+class TestValidateOutput:
+    """Tests for the validate_output option on OpenAPIProvider."""
+
+    @pytest.fixture
+    def spec_with_output_schema(self):
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/users/{id}": {
+                    "get": {
+                        "operationId": "get_user",
+                        "summary": "Get a user",
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "integer"},
+                            }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "A user",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {"type": "integer"},
+                                                "name": {"type": "string"},
+                                                "email": {"type": "string"},
+                                            },
+                                            "required": ["id", "name"],
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                },
+                "/items": {
+                    "get": {
+                        "operationId": "list_items",
+                        "summary": "List items",
+                        "responses": {
+                            "200": {
+                                "description": "An array of items",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "name": {"type": "string"}
+                                                },
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                },
+            },
+        }
+
+    async def test_validate_output_true_preserves_extracted_schema(
+        self, spec_with_output_schema
+    ):
+        """Default validate_output=True uses the real extracted schema."""
+        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec_with_output_schema,
+                client=client,
+            )
+
+            tool = provider._tools["get_user"]
+            assert tool.output_schema is not None
+            assert tool.output_schema.get("type") == "object"
+            assert "properties" in tool.output_schema
+            assert "id" in tool.output_schema["properties"]
+
+    async def test_validate_output_false_uses_permissive_schema(
+        self, spec_with_output_schema
+    ):
+        """validate_output=False replaces the schema with a permissive one."""
+        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec_with_output_schema,
+                client=client,
+                validate_output=False,
+            )
+
+            tool = provider._tools["get_user"]
+            assert tool.output_schema is not None
+            assert tool.output_schema == {
+                "type": "object",
+                "additionalProperties": True,
+            }
+
+    async def test_validate_output_false_preserves_wrap_result_flag(
+        self, spec_with_output_schema
+    ):
+        """validate_output=False preserves x-fastmcp-wrap-result for array responses."""
+        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec_with_output_schema,
+                client=client,
+                validate_output=False,
+            )
+
+            # The list_items endpoint returns an array, so the extracted schema
+            # would have had x-fastmcp-wrap-result=True
+            tool = provider._tools["list_items"]
+            assert tool.output_schema is not None
+            assert tool.output_schema.get("x-fastmcp-wrap-result") is True
+            assert tool.output_schema.get("additionalProperties") is True
+
+    async def test_validate_output_false_allows_nonconforming_response(
+        self, spec_with_output_schema
+    ):
+        """With validate_output=False, responses that don't match the spec succeed."""
+        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
+
+        # Return extra fields not in the schema
+        mock_response = Mock(spec=Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "id": 1,
+            "name": "Alice",
+            "email": "alice@example.com",
+            "unexpected_field": "surprise",
+            "nested": {"deep": True},
+        }
+        mock_response.raise_for_status = Mock()
+        mock_client.send = AsyncMock(return_value=mock_response)
+
+        provider = OpenAPIProvider(
+            openapi_spec=spec_with_output_schema,
+            client=mock_client,
+            validate_output=False,
+        )
+        mcp = FastMCP("Test")
+        mcp.add_provider(provider)
+
+        async with Client(mcp) as mcp_client:
+            result = await mcp_client.call_tool("get_user", {"id": 1})
+            assert result is not None
+            # Structured content should have the full response including extra fields
+            assert result.structured_content is not None
+            assert result.structured_content["unexpected_field"] == "surprise"
+
+    async def test_validate_output_false_wraps_non_dict_response(
+        self, spec_with_output_schema
+    ):
+        """Non-dict responses are wrapped even when schema says object and validate_output=False."""
+        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
+
+        # Backend returns an array even though schema says object
+        mock_response = Mock(spec=Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = [{"id": 1}, {"id": 2}]
+        mock_response.raise_for_status = Mock()
+        mock_client.send = AsyncMock(return_value=mock_response)
+
+        provider = OpenAPIProvider(
+            openapi_spec=spec_with_output_schema,
+            client=mock_client,
+            validate_output=False,
+        )
+        mcp = FastMCP("Test")
+        mcp.add_provider(provider)
+
+        async with Client(mcp) as mcp_client:
+            result = await mcp_client.call_tool("get_user", {"id": 1})
+            assert result is not None
+            # Non-dict should be wrapped so structured_content is always a dict
+            assert result.structured_content is not None
+            assert isinstance(result.structured_content, dict)
+            assert result.structured_content["result"] == [{"id": 1}, {"id": 2}]
+
+    async def test_from_openapi_threads_validate_output(self, spec_with_output_schema):
+        """FastMCP.from_openapi() correctly passes validate_output to the provider."""
+        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
+
+        server = FastMCP.from_openapi(
+            openapi_spec=spec_with_output_schema,
+            client=mock_client,
+            validate_output=False,
+        )
+
+        async with Client(server) as mcp_client:
+            tools = await mcp_client.list_tools()
+            get_user = next(t for t in tools if t.name == "get_user")
+            # With validate_output=False, the outputSchema should be permissive
+            assert get_user.outputSchema is not None
+            assert get_user.outputSchema.get("additionalProperties") is True
+            # Should NOT have specific properties from the original schema
+            assert "properties" not in get_user.outputSchema

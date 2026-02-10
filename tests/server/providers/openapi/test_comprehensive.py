@@ -763,3 +763,198 @@ class TestOpenAPIComprehensive:
             error_message = str(exc_info.value)
             assert "timed out" in error_message
             assert "ReadTimeout" in error_message
+
+
+class TestOpenAPIPostEdgeCases:
+    """Tests for POST request edge cases that could cause unhandled errors."""
+
+    @pytest.fixture
+    def post_spec_with_empty_content_schema(self):
+        """OpenAPI spec where a POST endpoint has an empty content_schema."""
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/items": {
+                    "post": {
+                        "operationId": "create_item",
+                        "summary": "Create an item",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {"type": "string"},
+                                            "value": {"type": "integer"},
+                                        },
+                                        "required": ["name"],
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {
+                            "201": {
+                                "description": "Created",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {"type": "integer"},
+                                                "name": {"type": "string"},
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                },
+                "/items/{item_id}": {
+                    "post": {
+                        "operationId": "update_item",
+                        "summary": "Update an item",
+                        "parameters": [
+                            {
+                                "name": "item_id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "integer"},
+                            }
+                        ],
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {"type": "string"},
+                                            "value": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {
+                            "200": {
+                                "description": "Updated",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {"type": "integer"},
+                                                "name": {"type": "string"},
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                },
+            },
+        }
+
+    async def test_post_with_body_params(self, post_spec_with_empty_content_schema):
+        """POST with body parameters should build the request correctly."""
+        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
+
+        mock_response = Mock(spec=Response)
+        mock_response.status_code = 201
+        mock_response.json.return_value = {"id": 1, "name": "Test"}
+        mock_response.raise_for_status = Mock()
+        mock_client.send = AsyncMock(return_value=mock_response)
+
+        server = create_openapi_server(
+            openapi_spec=post_spec_with_empty_content_schema,
+            client=mock_client,
+        )
+
+        async with Client(server) as mcp_client:
+            result = await mcp_client.call_tool(
+                "create_item", {"name": "Test", "value": 42}
+            )
+
+        mock_client.send.assert_called_once()
+        request = mock_client.send.call_args[0][0]
+        assert request.method == "POST"
+        body_data = json.loads(request.content)
+        assert body_data["name"] == "Test"
+        assert body_data["value"] == 42
+        assert result is not None
+
+    async def test_post_with_path_params_and_body(
+        self, post_spec_with_empty_content_schema
+    ):
+        """POST with both path parameters and body should route args correctly."""
+        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
+
+        mock_response = Mock(spec=Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"id": 5, "name": "Updated"}
+        mock_response.raise_for_status = Mock()
+        mock_client.send = AsyncMock(return_value=mock_response)
+
+        server = create_openapi_server(
+            openapi_spec=post_spec_with_empty_content_schema,
+            client=mock_client,
+        )
+
+        async with Client(server) as mcp_client:
+            result = await mcp_client.call_tool(
+                "update_item",
+                {"item_id": 5, "name": "Updated", "value": 99},
+            )
+
+        mock_client.send.assert_called_once()
+        request = mock_client.send.call_args[0][0]
+        assert request.method == "POST"
+        assert "/items/5" in str(request.url)
+        body_data = json.loads(request.content)
+        assert body_data["name"] == "Updated"
+        assert body_data["value"] == 99
+        assert "item_id" not in body_data
+        assert result is not None
+
+    async def test_unexpected_error_in_request_building_gives_useful_message(self):
+        """Unexpected exceptions during request building should produce useful errors."""
+        from fastmcp.server.providers.openapi.components import OpenAPITool
+        from fastmcp.utilities.openapi.director import RequestDirector
+        from fastmcp.utilities.openapi.models import HTTPRoute
+
+        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
+
+        route = HTTPRoute(
+            path="/test",
+            method="POST",
+            operation_id="test_op",
+            parameters=[],
+            responses={},
+            response_schemas={},
+        )
+
+        mock_director = Mock(spec=RequestDirector)
+        mock_director.build.side_effect = KeyError("missing_param")
+
+        tool = OpenAPITool(
+            client=mock_client,
+            route=route,
+            director=mock_director,
+            name="test_tool",
+            description="test",
+            parameters={},
+        )
+
+        with pytest.raises(ValueError, match="Error building request for POST /test"):
+            await tool.run({"some_arg": "value"})

@@ -159,23 +159,28 @@ class OpenAPITool(Tool):
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the HTTP request using RequestDirector."""
+        # Build the request — errors here are programming/schema issues,
+        # not HTTP failures, so we catch them separately.
         try:
             base_url = str(self._client.base_url) or "http://localhost"
-
-            # Build the request using RequestDirector
             request = self._director.build(self._route, arguments, base_url)
 
-            # Add client headers (lowest precedence)
             if self._client.headers:
                 for key, value in self._client.headers.items():
                     if key not in request.headers:
                         request.headers[key] = value
 
-            # Add MCP transport headers (highest precedence)
             mcp_headers = get_http_headers()
             if mcp_headers:
                 request.headers.update(mcp_headers)
+        except Exception as e:
+            raise ValueError(
+                f"Error building request for {self._route.method.upper()} "
+                f"{self._route.path}: {type(e).__name__}: {e}"
+            ) from e
 
+        # Send the request and process the response.
+        try:
             logger.debug(f"run - sending request; headers: {request.headers}")
 
             response = await self._client.send(request)
@@ -195,6 +200,12 @@ class OpenAPITool(Tool):
                     structured_output = {"result": result}
                 else:
                     structured_output = result
+
+                # Structured content must be a dict for the MCP protocol.
+                # Wrap non-dict values that slipped through (e.g. a backend
+                # returning an array when the schema declared an object).
+                if not isinstance(structured_output, dict):
+                    structured_output = {"result": structured_output}
 
                 return ToolResult(structured_content=structured_output)
             except json.JSONDecodeError:

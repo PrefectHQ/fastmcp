@@ -101,36 +101,39 @@ class TestMarking:
     def test_disable_marks_as_disabled(self):
         """Visibility(False, ...) marks matching components as disabled."""
         tool = Tool(name="foo", parameters={})
-        Visibility(False, names={"foo"})._mark_component(tool)
-        assert is_enabled(tool) is False
+        marked = Visibility(False, names={"foo"})._mark_component(tool)
+        assert is_enabled(marked) is False
 
     def test_enable_marks_as_enabled(self):
         """Visibility(True, ...) marks matching components as enabled."""
         tool = Tool(name="foo", parameters={})
-        Visibility(True, names={"foo"})._mark_component(tool)
-        assert is_enabled(tool) is True
-        assert tool.meta is not None
-        assert tool.meta["fastmcp"]["_internal"]["visibility"] is True
+        marked = Visibility(True, names={"foo"})._mark_component(tool)
+        assert is_enabled(marked) is True
+        assert marked.meta is not None
+        assert marked.meta["fastmcp"]["_internal"]["visibility"] is True
 
     def test_non_matching_unchanged(self):
         """Non-matching components are not modified."""
         tool = Tool(name="bar", parameters={})
-        Visibility(False, names={"foo"})._mark_component(tool)
+        result = Visibility(False, names={"foo"})._mark_component(tool)
         # No _internal key added
-        assert tool.meta is None or "_internal" not in tool.meta.get("fastmcp", {})
-        assert is_enabled(tool) is True
+        assert result.meta is None or "_internal" not in result.meta.get("fastmcp", {})
+        assert is_enabled(result) is True
 
-    def test_mutates_in_place(self):
-        """Marking mutates the component in place."""
+    def test_returns_copy_for_matching(self):
+        """Marking returns a copy to avoid mutating shared provider objects."""
         tool = Tool(name="foo", parameters={})
         result = Visibility(False, names={"foo"})._mark_component(tool)
-        assert result is tool
+        assert result is not tool
+        assert is_enabled(result) is False
+        # Original is untouched
+        assert is_enabled(tool) is True
 
     def test_disable_all(self):
         """match_all=True disables all components."""
         tool = Tool(name="anything", parameters={})
-        Visibility(False, match_all=True)._mark_component(tool)
-        assert is_enabled(tool) is False
+        marked = Visibility(False, match_all=True)._mark_component(tool)
+        assert is_enabled(marked) is False
 
 
 class TestOverride:
@@ -139,20 +142,20 @@ class TestOverride:
     def test_enable_overrides_disable(self):
         """An enable after disable results in enabled."""
         tool = Tool(name="foo", parameters={})
-        Visibility(False, names={"foo"})._mark_component(tool)
-        assert is_enabled(tool) is False
+        marked = Visibility(False, names={"foo"})._mark_component(tool)
+        assert is_enabled(marked) is False
 
-        Visibility(True, names={"foo"})._mark_component(tool)
-        assert is_enabled(tool) is True
+        marked = Visibility(True, names={"foo"})._mark_component(marked)
+        assert is_enabled(marked) is True
 
     def test_disable_overrides_enable(self):
         """A disable after enable results in disabled."""
         tool = Tool(name="foo", parameters={})
-        Visibility(True, names={"foo"})._mark_component(tool)
-        assert is_enabled(tool) is True
+        marked = Visibility(True, names={"foo"})._mark_component(tool)
+        assert is_enabled(marked) is True
 
-        Visibility(False, names={"foo"})._mark_component(tool)
-        assert is_enabled(tool) is False
+        marked = Visibility(False, names={"foo"})._mark_component(marked)
+        assert is_enabled(marked) is False
 
 
 class TestHelperFunctions:
@@ -169,9 +172,10 @@ class TestHelperFunctions:
             Tool(name="enabled", parameters={}),
             Tool(name="disabled", parameters={}),
         ]
-        Visibility(False, names={"disabled"})._mark_component(tools[1])
+        vis = Visibility(False, names={"disabled"})
+        marked_tools = [vis._mark_component(t) for t in tools]
 
-        visible = [t for t in tools if is_enabled(t)]
+        visible = [t for t in marked_tools if is_enabled(t)]
         assert [t.name for t in visible] == ["enabled"]
 
 
@@ -181,14 +185,14 @@ class TestMetadata:
     def test_internal_metadata_stripped_by_get_meta(self):
         """Internal metadata is stripped when calling get_meta()."""
         tool = Tool(name="foo", parameters={})
-        Visibility(True, names={"foo"})._mark_component(tool)
+        marked = Visibility(True, names={"foo"})._mark_component(tool)
 
         # Raw meta has _internal
-        assert tool.meta is not None
-        assert "_internal" in tool.meta.get("fastmcp", {})
+        assert marked.meta is not None
+        assert "_internal" in marked.meta.get("fastmcp", {})
 
         # get_meta() strips it
-        output = tool.get_meta()
+        output = marked.get_meta()
         assert "_internal" not in output.get("fastmcp", {})
 
     def test_user_metadata_preserved(self):

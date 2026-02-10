@@ -79,6 +79,7 @@ class OpenAPIProvider(Provider):
         mcp_component_fn: ComponentFn | None = None,
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
+        validate_output: bool = True,
     ):
         """Initialize provider by parsing OpenAPI spec and creating components.
 
@@ -93,6 +94,10 @@ class OpenAPIProvider(Provider):
             mcp_component_fn: Optional callable for component customization
             mcp_names: Optional dictionary mapping operationId to component names
             tags: Optional set of tags to add to all components
+            validate_output: If True (default), tools use the output schema
+                extracted from the OpenAPI spec for response validation. If
+                False, a permissive schema is used instead, allowing any
+                response structure while still returning structured JSON.
         """
         super().__init__()
 
@@ -101,6 +106,7 @@ class OpenAPIProvider(Provider):
             client = self._create_default_client(openapi_spec)
         self._client = client
         self._mcp_component_fn = mcp_component_fn
+        self._validate_output = validate_output
 
         # Keep track of names to detect collisions
         self._used_names: dict[str, Counter[str]] = {
@@ -231,6 +237,17 @@ class OpenAPIProvider(Provider):
             route.response_schemas,
             route.openapi_version,
         )
+
+        if not self._validate_output and output_schema is not None:
+            # Use a permissive schema that accepts any object, preserving
+            # the wrap-result flag so non-object responses still get wrapped
+            permissive: dict[str, Any] = {
+                "type": "object",
+                "additionalProperties": True,
+            }
+            if output_schema.get("x-fastmcp-wrap-result"):
+                permissive["x-fastmcp-wrap-result"] = True
+            output_schema = permissive
 
         tool_name = self._get_unique_name(name, "tool")
         base_description = (
