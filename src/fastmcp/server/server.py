@@ -2029,6 +2029,7 @@ class FastMCP(
         mcp_component_fn: OpenAPIComponentFn | None = None,
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
+        validate_output: bool = True,
         **settings: Any,
     ) -> Self:
         """
@@ -2045,6 +2046,10 @@ class FastMCP(
             mcp_component_fn: Optional callable for component customization
             mcp_names: Optional dictionary mapping operationId to component names
             tags: Optional set of tags to add to all components
+            validate_output: If True (default), tools use the output schema
+                extracted from the OpenAPI spec for response validation. If
+                False, a permissive schema is used instead, allowing any
+                response structure while still returning structured JSON.
             **settings: Additional settings passed to FastMCP
 
         Returns:
@@ -2060,6 +2065,7 @@ class FastMCP(
             mcp_component_fn=mcp_component_fn,
             mcp_names=mcp_names,
             tags=tags,
+            validate_output=validate_output,
         )
         return cls(name=name, providers=[provider], **settings)
 

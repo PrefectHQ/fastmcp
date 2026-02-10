@@ -201,6 +201,12 @@ class OpenAPITool(Tool):
                 else:
                     structured_output = result
 
+                # Structured content must be a dict for the MCP protocol.
+                # Wrap non-dict values that slipped through (e.g. a backend
+                # returning an array when the schema declared an object).
+                if not isinstance(structured_output, dict):
+                    structured_output = {"result": structured_output}
+
                 return ToolResult(structured_content=structured_output)
             except json.JSONDecodeError:
                 return ToolResult(content=response.text)
