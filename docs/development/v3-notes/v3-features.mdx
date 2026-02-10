@@ -120,6 +120,29 @@ Key details:
 
 Documentation: [CIMD Authentication](/clients/auth/cimd), [OAuth Proxy CIMD config](/servers/auth/oauth-proxy#cimd-support)
 
+### Pre-Registered OAuth Clients
+
+The `OAuth` client helper now accepts `client_id` and `client_secret` parameters for servers where the client is already registered ([#3086](https://github.com/jlowin/fastmcp/pull/3086)). This bypasses Dynamic Client Registration entirely — useful when DCR is disabled, or when the server has pre-provisioned credentials for your application.
+
+```python
+from fastmcp import Client
+from fastmcp.client.auth import OAuth
+
+async with Client(
+    "https://mcp-server.example.com/mcp",
+    auth=OAuth(
+        client_id="my-registered-app",
+        client_secret="my-secret",
+        scopes=["read", "write"],
+    ),
+) as client:
+    await client.ping()
+```
+
+The static credentials are injected before the OAuth flow begins, so the client never attempts DCR. If the server rejects the credentials, the error surfaces immediately rather than retrying with fresh registration (which can't help for fixed credentials). Public clients can omit `client_secret`.
+
+Documentation: [Pre-Registered Clients](/clients/auth/oauth#pre-registered-clients)
+
 ### CLI: `fastmcp generate-cli`
 
 `fastmcp generate-cli` connects to any MCP server, reads its tool schemas, and writes a standalone Python CLI script where every tool becomes a typed subcommand with flags, help text, and tab completion ([#3065](https://github.com/jlowin/fastmcp/pull/3065)). The insight is that MCP tool schemas already contain everything a CLI framework needs — parameter names, types, descriptions, required/optional status — so the generator maps JSON Schema directly into [cyclopts](https://cyclopts.readthedocs.io/) commands.
