@@ -13,7 +13,7 @@ in Docket workers. Unlike regular MCP requests, background tasks don't have
 an active request context, so elicitation requires special handling:
 
 1. Set task status to "input_required" via Redis
-2. Send notifications/tasks/updated with elicitation metadata
+2. Send notifications/tasks/status with elicitation metadata
 3. Wait for client to send input via tasks/sendInput
 4. Resume task execution with the provided input
 
@@ -26,7 +26,7 @@ internal APIs for background task coordination.
 ### `elicit_for_task` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-elicit_for_task(task_id: str, session: ServerSession, message: str, schema: dict[str, Any], fastmcp: FastMCP) -> mcp.types.ElicitResult
+elicit_for_task(task_id: str, session: ServerSession | None, message: str, schema: dict[str, Any], fastmcp: FastMCP) -> mcp.types.ElicitResult
 ```
 
 
@@ -50,7 +50,7 @@ in a Docket worker context where there's no active MCP request.
 - `McpError`: If the elicitation request fails
 
 
-### `handle_task_input` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `handle_task_input` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L234" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 handle_task_input(task_id: str, session_id: str, action: str, content: dict[str, Any] | None, fastmcp: FastMCP) -> bool
