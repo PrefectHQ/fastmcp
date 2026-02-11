@@ -29,8 +29,8 @@ from pydantic import (
 from pydantic.json_schema import SkipJsonSchema
 from typing_extensions import Self
 
+from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
-from fastmcp.tools.tool import AuthCheckCallable
 from fastmcp.utilities.components import FastMCPComponent
 
 
@@ -227,7 +227,7 @@ class Resource(FastMCPComponent):
         Field(description="Optional annotations about the resource's behavior"),
     ] = None
     auth: Annotated[
-        SkipJsonSchema[AuthCheckCallable | list[AuthCheckCallable] | None],
+        SkipJsonSchema[AuthCheck | list[AuthCheck] | None],
         Field(description="Authorization checks for this resource", exclude=True),
     ] = None
 
@@ -247,7 +247,7 @@ class Resource(FastMCPComponent):
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionResource:
         from fastmcp.resources.function_resource import (
             FunctionResource,

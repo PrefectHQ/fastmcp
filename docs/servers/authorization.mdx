@@ -24,7 +24,7 @@ When an `AuthProvider` is configured, all requests to the MCP endpoint must carr
 
 ## Auth Checks
 
-An auth check is any callable that accepts an `AuthContext` and returns a boolean. The `AuthContext` provides access to the current token (if any) and the component being accessed.
+An auth check is any callable that accepts an `AuthContext` and returns a boolean. Auth checks can be synchronous or asynchronous, so checks that need to perform async operations (like reading server state or calling external services) work naturally.
 
 ```python
 from fastmcp.server.auth import AuthContext
@@ -136,6 +136,34 @@ def advanced_feature() -> str:
     """Requires access level 5 or higher."""
     return "Advanced feature"
 ```
+
+### Async Auth Checks
+
+Auth checks can be `async` functions, which is useful when the authorization decision depends on asynchronous operations like reading server state or querying external services.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth import AuthContext
+
+mcp = FastMCP("Async Auth Server")
+
+async def check_user_permissions(ctx: AuthContext) -> bool:
+    """Async auth check that reads server state."""
+    if ctx.token is None:
+        return False
+    user_id = ctx.token.claims.get("sub")
+    # Async operations work naturally in auth checks
+    permissions = await fetch_user_permissions(user_id)
+    return "admin" in permissions
+
+@mcp.tool(auth=check_user_permissions)
+def admin_tool() -> str:
+    return "Admin action completed"
+```
+
+Sync and async checks can be freely combined in a list — each check is handled according to its type.
+
+### Error Handling
 
 Auth checks can raise exceptions for explicit denial with custom messages:
 
@@ -346,7 +374,7 @@ def require_matching_tag(ctx: AuthContext) -> bool:
 from fastmcp.server.auth import (
     AccessToken,       # Token with .token, .client_id, .scopes, .expires_at, .claims
     AuthContext,       # Context with .token, .component
-    AuthCheck,         # Type alias: Callable[[AuthContext], bool]
+    AuthCheck,         # Type alias: sync or async Callable[[AuthContext], bool]
     require_scopes,    # Built-in: requires specific scopes
     restrict_tag,      # Built-in: tag-based scope requirements
     run_auth_checks,   # Utility: run checks with AND logic

@@ -120,31 +120,31 @@ class TestRestrictTag:
 
 
 class TestRunAuthChecks:
-    def test_single_check_passes(self):
+    async def test_single_check_passes(self):
         ctx = AuthContext(token=make_token(scopes=["test"]), component=make_tool())
-        assert run_auth_checks(require_scopes("test"), ctx) is True
+        assert await run_auth_checks(require_scopes("test"), ctx) is True
 
-    def test_single_check_fails(self):
+    async def test_single_check_fails(self):
         ctx = AuthContext(token=None, component=make_tool())
-        assert run_auth_checks(require_scopes("test"), ctx) is False
+        assert await run_auth_checks(require_scopes("test"), ctx) is False
 
-    def test_multiple_checks_all_pass(self):
+    async def test_multiple_checks_all_pass(self):
         token = make_token(scopes=["test", "admin"])
         ctx = AuthContext(token=token, component=make_tool())
         checks = [require_scopes("test"), require_scopes("admin")]
-        assert run_auth_checks(checks, ctx) is True
+        assert await run_auth_checks(checks, ctx) is True
 
-    def test_multiple_checks_one_fails(self):
+    async def test_multiple_checks_one_fails(self):
         token = make_token(scopes=["read"])
         ctx = AuthContext(token=token, component=make_tool())
         checks = [require_scopes("read"), require_scopes("admin")]
-        assert run_auth_checks(checks, ctx) is False
+        assert await run_auth_checks(checks, ctx) is False
 
-    def test_empty_list_passes(self):
+    async def test_empty_list_passes(self):
         ctx = AuthContext(token=None, component=make_tool())
-        assert run_auth_checks([], ctx) is True
+        assert await run_auth_checks([], ctx) is True
 
-    def test_custom_lambda_check(self):
+    async def test_custom_lambda_check(self):
         token = make_token()
         token.claims = {"level": 5}
         ctx = AuthContext(token=token, component=make_tool())
@@ -152,9 +152,9 @@ class TestRunAuthChecks:
         def check(ctx: AuthContext) -> bool:
             return ctx.token is not None and ctx.token.claims.get("level", 0) >= 3
 
-        assert run_auth_checks(check, ctx) is True
+        assert await run_auth_checks(check, ctx) is True
 
-    def test_authorization_error_propagates(self):
+    async def test_authorization_error_propagates(self):
         """AuthorizationError from auth check should propagate with custom message."""
         from fastmcp.exceptions import AuthorizationError
 
@@ -163,9 +163,9 @@ class TestRunAuthChecks:
 
         ctx = AuthContext(token=make_token(), component=make_tool())
         with pytest.raises(AuthorizationError, match="Custom denial reason"):
-            run_auth_checks(custom_auth_check, ctx)
+            await run_auth_checks(custom_auth_check, ctx)
 
-    def test_generic_exception_is_masked(self):
+    async def test_generic_exception_is_masked(self):
         """Generic exceptions from auth checks should be masked (return False)."""
 
         def buggy_auth_check(ctx: AuthContext) -> bool:
@@ -173,9 +173,9 @@ class TestRunAuthChecks:
 
         ctx = AuthContext(token=make_token(), component=make_tool())
         # Should return False, not raise the ValueError
-        assert run_auth_checks(buggy_auth_check, ctx) is False
+        assert await run_auth_checks(buggy_auth_check, ctx) is False
 
-    def test_authorization_error_stops_chain(self):
+    async def test_authorization_error_stops_chain(self):
         """AuthorizationError should stop the check chain and propagate."""
         from fastmcp.exceptions import AuthorizationError
 
@@ -195,10 +195,61 @@ class TestRunAuthChecks:
 
         ctx = AuthContext(token=make_token(), component=make_tool())
         with pytest.raises(AuthorizationError, match="Explicit denial"):
-            run_auth_checks([check_1, check_2, check_3], ctx)
+            await run_auth_checks([check_1, check_2, check_3], ctx)
 
         # Check 3 should not be called
         assert call_order == [1, 2]
+
+    async def test_async_check_passes(self):
+        """Async auth check functions should be awaited."""
+
+        async def async_check(ctx: AuthContext) -> bool:
+            return ctx.token is not None
+
+        ctx = AuthContext(token=make_token(), component=make_tool())
+        assert await run_auth_checks(async_check, ctx) is True
+
+    async def test_async_check_fails(self):
+        """Async auth check that returns False should deny access."""
+
+        async def async_check(ctx: AuthContext) -> bool:
+            return False
+
+        ctx = AuthContext(token=make_token(), component=make_tool())
+        assert await run_auth_checks(async_check, ctx) is False
+
+    async def test_mixed_sync_and_async_checks(self):
+        """A mix of sync and async checks should all be evaluated."""
+
+        def sync_check(ctx: AuthContext) -> bool:
+            return True
+
+        async def async_check(ctx: AuthContext) -> bool:
+            return ctx.token is not None
+
+        ctx = AuthContext(token=make_token(scopes=["test"]), component=make_tool())
+        checks = [sync_check, async_check, require_scopes("test")]
+        assert await run_auth_checks(checks, ctx) is True
+
+    async def test_async_check_exception_is_masked(self):
+        """Async checks that raise non-AuthorizationError should be masked."""
+
+        async def buggy_async_check(ctx: AuthContext) -> bool:
+            raise ValueError("async error")
+
+        ctx = AuthContext(token=make_token(), component=make_tool())
+        assert await run_auth_checks(buggy_async_check, ctx) is False
+
+    async def test_async_check_authorization_error_propagates(self):
+        """Async checks that raise AuthorizationError should propagate."""
+        from fastmcp.exceptions import AuthorizationError
+
+        async def async_denial(ctx: AuthContext) -> bool:
+            raise AuthorizationError("Async denial")
+
+        ctx = AuthContext(token=make_token(), component=make_tool())
+        with pytest.raises(AuthorizationError, match="Async denial"):
+            await run_auth_checks(async_denial, ctx)
 
 
 # =============================================================================
@@ -450,6 +501,91 @@ class TestAuthIntegration:
                 # With token, both tools should be visible
                 assert "public_tool" in tool_names
                 assert "protected_tool" in tool_names
+        finally:
+            auth_context_var.reset(tok)
+
+
+# =============================================================================
+# Integration tests with async auth checks
+# =============================================================================
+
+
+class TestAsyncAuthIntegration:
+    async def test_async_auth_check_filters_tool_listing(self):
+        """Async auth checks should work for filtering tool lists."""
+        mcp = FastMCP()
+
+        async def check_claims(ctx: AuthContext) -> bool:
+            return ctx.token is not None and ctx.token.claims.get("role") == "admin"
+
+        @mcp.tool(auth=check_claims)
+        def admin_tool() -> str:
+            return "admin"
+
+        @mcp.tool
+        def public_tool() -> str:
+            return "public"
+
+        # Without token, only public tool visible
+        tools = await mcp.list_tools()
+        assert len(tools) == 1
+        assert tools[0].name == "public_tool"
+
+        # With correct claims, both visible
+        token = make_token()
+        token.claims = {"role": "admin"}
+        tok = set_token(token)
+        try:
+            tools = await mcp.list_tools()
+            assert len(tools) == 2
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_async_auth_check_on_tool_call(self):
+        """Async auth checks should work for tool execution via client."""
+        mcp = FastMCP()
+
+        async def check_claims(ctx: AuthContext) -> bool:
+            return ctx.token is not None and ctx.token.claims.get("role") == "admin"
+
+        @mcp.tool(auth=check_claims)
+        def admin_tool() -> str:
+            return "secret"
+
+        token = make_token()
+        token.claims = {"role": "admin"}
+        tok = set_token(token)
+        try:
+            async with Client(mcp) as client:
+                result = await client.call_tool("admin_tool", {})
+                assert result.content[0].text == "secret"
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_async_auth_middleware(self):
+        """Async auth checks should work with AuthMiddleware."""
+
+        async def async_scope_check(ctx: AuthContext) -> bool:
+            return ctx.token is not None and "api" in ctx.token.scopes
+
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=async_scope_check)])
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "api"
+
+        # Without token, tool is hidden
+        result = await mcp._list_tools_mcp(__import__("mcp").types.ListToolsRequest())
+        assert len(result.tools) == 0
+
+        # With token containing "api" scope, tool is visible
+        token = make_token(scopes=["api"])
+        tok = set_token(token)
+        try:
+            result = await mcp._list_tools_mcp(
+                __import__("mcp").types.ListToolsRequest()
+            )
+            assert len(result.tools) == 1
         finally:
             auth_context_var.reset(tok)
 

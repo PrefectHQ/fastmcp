@@ -61,7 +61,7 @@ from fastmcp.server.apps import (
     app_config_to_meta_dict,
     resolve_ui_mime_type,
 )
-from fastmcp.server.auth import AuthContext, AuthProvider, run_auth_checks
+from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
@@ -78,7 +78,7 @@ from fastmcp.server.transforms import (
 from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import AuthCheckCallable, Tool, ToolResult
+from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
@@ -509,7 +509,7 @@ class FastMCP(
                 if not skip_auth and tool.auth is not None:
                     ctx = AuthContext(token=token, component=tool)
                     try:
-                        if not run_auth_checks(tool.auth, ctx):
+                        if not await run_auth_checks(tool.auth, ctx):
                             continue
                     except AuthorizationError:
                         continue
@@ -540,7 +540,7 @@ class FastMCP(
         if not skip_auth and tool.auth is not None:
             ctx = AuthContext(token=token, component=tool)
             try:
-                if not run_auth_checks(tool.auth, ctx):
+                if not await run_auth_checks(tool.auth, ctx):
                     return None
             except AuthorizationError:
                 return None
@@ -607,7 +607,7 @@ class FastMCP(
                 if not skip_auth and resource.auth is not None:
                     ctx = AuthContext(token=token, component=resource)
                     try:
-                        if not run_auth_checks(resource.auth, ctx):
+                        if not await run_auth_checks(resource.auth, ctx):
                             continue
                     except AuthorizationError:
                         continue
@@ -638,7 +638,7 @@ class FastMCP(
         if not skip_auth and resource.auth is not None:
             ctx = AuthContext(token=token, component=resource)
             try:
-                if not run_auth_checks(resource.auth, ctx):
+                if not await run_auth_checks(resource.auth, ctx):
                     return None
             except AuthorizationError:
                 return None
@@ -706,7 +706,7 @@ class FastMCP(
                 if not skip_auth and template.auth is not None:
                     ctx = AuthContext(token=token, component=template)
                     try:
-                        if not run_auth_checks(template.auth, ctx):
+                        if not await run_auth_checks(template.auth, ctx):
                             continue
                     except AuthorizationError:
                         continue
@@ -737,7 +737,7 @@ class FastMCP(
         if not skip_auth and template.auth is not None:
             ctx = AuthContext(token=token, component=template)
             try:
-                if not run_auth_checks(template.auth, ctx):
+                if not await run_auth_checks(template.auth, ctx):
                     return None
             except AuthorizationError:
                 return None
@@ -801,7 +801,7 @@ class FastMCP(
                 if not skip_auth and prompt.auth is not None:
                     ctx = AuthContext(token=token, component=prompt)
                     try:
-                        if not run_auth_checks(prompt.auth, ctx):
+                        if not await run_auth_checks(prompt.auth, ctx):
                             continue
                     except AuthorizationError:
                         continue
@@ -832,7 +832,7 @@ class FastMCP(
         if not skip_auth and prompt.auth is not None:
             ctx = AuthContext(token=token, component=prompt)
             try:
-                if not run_auth_checks(prompt.auth, ctx):
+                if not await run_auth_checks(prompt.auth, ctx):
                     return None
             except AuthorizationError:
                 return None
@@ -1283,7 +1283,7 @@ class FastMCP(
         app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionTool: ...
 
     @overload
@@ -1304,7 +1304,7 @@ class FastMCP(
         app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> Callable[[AnyFunction], FunctionTool]: ...
 
     def tool(
@@ -1324,7 +1324,7 @@ class FastMCP(
         app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> (
         Callable[[AnyFunction], FunctionTool]
         | FunctionTool
@@ -1445,7 +1445,7 @@ class FastMCP(
         meta: dict[str, Any] | None = None,
         app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> Callable[[AnyFunction], Resource | ResourceTemplate | AnyFunction]:
         """Decorator to register a function as a resource.
 
@@ -1576,7 +1576,7 @@ class FastMCP(
         tags: set[str] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionPrompt: ...
 
     @overload
@@ -1592,7 +1592,7 @@ class FastMCP(
         tags: set[str] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> Callable[[AnyFunction], FunctionPrompt]: ...
 
     def prompt(
@@ -1607,7 +1607,7 @@ class FastMCP(
         tags: set[str] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> (
         Callable[[AnyFunction], FunctionPrompt]
         | FunctionPrompt

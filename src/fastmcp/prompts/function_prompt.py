@@ -25,12 +25,12 @@ import fastmcp
 from fastmcp.decorators import resolve_task_config
 from fastmcp.exceptions import PromptError
 from fastmcp.prompts.prompt import Prompt, PromptArgument, PromptResult
+from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (
     transform_context_annotations,
     without_injected_parameters,
 )
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.tools.tool import AuthCheckCallable
 from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -67,7 +67,7 @@ class PromptMeta:
     tags: set[str] | None = None
     meta: dict[str, Any] | None = None
     task: bool | TaskConfig | None = None
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None
+    auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
 
 
@@ -91,7 +91,7 @@ class FunctionPrompt(Prompt):
         tags: set[str] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -377,7 +377,7 @@ def prompt(
     tags: set[str] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+    auth: AuthCheck | list[AuthCheck] | None = None,
 ) -> Callable[[F], F]: ...
 @overload
 def prompt(
@@ -391,7 +391,7 @@ def prompt(
     tags: set[str] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+    auth: AuthCheck | list[AuthCheck] | None = None,
 ) -> Callable[[F], F]: ...
 
 
@@ -406,7 +406,7 @@ def prompt(
     tags: set[str] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+    auth: AuthCheck | list[AuthCheck] | None = None,
 ) -> Any:
     """Standalone decorator to mark a function as an MCP prompt.
 

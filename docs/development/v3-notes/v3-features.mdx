@@ -66,6 +66,10 @@ async def get_emails(
 
 Background tasks now use a distributed Redis notification queue for reliable delivery ([#2906](https://github.com/jlowin/fastmcp/pull/2906)). Elicitation switches from polling to BLPOP (single blocking call instead of ~7,200 round-trips/hour), and notification delivery retries up to 3x with TTL-based expiration.
 
+### Async Auth Checks
+
+Auth check functions can now be `async`, enabling authorization decisions that depend on asynchronous operations like reading server state via `Context.get_state` or calling external services ([#3150](https://github.com/jlowin/fastmcp/issues/3150)). Sync and async checks can be freely mixed. Previously, passing an async function as an auth check would silently pass (coroutine objects are truthy).
+
 ### Breaking: Deprecated `FastMCP()` Constructor Kwargs Removed
 
 Sixteen deprecated keyword arguments have been removed from `FastMCP.__init__`. Passing any of them now raises `TypeError` with a migration hint. Environment variables (e.g., `FASTMCP_HOST`) continue to work — only the constructor kwargs moved.

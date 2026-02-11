@@ -27,8 +27,8 @@ from mcp.types import PromptArgument as SDKPromptArgument
 from pydantic import Field
 from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
-from fastmcp.tools.tool import AuthCheckCallable
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
@@ -195,7 +195,7 @@ class Prompt(FastMCPComponent):
     arguments: list[PromptArgument] | None = Field(
         default=None, description="Arguments that can be passed to the prompt"
     )
-    auth: SkipJsonSchema[AuthCheckCallable | list[AuthCheckCallable] | None] = Field(
+    auth: SkipJsonSchema[AuthCheck | list[AuthCheck] | None] = Field(
         default=None, description="Authorization checks for this prompt", exclude=True
     )
 
@@ -237,7 +237,7 @@ class Prompt(FastMCPComponent):
         tags: set[str] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 

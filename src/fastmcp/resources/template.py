@@ -24,12 +24,12 @@ from pydantic import (
 
 from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.server.apps import resolve_ui_mime_type
+from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (
     transform_context_annotations,
     without_injected_parameters,
 )
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
-from fastmcp.tools.tool import AuthCheckCallable
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import get_cached_typeadapter
@@ -117,7 +117,7 @@ class ResourceTemplate(FastMCPComponent):
     annotations: Annotations | None = Field(
         default=None, description="Optional annotations about the resource's behavior"
     )
-    auth: SkipJsonSchema[AuthCheckCallable | list[AuthCheckCallable] | None] = Field(
+    auth: SkipJsonSchema[AuthCheck | list[AuthCheck] | None] = Field(
         default=None,
         description="Authorization checks for this resource template",
         exclude=True,
@@ -140,7 +140,7 @@ class ResourceTemplate(FastMCPComponent):
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionResourceTemplate:
         return FunctionResourceTemplate.from_function(
             fn=fn,
@@ -471,7 +471,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionResourceTemplate:
         """Create a template from a function."""
 

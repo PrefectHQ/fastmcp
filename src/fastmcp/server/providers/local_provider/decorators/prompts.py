@@ -17,8 +17,8 @@ from mcp.types import AnyFunction
 import fastmcp
 from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.prompts.prompt import Prompt
+from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.tools.tool import AuthCheckCallable
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider
@@ -82,7 +82,7 @@ class PromptDecoratorMixin:
         enabled: bool = True,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionPrompt: ...
 
     @overload
@@ -99,7 +99,7 @@ class PromptDecoratorMixin:
         enabled: bool = True,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> Callable[[AnyFunction], FunctionPrompt]: ...
 
     def prompt(
@@ -115,7 +115,7 @@ class PromptDecoratorMixin:
         enabled: bool = True,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> (
         Callable[[AnyFunction], FunctionPrompt]
         | FunctionPrompt
