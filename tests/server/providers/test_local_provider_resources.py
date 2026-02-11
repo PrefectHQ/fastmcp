@@ -676,7 +676,7 @@ class TestTemplateDecorator:
 
 class TestResourceTags:
     def create_server(self, include_tags=None, exclude_tags=None):
-        mcp = FastMCP(include_tags=include_tags, exclude_tags=exclude_tags)
+        mcp = FastMCP()
 
         @mcp.resource("resource://1", tags={"a", "b"})
         def resource_1() -> str:
@@ -685,6 +685,11 @@ class TestResourceTags:
         @mcp.resource("resource://2", tags={"b", "c"})
         def resource_2() -> str:
             return "2"
+
+        if include_tags:
+            mcp.enable(tags=include_tags, only=True)
+        if exclude_tags:
+            mcp.disable(tags=exclude_tags)
 
         return mcp
 
@@ -823,7 +828,7 @@ class TestResourceEnabled:
 
 class TestResourceTemplatesTags:
     def create_server(self, include_tags=None, exclude_tags=None):
-        mcp = FastMCP(include_tags=include_tags, exclude_tags=exclude_tags)
+        mcp = FastMCP()
 
         @mcp.resource("resource://1/{param}", tags={"a", "b"})
         def template_resource_1(param: str) -> str:
@@ -832,6 +837,11 @@ class TestResourceTemplatesTags:
         @mcp.resource("resource://2/{param}", tags={"b", "c"})
         def template_resource_2(param: str) -> str:
             return f"Template resource 2: {param}"
+
+        if include_tags:
+            mcp.enable(tags=include_tags, only=True)
+        if exclude_tags:
+            mcp.disable(tags=exclude_tags)
 
         return mcp
 

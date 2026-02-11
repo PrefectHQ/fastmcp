@@ -211,9 +211,9 @@ class TestAbstractCollectionTypes:
             "test",
             middleware=(),  # Empty tuple
             tools=(Tool.from_function(dummy_tool),),  # Tuple of tools
-            include_tags={"tag1", "tag2"},  # Set
-            exclude_tags={"tag3"},  # Set
         )
+        mcp.enable(tags={"tag1", "tag2"}, only=True)
+        mcp.disable(tags={"tag3"})
         assert mcp is not None
         assert mcp.name == "test"
         assert isinstance(mcp.middleware, list)  # Should be converted to list

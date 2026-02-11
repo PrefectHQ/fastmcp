@@ -66,6 +66,32 @@ async def get_emails(
 
 Background tasks now use a distributed Redis notification queue for reliable delivery ([#2906](https://github.com/jlowin/fastmcp/pull/2906)). Elicitation switches from polling to BLPOP (single blocking call instead of ~7,200 round-trips/hour), and notification delivery retries up to 3x with TTL-based expiration.
 
+### Breaking: Deprecated `FastMCP()` Constructor Kwargs Removed
+
+Sixteen deprecated keyword arguments have been removed from `FastMCP.__init__`. Passing any of them now raises `TypeError` with a migration hint. Environment variables (e.g., `FASTMCP_HOST`) continue to work — only the constructor kwargs moved.
+
+**Transport/server settings** (`host`, `port`, `log_level`, `debug`, `sse_path`, `message_path`, `streamable_http_path`, `json_response`, `stateless_http`): Pass to `run()`, `run_http_async()`, or `http_app()` as appropriate, or set via environment variables.
+
+```python
+# Before
+mcp = FastMCP("server", host="0.0.0.0", port=8080)
+mcp.run()
+
+# After
+mcp = FastMCP("server")
+mcp.run(transport="http", host="0.0.0.0", port=8080)
+```
+
+**Duplicate handling** (`on_duplicate_tools`, `on_duplicate_resources`, `on_duplicate_prompts`): Use the unified `on_duplicate=` parameter.
+
+**Tag filtering** (`include_tags`, `exclude_tags`): Use `server.enable(tags=..., only=True)` and `server.disable(tags=...)` after construction.
+
+**Tool serializer** (`tool_serializer`): Return `ToolResult` from tools instead.
+
+**Tool transformations** (`tool_transformations`): Use `server.add_transform(ToolTransform(...))` after construction.
+
+The `_deprecated_settings` attribute and `.settings` property are also removed. `ExperimentalSettings` has been deleted (dead code).
+
 ### Breaking: `ui=` Renamed to `app=`
 
 The MCP Apps decorator parameter has been renamed from `ui=ToolUI(...)` / `ui=ResourceUI(...)` to `app=AppConfig(...)` ([#3117](https://github.com/jlowin/fastmcp/pull/3117)). `ToolUI` and `ResourceUI` are consolidated into a single `AppConfig` class. Wire format is unchanged. See the MCP Apps section under beta2 for full details.
@@ -1266,35 +1292,9 @@ main.mount(subserver, prefix="api")
 main.mount(subserver, namespace="api")
 ```
 
-#### Tag Filtering Init Parameters
+#### Tag Filtering, Tool Serializer, Tool Transformations Init Parameters
 
-`FastMCP(include_tags=..., exclude_tags=...)` deprecated. Use `enable()`/`disable()` methods:
-
-```python
-# Deprecated
-mcp = FastMCP("server", exclude_tags={"internal"})
-
-# New
-mcp = FastMCP("server")
-mcp.disable(tags={"internal"})
-```
-
-#### Tool Serializer Parameter
-
-The `tool_serializer` parameter on `FastMCP` is deprecated. Return `ToolResult` for explicit serialization control.
-
-#### Tool Transformation Methods
-
-`add_tool_transformation()`, `remove_tool_transformation()`, and `tool_transformations` constructor parameter are deprecated. Use `add_transform(ToolTransform({...}))` instead:
-
-```python
-# Deprecated
-mcp.add_tool_transformation("name", config)
-
-# New
-from fastmcp.server.transforms import ToolTransform
-mcp.add_transform(ToolTransform({"name": config}))
-```
+These constructor parameters have been **removed** (not just deprecated) as of rc1. See "Breaking: Deprecated `FastMCP()` Constructor Kwargs Removed" in the rc1 section above. The `add_tool_transformation()` and `remove_tool_transformation()` methods remain as deprecated shims.
 
 ---
 

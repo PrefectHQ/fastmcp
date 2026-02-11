@@ -2,7 +2,6 @@ from __future__ import annotations as _annotations
 
 import inspect
 import os
-import warnings
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -115,30 +114,6 @@ class DocketSettings(BaseSettings):
     ] = timedelta(seconds=5)
 
 
-class ExperimentalSettings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_EXPERIMENTAL_",
-        extra="ignore",
-        validate_assignment=True,
-    )
-
-    # Deprecated in 2.14 - the new OpenAPI parser is now the default and only parser
-    enable_new_openapi_parser: bool = False
-
-    @field_validator("enable_new_openapi_parser", mode="after")
-    @classmethod
-    def _warn_openapi_parser_deprecated(cls, v: bool) -> bool:
-        if v:
-            warnings.warn(
-                "enable_new_openapi_parser is deprecated. "
-                "The new OpenAPI parser is now the default (and only) parser. "
-                "You can remove this setting.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return v
-
-
 class Settings(BaseSettings):
     """FastMCP settings."""
 
@@ -190,8 +165,6 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v.upper()
         return v
-
-    experimental: ExperimentalSettings = ExperimentalSettings()
 
     docket: DocketSettings = DocketSettings()
 
