@@ -45,7 +45,7 @@ async def my_tool(
 ): ...
 ```
 
-For Azure/Entra, the new `fastmcp[azure]` extra adds `EntraOBOToken` and `MSALApp` dependencies that handle the On-Behalf-Of token exchange declaratively:
+For Azure/Entra, the new `fastmcp[azure]` extra adds `EntraOBOToken`, which handles the On-Behalf-Of token exchange declaratively:
 
 ```python
 from fastmcp.server.auth.providers.azure import EntraOBOToken
