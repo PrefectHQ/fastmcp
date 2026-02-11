@@ -34,7 +34,6 @@ from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import (
     HTTPRoute,
     extract_output_schema_from_responses,
-    format_simple_description,
     parse_openapi_to_http_routes,
 )
 from fastmcp.utilities.openapi.director import RequestDirector
@@ -255,18 +254,13 @@ class OpenAPIProvider(Provider):
             or route.summary
             or f"Executes {route.method} {route.path}"
         )
-        enhanced_description = format_simple_description(
-            base_description=base_description,
-            parameters=route.parameters,
-            request_body=route.request_body,
-        )
 
         tool = OpenAPITool(
             client=self._client,
             route=route,
             director=self._director,
             name=tool_name,
-            description=enhanced_description,
+            description=base_description,
             parameters=combined_schema,
             output_schema=output_schema,
             tags=set(route.tags or []) | tags,
@@ -293,11 +287,6 @@ class OpenAPIProvider(Provider):
         base_description = (
             route.description or route.summary or f"Represents {route.path}"
         )
-        enhanced_description = format_simple_description(
-            base_description=base_description,
-            parameters=route.parameters,
-            request_body=route.request_body,
-        )
 
         resource = OpenAPIResource(
             client=self._client,
@@ -305,7 +294,7 @@ class OpenAPIProvider(Provider):
             director=self._director,
             uri=resource_uri,
             name=resource_name,
-            description=enhanced_description,
+            description=base_description,
             mime_type=_extract_mime_type_from_route(route),
             tags=set(route.tags or []) | tags,
         )
@@ -338,11 +327,6 @@ class OpenAPIProvider(Provider):
         base_description = (
             route.description or route.summary or f"Template for {route.path}"
         )
-        enhanced_description = format_simple_description(
-            base_description=base_description,
-            parameters=route.parameters,
-            request_body=route.request_body,
-        )
 
         template_params_schema = {
             "type": "object",
@@ -372,7 +356,7 @@ class OpenAPIProvider(Provider):
             director=self._director,
             uri_template=uri_template_str,
             name=template_name,
-            description=enhanced_description,
+            description=base_description,
             parameters=template_params_schema,
             tags=set(route.tags or []) | tags,
             mime_type=_extract_mime_type_from_route(route),

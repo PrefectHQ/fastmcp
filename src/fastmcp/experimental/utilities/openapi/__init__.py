@@ -10,7 +10,6 @@ from fastmcp.utilities.openapi import (
     RequestBodyInfo,
     ResponseInfo,
     extract_output_schema_from_responses,
-    format_simple_description,
     parse_openapi_to_http_routes,
     _combine_schemas,
 )
@@ -32,6 +31,5 @@ __all__ = [
     "ResponseInfo",
     "_combine_schemas",
     "extract_output_schema_from_responses",
-    "format_simple_description",
     "parse_openapi_to_http_routes",
 ]
