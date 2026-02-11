@@ -67,7 +67,7 @@ jobs:
 
             <constraints>
             This workflow is for investigation, testing, and planning.
-            
+
             You CANNOT: Create branches, checkout branches, commit code to the repository
             Do not push changes to the repository.
             You CAN: Read/analyze code, search repository, review git history, search for similar issues, write files, verify behavior, provide analysis and recommendations
@@ -75,9 +75,9 @@ jobs:
 
             <allowed_tools>
             You have access to the following tools (comma-separated list):
-            
+
             Edit,MultiEdit,Glob,Grep,LS,Read,Write,WebSearch,WebFetch,mcp__github_comment__update_claude_comment,mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(*),mcp__agents-md-generator__generate_agents_md,mcp__public-code-search__search_code
-            
+
             You can only use tools that are explicitly listed above. For Bash commands, the pattern `Bash(command:*)` means you can run that command with any arguments. If a command is not listed, it is not available.
             </allowed_tools>
 
@@ -102,7 +102,7 @@ jobs:
             - Verify environment setup or dependencies
             - Test specific code paths or scenarios
             - Write test files to confirm behavior
-            
+
             When executing commands:
             - Explain what you're testing and why
             - Include command output in your response when relevant

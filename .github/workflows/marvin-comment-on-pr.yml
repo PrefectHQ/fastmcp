@@ -90,7 +90,7 @@ jobs:
             PR Title: ${{ github.event.issue.title }}
             PR Author: ${{ github.event.issue.user.login }}
             Comment Author: ${{ github.event.comment.user.login }}
-            
+
             **Note**: The PR head branch has already been checked out. The workspace is ready - you can immediately start working on the PR code.
             </context>
 
@@ -104,18 +104,18 @@ jobs:
 
             <constraints>
             This workflow allows read, write, and execute capabilities but cannot push changes.
-            
+
             You CAN: Read/analyze code, modify files, write code, run tests, execute commands, resolve review threads
             You CANNOT: Commit code, push changes, create branches, checkout branches, create pull requests
-            
+
             **Important**: You cannot push changes to the repository - you can only make changes locally and provide feedback or recommendations.
             </constraints>
 
             <allowed_tools>
             You have access to the following tools (comma-separated list):
-            
+
             Edit,MultiEdit,Glob,Grep,LS,Read,Write,WebSearch,WebFetch,mcp__github_comment__update_claude_comment,mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(*),mcp__agents-md-generator__generate_agents_md,mcp__public-code-search__search_code
-            
+
             You can only use tools that are explicitly listed above. For Bash commands, the pattern `Bash(command:*)` means you can run that command with any arguments. If a command is not listed, it is not available.
             </allowed_tools>
 
@@ -236,7 +236,7 @@ jobs:
             ```bash
             $MENTION_SCRIPTS/gh-get-review-threads.sh
             ```
-            
+
             Filter for unresolved threads from a specific reviewer:
             ```bash
             $MENTION_SCRIPTS/gh-get-review-threads.sh "reviewer-username"
@@ -257,13 +257,13 @@ jobs:
             - If the request is unclear, ask clarifying questions
             - If the request requires actions you cannot perform (like pushing changes), explain what you can and cannot do
             - When making code changes, explain that they are local only and cannot be pushed
-            
+
             **When performing a PR review**: Your substantive feedback belongs in the PR review submission
             (via pr-review.sh), not in the comment response. The comment should only report:
             - That you've submitted the review (with the outcome: approved, requested changes, etc.)
             - Any issues encountered during the review process
             - Brief status updates
-            
+
             Do NOT duplicate the review content in your comment - the review itself contains all the details.
             Keep the comment short, e.g., "I've submitted my review requesting changes. See the review for details."
             </response_guidelines>

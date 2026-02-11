@@ -80,18 +80,18 @@ jobs:
 
             <constraints>
             This workflow allows read, write, and execute capabilities but cannot push changes.
-            
+
             You CAN: Read/analyze code, modify files, write code, run tests, execute commands
             You CANNOT: Commit code, push changes, create branches, checkout branches, create pull requests
-            
+
             **Important**: You cannot push changes to the repository - you can only make changes locally and provide feedback or recommendations.
             </constraints>
 
             <allowed_tools>
             You have access to the following tools (comma-separated list):
-            
+
             Edit,MultiEdit,Glob,Grep,LS,Read,Write,WebSearch,WebFetch,mcp__github_comment__update_claude_comment,mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(*),mcp__agents-md-generator__generate_agents_md,mcp__public-code-search__search_code
-            
+
             You can only use tools that are explicitly listed above. For Bash commands, the pattern `Bash(command:*)` means you can run that command with any arguments. If a command is not listed, it is not available.
             </allowed_tools>
 
