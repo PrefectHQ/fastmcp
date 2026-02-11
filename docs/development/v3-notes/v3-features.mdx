@@ -4,6 +4,72 @@ title: v3.0 Feature Tracking
 
 This document tracks major features in FastMCP v3.0 for release notes preparation.
 
+## 3.0.0rc1
+
+### Concurrent Tool Execution in Sampling
+
+When an LLM returns multiple tool calls in a single sampling response, they can now be executed concurrently ([#3022](https://github.com/jlowin/fastmcp/pull/3022)). Default behavior remains sequential; opt in with `tool_concurrency`. Tools can declare `sequential=True` to force sequential execution even when concurrency is enabled.
+
+```python
+result = await context.sample(
+    messages="Fetch weather for NYC and LA",
+    tools=[fetch_weather],
+    tool_concurrency=0,  # Unlimited parallel execution
+)
+```
+
+### OpenAPI `validate_output` Option
+
+`OpenAPIProvider` and `FastMCP.from_openapi()` now accept `validate_output=False` to skip output schema validation ([#3134](https://github.com/jlowin/fastmcp/pull/3134)). Useful when backends don't conform to their own OpenAPI response schemas — structured JSON still flows through, only the strict schema checking is disabled.
+
+```python
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=client,
+    validate_output=False,
+)
+```
+
+### Auth Token Injection and Azure OBO Dependencies
+
+New dependency injection for accessing the authenticated user's token directly in tool parameters ([#2918](https://github.com/jlowin/fastmcp/pull/2918)). Works with any auth provider.
+
+```python
+from fastmcp.server.dependencies import CurrentAccessToken, TokenClaim
+from fastmcp.server.auth import AccessToken
+
+@mcp.tool()
+async def my_tool(
+    token: AccessToken = CurrentAccessToken,
+    user_id: str = TokenClaim("oid"),
+): ...
+```
+
+For Azure/Entra, the new `fastmcp[azure]` extra adds `EntraOBOToken` and `MSALApp` dependencies that handle the On-Behalf-Of token exchange declaratively:
+
+```python
+from fastmcp.server.auth.providers.azure import EntraOBOToken
+
+@mcp.tool()
+async def get_emails(
+    graph_token: str = EntraOBOToken(["https://graph.microsoft.com/Mail.Read"]),
+):
+    # graph_token is ready — OBO exchange happened automatically
+    ...
+```
+
+### `generate-cli` Agent Skill Generation
+
+`fastmcp generate-cli` now produces a `SKILL.md` alongside the CLI script ([#3115](https://github.com/jlowin/fastmcp/pull/3115)) — a Claude Code agent skill with pre-computed invocation syntax for every tool. Agents reading the skill can call tools immediately without running `--help`. On by default; pass `--no-skill` to opt out.
+
+### Background Task Notification Queue
+
+Background tasks now use a distributed Redis notification queue for reliable delivery ([#2906](https://github.com/jlowin/fastmcp/pull/2906)). Elicitation switches from polling to BLPOP (single blocking call instead of ~7,200 round-trips/hour), and notification delivery retries up to 3x with TTL-based expiration.
+
+### Breaking: `ui=` Renamed to `app=`
+
+The MCP Apps decorator parameter has been renamed from `ui=ToolUI(...)` / `ui=ResourceUI(...)` to `app=AppConfig(...)` ([#3117](https://github.com/jlowin/fastmcp/pull/3117)). `ToolUI` and `ResourceUI` are consolidated into a single `AppConfig` class. Wire format is unchanged. See the MCP Apps section under beta2 for full details.
+
 ## 3.0.0beta2
 
 ### CLI: `fastmcp list` and `fastmcp call`
