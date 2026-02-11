@@ -16,6 +16,7 @@ permissions:
 jobs:
   comment:
     if: |
+      !github.event.issue.pull_request &&
       contains(github.event.comment.body, '/marvin') &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
