@@ -168,6 +168,8 @@
                 "group": "Clients",
                 "pages": [
                   "clients/client",
+                  "clients/cli",
+                  "clients/generate-cli",
                   "clients/transports",
                   {
                     "group": "Core Operations",
@@ -196,6 +198,7 @@
                     "icon": "key",
                     "pages": [
                       "clients/auth/oauth",
+                      "clients/auth/cimd",
                       "clients/auth/bearer"
                     ]
                   }
@@ -299,7 +302,12 @@
                     "group": "fastmcp.cli",
                     "pages": [
                       "python-sdk/fastmcp-cli-__init__",
+                      "python-sdk/fastmcp-cli-auth",
+                      "python-sdk/fastmcp-cli-cimd",
                       "python-sdk/fastmcp-cli-cli",
+                      "python-sdk/fastmcp-cli-client",
+                      "python-sdk/fastmcp-cli-discovery",
+                      "python-sdk/fastmcp-cli-generate",
                       {
                         "group": "install",
                         "pages": [
@@ -310,7 +318,8 @@
                           "python-sdk/fastmcp-cli-install-gemini_cli",
                           "python-sdk/fastmcp-cli-install-goose",
                           "python-sdk/fastmcp-cli-install-mcp_json",
-                          "python-sdk/fastmcp-cli-install-shared"
+                          "python-sdk/fastmcp-cli-install-shared",
+                          "python-sdk/fastmcp-cli-install-stdio"
                         ]
                       },
                       "python-sdk/fastmcp-cli-run",
@@ -399,12 +408,14 @@
                     "group": "fastmcp.server",
                     "pages": [
                       "python-sdk/fastmcp-server-__init__",
+                      "python-sdk/fastmcp-server-apps",
                       {
                         "group": "auth",
                         "pages": [
                           "python-sdk/fastmcp-server-auth-__init__",
                           "python-sdk/fastmcp-server-auth-auth",
                           "python-sdk/fastmcp-server-auth-authorization",
+                          "python-sdk/fastmcp-server-auth-cimd",
                           "python-sdk/fastmcp-server-auth-jwt_issuer",
                           "python-sdk/fastmcp-server-auth-middleware",
                           {
@@ -439,7 +450,8 @@
                               "python-sdk/fastmcp-server-auth-providers-workos"
                             ]
                           },
-                          "python-sdk/fastmcp-server-auth-redirect_validation"
+                          "python-sdk/fastmcp-server-auth-redirect_validation",
+                          "python-sdk/fastmcp-server-auth-ssrf"
                         ]
                       },
                       "python-sdk/fastmcp-server-context",
@@ -460,6 +472,7 @@
                           "python-sdk/fastmcp-server-middleware-middleware",
                           "python-sdk/fastmcp-server-middleware-ping",
                           "python-sdk/fastmcp-server-middleware-rate_limiting",
+                          "python-sdk/fastmcp-server-middleware-response_limiting",
                           "python-sdk/fastmcp-server-middleware-timing",
                           "python-sdk/fastmcp-server-middleware-tool_injection"
                         ]
@@ -546,6 +559,7 @@
                           "python-sdk/fastmcp-server-tasks-__init__",
                           "python-sdk/fastmcp-server-tasks-capabilities",
                           "python-sdk/fastmcp-server-tasks-config",
+                          "python-sdk/fastmcp-server-tasks-elicitation",
                           "python-sdk/fastmcp-server-tasks-handlers",
                           "python-sdk/fastmcp-server-tasks-keys",
                           "python-sdk/fastmcp-server-tasks-requests",
@@ -651,7 +665,7 @@
             "icon": "code"
           }
         ],
-        "version": "v3.0.0 (beta 1)"
+        "version": "v3.0.0 (beta 2)"
       },
       {
         "dropdowns": [

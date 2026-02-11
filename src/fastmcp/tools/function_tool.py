@@ -20,14 +20,15 @@ import anyio
 import mcp.types
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, Icon, ToolAnnotations, ToolExecution
+from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
+from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import without_injected_parameters
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
 from fastmcp.tools.tool import (
-    AuthCheckCallable,
     Tool,
     ToolResult,
     ToolResultSerializerType,
@@ -72,16 +73,17 @@ class ToolMeta:
     output_schema: dict[str, Any] | NotSetT | None = NotSet
     annotations: ToolAnnotations | None = None
     meta: dict[str, Any] | None = None
+    app: Any = None
     task: bool | TaskConfig | None = None
     exclude_args: list[str] | None = None
     serializer: Any | None = None
     timeout: float | None = None
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None
+    auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
 
 
 class FunctionTool(Tool):
-    fn: Callable[..., Any]
+    fn: SkipJsonSchema[Callable[..., Any]]
 
     def to_mcp_tool(
         self,
@@ -121,7 +123,7 @@ class FunctionTool(Tool):
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionTool:
         """Create a FunctionTool from a function.
 
@@ -192,7 +194,7 @@ class FunctionTool(Tool):
             warnings.warn(
                 "The `exclude_args` parameter is deprecated as of FastMCP 2.14. "
                 "Use dependency injection with `Depends()` instead for better lifecycle management. "
-                "See https://gofastmcp.com/servers/dependencies for examples.",
+                "See https://gofastmcp.com/servers/dependency-injection#using-depends for examples.",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -343,7 +345,7 @@ def tool(
     exclude_args: list[str] | None = None,
     serializer: Any | None = None,
     timeout: float | None = None,
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+    auth: AuthCheck | list[AuthCheck] | None = None,
 ) -> Callable[[F], F]: ...
 @overload
 def tool(
@@ -362,7 +364,7 @@ def tool(
     exclude_args: list[str] | None = None,
     serializer: Any | None = None,
     timeout: float | None = None,
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+    auth: AuthCheck | list[AuthCheck] | None = None,
 ) -> Callable[[F], F]: ...
 
 
@@ -382,7 +384,7 @@ def tool(
     exclude_args: list[str] | None = None,
     serializer: Any | None = None,
     timeout: float | None = None,
-    auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+    auth: AuthCheck | list[AuthCheck] | None = None,
 ) -> Any:
     """Standalone decorator to mark a function as an MCP tool.
 

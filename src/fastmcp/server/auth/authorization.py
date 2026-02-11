@@ -11,25 +11,26 @@ Auth checks can also raise exceptions:
 Example:
     ```python
     from fastmcp import FastMCP
-    from fastmcp.server.auth import require_auth, require_scopes
+    from fastmcp.server.auth import require_scopes
 
     mcp = FastMCP()
 
-    @mcp.tool(auth=require_auth)
+    @mcp.tool(auth=require_scopes("write"))
     def protected_tool(): ...
 
     @mcp.resource("data://secret", auth=require_scopes("read"))
     def secret_data(): ...
 
-    @mcp.prompt(auth=require_auth)
+    @mcp.prompt(auth=require_scopes("admin"))
     def admin_prompt(): ...
     ```
 """
 
 from __future__ import annotations
 
+import inspect
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
@@ -70,22 +71,8 @@ class AuthContext:
         return self.component if isinstance(self.component, Tool) else None
 
 
-# Type alias for auth check functions
-AuthCheck = Callable[[AuthContext], bool]
-
-
-def require_auth(ctx: AuthContext) -> bool:
-    """Require any valid authentication.
-
-    Returns True if the request has a valid token, False otherwise.
-
-    Example:
-        ```python
-        @mcp.tool(auth=require_auth)
-        def protected_tool(): ...
-        ```
-    """
-    return ctx.token is not None
+# Type alias for auth check functions (sync or async)
+AuthCheck = Callable[[AuthContext], bool] | Callable[[AuthContext], Awaitable[bool]]
 
 
 def require_scopes(*scopes: str) -> AuthCheck:
@@ -144,13 +131,14 @@ def restrict_tag(tag: str, *, scopes: list[str]) -> AuthCheck:
     return check
 
 
-def run_auth_checks(
+async def run_auth_checks(
     checks: AuthCheck | list[AuthCheck],
     ctx: AuthContext,
 ) -> bool:
     """Run auth checks with AND logic.
 
-    All checks must pass for authorization to succeed.
+    All checks must pass for authorization to succeed. Checks can be
+    synchronous or asynchronous functions.
 
     Auth checks can:
     - Return True to allow access
@@ -160,6 +148,7 @@ def run_auth_checks(
 
     Args:
         checks: A single check function or list of check functions.
+            Each check can be sync (returns bool) or async (returns Awaitable[bool]).
         ctx: The auth context to pass to each check.
 
     Returns:
@@ -173,7 +162,10 @@ def run_auth_checks(
 
     for check in check_list:
         try:
-            if not check(ctx):
+            result = check(ctx)
+            if inspect.isawaitable(result):
+                result = await result
+            if not result:
                 return False
         except AuthorizationError:
             # Let AuthorizationError propagate with its custom message

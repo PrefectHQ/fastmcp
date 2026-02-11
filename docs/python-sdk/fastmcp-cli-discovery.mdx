@@ -1,0 +1,71 @@
+---
+title: discovery
+sidebarTitle: discovery
+---
+
+# `fastmcp.cli.discovery`
+
+
+Discover MCP servers configured in editor config files.
+
+Scans filesystem-readable config files from editors like Claude Desktop,
+Claude Code, Cursor, Gemini CLI, and Goose, as well as project-level
+``mcp.json`` files. Each discovered server can be resolved by name
+(or ``source:name``) so the CLI can connect without requiring a URL
+or file path.
+
+
+## Functions
+
+### `discover_servers` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/discovery.py#L314" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+discover_servers(start_dir: Path | None = None) -> list[DiscoveredServer]
+```
+
+
+Run all scanners and return the combined results.
+
+Duplicate names across sources are preserved — callers can
+use :pyattr:`DiscoveredServer.qualified_name` to disambiguate.
+
+
+### `resolve_name` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/discovery.py#L331" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+resolve_name(name: str, start_dir: Path | None = None) -> ClientTransport
+```
+
+
+Resolve a server name (or ``source:name``) to a transport.
+
+Raises :class:`ValueError` when the name is not found or is ambiguous.
+
+
+## Classes
+
+### `DiscoveredServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/discovery.py#L37" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A single MCP server found in an editor or project config.
+
+
+**Methods:**
+
+#### `qualified_name` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/discovery.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+qualified_name(self) -> str
+```
+
+Fully qualified ``source:name`` identifier.
+
+
+#### `transport_summary` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/discovery.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+transport_summary(self) -> str
+```
+
+Human-readable one-liner describing the transport.
+

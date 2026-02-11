@@ -6,7 +6,7 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from key_value.aio.protocols import AsyncKeyValue
 
@@ -16,6 +16,7 @@ from fastmcp.utilities.auth import decode_jwt_payload, parse_scopes
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
+    from azure.identity.aio import OnBehalfOfCredential
     from mcp.server.auth.provider import AuthorizationParams
     from mcp.shared.auth import OAuthClientInformationFull
 
@@ -160,6 +161,10 @@ class AzureProvider(OAuthProxy):
         # Always include offline_access to get refresh tokens from Azure
         if "offline_access" not in parsed_additional_scopes:
             parsed_additional_scopes = [*parsed_additional_scopes, "offline_access"]
+
+        # Store Azure-specific config for OBO credential creation
+        self._tenant_id = tenant_id
+        self._base_authority = base_authority
 
         # Apply defaults
         self.identifier_uri = identifier_uri or f"api://{client_id}"
@@ -452,3 +457,244 @@ class AzureProvider(OAuthProxy):
         except Exception as e:
             logger.debug("Failed to extract Azure claims: %s", e)
             return None
+
+    def create_obo_credential(self, user_assertion: str) -> OnBehalfOfCredential:
+        """Create an OnBehalfOfCredential for OBO token exchange.
+
+        Uses the AzureProvider's configuration (client_id, client_secret,
+        tenant_id, authority) to create a credential that can exchange the
+        user's token for downstream API tokens.
+
+        Args:
+            user_assertion: The user's access token to exchange via OBO.
+
+        Returns:
+            A configured OnBehalfOfCredential ready for get_token() calls.
+
+        Raises:
+            ImportError: If azure-identity is not installed (requires fastmcp[azure]).
+        """
+        _require_azure_identity("OBO token exchange")
+        from azure.identity.aio import OnBehalfOfCredential
+
+        return OnBehalfOfCredential(
+            tenant_id=self._tenant_id,
+            client_id=self._upstream_client_id,
+            client_secret=self._upstream_client_secret.get_secret_value(),
+            user_assertion=user_assertion,
+            authority=f"https://{self._base_authority}",
+        )
+
+
+class AzureJWTVerifier(JWTVerifier):
+    """JWT verifier pre-configured for Azure AD / Microsoft Entra ID.
+
+    Auto-configures JWKS URI, issuer, audience, and scope handling from your
+    Azure app registration details. Designed for Managed Identity and other
+    token-verification-only scenarios where AzureProvider's full OAuth proxy
+    isn't needed.
+
+    Handles Azure's scope format automatically:
+    - Validates tokens using short-form scopes (what Azure puts in ``scp`` claims)
+    - Advertises full-URI scopes in OAuth metadata (what clients need to request)
+
+    Example::
+
+        from fastmcp.server.auth import RemoteAuthProvider
+        from fastmcp.server.auth.providers.azure import AzureJWTVerifier
+        from pydantic import AnyHttpUrl
+
+        verifier = AzureJWTVerifier(
+            client_id="your-client-id",
+            tenant_id="your-tenant-id",
+            required_scopes=["access_as_user"],
+        )
+
+        auth = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[
+                AnyHttpUrl("https://login.microsoftonline.com/your-tenant-id/v2.0")
+            ],
+            base_url="https://my-server.com",
+        )
+    """
+
+    def __init__(
+        self,
+        *,
+        client_id: str,
+        tenant_id: str,
+        required_scopes: list[str] | None = None,
+        identifier_uri: str | None = None,
+        base_authority: str = "login.microsoftonline.com",
+    ):
+        """Initialize Azure JWT verifier.
+
+        Args:
+            client_id: Azure application (client) ID from your App registration
+            tenant_id: Azure tenant ID (specific tenant GUID, "organizations", or "consumers").
+                For multi-tenant apps ("organizations" or "consumers"), issuer validation
+                is skipped since Azure tokens carry the actual tenant GUID as issuer.
+            required_scopes: Scope names as they appear in Azure Portal under "Expose an API"
+                (e.g., ["access_as_user", "read"]). These are validated against
+                the short-form scopes in token ``scp`` claims, and automatically
+                prefixed with identifier_uri for OAuth metadata.
+            identifier_uri: Application ID URI (defaults to ``api://{client_id}``).
+                Used to prefix scopes in OAuth metadata so clients know the full
+                scope URIs to request from Azure.
+            base_authority: Azure authority base URL (defaults to "login.microsoftonline.com").
+                For Azure Government, use "login.microsoftonline.us".
+        """
+        self._identifier_uri = identifier_uri or f"api://{client_id}"
+
+        # For multi-tenant apps, Azure tokens carry the actual tenant GUID as
+        # issuer, not the literal "organizations" or "consumers" string. Skip
+        # issuer validation for these — audience still protects against wrong-app tokens.
+        multi_tenant_values = {"organizations", "consumers", "common"}
+        issuer: str | None = (
+            None
+            if tenant_id in multi_tenant_values
+            else f"https://{base_authority}/{tenant_id}/v2.0"
+        )
+
+        super().__init__(
+            jwks_uri=f"https://{base_authority}/{tenant_id}/discovery/v2.0/keys",
+            issuer=issuer,
+            audience=client_id,
+            algorithm="RS256",
+            required_scopes=required_scopes,
+        )
+
+    @property
+    def scopes_supported(self) -> list[str]:
+        """Return scopes with Azure URI prefix for OAuth metadata.
+
+        Azure tokens contain short-form scopes (e.g., ``read``) in the ``scp``
+        claim, but clients must request full URI scopes (e.g.,
+        ``api://client-id/read``) from the Azure authorization endpoint. This
+        property returns the full-URI form for OAuth metadata while
+        ``required_scopes`` retains the short form for token validation.
+        """
+        if not self.required_scopes:
+            return []
+        prefixed = []
+        for scope in self.required_scopes:
+            if scope in OIDC_SCOPES or "://" in scope or "/" in scope:
+                prefixed.append(scope)
+            else:
+                prefixed.append(f"{self._identifier_uri}/{scope}")
+        return prefixed
+
+
+# --- Dependency injection support ---
+# These require fastmcp[azure] extra for azure-identity
+
+# Check if DI engine is available
+try:
+    from docket.dependencies import Dependency
+except ImportError:
+    from fastmcp._vendor.docket_di import Dependency
+
+
+def _require_azure_identity(feature: str) -> None:
+    """Raise ImportError with install instructions if azure-identity is not available."""
+    try:
+        import azure.identity  # noqa: F401
+    except ImportError as e:
+        raise ImportError(
+            f"{feature} requires the `azure` extra. "
+            "Install with: pip install 'fastmcp[azure]'"
+        ) from e
+
+
+class _EntraOBOToken(Dependency):  # type: ignore[misc]
+    """Dependency that performs OBO token exchange for Microsoft Entra.
+
+    Uses azure.identity's OnBehalfOfCredential for async-native OBO,
+    with automatic token caching and refresh.
+    """
+
+    def __init__(self, scopes: list[str]):
+        self.scopes = scopes
+        self._credential: OnBehalfOfCredential | None = None
+
+    async def __aenter__(self) -> str:
+        _require_azure_identity("EntraOBOToken")
+
+        from fastmcp.server.dependencies import get_access_token, get_server
+
+        access_token = get_access_token()
+        if access_token is None:
+            raise RuntimeError(
+                "No access token available. Cannot perform OBO exchange."
+            )
+
+        server = get_server()
+        if not isinstance(server.auth, AzureProvider):
+            raise RuntimeError(
+                "EntraOBOToken requires an AzureProvider as the auth provider. "
+                f"Current provider: {type(server.auth).__name__}"
+            )
+
+        self._credential = server.auth.create_obo_credential(
+            user_assertion=access_token.token,
+        )
+
+        try:
+            result = await self._credential.get_token(*self.scopes)
+        except BaseException:
+            await self._credential.close()
+            self._credential = None
+            raise
+
+        return result.token
+
+    async def __aexit__(self, *args: object) -> None:
+        if self._credential is not None:
+            await self._credential.close()
+            self._credential = None
+
+
+def EntraOBOToken(scopes: list[str]) -> str:
+    """Exchange the user's Entra token for a downstream API token via OBO.
+
+    This dependency performs a Microsoft Entra On-Behalf-Of (OBO) token exchange,
+    allowing your MCP server to call downstream APIs (like Microsoft Graph) on
+    behalf of the authenticated user.
+
+    Args:
+        scopes: The scopes to request for the downstream API. For Microsoft Graph,
+            use scopes like ["https://graph.microsoft.com/Mail.Read"] or
+            ["https://graph.microsoft.com/.default"].
+
+    Returns:
+        A dependency that resolves to the downstream API access token string
+
+    Raises:
+        ImportError: If fastmcp[azure] is not installed
+        RuntimeError: If no access token is available, provider is not Azure,
+            or OBO exchange fails
+
+    Example:
+        ```python
+        from fastmcp.server.auth.providers.azure import EntraOBOToken
+        import httpx
+
+        @mcp.tool()
+        async def get_my_emails(
+            graph_token: str = EntraOBOToken(["https://graph.microsoft.com/Mail.Read"])
+        ):
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://graph.microsoft.com/v1.0/me/messages",
+                    headers={"Authorization": f"Bearer {graph_token}"}
+                )
+                return resp.json()
+        ```
+
+    Note:
+        For OBO to work, ensure the scopes are included in the AzureProvider's
+        `additional_authorize_scopes` parameter, and that admin consent has been
+        granted for those scopes in your Entra app registration.
+    """
+    return cast(str, _EntraOBOToken(scopes))

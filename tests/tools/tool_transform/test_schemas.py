@@ -346,8 +346,8 @@ class TestInputSchema:
     def test_merge_schema_with_defs_precedence(self):
         """Test _merge_schema_with_precedence merges $defs correctly.
 
-        Note: This tests the raw merge behavior before dereferencing.
-        The final schema output will be dereferenced by compress_schema.
+        Note: compress_schema no longer dereferences $ref by default.
+        Used definitions are kept in $defs; unused definitions are pruned.
         """
         base_schema = {
             "type": "object",
@@ -374,23 +374,28 @@ class TestInputSchema:
         # SharedType should no longer be present on the schema (unused)
         assert "SharedType" not in transformed_tool_schema.get("$defs", {})
 
-        # Schema is dereferenced so no $defs in final output
+        # $ref and $defs are preserved for used definitions
         assert transformed_tool_schema == snapshot(
             {
                 "type": "object",
                 "properties": {
-                    "field1": {"type": "string", "description": "base"},
-                    "field2": {"type": "boolean"},
+                    "field1": {"$ref": "#/$defs/BaseType"},
+                    "field2": {"$ref": "#/$defs/OverrideType"},
+                },
+                "$defs": {
+                    "BaseType": {"type": "string", "description": "base"},
+                    "OverrideType": {"type": "boolean"},
                 },
                 "required": [],
+                "additionalProperties": False,
             }
         )
 
     def test_transform_tool_with_complex_defs_pruning(self):
         """Test that tool transformation properly handles hidden params.
 
-        With schema dereferencing, unused types are automatically removed
-        since $defs is eliminated entirely.
+        Unused type definitions are pruned from $defs when their
+        corresponding parameters are hidden. Used types remain as $ref.
         """
 
         class UsedType(BaseModel):
@@ -410,25 +415,29 @@ class TestInputSchema:
             complex_tool, transform_args={"unused_param": ArgTransform(hide=True)}
         )
 
-        # Schema is dereferenced - no $defs
-        assert "$defs" not in transformed_tool.parameters
+        # UnusedType should be pruned from $defs, but UsedType remains
+        assert "UnusedType" not in transformed_tool.parameters.get("$defs", {})
 
         assert transformed_tool.parameters == snapshot(
             {
                 "type": "object",
                 "properties": {
-                    "used_param": {
+                    "used_param": {"$ref": "#/$defs/UsedType"},
+                },
+                "$defs": {
+                    "UsedType": {
                         "properties": {"value": {"type": "string"}},
                         "required": ["value"],
                         "type": "object",
-                    }
+                    },
                 },
                 "required": ["used_param"],
+                "additionalProperties": False,
             }
         )
 
     def test_transform_with_custom_function_preserves_needed_types(self):
-        """Test that custom transform functions preserve necessary types inline."""
+        """Test that custom transform functions preserve necessary type definitions."""
 
         class InputType(BaseModel):
             data: str
@@ -450,25 +459,27 @@ class TestInputSchema:
             transform_args={"input_data": ArgTransform(name="renamed_input")},
         )
 
-        # Schema is dereferenced - types are inlined
-        assert "$defs" not in transformed.parameters
-
+        # Used type definitions are preserved as $ref/$defs
         assert transformed.parameters == snapshot(
             {
                 "type": "object",
                 "properties": {
-                    "renamed_input": {
+                    "renamed_input": {"$ref": "#/$defs/InputType"},
+                },
+                "$defs": {
+                    "InputType": {
                         "properties": {"data": {"type": "string"}},
                         "required": ["data"],
                         "type": "object",
-                    }
+                    },
                 },
                 "required": ["renamed_input"],
+                "additionalProperties": False,
             }
         )
 
     def test_chained_transforms_inline_types(self):
-        """Test that chained transformations produce correct inlined schemas."""
+        """Test that chained transformations produce correct schemas with $ref/$defs."""
 
         class TypeA(BaseModel):
             a: str
@@ -489,25 +500,30 @@ class TestInputSchema:
             transform_args={"param_c": ArgTransform(hide=True, default=TypeC(c=True))},
         )
 
-        # Schema is dereferenced - types are inlined
-        assert "$defs" not in transform1.parameters
+        # TypeC should be pruned from $defs, TypeA and TypeB remain
+        assert "TypeC" not in transform1.parameters.get("$defs", {})
 
         assert transform1.parameters == snapshot(
             {
                 "type": "object",
                 "properties": {
-                    "param_a": {
+                    "param_a": {"$ref": "#/$defs/TypeA"},
+                    "param_b": {"$ref": "#/$defs/TypeB"},
+                },
+                "$defs": {
+                    "TypeA": {
                         "properties": {"a": {"type": "string"}},
                         "required": ["a"],
                         "type": "object",
                     },
-                    "param_b": {
+                    "TypeB": {
                         "properties": {"b": {"type": "integer"}},
                         "required": ["b"],
                         "type": "object",
                     },
                 },
                 "required": IsList("param_b", "param_a", check_order=False),
+                "additionalProperties": False,
             }
         )
 
@@ -517,18 +533,23 @@ class TestInputSchema:
             transform_args={"param_b": ArgTransform(hide=True, default=TypeB(b=42))},
         )
 
-        assert "$defs" not in transform2.parameters
+        # TypeB should be pruned from $defs, only TypeA remains
+        assert "TypeB" not in transform2.parameters.get("$defs", {})
 
         assert transform2.parameters == snapshot(
             {
                 "type": "object",
                 "properties": {
-                    "param_a": {
+                    "param_a": {"$ref": "#/$defs/TypeA"},
+                },
+                "$defs": {
+                    "TypeA": {
                         "properties": {"a": {"type": "string"}},
                         "required": ["a"],
                         "type": "object",
-                    }
+                    },
                 },
                 "required": ["param_a"],
+                "additionalProperties": False,
             }
         )

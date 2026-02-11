@@ -24,7 +24,9 @@ from mcp.types import (
 )
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
@@ -35,10 +37,6 @@ from fastmcp.utilities.types import (
     NotSet,
     NotSetT,
 )
-
-# Runtime type alias for auth checks to avoid circular imports with authorization.py
-# AuthCheck is Callable[[AuthContext], bool] but we use Any to avoid the import
-AuthCheckCallable: TypeAlias = Callable[[Any], bool]
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -140,13 +138,13 @@ class Tool(FastMCPComponent):
         Field(description="Task execution configuration (SEP-1686)"),
     ] = None
     serializer: Annotated[
-        ToolResultSerializerType | None,
+        SkipJsonSchema[ToolResultSerializerType | None],
         Field(
             description="Deprecated. Return ToolResult from your tools for full control over serialization."
         ),
     ] = None
     auth: Annotated[
-        AuthCheckCallable | list[AuthCheckCallable] | None,
+        SkipJsonSchema[AuthCheck | list[AuthCheck] | None],
         Field(description="Authorization checks for this tool", exclude=True),
     ] = None
     timeout: Annotated[
@@ -206,7 +204,7 @@ class Tool(FastMCPComponent):
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
         from fastmcp.tools.function_tool import FunctionTool

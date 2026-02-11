@@ -64,7 +64,7 @@ These compose cleanly, so complex patterns don't require complex code. And becau
 ## Installation
 
 > [!Note]
-> FastMCP 3.0 is currently in beta. Install with: `pip install fastmcp==3.0.0b1`
+> FastMCP 3.0 is currently in beta. Install with: `pip install fastmcp==3.0.0b2`
 >
 > For production systems requiring stability, pin to v2: `pip install 'fastmcp<3'`
 

@@ -1,0 +1,242 @@
+---
+title: cimd
+sidebarTitle: cimd
+---
+
+# `fastmcp.server.auth.cimd`
+
+
+CIMD (Client ID Metadata Document) support for FastMCP.
+
+.. warning::
+    **Beta Feature**: CIMD support is currently in beta. The API may change
+    in future releases. Please report any issues you encounter.
+
+CIMD is a simpler alternative to Dynamic Client Registration where clients
+host a static JSON document at an HTTPS URL, and that URL becomes their
+client_id. See the IETF draft: draft-parecki-oauth-client-id-metadata-document
+
+This module provides:
+- CIMDDocument: Pydantic model for CIMD document validation
+- CIMDFetcher: Fetch and validate CIMD documents with SSRF protection
+- CIMDClientManager: Manages CIMD client operations
+
+
+## Classes
+
+### `CIMDDocument` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L45" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+CIMD document per draft-parecki-oauth-client-id-metadata-document.
+
+The client metadata document is a JSON document containing OAuth client
+metadata. The client_id property MUST match the URL where this document
+is hosted.
+
+Key constraint: token_endpoint_auth_method MUST NOT use shared secrets
+(client_secret_post, client_secret_basic, client_secret_jwt).
+
+redirect_uris is required and must contain at least one entry.
+
+
+**Methods:**
+
+#### `validate_auth_method` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate_auth_method(cls, v: str) -> str
+```
+
+Ensure no shared-secret auth methods are used.
+
+
+#### `validate_redirect_uris` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate_redirect_uris(cls, v: list[str]) -> list[str]
+```
+
+Ensure redirect_uris is non-empty and each entry is a valid URI.
+
+
+### `CIMDValidationError` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L154" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when CIMD document validation fails.
+
+
+### `CIMDFetchError` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L158" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when CIMD document fetching fails.
+
+
+### `CIMDFetcher` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L186" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Fetch and validate CIMD documents with SSRF protection.
+
+Delegates HTTP fetching to ssrf_safe_fetch_response, which provides DNS
+pinning, IP validation, size limits, and timeout enforcement. Documents are
+cached using HTTP caching semantics (Cache-Control/ETag/Last-Modified), with
+a TTL fallback when response headers do not define caching behavior.
+
+
+**Methods:**
+
+#### `is_cimd_client_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L270" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_cimd_client_id(self, client_id: str) -> bool
+```
+
+Check if a client_id looks like a CIMD URL.
+
+CIMD URLs must be HTTPS with a host and non-root path.
+
+
+#### `fetch` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L287" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+fetch(self, client_id_url: str) -> CIMDDocument
+```
+
+Fetch and validate a CIMD document with SSRF protection.
+
+Uses ssrf_safe_fetch_response for the HTTP layer, which provides:
+- HTTPS only, DNS resolution with IP validation
+- DNS pinning (connects to validated IP directly)
+- Blocks private/loopback/link-local/multicast IPs
+- Response size limit and timeout enforcement
+- Redirects disabled
+
+**Args:**
+- `client_id_url`: The URL to fetch (also the expected client_id)
+
+**Returns:**
+- Validated CIMDDocument
+
+**Raises:**
+- `CIMDValidationError`: If document is invalid or URL blocked
+- `CIMDFetchError`: If document cannot be fetched
+
+
+#### `validate_redirect_uri` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L422" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate_redirect_uri(self, doc: CIMDDocument, redirect_uri: str) -> bool
+```
+
+Validate that a redirect_uri is allowed by the CIMD document.
+
+**Args:**
+- `doc`: The CIMD document
+- `redirect_uri`: The redirect URI to validate
+
+**Returns:**
+- True if valid, False otherwise
+
+
+### `CIMDAssertionValidator` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L452" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Validates JWT assertions for private_key_jwt CIMD clients.
+
+Implements RFC 7523 (JSON Web Token (JWT) Profile for OAuth 2.0 Client
+Authentication and Authorization Grants) for CIMD client authentication.
+
+JTI replay protection uses TTL-based caching to ensure proper security:
+- JTIs are cached with expiration matching the JWT's exp claim
+- Expired JTIs are automatically cleaned up
+- Maximum assertion lifetime is enforced (5 minutes)
+
+
+**Methods:**
+
+#### `validate_assertion` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L495" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate_assertion(self, assertion: str, client_id: str, token_endpoint: str, cimd_doc: CIMDDocument) -> bool
+```
+
+Validate JWT assertion from client.
+
+**Args:**
+- `assertion`: The JWT assertion string
+- `client_id`: Expected client_id (must match iss and sub claims)
+- `token_endpoint`: Token endpoint URL (must match aud claim)
+- `cimd_doc`: CIMD document containing JWKS for key verification
+
+**Returns:**
+- True if valid
+
+**Raises:**
+- `ValueError`: If validation fails
+
+
+### `CIMDClientManager` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L677" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Manages all CIMD client operations for OAuth proxy.
+
+This class encapsulates:
+- CIMD client detection
+- Document fetching and validation
+- Synthetic OAuth client creation
+- Private key JWT assertion validation
+
+This allows the OAuth proxy to delegate all CIMD-specific logic to a
+single, focused manager class.
+
+
+**Methods:**
+
+#### `is_cimd_client_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L711" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_cimd_client_id(self, client_id: str) -> bool
+```
+
+Check if client_id is a CIMD URL.
+
+**Args:**
+- `client_id`: Client ID to check
+
+**Returns:**
+- True if client_id is an HTTPS URL (CIMD format)
+
+
+#### `get_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L722" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_client(self, client_id_url: str)
+```
+
+Fetch CIMD document and create synthetic OAuth client.
+
+**Args:**
+- `client_id_url`: HTTPS URL pointing to CIMD document
+
+**Returns:**
+- OAuthProxyClient with CIMD document attached, or None if fetch fails
+
+
+#### `validate_private_key_jwt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/cimd.py#L771" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate_private_key_jwt(self, assertion: str, client, token_endpoint: str) -> bool
+```
+
+Validate JWT assertion for private_key_jwt auth.
+
+**Args:**
+- `assertion`: JWT assertion string from client
+- `client`: OAuth proxy client (must have cimd_document)
+- `token_endpoint`: Token endpoint URL for aud validation
+
+**Returns:**
+- True if assertion is valid
+
+**Raises:**
+- `ValueError`: If client doesn't have CIMD document or validation fails
+

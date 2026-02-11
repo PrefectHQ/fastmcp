@@ -1,0 +1,43 @@
+---
+title: cimd
+sidebarTitle: cimd
+---
+
+# `fastmcp.cli.cimd`
+
+
+CIMD (Client ID Metadata Document) CLI commands.
+
+## Functions
+
+### `create_command` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cimd.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_command() -> None
+```
+
+
+Generate a CIMD document for hosting.
+
+Create a Client ID Metadata Document that you can host at an HTTPS URL.
+The URL where you host this document becomes your client_id.
+
+After creating the document, host it at an HTTPS URL with a non-root path,
+for example: https://myapp.example.com/oauth/client.json
+
+
+### `validate_command` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cimd.py#L144" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate_command(url: Annotated[str, cyclopts.Parameter(help='URL of the CIMD document to validate')]) -> None
+```
+
+
+Validate a hosted CIMD document.
+
+Fetches the document from the given URL and validates:
+- URL is valid CIMD URL (HTTPS, non-root path)
+- Document is valid JSON
+- Document conforms to CIMD schema
+- client_id in document matches the URL
+

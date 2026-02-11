@@ -68,37 +68,12 @@ class TestAddToolTransformationDeprecated:
             assert "remove_tool_transformation is deprecated" in str(w[0].message)
             assert "no effect" in str(w[0].message)
 
-    async def test_tool_transformations_constructor_emits_warning(self):
-        """tool_transformations constructor param should emit deprecation warning."""
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+    async def test_tool_transformations_constructor_raises_type_error(self):
+        """tool_transformations constructor param should raise TypeError."""
+        import pytest
+
+        with pytest.raises(TypeError, match="no longer accepts `tool_transformations`"):
             FastMCP(
                 "test",
                 tool_transformations={"my_tool": ToolTransformConfig(name="renamed")},
             )
-
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-            assert "tool_transformations parameter is deprecated" in str(w[0].message)
-
-    async def test_tool_transformations_constructor_still_works(self):
-        """tool_transformations constructor param should still apply transforms."""
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            mcp = FastMCP(
-                "test",
-                tool_transformations={
-                    "my_tool": ToolTransformConfig(name="renamed_tool")
-                },
-            )
-
-        @mcp.tool
-        def my_tool() -> str:
-            return "result"
-
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            tool_names = [t.name for t in tools]
-
-            assert "my_tool" not in tool_names
-            assert "renamed_tool" in tool_names

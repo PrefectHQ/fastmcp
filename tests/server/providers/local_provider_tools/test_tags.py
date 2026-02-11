@@ -40,7 +40,7 @@ class PersonDataclass:
 
 class TestToolTags:
     def create_server(self, include_tags=None, exclude_tags=None):
-        mcp = FastMCP(include_tags=include_tags, exclude_tags=exclude_tags)
+        mcp = FastMCP()
 
         @mcp.tool(tags={"a", "b"})
         def tool_1() -> int:
@@ -49,6 +49,11 @@ class TestToolTags:
         @mcp.tool(tags={"b", "c"})
         def tool_2() -> int:
             return 2
+
+        if include_tags:
+            mcp.enable(tags=include_tags, only=True)
+        if exclude_tags:
+            mcp.disable(tags=exclude_tags)
 
         return mcp
 

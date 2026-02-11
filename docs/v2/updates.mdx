@@ -5,6 +5,26 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 2.14.5" description="February 3, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP 2.14.5: Sealed Docket"
+href="https://github.com/jlowin/fastmcp/releases/tag/v2.14.5"
+cta="Read the release notes"
+>
+Fixes a memory leak in the memory:// docket broker where cancelled tasks accumulated instead of being cleaned up. Bumps pydocket to ≥0.17.2.
+</Card>
+</Update>
+
+<Update label="FastMCP 2.14.4" description="January 22, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP 2.14.4: Package Deal"
+href="https://github.com/jlowin/fastmcp/releases/tag/v2.14.4"
+cta="Read the release notes"
+>
+Fixes a fresh install bug where the packaging library was missing as a direct dependency, plus backports $ref dereferencing in tool schemas and a task capabilities location fix.
+</Card>
+</Update>
+
 <Update label="FastMCP 2.14.3" description="January 12, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP 2.14.3: Time After Timeout"

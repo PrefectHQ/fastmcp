@@ -16,8 +16,9 @@ dependencies = [
     "cyclopts>=4.0.0",
     "authlib>=1.6.5",
     "pydantic[email]>=2.11.7",
+    "pyyaml>=6.0,<7.0",
     "pyperclip>=1.9.0",
-    "py-key-value-aio[disk,keyring,memory]>=0.3.0,<0.4.0",
+    "py-key-value-aio[disk,keyring,memory]>=0.4.0,<0.5.0",
     "uvicorn>=0.35",
     "websockets>=15.0.1",
     "jsonschema-path>=0.3.4",
@@ -51,13 +52,14 @@ classifiers = [
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40.0"]
+azure = ["azure-identity>=1.16.0"]
 openai = ["openai>=1.102.0"]
 tasks = ["pydocket>=0.17.2"]
 
 [dependency-groups]
 dev = [
     "dirty-equals>=0.9.0",
-    "fastmcp[anthropic,openai,tasks]",
+    "fastmcp[anthropic,azure,openai,tasks]",
     # add optional dependencies for fastmcp dev
     "fastapi>=0.115.12",
     "opentelemetry-sdk>=1.20.0",
@@ -78,7 +80,7 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff>=0.12.8",
-    "ty>=0.0.7",
+    "ty>=0.0.15",
     "prek>=0.2.12",
     "loq>=0.1.0a3",
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",

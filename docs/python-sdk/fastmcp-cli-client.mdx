@@ -1,0 +1,133 @@
+---
+title: client
+sidebarTitle: client
+---
+
+# `fastmcp.cli.client`
+
+
+Client-side CLI commands for querying and invoking MCP servers.
+
+## Functions
+
+### `resolve_server_spec` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/client.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+resolve_server_spec(server_spec: str | None) -> str | dict[str, Any] | ClientTransport
+```
+
+
+Turn CLI inputs into something ``Client()`` accepts.
+
+Exactly one of ``server_spec`` or ``command`` should be provided.
+
+Resolution order for ``server_spec``:
+1. URLs (``http://``, ``https://``) — passed through as-is.
+   If ``--transport`` is ``sse``, the URL is rewritten to end with ``/sse``
+   so ``infer_transport`` picks the right transport.
+2. Existing file paths, or strings ending in ``.py``/``.js``/``.json``.
+3. Anything else — name-based resolution via ``resolve_name``.
+
+When ``command`` is provided, the string is shell-split into a
+``StdioTransport(command, args)``.
+
+
+### `coerce_value` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/client.py#L265" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+coerce_value(raw: str, schema: dict[str, Any]) -> Any
+```
+
+
+Coerce a string CLI value according to a JSON-Schema type hint.
+
+
+### `parse_tool_arguments` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/client.py#L299" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+parse_tool_arguments(raw_args: tuple[str, ...], input_json: str | None, input_schema: dict[str, Any]) -> dict[str, Any]
+```
+
+
+Build a tool-call argument dict from CLI inputs.
+
+A single JSON object argument is treated as the full argument dict.
+``--input-json`` provides the base dict; ``key=value`` pairs override.
+Values are coerced using the tool's ``inputSchema``.
+
+
+### `format_tool_signature` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/client.py#L371" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+format_tool_signature(tool: mcp.types.Tool) -> str
+```
+
+
+Build ``name(param: type, ...) -> return_type`` from a tool's JSON schemas.
+
+
+### `list_command` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/client.py#L627" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_command(server_spec: Annotated[str | None, cyclopts.Parameter(help='Server URL, Python file, MCPConfig JSON, or .js file')] = None) -> None
+```
+
+
+List tools available on an MCP server.
+
+**Examples:**
+
+fastmcp list http://localhost:8000/mcp
+fastmcp list server.py
+fastmcp list mcp.json --json
+fastmcp list --command 'npx -y @mcp/server' --resources
+fastmcp list http://server/mcp --transport sse
+
+
+### `call_command` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/client.py#L776" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+call_command(server_spec: Annotated[str | None, cyclopts.Parameter(help='Server URL, Python file, MCPConfig JSON, or .js file')] = None, target: Annotated[str, cyclopts.Parameter(help='Tool name, resource URI, or prompt name (with --prompt)')] = '', *arguments: str) -> None
+```
+
+
+Call a tool, read a resource, or get a prompt on an MCP server.
+
+By default the target is treated as a tool name. If the target
+contains ``://`` it is treated as a resource URI. Pass ``--prompt``
+to treat it as a prompt name.
+
+Arguments are passed as key=value pairs. Use --input-json for complex
+or nested arguments.
+
+**Examples:**
+
+fastmcp call server.py greet name=World
+fastmcp call server.py resource://docs/readme
+fastmcp call server.py analyze --prompt data='[1,2,3]'
+fastmcp call http://server/mcp create --input-json '{"tags": ["a","b"]}'
+
+
+### `discover_command` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/client.py#L875" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+discover_command() -> None
+```
+
+
+Discover MCP servers configured in editor and project configs.
+
+Scans Claude Desktop, Claude Code, Cursor, Gemini CLI, Goose, and
+project-level mcp.json files for MCP server definitions.
+
+Discovered server names can be used directly with ``fastmcp list``
+and ``fastmcp call`` instead of specifying a URL or file path.
+
+**Examples:**
+
+fastmcp discover
+fastmcp discover --source claude-code
+fastmcp discover --source cursor --source gemini --json
+fastmcp list weather
+fastmcp call cursor:weather get_forecast city=London
+

@@ -1,0 +1,67 @@
+---
+title: goose
+sidebarTitle: goose
+---
+
+# `fastmcp.cli.install.goose`
+
+
+Goose integration for FastMCP install using Cyclopts.
+
+## Functions
+
+### `generate_goose_deeplink` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/install/goose.py#L29" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+generate_goose_deeplink(name: str, command: str, args: list[str]) -> str
+```
+
+
+Generate a Goose deeplink for installing an MCP extension.
+
+**Args:**
+- `name`: Human-readable display name for the extension.
+- `command`: The executable command (e.g. "uv").
+- `args`: Arguments to the command.
+- `description`: Short description shown in Goose.
+
+**Returns:**
+- A goose://extension?... deeplink URL.
+
+
+### `install_goose` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/install/goose.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+install_goose(file: Path, server_object: str | None, name: str) -> bool
+```
+
+
+Install FastMCP server in Goose via deeplink.
+
+**Args:**
+- `file`: Path to the server file.
+- `server_object`: Optional server object name (for \:object suffix).
+- `name`: Name for the extension in Goose.
+- `with_packages`: Optional list of additional packages to install.
+- `python_version`: Optional Python version to use.
+
+**Returns:**
+- True if installation was successful, False otherwise.
+
+
+### `goose_command` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/install/goose.py#L136" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+goose_command(server_spec: str) -> None
+```
+
+
+Install an MCP server in Goose.
+
+Uses uvx to run the server. Environment variables are not included
+in the deeplink; use `fastmcp install mcp-json` to generate a full
+config for manual installation.
+
+**Args:**
+- `server_spec`: Python file to install, optionally with \:object suffix
+

@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, Literal, cast
 
+import anyio
 from mcp.types import (
     ClientCapabilities,
     CreateMessageResult,
@@ -31,6 +32,7 @@ from typing_extensions import TypeVar
 from fastmcp import settings
 from fastmcp.exceptions import ToolError
 from fastmcp.server.sampling.sampling_tool import SamplingTool
+from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
@@ -239,6 +241,7 @@ async def execute_tools(
     tool_calls: list[ToolUseContent],
     tool_map: dict[str, SamplingTool],
     mask_error_details: bool = False,
+    tool_concurrency: int | None = None,
 ) -> list[ToolResultContent]:
     """Execute tool calls and return results.
 
@@ -249,66 +252,96 @@ async def execute_tools(
             When masked, only generic error messages are returned to the LLM.
             Tools can explicitly raise ToolError to bypass masking when they want
             to provide specific error messages to the LLM.
+        tool_concurrency: Controls parallel execution of tools:
+            - None (default): Sequential execution (one at a time)
+            - 0: Unlimited parallel execution
+            - N > 0: Execute at most N tools concurrently
+            If any tool has sequential=True, all tools execute sequentially
+            regardless of this setting.
 
     Returns:
-        List of tool result content blocks.
+        List of tool result content blocks in the same order as tool_calls.
     """
-    tool_results: list[ToolResultContent] = []
+    if tool_concurrency is not None and tool_concurrency < 0:
+        raise ValueError(
+            f"tool_concurrency must be None, 0 (unlimited), or a positive integer, "
+            f"got {tool_concurrency}"
+        )
 
-    for tool_use in tool_calls:
+    async def _execute_single_tool(tool_use: ToolUseContent) -> ToolResultContent:
+        """Execute a single tool and return its result."""
         tool = tool_map.get(tool_use.name)
         if tool is None:
-            tool_results.append(
-                ToolResultContent(
-                    type="tool_result",
-                    toolUseId=tool_use.id,
-                    content=[
-                        TextContent(
-                            type="text",
-                            text=f"Error: Unknown tool '{tool_use.name}'",
-                        )
-                    ],
-                    isError=True,
-                )
+            return ToolResultContent(
+                type="tool_result",
+                toolUseId=tool_use.id,
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Error: Unknown tool '{tool_use.name}'",
+                    )
+                ],
+                isError=True,
             )
-        else:
-            try:
-                result_value = await tool.run(tool_use.input)
-                tool_results.append(
-                    ToolResultContent(
-                        type="tool_result",
-                        toolUseId=tool_use.id,
-                        content=[TextContent(type="text", text=str(result_value))],
-                    )
-                )
-            except ToolError as e:
-                # ToolError is the escape hatch - always pass message through
-                logger.exception(f"Error calling sampling tool '{tool_use.name}'")
-                tool_results.append(
-                    ToolResultContent(
-                        type="tool_result",
-                        toolUseId=tool_use.id,
-                        content=[TextContent(type="text", text=str(e))],
-                        isError=True,
-                    )
-                )
-            except Exception as e:
-                # Generic exceptions - mask based on setting
-                logger.exception(f"Error calling sampling tool '{tool_use.name}'")
-                if mask_error_details:
-                    error_text = f"Error executing tool '{tool_use.name}'"
-                else:
-                    error_text = f"Error executing tool '{tool_use.name}': {e}"
-                tool_results.append(
-                    ToolResultContent(
-                        type="tool_result",
-                        toolUseId=tool_use.id,
-                        content=[TextContent(type="text", text=error_text)],
-                        isError=True,
-                    )
-                )
 
-    return tool_results
+        try:
+            result_value = await tool.run(tool_use.input)
+            return ToolResultContent(
+                type="tool_result",
+                toolUseId=tool_use.id,
+                content=[TextContent(type="text", text=str(result_value))],
+            )
+        except ToolError as e:
+            # ToolError is the escape hatch - always pass message through
+            logger.exception(f"Error calling sampling tool '{tool_use.name}'")
+            return ToolResultContent(
+                type="tool_result",
+                toolUseId=tool_use.id,
+                content=[TextContent(type="text", text=str(e))],
+                isError=True,
+            )
+        except Exception as e:
+            # Generic exceptions - mask based on setting
+            logger.exception(f"Error calling sampling tool '{tool_use.name}'")
+            if mask_error_details:
+                error_text = f"Error executing tool '{tool_use.name}'"
+            else:
+                error_text = f"Error executing tool '{tool_use.name}': {e}"
+            return ToolResultContent(
+                type="tool_result",
+                toolUseId=tool_use.id,
+                content=[TextContent(type="text", text=error_text)],
+                isError=True,
+            )
+
+    # Check if any tool requires sequential execution
+    requires_sequential = any(
+        tool.sequential
+        for tool_use in tool_calls
+        if (tool := tool_map.get(tool_use.name)) is not None
+    )
+
+    # Execute sequentially if required or if concurrency is None (default)
+    if tool_concurrency is None or requires_sequential:
+        tool_results: list[ToolResultContent] = []
+        for tool_use in tool_calls:
+            result = await _execute_single_tool(tool_use)
+            tool_results.append(result)
+        return tool_results
+
+    # Execute in parallel
+    if tool_concurrency == 0:
+        # Unlimited parallel execution
+        return await gather(*[_execute_single_tool(tc) for tc in tool_calls])
+    else:
+        # Bounded parallel execution with semaphore
+        semaphore = anyio.Semaphore(tool_concurrency)
+
+        async def bounded_execute(tool_use: ToolUseContent) -> ToolResultContent:
+            async with semaphore:
+                return await _execute_single_tool(tool_use)
+
+        return await gather(*[bounded_execute(tc) for tc in tool_calls])
 
 
 # --- Helper functions for sampling ---
@@ -412,6 +445,7 @@ async def sample_step_impl(
     tool_choice: ToolChoiceOption | str | None = None,
     auto_execute_tools: bool = True,
     mask_error_details: bool | None = None,
+    tool_concurrency: int | None = None,
 ) -> SampleStep:
     """Implementation of Context.sample_step().
 
@@ -498,7 +532,10 @@ async def sample_step_impl(
             else settings.mask_error_details
         )
         tool_results: list[ToolResultContent] = await execute_tools(
-            step_tool_calls, tool_map, mask_error_details=effective_mask
+            step_tool_calls,
+            tool_map,
+            mask_error_details=effective_mask,
+            tool_concurrency=tool_concurrency,
         )
 
         if tool_results:
@@ -523,6 +560,7 @@ async def sample_impl(
     tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
     result_type: type[ResultT] | None = None,
     mask_error_details: bool | None = None,
+    tool_concurrency: int | None = None,
 ) -> SamplingResult[ResultT]:
     """Implementation of Context.sample().
 
@@ -561,6 +599,7 @@ async def sample_impl(
             tools=sampling_tools,
             tool_choice=tool_choice,
             mask_error_details=mask_error_details,
+            tool_concurrency=tool_concurrency,
         )
 
         # Check for final_response tool call for structured output

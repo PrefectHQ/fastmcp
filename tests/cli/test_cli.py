@@ -39,7 +39,8 @@ class TestMainCLI:
 class TestVersionCommand:
     """Test the version command."""
 
-    def test_version_command_execution(self):
+    @patch("fastmcp.cli.cli.check_for_newer_version", return_value=None)
+    def test_version_command_execution(self, mock_check):
         """Test that version command executes properly."""
         # The version command should execute without raising SystemExit
         command, bound, _ = app.parse_args(["version"])

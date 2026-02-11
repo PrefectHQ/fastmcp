@@ -552,6 +552,88 @@ class TestPromptResult:
         assert mcp_result.meta == {"key": "value"}
 
 
+class TestPromptFieldDefaults:
+    """Test prompts with Field() defaults."""
+
+    async def test_field_with_default(self):
+        """Test that Field(default=...) correctly provides default values."""
+
+        from pydantic import Field
+
+        def prompt_with_defaults(
+            required: str = Field(description="Required parameter"),
+            optional: str = Field(
+                default="default_value", description="Optional parameter"
+            ),
+        ) -> str:
+            return f"required={required}, optional={optional}"
+
+        prompt = Prompt.from_function(prompt_with_defaults)
+        result = await prompt.render(arguments={"required": "test"})
+        assert result.messages == [Message("required=test, optional=default_value")]
+
+    async def test_annotated_field_with_default_in_signature(self):
+        """Test that Annotated[type, Field(...)] with default in signature works."""
+        from typing import Annotated
+
+        from pydantic import Field
+
+        def prompt_with_annotated(
+            required: Annotated[str, Field(description="Required parameter")],
+            optional: Annotated[
+                str, Field(description="Optional parameter")
+            ] = "default_value",
+        ) -> str:
+            return f"required={required}, optional={optional}"
+
+        prompt = Prompt.from_function(prompt_with_annotated)
+        result = await prompt.render(arguments={"required": "test"})
+        assert result.messages == [Message("required=test, optional=default_value")]
+
+    async def test_multiple_field_defaults(self):
+        """Test multiple parameters with Field() defaults."""
+        from pydantic import Field
+
+        def prompt_with_multiple_defaults(
+            name: str = Field(description="Name"),
+            greeting: str = Field(default="Hello", description="Greeting"),
+            punctuation: str = Field(default="!", description="Punctuation"),
+        ) -> str:
+            return f"{greeting}, {name}{punctuation}"
+
+        prompt = Prompt.from_function(prompt_with_multiple_defaults)
+
+        # Test with only required parameter
+        result1 = await prompt.render(arguments={"name": "World"})
+        assert result1.messages == [Message("Hello, World!")]
+
+        # Test overriding one default
+        result2 = await prompt.render(arguments={"name": "World", "greeting": "Hi"})
+        assert result2.messages == [Message("Hi, World!")]
+
+        # Test overriding all defaults
+        result3 = await prompt.render(
+            arguments={"name": "World", "greeting": "Greetings", "punctuation": "."}
+        )
+        assert result3.messages == [Message("Greetings, World.")]
+
+    async def test_field_defaults_with_type_conversion(self):
+        """Test Field() defaults work with type conversion for non-string types."""
+        from pydantic import Field
+
+        def prompt_with_typed_defaults(
+            count: int = Field(description="Count"),
+            multiplier: int = Field(default=2, description="Multiplier"),
+        ) -> str:
+            return f"result={count * multiplier}"
+
+        prompt = Prompt.from_function(prompt_with_typed_defaults)
+
+        # Pass count as string (MCP requirement), should use default for multiplier
+        result = await prompt.render(arguments={"count": "5"})
+        assert result.messages == [Message("result=10")]
+
+
 class TestPromptCallableAndConcurrency:
     """Test prompts with callable objects and concurrent execution."""
 

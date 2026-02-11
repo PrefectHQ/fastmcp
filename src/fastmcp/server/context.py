@@ -182,10 +182,45 @@ class Context:
     # Default TTL for session state: 1 day in seconds
     _STATE_TTL_SECONDS: int = 86400
 
-    def __init__(self, fastmcp: FastMCP, session: ServerSession | None = None):
+    def __init__(
+        self,
+        fastmcp: FastMCP,
+        session: ServerSession | None = None,
+        *,
+        task_id: str | None = None,
+    ):
         self._fastmcp: weakref.ref[FastMCP] = weakref.ref(fastmcp)
         self._session: ServerSession | None = session  # For state ops during init
         self._tokens: list[Token] = []
+        # Background task support (SEP-1686)
+        self._task_id: str | None = task_id
+
+    @property
+    def is_background_task(self) -> bool:
+        """True when this context is running in a background task (Docket worker).
+
+        When True, certain operations like elicit() and sample() will use
+        task-aware implementations that can pause the task and wait for
+        client input.
+
+        Example:
+            ```python
+            @server.tool(task=True)
+            async def my_task(ctx: Context) -> str:
+                # Works transparently in both foreground and background task modes
+                result = await ctx.elicit("Need input", str)
+                return str(result)
+            ```
+        """
+        return self._task_id is not None
+
+    @property
+    def task_id(self) -> str | None:
+        """Get the background task ID if running in a background task.
+
+        Returns None if not running in a background task context.
+        """
+        return self._task_id
 
     @property
     def fastmcp(self) -> FastMCP:
@@ -283,6 +318,10 @@ class Context:
         Returns an empty dict if no lifespan was configured or if the MCP
         session is not yet established.
 
+        In background tasks (Docket workers), where request_context is not
+        available, falls back to reading from the FastMCP server's lifespan
+        result directly.
+
         Example:
         ```python
         @server.tool
@@ -295,6 +334,11 @@ class Context:
         """
         rc = self.request_context
         if rc is None:
+            # In background tasks, request_context is not available.
+            # Fall back to the server's lifespan result directly (#3095).
+            result = self.fastmcp._lifespan_result
+            if result is not None:
+                return result
             return {}
         return rc.lifespan_context
 
@@ -303,9 +347,13 @@ class Context:
     ) -> None:
         """Report progress for the current operation.
 
+        Works in both foreground (MCP progress notifications) and background
+        (Docket task execution) contexts.
+
         Args:
             progress: Current progress value e.g. 24
             total: Optional total value e.g. 100
+            message: Optional status message describing current progress
         """
 
         progress_token = (
@@ -314,16 +362,48 @@ class Context:
             else None
         )
 
-        if progress_token is None:
+        # Foreground: Send MCP progress notification if we have a token
+        if progress_token is not None:
+            await self.session.send_progress_notification(
+                progress_token=progress_token,
+                progress=progress,
+                total=total,
+                message=message,
+                related_request_id=self.request_id,
+            )
             return
 
-        await self.session.send_progress_notification(
-            progress_token=progress_token,
-            progress=progress,
-            total=total,
-            message=message,
-            related_request_id=self.request_id,
-        )
+        # Background: Update Docket execution progress (stored in Redis)
+        # This makes progress visible via tasks/get and notifications/tasks/status
+        from fastmcp.server.dependencies import is_docket_available
+
+        if not is_docket_available():
+            return
+
+        try:
+            from docket.dependencies import Dependency
+
+            # Get current execution from worker context
+            execution = Dependency.execution.get()
+
+            # Update progress in Redis using Docket's progress API.
+            # Docket only exposes increment() (relative), so we compute
+            # the delta from the last reported value stored on this execution.
+            if total is not None:
+                await execution.progress.set_total(int(total))
+
+            current = int(progress)
+            last: int = getattr(execution, "_fastmcp_last_progress", 0)
+            delta = current - last
+            if delta > 0:
+                await execution.progress.increment(delta)
+            execution._fastmcp_last_progress = current  # type: ignore[attr-defined]
+
+            if message is not None:
+                await execution.progress.set_message(message)
+        except LookupError:
+            # Not running in Docket worker context - no progress tracking available
+            pass
 
     async def _paginate_list(
         self,
@@ -566,14 +646,27 @@ class Context:
     def session(self) -> ServerSession:
         """Access to the underlying session for advanced usage.
 
-        Raises RuntimeError if MCP request context is not available.
+        In request mode: Returns the session from the active request context.
+        In background task mode: Returns the session stored at Context creation.
+
+        Raises RuntimeError if no session is available.
         """
-        if self.request_context is None:
-            raise RuntimeError(
-                "session is not available because the MCP session has not been established yet. "
-                "Check `context.request_context` for None before accessing this attribute."
-            )
-        return self.request_context.session
+        # Background task mode: use the stored session
+        if self.is_background_task and self._session is not None:
+            return self._session
+
+        # Request mode: use request context
+        if self.request_context is not None:
+            return self.request_context.session
+
+        # Fallback to stored session (e.g., during on_initialize)
+        if self._session is not None:
+            return self._session
+
+        raise RuntimeError(
+            "session is not available because the MCP session has not been established yet. "
+            "Check `context.request_context` for None before accessing this attribute."
+        )
 
     # Convenience methods for common log levels
     async def debug(
@@ -706,6 +799,7 @@ class Context:
         tool_choice: ToolChoiceOption | str | None = None,
         execute_tools: bool = True,
         mask_error_details: bool | None = None,
+        tool_concurrency: int | None = None,
     ) -> SampleStep:
         """
         Make a single LLM sampling call.
@@ -729,6 +823,12 @@ class Context:
             mask_error_details: If True, mask detailed error messages from tool
                 execution. When None (default), uses the global settings value.
                 Tools can raise ToolError to bypass masking.
+            tool_concurrency: Controls parallel execution of tools:
+                - None (default): Sequential execution (one at a time)
+                - 0: Unlimited parallel execution
+                - N > 0: Execute at most N tools concurrently
+                If any tool has sequential=True, all tools execute sequentially
+                regardless of this setting.
 
         Returns:
             SampleStep containing:
@@ -762,6 +862,7 @@ class Context:
             tool_choice=tool_choice,
             auto_execute_tools=execute_tools,
             mask_error_details=mask_error_details,
+            tool_concurrency=tool_concurrency,
         )
 
     @overload
@@ -776,6 +877,7 @@ class Context:
         tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
         result_type: type[ResultT],
         mask_error_details: bool | None = None,
+        tool_concurrency: int | None = None,
     ) -> SamplingResult[ResultT]:
         """Overload: With result_type, returns SamplingResult[ResultT]."""
 
@@ -791,6 +893,7 @@ class Context:
         tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
         result_type: None = None,
         mask_error_details: bool | None = None,
+        tool_concurrency: int | None = None,
     ) -> SamplingResult[str]:
         """Overload: Without result_type, returns SamplingResult[str]."""
 
@@ -805,6 +908,7 @@ class Context:
         tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
         result_type: type[ResultT] | None = None,
         mask_error_details: bool | None = None,
+        tool_concurrency: int | None = None,
     ) -> SamplingResult[ResultT] | SamplingResult[str]:
         """
         Send a sampling request to the client and await the response.
@@ -835,13 +939,25 @@ class Context:
             mask_error_details: If True, mask detailed error messages from tool
                 execution. When None (default), uses the global settings value.
                 Tools can raise ToolError to bypass masking.
+            tool_concurrency: Controls parallel execution of tools:
+                - None (default): Sequential execution (one at a time)
+                - 0: Unlimited parallel execution
+                - N > 0: Execute at most N tools concurrently
+                If any tool has sequential=True, all tools execute sequentially
+                regardless of this setting.
 
         Returns:
             SamplingResult[T] containing:
             - .text: The text representation (raw text or JSON for structured)
             - .result: The typed result (str for text, parsed object for structured)
             - .history: All messages exchanged during sampling
+
+        Note:
+            Background task support for sampling is planned for a future release.
+            Currently, sampling in background tasks requires using the low-level
+            session.create_message() API directly.
         """
+        # TODO: Add background task support similar to elicit() when is_background_task
         return await sample_impl(
             self,
             messages=messages,
@@ -852,6 +968,7 @@ class Context:
             tools=tools,
             result_type=result_type,
             mask_error_details=mask_error_details,
+            tool_concurrency=tool_concurrency,
         )
 
     @overload
@@ -960,14 +1077,27 @@ class Context:
             response_type: The type of the response, which should be a primitive
                 type or dataclass or BaseModel. If it is a primitive type, an
                 object schema with a single "value" field will be generated.
+
+        Note:
+            This method works transparently in both request and background task
+            contexts. In background task mode (SEP-1686), it will set the task
+            status to "input_required" and wait for the client to provide input.
         """
         config = parse_elicit_response_type(response_type)
 
-        result = await self.session.elicit(
-            message=message,
-            requestedSchema=config.schema,
-            related_request_id=self.request_id,
-        )
+        if self.is_background_task:
+            # Background task mode: use task-aware elicitation
+            result = await self._elicit_for_task(
+                message=message,
+                schema=config.schema,
+            )
+        else:
+            # Standard request mode: use session.elicit directly
+            result = await self.session.elicit(
+                message=message,
+                requestedSchema=config.schema,
+                related_request_id=self.request_id,
+            )
 
         if result.action == "accept":
             return handle_elicit_accept(config, result.content)
@@ -977,6 +1107,46 @@ class Context:
             return CancelledElicitation()
         else:
             raise ValueError(f"Unexpected elicitation action: {result.action}")
+
+    async def _elicit_for_task(
+        self,
+        message: str,
+        schema: dict[str, Any],
+    ) -> mcp.types.ElicitResult:
+        """Send an elicitation request from a background task (SEP-1686).
+
+        This method handles elicitation when running in a Docket worker context,
+        where there's no active MCP request. It:
+        1. Sets the task status to "input_required"
+        2. Sends the elicitation request with task metadata
+        3. Waits for the client to provide input via tasks/sendInput
+        4. Returns the result and resumes task execution
+
+        Args:
+            message: The message to display to the user
+            schema: The JSON schema for the expected response
+
+        Returns:
+            ElicitResult with the user's response
+
+        Raises:
+            RuntimeError: If not running in a background task context
+        """
+        if not self.is_background_task:
+            raise RuntimeError(
+                "_elicit_for_task called but not in a background task context"
+            )
+
+        # Import here to avoid circular imports and optional dependency issues
+        from fastmcp.server.tasks.elicitation import elicit_for_task
+
+        return await elicit_for_task(
+            task_id=self._task_id,  # type: ignore[arg-type]
+            session=self._session,
+            message=message,
+            schema=schema,
+            fastmcp=self.fastmcp,
+        )
 
     def _make_state_key(self, key: str) -> str:
         """Create session-prefixed key for state storage."""

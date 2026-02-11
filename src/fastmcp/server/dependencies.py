@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import logging
 import weakref
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Protocol, cast, get_type_hints, runtime_checkable
 
@@ -32,9 +35,12 @@ from fastmcp.server.http import _current_http_request
 from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
 from fastmcp.utilities.types import find_kwarg_by_type, is_class_member_of_type
 
+_logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from docket import Docket
     from docket.worker import Worker
+    from mcp.server.session import ServerSession
 
     from fastmcp.server.context import Context
     from fastmcp.server.server import FastMCP
@@ -50,17 +56,111 @@ __all__ = [
     "CurrentRequest",
     "CurrentWorker",
     "Progress",
+    "TaskContextInfo",
+    "TokenClaim",
     "get_access_token",
     "get_context",
     "get_http_headers",
     "get_http_request",
     "get_server",
+    "get_task_context",
+    "get_task_session",
     "is_docket_available",
+    "register_task_session",
     "require_docket",
     "resolve_dependencies",
     "transform_context_annotations",
     "without_injected_parameters",
 ]
+
+
+# --- TaskContextInfo and get_task_context ---
+
+
+@dataclass(frozen=True, slots=True)
+class TaskContextInfo:
+    """Information about the current background task context.
+
+    Returned by ``get_task_context()`` when running inside a Docket worker.
+    Contains identifiers needed to communicate with the MCP session.
+    """
+
+    task_id: str
+    """The MCP task ID (server-generated UUID)."""
+
+    session_id: str
+    """The session ID that submitted this task."""
+
+
+def get_task_context() -> TaskContextInfo | None:
+    """Get the current task context if running inside a background task worker.
+
+    This function extracts task information from the Docket execution context.
+    Returns None if not running in a task context (e.g., foreground execution).
+
+    Returns:
+        TaskContextInfo with task_id and session_id, or None if not in a task.
+    """
+    if not is_docket_available():
+        return None
+
+    from docket.dependencies import Dependency as DocketDependency
+
+    try:
+        execution = DocketDependency.execution.get()
+        # Parse the task key: {session_id}:{task_id}:{task_type}:{component}
+        from fastmcp.server.tasks.keys import parse_task_key
+
+        key_parts = parse_task_key(execution.key)
+        return TaskContextInfo(
+            task_id=key_parts["client_task_id"],
+            session_id=key_parts["session_id"],
+        )
+    except LookupError:
+        # Not in worker context
+        return None
+    except (ValueError, KeyError):
+        # Invalid task key format
+        return None
+
+
+# --- Session registry for background task Context ---
+
+
+_task_sessions: dict[str, weakref.ref[ServerSession]] = {}
+
+
+def register_task_session(session_id: str, session: ServerSession) -> None:
+    """Register a session for Context access in background tasks.
+
+    Called automatically when a task is submitted to Docket. The session is
+    stored as a weakref so it doesn't prevent garbage collection when the
+    client disconnects.
+
+    Args:
+        session_id: The session identifier
+        session: The ServerSession instance
+    """
+    _task_sessions[session_id] = weakref.ref(session)
+
+
+def get_task_session(session_id: str) -> ServerSession | None:
+    """Get a registered session by ID if still alive.
+
+    Args:
+        session_id: The session identifier
+
+    Returns:
+        The ServerSession if found and alive, None otherwise
+    """
+    ref = _task_sessions.get(session_id)
+    if ref is None:
+        return None
+    session = ref()
+    if session is None:
+        # Session was garbage collected, clean up entry
+        _task_sessions.pop(session_id, None)
+    return session
 
 
 # --- ContextVars ---
@@ -70,6 +170,9 @@ _current_server: ContextVar[weakref.ref[FastMCP] | None] = ContextVar(
 )
 _current_docket: ContextVar[Docket | None] = ContextVar("docket", default=None)
 _current_worker: ContextVar[Worker | None] = ContextVar("worker", default=None)
+_task_access_token: ContextVar[AccessToken | None] = ContextVar(
+    "task_access_token", default=None
+)
 
 
 # --- Docket availability check ---
@@ -346,6 +449,7 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
         exclude_headers = {
             "host",
             "content-length",
+            "content-type",
             "connection",
             "transfer-encoding",
             "upgrade",
@@ -382,7 +486,8 @@ def get_access_token() -> AccessToken | None:
     This function first tries to get the token from the current HTTP request's scope,
     which is more reliable for long-lived connections where the SDK's auth_context_var
     may become stale after token refresh. Falls back to the SDK's context var if no
-    request is available.
+    request is available. In background tasks (Docket workers), falls back to the
+    token snapshot stored in Redis at task submission time.
 
     Returns:
         The access token if an authenticated user is available, None otherwise.
@@ -404,6 +509,19 @@ def get_access_token() -> AccessToken | None:
     # Fall back to SDK's context var if we didn't get a token from the request
     if access_token is None:
         access_token = _sdk_get_access_token()
+
+    # Fall back to background task snapshot (#3095)
+    # In Docket workers, neither HTTP request nor SDK context var are available.
+    # The token was snapshotted in Redis at submit_to_docket() time and restored
+    # into this ContextVar by _CurrentContext.__aenter__().
+    if access_token is None:
+        task_token = _task_access_token.get()
+        if task_token is not None:
+            # Check expiration: if expires_at is set and past, treat as expired
+            if task_token.expires_at is not None:
+                if task_token.expires_at < int(datetime.now(timezone.utc).timestamp()):
+                    return None
+            return task_token
 
     if access_token is None or isinstance(access_token, AccessToken):
         return access_token
@@ -622,14 +740,98 @@ async def resolve_dependencies(
 # so that get_dependency_parameters can detect them.
 
 
+async def _restore_task_access_token(
+    session_id: str, task_id: str
+) -> Token[AccessToken | None] | None:
+    """Restore the access token snapshot from Redis into a ContextVar.
+
+    Called when setting up context in a Docket worker. The token was stored at
+    submit_to_docket() time. The token is restored regardless of expiration;
+    get_access_token() checks expiry when reading from the ContextVar.
+
+    Returns:
+        The ContextVar token for resetting, or None if nothing was restored.
+    """
+    docket = _current_docket.get()
+    if docket is None:
+        return None
+
+    token_key = docket.key(f"fastmcp:task:{session_id}:{task_id}:access_token")
+    try:
+        async with docket.redis() as redis:
+            token_data = await redis.get(token_key)
+        if token_data is not None:
+            restored = AccessToken.model_validate_json(token_data)
+            return _task_access_token.set(restored)
+    except Exception:
+        _logger.warning(
+            "Failed to restore access token for task %s:%s",
+            session_id,
+            task_id,
+            exc_info=True,
+        )
+    return None
+
+
 class _CurrentContext(Dependency):  # type: ignore[misc]
-    """Async context manager for Context dependency."""
+    """Async context manager for Context dependency.
+
+    In foreground (request) mode: returns the active context from _current_context.
+    In background (Docket worker) mode: creates a task-aware Context with task_id
+    and restores the access token snapshot from Redis.
+    """
+
+    _context: Context | None = None
+    _access_token_cv_token: Token[AccessToken | None] | None = None
 
     async def __aenter__(self) -> Context:
-        return get_context()
+        from fastmcp.server.context import Context, _current_context
+
+        # Try foreground context first (normal MCP request)
+        context = _current_context.get()
+        if context is not None:
+            return context
+
+        # Check if we're in a Docket worker context
+        task_info = get_task_context()
+        if task_info is not None:
+            # Get session from registry (registered when task was submitted)
+            session = get_task_session(task_info.session_id)
+            # Get server from ContextVar
+            server = get_server()
+            # Create task-aware Context
+            self._context = Context(
+                fastmcp=server,
+                session=session,
+                task_id=task_info.task_id,
+            )
+            # Enter the context to set up ContextVars
+            await self._context.__aenter__()
+
+            # Restore access token snapshot from Redis (#3095)
+            self._access_token_cv_token = await _restore_task_access_token(
+                task_info.session_id, task_info.task_id
+            )
+
+            return self._context
+
+        # Neither foreground nor background context available
+        raise RuntimeError(
+            "No active context found. This can happen if:\n"
+            "  - Called outside an MCP request handler\n"
+            "  - Called in a background task before session was registered\n"
+            "Check `context.request_context` for None before accessing."
+        )
 
     async def __aexit__(self, *args: object) -> None:
-        pass
+        # Clean up access token ContextVar
+        if self._access_token_cv_token is not None:
+            _task_access_token.reset(self._access_token_cv_token)
+            self._access_token_cv_token = None
+        # Clean up if we created a context for background task
+        if self._context is not None:
+            await self._context.__aexit__(*args)
+            self._context = None
 
 
 def CurrentContext() -> Context:
@@ -856,47 +1058,6 @@ def CurrentHeaders() -> dict[str, str]:
     return cast(dict[str, str], _CurrentHeaders())
 
 
-class _CurrentAccessToken(Dependency):  # type: ignore[misc]
-    """Async context manager for AccessToken dependency."""
-
-    async def __aenter__(self) -> AccessToken:
-        token = get_access_token()
-        if token is None:
-            raise RuntimeError(
-                "No access token found. Ensure authentication is configured "
-                "and the request is authenticated."
-            )
-        return token
-
-    async def __aexit__(self, *args: object) -> None:
-        pass
-
-
-def CurrentAccessToken() -> AccessToken:
-    """Get the current access token for the authenticated user.
-
-    This dependency provides access to the AccessToken for the current
-    authenticated request. Raises an error if no authentication is present.
-
-    Returns:
-        A dependency that resolves to the active AccessToken
-
-    Raises:
-        RuntimeError: If no authenticated user (use get_access_token() for optional)
-
-    Example:
-        ```python
-        from fastmcp.server.dependencies import CurrentAccessToken
-        from fastmcp.server.auth import AccessToken
-
-        @mcp.tool()
-        async def get_user_id(token: AccessToken = CurrentAccessToken()) -> str:
-            return token.claims.get("sub", "unknown")
-        ```
-    """
-    return cast(AccessToken, _CurrentAccessToken())
-
-
 # --- Progress dependency ---
 
 
@@ -1027,3 +1188,122 @@ class Progress(Dependency):  # type: ignore[misc]
 
     async def __aexit__(self, *args: object) -> None:
         pass
+
+
+# --- Access Token dependency ---
+
+
+class _CurrentAccessToken(Dependency):  # type: ignore[misc]
+    """Async context manager for AccessToken dependency."""
+
+    _access_token_cv_token: Token[AccessToken | None] | None = None
+
+    async def __aenter__(self) -> AccessToken:
+        token = get_access_token()
+
+        # If no token found and we're in a Docket worker, try restoring from
+        # Redis. This handles the case where ctx: Context is not in the
+        # function signature, so _CurrentContext never ran the restoration.
+        if token is None:
+            task_info = get_task_context()
+            if task_info is not None:
+                self._access_token_cv_token = await _restore_task_access_token(
+                    task_info.session_id, task_info.task_id
+                )
+                token = get_access_token()
+
+        if token is None:
+            raise RuntimeError(
+                "No access token found. Ensure authentication is configured "
+                "and the request is authenticated."
+            )
+        return token
+
+    async def __aexit__(self, *args: object) -> None:
+        if self._access_token_cv_token is not None:
+            _task_access_token.reset(self._access_token_cv_token)
+            self._access_token_cv_token = None
+
+
+def CurrentAccessToken() -> AccessToken:
+    """Get the current access token for the authenticated user.
+
+    This dependency provides access to the AccessToken for the current
+    authenticated request. Raises an error if no authentication is present.
+
+    Returns:
+        A dependency that resolves to the active AccessToken
+
+    Raises:
+        RuntimeError: If no authenticated user (use get_access_token() for optional)
+
+    Example:
+        ```python
+        from fastmcp.server.dependencies import CurrentAccessToken
+        from fastmcp.server.auth import AccessToken
+
+        @mcp.tool()
+        async def get_user_id(token: AccessToken = CurrentAccessToken()) -> str:
+            return token.claims.get("sub", "unknown")
+        ```
+    """
+    return cast(AccessToken, _CurrentAccessToken())
+
+
+# --- Token Claim dependency ---
+
+
+class _TokenClaim(Dependency):  # type: ignore[misc]
+    """Dependency that extracts a specific claim from the access token."""
+
+    def __init__(self, claim_name: str):
+        self.claim_name = claim_name
+
+    async def __aenter__(self) -> str:
+        token = get_access_token()
+        if token is None:
+            raise RuntimeError(
+                f"No access token available. Cannot extract claim '{self.claim_name}'."
+            )
+        value = token.claims.get(self.claim_name)
+        if value is None:
+            raise RuntimeError(
+                f"Claim '{self.claim_name}' not found in access token. "
+                f"Available claims: {list(token.claims.keys())}"
+            )
+        return str(value)
+
+    async def __aexit__(self, *args: object) -> None:
+        pass
+
+
+def TokenClaim(name: str) -> str:
+    """Get a specific claim from the access token.
+
+    This dependency extracts a single claim value from the current access token.
+    It's useful for getting user identifiers, roles, or other token claims
+    without needing the full token object.
+
+    Args:
+        name: The name of the claim to extract (e.g., "oid", "sub", "email")
+
+    Returns:
+        A dependency that resolves to the claim value as a string
+
+    Raises:
+        RuntimeError: If no access token is available or claim is missing
+
+    Example:
+        ```python
+        from fastmcp.server.dependencies import TokenClaim
+
+        @mcp.tool()
+        async def add_expense(
+            user_id: str = TokenClaim("oid"),  # Azure object ID
+            amount: float,
+        ):
+            # user_id is automatically injected from the token
+            await db.insert({"user_id": user_id, "amount": amount})
+        ```
+    """
+    return cast(str, _TokenClaim(name))

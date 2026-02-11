@@ -21,7 +21,7 @@ from mcp.types import (
 )
 
 try:
-    from openai import NOT_GIVEN, AsyncOpenAI, NotGiven
+    from openai import AsyncOpenAI
     from openai.types.chat import (
         ChatCompletion,
         ChatCompletionAssistantMessageParam,
@@ -70,26 +70,32 @@ class OpenAISamplingHandler:
         model: ChatModel = self._select_model_from_preferences(params.modelPreferences)
 
         # Convert MCP tools to OpenAI format
-        openai_tools: list[ChatCompletionToolParam] | NotGiven = NOT_GIVEN
+        openai_tools: list[ChatCompletionToolParam] | None = None
         if params.tools:
             openai_tools = self._convert_tools_to_openai(params.tools)
 
         # Convert tool_choice to OpenAI format
-        openai_tool_choice: ChatCompletionToolChoiceOptionParam | NotGiven = NOT_GIVEN
+        openai_tool_choice: ChatCompletionToolChoiceOptionParam | None = None
         if params.toolChoice:
             openai_tool_choice = self._convert_tool_choice_to_openai(params.toolChoice)
 
-        response = await self.client.chat.completions.create(
-            model=model,
-            messages=openai_messages,
-            temperature=(
-                params.temperature if params.temperature is not None else NOT_GIVEN
-            ),
-            max_tokens=params.maxTokens,
-            stop=params.stopSequences if params.stopSequences else NOT_GIVEN,
-            tools=openai_tools,
-            tool_choice=openai_tool_choice,
-        )
+        # Build kwargs to avoid sentinel type compatibility issues across
+        # openai SDK versions (NotGiven vs Omit)
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": openai_messages,
+            "max_tokens": params.maxTokens,
+        }
+        if params.temperature is not None:
+            kwargs["temperature"] = params.temperature
+        if params.stopSequences:
+            kwargs["stop"] = params.stopSequences
+        if openai_tools is not None:
+            kwargs["tools"] = openai_tools
+        if openai_tool_choice is not None:
+            kwargs["tool_choice"] = openai_tool_choice
+
+        response = await self.client.chat.completions.create(**kwargs)
 
         # Return appropriate result type based on whether tools were provided
         if params.tools:

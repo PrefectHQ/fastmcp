@@ -506,6 +506,10 @@ class OpenAPIParser(
                                 f"Failed to extract schema for media type '{media_type_str}' "
                                 f"in response {status_code}: {e}"
                             )
+                    else:
+                        # Record the media type even without a schema so MIME
+                        # type inference can still use the declared content type.
+                        resp_info.content_schema.setdefault(media_type_str, {})
 
             extracted_responses[str(status_code)] = resp_info
         except ValueError as e:

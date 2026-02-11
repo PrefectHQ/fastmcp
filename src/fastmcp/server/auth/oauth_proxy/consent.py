@@ -21,6 +21,7 @@ from pydantic import AnyUrl
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 
+from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
 from fastmcp.server.auth.oauth_proxy.ui import create_consent_html
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.ui import create_secure_html_response
@@ -245,9 +246,16 @@ class ConsentMixin:
         txn["csrf_token"] = csrf_token
         txn["csrf_expires_at"] = csrf_expires_at
 
-        # Load client to get client_name if available
+        # Load client to get client_name and CIMD info if available
         client = await self.get_client(txn["client_id"])
         client_name = getattr(client, "client_name", None) if client else None
+
+        # Detect CIMD clients for verified domain badge
+        is_cimd_client = False
+        cimd_domain: str | None = None
+        if isinstance(client, ProxyDCRClient) and client.cimd_document is not None:
+            is_cimd_client = True
+            cimd_domain = urlparse(txn["client_id"]).hostname
 
         # Extract server metadata from app state
         fastmcp = getattr(request.app.state, "fastmcp_server", None)
@@ -273,6 +281,8 @@ class ConsentMixin:
             server_icon_url=server_icon_url,
             server_website_url=server_website_url,
             csp_policy=self._consent_csp_policy,
+            is_cimd_client=is_cimd_client,
+            cimd_domain=cimd_domain,
         )
         response = create_secure_html_response(html)
         # Store CSRF in cookie with short lifetime

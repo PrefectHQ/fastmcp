@@ -415,7 +415,7 @@ class TestPromptEnabled:
 
 class TestPromptTags:
     def create_server(self, include_tags=None, exclude_tags=None):
-        mcp = FastMCP(include_tags=include_tags, exclude_tags=exclude_tags)
+        mcp = FastMCP()
 
         @mcp.prompt(tags={"a", "b"})
         def prompt_1() -> str:
@@ -424,6 +424,11 @@ class TestPromptTags:
         @mcp.prompt(tags={"b", "c"})
         def prompt_2() -> str:
             return "2"
+
+        if include_tags:
+            mcp.enable(tags=include_tags, only=True)
+        if exclude_tags:
+            mcp.disable(tags=exclude_tags)
 
         return mcp
 

@@ -72,26 +72,7 @@ format_json_for_description(data: Any, indent: int = 2) -> str
 Formats Python data as a JSON string block for Markdown.
 
 
-### `format_simple_description` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi/formatters.py#L192" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-format_simple_description(base_description: str, parameters: list[ParameterInfo] | None = None, request_body: RequestBodyInfo | None = None) -> str
-```
-
-
-Formats a simple description for MCP objects (tools, resources, prompts).
-Excludes response details, examples, and verbose status codes.
-
-**Args:**
-- `base_description`: The initial description to be formatted.
-- `parameters`: A list of parameter information.
-- `request_body`: Information about the request body.
-
-**Returns:**
-- The formatted description string with minimal details.
-
-
-### `format_description_with_responses` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi/formatters.py#L225" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `format_description_with_responses` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi/formatters.py#L192" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 format_description_with_responses(base_description: str, responses: dict[str, Any], parameters: list[ParameterInfo] | None = None, request_body: RequestBodyInfo | None = None) -> str

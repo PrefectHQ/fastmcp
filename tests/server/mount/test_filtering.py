@@ -11,7 +11,8 @@ class TestParentTagFiltering:
 
     async def test_parent_include_tags_filters_mounted_tools(self):
         """Test that parent include_tags filters out non-matching mounted tools."""
-        parent = FastMCP("Parent", include_tags={"allowed"})
+        parent = FastMCP("Parent")
+        parent.enable(tags={"allowed"}, only=True)
         mounted = FastMCP("Mounted")
 
         @mounted.tool(tags={"allowed"})
@@ -38,7 +39,8 @@ class TestParentTagFiltering:
 
     async def test_parent_exclude_tags_filters_mounted_tools(self):
         """Test that parent exclude_tags filters out matching mounted tools."""
-        parent = FastMCP("Parent", exclude_tags={"blocked"})
+        parent = FastMCP("Parent")
+        parent.disable(tags={"blocked"})
         mounted = FastMCP("Mounted")
 
         @mounted.tool(tags={"production"})
@@ -58,7 +60,8 @@ class TestParentTagFiltering:
 
     async def test_parent_filters_apply_to_mounted_resources(self):
         """Test that parent tag filters apply to mounted resources."""
-        parent = FastMCP("Parent", include_tags={"allowed"})
+        parent = FastMCP("Parent")
+        parent.enable(tags={"allowed"}, only=True)
         mounted = FastMCP("Mounted")
 
         @mounted.resource("resource://allowed", tags={"allowed"})
@@ -78,7 +81,8 @@ class TestParentTagFiltering:
 
     async def test_parent_filters_apply_to_mounted_prompts(self):
         """Test that parent tag filters apply to mounted prompts."""
-        parent = FastMCP("Parent", exclude_tags={"blocked"})
+        parent = FastMCP("Parent")
+        parent.disable(tags={"blocked"})
         mounted = FastMCP("Mounted")
 
         @mounted.prompt(tags={"allowed"})

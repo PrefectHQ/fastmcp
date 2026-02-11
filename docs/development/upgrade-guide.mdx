@@ -95,6 +95,19 @@ value = await ctx.get_state("key")
 
 `FASTMCP_SHOW_CLI_BANNER` is now `FASTMCP_SHOW_SERVER_BANNER`.
 
+#### OpenAPI `timeout` Parameter Removed
+
+Configure timeout on the httpx client directly. The `client` parameter is now optional — when omitted, a default client is created from the spec's `servers` URL with a 30-second timeout.
+
+```python
+# Before
+provider = OpenAPIProvider(spec, client, timeout=60)
+
+# After
+client = httpx.AsyncClient(base_url="https://api.example.com", timeout=60)
+provider = OpenAPIProvider(spec, client)
+```
+
 #### Metadata Namespace Renamed
 
 The FastMCP metadata namespace changed from `_fastmcp` to `fastmcp`, and metadata is now always included. The `include_fastmcp_meta` parameter has been removed from `FastMCP()` and `to_mcp_tool()`—remove any usage of this parameter.

@@ -4,6 +4,38 @@ icon: "list-check"
 rss: true
 ---
 
+<Update label="v2.14.5" description="2026-02-03">
+
+**[v2.14.5: Sealed Docket](https://github.com/jlowin/fastmcp/releases/tag/v2.14.5)**
+
+Fixes a memory leak in the memory:// docket broker where cancelled tasks accumulated instead of being cleaned up. Bumps pydocket to ≥0.17.2.
+
+## What's Changed
+### Enhancements 🔧
+* Bump pydocket to 0.17.2 (memory leak fix) by [@chrisguidry](https://github.com/chrisguidry) in [#2992](https://github.com/jlowin/fastmcp/pull/2992)
+
+**Full Changelog**: [v2.14.4...v2.14.5](https://github.com/jlowin/fastmcp/compare/v2.14.4...v2.14.5)
+
+</Update>
+
+<Update label="v2.14.4" description="2026-01-22">
+
+**[v2.14.4: Package Deal](https://github.com/jlowin/fastmcp/releases/tag/v2.14.4)**
+
+Fixes a fresh install bug where the packaging library was missing as a direct dependency, plus backports from 3.x for $ref dereferencing in tool schemas and a task capabilities location fix.
+
+## What's Changed
+### Enhancements 🔧
+* Add release notes for v2.14.2 and v2.14.3 by [@jlowin](https://github.com/jlowin) in [#2851](https://github.com/jlowin/fastmcp/pull/2851)
+### Fixes 🐞
+* Backport: Dereference $ref in tool schemas for MCP client compatibility by [@jlowin](https://github.com/jlowin) in [#2861](https://github.com/jlowin/fastmcp/pull/2861)
+* Fix task capabilities location (issue #2870) by [@jlowin](https://github.com/jlowin) in [#2874](https://github.com/jlowin/fastmcp/pull/2874)
+* Add missing packaging dependency by [@jlowin](https://github.com/jlowin) in [#2989](https://github.com/jlowin/fastmcp/pull/2989)
+
+**Full Changelog**: [v2.14.3...v2.14.4](https://github.com/jlowin/fastmcp/compare/v2.14.3...v2.14.4)
+
+</Update>
+
 <Update label="v2.14.3" description="2026-01-12">
 
 **[v2.14.3: Time After Timeout](https://github.com/jlowin/fastmcp/releases/tag/v2.14.3)**

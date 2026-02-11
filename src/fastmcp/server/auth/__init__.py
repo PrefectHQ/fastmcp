@@ -8,7 +8,6 @@ from .auth import (
 from .authorization import (
     AuthCheck,
     AuthContext,
-    require_auth,
     require_scopes,
     restrict_tag,
     run_auth_checks,
@@ -32,7 +31,6 @@ __all__ = [
     "RemoteAuthProvider",
     "StaticTokenVerifier",
     "TokenVerifier",
-    "require_auth",
     "require_scopes",
     "restrict_tag",
     "run_auth_checks",

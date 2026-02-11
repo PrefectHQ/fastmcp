@@ -10,7 +10,7 @@ Client utilities for discovering and downloading skills from MCP servers.
 
 ## Functions
 
-### `list_skills` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/skills.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `list_skills` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/skills.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_skills(client: Client) -> list[SkillSummary]
@@ -29,7 +29,7 @@ Discovers skills by finding resources with URIs matching the
 - List of SkillSummary objects with name, description, and URI
 
 
-### `get_skill_manifest` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/skills.py#L84" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_skill_manifest` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/skills.py#L87" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_skill_manifest(client: Client, skill_name: str) -> SkillManifest
@@ -49,7 +49,7 @@ Get the manifest for a specific skill.
 - `ValueError`: If manifest cannot be read or parsed
 
 
-### `download_skill` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/skills.py#L124" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `download_skill` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/skills.py#L127" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 download_skill(client: Client, skill_name: str, target_dir: str | Path) -> Path
@@ -95,19 +95,19 @@ Download all available skills from a server.
 
 ## Classes
 
-### `SkillSummary` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/skills.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SkillSummary` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/skills.py#L18" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Summary information about a skill available on a server.
 
 
-### `SkillFile` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/skills.py#L24" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SkillFile` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/skills.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Information about a file within a skill.
 
 
-### `SkillManifest` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/skills.py#L33" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SkillManifest` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/skills.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Full manifest of a skill including all files.

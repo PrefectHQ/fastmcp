@@ -37,7 +37,7 @@ Create a SamplingTool explicitly when you need custom name/description:
 
 **Methods:**
 
-#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, arguments: dict[str, Any] | None = None) -> Any
@@ -52,7 +52,7 @@ Execute the tool with the given arguments.
 - The result of executing the tool function.
 
 
-#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/sampling_tool.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any]) -> SamplingTool
@@ -67,6 +67,10 @@ the tool's parameters. Type hints are used to determine parameter types.
 - `fn`: The function to create a tool from.
 - `name`: Optional name override. Defaults to the function's name.
 - `description`: Optional description override. Defaults to the function's docstring.
+- `sequential`: If True, this tool requires sequential execution and prevents
+parallel execution of all tools in the batch. Set to True for tools
+with shared state, file writes, or other operations that cannot run
+concurrently. Defaults to False.
 
 **Returns:**
 - A SamplingTool wrapping the function.

@@ -1,6 +1,12 @@
+import httpx
+
 from fastmcp import FastMCP
+from fastmcp.client import Client
 from fastmcp.server.transforms import ToolTransform
-from fastmcp.tools.tool_transform import ToolTransformConfig
+from fastmcp.tools.tool_transform import (
+    ArgTransformConfig,
+    ToolTransformConfig,
+)
 
 
 async def test_tool_transformation_via_layer():
@@ -207,3 +213,73 @@ async def test_tool_transform_config_enabled_true_overrides_earlier_disable():
 
     # Tool should now be visible
     assert "my_tool" in tool_names
+
+
+async def test_openapi_path_params_not_duplicated_in_description():
+    """Path parameter details should live in inputSchema, not the description.
+
+    Regression test for https://github.com/jlowin/fastmcp/issues/3130 — hiding
+    a path param via ToolTransform left stale references in the description
+    because the description was generated before transforms ran. The fix is to
+    keep parameter docs in inputSchema only, where transforms can control them.
+    """
+    spec = {
+        "openapi": "3.1.0",
+        "info": {"title": "Test", "version": "0.1.0"},
+        "paths": {
+            "/api/{version}/users/{user_id}": {
+                "get": {
+                    "operationId": "my_endpoint",
+                    "summary": "My endpoint",
+                    "parameters": [
+                        {
+                            "name": "version",
+                            "in": "path",
+                            "required": True,
+                            "description": "API version",
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "user_id",
+                            "in": "path",
+                            "required": True,
+                            "description": "The user ID",
+                            "schema": {"type": "string"},
+                        },
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                },
+            },
+        },
+    }
+
+    async with httpx.AsyncClient(base_url="http://localhost") as http_client:
+        mcp = FastMCP.from_openapi(openapi_spec=spec, client=http_client)
+
+        # Hide one of the two path params
+        mcp.add_transform(
+            ToolTransform(
+                {
+                    "my_endpoint": ToolTransformConfig(
+                        arguments={
+                            "version": ArgTransformConfig(hide=True, default="v1"),
+                        }
+                    )
+                }
+            )
+        )
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool = tools[0]
+
+            # Description should be the summary only — no parameter details
+            assert tool.description == "My endpoint"
+
+            # Hidden param gone from schema, visible param still present
+            assert "version" not in tool.inputSchema.get("properties", {})
+            assert "user_id" in tool.inputSchema["properties"]
+            assert (
+                tool.inputSchema["properties"]["user_id"]["description"]
+                == "The user ID"
+            )

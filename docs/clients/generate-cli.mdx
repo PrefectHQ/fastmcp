@@ -1,0 +1,165 @@
+---
+title: Generate CLI
+sidebarTitle: Generate CLI
+description: Turn any MCP server into a standalone, typed command-line tool.
+icon: wand-magic-sparkles
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.0.0" />
+
+`fastmcp list` and `fastmcp call` let you poke at a server interactively, but they're developer tools — you always have to spell out the server spec, the tool name, and the arguments. `fastmcp generate-cli` takes the next step: it connects to a server, reads its schemas, and writes a standalone Python script where every tool is a proper subcommand with typed flags, help text, and tab completion. The result is a CLI that feels like it was hand-written for that specific server.
+
+The key insight is that MCP tool schemas already contain everything a CLI framework needs: parameter names, types, descriptions, required/optional status, and defaults. `generate-cli` maps that schema into [cyclopts](https://cyclopts.readthedocs.io/) commands, so JSON Schema types become Python type annotations, descriptions become `--help` text, and required parameters become mandatory flags.
+
+## Generating a Script
+
+Point the command at any server spec — URLs, Python files, discovered server names, MCPConfig JSON — and it writes a CLI script:
+
+```bash
+fastmcp generate-cli weather
+fastmcp generate-cli http://localhost:8000/mcp
+fastmcp generate-cli server.py my_weather_cli.py
+```
+
+The second positional argument sets the output path. When omitted, it defaults to `cli.py`. If either the CLI file or its companion `SKILL.md` already exists, the command refuses to overwrite unless you pass `-f`:
+
+```bash
+fastmcp generate-cli weather -f
+fastmcp generate-cli weather my_cli.py -f
+```
+
+Name-based resolution works here too, so if you have a server configured in Claude Desktop, Cursor, or any other supported editor, you can reference it by name. Run [`fastmcp discover`](/clients/cli#discovering-configured-servers) to see what's available.
+
+```bash
+fastmcp generate-cli claude-code:my-server output.py
+```
+
+The `--timeout` and `--auth` flags work the same way they do in `fastmcp list` and `fastmcp call`.
+
+## What You Get
+
+The generated script is a regular Python file — executable, editable, and yours. Here's what it looks like in practice:
+
+```
+$ python cli.py --help
+Usage: weather-cli COMMAND
+
+CLI for weather MCP server
+
+Commands:
+  call-tool       Call a tool on the server
+  list-tools      List available tools.
+  list-resources  List available resources.
+  read-resource   Read a resource by URI.
+  list-prompts    List available prompts.
+  get-prompt      Get a prompt by name. Pass arguments as key=value pairs.
+```
+
+The `call-tool` subcommand is where the generated code lives. Each tool on the server becomes its own command:
+
+```
+$ python cli.py call-tool --help
+Usage: weather-cli call-tool COMMAND
+
+Call a tool on the server
+
+Commands:
+  get_forecast  Get the weather forecast for a city.
+  search_city   Search for a city by name.
+```
+
+And each tool has typed parameters with help text pulled directly from the server's schema:
+
+```
+$ python cli.py call-tool get_forecast --help
+Usage: weather-cli call-tool get_forecast [OPTIONS]
+
+Get the weather forecast for a city.
+
+Options:
+  --city    [str]  City name (required)
+  --days    [int]  Number of forecast days (default: 3)
+```
+
+Tool names are preserved exactly as the server defines them — underscores stay as underscores, so `call-tool get_forecast` matches what the server expects.
+
+## Agent Skill
+
+Alongside the CLI script, `generate-cli` also writes a `SKILL.md` file — a [Claude Code agent skill](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/skills) that documents the generated CLI. The skill includes every tool's exact invocation syntax, parameter flags with types and descriptions, and the utility commands, so an agent can use the CLI immediately without running `--help` or experimenting with flag names.
+
+The skill is written to the same directory as the CLI script. For a weather server, it looks something like:
+
+````markdown
+---
+name: "weather-cli"
+description: "CLI for the weather MCP server. Call tools, list resources, and get prompts."
+---
+
+# weather CLI
+
+## Tool Commands
+
+### get_forecast
+
+Get the weather forecast for a city.
+
+```bash
+uv run --with fastmcp python cli.py call-tool get_forecast --city <value> --days <value>
+```
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--city` | string | yes | City name |
+| `--days` | integer | no | Number of forecast days |
+````
+
+To skip skill generation, pass `--no-skill`:
+
+```bash
+fastmcp generate-cli weather --no-skill
+```
+
+## How It Works
+
+The generated script is a client, not a server. It doesn't bundle or embed the MCP server — it connects to it on every invocation. For URL-based servers, the server needs to be running. For stdio-based servers, the command specified in `CLIENT_SPEC` must be available on the system's `PATH`.
+
+At the top of the generated file, a `CLIENT_SPEC` variable holds the resolved transport: either a URL string or a `StdioTransport` with the command and arguments baked in. Every invocation connects through this spec, so the script works without any external configuration.
+
+### Parameter Handling
+
+Parameters are mapped intelligently based on their complexity:
+
+**Simple types** (`string`, `integer`, `number`, `boolean`) become typed Python parameters with clean flags:
+```bash
+python cli.py call-tool get_forecast --city London --days 3
+```
+
+**Arrays of simple types** (`array` with `string`/`integer`/`number`/`boolean` items) become `list[T]` parameters that accept multiple flags:
+```bash
+python cli.py call-tool tag_items --tags python --tags fastapi --tags mcp
+```
+
+**Complex types** (objects, nested arrays, or unions) accept JSON strings. The tool's `--help` displays the full JSON schema so you know exactly what structure to pass:
+```bash
+python cli.py call-tool create_user \
+  --name John \
+  --metadata '{"role": "admin", "dept": "engineering"}'
+```
+
+Required parameters are mandatory flags; optional ones default to their schema default or `None`. Empty values are filtered out before calling the server.
+
+Beyond tool commands, the script includes generic commands that work regardless of what the server exposes: `list-tools`, `list-resources`, `read-resource`, `list-prompts`, and `get-prompt`. These connect to the server at runtime, so they always reflect the server's current state even if the tools have changed since generation.
+
+## Editing the Output
+
+The most common edit is changing `CLIENT_SPEC`. If you generated from a local dev server and want to point at production, just change the string. If you generated from a discovered name and want to pin the transport, replace it with an explicit URL or `StdioTransport`.
+
+Beyond that, it's a regular Python file. You can add commands, change the output formatting, integrate it into a larger application, or strip out the parts you don't need. The helper functions (`_call_tool`, `_print_tool_result`) are thin wrappers around `fastmcp.Client` that are easy to adapt.
+
+The generated script requires `fastmcp` as a dependency. If the script lives outside a project that already has fastmcp installed, `uv run` is the easiest way to run it without permanent installation:
+
+```bash
+uv run --with fastmcp python cli.py call-tool get_forecast --city London
+```

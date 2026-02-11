@@ -288,7 +288,7 @@ class TestResponseCachingMiddlewareIntegration:
         request: pytest.FixtureRequest,
     ):
         """Create a FastMCP server for caching tests."""
-        mcp = FastMCP("CachingTestServer")
+        mcp = FastMCP("CachingTestServer", dereference_schemas=False)
 
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             disk_store: DiskStore = DiskStore(directory=temp_dir)
