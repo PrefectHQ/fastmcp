@@ -366,14 +366,10 @@ def compress_schema(
     prune_params: list[str] | None = None,
     prune_additional_properties: bool = False,
     prune_titles: bool = False,
+    dereference: bool = False,
 ) -> dict[str, Any]:
     """
     Compress and optimize a JSON schema for MCP compatibility.
-
-    This function dereferences all $ref entries (inlining definitions) to ensure
-    compatibility with MCP clients that don't properly handle $ref in schemas
-    (e.g., VS Code Copilot). It also applies various optimizations to reduce
-    schema size.
 
     Args:
         schema: The schema to compress
@@ -382,22 +378,27 @@ def compress_schema(
             Defaults to False to maintain MCP client compatibility, as some clients
             (e.g., Claude) require additionalProperties: false for strict validation.
         prune_titles: Whether to remove title fields from the schema
+        dereference: Whether to dereference $ref by inlining definitions.
+            Defaults to False; dereferencing is typically handled by
+            middleware at serve-time instead.
     """
-    # Dereference $ref - this inlines all definitions and removes $defs
-    # Required for MCP client compatibility
-    schema = dereference_refs(schema)
+    if dereference:
+        schema = dereference_refs(schema)
+
+    # Resolve root-level $ref for MCP spec compliance (requires type: object at root)
+    schema = resolve_root_ref(schema)
 
     # Remove specific parameters if requested
     for param in prune_params or []:
         schema = _prune_param(schema, param=param)
 
-    # Apply combined optimizations in a single tree traversal
-    if prune_titles or prune_additional_properties:
-        schema = _single_pass_optimize(
-            schema,
-            prune_titles=prune_titles,
-            prune_additional_properties=prune_additional_properties,
-            prune_defs=False,
-        )
+    # Apply combined optimizations in a single tree traversal.
+    # Always prune unused $defs to keep schemas clean after parameter removal.
+    schema = _single_pass_optimize(
+        schema,
+        prune_titles=prune_titles,
+        prune_additional_properties=prune_additional_properties,
+        prune_defs=True,
+    )
 
     return schema

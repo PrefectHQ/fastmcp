@@ -1,0 +1,35 @@
+---
+title: dereference
+sidebarTitle: dereference
+---
+
+# `fastmcp.server.middleware.dereference`
+
+
+Middleware that dereferences $ref in JSON schemas before sending to clients.
+
+## Classes
+
+### `DereferenceRefsMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/dereference.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Dereferences $ref in component schemas before sending to clients.
+
+Some MCP clients (e.g., VS Code Copilot) don't handle JSON Schema $ref
+properly. This middleware inlines all $ref definitions so schemas are
+self-contained. Enabled by default via ``FastMCP(dereference_schemas=True)``.
+
+
+**Methods:**
+
+#### `on_list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/dereference.py#L24" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_list_tools(self, context: MiddlewareContext[mt.ListToolsRequest], call_next: CallNext[mt.ListToolsRequest, Sequence[Tool]]) -> Sequence[Tool]
+```
+
+#### `on_list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/dereference.py#L33" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_list_resource_templates(self, context: MiddlewareContext[mt.ListResourceTemplatesRequest], call_next: CallNext[mt.ListResourceTemplatesRequest, Sequence[ResourceTemplate]]) -> Sequence[ResourceTemplate]
+```

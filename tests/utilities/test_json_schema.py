@@ -196,8 +196,8 @@ class TestDereferenceRefs:
 class TestCompressSchema:
     """Tests for the compress_schema function."""
 
-    def test_dereferences_by_default(self):
-        """Test that compress_schema dereferences $refs by default."""
+    def test_preserves_refs_by_default(self):
+        """Test that compress_schema preserves $refs by default."""
         schema = {
             "properties": {
                 "foo": {"$ref": "#/$defs/foo_def"},
@@ -208,10 +208,9 @@ class TestCompressSchema:
         }
         result = compress_schema(schema)
 
-        # $ref should be inlined
-        assert result["properties"]["foo"] == {"type": "string"}
-        # $defs should be removed
-        assert "$defs" not in result
+        # $ref should be preserved (dereferencing is handled by middleware)
+        assert result["properties"]["foo"] == {"$ref": "#/$defs/foo_def"}
+        assert "$defs" in result
 
     def test_prune_params(self):
         """Test pruning parameters with compress_schema."""
@@ -271,7 +270,7 @@ class TestCompressSchema:
         assert "remove" not in result["properties"]
         # Check that required list was updated
         assert result["required"] == ["keep"]
-        # Check that $defs was removed (dereferenced)
+        # All $defs entries are now unreferenced after pruning "remove", so they're cleaned up
         assert "$defs" not in result
         # Check that additionalProperties was removed
         assert "additionalProperties" not in result
@@ -440,6 +439,46 @@ class TestCompressSchema:
         assert graph_table.get("additionalProperties") is False, (
             "Nested additionalProperties: false was removed, breaking MCP compatibility"
         )
+
+
+class TestCompressSchemaDereference:
+    """Tests for the dereference parameter of compress_schema."""
+
+    SCHEMA_WITH_REFS = {
+        "properties": {
+            "foo": {"$ref": "#/$defs/foo_def"},
+        },
+        "$defs": {
+            "foo_def": {"type": "string"},
+        },
+    }
+
+    def test_dereference_true_inlines_refs(self):
+        result = compress_schema(self.SCHEMA_WITH_REFS, dereference=True)
+        assert result["properties"]["foo"] == {"type": "string"}
+        assert "$defs" not in result
+
+    def test_dereference_false_preserves_refs(self):
+        result = compress_schema(self.SCHEMA_WITH_REFS, dereference=False)
+        assert result["properties"]["foo"] == {"$ref": "#/$defs/foo_def"}
+        assert "$defs" in result
+
+    def test_other_optimizations_still_apply_without_dereference(self):
+        schema = {
+            "properties": {
+                "foo": {"$ref": "#/$defs/foo_def"},
+                "bar": {"type": "integer", "title": "Bar"},
+            },
+            "$defs": {
+                "foo_def": {"type": "string"},
+            },
+        }
+        result = compress_schema(
+            schema, dereference=False, prune_params=["bar"], prune_titles=True
+        )
+        assert "bar" not in result["properties"]
+        assert "$ref" in result["properties"]["foo"]
+        assert "$defs" in result
 
 
 class TestResolveRootRef:

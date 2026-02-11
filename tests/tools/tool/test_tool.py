@@ -196,9 +196,8 @@ class TestToolFromFunction:
                 "description": "Create a new user.",
                 "tags": set(),
                 "parameters": {
-                    "additionalProperties": False,
-                    "properties": {
-                        "user": {
+                    "$defs": {
+                        "UserInput": {
                             "properties": {
                                 "name": {"type": "string"},
                                 "age": {"type": "integer"},
@@ -206,6 +205,10 @@ class TestToolFromFunction:
                             "required": ["name", "age"],
                             "type": "object",
                         },
+                    },
+                    "additionalProperties": False,
+                    "properties": {
+                        "user": {"$ref": "#/$defs/UserInput"},
                         "flag": {"type": "boolean"},
                     },
                     "required": ["user", "flag"],

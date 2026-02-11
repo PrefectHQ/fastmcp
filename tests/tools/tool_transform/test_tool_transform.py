@@ -205,10 +205,11 @@ async def test_hidden_param_prunes_defs():
     schema = new_tool.parameters
     # Only 'a' should be visible
     assert list(schema["properties"].keys()) == ["a"]
-    # Schema should be fully dereferenced (no $defs)
-    assert "$defs" not in schema
-    # VisibleType should be inlined in the property
-    assert schema["properties"]["a"] == {
+    # HiddenType should be pruned from $defs
+    assert "HiddenType" not in schema.get("$defs", {})
+    # VisibleType should remain in $defs and be referenced via $ref
+    assert schema["properties"]["a"] == {"$ref": "#/$defs/VisibleType"}
+    assert schema["$defs"]["VisibleType"] == {
         "properties": {"x": {"type": "integer"}},
         "required": ["x"],
         "type": "object",
@@ -396,10 +397,8 @@ def test_transform_args_with_parent_defaults():
 
     new_tool = Tool.from_tool(tool)
 
-    # Both tools should have the same dereferenced schema
+    # Both tools should have the same schema (with $ref/$defs preserved)
     assert new_tool.parameters == tool.parameters
-    # Schema should be fully dereferenced (no $defs)
-    assert "$defs" not in new_tool.parameters
 
 
 def test_transform_args_validation_unknown_arg(add_tool):

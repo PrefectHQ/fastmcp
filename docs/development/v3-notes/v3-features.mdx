@@ -70,6 +70,16 @@ Background tasks now use a distributed Redis notification queue for reliable del
 
 Auth check functions can now be `async`, enabling authorization decisions that depend on asynchronous operations like reading server state via `Context.get_state` or calling external services ([#3150](https://github.com/jlowin/fastmcp/issues/3150)). Sync and async checks can be freely mixed. Previously, passing an async function as an auth check would silently pass (coroutine objects are truthy).
 
+### Optional `$ref` Dereferencing in Schemas
+
+Schema `$ref` dereferencing — which inlines all `$defs` for compatibility with MCP clients that don't handle `$ref` — is now controlled by the `dereference_schemas` constructor kwarg ([#3141](https://github.com/jlowin/fastmcp/issues/3141)). Default is `True` (dereference on) because the non-compliant clients are popular and the failure mode is silent breakage that server authors can't diagnose. Opt out when you know your clients handle `$ref` and want smaller schemas:
+
+```python
+mcp = FastMCP("my-server", dereference_schemas=False)
+```
+
+Dereferencing is implemented as middleware (`DereferenceRefsMiddleware`) that runs at serve-time, so schemas are stored with `$ref` intact and only inlined when sent to clients.
+
 ### Breaking: Deprecated `FastMCP()` Constructor Kwargs Removed
 
 Sixteen deprecated keyword arguments have been removed from `FastMCP.__init__`. Passing any of them now raises `TypeError` with a migration hint. Environment variables (e.g., `FASTMCP_HOST`) continue to work — only the constructor kwargs moved.
