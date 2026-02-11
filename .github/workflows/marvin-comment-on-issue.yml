@@ -1,0 +1,143 @@
+# Respond to /marvin mentions in issue comments (elastic mention-in-issue style)
+# Calls run-claude directly
+
+name: Comment on Issue
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: read
+  id-token: write
+
+jobs:
+  comment:
+    if: |
+      contains(github.event.comment.body, '/marvin') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --python 3.12
+
+      - name: Run prek
+        uses: j178/prek-action@v1
+        env:
+          SKIP: no-commit-to-branch
+
+      - name: Generate Marvin App token
+        id: marvin-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.MARVIN_APP_ID }}
+          private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+
+      - name: React to comment with eyes
+        env:
+          GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" -f content=eyes 2>/dev/null || true
+
+      - name: Run Claude for Issue Comment
+        uses: ./.github/actions/run-claude
+        with:
+          claude-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github-token: ${{ steps.marvin-token.outputs.token }}
+          trigger-phrase: "/marvin"
+          allowed-bots: "*"
+          allowed-tools: "Edit,MultiEdit,Glob,Grep,LS,Read,Write,WebSearch,WebFetch,mcp__github_comment__update_claude_comment,mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(*),mcp__agents-md-generator__generate_agents_md,mcp__public-code-search__search_code"
+          prompt: |
+            <context>
+            Repository: ${{ github.repository }}
+            Issue Number: #${{ github.event.issue.number }}
+            Issue Title: ${{ github.event.issue.title }}
+            Issue Author: ${{ github.event.issue.user.login }}
+            Comment Author: ${{ github.event.comment.user.login }}
+            </context>
+
+            <user_request>
+            ${{ github.event.comment.body }}
+            </user_request>
+
+            <task>
+            You have been mentioned in a GitHub issue comment. Understand the request, gather context, complete the task, and respond with results.
+            </task>
+
+            <constraints>
+            This workflow allows read, write, and execute capabilities but cannot push changes.
+            
+            You CAN: Read/analyze code, modify files, write code, run tests, execute commands
+            You CANNOT: Commit code, push changes, create branches, checkout branches, create pull requests
+            
+            **Important**: You cannot push changes to the repository - you can only make changes locally and provide feedback or recommendations.
+            </constraints>
+
+            <allowed_tools>
+            You have access to the following tools (comma-separated list):
+            
+            Edit,MultiEdit,Glob,Grep,LS,Read,Write,WebSearch,WebFetch,mcp__github_comment__update_claude_comment,mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(*),mcp__agents-md-generator__generate_agents_md,mcp__public-code-search__search_code
+            
+            You can only use tools that are explicitly listed above. For Bash commands, the pattern `Bash(command:*)` means you can run that command with any arguments. If a command is not listed, it is not available.
+            </allowed_tools>
+
+            <getting_started>
+            Use `mcp__agents-md-generator__generate_agents_md` to get repository context before responding.
+            </getting_started>
+
+            <investigation_approach>
+            Be thorough in your investigations:
+            - Understand the full context of the repository
+            - Review related code, issues, and PRs
+            - Consider edge cases and implications
+            - Gather all relevant information before responding
+
+            Available tools:
+            - `mcp__public-code-search__search_code`: Search code in OTHER repositories (use `Grep`/`Read` for this repo)
+            - `WebSearch`: Search the web for documentation, best practices, or solutions
+            - `WebFetch`: Fetch and read content from URLs
+            </investigation_approach>
+
+            <common_tasks>
+            - Answer questions about the codebase
+            - Help debug reported problems (make changes locally to test, cannot push)
+            - Suggest solutions or workarounds
+            - Provide code examples
+            - Help clarify requirements
+            - Link to relevant documentation or code
+            </common_tasks>
+
+            <response_guidelines>
+            - Be concise and actionable
+            - If the request is unclear, ask clarifying questions
+            - If the request requires actions you cannot perform (like pushing changes), explain what you can and cannot do
+            - When making code changes, explain that they are local only and cannot be pushed
+            </response_guidelines>
+
+            <response_footer>
+            Always end your comment with a new line, three dashes, and the footer message:
+            <exact_content>
+
+            ---
+            Marvin Context Protocol | Type `/marvin` to interact further
+
+            Give us feedback! React with 🚀 if perfect, 👍 if helpful, 👎 if not.
+            </exact_content>
+            </response_footer>
+
+            <github_formatting>
+            When writing GitHub comments, wrap branch names, tags, or other @-references in backticks (e.g., `@main`, `@v1.0`) to avoid accidentally pinging users. Do not add backticks around terms that are already inside backticks or code blocks.
+            </github_formatting>

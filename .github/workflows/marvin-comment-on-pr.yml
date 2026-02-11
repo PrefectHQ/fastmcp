@@ -1,0 +1,294 @@
+# Respond to /marvin mentions in PR comments or PR body (elastic mention-in-pr style)
+# Calls run-claude directly
+
+name: Comment on PR
+
+on:
+  pull_request_review_comment:
+    types: [created]
+  pull_request:
+    types: [opened, edited]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+  id-token: write
+
+jobs:
+  comment:
+    if: |
+      (github.event_name == 'pull_request_review_comment' &&
+        contains(github.event.comment.body, '/marvin') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.body, '/marvin') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout PR head branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --python 3.12
+
+      - name: Run prek
+        uses: j178/prek-action@v1
+        env:
+          SKIP: no-commit-to-branch
+
+      - name: Generate Marvin App token
+        id: marvin-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.MARVIN_APP_ID }}
+          private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+
+      - name: React to comment with eyes
+        if: github.event_name == 'pull_request_review_comment'
+        env:
+          GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" -f content=eyes 2>/dev/null || true
+
+      - name: React to PR with eyes
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions" -f content=eyes 2>/dev/null || true
+
+      - name: Get PR HEAD SHA
+        id: pr-info
+        env:
+          GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+        run: |
+          HEAD_SHA=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" --jq '.head.sha')
+          echo "head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Run Claude for PR Comment
+        uses: ./.github/actions/run-claude
+        env:
+          MENTION_REPO: ${{ github.repository }}
+          MENTION_PR_NUMBER: ${{ github.event.pull_request.number }}
+          MENTION_SCRIPTS: ${{ github.workspace }}/.github/scripts/mention
+          PR_REVIEW_REPO: ${{ github.repository }}
+          PR_REVIEW_PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_REVIEW_HEAD_SHA: ${{ steps.pr-info.outputs.head_sha }}
+          PR_REVIEW_COMMENTS_DIR: /tmp/pr-review-comments
+          PR_REVIEW_HELPERS_DIR: ${{ github.workspace }}/.github/scripts/pr-review
+        with:
+          claude-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github-token: ${{ steps.marvin-token.outputs.token }}
+          trigger-phrase: "/marvin"
+          allowed-bots: "*"
+          allowed-tools: "Edit,MultiEdit,Glob,Grep,LS,Read,Write,WebSearch,WebFetch,mcp__github_comment__update_claude_comment,mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(*),mcp__agents-md-generator__generate_agents_md,mcp__public-code-search__search_code"
+          prompt: |
+            <context>
+            Repository: ${{ github.repository }}
+            PR Number: #${{ github.event.pull_request.number }}
+            PR Title: ${{ github.event.pull_request.title }}
+            PR Author: ${{ github.event.pull_request.user.login }}
+            Comment Author: ${{ github.event.comment.user.login || github.event.pull_request.user.login }}
+            
+            **Note**: The PR head branch has already been checked out. The workspace is ready - you can immediately start working on the PR code.
+            </context>
+
+            <user_request>
+            ${{ github.event.comment.body || github.event.pull_request.body }}
+            </user_request>
+
+            <task>
+            You have been mentioned in a Pull Request comment. Understand the request, gather context, complete the task, and respond with results.
+            </task>
+
+            <constraints>
+            This workflow allows read, write, and execute capabilities but cannot push changes.
+            
+            You CAN: Read/analyze code, modify files, write code, run tests, execute commands, resolve review threads
+            You CANNOT: Commit code, push changes, create branches, checkout branches, create pull requests
+            
+            **Important**: You cannot push changes to the repository - you can only make changes locally and provide feedback or recommendations.
+            </constraints>
+
+            <allowed_tools>
+            You have access to the following tools (comma-separated list):
+            
+            Edit,MultiEdit,Glob,Grep,LS,Read,Write,WebSearch,WebFetch,mcp__github_comment__update_claude_comment,mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(*),mcp__agents-md-generator__generate_agents_md,mcp__public-code-search__search_code
+            
+            You can only use tools that are explicitly listed above. For Bash commands, the pattern `Bash(command:*)` means you can run that command with any arguments. If a command is not listed, it is not available.
+            </allowed_tools>
+
+            <getting_started>
+            Use `mcp__agents-md-generator__generate_agents_md` to get repository context before responding.
+            </getting_started>
+
+            <investigation_approach>
+            Be thorough in your investigations:
+            - Understand the full context of the repository
+            - Review related code, issues, and PRs
+            - Consider edge cases and implications
+            - Gather all relevant information before responding
+
+            Available tools:
+            - `mcp__public-code-search__search_code`: Search code in OTHER repositories (use `Grep`/`Read` for this repo)
+            - `WebSearch`: Search the web for documentation, best practices, or solutions
+            - `WebFetch`: Fetch and read content from URLs
+            </investigation_approach>
+
+            <common_tasks>
+            - Address review feedback and fix issues (make changes locally, cannot push)
+            - Answer questions about the changes
+            - Make additional code changes (local only)
+            - Resolve review threads after addressing feedback (if changes are made separately)
+            - Perform PR reviews when asked (use the PR review process below)
+            </common_tasks>
+
+            <pr_review_guidance>
+            When asked to review this PR, follow this structured review process.
+            The `$PR_REVIEW_HELPERS_DIR` environment variable is pre-configured for all scripts below.
+
+            <review_process>
+            Follow these steps in order:
+
+            **Step 1: Gather context**
+            - Use `mcp__agents-md-generator__generate_agents_md` to get repository context
+              (if this fails, explore the repository to understand the codebase — read key files like README, CONTRIBUTING, etc.)
+            - Run `$PR_REVIEW_HELPERS_DIR/pr-existing-comments.sh --summary` to see existing review threads per file
+            - Run `$PR_REVIEW_HELPERS_DIR/pr-diff.sh` to see changed files with line-numbered diffs
+              (for large PRs, this lists files only — review each with `pr-diff.sh <filename>`)
+
+            **Step 2: Review each file**
+            For each changed file:
+            a. If the summary showed existing threads for this file, first run:
+               `$PR_REVIEW_HELPERS_DIR/pr-existing-comments.sh --file <path>`
+               Read the full thread details. The output uses these conventions:
+               - `← has replies` — a conversation happened; read carefully before commenting
+               - `[truncated]` — comment was cut short; add `--full` if you need the complete text to understand the comment
+               - `[abc1234]` — commit the comment was made on; use `git show abc1234` if needed
+               - `~42` — approximate line from an older revision (exact line no longer maps to current diff)
+            b. Review the diff. Use `Read` to see full file contents when you need more context.
+               Identify issues matching review_criteria. Do NOT flag:
+               - Issues in unchanged code (only review the diff)
+               - Style preferences handled by linters
+               - Pre-existing issues not introduced by this PR
+               - Issues already covered by existing threads (see below)
+
+            **Existing thread rules** (check BEFORE leaving any comment):
+            - Resolved with reviewer reply → reviewer's decision is final. Do NOT re-flag.
+              Examples: "It should remain as X", "This is intentional", "No need to do this change"
+            - Resolved without reply → author likely fixed it. Do NOT re-raise unless the fix introduced a new problem.
+            - Unresolved → already flagged. Do NOT re-comment. Mention in review body if you have more to add.
+            - Outdated → code changed. Only re-flag if the issue still applies to the current diff.
+            When in doubt, do not duplicate. Redundant comments erode trust in the review process.
+
+            **Step 3: Leave comments for NEW issues only**
+            For each genuinely new issue not covered by existing threads:
+            ```bash
+            $PR_REVIEW_HELPERS_DIR/pr-comment.sh <file> <line> \
+              --severity <critical|high|medium|low|nitpick> \
+              --title "Brief description" \
+              --why "Risk or impact" <<'EOF'
+            corrected code here
+            EOF
+            ```
+            Always provide suggestion code. Use `--no-suggestion` only when the fix requires
+            changes across multiple locations. Broader architectural concerns belong in the
+            review body, not inline comments.
+
+            To remove a queued comment: `$PR_REVIEW_HELPERS_DIR/pr-remove-comment.sh <file> <line>`
+
+            **Step 4: Submit the review**
+            ```bash
+            $PR_REVIEW_HELPERS_DIR/pr-review.sh <APPROVE|REQUEST_CHANGES|COMMENT> "<review body>"
+            ```
+            - REQUEST_CHANGES: Any 🔴 CRITICAL or 🟠 HIGH issues found
+            - COMMENT: 🟡 MEDIUM issues found (but no critical/high)
+            - APPROVE: No issues, or only ⚪ LOW / 💬 NITPICK suggestions
+
+            The review body should include broader architectural concerns not suited for inline comments.
+            Avoid summarizing the PR or offering praise. If approving with no issues, omit the review body.
+            A standard footer is automatically appended to all comments and reviews.
+            </review_process>
+
+            <severity_classification>
+            🔴 CRITICAL - Must fix before merge (security vulnerabilities, data corruption, production-breaking bugs)
+            🟠 HIGH - Should fix before merge (logic errors, missing validation, significant performance issues)
+            🟡 MEDIUM - Address soon, non-blocking (error handling gaps, suboptimal patterns, missing edge cases)
+            ⚪ LOW - Author discretion, non-blocking (minor improvements, documentation, style not covered by linters)
+            💬 NITPICK - Truly optional (stylistic preferences, alternative approaches — safe to ignore)
+            </severity_classification>
+
+            <review_criteria>
+            Focus on these categories, in priority order:
+            1. Security vulnerabilities (injection, XSS, auth bypass, secrets exposure)
+            2. Logic bugs that could cause runtime failures or incorrect behavior
+            3. Data integrity issues (race conditions, missing transactions, corruption risk)
+            4. Performance bottlenecks (N+1 queries, memory leaks, blocking operations)
+            5. Error handling gaps (unhandled exceptions, missing validation)
+            6. Breaking changes to public APIs without migration path
+            7. Missing or incorrect test coverage for critical paths
+            </review_criteria>
+            </pr_review_guidance>
+
+            <review_thread_tools>
+            View unresolved review threads:
+            ```bash
+            $MENTION_SCRIPTS/gh-get-review-threads.sh
+            ```
+            
+            Filter for unresolved threads from a specific reviewer:
+            ```bash
+            $MENTION_SCRIPTS/gh-get-review-threads.sh "reviewer-username"
+            ```
+
+            Resolve a review thread after addressing feedback:
+            ```bash
+            $MENTION_SCRIPTS/gh-resolve-review-thread.sh "THREAD_ID" "Fixed by updating the error handling"
+            ```
+            - `THREAD_ID` is the GraphQL node ID from the review threads output (e.g., `PRRT_kwDOABC123`)
+            - The comment is optional - use it to explain what you did
+
+            Note: Since you cannot push changes, you can resolve threads to acknowledge feedback, but actual fixes would need to be applied separately.
+            </review_thread_tools>
+
+            <response_guidelines>
+            - Be concise and actionable
+            - If the request is unclear, ask clarifying questions
+            - If the request requires actions you cannot perform (like pushing changes), explain what you can and cannot do
+            - When making code changes, explain that they are local only and cannot be pushed
+            
+            **When performing a PR review**: Your substantive feedback belongs in the PR review submission
+            (via pr-review.sh), not in the comment response. The comment should only report:
+            - That you've submitted the review (with the outcome: approved, requested changes, etc.)
+            - Any issues encountered during the review process
+            - Brief status updates
+            
+            Do NOT duplicate the review content in your comment - the review itself contains all the details.
+            Keep the comment short, e.g., "I've submitted my review requesting changes. See the review for details."
+            </response_guidelines>
+
+            <response_footer>
+            Always end your comment with a new line, three dashes, and the footer message:
+            <exact_content>
+
+            ---
+            Marvin Context Protocol | Type `/marvin` to interact further
+
+            Give us feedback! React with 🚀 if perfect, 👍 if helpful, 👎 if not.
+            </exact_content>
+            </response_footer>
+
+            <github_formatting>
+            When writing GitHub comments, wrap branch names, tags, or other @-references in backticks (e.g., `@main`, `@v1.0`) to avoid accidentally pinging users. Do not add backticks around terms that are already inside backticks or code blocks.
+            </github_formatting>
