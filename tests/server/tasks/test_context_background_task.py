@@ -14,7 +14,9 @@ from mcp import ServerSession
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.elicitation import ElicitResult
+from fastmcp.server.auth import AccessToken
 from fastmcp.server.context import Context
+from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.elicitation import AcceptedElicitation, DeclinedElicitation
 from fastmcp.server.tasks.elicitation import handle_task_input
 
@@ -317,3 +319,124 @@ class TestBackgroundTaskIntegration:
                 fastmcp=mcp,
             )
             assert success is False
+
+
+class TestAccessTokenInBackgroundTasks:
+    """Tests for access token availability in background tasks (#3095).
+
+    Integration tests use Client(mcp) with the real memory:// Docket backend.
+    The token snapshot/restore round-trip flows through actual Redis (fakeredis).
+
+    Note: async tests run in isolated asyncio tasks, so ContextVar changes
+    are automatically scoped — no cleanup required.
+    """
+
+    async def test_token_round_trips_through_background_task(self):
+        """E2E: token set at submit time is available inside the worker."""
+        from mcp.server.auth.middleware.auth_context import auth_context_var
+        from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+
+        mcp = FastMCP("token-roundtrip")
+
+        @mcp.tool(task=True)
+        async def check_token(ctx: Context) -> str:
+            token = get_access_token()
+            if token is None:
+                return "no-token"
+            return f"{token.token}|{token.client_id}"
+
+        test_token = AccessToken(
+            token="roundtrip-jwt",
+            client_id="test-client",
+            scopes=["read"],
+            claims={"sub": "user-1"},
+        )
+        auth_context_var.set(AuthenticatedUser(test_token))
+
+        async with Client(mcp) as client:
+            task = await client.call_tool("check_token", {}, task=True)
+            result = await task.result()
+            assert result.data == "roundtrip-jwt|test-client"
+
+    async def test_no_token_when_unauthenticated(self):
+        """E2E: background task gets no token when nothing was set."""
+        mcp = FastMCP("no-auth")
+
+        @mcp.tool(task=True)
+        async def check_token(ctx: Context) -> str:
+            token = get_access_token()
+            return "no-token" if token is None else token.token
+
+        async with Client(mcp) as client:
+            task = await client.call_tool("check_token", {}, task=True)
+            result = await task.result()
+            assert result.data == "no-token"
+
+    async def test_expired_token_returns_none(self):
+        """get_access_token() returns None when task token has expired."""
+        from datetime import datetime, timezone
+
+        from fastmcp.server.dependencies import _task_access_token
+
+        expired = AccessToken(
+            token="expired-jwt",
+            client_id="test-client",
+            scopes=["read"],
+            expires_at=int(datetime.now(timezone.utc).timestamp()) - 3600,
+        )
+        _task_access_token.set(expired)
+        assert get_access_token() is None
+
+    async def test_valid_token_with_future_expiry(self):
+        """get_access_token() returns token when expiry is in the future."""
+        from datetime import datetime, timezone
+
+        from fastmcp.server.dependencies import _task_access_token
+
+        valid = AccessToken(
+            token="valid-jwt",
+            client_id="test-client",
+            scopes=["read"],
+            expires_at=int(datetime.now(timezone.utc).timestamp()) + 3600,
+        )
+        _task_access_token.set(valid)
+        result = get_access_token()
+        assert result is not None
+        assert result.token == "valid-jwt"
+
+    async def test_token_without_expiry_always_valid(self):
+        """get_access_token() returns token when no expires_at is set."""
+        from fastmcp.server.dependencies import _task_access_token
+
+        no_expiry = AccessToken(
+            token="eternal-jwt",
+            client_id="test-client",
+            scopes=["read"],
+        )
+        _task_access_token.set(no_expiry)
+        result = get_access_token()
+        assert result is not None
+        assert result.token == "eternal-jwt"
+
+
+class TestLifespanContextInBackgroundTasks:
+    """Tests for lifespan_context availability in background tasks (#3095)."""
+
+    def test_lifespan_context_falls_back_to_server_result(self):
+        """lifespan_context reads from server when request_context is None."""
+        mcp = FastMCP("test")
+        mcp._lifespan_result = {"db": "mock-db-connection", "cache": "mock-cache"}
+
+        ctx = Context(mcp, task_id="test-task")
+        assert ctx.request_context is None
+        assert ctx.lifespan_context == {
+            "db": "mock-db-connection",
+            "cache": "mock-cache",
+        }
+
+    def test_lifespan_context_returns_empty_dict_when_no_lifespan(self):
+        """lifespan_context returns {} when no lifespan is configured."""
+        mcp = FastMCP("test")
+        ctx = Context(mcp, task_id="test-task")
+        assert ctx.request_context is None
+        assert ctx.lifespan_context == {}

@@ -14,7 +14,7 @@ import mcp.types
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
-from fastmcp.server.dependencies import _current_docket, get_context
+from fastmcp.server.dependencies import _current_docket, get_access_token, get_context
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.tasks.keys import build_task_key
 from fastmcp.utilities.logging import get_logger
@@ -99,10 +99,21 @@ async def submit_to_docket(
         f"fastmcp:task:{session_id}:{server_task_id}:poll_interval"
     )
     poll_interval_ms = int(component.task_config.poll_interval.total_seconds() * 1000)
+
+    # Snapshot the current access token (if any) for background task access (#3095)
+    access_token = get_access_token()
+    access_token_key = docket.key(
+        f"fastmcp:task:{session_id}:{server_task_id}:access_token"
+    )
+
     async with docket.redis() as redis:
         await redis.set(task_meta_key, task_key, ex=ttl_seconds)
         await redis.set(created_at_key, created_at.isoformat(), ex=ttl_seconds)
         await redis.set(poll_interval_key, str(poll_interval_ms), ex=ttl_seconds)
+        if access_token is not None:
+            await redis.set(
+                access_token_key, access_token.model_dump_json(), ex=ttl_seconds
+            )
 
     # Register session for Context access in background workers (SEP-1686)
     # This enables elicitation/sampling from background tasks via weakref

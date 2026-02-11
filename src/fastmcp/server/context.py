@@ -318,6 +318,10 @@ class Context:
         Returns an empty dict if no lifespan was configured or if the MCP
         session is not yet established.
 
+        In background tasks (Docket workers), where request_context is not
+        available, falls back to reading from the FastMCP server's lifespan
+        result directly.
+
         Example:
         ```python
         @server.tool
@@ -330,6 +334,11 @@ class Context:
         """
         rc = self.request_context
         if rc is None:
+            # In background tasks, request_context is not available.
+            # Fall back to the server's lifespan result directly (#3095).
+            result = self.fastmcp._lifespan_result
+            if result is not None:
+                return result
             return {}
         return rc.lifespan_context
 
