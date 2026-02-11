@@ -1,0 +1,136 @@
+---
+title: Tool Search
+sidebarTitle: Tool Search
+description: Replace large tool catalogs with on-demand search
+icon: magnifying-glass
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.0.0" />
+
+When a server exposes hundreds or thousands of tools, sending the full catalog to an LLM wastes tokens and degrades tool selection accuracy. Search transforms solve this by replacing the tool listing with a search interface, letting the LLM discover tools on demand.
+
+When you add a search transform, `list_tools()` returns just two synthetic tools instead of the full catalog:
+
+- **`search_tools`** finds tools matching a query and returns their full definitions
+- **`call_tool`** executes a discovered tool by name
+
+The LLM searches for what it needs, gets back tool schemas in the same format as `list_tools`, and calls them through the proxy.
+
+## Choosing a Search Strategy
+
+FastMCP provides two search transforms with different tradeoffs:
+
+**`RegexSearchTransform`** matches tools against a regex pattern. Zero overhead, no index to build, works well when the LLM knows roughly what it's looking for. Searches tool names, descriptions, parameter names, and parameter descriptions.
+
+**`BM25SearchTransform`** ranks tools by relevance using the [BM25 Okapi](https://en.wikipedia.org/wiki/Okapi_BM25) algorithm. Better for natural language queries like "tools for working with databases." Builds an in-memory index that auto-rebuilds when the catalog changes.
+
+Both are self-contained with no external dependencies.
+
+## Basic Usage
+
+Add the transform to your server. The search tools appear automatically.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms.search import RegexSearchTransform
+
+mcp = FastMCP("My Server")
+
+@mcp.tool
+def search_database(query: str, limit: int = 10) -> list[dict]:
+    """Search the database for records matching the query."""
+    ...
+
+@mcp.tool
+def delete_record(record_id: str) -> bool:
+    """Delete a record from the database by its ID."""
+    ...
+
+@mcp.tool
+def send_email(to: str, subject: str, body: str) -> bool:
+    """Send an email to the given recipient."""
+    ...
+
+# Clients now see only search_tools and call_tool
+mcp.add_transform(RegexSearchTransform())
+```
+
+An LLM interacting with this server would first search for relevant tools, then call them:
+
+```python
+# LLM searches for database-related tools
+result = await client.call_tool("search_tools", {"pattern": "database"})
+# Returns full tool schemas for search_database and delete_record
+
+# LLM calls a discovered tool through the proxy
+result = await client.call_tool("call_tool", {
+    "name": "search_database",
+    "arguments": {"query": "active users", "limit": 5}
+})
+```
+
+For BM25, the usage is identical — just swap the class:
+
+```python
+from fastmcp.server.transforms.search import BM25SearchTransform
+
+mcp.add_transform(BM25SearchTransform())
+
+# LLM uses natural language instead of regex
+result = await client.call_tool("search_tools", {
+    "query": "tools for deleting things from the database"
+})
+```
+
+## Search Results
+
+The search tool returns tool definitions in the same format as `list_tools` — each result includes the tool's name, description, and full input schema. This means an LLM (or a human intercepting the output) can treat search results exactly like a `list_tools` response.
+
+## Pinning Tools
+
+Some tools should always be visible regardless of search. Use `always_visible` to pin them in the listing alongside the search tools:
+
+```python
+mcp.add_transform(RegexSearchTransform(
+    always_visible=["help", "status"],
+))
+
+# list_tools returns: help, status, search_tools, call_tool
+```
+
+## Customizing Tool Names
+
+The default names `search_tools` and `call_tool` can be changed to avoid conflicts:
+
+```python
+mcp.add_transform(RegexSearchTransform(
+    search_tool_name="find_tools",
+    call_tool_name="run_tool",
+))
+```
+
+## Auth and Visibility
+
+Search transforms respect the full authorization pipeline. Tools filtered by middleware, visibility transforms, or component-level auth checks will not appear in search results.
+
+This works because the search tool queries the server's `list_tools()` through the complete pipeline at search time — the same filtering that controls what a client sees in `list_tools` also controls what they can discover through search.
+
+```python
+from fastmcp.server.transforms import Visibility
+from fastmcp.server.transforms.search import RegexSearchTransform
+
+mcp = FastMCP("My Server")
+
+# ... define tools ...
+
+# Disable admin tools globally
+mcp.add_transform(Visibility(False, tags={"admin"}))
+
+# Add search — admin tools won't appear in results
+mcp.add_transform(RegexSearchTransform())
+```
+
+Session-level visibility changes (via `ctx.disable_components()`) are also reflected immediately in search results.
