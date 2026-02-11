@@ -1,0 +1,83 @@
+---
+title: base
+sidebarTitle: base
+---
+
+# `fastmcp.server.transforms.search.base`
+
+
+Base class for search transforms.
+
+Search transforms replace ``list_tools()`` output with a small set of
+synthetic tools — a search tool and a call-tool proxy — so LLMs can
+discover tools on demand instead of receiving the full catalog.
+
+All concrete search transforms (``RegexSearchTransform``,
+``BM25SearchTransform``, etc.) inherit from ``BaseSearchTransform`` and
+implement ``_make_search_tool()`` and ``_search()`` to provide their
+specific search strategy.
+
+Example::
+
+    from fastmcp import FastMCP
+    from fastmcp.server.transforms.search import RegexSearchTransform
+
+    mcp = FastMCP("Server")
+
+    @mcp.tool
+    def add(a: int, b: int) -> int: ...
+
+    @mcp.tool
+    def multiply(x: float, y: float) -> float: ...
+
+    # Clients now see only ``search_tools`` and ``call_tool``.
+    # The original tools are discoverable via search.
+    mcp.add_transform(RegexSearchTransform())
+
+
+## Classes
+
+### `BaseSearchTransform` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/search/base.py#L73" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Replace the tool listing with a search interface.
+
+When this transform is active, ``list_tools()`` returns only:
+
+* Any tools listed in ``always_visible`` (pinned).
+* A **search tool** that finds tools matching a query.
+* A **call_tool** proxy that executes tools discovered via search.
+
+Hidden tools remain callable — ``get_tool()`` delegates unknown
+names downstream, so direct calls and the call-tool proxy both work.
+
+Search results respect the full auth pipeline: middleware, visibility
+transforms, and component-level auth checks all apply.
+
+**Args:**
+- `max_results`: Maximum number of tools returned per search.
+- `always_visible`: Tool names that stay in the ``list_tools``
+output alongside the synthetic search/call tools.
+- `search_tool_name`: Name of the generated search tool.
+- `call_tool_name`: Name of the generated call-tool proxy.
+
+
+**Methods:**
+
+#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/search/base.py#L113" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
+```
+
+Return only pinned + synthetic tools, or pass through if bypassed.
+
+
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/search/base.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
+```
+
+Intercept synthetic tool names; delegate everything else.
+
