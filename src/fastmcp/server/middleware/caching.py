@@ -243,43 +243,41 @@ class ResponseCachingMiddleware(Middleware):
             call_tool_settings or CallToolSettings()
         )
 
-        # PydanticAdapter type signature will be fixed to accept generic aliases
-        # See: https://github.com/strawgate/py-key-value/pull/250
         self._list_tools_cache: PydanticAdapter[list[Tool]] = PydanticAdapter(
             key_value=self._stats,
-            pydantic_model=list[Tool],  # type: ignore[arg-type]
+            pydantic_model=list[Tool],
             default_collection="tools/list",
         )
 
         self._list_resources_cache: PydanticAdapter[list[Resource]] = PydanticAdapter(
             key_value=self._stats,
-            pydantic_model=list[Resource],  # type: ignore[arg-type]
+            pydantic_model=list[Resource],
             default_collection="resources/list",
         )
 
         self._list_prompts_cache: PydanticAdapter[list[Prompt]] = PydanticAdapter(
             key_value=self._stats,
-            pydantic_model=list[Prompt],  # type: ignore[arg-type]
+            pydantic_model=list[Prompt],
             default_collection="prompts/list",
         )
 
         self._read_resource_cache: PydanticAdapter[CachableResourceResult] = (
             PydanticAdapter(
                 key_value=self._stats,
-                pydantic_model=CachableResourceResult,  # type: ignore[arg-type]
+                pydantic_model=CachableResourceResult,
                 default_collection="resources/read",
             )
         )
 
         self._get_prompt_cache: PydanticAdapter[CachablePromptResult] = PydanticAdapter(
             key_value=self._stats,
-            pydantic_model=CachablePromptResult,  # type: ignore[arg-type]
+            pydantic_model=CachablePromptResult,
             default_collection="prompts/get",
         )
 
         self._call_tool_cache: PydanticAdapter[CachableToolResult] = PydanticAdapter(
             key_value=self._stats,
-            pydantic_model=CachableToolResult,  # type: ignore[arg-type]
+            pydantic_model=CachableToolResult,
             default_collection="tools/call",
         )
 
