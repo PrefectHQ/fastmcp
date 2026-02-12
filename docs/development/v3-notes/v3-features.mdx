@@ -6,6 +6,23 @@ This document tracks major features in FastMCP v3.0 for release notes preparatio
 
 ## 3.0.0rc1
 
+### SamplingTool Conversion Helpers
+
+Server tools (FunctionTool and TransformedTool) can now be passed directly to sampling methods via `SamplingTool.from_callable_tool()` ([#3062](https://github.com/jlowin/fastmcp/pull/3062)). Previously, tools defined with `@mcp.tool` had to be recreated as functions for use in `ctx.sample()`. Now `ctx.sample()` and `ctx.sample_step()` accept these tool instances directly.
+
+```python
+@mcp.tool
+def search(query: str) -> str:
+    """Search the web."""
+    return do_search(query)
+
+# Use tool directly in sampling
+result = await ctx.sample(
+    "Research Python frameworks",
+    tools=[search]  # FunctionTool works directly!
+)
+```
+
 ### Concurrent Tool Execution in Sampling
 
 When an LLM returns multiple tool calls in a single sampling response, they can now be executed concurrently ([#3022](https://github.com/jlowin/fastmcp/pull/3022)). Default behavior remains sequential; opt in with `tool_concurrency`. Tools can declare `sequential=True` to force sequential execution even when concurrency is enabled.
@@ -109,7 +126,6 @@ The `_deprecated_settings` attribute and `.settings` property are also removed. 
 ### Breaking: `ui=` Renamed to `app=`
 
 The MCP Apps decorator parameter has been renamed from `ui=ToolUI(...)` / `ui=ResourceUI(...)` to `app=AppConfig(...)` ([#3117](https://github.com/jlowin/fastmcp/pull/3117)). `ToolUI` and `ResourceUI` are consolidated into a single `AppConfig` class. Wire format is unchanged. See the MCP Apps section under beta2 for full details.
-
 ## 3.0.0beta2
 
 ### CLI: `fastmcp list` and `fastmcp call`

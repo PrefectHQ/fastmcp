@@ -32,6 +32,8 @@ from typing_extensions import TypeVar
 from fastmcp import settings
 from fastmcp.exceptions import ToolError
 from fastmcp.server.sampling.sampling_tool import SamplingTool
+from fastmcp.tools.function_tool import FunctionTool
+from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -367,9 +369,22 @@ def prepare_messages(
 
 
 def prepare_tools(
-    tools: Sequence[SamplingTool | Callable[..., Any]] | None,
+    tools: Sequence[SamplingTool | FunctionTool | TransformedTool | Callable[..., Any]]
+    | None,
 ) -> list[SamplingTool] | None:
-    """Convert tools to SamplingTool objects."""
+    """Convert tools to SamplingTool objects.
+
+    Accepts SamplingTool instances, FunctionTool instances, TransformedTool instances,
+    or plain callable functions. FunctionTool and TransformedTool are converted using
+    from_callable_tool(), while plain functions use from_function().
+
+    Args:
+        tools: Sequence of tools to prepare. Can be SamplingTool, FunctionTool,
+            TransformedTool, or plain callable functions.
+
+    Returns:
+        List of SamplingTool instances, or None if tools is None.
+    """
     if tools is None:
         return None
 
@@ -377,10 +392,14 @@ def prepare_tools(
     for t in tools:
         if isinstance(t, SamplingTool):
             sampling_tools.append(t)
+        elif isinstance(t, (FunctionTool, TransformedTool)):
+            sampling_tools.append(SamplingTool.from_callable_tool(t))
         elif callable(t):
             sampling_tools.append(SamplingTool.from_function(t))
         else:
-            raise TypeError(f"Expected SamplingTool or callable, got {type(t)}")
+            raise TypeError(
+                f"Expected SamplingTool, FunctionTool, TransformedTool, or callable, got {type(t)}"
+            )
 
     return sampling_tools if sampling_tools else None
 
@@ -441,7 +460,8 @@ async def sample_step_impl(
     temperature: float | None = None,
     max_tokens: int | None = None,
     model_preferences: ModelPreferences | str | list[str] | None = None,
-    tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
+    tools: Sequence[SamplingTool | FunctionTool | TransformedTool | Callable[..., Any]]
+    | None = None,
     tool_choice: ToolChoiceOption | str | None = None,
     auto_execute_tools: bool = True,
     mask_error_details: bool | None = None,
@@ -557,7 +577,8 @@ async def sample_impl(
     temperature: float | None = None,
     max_tokens: int | None = None,
     model_preferences: ModelPreferences | str | list[str] | None = None,
-    tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
+    tools: Sequence[SamplingTool | FunctionTool | TransformedTool | Callable[..., Any]]
+    | None = None,
     result_type: type[ResultT] | None = None,
     mask_error_details: bool | None = None,
     tool_concurrency: int | None = None,

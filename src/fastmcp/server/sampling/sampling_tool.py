@@ -6,10 +6,14 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
+from mcp.types import TextContent
 from mcp.types import Tool as SDKTool
 from pydantic import ConfigDict
 
 from fastmcp.tools.function_parsing import ParsedFunction
+from fastmcp.tools.function_tool import FunctionTool
+from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.types import FastMCPBaseModel
 
 
@@ -113,4 +117,67 @@ class SamplingTool(FastMCPBaseModel):
             parameters=parsed.input_schema,
             fn=parsed.fn,
             sequential=sequential,
+        )
+
+    @classmethod
+    def from_callable_tool(
+        cls,
+        tool: FunctionTool | TransformedTool,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> SamplingTool:
+        """Create a SamplingTool from a FunctionTool or TransformedTool.
+
+        Reuses existing server tools in sampling contexts. For TransformedTool,
+        the tool's .run() method is used to ensure proper argument transformation,
+        and the ToolResult is automatically unwrapped.
+
+        Args:
+            tool: A FunctionTool or TransformedTool to convert.
+            name: Optional name override. Defaults to tool.name.
+            description: Optional description override. Defaults to tool.description.
+
+        Raises:
+            TypeError: If the tool is not a FunctionTool or TransformedTool.
+        """
+        # Validate that the tool is a supported type
+        if not isinstance(tool, (FunctionTool, TransformedTool)):
+            raise TypeError(
+                f"Expected FunctionTool or TransformedTool, got {type(tool).__name__}. "
+                "Only callable tools can be converted to SamplingTools."
+            )
+
+        # Both FunctionTool and TransformedTool need .run() to ensure proper
+        # result processing (serializers, output_schema, wrap-result flags)
+        async def wrapper(**kwargs: Any) -> Any:
+            result = await tool.run(kwargs)
+            # Unwrap ToolResult - extract the actual value
+            if isinstance(result, ToolResult):
+                # If there's structured_content, use that
+                if result.structured_content is not None:
+                    # Check tool's schema - this is the source of truth
+                    if tool.output_schema and tool.output_schema.get(
+                        "x-fastmcp-wrap-result"
+                    ):
+                        # Tool wraps results: {"result": value} -> value
+                        return result.structured_content.get("result")
+                    else:
+                        # No wrapping: use structured_content directly
+                        return result.structured_content
+                # Otherwise, extract from text content
+                if result.content and len(result.content) > 0:
+                    first_content = result.content[0]
+                    if isinstance(first_content, TextContent):
+                        return first_content.text
+            return result
+
+        fn = wrapper
+
+        # Extract the callable function, name, description, and parameters
+        return cls(
+            name=name or tool.name,
+            description=description or tool.description,
+            parameters=tool.parameters,
+            fn=fn,
         )
