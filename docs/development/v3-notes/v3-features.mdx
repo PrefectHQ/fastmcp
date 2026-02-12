@@ -1376,7 +1376,8 @@ server.disable(names={"my_tool"}, components=["tool"])
 Server lookup and listing methods have updated signatures:
 
 - Parameter names: `get_tool(name=...)`, `get_resource(uri=...)`, etc. (was `key`)
-- Return types: `get_tools()`, `get_resources()`, etc. return lists instead of dicts
+- Plural listing methods renamed: `get_tools()` → `list_tools()`, `get_resources()` → `list_resources()`, etc.
+- Return types: `list_tools()`, `list_resources()`, etc. return lists instead of dicts
 
 ```python
 # v2.x
@@ -1384,7 +1385,7 @@ tools = await server.get_tools()
 tool = tools["my_tool"]
 
 # v3.0
-tools = await server.get_tools()
+tools = await server.list_tools()
 tool = next((t for t in tools if t.name == "my_tool"), None)
 ```
 

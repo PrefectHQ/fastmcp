@@ -60,11 +60,11 @@ async def main():
         ],
     )
 
-    tools = await mcp1.get_tools()
-    resources = await mcp1.get_resources()
+    tools = await mcp1.list_tools()
+    resources = await mcp1.list_resources()
 
-    print(f"Tools ({len(tools)}): {', '.join(tools.keys())}")
-    print(f"Resources ({len(resources)}): {', '.join(resources.keys())}")
+    print(f"Tools ({len(tools)}): {', '.join(t.name for t in tools)}")
+    print(f"Resources ({len(resources)}): {', '.join(str(r.uri) for r in resources)}")
 
     print("\n=== Example 2: Exclude internal routes ===")
 
@@ -80,11 +80,11 @@ async def main():
         ],
     )
 
-    tools = await mcp2.get_tools()
-    resources = await mcp2.get_resources()
+    tools = await mcp2.list_tools()
+    resources = await mcp2.list_resources()
 
-    print(f"Tools ({len(tools)}): {', '.join(tools.keys())}")
-    print(f"Resources ({len(resources)}): {', '.join(resources.keys())}")
+    print(f"Tools ({len(tools)}): {', '.join(t.name for t in tools)}")
+    print(f"Resources ({len(resources)}): {', '.join(str(r.uri) for r in resources)}")
 
     print("\n=== Example 3: Pattern + Tags combination ===")
 
@@ -107,11 +107,11 @@ async def main():
         ],
     )
 
-    tools = await mcp3.get_tools()
-    resources = await mcp3.get_resources()
+    tools = await mcp3.list_tools()
+    resources = await mcp3.list_resources()
 
-    print(f"Tools ({len(tools)}): {', '.join(tools.keys())}")
-    print(f"Resources ({len(resources)}): {', '.join(resources.keys())}")
+    print(f"Tools ({len(tools)}): {', '.join(t.name for t in tools)}")
+    print(f"Resources ({len(resources)}): {', '.join(str(r.uri) for r in resources)}")
 
     print("\n=== Example 4: Multiple tag AND condition ===")
 
@@ -130,11 +130,11 @@ async def main():
         ],
     )
 
-    tools = await mcp4.get_tools()
-    resources = await mcp4.get_resources()
+    tools = await mcp4.list_tools()
+    resources = await mcp4.list_resources()
 
-    print(f"Tools ({len(tools)}): {', '.join(tools.keys())}")
-    print(f"Resources ({len(resources)}): {', '.join(resources.keys())}")
+    print(f"Tools ({len(tools)}): {', '.join(t.name for t in tools)}")
+    print(f"Resources ({len(resources)}): {', '.join(str(r.uri) for r in resources)}")
 
 
 if __name__ == "__main__":

@@ -43,9 +43,9 @@ tool.disable()
 server.disable(names={"my_tool"}, components=["tool"])
 ```
 
-#### Listing Methods Return Lists
+#### Listing Methods Renamed and Return Lists
 
-`get_tools()`, `get_resources()`, `get_prompts()`, and `get_resource_templates()` now return lists instead of dicts:
+`get_tools()`, `get_resources()`, `get_prompts()`, and `get_resource_templates()` have been replaced by `list_tools()`, `list_resources()`, `list_prompts()`, and `list_resource_templates()`. The new methods return lists instead of dicts:
 
 ```python
 # Before
@@ -53,7 +53,7 @@ tools = await server.get_tools()
 tool = tools["my_tool"]
 
 # After
-tools = await server.get_tools()
+tools = await server.list_tools()
 tool = next((t for t in tools if t.name == "my_tool"), None)
 ```
 
