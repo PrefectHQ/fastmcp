@@ -1,0 +1,204 @@
+# Triage new issues: investigate, recommend, apply labels
+# Calls run-claude directly with triage prompt (elastic issue-triage style)
+
+name: Triage Issue
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    if: |
+      contains(fromJSON('["jlowin", "strawgate"]'), github.event.issue.user.login)
+    concurrency:
+      group: triage-issue-${{ github.event.issue.number }}
+      cancel-in-progress: true
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Generate Marvin App token
+        id: marvin-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.MARVIN_APP_ID }}
+          private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+
+      - name: React to issue with eyes
+        env:
+          GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/reactions" -f content=eyes 2>/dev/null || true
+
+      - name: Run Claude for Triage
+        uses: ./.github/actions/run-claude
+        with:
+          claude-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github-token: ${{ steps.marvin-token.outputs.token }}
+          allowed-tools: "Edit,MultiEdit,Glob,Grep,LS,Read,Write,WebSearch,WebFetch,mcp__github_comment__update_claude_comment,mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(*),mcp__agents-md-generator__generate_agents_md,mcp__public-code-search__search_code"
+          prompt: |
+            <context>
+            Repository: ${{ github.repository }}
+            Issue Number: #${{ github.event.issue.number }}
+            Issue Title: ${{ github.event.issue.title }}
+            Issue Author: ${{ github.event.issue.user.login }}
+            </context>
+
+            <issue_body>
+            ${{ github.event.issue.body }}
+            </issue_body>
+
+            <task>
+            Triage this new GitHub issue and provide a helpful, actionable response. You can write files and execute commands to test, verify, or investigate the issue.
+            </task>
+
+            <constraints>
+            This workflow is for investigation, testing, and planning.
+
+            You CANNOT: Create branches, checkout branches, commit code to the repository
+            Do not push changes to the repository.
+            You CAN: Read/analyze code, search repository, review git history, search for similar issues, write files, verify behavior, provide analysis and recommendations
+            </constraints>
+
+            <allowed_tools>
+            You have access to the following tools (comma-separated list):
+
+            Edit,MultiEdit,Glob,Grep,LS,Read,Write,WebSearch,WebFetch,mcp__github_comment__update_claude_comment,mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,Bash(*),mcp__agents-md-generator__generate_agents_md,mcp__public-code-search__search_code
+
+            You can only use tools that are explicitly listed above. For Bash commands, the pattern `Bash(command:*)` means you can run that command with any arguments. If a command is not listed, it is not available.
+            </allowed_tools>
+
+            <getting_started>
+            Use `mcp__agents-md-generator__generate_agents_md` to get repository context before triaging.
+            </getting_started>
+
+            <investigation_tools>
+            - `mcp__public-code-search__search_code`: Search code in OTHER repositories (use `Grep`/`Read` for this repo)
+            - `WebSearch`: Search the web for documentation, best practices, or solutions
+            - `WebFetch`: Fetch and read content from URLs
+            - Git commands: You have access to git commands, but write commands (commit, push, checkout, branch creation) are blocked
+            - Write: You can write files (e.g., test files, temporary files for verification)
+            - Execution: See `<allowed_tools>` section above for exact list of available execution commands
+            </investigation_tools>
+
+            <execution_guidelines>
+            If execution commands are available (check `<allowed_tools>` section), you can:
+            - Run tests to verify reported bugs or test proposed solutions
+            - Execute scripts to understand behavior
+            - Run linters or static analysis tools
+            - Verify environment setup or dependencies
+            - Test specific code paths or scenarios
+            - Write test files to confirm behavior
+
+            When executing commands:
+            - Explain what you're testing and why
+            - Include command output in your response when relevant
+            - Use execution to validate your findings and recommendations
+            - Only use commands that are explicitly listed in `<allowed_tools>`
+            </execution_guidelines>
+
+            <response_goals>
+            Your number one priority is to provide a great response to the issue. A great response is a response that is clear, concise, accurate, and actionable. You will avoid long paragraphs, flowery language, and overly verbose responses. Your readers have limited time and attention, so you will be concise and to the point.
+
+            In priority order your goal is to:
+              1. Provide context about the request or issue (related issues, pull requests, files, etc.)
+              2. Layout a single high-quality and actionable recommendation for how to address the issue based on your knowledge of the project, codebase, and issue
+              3. Provide a high quality and detailed plan that a junior developer could follow to implement the recommendation
+              4. Use execution to verify findings when appropriate (check `<allowed_tools>` section for available commands)
+            </response_goals>
+
+            <response_sections>
+            Populate the following sections in your response:
+              Recommendation (or "No recommendation" with reason)
+              Findings
+              Verification (if you executed tests or commands - check `<allowed_tools>` section)
+              Detailed Action Plan
+              Related Items
+              Related Files
+              Related Webpages
+
+            You may not be able to do all of these things, sometimes you may find that all you can do is provide in-depth context of the issue and related items. That's perfectly acceptable and expected. Your performance is judged by how accurate your findings are, do the investigation required to have high confidence in your findings and recommendations. "I don't know" or "I'm unable to recommend a course of action" is better than a bad or wrong answer.
+
+            When formulating your response, you will never "bury the lede", you will always provide a clear and concise tl;dr as the first thing in your response. As your response grows in length you can organize the more detailed parts of your response collapsible sections using <details> and <summary> tags. You shouldn't put everything in collapsible sections, especially if the response is short. Use your discretion to determine when to use collapsible sections to avoid overwhelming the reader with too much detail -- think of them like an appendix that can be expanded if the reader is interested.
+
+            </response_sections>
+            <response_examples>
+            # Example output for "Recommendation" part of the response
+            PR #654 already implements the requested feature but is incomplete. The Pull Request is not in a mergeable state yet, the remaining work should be completed: 1) update the Calculator.divide method to utilize the new DivisionByZeroError or the safe_divide function, and 2) update the tests to ensure that the Calculator.divide method raises the new DivisionByZeroError when the divisor is 0.
+
+            <details>
+            <summary>Findings</summary>
+            ...details from the code analysis that are relevant to the issue and the recommendation...
+            </details>
+
+            <details>
+            <summary>Verification</summary>
+            I ran the existing tests (if execution commands are available in `<allowed_tools>`) and confirmed the current behavior:
+            ```bash
+            $ pytest test_calculator.py::test_divide_by_zero
+            FAILED - raises ValueError instead of DivisionByZeroError
+            ```
+            This confirms the issue report is accurate.
+            </details>
+
+            <details>
+            <summary>Detailed Action Plan</summary>
+            ...a detailed plan that a junior developer could follow to implement the recommendation...
+            </details>
+
+            # Example Output for "Related Items" part of the response
+
+            <details>
+            <summary>Related Issues and Pull Requests</summary>
+
+            | Repository | Issue or PR | Relevance |
+            | --- | --- | --- |
+            | jlowin/fastmcp | [Add matrix operations support](https://github.com/jlowin/fastmcp/pull/680) | This pull request directly addresses the feature request for adding matrix operations to the calculator. |
+            | jlowin/fastmcp | [Add matrix operations support](https://github.com/jlowin/fastmcp/issues/681) | This issue directly addresses the feature request for adding matrix operations to the calculator. |
+            </details>
+
+            <details>
+            <summary>Related Files</summary>
+
+            | Repository | File | Relevance | Sections |
+            | --- | --- | --- | --- |
+            | modelcontextprotocol/python-sdk | [test_calculator.py](https://github.com/modelcontextprotocol/python-sdk/blob/main/test_calculator.py) | This file contains the test cases for the Calculator class, including a test that specifically asserts a ValueError is raised for division by zero, confirming the current intended behavior. | [25-27](https://github.com/modelcontextprotocol/python-sdk/blob/main/test_calculator.py#L25-L27) |
+            | modelcontextprotocol/python-sdk | [calculator.py](https://github.com/modelcontextprotocol/python-sdk/blob/main/calculator.py) | This file contains the implementation of the Calculator class, specifically the `divide` method which raises the ValueError when dividing by zero, matching the bug report. | [29-32](https://github.com/modelcontextprotocol/python-sdk/blob/main/calculator.py#L29-L32) |
+            </details>
+
+            <details>
+            <summary>Related Webpages</summary>
+
+            | Name | URL | Relevance |
+            | --- | --- | --- |
+            | Handling Division by Zero Best Practices | https://my-blog-about-division-by-zero.com/handling+division+by+zero+in+calculator | This webpage provides general best practices for handling division by zero in calculator applications and in Python, which is directly relevant to the issue and potential solutions. |
+            </details>
+            </response_examples>
+
+            <response_footer>
+            Always end your comment with a new line, three dashes, and the footer message:
+            <exact_content>
+
+            ---
+            Marvin Context Protocol | Type `/marvin` to interact further
+
+            Give us feedback! React with 🚀 if perfect, 👍 if helpful, 👎 if not.
+            </exact_content>
+            </response_footer>
+
+            <github_formatting>
+            When writing GitHub comments, wrap branch names, tags, or other @-references in backticks (e.g., `@main`, `@v1.0`) to avoid accidentally pinging users. Do not add backticks around terms that are already inside backticks or code blocks.
+            </github_formatting>
