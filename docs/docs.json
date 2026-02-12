@@ -467,6 +467,7 @@
                           "python-sdk/fastmcp-server-middleware-__init__",
                           "python-sdk/fastmcp-server-middleware-authorization",
                           "python-sdk/fastmcp-server-middleware-caching",
+                          "python-sdk/fastmcp-server-middleware-dereference",
                           "python-sdk/fastmcp-server-middleware-error_handling",
                           "python-sdk/fastmcp-server-middleware-logging",
                           "python-sdk/fastmcp-server-middleware-middleware",
@@ -562,6 +563,7 @@
                           "python-sdk/fastmcp-server-tasks-elicitation",
                           "python-sdk/fastmcp-server-tasks-handlers",
                           "python-sdk/fastmcp-server-tasks-keys",
+                          "python-sdk/fastmcp-server-tasks-notifications",
                           "python-sdk/fastmcp-server-tasks-requests",
                           "python-sdk/fastmcp-server-tasks-routing",
                           "python-sdk/fastmcp-server-tasks-subscriptions"
@@ -665,7 +667,7 @@
             "icon": "code"
           }
         ],
-        "version": "v3.0.0 (beta 2)"
+        "version": "v3.0.0 (rc 1)"
       },
       {
         "dropdowns": [
@@ -862,7 +864,7 @@
             "icon": "book"
           }
         ],
-        "version": "v2.14.3"
+        "version": "v2.14.5"
       }
     ]
   },

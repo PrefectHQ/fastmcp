@@ -8,17 +8,17 @@ icon: arrow-down-to-line
 We recommend using [uv](https://docs.astral.sh/uv/getting-started/installation/) to install and manage FastMCP.
 
 <Note>
-FastMCP 3.0 is currently in beta. Package managers won't install beta versions by default—you must explicitly request one (e.g., `>=3.0.0b2`).
+FastMCP 3.0 is currently a release candidate. Package managers won't install pre-release versions by default—you must explicitly request one (e.g., `>=3.0.0rc1`).
 </Note>
 
 ```bash
-pip install "fastmcp>=3.0.0b2"
+pip install "fastmcp>=3.0.0rc1"
 ```
 
 Or with uv:
 
 ```bash
-uv add "fastmcp>=3.0.0b2"
+uv add "fastmcp>=3.0.0rc1"
 ```
 
 ### Optional Dependencies
@@ -26,7 +26,7 @@ uv add "fastmcp>=3.0.0b2"
 FastMCP provides optional extras for specific features. For example, to install the background tasks extra:
 
 ```bash
-pip install "fastmcp[tasks]==3.0.0b2"
+pip install "fastmcp[tasks]==3.0.0rc1"
 ```
 
 See [Background Tasks](/servers/tasks) for details on the task system.
@@ -44,7 +44,7 @@ You should see output like the following:
 ```bash
 $ fastmcp version
 
-FastMCP version:                           3.0.0
+FastMCP version:                        3.0.0rc1
 MCP version:                               1.25.0
 Python version:                            3.12.2
 Platform:            macOS-15.3.1-arm64-arm-64bit

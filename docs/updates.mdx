@@ -5,6 +5,48 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 3.0.0rc1" description="February 12, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.0.0rc1: RC-ing is Believing"
+href="https://github.com/jlowin/fastmcp/releases/tag/v3.0.0rc1"
+cta="Read the release notes"
+>
+FastMCP 3 RC1 means we believe the API is stable. Beta 2 drew a wave of real-world adoption — production deployments, migration reports, integration testing — and the feedback overwhelmingly confirmed that the architecture works. This release closes gaps that surfaced under load: auth flows that needed to be async, background tasks that needed reliable notification delivery, and APIs still carrying beta-era naming. If nothing unexpected surfaces, this is what 3.0.0 looks like.
+
+🚨 **Breaking Changes** — The `ui=` parameter is now `app=` with a unified `AppConfig` class, and 16 `FastMCP()` constructor kwargs have been removed after months of deprecation warnings.
+
+🔐 **Auth Improvements** — Async `auth=` checks, Static Client Registration for servers without DCR, and declarative Azure OBO flows via dependency injection.
+
+⚡ **Concurrent Sampling** — `context.sample()` can now execute multiple tool calls in parallel with `tool_concurrency=0`.
+
+📡 **Background Task Notifications** — A distributed Redis queue replaces polling for progress updates and elicitation relay.
+
+✅ **OpenAPI Output Validation** — `validate_output=False` disables strict schema checking for imperfect backend APIs.
+</Card>
+</Update>
+
+<Update label="FastMCP 3.0.0b2" description="February 7, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.0.0b2: 2 Fast 2 Beta"
+href="https://github.com/jlowin/fastmcp/releases/tag/v3.0.0b2"
+cta="Read the release notes"
+>
+Beta 2 reflects the huge number of people that kicked the tires on Beta 1. Seven new contributors landed changes, and early migration reports went smoother than expected. Most of Beta 2 is refinement — fixing what people found, filling gaps from real usage, hardening edges — but a few new features landed along the way.
+
+🖥️ **Client CLI** — `fastmcp list`, `fastmcp call`, `fastmcp discover`, and `fastmcp generate-cli` turn any MCP server into something you can poke at from a terminal.
+
+🔐 **CIMD** (Client ID Metadata Documents) adds an alternative to Dynamic Client Registration for OAuth.
+
+📱 **MCP Apps** — Spec-level compliance for the MCP Apps extension with `ui://` resource scheme and typed UI metadata.
+
+⏳ **Background Task Context** — `Context` now works transparently in Docket workers with Redis-based coordination.
+
+🛡️ **ResponseLimitingMiddleware** caps tool response sizes with UTF-8-safe truncation.
+
+🪿 **Goose Integration** — `fastmcp install goose` for one-command server installation into Goose.
+</Card>
+</Update>
+
 <Update label="FastMCP 3.0.0b1" description="January 20, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP 3.0.0b1: This Beta Work"
