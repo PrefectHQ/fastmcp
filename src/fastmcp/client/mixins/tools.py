@@ -73,12 +73,20 @@ class ClientToolsMixin:
         """
         all_tools: list[mcp.types.Tool] = []
         cursor: str | None = None
+        seen_cursors: set[str] = set()
 
         while True:
             result = await self.list_tools_mcp(cursor=cursor)
             all_tools.extend(result.tools)
-            if result.nextCursor is None:
+            if not result.nextCursor:
                 break
+            if result.nextCursor in seen_cursors:
+                logger.warning(
+                    f"[{self.name}] Server returned duplicate pagination cursor"
+                    f" {result.nextCursor!r} for list_tools; stopping pagination"
+                )
+                break
+            seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
 
         return all_tools

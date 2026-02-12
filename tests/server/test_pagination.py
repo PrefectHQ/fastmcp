@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
+import mcp.types
 import pytest
 from mcp.shared.exceptions import McpError
 
@@ -241,3 +244,193 @@ class TestPageSizeValidation:
             ValueError, match="list_page_size must be a positive integer"
         ):
             FastMCP(list_page_size=-1)
+
+
+class TestPaginationCycleDetection:
+    """Tests that auto-pagination terminates when the server returns cycling cursors."""
+
+    async def test_tools_constant_cursor_terminates(self) -> None:
+        """list_tools should stop if the server always returns the same cursor."""
+        server = FastMCP()
+
+        @server.tool
+        def my_tool() -> str:
+            return "ok"
+
+        async with Client(server) as client:
+            original = client.list_tools_mcp
+
+            async def returning_constant_cursor(
+                *,
+                cursor: str | None = None,
+            ) -> mcp.types.ListToolsResult:
+                result = await original(cursor=cursor)
+                result.nextCursor = "stuck"
+                return result
+
+            with patch.object(
+                client, "list_tools_mcp", side_effect=returning_constant_cursor
+            ):
+                tools = await client.list_tools()
+
+            # Should get tools from first page + one duplicate (the retry before
+            # detecting the cycle), then stop.
+            assert len(tools) == 2
+            assert all(t.name == "my_tool" for t in tools)
+
+    async def test_prompts_constant_cursor_terminates(self) -> None:
+        """list_prompts should stop if the server always returns the same cursor."""
+        server = FastMCP()
+
+        @server.prompt
+        def my_prompt() -> str:
+            return "text"
+
+        async with Client(server) as client:
+            original = client.list_prompts_mcp
+
+            async def returning_constant_cursor(
+                *,
+                cursor: str | None = None,
+            ) -> mcp.types.ListPromptsResult:
+                result = await original(cursor=cursor)
+                result.nextCursor = "stuck"
+                return result
+
+            with patch.object(
+                client, "list_prompts_mcp", side_effect=returning_constant_cursor
+            ):
+                prompts = await client.list_prompts()
+
+            assert len(prompts) == 2
+            assert all(p.name == "my_prompt" for p in prompts)
+
+    async def test_resources_constant_cursor_terminates(self) -> None:
+        """list_resources should stop if the server always returns the same cursor."""
+        server = FastMCP()
+
+        @server.resource("test://r")
+        def my_resource() -> str:
+            return "data"
+
+        async with Client(server) as client:
+            original = client.list_resources_mcp
+
+            async def returning_constant_cursor(
+                *,
+                cursor: str | None = None,
+            ) -> mcp.types.ListResourcesResult:
+                result = await original(cursor=cursor)
+                result.nextCursor = "stuck"
+                return result
+
+            with patch.object(
+                client, "list_resources_mcp", side_effect=returning_constant_cursor
+            ):
+                resources = await client.list_resources()
+
+            assert len(resources) == 2
+            assert all(r.name == "my_resource" for r in resources)
+
+    async def test_resource_templates_constant_cursor_terminates(self) -> None:
+        """list_resource_templates should stop if the server always returns the same cursor."""
+        server = FastMCP()
+
+        @server.resource("test://items/{item_id}")
+        def my_template(item_id: str) -> str:
+            return item_id
+
+        async with Client(server) as client:
+            original = client.list_resource_templates_mcp
+
+            async def returning_constant_cursor(
+                *,
+                cursor: str | None = None,
+            ) -> mcp.types.ListResourceTemplatesResult:
+                result = await original(cursor=cursor)
+                result.nextCursor = "stuck"
+                return result
+
+            with patch.object(
+                client,
+                "list_resource_templates_mcp",
+                side_effect=returning_constant_cursor,
+            ):
+                templates = await client.list_resource_templates()
+
+            assert len(templates) == 2
+
+    async def test_cycling_cursors_terminates(self) -> None:
+        """list_tools should stop if the server cycles through a set of cursors."""
+        server = FastMCP()
+
+        @server.tool
+        def my_tool() -> str:
+            return "ok"
+
+        async with Client(server) as client:
+            call_count = 0
+            original = client.list_tools_mcp
+
+            async def returning_cycling_cursor(
+                *,
+                cursor: str | None = None,
+            ) -> mcp.types.ListToolsResult:
+                nonlocal call_count
+                result = await original(cursor=cursor)
+                # Cycle through A -> B -> C -> A
+                cursors = ["A", "B", "C"]
+                result.nextCursor = cursors[call_count % 3]
+                call_count += 1
+                return result
+
+            with patch.object(
+                client, "list_tools_mcp", side_effect=returning_cycling_cursor
+            ):
+                tools = await client.list_tools()
+
+            # A, B, C seen, then A is a duplicate → 4 calls total
+            assert call_count == 4
+            assert len(tools) == 4
+
+    async def test_empty_string_cursor_terminates(self) -> None:
+        """list_tools should stop if the server returns an empty string cursor."""
+        server = FastMCP()
+
+        @server.tool
+        def my_tool() -> str:
+            return "ok"
+
+        async with Client(server) as client:
+            original = client.list_tools_mcp
+
+            async def returning_empty_cursor(
+                *,
+                cursor: str | None = None,
+            ) -> mcp.types.ListToolsResult:
+                result = await original(cursor=cursor)
+                result.nextCursor = ""
+                return result
+
+            with patch.object(
+                client, "list_tools_mcp", side_effect=returning_empty_cursor
+            ):
+                tools = await client.list_tools()
+
+            assert len(tools) == 1
+            assert tools[0].name == "my_tool"
+
+    async def test_normal_pagination_unaffected(self) -> None:
+        """Cycle detection should not interfere with normal pagination."""
+        server = FastMCP(list_page_size=10)
+
+        for i in range(25):
+
+            @server.tool(name=f"tool_{i}")
+            def make_tool() -> str:
+                return "ok"
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 25
+            assert len({t.name for t in tools}) == 25

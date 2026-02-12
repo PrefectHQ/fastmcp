@@ -423,12 +423,16 @@ class Context:
         """
         all_items: list[Any] = []
         cursor: str | None = None
+        seen_cursors: set[str] = set()
         while True:
             request = request_factory(cursor)
             result = await call_method(request)
             all_items.extend(extract_items(result))
-            if result.nextCursor is None:
+            if not result.nextCursor:
                 break
+            if result.nextCursor in seen_cursors:
+                break
+            seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
         return all_items
 

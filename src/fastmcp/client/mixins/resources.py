@@ -69,12 +69,20 @@ class ClientResourcesMixin:
         """
         all_resources: list[mcp.types.Resource] = []
         cursor: str | None = None
+        seen_cursors: set[str] = set()
 
         while True:
             result = await self.list_resources_mcp(cursor=cursor)
             all_resources.extend(result.resources)
-            if result.nextCursor is None:
+            if not result.nextCursor:
                 break
+            if result.nextCursor in seen_cursors:
+                logger.warning(
+                    f"[{self.name}] Server returned duplicate pagination cursor"
+                    f" {result.nextCursor!r} for list_resources; stopping pagination"
+                )
+                break
+            seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
 
         return all_resources
@@ -119,12 +127,21 @@ class ClientResourcesMixin:
         """
         all_templates: list[mcp.types.ResourceTemplate] = []
         cursor: str | None = None
+        seen_cursors: set[str] = set()
 
         while True:
             result = await self.list_resource_templates_mcp(cursor=cursor)
             all_templates.extend(result.resourceTemplates)
-            if result.nextCursor is None:
+            if not result.nextCursor:
                 break
+            if result.nextCursor in seen_cursors:
+                logger.warning(
+                    f"[{self.name}] Server returned duplicate pagination cursor"
+                    f" {result.nextCursor!r} for list_resource_templates;"
+                    " stopping pagination"
+                )
+                break
+            seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
 
         return all_templates
