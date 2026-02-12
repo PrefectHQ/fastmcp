@@ -91,6 +91,20 @@ await ctx.set_state("key", "value")
 value = await ctx.get_state("key")
 ```
 
+#### State Values Must Be Serializable
+
+Session state values must now be JSON-serializable by default (dicts, lists, strings, numbers, etc.), since state is persisted across requests using a pluggable storage backend.
+
+If you need to store non-serializable values (e.g., passing an HTTP client from middleware to a tool), use `serializable=False`. These values are request-scoped and only available during the current tool call, resource read, or prompt render:
+
+```python
+# Middleware sets up a client for the current request
+await ctx.set_state("client", my_http_client, serializable=False)
+
+# Tool retrieves it in the same request
+client = await ctx.get_state("client")
+```
+
 #### Server Banner Environment Variable Renamed
 
 `FASTMCP_SHOW_CLI_BANNER` is now `FASTMCP_SHOW_SERVER_BANNER`.

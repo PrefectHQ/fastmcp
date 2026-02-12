@@ -161,6 +161,9 @@ class Context:
         await ctx.set_state("key", "value")
         value = await ctx.get_state("key")
 
+        # Store non-serializable values for the current request only
+        await ctx.set_state("client", http_client, serializable=False)
+
         return str(x)
     ```
 
@@ -194,6 +197,8 @@ class Context:
         self._tokens: list[Token] = []
         # Background task support (SEP-1686)
         self._task_id: str | None = task_id
+        # Request-scoped state for non-serializable values (serializable=False)
+        self._request_state: dict[str, Any] = {}
 
     @property
     def is_background_task(self) -> bool:
@@ -1156,32 +1161,69 @@ class Context:
         """Create session-prefixed key for state storage."""
         return f"{self.session_id}:{key}"
 
-    async def set_state(self, key: str, value: Any) -> None:
-        """Set a value in the session-scoped state store.
+    async def set_state(
+        self, key: str, value: Any, *, serializable: bool = True
+    ) -> None:
+        """Set a value in the state store.
 
-        Values persist across requests within the same MCP session.
+        By default, values are stored in the session-scoped state store and
+        persist across requests within the same MCP session. Values must be
+        JSON-serializable (dicts, lists, strings, numbers, etc.).
+
+        For non-serializable values (e.g., HTTP clients, database connections),
+        pass ``serializable=False``. These values are stored in a request-scoped
+        dict and only live for the current MCP request (tool call, resource
+        read, or prompt render). They will not be available in subsequent
+        requests.
+
         The key is automatically prefixed with the session identifier.
-        State expires after 1 day to prevent unbounded memory growth.
         """
         prefixed_key = self._make_state_key(key)
-        await self.fastmcp._state_store.put(
-            key=prefixed_key,
-            value=StateValue(value=value),
-            ttl=self._STATE_TTL_SECONDS,
-        )
+        if not serializable:
+            self._request_state[prefixed_key] = value
+            return
+        # Clear any request-scoped shadow so the session value is visible
+        self._request_state.pop(prefixed_key, None)
+        try:
+            await self.fastmcp._state_store.put(
+                key=prefixed_key,
+                value=StateValue(value=value),
+                ttl=self._STATE_TTL_SECONDS,
+            )
+        except Exception as e:
+            # Catch serialization errors from Pydantic (ValueError) or
+            # the key_value library (SerializationError). Both contain
+            # "serialize" in the message. Other exceptions propagate as-is.
+            if "serialize" in str(e).lower():
+                raise TypeError(
+                    f"Value for state key {key!r} is not serializable. "
+                    f"Use set_state({key!r}, value, serializable=False) to store "
+                    f"non-serializable values. Note: non-serializable state is "
+                    f"request-scoped and will not persist across requests."
+                ) from e
+            raise
 
     async def get_state(self, key: str) -> Any:
-        """Get a value from the session-scoped state store.
+        """Get a value from the state store.
+
+        Checks request-scoped state first (set with ``serializable=False``),
+        then falls back to the session-scoped state store.
 
         Returns None if the key is not found.
         """
         prefixed_key = self._make_state_key(key)
+        if prefixed_key in self._request_state:
+            return self._request_state[prefixed_key]
         result = await self.fastmcp._state_store.get(key=prefixed_key)
         return result.value if result is not None else None
 
     async def delete_state(self, key: str) -> None:
-        """Delete a value from the session-scoped state store."""
+        """Delete a value from the state store.
+
+        Removes from both request-scoped and session-scoped stores.
+        """
         prefixed_key = self._make_state_key(key)
+        self._request_state.pop(prefixed_key, None)
         await self.fastmcp._state_store.delete(key=prefixed_key)
 
     # -------------------------------------------------------------------------
