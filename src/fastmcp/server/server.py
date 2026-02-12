@@ -368,6 +368,18 @@ class FastMCP(
         else:
             return list(self._mcp_server.icons)
 
+    @property
+    def local_provider(self) -> LocalProvider:
+        """The server's local provider, which stores directly-registered components.
+
+        Use this to remove components:
+
+            mcp.local_provider.remove_tool("my_tool")
+            mcp.local_provider.remove_resource("data://info")
+            mcp.local_provider.remove_prompt("my_prompt")
+        """
+        return self._local_provider
+
     async def _run_middleware(
         self,
         context: MiddlewareContext[Any],
@@ -1257,6 +1269,9 @@ class FastMCP(
     def remove_tool(self, name: str, version: str | None = None) -> None:
         """Remove tool(s) from the server.
 
+        .. deprecated::
+            Use ``mcp.local_provider.remove_tool(name)`` instead.
+
         Args:
             name: The name of the tool to remove.
             version: If None, removes ALL versions. If specified, removes only that version.
@@ -1264,6 +1279,13 @@ class FastMCP(
         Raises:
             NotFoundError: If no matching tool is found.
         """
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "remove_tool() is deprecated. Use "
+                "mcp.local_provider.remove_tool(name) instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         try:
             self._local_provider.remove_tool(name, version)
         except KeyError:

@@ -53,8 +53,8 @@ class TestDynamicChanges:
         tools = await main_app.list_tools()
         assert any(t.name == "sub_temp_tool" for t in tools)
 
-        # Remove the tool from sub_app using public API
-        sub_app.remove_tool("temp_tool")
+        # Remove the tool from sub_app
+        sub_app.local_provider.remove_tool("temp_tool")
 
         # The tool should no longer be accessible
         tools = await main_app.list_tools()

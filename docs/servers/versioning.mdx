@@ -293,14 +293,14 @@ If the requested version doesn't exist, a `NotFoundError` is raised.
 
 ## Removing Versions
 
-The `remove_tool`, `remove_resource`, and `remove_prompt` methods accept an optional `version` parameter that controls what gets removed.
+The `remove_tool`, `remove_resource`, and `remove_prompt` methods on the server's [local provider](/servers/providers/local) accept an optional `version` parameter that controls what gets removed.
 
 ```python
 # Remove ALL versions of a component
-mcp.remove_tool("calculate")
+mcp.local_provider.remove_tool("calculate")
 
 # Remove only a specific version
-mcp.remove_tool("calculate", version="1.0")
+mcp.local_provider.remove_tool("calculate", version="1.0")
 ```
 
 When you remove a specific version, other versions remain registered. When you remove without specifying a version, all versions are removed.
@@ -332,5 +332,5 @@ Clients automatically see version 2.0 (the highest). During the transition, your
 Once the migration is complete, remove the old version.
 
 ```python
-mcp.remove_tool("process_data", version="1.0")
+mcp.local_provider.remove_tool("process_data", version="1.0")
 ```
