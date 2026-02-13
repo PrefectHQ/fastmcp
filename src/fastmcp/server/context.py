@@ -191,12 +191,14 @@ class Context:
         session: ServerSession | None = None,
         *,
         task_id: str | None = None,
+        origin_request_id: str | None = None,
     ):
         self._fastmcp: weakref.ref[FastMCP] = weakref.ref(fastmcp)
         self._session: ServerSession | None = session  # For state ops during init
         self._tokens: list[Token] = []
         # Background task support (SEP-1686)
         self._task_id: str | None = task_id
+        self._origin_request_id: str | None = origin_request_id
         # Request-scoped state for non-serializable values (serializable=False)
         self._request_state: dict[str, Any] = {}
 
@@ -226,6 +228,18 @@ class Context:
         Returns None if not running in a background task context.
         """
         return self._task_id
+
+    @property
+    def origin_request_id(self) -> str | None:
+        """Get the request ID that originated this execution, if available.
+
+        In foreground request mode, this is the current request_id.
+        In background task mode, this is the request_id captured when the task
+        was submitted, if one was available.
+        """
+        if self.request_context is not None:
+            return str(self.request_context.request_id)
+        return self._origin_request_id
 
     @property
     def fastmcp(self) -> FastMCP:
@@ -533,13 +547,14 @@ class Context:
             extra: Optional mapping for additional arguments
         """
         data = LogData(msg=message, extra=extra)
+        related_request_id = self.origin_request_id
 
         await _log_to_server_and_client(
             data=data,
             session=self.session,
             level=level or "info",
             logger_name=logger_name,
-            related_request_id=self.request_id,
+            related_request_id=related_request_id,
         )
 
     @property
