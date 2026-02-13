@@ -429,6 +429,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 salt="fastmcp-storage-encryption-key",
             )
 
+            # FileTreeStore emits a UserWarning because its API is marked
+            # as unstable (stable_api=False in py-key-value).
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", UserWarning)
                 file_store = FileTreeStore(
