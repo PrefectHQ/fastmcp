@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import time
+import warnings
 from base64 import urlsafe_b64encode
 from typing import Any
 from urllib.parse import urlencode, urlparse, urlunparse
@@ -31,6 +32,11 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client
 from cryptography.fernet import Fernet
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1CollectionSanitizationStrategy,
+    FileTreeV1KeySanitizationStrategy,
+)
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.server.auth.handlers.metadata import MetadataHandler
 from mcp.server.auth.provider import (
@@ -292,7 +298,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             extra_token_params: Additional parameters to forward to the upstream token endpoint.
                 Useful for provider-specific parameters during token exchange.
             client_storage: Storage backend for OAuth state (client registrations, tokens).
-                If None, an encrypted DiskStore will be created in the data directory.
+                If None, an encrypted file store will be created in the data directory.
             jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes).
                 If bytes are provided, they will be used as-is.
                 If a string is provided, it will be derived into a 32-byte key using PBKDF2 (1.2M iterations).
@@ -413,17 +419,30 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # JWTIssuer will be created in set_mcp_path() with correct audience
         self._jwt_issuer: JWTIssuer | None = None
 
-        # If the user does not provide a store, we will provide an encrypted disk store
+        # If the user does not provide a store, we will provide an encrypted file store
         if client_storage is None:
-            # Import lazily to avoid sqlite3 dependency when not using OAuthProxy
-            from key_value.aio.stores.disk import DiskStore
+            storage_dir = settings.home / "oauth-proxy"
+            storage_dir.mkdir(parents=True, exist_ok=True)
 
             storage_encryption_key = derive_jwt_key(
                 high_entropy_material=jwt_signing_key.decode(),
                 salt="fastmcp-storage-encryption-key",
             )
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                file_store = FileTreeStore(
+                    data_directory=storage_dir,
+                    key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(
+                        storage_dir
+                    ),
+                    collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(
+                        storage_dir
+                    ),
+                )
+
             client_storage = FernetEncryptionWrapper(
-                key_value=DiskStore(directory=settings.home / "oauth-proxy"),
+                key_value=file_store,
                 fernet=Fernet(key=storage_encryption_key),
             )
 

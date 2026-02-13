@@ -2,12 +2,18 @@
 
 import sys
 import tempfile
+import warnings
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import mcp.types
 import pytest
 from inline_snapshot import snapshot
-from key_value.aio.stores.disk import DiskStore
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1CollectionSanitizationStrategy,
+    FileTreeV1KeySanitizationStrategy,
+)
 from key_value.aio.stores.memory import MemoryStore
 from key_value.aio.wrappers.statistics.wrapper import (
     GetStatistics,
@@ -281,7 +287,7 @@ class TestResponseCachingMiddleware:
 class TestResponseCachingMiddlewareIntegration:
     """Integration tests with real FastMCP server."""
 
-    @pytest.fixture(params=["memory", "disk"])
+    @pytest.fixture(params=["memory", "filetree"])
     async def caching_server(
         self,
         tracking_calculator: TrackingCalculator,
@@ -291,9 +297,21 @@ class TestResponseCachingMiddlewareIntegration:
         mcp = FastMCP("CachingTestServer", dereference_schemas=False)
 
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
-            disk_store: DiskStore = DiskStore(directory=temp_dir)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                file_store = FileTreeStore(
+                    data_directory=Path(temp_dir),
+                    key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(
+                        Path(temp_dir)
+                    ),
+                    collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(
+                        Path(temp_dir)
+                    ),
+                )
             response_caching_middleware = ResponseCachingMiddleware(
-                cache_storage=disk_store if request.param == "disk" else MemoryStore(),
+                cache_storage=file_store
+                if request.param == "filetree"
+                else MemoryStore(),
             )
 
             mcp.add_middleware(middleware=response_caching_middleware)
@@ -303,8 +321,6 @@ class TestResponseCachingMiddlewareIntegration:
             tracking_calculator.add_prompts(fastmcp=mcp)
 
             yield mcp
-
-            await disk_store.close()
 
     @pytest.fixture
     def non_caching_server(self, tracking_calculator: TrackingCalculator):
