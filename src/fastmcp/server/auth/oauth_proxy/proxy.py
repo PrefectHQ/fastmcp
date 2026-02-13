@@ -419,15 +419,20 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # JWTIssuer will be created in set_mcp_path() with correct audience
         self._jwt_issuer: JWTIssuer | None = None
 
-        # If the user does not provide a store, we will provide an encrypted file store
+        # If the user does not provide a store, we will provide an encrypted file store.
+        # The storage directory is derived from the encryption key so that different
+        # keys get isolated directories (e.g. two servers on the same machine with
+        # different keys won't collide). Decryption errors are treated as cache misses
+        # rather than hard failures, so key rotation just causes re-registration.
         if client_storage is None:
-            storage_dir = settings.home / "oauth-proxy"
-            storage_dir.mkdir(parents=True, exist_ok=True)
-
             storage_encryption_key = derive_jwt_key(
                 high_entropy_material=jwt_signing_key.decode(),
                 salt="fastmcp-storage-encryption-key",
             )
+
+            key_fingerprint = hashlib.sha256(storage_encryption_key).hexdigest()[:12]
+            storage_dir = settings.home / "oauth-proxy" / key_fingerprint
+            storage_dir.mkdir(parents=True, exist_ok=True)
 
             # FileTreeStore emits a UserWarning because its API is marked
             # as unstable (stable_api=False in py-key-value).
@@ -446,6 +451,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             client_storage = FernetEncryptionWrapper(
                 key_value=file_store,
                 fernet=Fernet(key=storage_encryption_key),
+                raise_on_decryption_error=False,
             )
 
         self._client_storage: AsyncKeyValue = client_storage
