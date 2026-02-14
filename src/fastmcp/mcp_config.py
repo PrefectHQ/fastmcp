@@ -76,7 +76,7 @@ def infer_transport_type_from_url(
 class _TransformingMCPServerMixin(FastMCPBaseModel):
     """A mixin that enables wrapping an MCP Server with tool transforms."""
 
-    tools: dict[str, ToolTransformConfig] = Field(...)
+    tools: dict[str, ToolTransformConfig] = Field(default_factory=dict)
     """The multi-tool transform to apply to the tools."""
 
     include_tags: set[str] | None = Field(
@@ -88,6 +88,27 @@ class _TransformingMCPServerMixin(FastMCPBaseModel):
         default=None,
         description="The tags to exclude in the proxy.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _require_at_least_one_transform_field(
+        cls, values: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Reject if none of the transforming fields are set.
+
+        This ensures that plain server configs (without tools, include_tags,
+        or exclude_tags) fall through to the base server types during union
+        validation, avoiding unnecessary proxy wrapping.
+        """
+        if isinstance(values, dict):
+            has_tools = bool(values.get("tools"))
+            has_include = values.get("include_tags") is not None
+            has_exclude = values.get("exclude_tags") is not None
+            if not (has_tools or has_include or has_exclude):
+                raise ValueError(
+                    "At least one of 'tools', 'include_tags', or 'exclude_tags' is required"
+                )
+        return values
 
     def _to_server_and_underlying_transport(
         self,

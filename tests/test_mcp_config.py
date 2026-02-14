@@ -150,6 +150,11 @@ def test_parse_mcpservers_discriminator():
             "args": ["hello"],
         },
         "test_server_two": {"command": "echo", "args": ["hello"], "tools": {}},
+        "test_server_three": {
+            "command": "echo",
+            "args": ["hello"],
+            "include_tags": ["my_tag"],
+        },
     }
 
     mcp_config = MCPConfig.from_dict(config)
@@ -157,8 +162,13 @@ def test_parse_mcpservers_discriminator():
     test_server: MCPServerTypes = mcp_config.mcpServers["test_server"]
     assert isinstance(test_server, StdioMCPServer)
 
+    # Empty tools dict with no tags is not a meaningful transform
     test_server_two: MCPServerTypes = mcp_config.mcpServers["test_server_two"]
-    assert isinstance(test_server_two, TransformingStdioMCPServer)
+    assert isinstance(test_server_two, StdioMCPServer)
+
+    # include_tags alone triggers transforming type
+    test_server_three: MCPServerTypes = mcp_config.mcpServers["test_server_three"]
+    assert isinstance(test_server_three, TransformingStdioMCPServer)
 
     canonical_mcp_config = CanonicalMCPConfig.from_dict(config)
 
@@ -736,6 +746,48 @@ async def test_multi_client_transform_with_filtering(tmp_path: Path):
         assert "test_1_subtract" not in tools_by_name
         assert "test_2_add" in tools_by_name
         assert "test_2_subtract" in tools_by_name
+
+
+@pytest.mark.flaky(retries=3)
+async def test_single_server_config_include_tags_filtering(tmp_path: Path):
+    """include_tags should filter tools even with a single server in the config."""
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP()
+
+        @mcp.tool(tags={"keep"})
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        @mcp.tool
+        def subtract(a: int, b: int) -> int:
+            return a - b
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "test.py"
+    script_path.write_text(server_script)
+
+    config = {
+        "mcpServers": {
+            "test": {
+                "command": "python",
+                "args": [str(script_path)],
+                "include_tags": ["keep"],
+            },
+        }
+    }
+
+    client = Client(config)
+
+    async with client:
+        tools = await client.list_tools()
+        tool_names = {tool.name for tool in tools}
+        assert "add" in tool_names
+        assert "subtract" not in tool_names
 
 
 async def test_multi_client_with_elicitation(tmp_path: Path):
