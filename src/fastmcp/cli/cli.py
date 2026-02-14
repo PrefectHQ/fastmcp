@@ -134,8 +134,12 @@ def version(
             console.print("[dim]Run: pip install --upgrade fastmcp[/dim]")
 
 
-@app.command
-async def dev(
+# Create dev subcommand group
+dev_app = cyclopts.App(name="dev", help="Development tools for MCP servers")
+
+
+@dev_app.command
+async def inspector(
     server_spec: str | None = None,
     *,
     with_editable: Annotated[
@@ -945,6 +949,9 @@ async def prepare(
         console.print(f"[bold red]✗[/bold red] Failed to prepare project: {e}")
         sys.exit(1)
 
+
+# Add dev subcommand group
+app.command(dev_app)
 
 # Add project subcommand group
 app.command(project_app)
