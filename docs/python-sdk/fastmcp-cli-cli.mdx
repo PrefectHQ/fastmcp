@@ -37,10 +37,10 @@ version()
 Display version information and platform details.
 
 
-### `dev` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L138" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `inspector` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-dev(server_spec: str | None = None) -> None
+inspector(server_spec: str | None = None) -> None
 ```
 
 
@@ -50,7 +50,7 @@ Run an MCP server with the MCP Inspector for development.
 - `server_spec`: Python file to run, optionally with \:object suffix, or None to auto-detect fastmcp.json
 
 
-### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L318" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L322" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(server_spec: str | None = None, *server_args: str) -> None
@@ -74,7 +74,7 @@ fastmcp run server.py -- --config config.json --debug
 - `server_spec`: Python file, object specification (file\:obj), config file, URL, or None to auto-detect
 
 
-### `inspect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L620" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `inspect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L624" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 inspect(server_spec: str | None = None) -> None
@@ -105,7 +105,7 @@ fastmcp inspect  # auto-detect fastmcp.json
 - `server_spec`: Python file to inspect, optionally with \:object suffix, or fastmcp.json
 
 
-### `prepare` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L862" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `prepare` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L866" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prepare(config_path: Annotated[str | None, cyclopts.Parameter(help='Path to fastmcp.json configuration file')] = None, output_dir: Annotated[str | None, cyclopts.Parameter(help='Directory to create the persistent environment in')] = None, skip_source: Annotated[bool, cyclopts.Parameter(help='Skip source preparation (e.g., git clone)')] = False) -> None
