@@ -1,0 +1,20 @@
+---
+title: bm25
+sidebarTitle: bm25
+---
+
+# `fastmcp.server.transforms.search.bm25`
+
+
+BM25-based search transform.
+
+## Classes
+
+### `BM25SearchTransform` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/transforms/search/bm25.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Search transform using BM25 Okapi relevance ranking.
+
+Maintains an in-memory index that is lazily rebuilt when the tool
+catalog changes (detected via a hash of tool names).
+
