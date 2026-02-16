@@ -1,0 +1,17 @@
+name: Minimize Resolved Reviews
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  minimize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Minimize resolved review comments
+        uses: strawgate/minimize-resolved-pr-reviews@v0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
