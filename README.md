@@ -3,7 +3,7 @@
 <!-- omit in toc -->
 
 <picture>
-  <source width="550" media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/f-watercolor-waves-dark-2.png">
+  <source width="550" media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/f-watercolor-waves-dark-2.jpeg">
   <source width="550" media="(prefers-color-scheme: light)" srcset="docs/assets/brand/f-watercolor-waves-2.png">
   <img width="550" alt="FastMCP Logo" src="docs/assets/brand/f-watercolor-waves-2.png">
 </picture>
