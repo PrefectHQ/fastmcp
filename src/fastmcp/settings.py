@@ -227,6 +227,9 @@ class Settings(BaseSettings):
         ),
     ] = None
 
+    # Transport settings
+    transport: Literal["stdio", "http", "sse", "streamable-http"] = "stdio"
+
     # HTTP settings
     host: str = "127.0.0.1"
     port: int = 8000
