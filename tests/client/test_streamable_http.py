@@ -231,6 +231,26 @@ async def test_elicitation_tool(streamable_http_server: str, request):
         assert result.data == "You said your name was: Alice!"
 
 
+@pytest.mark.parametrize("streamable_http_server", [True], indirect=True)
+async def test_stateless_http_rejects_get_sse(streamable_http_server: str):
+    """Stateless servers should reject GET SSE requests with 405."""
+    import httpx
+
+    async with httpx.AsyncClient() as http_client:
+        response = await http_client.get(streamable_http_server)
+        assert response.status_code == 405
+
+
+@pytest.mark.parametrize("streamable_http_server", [True], indirect=True)
+async def test_stateless_http_still_accepts_post(streamable_http_server: str):
+    """Stateless servers should still handle POST requests normally."""
+    async with Client(
+        transport=StreamableHttpTransport(streamable_http_server)
+    ) as client:
+        result = await client.call_tool("greet", {"name": "World"})
+        assert result.data == "Hello, World!"
+
+
 async def test_nested_streamable_http_server_resolves_correctly(nested_server: str):
     """Test patch for https://github.com/modelcontextprotocol/python-sdk/pull/659"""
     async with Client(transport=StreamableHttpTransport(nested_server)) as client:
