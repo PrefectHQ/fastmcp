@@ -63,6 +63,7 @@ class TestStreamableHTTPAppResourceMetadataURL:
         assert isinstance(route.endpoint, RequireAuthMiddleware)
         # Verify methods include GET, POST, DELETE for streamable-http
         expected_methods = {"GET", "POST", "DELETE"}
+        assert route.methods is not None
         assert expected_methods.issubset(set(route.methods))
 
     def test_no_auth_provider_mounts_without_middleware(self, rsa_key_pair):
