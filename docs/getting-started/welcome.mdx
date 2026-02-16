@@ -1,8 +1,9 @@
 ---
-title: "Welcome to FastMCP 3.0!"
+title: "Welcome to FastMCP"
 sidebarTitle: "Welcome!"
-description: The fast, Pythonic way to build MCP servers and clients.
+description: The fast, Pythonic way to build MCP servers, clients, and applications.
 icon: hand-wave
+mode: center
 ---
 <img
   src="/assets/brand/f-watercolor-waves-2.png"
@@ -19,7 +20,7 @@ icon: hand-wave
   />
 
 
-**FastMCP is the standard framework for building MCP applications.** The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) provides a standardized way to connect LLMs to tools and data, and FastMCP makes it production-ready with clean, Pythonic code:
+**FastMCP is the standard framework for building MCP applications.** The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) connects LLMs to tools and data. FastMCP gives you everything you need to go from idea to production — build servers that expose capabilities, connect clients to any MCP service, and give your tools interactive UIs:
 
 ```python {1}
 from fastmcp import FastMCP
@@ -35,31 +36,34 @@ if __name__ == "__main__":
     mcp.run()
 ```
 
-<Tip>
-**This documentation is for FastMCP 3.0**, which is currently a release candidate. For the 2.x release, see the [FastMCP 2.0 documentation](/v2/getting-started/welcome).
-</Tip>
-
-FastMCP is made with 💙 by [Prefect](https://www.prefect.io/).
 
 ## Move Fast and Make Things
 
-The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) lets you give agents access to your tools and data. But building an effective MCP server is harder than it looks.
+The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) lets you give agents access to your tools and data. But building an effective MCP application is harder than it looks.
 
-Give your agent too much—hundreds of tools, verbose responses—and it gets overwhelmed. Give it too little and it can't do its job. The protocol itself is complex, with layers of serialization, validation, and error handling that have nothing to do with your business logic. And the spec keeps evolving; what worked last month might already need updating.
+FastMCP handles all of it. Declare a tool with a Python function, and the schema, validation, and documentation are generated automatically. Connect to a server with a URL, and transport negotiation, authentication, and protocol lifecycle are managed for you. You focus on your logic, and the MCP part just works: **with FastMCP, best practices are built in.**
 
-The real challenge isn't implementing the protocol. It's delivering **the right information at the right time**.
+**That's why FastMCP is the standard framework for working with MCP.** FastMCP 1.0 was incorporated into the official MCP SDK in 2024. Today, the actively maintained standalone project is downloaded a million times a day, and some version of FastMCP powers 70% of MCP servers across all languages.
 
-That's the problem FastMCP solves—and why it's become the standard. FastMCP 1.0 was incorporated into the official MCP SDK in 2024. Today, the actively maintained standalone project is downloaded a million times a day, and some version of FastMCP powers 70% of MCP servers across all languages.
+FastMCP has three pillars:
 
-The framework is built on three abstractions that map to the decisions you actually need to make:
+<CardGroup cols={3}>
+  <Card title="Servers" img="/assets/images/servers-card.png" href="/servers/server">
+    Expose tools, resources, and prompts to LLMs.
+  </Card>
+  <Card title="Apps" img="/assets/images/apps-card.png" href="/apps/overview">
+    Give your tools interactive UIs rendered directly in the conversation.
+  </Card>
+  <Card title="Clients" img="/assets/images/clients-card.png" href="/clients/client">
+    Connect to any MCP server — local or remote, programmatic or CLI.
+  </Card>
+</CardGroup>
 
-- **[Components](/servers/tools)** are what you expose: tools, resources, and prompts. Wrap a Python function, and FastMCP handles the schema, validation, and docs.
-- **[Providers](/servers/providers/overview)** are where components come from: decorated functions, files on disk, OpenAPI specs, remote servers—your logic can live anywhere.
-- **[Transforms](/servers/transforms/transforms)** shape what clients see: namespacing, filtering, authorization, versioning. The same server can present differently to different users.
-
-These compose cleanly, so complex patterns don't require complex code. And because FastMCP is opinionated about the details, like serialization, error handling, and protocol compliance, **best practices are the path of least resistance**. You focus on your logic; the MCP part just works.
+**[Servers](/servers/server)** wrap your Python functions into MCP-compliant tools, resources, and prompts. **[Clients](/clients/client)** connect to any server with full protocol support. And **[Apps](/apps/overview)** give your tools interactive UIs rendered directly in the conversation.
 
 Ready to build? Start with the [installation guide](/getting-started/installation) or jump straight to the [quickstart](/getting-started/quickstart). When you're ready to deploy, [Prefect Horizon](https://www.prefect.io/horizon) offers free hosting for FastMCP users.
+
+FastMCP is made with 💙 by [Prefect](https://www.prefect.io/).
 
 <Tip>
 **This documentation reflects FastMCP's `main` branch**, meaning it always reflects the latest development version. Features are generally marked with version badges (e.g. `New in version: 3.0.0`) to indicate when they were introduced. Note that this may include features that are not yet released.
@@ -71,7 +75,7 @@ The FastMCP documentation is available in multiple LLM-friendly formats:
 
 ### MCP Server
 
-The FastMCP docs are accessible via MCP! The server URL is `https://gofastmcp.com/mcp`. 
+The FastMCP docs are accessible via MCP! The server URL is `https://gofastmcp.com/mcp`.
 
 In fact, you can use FastMCP to search the FastMCP docs:
 
@@ -82,7 +86,7 @@ from fastmcp import Client
 async def main():
     async with Client("https://gofastmcp.com/mcp") as client:
         result = await client.call_tool(
-            name="SearchFastMcp", 
+            name="SearchFastMcp",
             arguments={"query": "deploy a FastMCP server"}
         )
     print(result)
