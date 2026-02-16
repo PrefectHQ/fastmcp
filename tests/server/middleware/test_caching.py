@@ -297,7 +297,6 @@ class TestResponseCachingMiddlewareIntegration:
         mcp = FastMCP("CachingTestServer", dereference_schemas=False)
 
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
-            # FileTreeStore emits a UserWarning (stable_api=False)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", UserWarning)
                 file_store = FileTreeStore(

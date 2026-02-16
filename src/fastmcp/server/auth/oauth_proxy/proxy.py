@@ -434,8 +434,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             storage_dir = settings.home / "oauth-proxy" / key_fingerprint
             storage_dir.mkdir(parents=True, exist_ok=True)
 
-            # FileTreeStore emits a UserWarning because its API is marked
-            # as unstable (stable_api=False in py-key-value).
+            # FileTreeStore warns that its API is not yet stable.
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", UserWarning)
                 file_store = FileTreeStore(

@@ -33,11 +33,9 @@ class TestOAuthProxyStorage:
     async def temp_storage(self) -> AsyncGenerator[FileTreeStore, None]:
         """Create file-based storage for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            # FileTreeStore emits a UserWarning (stable_api=False)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", UserWarning)
-                file_store = FileTreeStore(data_directory=Path(temp_dir))
-            yield file_store
+                yield FileTreeStore(data_directory=Path(temp_dir))
 
     @pytest.fixture
     def memory_storage(self) -> MemoryStore:
