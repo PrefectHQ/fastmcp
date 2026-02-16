@@ -24,6 +24,8 @@ An MCP App has two parts:
 The tool declares which resource to use via `AppConfig`. When the host calls the tool, it also fetches the linked resource, renders it in a sandboxed iframe, and pushes the tool result into the app via `postMessage`. The app can also call tools back, enabling interactive workflows.
 
 ```python
+import json
+
 from fastmcp import FastMCP
 from fastmcp.server.apps import AppConfig, ResourceCSP
 
@@ -202,7 +204,7 @@ Hosts may or may not grant these permissions. Your app should use JavaScript fea
 
 ## Example: QR Code Server
 
-This example creates a tool that generates QR codes and an app that renders them as images. It's based on the [official MCP Apps example](https://github.com/modelcontextprotocol/ext-apps/tree/main/examples/qr-server).
+This example creates a tool that generates QR codes and an app that renders them as images. It's based on the [official MCP Apps example](https://github.com/modelcontextprotocol/ext-apps/tree/main/examples/qr-server). Requires the `qrcode[pil]` package.
 
 ```python expandable
 import base64
@@ -287,7 +289,8 @@ The tool generates a QR code as a base64 PNG. The resource loads the MCP Apps JS
 Not all hosts support the Apps extension. You can check at runtime using the tool's [context](/servers/context):
 
 ```python
-from fastmcp.server.apps import UI_EXTENSION_ID
+from fastmcp import Context
+from fastmcp.server.apps import AppConfig, UI_EXTENSION_ID
 
 @mcp.tool(app=AppConfig(resource_uri="ui://my-app/view.html"))
 async def my_tool(ctx: Context) -> str:
