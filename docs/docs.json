@@ -89,8 +89,7 @@
                   "getting-started/welcome",
                   "getting-started/installation",
                   "development/upgrade-guide",
-                  "getting-started/quickstart",
-                  "updates"
+                  "getting-started/quickstart"
                 ]
               },
               {
@@ -98,6 +97,7 @@
                 "pages": [
                   "servers/server",
                   {
+                    "collapsed": true,
                     "group": "Core Components",
                     "icon": "toolbox",
                     "pages": [
@@ -108,7 +108,9 @@
                     ]
                   },
                   {
+                    "collapsed": true,
                     "group": "Features",
+                    "tag": "NEW",
                     "icon": "stars",
                     "pages": [
                       "servers/tasks",
@@ -127,6 +129,36 @@
                     ]
                   },
                   {
+                    "collapsed": true,
+                    "group": "Providers",
+                    "tag": "NEW",
+                    "icon": "layer-group",
+                    "pages": [
+                      "servers/providers/overview",
+                      "servers/providers/local",
+                      "servers/providers/filesystem",
+                      "servers/providers/proxy",
+                      "servers/providers/skills",
+                      "servers/providers/custom",
+                      "servers/providers/mounting"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
+                    "group": "Transforms",
+                    "tag": "NEW",
+                    "icon": "wand-magic-sparkles",
+                    "pages": [
+                      "servers/transforms/transforms",
+                      "servers/transforms/namespace",
+                      "servers/transforms/tool-transformation",
+                      "servers/visibility",
+                      "servers/transforms/resources-as-tools",
+                      "servers/transforms/prompts-as-tools"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
                     "group": "Authentication",
                     "icon": "key",
                     "pages": [
@@ -138,40 +170,46 @@
                       "servers/auth/full-oauth-server"
                     ]
                   },
-                  "servers/authorization"
+                  "servers/authorization",
+                  {
+                    "collapsed": true,
+                    "group": "Deployment",
+                    "icon": "rocket",
+                    "pages": [
+                      "deployment/running-server",
+                      "deployment/http",
+                      "deployment/prefect-horizon",
+                      "deployment/server-configuration",
+                      "patterns/cli",
+                      "patterns/testing"
+                    ]
+                  }
                 ]
               },
               {
-                "group": "MCP Providers",
+                "group": "Apps",
                 "pages": [
-                  "servers/providers/overview",
-                  "servers/providers/local",
-                  "servers/providers/filesystem",
-                  "servers/providers/proxy",
-                  "servers/providers/skills",
-                  "servers/providers/custom",
-                  "servers/providers/mounting"
-                ]
-              },
-              {
-                "group": "MCP Transforms",
-                "pages": [
-                  "servers/transforms/transforms",
-                  "servers/transforms/namespace",
-                  "servers/transforms/tool-transformation",
-                  "servers/visibility",
-                  "servers/transforms/resources-as-tools",
-                  "servers/transforms/prompts-as-tools"
+                  "apps/overview",
+                  "apps/low-level"
                 ]
               },
               {
                 "group": "Clients",
                 "pages": [
                   "clients/client",
-                  "clients/cli",
-                  "clients/generate-cli",
                   "clients/transports",
                   {
+                    "collapsed": true,
+                    "group": "CLI",
+                    "tag": "NEW",
+                    "icon": "terminal",
+                    "pages": [
+                      "clients/cli",
+                      "clients/generate-cli"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
                     "group": "Core Operations",
                     "icon": "toolbox",
                     "pages": [
@@ -181,6 +219,7 @@
                     ]
                   },
                   {
+                    "collapsed": true,
                     "group": "Handlers",
                     "icon": "hand",
                     "pages": [
@@ -194,7 +233,9 @@
                     ]
                   },
                   {
+                    "collapsed": true,
                     "group": "Authentication",
+                    "tag": "NEW",
                     "icon": "key",
                     "pages": [
                       "clients/auth/oauth",
@@ -202,17 +243,6 @@
                       "clients/auth/bearer"
                     ]
                   }
-                ]
-              },
-              {
-                "group": "Deployment",
-                "pages": [
-                  "deployment/running-server",
-                  "deployment/http",
-                  "deployment/prefect-horizon",
-                  "deployment/server-configuration",
-                  "patterns/cli",
-                  "patterns/testing"
                 ]
               },
               {
@@ -240,6 +270,7 @@
                     ]
                   },
                   {
+                    "collapsed": true,
                     "group": "Web Frameworks",
                     "icon": "code",
                     "pages": [
@@ -279,6 +310,7 @@
                   "development/contributing",
                   "development/tests",
                   "development/releases",
+                  "updates",
                   "changelog",
                   "patterns/contrib"
                 ]
@@ -667,7 +699,7 @@
             "icon": "code"
           }
         ],
-        "version": "v3.0.0 (rc 1)"
+        "version": "v3.0.0 (rc 2)"
       },
       {
         "dropdowns": [
