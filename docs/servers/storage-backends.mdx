@@ -38,39 +38,38 @@ cache_store = MemoryStore()
 - ❌ Data lost on restart
 - ❌ Not suitable for multi-process deployments
 
-### Disk Storage
+### File Storage
 
 **Best for:** Single-server production deployments, persistent caching
 
-Disk storage persists data to the filesystem, allowing it to survive server restarts.
+File storage persists data to the filesystem as one JSON file per key, allowing it to survive server restarts. This is the default backend for OAuth storage on Mac and Windows.
 
 ```python
-from key_value.aio.stores.disk import DiskStore
+from pathlib import Path
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1KeySanitizationStrategy,
+    FileTreeV1CollectionSanitizationStrategy,
+)
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 
+storage_dir = Path("/var/cache/fastmcp")
+store = FileTreeStore(
+    data_directory=storage_dir,
+    key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(storage_dir),
+    collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(storage_dir),
+)
+
 # Persistent response cache
-middleware = ResponseCachingMiddleware(
-    cache_storage=DiskStore(directory="/var/cache/fastmcp")
-)
+middleware = ResponseCachingMiddleware(cache_storage=store)
 ```
 
-Or with OAuth token storage:
-
-```python
-from fastmcp.server.auth.providers.github import GitHubProvider
-from key_value.aio.stores.disk import DiskStore
-
-auth = GitHubProvider(
-    client_id="your-id",
-    client_secret="your-secret",
-    base_url="https://your-server.com",
-    client_storage=DiskStore(directory="/var/lib/fastmcp/oauth")
-)
-```
+The sanitization strategies ensure keys and collection names are safe for the filesystem — alphanumeric names pass through as-is for readability, while special characters are hashed to prevent path traversal.
 
 **Characteristics:**
 - ✅ Data persists across restarts
-- ✅ Good performance for moderate load
+- ✅ No external dependencies
+- ✅ Human-readable files on disk
 - ❌ Not suitable for distributed deployments
 - ❌ Filesystem access required
 
@@ -203,16 +202,26 @@ Both parameters are required for production. **Wrap your storage in `FernetEncry
 The [Response Caching Middleware](/servers/middleware#caching-middleware) caches tool calls, resource reads, and prompt requests. Storage configuration is passed via the `cache_storage` parameter:
 
 ```python
+from pathlib import Path
 from fastmcp import FastMCP
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
-from key_value.aio.stores.disk import DiskStore
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1KeySanitizationStrategy,
+    FileTreeV1CollectionSanitizationStrategy,
+)
 
 mcp = FastMCP("My Server")
 
+cache_dir = Path("cache")
+cache_store = FileTreeStore(
+    data_directory=cache_dir,
+    key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(cache_dir),
+    collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(cache_dir),
+)
+
 # Cache to disk instead of memory
-mcp.add_middleware(ResponseCachingMiddleware(
-    cache_storage=DiskStore(directory="cache")
-))
+mcp.add_middleware(ResponseCachingMiddleware(cache_storage=cache_store))
 ```
 
 For multi-server deployments sharing a Redis instance:
@@ -236,11 +245,21 @@ middleware = ResponseCachingMiddleware(cache_storage=namespaced_store)
 The [FastMCP Client](/clients/client) uses storage for persisting OAuth tokens locally. By default, tokens are stored in memory:
 
 ```python
+from pathlib import Path
 from fastmcp.client.auth import OAuthClientProvider
-from key_value.aio.stores.disk import DiskStore
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1KeySanitizationStrategy,
+    FileTreeV1CollectionSanitizationStrategy,
+)
 
 # Store tokens on disk for persistence across restarts
-token_storage = DiskStore(directory="~/.local/share/fastmcp/tokens")
+token_dir = Path("~/.local/share/fastmcp/tokens").expanduser()
+token_storage = FileTreeStore(
+    data_directory=token_dir,
+    key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(token_dir),
+    collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(token_dir),
+)
 
 oauth_provider = OAuthClientProvider(
     mcp_url="https://your-mcp-server.com/mcp/sse",
@@ -255,7 +274,7 @@ This allows clients to reconnect without re-authenticating after restarts.
 | Backend | Development | Single Server | Multi-Server | Cloud Native |
 |---------|-------------|---------------|--------------|--------------|
 | Memory | ✅ Best | ⚠️ Limited | ❌ | ❌ |
-| Disk | ✅ Good | ✅ Recommended | ❌ | ⚠️ |
+| File | ✅ Good | ✅ Recommended | ❌ | ⚠️ |
 | Redis | ⚠️ Overkill | ✅ Good | ✅ Best | ✅ Best |
 | DynamoDB | ❌ | ⚠️ | ✅ | ✅ Best (AWS) |
 | MongoDB | ❌ | ⚠️ | ✅ | ✅ Good |
@@ -263,7 +282,7 @@ This allows clients to reconnect without re-authenticating after restarts.
 **Decision tree:**
 
 1. **Just starting?** Use **Memory** (default) - no configuration needed
-2. **Single server, needs persistence?** Use **Disk**
+2. **Single server, needs persistence?** Use **File**
 3. **Multiple servers or cloud deployment?** Use **Redis** or **DynamoDB**
 4. **Existing infrastructure?** Look for a matching py-key-value-aio backend
 

@@ -14,6 +14,38 @@ Most servers need only one change: update your import from `from mcp.server.fast
 
 ### Breaking Changes
 
+#### OAuth Storage Backend Changed (diskcache CVE)
+
+The default OAuth storage has moved from `DiskStore` to `FileTreeStore` to address a pickle deserialization vulnerability in diskcache ([CVE-2025-69872](https://github.com/jlowin/fastmcp/issues/3166)).
+
+If you were using the default storage (i.e., not passing an explicit `client_storage`), clients will need to re-register on their first connection after upgrading. This happens automatically — no user action required, and it's the same flow that already occurs whenever a server restarts with in-memory storage. No code changes needed.
+
+If you were passing a `DiskStore` explicitly, you have two options:
+
+1. **Keep using DiskStore** by adding the dependency yourself. This re-introduces the vulnerable `diskcache` package into your dependency tree:
+
+```bash
+pip install 'py-key-value-aio[disk]'
+```
+
+2. **Switch to FileTreeStore** (recommended) or any other [storage backend](/servers/storage-backends):
+
+```python
+from pathlib import Path
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1KeySanitizationStrategy,
+    FileTreeV1CollectionSanitizationStrategy,
+)
+
+storage_dir = Path("/var/lib/fastmcp/oauth")
+store = FileTreeStore(
+    data_directory=storage_dir,
+    key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(storage_dir),
+    collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(storage_dir),
+)
+```
+
 #### WSTransport Removed
 
 Use `StreamableHttpTransport` instead.
