@@ -842,7 +842,7 @@ requires-dist = [
     { name = "opentelemetry-api", specifier = ">=1.20.0" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "platformdirs", specifier = ">=4.0.0" },
-    { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], specifier = ">=0.4.3,<0.5.0" },
+    { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], specifier = ">=0.4.4,<0.5.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.17.2" },
     { name = "pyperclip", specifier = ">=1.9.0" },
@@ -1814,15 +1814,15 @@ wheels = [
 
 [[package]]
 name = "py-key-value-aio"
-version = "0.4.3"
+version = "0.4.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beartype" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5b/ee/6a1a37ec67d670e65b349a06089589ddcca93fb0613c316e14b850113074/py_key_value_aio-0.4.3.tar.gz", hash = "sha256:ca1872c19cd84822b45129d66d87f708b116d08cf9e81006196878600eae21a2", size = 92289, upload-time = "2026-02-16T20:55:35.351Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/04/3c/0397c072a38d4bc580994b42e0c90c5f44f679303489e4376289534735e5/py_key_value_aio-0.4.4.tar.gz", hash = "sha256:e3012e6243ed7cc09bb05457bd4d03b1ba5c2b1ca8700096b3927db79ffbbe55", size = 92300, upload-time = "2026-02-16T21:21:43.245Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/44/2c/9e3b718d679e2716ac5dc0ba06cb3dfee42056fbab780b720065bc197b9b/py_key_value_aio-0.4.3-py3-none-any.whl", hash = "sha256:fbf71b193126e136cdfc095fd92ca75e611a1442bad6eb591b8b4fdb36a901c2", size = 152292, upload-time = "2026-02-16T20:55:36.228Z" },
+    { url = "https://files.pythonhosted.org/packages/32/69/f1b537ee70b7def42d63124a539ed3026a11a3ffc3086947a1ca6e861868/py_key_value_aio-0.4.4-py3-none-any.whl", hash = "sha256:18e17564ecae61b987f909fc2cd41ee2012c84b4b1dcb8c055cf8b4bc1bf3f5d", size = 152291, upload-time = "2026-02-16T21:21:44.241Z" },
 ]
 
 [package.optional-dependencies]

@@ -21,7 +21,6 @@ from __future__ import annotations
 import hashlib
 import secrets
 import time
-import warnings
 from base64 import urlsafe_b64encode
 from typing import Any
 from urllib.parse import urlencode, urlparse, urlunparse
@@ -434,18 +433,15 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             storage_dir = settings.home / "oauth-proxy" / key_fingerprint
             storage_dir.mkdir(parents=True, exist_ok=True)
 
-            # FileTreeStore warns that its API is not yet stable.
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", UserWarning)
-                file_store = FileTreeStore(
-                    data_directory=storage_dir,
-                    key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(
-                        storage_dir
-                    ),
-                    collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(
-                        storage_dir
-                    ),
-                )
+            file_store = FileTreeStore(
+                data_directory=storage_dir,
+                key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(
+                    storage_dir
+                ),
+                collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(
+                    storage_dir
+                ),
+            )
 
             client_storage = FernetEncryptionWrapper(
                 key_value=file_store,
