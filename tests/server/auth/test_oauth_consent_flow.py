@@ -1088,6 +1088,64 @@ class TestConsentBindingCookie:
             set_cookie_header = r2.headers.get("set-cookie", "")
             assert "__Host-MCP_CONSENT_BINDING" in set_cookie_header
 
+    async def test_parallel_flows_do_not_interfere(self, oauth_proxy_https):
+        """Multiple concurrent consent flows in the same browser must not clobber each other.
+
+        Uses two different clients so the second flow also shows a consent form
+        (auto-approve only kicks in for the same client+redirect pair).
+        """
+        txn1, _ = await _start_flow(
+            oauth_proxy_https, "client-par-a", "http://localhost:6010/callback"
+        )
+        txn2, _ = await _start_flow(
+            oauth_proxy_https, "client-par-b", "http://localhost:6011/callback"
+        )
+        app = Starlette(routes=oauth_proxy_https.get_routes())
+        with TestClient(app) as c:
+            # Approve first flow
+            consent1 = c.get(f"/consent?txn_id={txn1}")
+            csrf1 = _extract_csrf(consent1.text)
+            assert csrf1
+            for k, v in consent1.cookies.items():
+                c.cookies.set(k, v)
+            r1 = c.post(
+                "/consent",
+                data={"action": "approve", "txn_id": txn1, "csrf_token": csrf1},
+                follow_redirects=False,
+            )
+            assert r1.status_code in (302, 303)
+            for k, v in r1.cookies.items():
+                c.cookies.set(k, v)
+
+            # Approve second flow (different client, so consent form is shown)
+            consent2 = c.get(f"/consent?txn_id={txn2}")
+            csrf2 = _extract_csrf(consent2.text)
+            assert csrf2
+            for k, v in consent2.cookies.items():
+                c.cookies.set(k, v)
+            r2 = c.post(
+                "/consent",
+                data={"action": "approve", "txn_id": txn2, "csrf_token": csrf2},
+                follow_redirects=False,
+            )
+            assert r2.status_code in (302, 303)
+            for k, v in r2.cookies.items():
+                c.cookies.set(k, v)
+
+            # Both transactions should have consent tokens
+            txn1_model = await oauth_proxy_https._transaction_store.get(key=txn1)
+            txn2_model = await oauth_proxy_https._transaction_store.get(key=txn2)
+            assert txn1_model is not None and txn1_model.consent_token
+            assert txn2_model is not None and txn2_model.consent_token
+
+            # First flow's callback should still work (cookie has both bindings)
+            r_cb1 = c.get(
+                f"/auth/callback?code=fake&state={txn1}", follow_redirects=False
+            )
+            # Should NOT be 403 — the binding for txn1 should still be in the cookie.
+            # It will fail at token exchange (500) but not at consent verification.
+            assert r_cb1.status_code != 403
+
     async def test_idp_callback_rejects_missing_consent_cookie(self, oauth_proxy_https):
         """IdP callback must reject requests without the consent binding cookie.
 

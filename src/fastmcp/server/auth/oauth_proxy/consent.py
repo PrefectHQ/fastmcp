@@ -148,18 +148,49 @@ class ConsentMixin:
             path="/",
         )
 
-    def _set_consent_binding_cookie(
+    def _read_consent_bindings(self: OAuthProxy, request: Request) -> dict[str, str]:
+        """Read the consent binding map from the signed cookie.
+
+        Returns a dict of {txn_id: consent_token} for all pending flows.
+        """
+        cookie_name = self._cookie_name("MCP_CONSENT_BINDING")
+        raw = request.cookies.get(cookie_name) or request.cookies.get(
+            "__MCP_CONSENT_BINDING"
+        )
+        if not raw:
+            return {}
+        payload = self._verify_cookie(raw)
+        if not payload:
+            return {}
+        try:
+            data = json.loads(base64.b64decode(payload.encode()).decode())
+            if isinstance(data, dict):
+                return {str(k): str(v) for k, v in data.items()}
+        except Exception:
+            logger.debug("Failed to decode consent binding cookie")
+        return {}
+
+    def _write_consent_bindings(
         self: OAuthProxy,
         response: HTMLResponse | RedirectResponse,
-        consent_token: str,
+        bindings: dict[str, str],
     ) -> None:
-        """Set a signed consent binding cookie to prevent confused deputy attacks.
-
-        This cookie binds the browser that approved consent to the IdP callback,
-        ensuring a different browser cannot complete the OAuth flow.
-        """
+        """Write the consent binding map to a signed cookie."""
         name = self._cookie_name("MCP_CONSENT_BINDING")
-        signed_value = self._sign_cookie(consent_token)
+        if not bindings:
+            response.set_cookie(
+                name,
+                "",
+                max_age=0,
+                secure=self._is_https,
+                httponly=True,
+                samesite="lax",
+                path="/",
+            )
+            return
+        payload_bytes = json.dumps(bindings, separators=(",", ":")).encode()
+        payload_b64 = base64.b64encode(payload_bytes).decode()
+        signed_value = self._sign_cookie(payload_b64)
         response.set_cookie(
             name,
             signed_value,
@@ -170,38 +201,46 @@ class ConsentMixin:
             path="/",
         )
 
+    def _set_consent_binding_cookie(
+        self: OAuthProxy,
+        request: Request,
+        response: HTMLResponse | RedirectResponse,
+        txn_id: str,
+        consent_token: str,
+    ) -> None:
+        """Add a consent binding entry for a transaction.
+
+        This cookie binds the browser that approved consent to the IdP callback,
+        ensuring a different browser cannot complete the OAuth flow. Multiple
+        concurrent flows are supported by storing a map of txn_id → consent_token.
+        """
+        bindings = self._read_consent_bindings(request)
+        bindings[txn_id] = consent_token
+        self._write_consent_bindings(response, bindings)
+
     def _clear_consent_binding_cookie(
         self: OAuthProxy,
+        request: Request,
         response: HTMLResponse | RedirectResponse,
+        txn_id: str,
     ) -> None:
-        """Clear the consent binding cookie after successful IdP callback."""
-        name = self._cookie_name("MCP_CONSENT_BINDING")
-        response.set_cookie(
-            name,
-            "",
-            max_age=0,
-            secure=self._is_https,
-            httponly=True,
-            samesite="lax",
-            path="/",
-        )
+        """Remove a specific consent binding entry after successful callback."""
+        bindings = self._read_consent_bindings(request)
+        bindings.pop(txn_id, None)
+        self._write_consent_bindings(response, bindings)
 
     def _verify_consent_binding_cookie(
         self: OAuthProxy,
         request: Request,
+        txn_id: str,
         expected_token: str,
     ) -> bool:
-        """Verify the consent binding cookie matches the expected token."""
-        cookie_name = self._cookie_name("MCP_CONSENT_BINDING")
-        raw = request.cookies.get(cookie_name) or request.cookies.get(
-            "__MCP_CONSENT_BINDING"
-        )
-        if not raw:
+        """Verify the consent binding for a specific transaction."""
+        bindings = self._read_consent_bindings(request)
+        actual = bindings.get(txn_id)
+        if not actual:
             return False
-        payload = self._verify_cookie(raw)
-        if not payload:
-            return False
-        return hmac.compare_digest(payload, expected_token)
+        return hmac.compare_digest(actual, expected_token)
 
     def _build_upstream_authorize_url(
         self: OAuthProxy, txn_id: str, transaction: dict[str, Any]
@@ -277,7 +316,7 @@ class ConsentMixin:
             await self._transaction_store.put(key=txn_id, value=txn_model, ttl=15 * 60)
             upstream_url = self._build_upstream_authorize_url(txn_id, txn)
             response = RedirectResponse(url=upstream_url, status_code=302)
-            self._set_consent_binding_cookie(response, consent_token)
+            self._set_consent_binding_cookie(request, response, txn_id, consent_token)
             return response
 
         if client_key in denied:
@@ -404,7 +443,7 @@ class ConsentMixin:
             self._set_list_cookie(
                 response, "MCP_CONSENT_STATE", self._encode_list_cookie([]), max_age=60
             )
-            self._set_consent_binding_cookie(response, consent_token)
+            self._set_consent_binding_cookie(request, response, txn_id, consent_token)
             return response
 
         elif action == "deny":

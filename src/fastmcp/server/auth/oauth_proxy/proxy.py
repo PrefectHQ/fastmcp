@@ -1653,7 +1653,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     )
                     return HTMLResponse(content=html_content, status_code=403)
 
-                if not self._verify_consent_binding_cookie(request, consent_token):
+                if not self._verify_consent_binding_cookie(
+                    request, txn_id, consent_token
+                ):
                     logger.warning(
                         "Consent binding cookie missing or invalid for transaction %s "
                         "(possible confused deputy attack)",
@@ -1782,7 +1784,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             logger.debug(f"Forwarding to client callback for transaction {txn_id}")
 
             response = RedirectResponse(url=client_callback_url, status_code=302)
-            self._clear_consent_binding_cookie(response)
+            self._clear_consent_binding_cookie(request, response, txn_id)
             return response
 
         except Exception as e:
