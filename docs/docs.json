@@ -203,6 +203,7 @@
                   "apps/prefab",
                   "apps/mini-apps",
                   "apps/full-apps",
+                  "apps/generative-uis",
                   "apps/low-level"
                 ]
               },

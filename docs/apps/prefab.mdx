@@ -10,17 +10,21 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.1.0" />
 
-[Prefab UI](https://prefab.prefect.io) is a Python component library that gives your MCP tools rich, interactive UIs. You write Python — Prefab renders charts, tables, forms, and layouts directly inside the host client's conversation. No HTML. No JavaScript. No frontend build step.
-
 ```bash
 pip install "fastmcp[apps]"
 ```
 
-## The Idea
+## The Problem
 
-Most MCP tools return text. That's fine for simple answers, but some results — a sales chart, a sortable employee directory, a form that collects user input — deserve better than a JSON blob in a chat window.
+Building an MCP App from scratch means building a frontend: writing HTML, CSS, and JavaScript, bundling it, wiring up the `ext-apps` SDK for host communication, managing CSP policies, and keeping your tool's Python output in sync with what the JavaScript expects. For Python developers, this is a significant barrier — and for the kinds of UIs most tools need (a chart, a table, a form), it's a disproportionate amount of work.
 
-Prefab lets you describe those UIs in Python using composable components, and FastMCP handles everything else: registering the renderer, wiring up the protocol, and delivering the result to the host.
+The deeper issue is what happens *without* Apps at all. When an MCP tool queries a database and returns 500 rows, those rows go into the LLM's context window. The model burns tokens formatting them, the human reads a text summary, and nobody gets a good experience. The same data in a sortable, searchable table — presented directly to the human — is dramatically more useful and costs zero tokens.
+
+## The Approach
+
+Most tool UIs aren't full applications. They're focused, single-purpose views: a chart showing trends, a table of records the user can search through, a form collecting structured input. We call these **mini apps**, and they're what Prefab is designed for.
+
+[Prefab UI](https://prefab.prefect.io) is a Python component library with 45+ components — layouts, typography, charts, tables, forms, and interactive controls. You describe your UI using Python context managers, and it compiles to a JSON protocol that a shared renderer interprets. FastMCP handles registering the renderer, wiring the protocol, and delivering the result to the host. You write Python and get an interactive UI.
 
 ```python
 from prefab_ui.components import Column, Heading, BarChart, ChartSeries, Muted
@@ -54,7 +58,7 @@ When a host calls `revenue_chart`, the user sees an interactive chart with hover
 
 Setting `app=True` (or returning a `PrefabApp` type) tells FastMCP to:
 
-1. **Register a shared renderer** — a `ui://prefab/renderer.html` resource containing the Prefab rendering engine, fetched once and reused across tools
+1. **Register a shared renderer** — a `ui://prefab/renderer.html` resource containing the rendering engine, fetched once and reused across all your tools
 2. **Wire the tool metadata** — so the host knows to load the renderer iframe when calling the tool
 3. **Serialize the component tree** — your Python components become `structuredContent` on the tool result, which the renderer interprets and displays
 
@@ -62,7 +66,7 @@ You don't manage resources, write HTML, or think about the MCP Apps protocol. Yo
 
 ## Building UIs
 
-Prefab uses Python context managers for layout composition. Components created inside a `with` block automatically become children of the parent:
+Prefab uses Python context managers for layout composition. Components created inside a `with` block become children of the parent:
 
 ```python
 from prefab_ui.components import Column, Row, Card, CardContent, Heading, Text, Badge
@@ -80,8 +84,6 @@ with Column(gap=6, css_class="p-6") as view:
 This produces a vertical layout with a header row (title + badge) and a card below it. The `gap`, `align`, and `css_class` parameters control spacing, alignment, and styling using Tailwind CSS classes.
 
 ### Available Components
-
-Prefab ships 45+ components. Here are the highlights:
 
 | Category | Components |
 |----------|-----------|
@@ -174,7 +176,7 @@ Explicit `app=True` is still recommended for clarity. It's required when the ret
 
 ## Interactivity
 
-Prefab UIs aren't static renders — they support client-side state, form inputs, and actions that call back to your server.
+Prefab UIs support client-side state, form inputs, and actions that call back to your server.
 
 ### Client-Side State
 
@@ -266,6 +268,7 @@ Prefab tools share a single renderer resource. Custom tools point to their own. 
 ## Next Steps
 
 - **[Mini Apps](/apps/mini-apps)** — Patterns for charts, tables, forms, and common use cases
-- **[Full Apps](/apps/full-apps)** — Building multi-page applications with navigation and complex state
+- **[Full Apps](/apps/full-apps)** — Multi-page applications with navigation and complex state
+- **[Generative UIs](/apps/generative-uis)** — Let the LLM generate UIs on the fly
 - **[Low-Level API](/apps/low-level)** — When you need custom HTML and full control
 - **[Prefab UI Docs](https://prefab.prefect.io)** — Complete component reference with interactive examples

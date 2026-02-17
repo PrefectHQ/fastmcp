@@ -10,19 +10,20 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.1.0" />
 
-Full apps go beyond single-screen tool UIs. They combine multiple pages, shared state, and server-side actions into cohesive applications — all rendered inside the host's conversation.
+Most tool UIs are [mini apps](/apps/mini-apps) — a chart, a table, a form. But some tools need multiple views, shared state across those views, and server-side actions that update what the user sees. Full apps combine `Pages` for navigation, shared state in `PrefabApp`, and `ToolCall` with `result_key` for server-driven state updates.
 
 <Info>
-  This section is under active development. The patterns described here work today, but we're building higher-level abstractions to make multi-page apps even easier.
+  This section is under active development. The patterns below work today, but we're building higher-level abstractions to make multi-page apps even easier.
 </Info>
 
 ## Pages
 
-The `Pages` component provides client-side navigation between views within a single tool result. Each `Page` is a named section, and only the active page renders at a time:
+The `Pages` component provides client-side navigation between views within a single tool result. Each `Page` is a named section, and only the active one renders at a time:
 
 ```python
 from prefab_ui.components import *
 from prefab_ui.app import PrefabApp
+from prefab_ui.actions import *
 from fastmcp import FastMCP
 
 mcp = FastMCP("CRM")
@@ -73,11 +74,11 @@ def crm_dashboard() -> PrefabApp:
     )
 ```
 
-Pages render a navigation bar automatically. The user clicks between views without any server round-trip — the page switch is pure client-side state.
+Pages render a navigation bar automatically. Switching between views is pure client-side state — no server round-trip.
 
 ## Shared State Across Pages
 
-State declared in `PrefabApp(state={...})` is available to all pages. This means a form on one page can write state that a table on another page reads:
+State declared in `PrefabApp(state={...})` is available to all pages. A form on one page can trigger a server action that updates state read by a table on another page:
 
 ```python
 @mcp.tool(app=True)
@@ -151,7 +152,7 @@ def fetch_tasks() -> list[dict]:
     return db.get_tasks()
 ```
 
-The `fetch_tasks` tool serves double duty: it's the backend for the refresh button, and it could be called directly by the model. This is one of the nice things about building on MCP — your UI actions and your conversational tools are the same thing.
+The `fetch_tasks` tool serves double duty: it's the backend for the refresh button, and it can also be called directly by the model in conversation. Your UI actions and your conversational tools are the same thing.
 
 ## Coming Soon
 
@@ -165,6 +166,6 @@ For now, the `Pages` + `ToolCall` + `result_key` pattern handles the vast majori
 
 ## Next Steps
 
-- **[Prefab UI](/apps/prefab)** — Core integration guide, state system, and server actions
 - **[Mini Apps](/apps/mini-apps)** — Charts, tables, forms, and common single-screen patterns
+- **[Generative UIs](/apps/generative-uis)** — Let the LLM generate UIs on the fly
 - **[Low-Level API](/apps/low-level)** — When you need custom HTML and full control
