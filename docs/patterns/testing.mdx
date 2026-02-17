@@ -102,3 +102,68 @@ async def test_add(
 <Tip>
 The [FastMCP Repository contains thousands of tests](https://github.com/jlowin/fastmcp/tree/main/tests) for the FastMCP Client and Server. Everything from connecting to remote MCP servers, to testing tools, resources, and prompts is covered, take a look for inspiration!
 </Tip>
+
+## Testing with MCPJam Inspector
+
+[MCPJam Inspector](https://www.mcpjam.com/) is a browser-based developer tool for testing and debugging MCP servers locally. It supports all transport protocols (STDIO, HTTP, and SSE), provides protocol-level inspection, and includes an LLM Playground for testing your server with real AI models.
+
+### Getting Started
+
+Install and run MCPJam Inspector locally:
+
+```bash
+npx @mcpjam/inspector@latest
+```
+
+The inspector runs at `http://127.0.0.1:6274` and requires Node.js 20+. For detailed setup and usage instructions, see the [official MCPJam documentation](https://docs.mcpjam.com/).
+
+### Key Features
+
+- **Protocol Support** - Connect via STDIO, HTTP, or SSE transport
+- **Server Testing** - Browse and execute tools, resources, and prompts
+- **LLM Playground** - Test your server integrated with real AI models (Claude, GPT, Ollama)
+- **OAuth Debugging** - Debug OAuth flows with detailed protocol inspection
+- **JSON-RPC Logs** - View real-time protocol messages for debugging
+
+## Testing with Postman
+
+[Postman](https://www.postman.com/) provides native support for the Model Context Protocol, allowing you to test MCP servers through its visual interface. Postman is particularly useful when integrating MCP servers into API workflows or collaborating with teams already using Postman for API testing.
+
+### Getting Started
+
+1. Open Postman and create a new workspace
+2. Select **New** > **MCP**
+3. Choose your transport (STDIO or HTTP)
+4. Enter your server connection details
+5. Click **Load Methods** to discover available capabilities
+
+For complete instructions, see [Postman's MCP documentation](https://learning.postman.com/docs/postman-ai/mcp-requests/overview).
+
+### Key Features
+
+- **Interactive Testing** - Browse and execute tools, resources, and prompts
+- **Collection Support** - Save and organize MCP requests in collections
+- **Export Configurations** - Export server configs for Claude Desktop, VS Code, or Cursor
+- **Team Collaboration** - Share MCP requests and collections with your team
+
+### When to Use Each Tool
+
+**Use MCPJam Inspector when:**
+- Testing locally with protocol-level debugging
+- Validating OAuth flows and authentication
+- Testing with real LLM models in the playground
+- Working with any transport (STDIO, HTTP, SSE)
+
+**Use Postman when:**
+- Integrating MCP testing into existing API workflows
+- Collaborating with teams using Postman
+- Managing MCP requests in collections
+- Exporting configurations for MCP clients
+
+**Use Pytest when:**
+- Building automated test suites for CI/CD
+- Testing multiple scenarios with parameterized inputs
+- Writing regression tests for bug fixes
+- Ensuring consistent behavior across code changes
+
+All three approaches are complementary. Use MCPJam Inspector for local protocol-level testing, Postman for API workflow integration, and Pytest for automated testing.

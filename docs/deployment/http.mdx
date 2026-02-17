@@ -154,8 +154,9 @@ CORS (Cross-Origin Resource Sharing) is needed when JavaScript running in a web 
 
 Browser-based MCP clients that need CORS include:
 
+- **MCPJam Inspector** - Local browser-based tool for testing MCP servers (see [Testing guide](/patterns/testing#testing-with-mcpjam-inspector))
 - **MCP Inspector** - Browser-based debugging tool for testing MCP servers
-- **Custom browser-based MCP clients** - If you're building a web app that directly connects to MCP servers
+- **Custom browser-based MCP clients** - Web apps that directly connect to MCP servers
 
 For these scenarios, add CORS middleware with the specific headers required for MCP protocol:
 
