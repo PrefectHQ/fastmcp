@@ -15,13 +15,7 @@ SERVER_URL = "http://localhost:8000/mcp"
 
 async def main():
     try:
-        async with Client(
-            SERVER_URL,
-            auth=OAuth(
-                # Replace with your own CIMD document URL
-                client_metadata_url="https://www.jlowin.dev/mcp-client.json",
-            ),
-        ) as client:
+        async with Client(SERVER_URL, auth=OAuth()) as client:
             assert await client.ping()
             print("✅ Successfully authenticated!")
 

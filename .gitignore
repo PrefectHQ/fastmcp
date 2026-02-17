@@ -70,6 +70,7 @@ dmypy.json
 /PLAN.md
 /TODO.md
 /STATUS.md
+plans/
 
 # Common FastMCP test files
 /test.py
