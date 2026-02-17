@@ -20,8 +20,9 @@ BREAKING CHANGES (will crash at import or runtime):
 1. IMPORT: "from mcp.server.fastmcp import FastMCP" must become "from fastmcp import FastMCP"
 
 2. CONSTRUCTOR KWARGS REMOVED: FastMCP() no longer accepts these kwargs (raises TypeError):
-   - Transport settings: host, port, log_level, debug, sse_path, message_path, streamable_http_path, json_response, stateless_http
+   - Transport settings: host, port, log_level, debug, sse_path, streamable_http_path, json_response, stateless_http
      Fix: pass to run() or run_http_async() instead, e.g. mcp.run(transport="http", host="0.0.0.0", port=8080)
+   - message_path: set via environment variable FASTMCP_MESSAGE_PATH only (not a run() kwarg)
    - Duplicate handling: on_duplicate_tools, on_duplicate_resources, on_duplicate_prompts
      Fix: use unified on_duplicate= parameter
    - Tool settings: tool_serializer, include_tags, exclude_tags, tool_transformations
@@ -50,9 +51,10 @@ BREAKING CHANGES (will crash at import or runtime):
 
 10. ENV VAR: FASTMCP_SHOW_CLI_BANNER renamed to FASTMCP_SHOW_SERVER_BANNER.
 
-BEHAVIOR CHANGES (won't crash but may surprise):
+11. DECORATORS: @mcp.tool, @mcp.resource, @mcp.prompt now return the original function, not a component object. Code that accesses .name, .description, or other component attributes on the decorated result will crash with AttributeError.
+   Fix: set FASTMCP_DECORATOR_MODE=object for v2 compat (itself deprecated).
 
-- Decorators (@mcp.tool, @mcp.resource, @mcp.prompt) now return the original function, not a component object. Code that treats the result as FunctionTool will break. Set FASTMCP_DECORATOR_MODE=object for v2 compat.
+12. OAUTH STORAGE: Default OAuth client storage changed from DiskStore to FileTreeStore due to pickle deserialization vulnerability in diskcache (CVE-2025-69872). Clients using default storage will re-register automatically on first connection. If using DiskStore explicitly, switch to FileTreeStore or add pip install 'py-key-value-aio[disk]'.
 
 DEPRECATIONS (still work but emit warnings):
 
@@ -84,7 +86,8 @@ mcp.run(transport="http", host="0.0.0.0", port=8080)
 
 The full list of removed kwargs and their replacements:
 
-- `host`, `port`, `log_level`, `debug`, `sse_path`, `message_path`, `streamable_http_path`, `json_response`, `stateless_http` — pass to `run()`, `run_http_async()`, or `http_app()`, or set via environment variables (e.g. `FASTMCP_HOST`)
+- `host`, `port`, `log_level`, `debug`, `sse_path`, `streamable_http_path`, `json_response`, `stateless_http` — pass to `run()`, `run_http_async()`, or `http_app()`, or set via environment variables (e.g. `FASTMCP_HOST`)
+- `message_path` — set via environment variable `FASTMCP_MESSAGE_PATH` only (not a `run()` kwarg)
 - `on_duplicate_tools`, `on_duplicate_resources`, `on_duplicate_prompts` — consolidated into a single `on_duplicate=` parameter
 - `tool_serializer` — return [`ToolResult`](/servers/tools#custom-serialization) from your tools instead
 - `include_tags` / `exclude_tags` — use `server.enable(tags=..., only=True)` / `server.disable(tags=...)` after construction
