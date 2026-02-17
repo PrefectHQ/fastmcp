@@ -94,7 +94,7 @@ class TestScalekitProvider:
         assert isinstance(provider.token_verifier, JWTVerifier)
         assert provider.token_verifier.jwks_uri == "https://my-env.scalekit.com/keys"
         assert provider.token_verifier.issuer == "https://my-env.scalekit.com"
-        assert provider.token_verifier.audience is None
+        assert provider.token_verifier.audience == "sk_resource_456"
 
     def test_required_scopes_hooks_into_verifier(self):
         """Token verifier should enforce required scopes when provided."""
