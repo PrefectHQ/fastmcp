@@ -154,9 +154,12 @@ class ConsentMixin:
         Returns a dict of {txn_id: consent_token} for all pending flows.
         """
         cookie_name = self._cookie_name("MCP_CONSENT_BINDING")
-        raw = request.cookies.get(cookie_name) or request.cookies.get(
-            "__MCP_CONSENT_BINDING"
-        )
+        raw = request.cookies.get(cookie_name)
+        # Only fall back to the non-__Host- name over plain HTTP. On HTTPS,
+        # __Host- enforces host-only scope; accepting the weaker name would
+        # bypass that guarantee.
+        if not raw and not self._is_https:
+            raw = request.cookies.get("__MCP_CONSENT_BINDING")
         if not raw:
             return {}
         payload = self._verify_cookie(raw)
