@@ -49,9 +49,9 @@ def sales_chart(year: int) -> PrefabApp:
 
 No HTML, no JavaScript, no frontend build step. Install with `pip install "fastmcp[apps]"` and see [Prefab UI](/apps/prefab) for the full guide.
 
-## Low-Level API
+## Custom HTML Apps
 
-The [low-level API](/apps/low-level) gives you full control when you need it. You write the HTML yourself, wire up communication with the host via the `@modelcontextprotocol/ext-apps` JavaScript SDK, and manage resources and CSP configuration directly.
+The [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) is an open protocol, and you can use it directly when you need full control. You write your own HTML, CSS, and JavaScript, wire up communication with the host via the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) SDK, and manage resources and CSP configuration through FastMCP.
 
 This is the right choice when you need custom rendering (maps, 3D, video), want to use a specific JavaScript framework, or need capabilities beyond what the component library offers.
 
@@ -73,4 +73,4 @@ def view() -> str:
     return "<html>...</html>"
 ```
 
-See [Low-Level API](/apps/low-level) for the full reference.
+See [Custom HTML Apps](/apps/low-level) for the full reference.

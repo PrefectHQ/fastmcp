@@ -245,7 +245,7 @@ class UserProfile(BaseModel):
 Form.from_model(UserProfile, on_submit=ToolCall("save_profile"))
 ```
 
-## Mixing with the Low-Level API
+## Mixing with Custom HTML Apps
 
 Prefab tools and custom HTML tools coexist in the same server:
 
@@ -270,5 +270,5 @@ Prefab tools share a single renderer resource. Custom tools point to their own. 
 - **[Mini Apps](/apps/mini-apps)** — Patterns for charts, tables, forms, and common use cases
 - **[Full Apps](/apps/full-apps)** — Multi-page applications with navigation and complex state
 - **[Generative UIs](/apps/generative-uis)** — Let the LLM generate UIs on the fly
-- **[Low-Level API](/apps/low-level)** — When you need custom HTML and full control
+- **[Custom HTML Apps](/apps/low-level)** — When you need your own HTML, CSS, and JavaScript
 - **[Prefab UI Docs](https://prefab.prefect.io)** — Complete component reference with interactive examples
