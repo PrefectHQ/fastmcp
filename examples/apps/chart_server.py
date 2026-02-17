@@ -4,6 +4,7 @@ Demonstrates `fastmcp[apps]` with Prefab chart components:
 - `BarChart` and `LineChart` for categorical and trend data
 - Multiple series, stacking, and curve styles
 - Layout composition with `Column`, `Heading`, and `Muted`
+- Custom text fallback via `ToolResult`
 
 Usage:
     uv run python chart_server.py              # HTTP (port 8000)
@@ -12,6 +13,7 @@ Usage:
 
 from __future__ import annotations
 
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     BarChart,
     ChartSeries,
@@ -20,9 +22,9 @@ from prefab_ui.components import (
     LineChart,
     Muted,
 )
-from prefab_ui.app import PrefabApp
 
 from fastmcp import FastMCP
+from fastmcp.tools import ToolResult
 
 mcp = FastMCP("Sales Dashboard")
 

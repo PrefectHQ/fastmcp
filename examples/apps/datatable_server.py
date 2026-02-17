@@ -13,6 +13,7 @@ Usage:
 
 from __future__ import annotations
 
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Badge,
     Column,
@@ -22,7 +23,6 @@ from prefab_ui.components import (
     Muted,
     Row,
 )
-from prefab_ui.app import PrefabApp
 
 from fastmcp import FastMCP
 

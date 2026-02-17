@@ -51,7 +51,7 @@ def _has_prefab_return_type(tool: Tool) -> bool:
     # Direct type check
     if isinstance(rt, type) and issubclass(rt, (_PrefabApp, _PrefabComponent)):
         return True
-    # Check Union args (e.g., UIResponse | None)
+    # Check Union args (e.g., PrefabApp | None)
     from typing import get_args
 
     args = get_args(rt)

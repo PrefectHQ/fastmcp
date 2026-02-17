@@ -94,6 +94,14 @@ class ToolResult(BaseModel):
         converted_content: list[ContentBlock] = _convert_to_content(result=content)
 
         if structured_content is not None:
+            # Convert Prefab types to their wire-format envelope before
+            # generic serialization, so the renderer gets the right shape.
+            if _HAS_PREFAB:
+                if isinstance(structured_content, _PrefabApp):
+                    structured_content = structured_content.to_json()
+                elif isinstance(structured_content, _PrefabComponent):
+                    structured_content = _PrefabApp(view=structured_content).to_json()
+
             try:
                 structured_content = pydantic_core.to_jsonable_python(
                     value=structured_content
@@ -262,9 +270,9 @@ class Tool(FastMCPComponent):
 
         if _HAS_PREFAB:
             if isinstance(raw_value, _PrefabApp):
-                return _ui_response_to_tool_result(raw_value)
+                return _prefab_to_tool_result(raw_value)
             if isinstance(raw_value, _PrefabComponent):
-                return _ui_response_to_tool_result(_PrefabApp(view=raw_value))
+                return _prefab_to_tool_result(_PrefabApp(view=raw_value))
 
         content = _convert_to_content(raw_value, serializer=self.serializer)
 
@@ -472,14 +480,14 @@ def _convert_to_single_content_block(
     return TextContent(type="text", text=_serialize_with_fallback(item, serializer))
 
 
-def _ui_response_to_tool_result(response: Any) -> ToolResult:
+_PREFAB_TEXT_FALLBACK = "[Rendered Prefab UI]"
+
+
+def _prefab_to_tool_result(app: Any) -> ToolResult:
     """Convert a PrefabApp to a FastMCP ToolResult."""
-    envelope = response.to_json()
-    title = getattr(response, "title", None) or "Prefab"
-    text = f"[{title} UI]"
     return ToolResult(
-        content=[TextContent(type="text", text=text)],
-        structured_content=envelope,
+        content=[TextContent(type="text", text=_PREFAB_TEXT_FALLBACK)],
+        structured_content=app.to_json(),
     )
 
 

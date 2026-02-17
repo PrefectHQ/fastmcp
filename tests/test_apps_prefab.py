@@ -7,9 +7,9 @@ return-type inference, output-schema suppression, and end-to-end round trips.
 from __future__ import annotations
 
 from mcp.types import TextContent
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import Column, Heading, Text
 from prefab_ui.components.base import Component
-from prefab_ui.app import PrefabApp
 
 from fastmcp import Client, FastMCP
 from fastmcp.resources.types import TextResource
@@ -28,14 +28,14 @@ class TestConvertResult:
     def test_prefab_app(self):
         with Column() as view:
             Heading("Hello")
-        response = PrefabApp(view=view, state={"name": "Alice"})
+        app = PrefabApp(view=view, state={"name": "Alice"})
 
         tool = Tool(name="t", parameters={})
-        result = tool.convert_result(response)
+        result = tool.convert_result(app)
 
         assert isinstance(result, ToolResult)
         assert isinstance(result.content[0], TextContent)
-        assert "Prefab" in result.content[0].text
+        assert result.content[0].text == "[Rendered Prefab UI]"
         assert result.structured_content is not None
         assert result.structured_content["version"] == "0.2"
         assert result.structured_content["state"] == {"name": "Alice"}
@@ -52,17 +52,36 @@ class TestConvertResult:
         assert result.structured_content["version"] == "0.2"
         assert result.structured_content["view"]["type"] == "Heading"
 
-    def test_text_fallback_uses_title(self):
-        response = PrefabApp(title="My Dashboard", view=Heading("Hello"))
+    def test_tool_result_with_prefab_structured_content(self):
+        """ToolResult with PrefabApp as structured_content preserves custom text."""
+        app = PrefabApp(view=Heading("Hello"), state={"x": 1})
 
         tool = Tool(name="t", parameters={})
-        result = tool.convert_result(response)
+        result = tool.convert_result(
+            ToolResult(content="Custom fallback text", structured_content=app)
+        )
 
         assert isinstance(result.content[0], TextContent)
-        assert "My Dashboard" in result.content[0].text
+        assert result.content[0].text == "Custom fallback text"
+        assert result.structured_content is not None
+        assert result.structured_content["version"] == "0.2"
+        assert result.structured_content["view"]["type"] == "Heading"
+
+    def test_tool_result_with_component_structured_content(self):
+        """ToolResult with bare Component as structured_content."""
+        tool = Tool(name="t", parameters={})
+        result = tool.convert_result(
+            ToolResult(content="My text", structured_content=Heading("Hi"))
+        )
+
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "My text"
+        assert result.structured_content is not None
+        assert result.structured_content["version"] == "0.2"
+        assert result.structured_content["view"]["type"] == "Heading"
 
     def test_tool_result_passthrough(self):
-        """ToolResult should still pass through unchanged."""
+        """ToolResult without prefab structured_content passes through unchanged."""
         original = ToolResult(content="hello")
         tool = Tool(name="t", parameters={})
         assert tool.convert_result(original) is original
@@ -155,6 +174,7 @@ class TestAppTrue:
             for v in tools.values()
             if hasattr(v, "parameters") and v.name == "my_tool"
         )
+        assert tool.meta is not None
         assert tool.meta["ui"]["resourceUri"] == "ui://custom/app.html"
 
 
@@ -164,7 +184,7 @@ class TestAppTrue:
 
 
 class TestInference:
-    def test_ui_response_annotation_inferred(self):
+    def test_prefab_app_annotation_inferred(self):
         mcp = FastMCP("test")
 
         @mcp.tool
@@ -226,7 +246,7 @@ class TestInference:
         )
         assert tool.meta is None or "ui" not in (tool.meta or {})
 
-    def test_optional_ui_response_inferred(self):
+    def test_optional_prefab_app_inferred(self):
         mcp = FastMCP("test")
 
         @mcp.tool
@@ -249,7 +269,7 @@ class TestInference:
 
 
 class TestOutputSchema:
-    def test_ui_response_return_no_output_schema(self):
+    def test_prefab_app_return_no_output_schema(self):
         mcp = FastMCP("test")
 
         @mcp.tool
@@ -257,10 +277,8 @@ class TestOutputSchema:
             return PrefabApp(view=Heading("hi"))
 
         tools = mcp._local_provider._components
-        tool = next(
-            v
-            for v in tools.values()
-            if hasattr(v, "parameters") and v.name == "my_tool"
+        tool: Tool = next(
+            v for v in tools.values() if isinstance(v, Tool) and v.name == "my_tool"
         )
         assert tool.output_schema is None
 
@@ -274,10 +292,8 @@ class TestOutputSchema:
             return view
 
         tools = mcp._local_provider._components
-        tool = next(
-            v
-            for v in tools.values()
-            if hasattr(v, "parameters") and v.name == "my_tool"
+        tool: Tool = next(
+            v for v in tools.values() if isinstance(v, Tool) and v.name == "my_tool"
         )
         assert tool.output_schema is None
 
@@ -304,6 +320,26 @@ class TestIntegration:
         assert result.structured_content is not None
         assert result.structured_content["version"] == "0.2"
         assert result.structured_content["state"] == {"name": "Alice"}
+
+    async def test_tool_call_with_custom_text(self):
+        mcp = FastMCP("test")
+
+        @mcp.tool(app=True)
+        def greet(name: str) -> ToolResult:
+            app = PrefabApp(view=Heading(f"Hello {name}"))
+            return ToolResult(
+                content=f"Greeting for {name}",
+                structured_content=app,
+            )
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("greet", {"name": "Alice"})
+
+        assert any(
+            "Greeting for Alice" in c.text for c in result.content if hasattr(c, "text")
+        )
+        assert result.structured_content is not None
+        assert result.structured_content["version"] == "0.2"
 
     async def test_tools_list_includes_app_meta(self):
         mcp = FastMCP("test")
