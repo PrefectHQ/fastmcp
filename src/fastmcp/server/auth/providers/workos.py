@@ -275,15 +275,14 @@ class AuthKitProvider(RemoteAuthProvider):
             parse_scopes(required_scopes) if required_scopes is not None else None
         )
 
-        logger.warning(
-            "AuthKitProvider cannot validate token audience for the specific resource "
-            "because AuthKit does not support RFC 8707 resource indicators. "
-            "This may leave the server vulnerable to cross-server token replay. "
-            "Consider using WorkOSProvider (OAuth proxy) for audience-bound tokens."
-        )
-
         # Create default JWT verifier if none provided
         if token_verifier is None:
+            logger.warning(
+                "AuthKitProvider cannot validate token audience for the specific resource "
+                "because AuthKit does not support RFC 8707 resource indicators. "
+                "This may leave the server vulnerable to cross-server token replay. "
+                "Consider using WorkOSProvider (OAuth proxy) for audience-bound tokens."
+            )
             token_verifier = JWTVerifier(
                 jwks_uri=f"{self.authkit_domain}/oauth2/jwks",
                 issuer=self.authkit_domain,
