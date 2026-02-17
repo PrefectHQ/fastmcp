@@ -96,7 +96,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 
 - Uses Mintlify framework
 - Files must be in docs.json to be included
-- Do not manually modify `docs/python-sdk/**` — a bot automatically updates these files via commits added to PRs
+- Do not manually modify `docs/python-sdk/**` — a bot automatically updates these files via commits added to PRs. Changes to these files in PR diffs are expected and should not be flagged during review.
 - **Core Principle:** A feature doesn't exist unless it is documented!
 
 ### Documentation Guidelines
