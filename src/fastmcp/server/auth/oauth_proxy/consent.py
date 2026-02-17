@@ -148,6 +148,61 @@ class ConsentMixin:
             path="/",
         )
 
+    def _set_consent_binding_cookie(
+        self: OAuthProxy,
+        response: HTMLResponse | RedirectResponse,
+        consent_token: str,
+    ) -> None:
+        """Set a signed consent binding cookie to prevent confused deputy attacks.
+
+        This cookie binds the browser that approved consent to the IdP callback,
+        ensuring a different browser cannot complete the OAuth flow.
+        """
+        name = self._cookie_name("MCP_CONSENT_BINDING")
+        signed_value = self._sign_cookie(consent_token)
+        response.set_cookie(
+            name,
+            signed_value,
+            max_age=15 * 60,
+            secure=self._is_https,
+            httponly=True,
+            samesite="lax",
+            path="/",
+        )
+
+    def _clear_consent_binding_cookie(
+        self: OAuthProxy,
+        response: HTMLResponse | RedirectResponse,
+    ) -> None:
+        """Clear the consent binding cookie after successful IdP callback."""
+        name = self._cookie_name("MCP_CONSENT_BINDING")
+        response.set_cookie(
+            name,
+            "",
+            max_age=0,
+            secure=self._is_https,
+            httponly=True,
+            samesite="lax",
+            path="/",
+        )
+
+    def _verify_consent_binding_cookie(
+        self: OAuthProxy,
+        request: Request,
+        expected_token: str,
+    ) -> bool:
+        """Verify the consent binding cookie matches the expected token."""
+        cookie_name = self._cookie_name("MCP_CONSENT_BINDING")
+        raw = request.cookies.get(cookie_name) or request.cookies.get(
+            "__MCP_CONSENT_BINDING"
+        )
+        if not raw:
+            return False
+        payload = self._verify_cookie(raw)
+        if not payload:
+            return False
+        return hmac.compare_digest(payload, expected_token)
+
     def _build_upstream_authorize_url(
         self: OAuthProxy, txn_id: str, transaction: dict[str, Any]
     ) -> str:
@@ -217,8 +272,13 @@ class ConsentMixin:
         denied = set(self._decode_list_cookie(request, "MCP_DENIED_CLIENTS"))
 
         if client_key in approved:
+            consent_token = secrets.token_urlsafe(32)
+            txn_model.consent_token = consent_token
+            await self._transaction_store.put(key=txn_id, value=txn_model, ttl=15 * 60)
             upstream_url = self._build_upstream_authorize_url(txn_id, txn)
-            return RedirectResponse(url=upstream_url, status_code=302)
+            response = RedirectResponse(url=upstream_url, status_code=302)
+            self._set_consent_binding_cookie(response, consent_token)
+            return response
 
         if client_key in denied:
             callback_params = {
@@ -331,6 +391,10 @@ class ConsentMixin:
                 approved.add(client_key)
             approved_b64 = self._encode_list_cookie(sorted(approved))
 
+            consent_token = secrets.token_urlsafe(32)
+            txn_model.consent_token = consent_token
+            await self._transaction_store.put(key=txn_id, value=txn_model, ttl=15 * 60)
+
             upstream_url = self._build_upstream_authorize_url(txn_id, txn)
             response = RedirectResponse(url=upstream_url, status_code=302)
             self._set_list_cookie(
@@ -340,6 +404,7 @@ class ConsentMixin:
             self._set_list_cookie(
                 response, "MCP_CONSENT_STATE", self._encode_list_cookie([]), max_age=60
             )
+            self._set_consent_binding_cookie(response, consent_token)
             return response
 
         elif action == "deny":

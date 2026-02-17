@@ -9,6 +9,7 @@ This test suite verifies:
 6. Security headers (X-Frame-Options) are set correctly
 7. Cookie signing and tampering detection
 8. Auto-approve behavior with valid cookies
+9. Consent binding cookie prevents confused deputy attacks (GHSA-rww4-4w9c-7733)
 """
 
 import re
@@ -1022,3 +1023,194 @@ class TestConsentCSPPolicy:
             assert html.escape(custom_csp, quote=True) in response.text
             # Default form-action should NOT be present (we're using custom)
             assert "form-action" not in response.text
+
+
+class TestConsentBindingCookie:
+    """Tests for consent binding cookie that prevents confused deputy attacks.
+
+    GHSA-rww4-4w9c-7733: Without browser-binding between consent approval and
+    the IdP callback, an attacker can intercept the upstream authorization URL
+    and send it to a victim whose browser completes the flow.
+    """
+
+    async def test_approve_sets_consent_binding_cookie(self, oauth_proxy_https):
+        """Approving consent must set a signed consent binding cookie."""
+        txn_id, _ = await _start_flow(
+            oauth_proxy_https, "client-binding", "http://localhost:6001/callback"
+        )
+        app = Starlette(routes=oauth_proxy_https.get_routes())
+        with TestClient(app) as c:
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "approve", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            assert r.status_code in (302, 303)
+            set_cookie_header = r.headers.get("set-cookie", "")
+            assert "__Host-MCP_CONSENT_BINDING" in set_cookie_header
+
+    async def test_auto_approve_sets_consent_binding_cookie(self, oauth_proxy_https):
+        """Auto-approve path (previously approved client) must also set the binding cookie."""
+        client_id = "client-autobinding"
+        redirect = "http://localhost:6002/callback"
+        txn_id, _ = await _start_flow(oauth_proxy_https, client_id, redirect)
+        app = Starlette(routes=oauth_proxy_https.get_routes())
+        with TestClient(app) as c:
+            # First: approve manually to get the approved cookie
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "approve", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            # Extract approved cookie
+            m = re.search(
+                r"__Host-MCP_APPROVED_CLIENTS=([^;]+)",
+                r.headers.get("set-cookie", ""),
+            )
+            assert m
+            approved_cookie = m.group(1)
+
+            # Second: start new flow, auto-approve should set binding cookie
+            new_txn, _ = await _start_flow(oauth_proxy_https, client_id, redirect)
+            c.cookies.set("__Host-MCP_APPROVED_CLIENTS", approved_cookie)
+            r2 = c.get(f"/consent?txn_id={new_txn}", follow_redirects=False)
+            assert r2.status_code in (302, 303)
+            set_cookie_header = r2.headers.get("set-cookie", "")
+            assert "__Host-MCP_CONSENT_BINDING" in set_cookie_header
+
+    async def test_idp_callback_rejects_missing_consent_cookie(self, oauth_proxy_https):
+        """IdP callback must reject requests without the consent binding cookie.
+
+        This is the core confused deputy scenario: a different browser (the victim)
+        hits the callback without the cookie that was set on the attacker's browser.
+        """
+        txn_id, _ = await _start_flow(
+            oauth_proxy_https, "client-nocd", "http://localhost:6003/callback"
+        )
+        # Manually set consent_token on transaction (simulating consent approval)
+        txn_model = await oauth_proxy_https._transaction_store.get(key=txn_id)
+        assert txn_model is not None
+        txn_model.consent_token = secrets.token_urlsafe(32)
+        await oauth_proxy_https._transaction_store.put(
+            key=txn_id, value=txn_model, ttl=15 * 60
+        )
+
+        app = Starlette(routes=oauth_proxy_https.get_routes())
+        with TestClient(app) as c:
+            # Hit callback WITHOUT the consent binding cookie
+            r = c.get(
+                f"/auth/callback?code=fake-code&state={txn_id}",
+                follow_redirects=False,
+            )
+            assert r.status_code == 403
+            assert (
+                "session mismatch" in r.text.lower() or "Authorization Error" in r.text
+            )
+
+    async def test_idp_callback_rejects_wrong_consent_cookie(self, oauth_proxy_https):
+        """IdP callback must reject requests with a tampered consent binding cookie."""
+        txn_id, _ = await _start_flow(
+            oauth_proxy_https, "client-wrongcd", "http://localhost:6004/callback"
+        )
+        txn_model = await oauth_proxy_https._transaction_store.get(key=txn_id)
+        assert txn_model is not None
+        txn_model.consent_token = secrets.token_urlsafe(32)
+        await oauth_proxy_https._transaction_store.put(
+            key=txn_id, value=txn_model, ttl=15 * 60
+        )
+
+        app = Starlette(routes=oauth_proxy_https.get_routes())
+        with TestClient(app) as c:
+            # Set a wrong/tampered consent binding cookie
+            c.cookies.set("__Host-MCP_CONSENT_BINDING", "wrong-token.invalidsig")
+            r = c.get(
+                f"/auth/callback?code=fake-code&state={txn_id}",
+                follow_redirects=False,
+            )
+            assert r.status_code == 403
+
+    async def test_idp_callback_rejects_missing_consent_token_on_transaction(
+        self, oauth_proxy_https
+    ):
+        """IdP callback must reject when transaction has no consent_token set."""
+        txn_id, _ = await _start_flow(
+            oauth_proxy_https, "client-notxntoken", "http://localhost:6005/callback"
+        )
+        # Transaction exists but consent_token is None (consent was never completed)
+        app = Starlette(routes=oauth_proxy_https.get_routes())
+        with TestClient(app) as c:
+            r = c.get(
+                f"/auth/callback?code=fake-code&state={txn_id}",
+                follow_redirects=False,
+            )
+            assert r.status_code == 403
+
+    async def test_consent_disabled_skips_binding_check(self):
+        """When require_authorization_consent=False, the binding check is skipped."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+            upstream_token_endpoint="https://github.com/login/oauth/access_token",
+            upstream_client_id="client-id",
+            upstream_client_secret="client-secret",
+            token_verifier=_Verifier(),
+            base_url="https://myserver.example",
+            client_storage=MemoryStore(),
+            jwt_signing_key="test-secret",
+            require_authorization_consent=False,
+        )
+        client_id = "client-noconsent"
+        redirect = "http://localhost:6006/callback"
+        await proxy.register_client(
+            OAuthClientInformationFull(
+                client_id=client_id,
+                client_secret="s",
+                redirect_uris=[AnyUrl(redirect)],
+            )
+        )
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl(redirect),
+            redirect_uri_provided_explicitly=True,
+            state="st",
+            code_challenge="ch",
+            scopes=["read"],
+        )
+        upstream_url = await proxy.authorize(
+            OAuthClientInformationFull(
+                client_id=client_id,
+                client_secret="s",
+                redirect_uris=[AnyUrl(redirect)],
+            ),
+            params,
+        )
+        # With consent disabled, authorize returns upstream URL directly
+        assert "github.com" in upstream_url
+        qs = parse_qs(urlparse(upstream_url).query)
+        txn_id = qs["state"][0]
+
+        # The transaction should have no consent_token
+        txn_model = await proxy._transaction_store.get(key=txn_id)
+        assert txn_model is not None
+        assert txn_model.consent_token is None
+
+        # IdP callback should NOT reject due to missing consent cookie
+        # (it will fail at token exchange, but not at the consent check)
+        app = Starlette(routes=proxy.get_routes())
+        with TestClient(app) as c:
+            r = c.get(
+                f"/auth/callback?code=fake-code&state={txn_id}",
+                follow_redirects=False,
+            )
+            # Should NOT be 403 (consent binding rejection)
+            # It will be 500 because the fake code can't be exchanged with GitHub,
+            # but that's fine — we're verifying the consent check was skipped.
+            assert r.status_code != 403
