@@ -1,7 +1,7 @@
 ---
 title: Mini Apps
 sidebarTitle: Mini Apps
-description: Charts, tables, forms, and other focused tool UIs that present data visually and collect structured input.
+description: Charts, tables, forms, and other focused tool UIs.
 icon: grid-2-plus
 tag: SOON
 ---
@@ -10,15 +10,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.1.0" />
 
-## Why Mini Apps Matter
-
-When an MCP tool queries a database, calls an API, or aggregates metrics, the result has to go somewhere. Without Apps, there's exactly one place: the LLM's context window. A query returns 500 rows? They all become tokens the model has to process. The human never sees the raw data — they get a summary, filtered through the model's interpretation.
-
-Mini apps change this equation. Instead of stuffing data into context for the model to describe, you present it directly to the human in the format that makes sense: a sortable table, an interactive chart, a form with proper input controls. The model doesn't need to burn tokens formatting a table or walking the user through option selections — the UI handles it.
-
-The same idea applies to collecting information. Sure, a model can ask "What's your preferred date?" in natural language, but a date picker is better. A multi-select dropdown beats asking the user to type a comma-separated list. And a form with validation catches mistakes before they reach your tool.
-
-Mini apps are focused, single-purpose UIs — one chart, one table, one form — designed to handle one interaction well. They're the most common thing you'll build, and they're where the component library really shines.
+Mini apps are focused, single-purpose tool UIs — a chart, a table, a form, a status display. They're the most common thing you'll build with Prefab, and they each take just a few lines of Python.
 
 Every example on this page is a complete tool body. They all assume these imports:
 
@@ -32,8 +24,6 @@ mcp = FastMCP("My Server")
 ```
 
 ## Charts
-
-A list of revenue numbers in a chat message is data. The same numbers in a bar chart with hover tooltips, axis labels, and visual trends is *information*. Charts are the clearest example of where visual presentation is dramatically better than text — and they take almost no code.
 
 ### Bar Chart
 
@@ -63,11 +53,11 @@ def quarterly_revenue(year: int) -> PrefabApp:
     return PrefabApp(view=view)
 ```
 
-Multi-series charts work by passing multiple `ChartSeries` entries. Each one plots a different data key. Add `stacked=True` to stack bars instead of grouping them, or `horizontal=True` to flip the axes.
+Multiple `ChartSeries` entries plot different data keys. Add `stacked=True` to stack bars, or `horizontal=True` to flip the axes.
 
 ### Line and Area Charts
 
-`LineChart` and `AreaChart` share the same API shape as `BarChart`, with a few extras: `curve` controls interpolation (`"linear"`, `"smooth"`, or `"step"`), and `show_dots` renders data points.
+`LineChart` and `AreaChart` share the same API as `BarChart`, with `curve` for interpolation (`"linear"`, `"smooth"`, `"step"`) and `show_dots` for data points:
 
 ```python
 @mcp.tool(app=True)
@@ -90,7 +80,7 @@ def usage_trend() -> PrefabApp:
 
 ### Pie and Donut Charts
 
-`PieChart` uses `data_key` (the numeric value) and `name_key` (the label) instead of series:
+`PieChart` uses `data_key` (the numeric value) and `name_key` (the label) instead of series. Set `inner_radius` for a donut:
 
 ```python
 @mcp.tool(app=True)
@@ -116,13 +106,9 @@ def ticket_breakdown() -> PrefabApp:
     return PrefabApp(view=view)
 ```
 
-Setting `inner_radius` to a non-zero value turns it into a donut chart — useful for showing proportions with a summary stat in the center.
-
 ## Data Tables
 
-Tables solve one of the most common problems in MCP: presenting a list of records. Without a table, the model has to format rows as text, the user can't sort or search, and large result sets overwhelm the context window.
-
-`DataTable` gives you sortable columns, full-text search, and pagination out of the box. The data stays in the browser — sorting and filtering happen client-side, so there's no server round-trip as the user explores.
+`DataTable` provides sortable columns, full-text search, and pagination. Sorting and filtering happen client-side in the browser.
 
 ```python
 @mcp.tool(app=True)
@@ -148,11 +134,9 @@ def employee_directory() -> PrefabApp:
     return PrefabApp(view=view)
 ```
 
-Consider the alternative: those same employees as JSON in a chat message. The user says "sort by department" and the model re-formats the entire list. With a `DataTable`, the user just clicks the column header.
+### Dynamic Tables
 
-### Dynamic Tables with State
-
-Tables become more powerful when combined with state. Here the table rows come from state, so they can be updated by actions:
+When table rows come from state, they can be updated by actions:
 
 ```python
 @mcp.tool(app=True)
@@ -181,15 +165,11 @@ def todo_list() -> PrefabApp:
     return PrefabApp(view=view, state={"todos": todos, "new_todo": ""})
 ```
 
-`ForEach` iterates over a state array and renders its children for each item. The children reference fields from the current item using `{{ field_name }}` templates.
+`ForEach` iterates over a state array and renders its children for each item. Children reference the current item's fields with `{{ field_name }}`.
 
 ## Forms
 
-Forms address the other side of the mini app equation: collecting structured input from the user. Natural language works for simple questions, but when you need a specific date, a selection from a fixed list, or multiple fields with validation, a proper form is both faster and less error-prone.
-
 ### Manual Forms
-
-Build forms by composing input components inside a `Form` wrapper:
 
 ```python
 @mcp.tool(app=True)
@@ -213,11 +193,11 @@ def new_contact_form() -> PrefabApp:
     return PrefabApp(view=view)
 ```
 
-When the user submits, `ToolCall("save_contact")` fires with all the named input values as arguments. Your `save_contact` tool receives `{"name": "...", "email": "...", "phone": "...", "category": "...", "notes": "..."}`.
+On submit, `ToolCall("save_contact")` fires with all named input values as arguments.
 
 ### Pydantic Model Forms
 
-If you already have a Pydantic model, `Form.from_model()` generates the entire form automatically — labels, input types, validation, and submit wiring:
+`Form.from_model()` generates a complete form from a Pydantic model — labels, input types, validation, and submit wiring:
 
 ```python
 from pydantic import BaseModel, Field
@@ -241,11 +221,9 @@ def report_bug() -> PrefabApp:
     return PrefabApp(view=view)
 ```
 
-`Form.from_model` inspects the model's fields: `str` becomes a text input, `Literal` becomes a select dropdown, `bool` becomes a checkbox. Field titles become labels, and default values are pre-filled. The `on_submit` ToolCall automatically receives all field values under a `data` key.
+`str` fields become text inputs, `Literal` becomes a select, `bool` becomes a checkbox. The `on_submit` ToolCall receives all field values under a `data` key.
 
 ### Forms with Feedback
-
-Combine `on_success` and `on_error` handlers to give users immediate feedback after submission:
 
 ```python
 with Form(
@@ -259,11 +237,7 @@ with Form(
     Button("Save")
 ```
 
-The toast appears in the renderer after the tool call completes. `{{ $error }}` interpolates the error message from the server if the tool raises an exception.
-
 ## Status Displays
-
-Not every mini app involves complex interaction. Sometimes you want a nicely formatted status view — a dashboard-quality display rendered right in the conversation:
 
 ```python
 @mcp.tool(app=True)
@@ -294,11 +268,9 @@ def system_status() -> PrefabApp:
     return PrefabApp(view=view)
 ```
 
-This mixes `Grid` for layout, `Card` for grouping, `Badge` for status indicators, and `Progress` for visual metrics.
-
 ## Conditional Content
 
-Use `If`, `Elif`, and `Else` to show or hide parts of your UI based on state:
+`If`, `Elif`, and `Else` show or hide content based on state. Changes are instant — no server round-trip.
 
 ```python
 @mcp.tool(app=True)
@@ -324,13 +296,7 @@ def feature_flags() -> PrefabApp:
     return PrefabApp(view=view, state={"dark_mode": False, "beta_features": False})
 ```
 
-`If` evaluates its condition against client-side state. When the user toggles a switch, the corresponding alert appears or disappears instantly — no server round-trip.
-
-## Composing Layouts
-
-### Tabs
-
-Organize related content into tabs when a single view has distinct sections:
+## Tabs
 
 ```python
 @mcp.tool(app=True)
@@ -366,9 +332,9 @@ def project_overview(project_id: str) -> PrefabApp:
     return PrefabApp(view=view, state={"activity": project["activity"]})
 ```
 
-### Accordion
+## Accordion
 
-Collapsible sections work well for dense information where users need to drill in:
+`multiple=True` lets users expand several items at once:
 
 ```python
 @mcp.tool(app=True)
@@ -394,11 +360,9 @@ def api_health() -> PrefabApp:
     return PrefabApp(view=view)
 ```
 
-`multiple=True` lets users expand several items simultaneously. Without it, only one stays open at a time.
-
 ## Text Fallback
 
-Every example above works in hosts that support Apps. For hosts that don't render iframes, the model sees `"[Rendered Prefab UI]"` by default. When the model needs the actual data to reason about, wrap your return in a `ToolResult`:
+Hosts that don't render Apps see `"[Rendered Prefab UI]"` by default. When the model needs the data, wrap your return in a `ToolResult`:
 
 ```python
 from fastmcp.tools import ToolResult
@@ -419,7 +383,7 @@ def revenue_summary(year: int) -> ToolResult:
     )
 ```
 
-The `content` text is what the LLM sees and reasons about. The `structured_content` is what the renderer displays. Both travel in the same tool result — the host picks whichever it supports.
+`content` is what the LLM sees. `structured_content` is what the renderer displays.
 
 ## Next Steps
 

@@ -10,17 +10,13 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.1.0" />
 
-## The Idea
+Prefab components compile to a JSON protocol — your Python builds a component tree, it serializes to JSON, and the renderer interprets it. The renderer doesn't care where the JSON came from. An LLM can produce it directly.
 
-Prefab components compile to a JSON protocol. Your Python code builds a component tree, serializes it to JSON, and the renderer interprets that JSON to produce the UI. Normally the Python code is static — you write the layout, and it renders the same structure every time.
-
-But the renderer doesn't care where the JSON came from. It just needs valid component JSON. Which means an LLM can produce that JSON directly.
-
-This opens up something genuinely new: a tool that accepts component JSON as its argument and renders whatever the LLM describes. The model can decide at runtime to show a bar chart, a form, a data table, or a combination of components — adapting the UI to the conversation. And because the JSON protocol includes actions like `ToolCall`, `SetState`, and `ShowToast`, the generated UI can be fully interactive: buttons that call server tools, forms that submit data, state that updates on user input.
+This means you can create a tool that accepts component JSON as its argument and renders whatever the model describes. The model decides at runtime whether to show a bar chart, a form, a data table, or a combination — adapting the UI to the conversation. And because the JSON protocol includes actions like `ToolCall` and `SetState`, generated UIs can be fully interactive.
 
 ## How It Works
 
-The pattern is straightforward: create a tool whose argument is the component JSON, and return it as structured content. The renderer handles the rest.
+Create a tool whose argument is the component JSON, and return it as structured content:
 
 ```python
 from prefab_ui.app import PrefabApp
@@ -40,25 +36,23 @@ def render_ui(ui: dict, state: dict | None = None) -> PrefabApp:
     return app
 ```
 
-When the model calls this tool, it passes the component tree as the `ui` argument. The tool wraps it in a `PrefabApp` and returns it — and the user sees whatever the model described.
+The model calls this tool with a component tree as the `ui` argument. The user sees whatever the model described.
 
 <Info>
   `PrefabApp.from_json()` and built-in generative UI tooling are under active development. The concept works today with manual JSON construction, and we're building ergonomic helpers to make it seamless.
 </Info>
 
-## What This Enables
+## Use Cases
 
-Generative UIs blur the line between "tool that shows data" and "tool that creates interfaces." A few scenarios:
+**Adaptive presentation.** The model examines data and picks the best visualization — line chart for trends, pie chart for proportions, table for detailed records. The presentation adapts to the content.
 
-**Adaptive dashboards.** Instead of a fixed dashboard layout, the model examines the data and decides the best way to present it. Mostly numeric trends? It generates a line chart. Categorical breakdown? A pie chart. Long list of records? A searchable table. The presentation adapts to the content.
+**Dynamic forms.** The model generates a form tailored to the conversation — a bug report form with severity and repro steps, or a deployment form with region and instance type. The form structure becomes part of the model's reasoning.
 
-**Interactive data collection.** The model can generate a form tailored to the current conversation. If the user is filing a bug report, the model generates a form with severity, reproduction steps, and affected components. If they're configuring a deployment, the model generates inputs for region, instance type, and scaling parameters. The form structure itself becomes part of the model's reasoning.
-
-**Exploratory workflows.** The model generates a UI, the user interacts with it (clicks a button, submits a form), and the model generates a new UI based on that interaction. Each step builds on the last, creating a guided experience that would be difficult to predefine.
+**Guided workflows.** The model generates a UI, the user interacts with it, and the model generates a new UI based on that interaction. Each step builds on the last.
 
 ## The JSON Protocol
 
-The component JSON follows a consistent structure. Every component has a `type`, optional `props`, and optional `children`:
+Every component has a `type`, optional `props`, and optional `children`:
 
 ```json
 {
@@ -77,19 +71,17 @@ The component JSON follows a consistent structure. Every component has a `type`,
 }
 ```
 
-Charts, tables, forms, and all other components follow the same pattern. The full protocol matches the [Prefab UI component reference](https://prefab.prefect.io) — every Python component has a corresponding JSON representation.
+Every Python component has a corresponding JSON representation. See the [Prefab UI documentation](https://prefab.prefect.io) for the full protocol reference.
 
 ## Coming Soon
 
-We're building first-class support for generative UIs:
-
-- **Built-in `render_ui` tool** — A ready-made tool that accepts component JSON, with the right schema hints so models produce valid JSON naturally
-- **Schema injection** — Automatic inclusion of the component schema in the tool description, so models know what components and props are available
-- **Validation** — Server-side validation of generated JSON before rendering, with clear error messages back to the model
-- **Template library** — Pre-built component patterns the model can reference and compose, reducing the chance of malformed output
+- **Built-in `render_ui` tool** with schema hints so models produce valid JSON naturally
+- **Schema injection** — automatic inclusion of the component schema in the tool description
+- **Validation** — server-side validation of generated JSON with clear error messages back to the model
+- **Template library** — pre-built component patterns the model can reference and compose
 
 ## Next Steps
 
 - **[Prefab UI](/apps/prefab)** — Core integration guide and component overview
 - **[Mini Apps](/apps/mini-apps)** — Pre-built patterns for charts, tables, and forms
-- **[Prefab UI Docs](https://prefab.prefect.io)** — Complete component reference with the JSON protocol for each component
+- **[Prefab UI Docs](https://prefab.prefect.io)** — Complete component reference with the JSON protocol

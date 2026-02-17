@@ -10,21 +10,13 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.1.0" />
 
+[Prefab UI](https://prefab.prefect.io) is a Python component library for building tool UIs. You describe layouts, charts, tables, and forms using Python components, and FastMCP handles the renderer, protocol wiring, and delivery. No HTML, no JavaScript, no frontend build step.
+
 ```bash
 pip install "fastmcp[apps]"
 ```
 
-## The Problem
-
-Building an MCP App from scratch means building a frontend: writing HTML, CSS, and JavaScript, bundling it, wiring up the `ext-apps` SDK for host communication, managing CSP policies, and keeping your tool's Python output in sync with what the JavaScript expects. For Python developers, this is a significant barrier — and for the kinds of UIs most tools need (a chart, a table, a form), it's a disproportionate amount of work.
-
-The deeper issue is what happens *without* Apps at all. When an MCP tool queries a database and returns 500 rows, those rows go into the LLM's context window. The model burns tokens formatting them, the human reads a text summary, and nobody gets a good experience. The same data in a sortable, searchable table — presented directly to the human — is dramatically more useful and costs zero tokens.
-
-## The Approach
-
-Most tool UIs aren't full applications. They're focused, single-purpose views: a chart showing trends, a table of records the user can search through, a form collecting structured input. We call these **mini apps**, and they're what Prefab is designed for.
-
-[Prefab UI](https://prefab.prefect.io) is a Python component library with 45+ components — layouts, typography, charts, tables, forms, and interactive controls. You describe your UI using Python context managers, and it compiles to a JSON protocol that a shared renderer interprets. FastMCP handles registering the renderer, wiring the protocol, and delivering the result to the host. You write Python and get an interactive UI.
+Building an MCP App from scratch means writing HTML/CSS/JavaScript, bundling it, wiring up the host SDK, and managing CSP policies. Prefab gives you 45+ components that cover the most common tool UIs, and compiles them to a JSON protocol that a shared renderer interprets.
 
 ```python
 from prefab_ui.components import Column, Heading, BarChart, ChartSeries, Muted
@@ -52,8 +44,6 @@ def revenue_chart(year: int) -> PrefabApp:
     return PrefabApp(view=view)
 ```
 
-When a host calls `revenue_chart`, the user sees an interactive chart with hover tooltips and axis labels — not a wall of numbers.
-
 ## How It Works
 
 Setting `app=True` (or returning a `PrefabApp` type) tells FastMCP to:
@@ -62,7 +52,7 @@ Setting `app=True` (or returning a `PrefabApp` type) tells FastMCP to:
 2. **Wire the tool metadata** — so the host knows to load the renderer iframe when calling the tool
 3. **Serialize the component tree** — your Python components become `structuredContent` on the tool result, which the renderer interprets and displays
 
-You don't manage resources, write HTML, or think about the MCP Apps protocol. You build a component tree and return it.
+You build a component tree and return it. FastMCP handles everything else.
 
 ## Building UIs
 
@@ -81,7 +71,7 @@ with Column(gap=6, css_class="p-6") as view:
             Text("Everything is running smoothly.")
 ```
 
-This produces a vertical layout with a header row (title + badge) and a card below it. The `gap`, `align`, and `css_class` parameters control spacing, alignment, and styling using Tailwind CSS classes.
+The `gap`, `align`, and `css_class` parameters control spacing, alignment, and styling using Tailwind CSS classes.
 
 ### Available Components
 
@@ -99,8 +89,6 @@ This produces a vertical layout with a header row (title + badge) and a card bel
 See the [Prefab UI documentation](https://prefab.prefect.io) for the complete reference with interactive examples.
 
 ## Return Patterns
-
-There are three ways to return UI from a tool, depending on how much control you need:
 
 ### Return a PrefabApp
 
@@ -140,7 +128,7 @@ def status_badge() -> Column:
 
 ### Custom Text Fallback
 
-By default, LLM clients that don't render Apps see `"[Rendered Prefab UI]"`. To provide a more useful summary the model can reason about, wrap the result in a `ToolResult`:
+By default, hosts that don't render Apps see `"[Rendered Prefab UI]"`. To provide a summary the model can reason about, wrap the result in a `ToolResult`:
 
 ```python
 from fastmcp.tools import ToolResult
@@ -166,7 +154,6 @@ The `content` string is what the LLM sees; the `structured_content` is what the 
 You don't strictly need `app=True` if your return type annotation is a Prefab type. FastMCP detects `PrefabApp`, `Component`, and their `Optional` variants automatically:
 
 ```python
-# app=True is inferred from the return type
 @mcp.tool
 def greet(name: str) -> PrefabApp:
     return PrefabApp(view=Heading(f"Hello, {name}!"))
@@ -196,7 +183,7 @@ def toggle_demo() -> PrefabApp:
     return PrefabApp(view=view, state={"show": False})
 ```
 
-State mutations happen entirely in the browser — no server round-trip needed for `SetState`, `ToggleState`, `AppendState`, or `PopState`.
+State mutations happen entirely in the browser — no server round-trip for `SetState`, `ToggleState`, `AppendState`, or `PopState`.
 
 ### Server Actions
 
@@ -232,7 +219,7 @@ with Form(on_submit=ToolCall("create_user")):
     Button("Create Account")
 ```
 
-For Pydantic models, `Form.from_model()` auto-generates the entire form — inputs, labels, validation, and types:
+For Pydantic models, `Form.from_model()` generates the entire form automatically — inputs, labels, validation, and types:
 
 ```python
 from pydantic import BaseModel, Field
@@ -252,18 +239,16 @@ Prefab tools and custom HTML tools coexist in the same server:
 ```python
 from fastmcp.server.apps import AppConfig
 
-# Prefab tool — automatic renderer
 @mcp.tool(app=True)
 def team_directory() -> PrefabApp:
     ...
 
-# Custom HTML tool — your own renderer
 @mcp.tool(app=AppConfig(resource_uri="ui://my-app/map.html"))
 def map_view() -> str:
     ...
 ```
 
-Prefab tools share a single renderer resource. Custom tools point to their own. Both use the same MCP Apps protocol under the hood.
+Prefab tools share a single renderer resource. Custom tools point to their own. Both use the same MCP Apps protocol.
 
 ## Next Steps
 

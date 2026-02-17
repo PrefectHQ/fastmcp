@@ -10,11 +10,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.0.0" />
 
-MCP tools return text. That works for simple answers, but a surprising amount of tool output — query results, metrics, lists of records, configuration options — is information that humans consume better visually than as a wall of text in a chat message.
-
-Without Apps, that data has only one place to go: the LLM's context window. A database query returns 500 rows? They all go into context. An API returns a nested JSON response? The model has to parse it and summarize. The human never sees the raw data, and the model burns tokens presenting it.
-
-MCP Apps change this. A tool can return an interactive UI — a chart, a sortable table, a form — rendered in a sandboxed iframe right inside the host client's conversation. The data goes directly to the human in a format designed for human consumption, while the model can focus on what it's good at.
+MCP Apps let your tools return interactive UIs — rendered in a sandboxed iframe right inside the host client's conversation. Instead of returning plain text, a tool can show a chart, a sortable table, a form, or anything you can build with HTML.
 
 FastMCP implements the [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) and provides two approaches:
 
@@ -22,7 +18,7 @@ FastMCP implements the [MCP Apps extension](https://modelcontextprotocol.io/docs
 
 <VersionBadge version="3.1.0" />
 
-[Prefab UI](/apps/prefab) is a Python component library that compiles to a JSON protocol, rendered by a shared engine that FastMCP manages automatically. You describe your UI in Python — layouts, charts, tables, forms — and FastMCP handles the renderer, the protocol wiring, and the delivery.
+[Prefab UI](/apps/prefab) is a Python component library that lets you build tool UIs without writing any HTML or JavaScript. Describe your layout in Python, and FastMCP handles the renderer and protocol wiring automatically.
 
 ```python
 from prefab_ui.components import Column, Heading, BarChart, ChartSeries
@@ -47,13 +43,13 @@ def sales_chart(year: int) -> PrefabApp:
     return PrefabApp(view=view)
 ```
 
-No HTML, no JavaScript, no frontend build step. Install with `pip install "fastmcp[apps]"` and see [Prefab UI](/apps/prefab) for the full guide.
+Install with `pip install "fastmcp[apps]"` and see [Prefab UI](/apps/prefab) for the full guide.
 
 ## Custom HTML Apps
 
-The [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) is an open protocol, and you can use it directly when you need full control. You write your own HTML, CSS, and JavaScript, wire up communication with the host via the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) SDK, and manage resources and CSP configuration through FastMCP.
+The [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) is an open protocol, and you can use it directly when you need full control. You write your own HTML/CSS/JavaScript and communicate with the host via the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) SDK.
 
-This is the right choice when you need custom rendering (maps, 3D, video), want to use a specific JavaScript framework, or need capabilities beyond what the component library offers.
+This is the right choice for custom rendering (maps, 3D, video), specific JavaScript frameworks, or capabilities beyond what the component library offers.
 
 ```python
 from fastmcp import FastMCP
