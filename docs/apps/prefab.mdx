@@ -10,79 +10,107 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.1.0" />
 
-[Prefab UI](https://docs.prefab-ui.com) is a Python component library that pairs with FastMCP to give your tools rich, interactive UIs. You compose layouts and charts in Python — Prefab handles rendering them inside the host client's conversation.
-
-Install with the `apps` extra:
+[Prefab UI](https://prefab.prefect.io) is a Python component library that gives your MCP tools rich, interactive UIs. You write Python — Prefab renders charts, tables, forms, and layouts directly inside the host client's conversation. No HTML. No JavaScript. No frontend build step.
 
 ```bash
 pip install "fastmcp[apps]"
 ```
 
-## Quick Start
+## The Idea
 
-The simplest way to add a UI to a tool is to return a Prefab component or `PrefabApp` from a function decorated with `app=True`:
+Most MCP tools return text. That's fine for simple answers, but some results — a sales chart, a sortable employee directory, a form that collects user input — deserve better than a JSON blob in a chat window.
+
+Prefab lets you describe those UIs in Python using composable components, and FastMCP handles everything else: registering the renderer, wiring up the protocol, and delivering the result to the host.
 
 ```python
-from prefab_ui.components import Column, Heading, Text, Badge
+from prefab_ui.components import Column, Heading, BarChart, ChartSeries, Muted
 from prefab_ui.app import PrefabApp
 from fastmcp import FastMCP
 
-mcp = FastMCP("My Server")
+mcp = FastMCP("Dashboard")
 
 
 @mcp.tool(app=True)
-def greet(name: str) -> PrefabApp:
-    """Greet someone with a styled card."""
+def revenue_chart(year: int) -> PrefabApp:
+    """Show annual revenue as an interactive bar chart."""
+    data = get_revenue_data(year)
+    total = sum(d["revenue"] for d in data)
+
     with Column(gap=4, css_class="p-6") as view:
-        Heading(f"Hello, {name}!")
-        Text("Welcome to the team.")
-        Badge("New member", variant="outline")
+        Heading(f"{year} Revenue")
+        Muted(f"${total:,} total")
+        BarChart(
+            data=data,
+            series=[ChartSeries(data_key="revenue", label="Revenue")],
+            x_axis="quarter",
+        )
 
     return PrefabApp(view=view)
 ```
 
-That's it. When the host calls `greet`, it renders an interactive UI in the conversation — the heading, text, and badge all styled and laid out. No HTML, no JavaScript, no `ui://` resources to manage.
+When a host calls `revenue_chart`, the user sees an interactive chart with hover tooltips and axis labels — not a wall of numbers.
 
 ## How It Works
 
-When you set `app=True` (or return a `PrefabApp`/`Component` type), FastMCP automatically:
+Setting `app=True` (or returning a `PrefabApp` type) tells FastMCP to:
 
-1. **Registers a shared renderer** — a `ui://prefab/renderer.html` resource containing the Prefab rendering engine
-2. **Wires the tool's metadata** — sets `meta.ui.resourceUri` so the host knows to load the renderer
-3. **Converts the return value** — serializes your component tree into `structuredContent` on the tool result
+1. **Register a shared renderer** — a `ui://prefab/renderer.html` resource containing the Prefab rendering engine, fetched once and reused across tools
+2. **Wire the tool metadata** — so the host knows to load the renderer iframe when calling the tool
+3. **Serialize the component tree** — your Python components become `structuredContent` on the tool result, which the renderer interprets and displays
 
-The host fetches the renderer once, loads it in a sandboxed iframe, and pushes each tool result into it. The renderer handles layout, styling, interactivity, and theming.
+You don't manage resources, write HTML, or think about the MCP Apps protocol. You build a component tree and return it.
+
+## Building UIs
+
+Prefab uses Python context managers for layout composition. Components created inside a `with` block automatically become children of the parent:
+
+```python
+from prefab_ui.components import Column, Row, Card, CardContent, Heading, Text, Badge
+
+with Column(gap=6, css_class="p-6") as view:
+    with Row(gap=2, align="center"):
+        Heading("Team Dashboard")
+        Badge("Live", variant="success")
+
+    with Card():
+        with CardContent():
+            Text("Everything is running smoothly.")
+```
+
+This produces a vertical layout with a header row (title + badge) and a card below it. The `gap`, `align`, and `css_class` parameters control spacing, alignment, and styling using Tailwind CSS classes.
+
+### Available Components
+
+Prefab ships 45+ components. Here are the highlights:
+
+| Category | Components |
+|----------|-----------|
+| **Layout** | `Column`, `Row`, `Grid`, `Container`, `Div`, `Span` |
+| **Typography** | `Heading`, `Text`, `Muted`, `Code`, `Markdown`, `H1`–`H4` |
+| **Data Display** | `DataTable`, `Table`, `Badge`, `Progress`, `Separator` |
+| **Charts** | `BarChart`, `LineChart`, `AreaChart`, `PieChart`, `RadarChart`, `RadialChart` |
+| **Forms** | `Input`, `Select`, `Checkbox`, `Switch`, `Slider`, `Textarea`, `DatePicker`, `Radio`, `Combobox`, `Form` |
+| **Containers** | `Card`, `Accordion`, `Tabs`, `Dialog`, `Popover`, `Tooltip`, `Alert` |
+| **Control Flow** | `If`/`Elif`/`Else`, `ForEach`, `Pages` |
+| **Actions** | `Button` with `on_click`, `Form` with `on_submit` |
+
+See the [Prefab UI documentation](https://prefab.prefect.io) for the complete reference with interactive examples.
 
 ## Return Patterns
 
-There are three ways to return UI from a tool:
+There are three ways to return UI from a tool, depending on how much control you need:
 
-### Bare Component
+### Return a PrefabApp
 
-Return any Prefab component directly. FastMCP wraps it in a `PrefabApp` and uses a default text fallback for LLM clients that don't support Apps.
+The standard pattern. Attach client-side state when your UI needs it:
 
 ```python
 @mcp.tool(app=True)
-def status() -> Column:
-    with Column(gap=2) as view:
-        Heading("System Status")
-        Text("All services operational.")
-    return view
-```
-
-### PrefabApp
-
-Return a `PrefabApp` when you need to attach client-side state or other configuration alongside the view:
-
-```python
-from prefab_ui.app import PrefabApp
-
-@mcp.tool(app=True)
-def dashboard(team: str) -> PrefabApp:
-    members = get_team_members(team)
+def team_directory() -> PrefabApp:
+    members = get_members()
 
     with Column(gap=4, css_class="p-6") as view:
-        Heading(f"{team} Dashboard")
+        Heading("Team")
         DataTable(
             columns=[
                 DataTableColumn(key="name", header="Name", sortable=True),
@@ -92,38 +120,48 @@ def dashboard(team: str) -> PrefabApp:
             searchable=True,
         )
 
-    return PrefabApp(
-        view=view,
-        state={"team": team, "count": len(members)},
-    )
+    return PrefabApp(view=view, state={"count": len(members)})
+```
+
+### Return a Bare Component
+
+For simple cases where you don't need state. FastMCP wraps it automatically:
+
+```python
+@mcp.tool(app=True)
+def status_badge() -> Column:
+    with Column(gap=2) as view:
+        Heading("All Systems Operational")
+        Badge("Healthy", variant="success")
+    return view
 ```
 
 ### Custom Text Fallback
 
-By default, LLM clients that don't render Apps see `"[Rendered Prefab UI]"` as the tool result text. To provide a more useful fallback — a summary the model can reason about — wrap the result in a `ToolResult`:
+By default, LLM clients that don't render Apps see `"[Rendered Prefab UI]"`. To provide a more useful summary the model can reason about, wrap the result in a `ToolResult`:
 
 ```python
 from fastmcp.tools import ToolResult
 
 @mcp.tool(app=True)
 def sales_overview() -> ToolResult:
-    total = sum(row["revenue"] for row in SALES_DATA)
+    total = sum(row["revenue"] for row in data)
 
-    with Column(gap=6, css_class="p-6") as view:
-        Heading("Monthly Sales")
-        BarChart(data=SALES_DATA, series=[ChartSeries(data_key="revenue")])
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Sales Overview")
+        BarChart(data=data, series=[ChartSeries(data_key="revenue")])
 
     return ToolResult(
-        content=f"Monthly sales: ${total:,} total revenue",
+        content=f"Total revenue: ${total:,}",
         structured_content=view,
     )
 ```
 
-The `content` is what the LLM sees; the `structured_content` (a component or `PrefabApp`) is what the renderer displays.
+The `content` string is what the LLM sees; the `structured_content` is what the renderer displays.
 
 ## Type Inference
 
-You don't strictly need `app=True` if your function's return type annotation is a Prefab type. FastMCP detects `PrefabApp`, `Component`, and `Optional` variants and auto-wires the renderer:
+You don't strictly need `app=True` if your return type annotation is a Prefab type. FastMCP detects `PrefabApp`, `Component`, and their `Optional` variants automatically:
 
 ```python
 # app=True is inferred from the return type
@@ -132,121 +170,82 @@ def greet(name: str) -> PrefabApp:
     return PrefabApp(view=Heading(f"Hello, {name}!"))
 ```
 
-Explicit `app=True` is still recommended for clarity, and is required when the return type doesn't reveal the Prefab type (e.g., `-> ToolResult`).
+Explicit `app=True` is still recommended for clarity. It's required when the return type doesn't reveal the Prefab type (e.g., `-> ToolResult`).
 
-## Available Components
+## Interactivity
 
-Prefab ships a comprehensive set of components. Here are some highlights:
+Prefab UIs aren't static renders — they support client-side state, form inputs, and actions that call back to your server.
 
-| Category | Components |
-|----------|-----------|
-| **Layout** | `Column`, `Row`, `Grid`, `Container` |
-| **Typography** | `Heading`, `Text`, `Muted`, `Code`, `Markdown` |
-| **Data** | `DataTable`, `Table` |
-| **Charts** | `BarChart`, `LineChart`, `AreaChart`, `PieChart`, `RadarChart`, `RadialChart` |
-| **Forms** | `Input`, `Select`, `Checkbox`, `Switch`, `Slider`, `DatePicker` |
-| **Feedback** | `Alert`, `Badge`, `Progress`, `Spinner` |
-| **Containers** | `Card`, `Accordion`, `Tabs`, `Dialog` |
+### Client-Side State
 
-Components compose using Python context managers:
+State values are set in `PrefabApp(state={...})` and referenced in components using `{{ expression }}` templates:
 
 ```python
-with Column(gap=6, css_class="p-6") as view:
-    with Row(gap=2, align="center"):
-        Heading("Title")
-        Badge("v2", variant="outline")
+from prefab_ui.components import Column, Text, Button, If, Badge
+from prefab_ui.actions import ToggleState
 
-    with Card():
-        with CardContent():
-            Text("Card body here.")
+@mcp.tool(app=True)
+def toggle_demo() -> PrefabApp:
+    with Column(gap=4) as view:
+        Button("Toggle", on_click=ToggleState("show"))
+        with If("{{ show }}"):
+            Badge("Visible!", variant="success")
+
+    return PrefabApp(view=view, state={"show": False})
 ```
 
-See the [Prefab UI documentation](https://docs.prefab-ui.com) for the full component reference and interactive examples.
+State mutations happen entirely in the browser — no server round-trip needed for `SetState`, `ToggleState`, `AppendState`, or `PopState`.
 
-## Example: Sales Dashboard
+### Server Actions
 
-A complete example showing charts, layout, and custom text fallback:
+Buttons and forms can call tools on your MCP server:
 
-```python expandable
-from prefab_ui.components import (
-    BarChart,
-    ChartSeries,
-    Column,
-    Heading,
-    LineChart,
-    Muted,
+```python
+from prefab_ui.actions import ToolCall, ShowToast
+
+Button(
+    "Save",
+    on_click=ToolCall(
+        "save_record",
+        arguments={"name": "{{ name }}", "email": "{{ email }}"},
+        on_success=ShowToast("Saved!", variant="success"),
+        on_error=ShowToast("{{ $error }}", variant="error"),
+    ),
 )
-from fastmcp import FastMCP
-from fastmcp.tools import ToolResult
+```
 
-mcp = FastMCP("Sales Dashboard")
+The renderer executes the tool call, handles the response, and runs success/error callbacks — all declared in Python.
 
-MONTHLY_SALES = [
-    {"month": "Jan", "online": 4200, "retail": 2400},
-    {"month": "Feb", "online": 3800, "retail": 2100},
-    {"month": "Mar", "online": 5100, "retail": 2800},
-    {"month": "Apr", "online": 4600, "retail": 3200},
-    {"month": "May", "online": 5800, "retail": 3100},
-    {"month": "Jun", "online": 6200, "retail": 3500},
-]
+### Forms
 
+Named inputs automatically sync their values to client-side state. The `Form` component collects them on submit:
 
-@mcp.tool(app=True)
-def sales_overview(stacked: bool = False) -> ToolResult:
-    """View monthly sales broken down by channel."""
-    total = sum(row["online"] + row["retail"] for row in MONTHLY_SALES)
+```python
+from prefab_ui.components import Form, Input, Button
+from prefab_ui.actions import ToolCall
 
-    with Column(gap=6, css_class="p-6") as view:
-        with Column(gap=1):
-            Heading("Monthly Sales")
-            Muted(f"${total:,} total revenue")
+with Form(on_submit=ToolCall("create_user")):
+    Input(name="username", placeholder="Username", required=True)
+    Input(name="email", input_type="email", placeholder="Email")
+    Button("Create Account")
+```
 
-        BarChart(
-            data=MONTHLY_SALES,
-            series=[
-                ChartSeries(data_key="online", label="Online"),
-                ChartSeries(data_key="retail", label="Retail"),
-            ],
-            x_axis="month",
-            stacked=stacked,
-            show_legend=True,
-        )
+For Pydantic models, `Form.from_model()` auto-generates the entire form — inputs, labels, validation, and types:
 
-    return ToolResult(
-        content=f"Monthly sales: ${total:,} total revenue across 2 channels",
-        structured_content=view,
-    )
+```python
+from pydantic import BaseModel, Field
 
+class UserProfile(BaseModel):
+    name: str = Field(title="Full Name")
+    email: str = Field(title="Email")
+    role: Literal["user", "admin"] = "user"
 
-@mcp.tool(app=True)
-def sales_trend(curve: str = "linear") -> ToolResult:
-    """View sales trends over time as a line chart."""
-    with Column(gap=6, css_class="p-6") as view:
-        with Column(gap=1):
-            Heading("Sales Trend")
-            Muted("Online vs. retail over 6 months")
-
-        LineChart(
-            data=MONTHLY_SALES,
-            series=[
-                ChartSeries(data_key="online", label="Online"),
-                ChartSeries(data_key="retail", label="Retail"),
-            ],
-            x_axis="month",
-            curve=curve,
-            show_dots=True,
-            show_legend=True,
-        )
-
-    return ToolResult(
-        content="Sales trend across online and retail channels",
-        structured_content=view,
-    )
+Form.from_model(UserProfile, on_submit=ToolCall("save_profile"))
 ```
 
 ## Mixing with the Low-Level API
 
-Prefab handles the renderer for you, but you can still use the [low-level API](/apps/low-level) alongside it. For example, you might have some tools that use Prefab and others that use custom HTML:
+Prefab tools and custom HTML tools coexist in the same server:
 
 ```python
 from fastmcp.server.apps import AppConfig
@@ -257,9 +256,16 @@ def team_directory() -> PrefabApp:
     ...
 
 # Custom HTML tool — your own renderer
-@mcp.tool(app=AppConfig(resource_uri="ui://my-app/custom.html"))
+@mcp.tool(app=AppConfig(resource_uri="ui://my-app/map.html"))
 def map_view() -> str:
     ...
 ```
 
-Both work in the same server. Prefab tools share a single renderer resource; custom tools point to their own.
+Prefab tools share a single renderer resource. Custom tools point to their own. Both use the same MCP Apps protocol under the hood.
+
+## Next Steps
+
+- **[Mini Apps](/apps/mini-apps)** — Patterns for charts, tables, forms, and common use cases
+- **[Full Apps](/apps/full-apps)** — Building multi-page applications with navigation and complex state
+- **[Low-Level API](/apps/low-level)** — When you need custom HTML and full control
+- **[Prefab UI Docs](https://prefab.prefect.io)** — Complete component reference with interactive examples

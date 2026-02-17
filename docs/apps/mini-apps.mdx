@@ -1,0 +1,416 @@
+---
+title: Mini Apps
+sidebarTitle: Mini Apps
+description: Patterns for charts, tables, forms, and other common tool UIs.
+icon: grid-2-plus
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.1.0" />
+
+Mini apps are single-screen tool UIs — a chart, a table, a form, a status display. They're the most common thing you'll build with Prefab, and they're where the library really shines: a few lines of Python replace what would otherwise be a full frontend project.
+
+Every example on this page is a complete tool body you can drop into any FastMCP server. They all assume these imports:
+
+```python
+from prefab_ui.components import *
+from prefab_ui.app import PrefabApp
+from prefab_ui.actions import *
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server")
+```
+
+## Charts
+
+Charts are probably the single most compelling reason to use Prefab. The difference between a table of numbers in a chat message and an interactive chart with hover tooltips is enormous — and it's one import away.
+
+### Bar Chart
+
+```python
+@mcp.tool(app=True)
+def quarterly_revenue(year: int) -> PrefabApp:
+    """Show quarterly revenue as a bar chart."""
+    data = [
+        {"quarter": "Q1", "revenue": 42000, "costs": 28000},
+        {"quarter": "Q2", "revenue": 51000, "costs": 31000},
+        {"quarter": "Q3", "revenue": 47000, "costs": 29000},
+        {"quarter": "Q4", "revenue": 63000, "costs": 35000},
+    ]
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading(f"{year} Revenue vs Costs")
+        BarChart(
+            data=data,
+            series=[
+                ChartSeries(data_key="revenue", label="Revenue"),
+                ChartSeries(data_key="costs", label="Costs"),
+            ],
+            x_axis="quarter",
+            show_legend=True,
+        )
+
+    return PrefabApp(view=view)
+```
+
+Multi-series charts work by passing multiple `ChartSeries` entries. Each one plots a different data key. Add `stacked=True` to stack bars instead of grouping them, or `horizontal=True` to flip the axes.
+
+### Line and Area Charts
+
+`LineChart` and `AreaChart` share the same API shape as `BarChart`, with a few extras: `curve` controls interpolation (`"linear"`, `"smooth"`, or `"step"`), and `show_dots` renders data points.
+
+```python
+@mcp.tool(app=True)
+def usage_trend() -> PrefabApp:
+    """Show API usage over time."""
+    data = fetch_daily_usage()
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("API Usage (30 Days)")
+        AreaChart(
+            data=data,
+            series=[ChartSeries(data_key="requests", label="Requests")],
+            x_axis="date",
+            curve="smooth",
+            height=250,
+        )
+
+    return PrefabApp(view=view)
+```
+
+### Pie and Donut Charts
+
+`PieChart` uses `data_key` (the numeric value) and `name_key` (the label) instead of series:
+
+```python
+@mcp.tool(app=True)
+def ticket_breakdown() -> PrefabApp:
+    """Show open tickets by category."""
+    data = [
+        {"category": "Bug", "count": 23},
+        {"category": "Feature", "count": 15},
+        {"category": "Docs", "count": 8},
+        {"category": "Infra", "count": 12},
+    ]
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Open Tickets")
+        PieChart(
+            data=data,
+            data_key="count",
+            name_key="category",
+            show_legend=True,
+            inner_radius=60,
+        )
+
+    return PrefabApp(view=view)
+```
+
+Setting `inner_radius` to a non-zero value turns it into a donut chart — great for showing proportions with a summary stat in the center.
+
+## Data Tables
+
+Tables are the other killer feature. Prefab's `DataTable` gives you sortable columns, full-text search, and pagination out of the box. Compare that to dumping JSON in a chat message and asking the model to format it.
+
+```python
+@mcp.tool(app=True)
+def employee_directory() -> PrefabApp:
+    """Show a searchable, sortable employee directory."""
+    employees = fetch_employees()
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Employee Directory")
+        DataTable(
+            columns=[
+                DataTableColumn(key="name", header="Name", sortable=True),
+                DataTableColumn(key="department", header="Department", sortable=True),
+                DataTableColumn(key="role", header="Role"),
+                DataTableColumn(key="location", header="Office", sortable=True),
+            ],
+            rows=employees,
+            searchable=True,
+            paginated=True,
+            page_size=15,
+        )
+
+    return PrefabApp(view=view)
+```
+
+The user gets a real table they can sort by clicking column headers, filter by typing in the search box, and page through. The data never leaves the browser — sorting and filtering happen client-side.
+
+### Dynamic Tables with State
+
+Tables become even more powerful when combined with state. Here's a pattern where the table rows come from state, so they can be updated by server actions:
+
+```python
+@mcp.tool(app=True)
+def todo_list() -> PrefabApp:
+    """Show a to-do list that can add and remove items."""
+    todos = fetch_todos()
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("To-Do List")
+
+        with Row(gap=2):
+            Input(name="new_todo", placeholder="Add a task...")
+            Button(
+                "Add",
+                on_click=[
+                    AppendState("todos", value={"text": "{{ new_todo }}", "done": False}),
+                    SetState("new_todo", ""),
+                ],
+            )
+
+        with ForEach("todos"):
+            with Row(gap=2, align="center"):
+                Checkbox(name="done")
+                Text("{{ text }}")
+
+    return PrefabApp(view=view, state={"todos": todos, "new_todo": ""})
+```
+
+`ForEach` iterates over a state array and renders its children for each item. The children can reference fields from the current item using `{{ field_name }}` templates.
+
+## Forms
+
+Forms are where Prefab really differentiates from static tool output. Instead of asking the model to collect information through multiple conversational turns, you can present a real form with validation, dropdowns, and a submit button — all in one tool call.
+
+### Manual Forms
+
+Build forms by composing input components inside a `Form` wrapper:
+
+```python
+@mcp.tool(app=True)
+def new_contact_form() -> PrefabApp:
+    """Show a form to create a new contact."""
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("New Contact")
+
+        with Form(on_submit=ToolCall("save_contact")):
+            Input(name="name", label="Full Name", required=True)
+            Input(name="email", label="Email", input_type="email", required=True)
+            Input(name="phone", label="Phone", input_type="tel")
+            Select(
+                name="category",
+                label="Category",
+                options=["Customer", "Vendor", "Partner", "Other"],
+            )
+            Textarea(name="notes", label="Notes", placeholder="Optional notes...")
+            Button("Save Contact")
+
+    return PrefabApp(view=view)
+```
+
+When the user submits, `ToolCall("save_contact")` fires with all the named input values as arguments. Your `save_contact` tool receives `{"name": "...", "email": "...", "phone": "...", "category": "...", "notes": "..."}`.
+
+Named inputs automatically sync their values to client-side state, so you can reference them in templates or use them in other actions before the form is submitted.
+
+### Pydantic Model Forms
+
+If you already have a Pydantic model, `Form.from_model()` generates the entire form automatically — labels, input types, validation, and submit wiring:
+
+```python
+from pydantic import BaseModel, Field
+from typing import Literal
+
+class BugReport(BaseModel):
+    title: str = Field(title="Bug Title")
+    severity: Literal["low", "medium", "high", "critical"] = Field(
+        title="Severity", default="medium"
+    )
+    description: str = Field(title="Description")
+    steps_to_reproduce: str = Field(title="Steps to Reproduce")
+
+@mcp.tool(app=True)
+def report_bug() -> PrefabApp:
+    """Show a bug report form."""
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Report a Bug")
+        Form.from_model(BugReport, on_submit=ToolCall("create_bug_report"))
+
+    return PrefabApp(view=view)
+```
+
+`Form.from_model` inspects the model's fields: `str` becomes a text input, `Literal` becomes a select dropdown, `bool` becomes a checkbox. Field titles become labels. Default values are pre-filled. The `on_submit` ToolCall automatically receives all field values under a `data` key.
+
+### Forms with Feedback
+
+Combine `on_success` and `on_error` handlers to give users immediate feedback:
+
+```python
+with Form(
+    on_submit=ToolCall(
+        "save_record",
+        on_success=ShowToast("Saved successfully!", variant="success"),
+        on_error=ShowToast("{{ $error }}", variant="error"),
+    )
+):
+    Input(name="name", label="Name", required=True)
+    Button("Save")
+```
+
+The toast appears in the renderer after the tool call completes. `{{ $error }}` interpolates the error message from the server if the tool raises an exception.
+
+## Status Displays
+
+Not every tool needs a chart or form. Sometimes you just want a nicely formatted status view:
+
+```python
+@mcp.tool(app=True)
+def system_status() -> PrefabApp:
+    """Show current system health."""
+    services = check_all_services()
+
+    with Column(gap=4, css_class="p-6") as view:
+        with Row(gap=2, align="center"):
+            Heading("System Status")
+            Badge("All Healthy", variant="success")
+
+        Separator()
+
+        with Grid(columns=2, gap=4):
+            for svc in services:
+                with Card():
+                    with CardContent():
+                        with Row(gap=2, align="center"):
+                            Text(svc["name"], css_class="font-medium")
+                            Badge(svc["status"], variant="success" if svc["ok"] else "destructive")
+                        Muted(f"Response: {svc['latency_ms']}ms")
+                        Progress(value=svc["uptime_pct"])
+
+    return PrefabApp(view=view)
+```
+
+This mixes `Grid` for layout, `Card` for grouping, `Badge` for status indicators, and `Progress` for visual metrics. The result is a dashboard-quality status page rendered right in the conversation.
+
+## Conditional Content
+
+Use `If`, `Elif`, and `Else` to show or hide parts of your UI based on state:
+
+```python
+@mcp.tool(app=True)
+def feature_flags() -> PrefabApp:
+    """Toggle feature flags with live preview."""
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Feature Flags")
+
+        Switch(name="dark_mode", label="Dark Mode")
+        Switch(name="beta_features", label="Beta Features")
+
+        Separator()
+
+        with If("{{ dark_mode }}"):
+            Alert(title="Dark mode enabled", description="UI will use dark theme.")
+        with If("{{ beta_features }}"):
+            Alert(
+                title="Beta features active",
+                description="Experimental features are now visible.",
+                variant="warning",
+            )
+
+    return PrefabApp(view=view, state={"dark_mode": False, "beta_features": False})
+```
+
+`If` evaluates its condition expression against client-side state. When the user toggles a switch, the corresponding alert appears or disappears instantly — no server round-trip.
+
+## Composing Layouts
+
+### Tabs
+
+Organize related content into tabs when a single view has distinct sections:
+
+```python
+@mcp.tool(app=True)
+def project_overview(project_id: str) -> PrefabApp:
+    """Show project details organized in tabs."""
+    project = fetch_project(project_id)
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading(project["name"])
+
+        with Tabs():
+            with Tab("Overview"):
+                Text(project["description"])
+                with Row(gap=4):
+                    Badge(project["status"])
+                    Muted(f"Created: {project['created_at']}")
+
+            with Tab("Members"):
+                DataTable(
+                    columns=[
+                        DataTableColumn(key="name", header="Name", sortable=True),
+                        DataTableColumn(key="role", header="Role"),
+                    ],
+                    rows=project["members"],
+                )
+
+            with Tab("Activity"):
+                with ForEach("activity"):
+                    with Row(gap=2):
+                        Muted("{{ timestamp }}")
+                        Text("{{ message }}")
+
+    return PrefabApp(view=view, state={"activity": project["activity"]})
+```
+
+### Accordion
+
+Collapsible sections work well for dense information where users need to drill into specifics:
+
+```python
+@mcp.tool(app=True)
+def api_health() -> PrefabApp:
+    """Show health details for each API endpoint."""
+    endpoints = fetch_endpoint_health()
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("API Health")
+
+        with Accordion(multiple=True):
+            for ep in endpoints:
+                with AccordionItem(ep["path"]):
+                    with Row(gap=4):
+                        Badge(f"{ep['status']}", variant="success" if ep["healthy"] else "destructive")
+                        Text(f"Avg: {ep['avg_ms']}ms")
+                        Text(f"P99: {ep['p99_ms']}ms")
+                    Progress(value=ep["uptime_pct"])
+
+    return PrefabApp(view=view)
+```
+
+`multiple=True` lets users expand several items simultaneously. Without it, only one item stays open at a time.
+
+## Text Fallback
+
+Every example above works great in hosts that support Apps. But what about hosts that don't render iframes? By default they'll see `"[Rendered Prefab UI]"` — not very useful for the model to reason about.
+
+For tools where the model needs the actual data (not just the visual), wrap your return in a `ToolResult`:
+
+```python
+from fastmcp.tools import ToolResult
+
+@mcp.tool(app=True)
+def revenue_summary(year: int) -> ToolResult:
+    """Show revenue chart with text fallback."""
+    data = fetch_revenue(year)
+    total = sum(d["revenue"] for d in data)
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading(f"{year} Revenue")
+        BarChart(data=data, series=[ChartSeries(data_key="revenue")], x_axis="quarter")
+
+    return ToolResult(
+        content=f"Total {year} revenue: ${total:,} across {len(data)} quarters",
+        structured_content=view,
+    )
+```
+
+The `content` text is what the LLM sees and reasons about. The `structured_content` is what the renderer displays. Both travel in the same tool result — the host picks whichever it supports.
+
+## Next Steps
+
+- **[Prefab UI](/apps/prefab)** — Core integration guide, state system, and server actions
+- **[Full Apps](/apps/full-apps)** — Multi-page applications with navigation and complex state
+- **[Prefab UI Docs](https://prefab.prefect.io)** — Complete component reference with interactive examples
