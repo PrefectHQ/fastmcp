@@ -1193,7 +1193,7 @@ class TestConsentBindingCookie:
             params,
         )
         # With consent disabled, authorize returns upstream URL directly
-        assert "github.com" in upstream_url
+        assert upstream_url.startswith("https://github.com/login/oauth/authorize")
         qs = parse_qs(urlparse(upstream_url).query)
         txn_id = qs["state"][0]
 
