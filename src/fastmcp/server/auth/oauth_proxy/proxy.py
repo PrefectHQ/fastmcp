@@ -1639,6 +1639,38 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     error_message="Invalid or expired authorization transaction. Please try authenticating again.",
                 )
                 return HTMLResponse(content=html_content, status_code=400)
+            # Verify consent binding cookie to prevent confused deputy attacks.
+            # When consent is enabled, the browser that approved consent receives
+            # a signed cookie. A different browser (e.g., a victim lured to the
+            # IdP URL) won't have this cookie and will be rejected.
+            if self._require_authorization_consent:
+                consent_token = transaction_model.consent_token
+                if not consent_token:
+                    logger.error("Transaction %s missing consent_token", txn_id)
+                    html_content = create_error_html(
+                        error_title="Authorization Error",
+                        error_message="Invalid authorization flow. Please try authenticating again.",
+                    )
+                    return HTMLResponse(content=html_content, status_code=403)
+
+                if not self._verify_consent_binding_cookie(
+                    request, txn_id, consent_token
+                ):
+                    logger.warning(
+                        "Consent binding cookie missing or invalid for transaction %s "
+                        "(possible confused deputy attack)",
+                        txn_id,
+                    )
+                    html_content = create_error_html(
+                        error_title="Authorization Error",
+                        error_message=(
+                            "Authorization session mismatch. This can happen if you "
+                            "followed a link from another person or your session expired. "
+                            "Please try authenticating again."
+                        ),
+                    )
+                    return HTMLResponse(content=html_content, status_code=403)
+
             transaction = transaction_model.model_dump()
 
             # Exchange IdP code for tokens (server-side)
@@ -1751,7 +1783,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
             logger.debug(f"Forwarding to client callback for transaction {txn_id}")
 
-            return RedirectResponse(url=client_callback_url, status_code=302)
+            response = RedirectResponse(url=client_callback_url, status_code=302)
+            self._clear_consent_binding_cookie(request, response, txn_id)
+            return response
 
         except Exception as e:
             logger.error("Error in IdP callback handler: %s", e, exc_info=True)
