@@ -1,0 +1,265 @@
+---
+title: Prefab UI
+sidebarTitle: Prefab UI
+description: Build interactive tool UIs in pure Python — no HTML or JavaScript required.
+icon: palette
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.1.0" />
+
+[Prefab UI](https://docs.prefab-ui.com) is a Python component library that pairs with FastMCP to give your tools rich, interactive UIs. You compose layouts and charts in Python — Prefab handles rendering them inside the host client's conversation.
+
+Install with the `apps` extra:
+
+```bash
+pip install "fastmcp[apps]"
+```
+
+## Quick Start
+
+The simplest way to add a UI to a tool is to return a Prefab component or `PrefabApp` from a function decorated with `app=True`:
+
+```python
+from prefab_ui.components import Column, Heading, Text, Badge
+from prefab_ui.app import PrefabApp
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server")
+
+
+@mcp.tool(app=True)
+def greet(name: str) -> PrefabApp:
+    """Greet someone with a styled card."""
+    with Column(gap=4, css_class="p-6") as view:
+        Heading(f"Hello, {name}!")
+        Text("Welcome to the team.")
+        Badge("New member", variant="outline")
+
+    return PrefabApp(view=view)
+```
+
+That's it. When the host calls `greet`, it renders an interactive UI in the conversation — the heading, text, and badge all styled and laid out. No HTML, no JavaScript, no `ui://` resources to manage.
+
+## How It Works
+
+When you set `app=True` (or return a `PrefabApp`/`Component` type), FastMCP automatically:
+
+1. **Registers a shared renderer** — a `ui://prefab/renderer.html` resource containing the Prefab rendering engine
+2. **Wires the tool's metadata** — sets `meta.ui.resourceUri` so the host knows to load the renderer
+3. **Converts the return value** — serializes your component tree into `structuredContent` on the tool result
+
+The host fetches the renderer once, loads it in a sandboxed iframe, and pushes each tool result into it. The renderer handles layout, styling, interactivity, and theming.
+
+## Return Patterns
+
+There are three ways to return UI from a tool:
+
+### Bare Component
+
+Return any Prefab component directly. FastMCP wraps it in a `PrefabApp` and uses a default text fallback for LLM clients that don't support Apps.
+
+```python
+@mcp.tool(app=True)
+def status() -> Column:
+    with Column(gap=2) as view:
+        Heading("System Status")
+        Text("All services operational.")
+    return view
+```
+
+### PrefabApp
+
+Return a `PrefabApp` when you need to attach client-side state or other configuration alongside the view:
+
+```python
+from prefab_ui.app import PrefabApp
+
+@mcp.tool(app=True)
+def dashboard(team: str) -> PrefabApp:
+    members = get_team_members(team)
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading(f"{team} Dashboard")
+        DataTable(
+            columns=[
+                DataTableColumn(key="name", header="Name", sortable=True),
+                DataTableColumn(key="role", header="Role", sortable=True),
+            ],
+            rows=members,
+            searchable=True,
+        )
+
+    return PrefabApp(
+        view=view,
+        state={"team": team, "count": len(members)},
+    )
+```
+
+### Custom Text Fallback
+
+By default, LLM clients that don't render Apps see `"[Rendered Prefab UI]"` as the tool result text. To provide a more useful fallback — a summary the model can reason about — wrap the result in a `ToolResult`:
+
+```python
+from fastmcp.tools import ToolResult
+
+@mcp.tool(app=True)
+def sales_overview() -> ToolResult:
+    total = sum(row["revenue"] for row in SALES_DATA)
+
+    with Column(gap=6, css_class="p-6") as view:
+        Heading("Monthly Sales")
+        BarChart(data=SALES_DATA, series=[ChartSeries(data_key="revenue")])
+
+    return ToolResult(
+        content=f"Monthly sales: ${total:,} total revenue",
+        structured_content=view,
+    )
+```
+
+The `content` is what the LLM sees; the `structured_content` (a component or `PrefabApp`) is what the renderer displays.
+
+## Type Inference
+
+You don't strictly need `app=True` if your function's return type annotation is a Prefab type. FastMCP detects `PrefabApp`, `Component`, and `Optional` variants and auto-wires the renderer:
+
+```python
+# app=True is inferred from the return type
+@mcp.tool
+def greet(name: str) -> PrefabApp:
+    return PrefabApp(view=Heading(f"Hello, {name}!"))
+```
+
+Explicit `app=True` is still recommended for clarity, and is required when the return type doesn't reveal the Prefab type (e.g., `-> ToolResult`).
+
+## Available Components
+
+Prefab ships a comprehensive set of components. Here are some highlights:
+
+| Category | Components |
+|----------|-----------|
+| **Layout** | `Column`, `Row`, `Grid`, `Container` |
+| **Typography** | `Heading`, `Text`, `Muted`, `Code`, `Markdown` |
+| **Data** | `DataTable`, `Table` |
+| **Charts** | `BarChart`, `LineChart`, `AreaChart`, `PieChart`, `RadarChart`, `RadialChart` |
+| **Forms** | `Input`, `Select`, `Checkbox`, `Switch`, `Slider`, `DatePicker` |
+| **Feedback** | `Alert`, `Badge`, `Progress`, `Spinner` |
+| **Containers** | `Card`, `Accordion`, `Tabs`, `Dialog` |
+
+Components compose using Python context managers:
+
+```python
+with Column(gap=6, css_class="p-6") as view:
+    with Row(gap=2, align="center"):
+        Heading("Title")
+        Badge("v2", variant="outline")
+
+    with Card():
+        with CardContent():
+            Text("Card body here.")
+```
+
+See the [Prefab UI documentation](https://docs.prefab-ui.com) for the full component reference and interactive examples.
+
+## Example: Sales Dashboard
+
+A complete example showing charts, layout, and custom text fallback:
+
+```python expandable
+from prefab_ui.components import (
+    BarChart,
+    ChartSeries,
+    Column,
+    Heading,
+    LineChart,
+    Muted,
+)
+from fastmcp import FastMCP
+from fastmcp.tools import ToolResult
+
+mcp = FastMCP("Sales Dashboard")
+
+MONTHLY_SALES = [
+    {"month": "Jan", "online": 4200, "retail": 2400},
+    {"month": "Feb", "online": 3800, "retail": 2100},
+    {"month": "Mar", "online": 5100, "retail": 2800},
+    {"month": "Apr", "online": 4600, "retail": 3200},
+    {"month": "May", "online": 5800, "retail": 3100},
+    {"month": "Jun", "online": 6200, "retail": 3500},
+]
+
+
+@mcp.tool(app=True)
+def sales_overview(stacked: bool = False) -> ToolResult:
+    """View monthly sales broken down by channel."""
+    total = sum(row["online"] + row["retail"] for row in MONTHLY_SALES)
+
+    with Column(gap=6, css_class="p-6") as view:
+        with Column(gap=1):
+            Heading("Monthly Sales")
+            Muted(f"${total:,} total revenue")
+
+        BarChart(
+            data=MONTHLY_SALES,
+            series=[
+                ChartSeries(data_key="online", label="Online"),
+                ChartSeries(data_key="retail", label="Retail"),
+            ],
+            x_axis="month",
+            stacked=stacked,
+            show_legend=True,
+        )
+
+    return ToolResult(
+        content=f"Monthly sales: ${total:,} total revenue across 2 channels",
+        structured_content=view,
+    )
+
+
+@mcp.tool(app=True)
+def sales_trend(curve: str = "linear") -> ToolResult:
+    """View sales trends over time as a line chart."""
+    with Column(gap=6, css_class="p-6") as view:
+        with Column(gap=1):
+            Heading("Sales Trend")
+            Muted("Online vs. retail over 6 months")
+
+        LineChart(
+            data=MONTHLY_SALES,
+            series=[
+                ChartSeries(data_key="online", label="Online"),
+                ChartSeries(data_key="retail", label="Retail"),
+            ],
+            x_axis="month",
+            curve=curve,
+            show_dots=True,
+            show_legend=True,
+        )
+
+    return ToolResult(
+        content="Sales trend across online and retail channels",
+        structured_content=view,
+    )
+```
+
+## Mixing with the Low-Level API
+
+Prefab handles the renderer for you, but you can still use the [low-level API](/apps/low-level) alongside it. For example, you might have some tools that use Prefab and others that use custom HTML:
+
+```python
+from fastmcp.server.apps import AppConfig
+
+# Prefab tool — automatic renderer
+@mcp.tool(app=True)
+def team_directory() -> PrefabApp:
+    ...
+
+# Custom HTML tool — your own renderer
+@mcp.tool(app=AppConfig(resource_uri="ui://my-app/custom.html"))
+def map_view() -> str:
+    ...
+```
+
+Both work in the same server. Prefab tools share a single renderer resource; custom tools point to their own.

@@ -200,6 +200,7 @@
                 "group": "Apps",
                 "pages": [
                   "apps/overview",
+                  "apps/prefab",
                   "apps/low-level"
                 ]
               },
