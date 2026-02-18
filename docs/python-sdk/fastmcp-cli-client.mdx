@@ -102,13 +102,15 @@ or nested arguments.
 
 **Examples:**
 
+```
 fastmcp call server.py greet name=World
 fastmcp call server.py resource://docs/readme
 fastmcp call server.py analyze --prompt data='[1,2,3]'
 fastmcp call http://server/mcp create --input-json '{"tags": ["a","b"]}'
+```
 
 
-### `discover_command` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/cli/client.py#L875" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `discover_command` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/cli/client.py#L877" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 discover_command() -> None
