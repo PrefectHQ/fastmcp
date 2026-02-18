@@ -10,7 +10,8 @@ on:
 jobs:
   triage:
     if: |
-      contains(fromJSON('["jlowin", "strawgate"]'), github.event.issue.user.login)
+      github.event.issue.user.login == 'strawgate' ||
+      (github.event.issue.user.login == 'jlowin' && contains(toJSON(github.event.issue.labels.*.name), 'bug'))
     concurrency:
       group: triage-issue-${{ github.event.issue.number }}
       cancel-in-progress: true
