@@ -99,7 +99,11 @@ The default OAuth client storage has moved from `DiskStore` to `FileTreeStore` t
 
 If you were using the default storage (i.e., not passing an explicit `client_storage`), clients will need to re-register on their first connection after upgrading. This happens automatically — no user action required, and it's the same flow that already occurs whenever a server restarts with in-memory storage.
 
-If you were passing a `DiskStore` explicitly, you can either [switch to `FileTreeStore`](/servers/storage-backends) (recommended) or keep using `DiskStore` by adding `pip install 'py-key-value-aio[disk]'` to your dependencies, which re-introduces the vulnerable `diskcache` package.
+If you were passing a `DiskStore` explicitly, you can either [switch to `FileTreeStore`](/servers/storage-backends) (recommended) or keep using `DiskStore` by adding the dependency yourself:
+
+<Warning>
+Keeping `DiskStore` requires `pip install 'py-key-value-aio[disk]'`, which re-introduces the vulnerable `diskcache` package into your dependency tree.
+</Warning>
 
 **Component enable()/disable() moved to server**
 
@@ -191,7 +195,17 @@ auth = GitHubProvider(
 
 **WSTransport removed**
 
-The deprecated WebSocket client transport has been removed. Use `StreamableHttpTransport` instead.
+The deprecated WebSocket client transport has been removed. Use `StreamableHttpTransport` instead:
+
+```python
+# Before
+from fastmcp.client.transports import WSTransport
+transport = WSTransport("ws://localhost:8000/ws")
+
+# After
+from fastmcp.client.transports import StreamableHttpTransport
+transport = StreamableHttpTransport("http://localhost:8000/mcp")
+```
 
 **OpenAPI `timeout` parameter removed**
 
@@ -276,7 +290,16 @@ from fastmcp.server.providers.proxy import FastMCPProxy
 from fastmcp.server.providers.openapi import OpenAPIProvider
 ```
 
-`FastMCPOpenAPI` itself is deprecated — use `FastMCP` with an `OpenAPIProvider` instead.
+`FastMCPOpenAPI` itself is deprecated — use `FastMCP` with an `OpenAPIProvider` instead:
+
+```python
+# Deprecated
+server = FastMCPOpenAPI(spec, client)
+
+# New
+from fastmcp.server.providers.openapi import OpenAPIProvider
+server = FastMCP("my_api", providers=[OpenAPIProvider(spec, client)])
+```
 
 **add_tool_transformation() → add_transform()**
 
