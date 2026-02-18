@@ -943,7 +943,7 @@ class TestProxyServer:
         self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
     ):
         """Tests that tags on remote FastMCP servers are visible to middleware
-        via proxy. See https://github.com/prefecthq/fastmcp/issues/1300"""
+        via proxy. See https://github.com/PrefectHQ/fastmcp/issues/1300"""
         proxy_server = FastMCP.as_proxy(mcp_server, name="Proxy Server")
 
         TAGS = []

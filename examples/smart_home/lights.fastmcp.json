@@ -3,7 +3,7 @@
   "entrypoint": "src/smart_home/lights/server.py",
   "environment": {
     "dependencies": [
-      "smart_home@git+https://github.com/prefecthq/fastmcp.git#subdirectory=examples/smart_home"
+      "smart_home@git+https://github.com/PrefectHQ/fastmcp.git#subdirectory=examples/smart_home"
     ]
   }
 }

@@ -1,6 +1,6 @@
 # /// script
 # dependencies = [
-#     "smart_home@git+https://github.com/prefecthq/fastmcp.git#subdirectory=examples/smart_home",
+#     "smart_home@git+https://github.com/PrefectHQ/fastmcp.git#subdirectory=examples/smart_home",
 #     "fastmcp",
 # ]
 # ///

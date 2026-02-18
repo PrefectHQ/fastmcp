@@ -40,7 +40,7 @@
   "footer": {
     "socials": {
       "discord": "https://discord.gg/uu8dJCgttd",
-      "github": "https://github.com/prefecthq/fastmcp",
+      "github": "https://github.com/PrefectHQ/fastmcp",
       "website": "https://www.prefect.io",
       "x": "https://x.com/fastmcp"
     }
@@ -72,7 +72,7 @@
       }
     ],
     "primary": {
-      "href": "https://github.com/prefecthq/fastmcp",
+      "href": "https://github.com/PrefectHQ/fastmcp",
       "type": "github"
     }
   },

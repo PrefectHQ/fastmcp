@@ -104,7 +104,7 @@ async def main(enable_posting: bool = False):
                     "links": [
                         {
                             "text": "FastMCP",
-                            "url": "https://github.com/prefecthq/fastmcp",
+                            "url": "https://github.com/PrefectHQ/fastmcp",
                         }
                     ],
                     "mentions": [
@@ -206,7 +206,7 @@ async def main(enable_posting: bool = False):
                             "links": [
                                 {
                                     "text": "everything",
-                                    "url": "https://github.com/prefecthq/fastmcp",
+                                    "url": "https://github.com/PrefectHQ/fastmcp",
                                 }
                             ],
                         },

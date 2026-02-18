@@ -91,7 +91,7 @@ async def demo():
         # Rich text with links and mentions
         await client.call_tool("post", {
             "text": "Check out FastMCP by @alternatebuild.dev",
-            "links": [{"text": "FastMCP", "url": "https://github.com/prefecthq/fastmcp"}],
+            "links": [{"text": "FastMCP", "url": "https://github.com/PrefectHQ/fastmcp"}],
             "mentions": [{"handle": "alternatebuild.dev", "display_text": "@alternatebuild.dev"}]
         })
         

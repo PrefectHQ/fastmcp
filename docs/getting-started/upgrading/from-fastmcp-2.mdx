@@ -25,10 +25,10 @@ uv add --upgrade fastmcp
 If you pin versions in a requirements file or `pyproject.toml`, update your pin to `fastmcp>=3.0.0,<4`.
 
 <Info>
-**New repository home.** As part of the v3 release, FastMCP's GitHub repository has moved from `jlowin/fastmcp` to [`prefecthq/fastmcp`](https://github.com/prefecthq/fastmcp) under [Prefect](https://prefect.io)'s stewardship. GitHub automatically redirects existing clones and bookmarks, so nothing breaks — but you can update your local remote whenever convenient:
+**New repository home.** As part of the v3 release, FastMCP's GitHub repository has moved from `jlowin/fastmcp` to [`PrefectHQ/fastmcp`](https://github.com/PrefectHQ/fastmcp) under [Prefect](https://prefect.io)'s stewardship. GitHub automatically redirects existing clones and bookmarks, so nothing breaks — but you can update your local remote whenever convenient:
 
 ```bash
-git remote set-url origin https://github.com/prefecthq/fastmcp.git
+git remote set-url origin https://github.com/PrefectHQ/fastmcp.git
 ```
 
 If you reference the repository URL in dependency specifications (e.g., `git+https://github.com/jlowin/fastmcp.git`), update those to the new location.
@@ -78,7 +78,7 @@ BREAKING CHANGES (will crash at import or runtime):
 
 12. OAUTH STORAGE: Default OAuth client storage changed from DiskStore to FileTreeStore due to pickle deserialization vulnerability in diskcache (CVE-2025-69872). Clients using default storage will re-register automatically on first connection. If using DiskStore explicitly, switch to FileTreeStore or add pip install 'py-key-value-aio[disk]'.
 
-13. REPO MOVE: GitHub repository moved from jlowin/fastmcp to prefecthq/fastmcp. Update git remotes and dependency URLs that reference the old location.
+13. REPO MOVE: GitHub repository moved from jlowin/fastmcp to PrefectHQ/fastmcp. Update git remotes and dependency URLs that reference the old location.
 
 14. BACKGROUND TASKS: FastMCP's background task system (SEP-1686) is now an optional dependency. If the code uses task=True or TaskConfig, add pip install "fastmcp[tasks]".
 
@@ -121,7 +121,7 @@ The full list of removed kwargs and their replacements:
 
 **OAuth storage backend changed (diskcache CVE)**
 
-The default OAuth client storage has moved from `DiskStore` to `FileTreeStore` to address a pickle deserialization vulnerability in diskcache ([CVE-2025-69872](https://github.com/prefecthq/fastmcp/issues/3166)).
+The default OAuth client storage has moved from `DiskStore` to `FileTreeStore` to address a pickle deserialization vulnerability in diskcache ([CVE-2025-69872](https://github.com/PrefectHQ/fastmcp/issues/3166)).
 
 If you were using the default storage (i.e., not passing an explicit `client_storage`), clients will need to re-register on their first connection after upgrading. This happens automatically — no user action required, and it's the same flow that already occurs whenever a server restarts with in-memory storage.
 

@@ -91,7 +91,7 @@ fastmcp = "fastmcp.cli:app"
 
 [project.urls]
 Homepage = "https://gofastmcp.com"
-Repository = "https://github.com/prefecthq/fastmcp"
+Repository = "https://github.com/PrefectHQ/fastmcp"
 Documentation = "https://gofastmcp.com"
 
 [build-system]

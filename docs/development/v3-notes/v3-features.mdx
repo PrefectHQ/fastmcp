@@ -8,7 +8,7 @@ This document tracks major features in FastMCP v3.0 for release notes preparatio
 
 ### SamplingTool Conversion Helpers
 
-Server tools (FunctionTool and TransformedTool) can now be passed directly to sampling methods via `SamplingTool.from_callable_tool()` ([#3062](https://github.com/prefecthq/fastmcp/pull/3062)). Previously, tools defined with `@mcp.tool` had to be recreated as functions for use in `ctx.sample()`. Now `ctx.sample()` and `ctx.sample_step()` accept these tool instances directly.
+Server tools (FunctionTool and TransformedTool) can now be passed directly to sampling methods via `SamplingTool.from_callable_tool()` ([#3062](https://github.com/PrefectHQ/fastmcp/pull/3062)). Previously, tools defined with `@mcp.tool` had to be recreated as functions for use in `ctx.sample()`. Now `ctx.sample()` and `ctx.sample_step()` accept these tool instances directly.
 
 ```python
 @mcp.tool
@@ -25,7 +25,7 @@ result = await ctx.sample(
 
 ### Concurrent Tool Execution in Sampling
 
-When an LLM returns multiple tool calls in a single sampling response, they can now be executed concurrently ([#3022](https://github.com/prefecthq/fastmcp/pull/3022)). Default behavior remains sequential; opt in with `tool_concurrency`. Tools can declare `sequential=True` to force sequential execution even when concurrency is enabled.
+When an LLM returns multiple tool calls in a single sampling response, they can now be executed concurrently ([#3022](https://github.com/PrefectHQ/fastmcp/pull/3022)). Default behavior remains sequential; opt in with `tool_concurrency`. Tools can declare `sequential=True` to force sequential execution even when concurrency is enabled.
 
 ```python
 result = await context.sample(
@@ -37,7 +37,7 @@ result = await context.sample(
 
 ### OpenAPI `validate_output` Option
 
-`OpenAPIProvider` and `FastMCP.from_openapi()` now accept `validate_output=False` to skip output schema validation ([#3134](https://github.com/prefecthq/fastmcp/pull/3134)). Useful when backends don't conform to their own OpenAPI response schemas — structured JSON still flows through, only the strict schema checking is disabled.
+`OpenAPIProvider` and `FastMCP.from_openapi()` now accept `validate_output=False` to skip output schema validation ([#3134](https://github.com/PrefectHQ/fastmcp/pull/3134)). Useful when backends don't conform to their own OpenAPI response schemas — structured JSON still flows through, only the strict schema checking is disabled.
 
 ```python
 mcp = FastMCP.from_openapi(
@@ -49,7 +49,7 @@ mcp = FastMCP.from_openapi(
 
 ### Auth Token Injection and Azure OBO Dependencies
 
-New dependency injection for accessing the authenticated user's token directly in tool parameters ([#2918](https://github.com/prefecthq/fastmcp/pull/2918)). Works with any auth provider.
+New dependency injection for accessing the authenticated user's token directly in tool parameters ([#2918](https://github.com/PrefectHQ/fastmcp/pull/2918)). Works with any auth provider.
 
 ```python
 from fastmcp.server.dependencies import CurrentAccessToken, TokenClaim
@@ -77,19 +77,19 @@ async def get_emails(
 
 ### `generate-cli` Agent Skill Generation
 
-`fastmcp generate-cli` now produces a `SKILL.md` alongside the CLI script ([#3115](https://github.com/prefecthq/fastmcp/pull/3115)) — a Claude Code agent skill with pre-computed invocation syntax for every tool. Agents reading the skill can call tools immediately without running `--help`. On by default; pass `--no-skill` to opt out.
+`fastmcp generate-cli` now produces a `SKILL.md` alongside the CLI script ([#3115](https://github.com/PrefectHQ/fastmcp/pull/3115)) — a Claude Code agent skill with pre-computed invocation syntax for every tool. Agents reading the skill can call tools immediately without running `--help`. On by default; pass `--no-skill` to opt out.
 
 ### Background Task Notification Queue
 
-Background tasks now use a distributed Redis notification queue for reliable delivery ([#2906](https://github.com/prefecthq/fastmcp/pull/2906)). Elicitation switches from polling to BLPOP (single blocking call instead of ~7,200 round-trips/hour), and notification delivery retries up to 3x with TTL-based expiration.
+Background tasks now use a distributed Redis notification queue for reliable delivery ([#2906](https://github.com/PrefectHQ/fastmcp/pull/2906)). Elicitation switches from polling to BLPOP (single blocking call instead of ~7,200 round-trips/hour), and notification delivery retries up to 3x with TTL-based expiration.
 
 ### Async Auth Checks
 
-Auth check functions can now be `async`, enabling authorization decisions that depend on asynchronous operations like reading server state via `Context.get_state` or calling external services ([#3150](https://github.com/prefecthq/fastmcp/issues/3150)). Sync and async checks can be freely mixed. Previously, passing an async function as an auth check would silently pass (coroutine objects are truthy).
+Auth check functions can now be `async`, enabling authorization decisions that depend on asynchronous operations like reading server state via `Context.get_state` or calling external services ([#3150](https://github.com/PrefectHQ/fastmcp/issues/3150)). Sync and async checks can be freely mixed. Previously, passing an async function as an auth check would silently pass (coroutine objects are truthy).
 
 ### Optional `$ref` Dereferencing in Schemas
 
-Schema `$ref` dereferencing — which inlines all `$defs` for compatibility with MCP clients that don't handle `$ref` — is now controlled by the `dereference_schemas` constructor kwarg ([#3141](https://github.com/prefecthq/fastmcp/issues/3141)). Default is `True` (dereference on) because the non-compliant clients are popular and the failure mode is silent breakage that server authors can't diagnose. Opt out when you know your clients handle `$ref` and want smaller schemas:
+Schema `$ref` dereferencing — which inlines all `$defs` for compatibility with MCP clients that don't handle `$ref` — is now controlled by the `dereference_schemas` constructor kwarg ([#3141](https://github.com/PrefectHQ/fastmcp/issues/3141)). Default is `True` (dereference on) because the non-compliant clients are popular and the failure mode is silent breakage that server authors can't diagnose. Opt out when you know your clients handle `$ref` and want smaller schemas:
 
 ```python
 mcp = FastMCP("my-server", dereference_schemas=False)
@@ -125,7 +125,7 @@ The `_deprecated_settings` attribute and `.settings` property are also removed. 
 
 ### Breaking: `ui=` Renamed to `app=`
 
-The MCP Apps decorator parameter has been renamed from `ui=ToolUI(...)` / `ui=ResourceUI(...)` to `app=AppConfig(...)` ([#3117](https://github.com/prefecthq/fastmcp/pull/3117)). `ToolUI` and `ResourceUI` are consolidated into a single `AppConfig` class. Wire format is unchanged. See the MCP Apps section under beta2 for full details.
+The MCP Apps decorator parameter has been renamed from `ui=ToolUI(...)` / `ui=ResourceUI(...)` to `app=AppConfig(...)` ([#3117](https://github.com/PrefectHQ/fastmcp/pull/3117)). `ToolUI` and `ResourceUI` are consolidated into a single `AppConfig` class. Wire format is unchanged. See the MCP Apps section under beta2 for full details.
 ## 3.0.0beta2
 
 ### CLI: `fastmcp list` and `fastmcp call`
@@ -179,11 +179,11 @@ Documentation: [Client CLI](/clients/cli)
 
 ### CLI: Expanded Reload File Watching
 
-The `--reload` flag now watches a comprehensive set of file types, making it suitable for MCP apps with frontend bundles ([#3028](https://github.com/prefecthq/fastmcp/pull/3028)). Previously limited to `.py` files, it now watches JavaScript, TypeScript, HTML, CSS, config files, and media assets.
+The `--reload` flag now watches a comprehensive set of file types, making it suitable for MCP apps with frontend bundles ([#3028](https://github.com/PrefectHQ/fastmcp/pull/3028)). Previously limited to `.py` files, it now watches JavaScript, TypeScript, HTML, CSS, config files, and media assets.
 
 ### CLI: fastmcp install stdio
 
-The new `fastmcp install stdio` command generates full `uv run` commands for running FastMCP servers over stdio ([#3032](https://github.com/prefecthq/fastmcp/pull/3032)).
+The new `fastmcp install stdio` command generates full `uv run` commands for running FastMCP servers over stdio ([#3032](https://github.com/PrefectHQ/fastmcp/pull/3032)).
 
 ```bash
 # Generate command for a server
@@ -244,7 +244,7 @@ Documentation: [CIMD Authentication](/clients/auth/cimd), [OAuth Proxy CIMD conf
 
 ### Pre-Registered OAuth Clients
 
-The `OAuth` client helper now accepts `client_id` and `client_secret` parameters for servers where the client is already registered ([#3086](https://github.com/prefecthq/fastmcp/pull/3086)). This bypasses Dynamic Client Registration entirely — useful when DCR is disabled, or when the server has pre-provisioned credentials for your application.
+The `OAuth` client helper now accepts `client_id` and `client_secret` parameters for servers where the client is already registered ([#3086](https://github.com/PrefectHQ/fastmcp/pull/3086)). This bypasses Dynamic Client Registration entirely — useful when DCR is disabled, or when the server has pre-provisioned credentials for your application.
 
 ```python
 from fastmcp import Client
@@ -267,7 +267,7 @@ Documentation: [Pre-Registered Clients](/clients/auth/oauth#pre-registered-clien
 
 ### CLI: `fastmcp generate-cli`
 
-`fastmcp generate-cli` connects to any MCP server, reads its tool schemas, and writes a standalone Python CLI script where every tool becomes a typed subcommand with flags, help text, and tab completion ([#3065](https://github.com/prefecthq/fastmcp/pull/3065)). The insight is that MCP tool schemas already contain everything a CLI framework needs — parameter names, types, descriptions, required/optional status — so the generator maps JSON Schema directly into [cyclopts](https://cyclopts.readthedocs.io/) commands.
+`fastmcp generate-cli` connects to any MCP server, reads its tool schemas, and writes a standalone Python CLI script where every tool becomes a typed subcommand with flags, help text, and tab completion ([#3065](https://github.com/PrefectHQ/fastmcp/pull/3065)). The insight is that MCP tool schemas already contain everything a CLI framework needs — parameter names, types, descriptions, required/optional status — so the generator maps JSON Schema directly into [cyclopts](https://cyclopts.readthedocs.io/) commands.
 
 ```bash
 # Generate from any server spec
@@ -287,7 +287,7 @@ Documentation: [Generate CLI](/clients/generate-cli)
 
 ### CLI: Goose Integration
 
-New `fastmcp install goose` command that generates a `goose://extension?...` deeplink URL and opens it, prompting Goose to install the server as a STDIO extension ([#3040](https://github.com/prefecthq/fastmcp/pull/3040)). Goose requires `uvx` rather than `uv run`, so the command builds the appropriate invocation automatically.
+New `fastmcp install goose` command that generates a `goose://extension?...` deeplink URL and opens it, prompting Goose to install the server as a STDIO extension ([#3040](https://github.com/PrefectHQ/fastmcp/pull/3040)). Goose requires `uvx` rather than `uv run`, so the command builds the appropriate invocation automatically.
 
 ```bash
 fastmcp install goose server.py
@@ -298,7 +298,7 @@ Also adds a full integration guide at [Goose Integration](/integrations/goose).
 
 ### ResponseLimitingMiddleware
 
-New middleware for controlling tool response sizes, preventing large outputs from overwhelming LLM context windows ([#3072](https://github.com/prefecthq/fastmcp/pull/3072)). Text responses are truncated at UTF-8 character boundaries; structured responses (tools with `output_schema`) raise `ToolError` since truncation would corrupt the schema.
+New middleware for controlling tool response sizes, preventing large outputs from overwhelming LLM context windows ([#3072](https://github.com/PrefectHQ/fastmcp/pull/3072)). Text responses are truncated at UTF-8 character boundaries; structured responses (tools with `output_schema`) raise `ToolError` since truncation would corrupt the schema.
 
 ```python
 from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
@@ -324,7 +324,7 @@ Documentation: [Middleware](/servers/middleware)
 
 ### Background Task Context (SEP-1686)
 
-`Context` now works transparently in background tasks running in Docket workers ([#2905](https://github.com/prefecthq/fastmcp/pull/2905)). Previously, tools running as background tasks couldn't use `ctx.elicit()` because there was no active request context. Now, when a tool executes in a Docket worker, `Context` detects this via its `task_id` and routes elicitation through Redis-based coordination: the task sets its status to `input_required`, sends a `notifications/tasks/updated` notification with elicitation metadata, and waits for the client to respond via `tasks/sendInput`.
+`Context` now works transparently in background tasks running in Docket workers ([#2905](https://github.com/PrefectHQ/fastmcp/pull/2905)). Previously, tools running as background tasks couldn't use `ctx.elicit()` because there was no active request context. Now, when a tool executes in a Docket worker, `Context` detects this via its `task_id` and routes elicitation through Redis-based coordination: the task sets its status to `input_required`, sends a `notifications/tasks/updated` notification with elicitation metadata, and waits for the client to respond via `tasks/sendInput`.
 
 ```python
 @mcp.tool(task=True)
@@ -342,7 +342,7 @@ async def interactive_task(ctx: Context) -> str:
 
 ### `require_auth` Removed
 
-The `require_auth` authorization check introduced in beta1 has been removed in favor of scope-based authorization via `require_scopes` ([#3103](https://github.com/prefecthq/fastmcp/pull/3103)). Since configuring an `AuthProvider` already rejects unauthenticated requests at the transport level, `require_auth` was redundant — `require_scopes` provides the same guarantee with better granularity. The beta1 Component Authorization section has been updated to reflect this.
+The `require_auth` authorization check introduced in beta1 has been removed in favor of scope-based authorization via `require_scopes` ([#3103](https://github.com/PrefectHQ/fastmcp/pull/3103)). Since configuring an `AuthProvider` already rejects unauthenticated requests at the transport level, `require_auth` was redundant — `require_scopes` provides the same guarantee with better granularity. The beta1 Component Authorization section has been updated to reflect this.
 
 ### MCP Apps (SDK Compatibility)
 
@@ -420,7 +420,7 @@ Implementation: `src/fastmcp/server/apps.py` (models and constants), with integr
 
 ### Provider-Based Architecture
 
-v3.0 introduces a provider-based component system that replaces v2's static-only registration ([#2622](https://github.com/prefecthq/fastmcp/pull/2622)). Providers dynamically source tools, resources, templates, and prompts at runtime.
+v3.0 introduces a provider-based component system that replaces v2's static-only registration ([#2622](https://github.com/PrefectHQ/fastmcp/pull/2622)). Providers dynamically source tools, resources, templates, and prompts at runtime.
 
 **Core abstraction** (`src/fastmcp/server/providers/base.py`):
 ```python
@@ -514,7 +514,7 @@ main.add_provider(provider)
 
 ### Transforms
 
-Transforms modify components (tools, resources, prompts) as they flow from providers to clients ([#2836](https://github.com/prefecthq/fastmcp/pull/2836)). They use a middleware pattern where each transform receives a `call_next` callable to continue the chain.
+Transforms modify components (tools, resources, prompts) as they flow from providers to clients ([#2836](https://github.com/PrefectHQ/fastmcp/pull/2836)). They use a middleware pattern where each transform receives a `call_next` callable to continue the chain.
 
 **Built-in transforms** (`src/fastmcp/server/transforms/`):
 
@@ -679,7 +679,7 @@ Works at both server and provider level. Supports:
 
 #### Per-Session Visibility
 
-Server-level visibility changes affect all connected clients. For per-session control, use `Context` methods that apply rules only to the current session ([#2917](https://github.com/prefecthq/fastmcp/pull/2917)):
+Server-level visibility changes affect all connected clients. For per-session control, use `Context` methods that apply rules only to the current session ([#2917](https://github.com/PrefectHQ/fastmcp/pull/2917)):
 
 ```python
 from fastmcp import FastMCP
@@ -838,7 +838,7 @@ The `@` is always present (even for unversioned components) to enable unambiguou
 
 ### Type-Safe Canonical Results
 
-v3.0 introduces type-safe result classes that provide explicit control over component responses while supporting MCP runtime metadata: `ToolResult` ([#2736](https://github.com/prefecthq/fastmcp/pull/2736)), `ResourceResult` ([#2734](https://github.com/prefecthq/fastmcp/pull/2734)), and `PromptResult` ([#2738](https://github.com/prefecthq/fastmcp/pull/2738)).
+v3.0 introduces type-safe result classes that provide explicit control over component responses while supporting MCP runtime metadata: `ToolResult` ([#2736](https://github.com/PrefectHQ/fastmcp/pull/2736)), `ResourceResult` ([#2734](https://github.com/PrefectHQ/fastmcp/pull/2734)), and `PromptResult` ([#2738](https://github.com/PrefectHQ/fastmcp/pull/2738)).
 
 #### ToolResult
 
@@ -936,7 +936,7 @@ Requires Docket server for task scheduling and result polling.
 
 ### Decorators Return Functions
 
-v3.0 changes what decorators (`@tool`, `@resource`, `@prompt`) return ([#2856](https://github.com/prefecthq/fastmcp/pull/2856)). Decorators now return the original function unchanged, rather than transforming it into a component object.
+v3.0 changes what decorators (`@tool`, `@resource`, `@prompt`) return ([#2856](https://github.com/PrefectHQ/fastmcp/pull/2856)). Decorators now return the original function unchanged, rather than transforming it into a component object.
 
 **v3 behavior (default):**
 ```python
@@ -968,7 +968,7 @@ Environment variable: `FASTMCP_DECORATOR_MODE=object`
 
 ### CLI Auto-Reload
 
-The `--reload` flag enables file watching with automatic server restarts for development ([#2816](https://github.com/prefecthq/fastmcp/pull/2816)).
+The `--reload` flag enables file watching with automatic server restarts for development ([#2816](https://github.com/PrefectHQ/fastmcp/pull/2816)).
 
 ```bash
 # Watch for changes and restart
@@ -997,7 +997,7 @@ fastmcp dev inspector server.py  # Includes --reload by default
 
 ### Component Authorization
 
-v3.0 introduces callable-based authorization for tools, resources, and prompts ([#2855](https://github.com/prefecthq/fastmcp/pull/2855)).
+v3.0 introduces callable-based authorization for tools, resources, and prompts ([#2855](https://github.com/PrefectHQ/fastmcp/pull/2855)).
 
 **Component-level auth**:
 
@@ -1053,7 +1053,7 @@ v3.0 introduces `FileSystemProvider`, a fundamentally different approach to orga
 
 **The problem it solves**: Traditional servers require coordination between files—either tool files import the server (creating coupling) or the server imports all tool modules (creating a registry bottleneck). FileSystemProvider removes this coupling entirely.
 
-**Usage** ([#2823](https://github.com/prefecthq/fastmcp/pull/2823)):
+**Usage** ([#2823](https://github.com/PrefectHQ/fastmcp/pull/2823)):
 
 ```python
 from fastmcp import FastMCP
@@ -1076,7 +1076,7 @@ def greet(name: str) -> str:
 ```
 
 Features:
-- **Standalone decorators**: `@tool`, `@resource`, `@prompt` from `fastmcp.tools`, `fastmcp.resources`, `fastmcp.prompts` ([#2832](https://github.com/prefecthq/fastmcp/pull/2832))
+- **Standalone decorators**: `@tool`, `@resource`, `@prompt` from `fastmcp.tools`, `fastmcp.resources`, `fastmcp.prompts` ([#2832](https://github.com/PrefectHQ/fastmcp/pull/2832))
 - **Reload mode**: `FileSystemProvider("mcp/", reload=True)` re-scans on every request for development
 - **Package support**: Directories with `__init__.py` support relative imports
 - **Warning deduplication**: Broken imports warn once per file modification
@@ -1087,7 +1087,7 @@ Documentation: [FileSystemProvider](/servers/providers/filesystem)
 
 ### SkillsProvider
 
-v3.0 introduces `SkillsProvider` for exposing agent skills as MCP resources ([#2944](https://github.com/prefecthq/fastmcp/pull/2944)). Skills are directories containing instructions and supporting files that teach AI assistants how to perform tasks—used by Claude Code, Cursor, VS Code Copilot, and other AI coding tools.
+v3.0 introduces `SkillsProvider` for exposing agent skills as MCP resources ([#2944](https://github.com/PrefectHQ/fastmcp/pull/2944)). Skills are directories containing instructions and supporting files that teach AI assistants how to perform tasks—used by Claude Code, Cursor, VS Code Copilot, and other AI coding tools.
 
 **Usage**:
 
@@ -1130,7 +1130,7 @@ Documentation: [Skills Provider](/servers/providers/skills)
 
 ### OpenTelemetry Tracing
 
-v3.0 adds OpenTelemetry instrumentation for observability into server and client operations ([#2869](https://github.com/prefecthq/fastmcp/pull/2869)).
+v3.0 adds OpenTelemetry instrumentation for observability into server and client operations ([#2869](https://github.com/PrefectHQ/fastmcp/pull/2869)).
 
 **Server spans**: Created for tool calls, resource reads, and prompt renders with attributes including component key, provider type, session ID, and auth context.
 
@@ -1158,7 +1158,7 @@ Documentation: [Telemetry](/servers/telemetry)
 
 ### Pagination
 
-v3.0 adds pagination support for list operations when servers expose many components ([#2903](https://github.com/prefecthq/fastmcp/pull/2903)).
+v3.0 adds pagination support for list operations when servers expose many components ([#2903](https://github.com/PrefectHQ/fastmcp/pull/2903)).
 
 ```python
 from fastmcp import FastMCP
@@ -1184,7 +1184,7 @@ Documentation: [Pagination](/servers/pagination)
 
 ### Composable Lifespans
 
-Lifespans can be combined with the `|` operator for modular setup/teardown ([#2828](https://github.com/prefecthq/fastmcp/pull/2828)):
+Lifespans can be combined with the `|` operator for modular setup/teardown ([#2828](https://github.com/PrefectHQ/fastmcp/pull/2828)):
 
 ```python
 from fastmcp import FastMCP
@@ -1225,7 +1225,7 @@ Documentation: [Lifespan](/servers/lifespan)
 
 ### Tool Timeout
 
-Tools can limit foreground execution time with a `timeout` parameter ([#2872](https://github.com/prefecthq/fastmcp/pull/2872)):
+Tools can limit foreground execution time with a `timeout` parameter ([#2872](https://github.com/PrefectHQ/fastmcp/pull/2872)):
 
 ```python
 @mcp.tool(timeout=30.0)
@@ -1242,7 +1242,7 @@ Note: This timeout applies to foreground execution only. Background tasks (`task
 
 ### PingMiddleware
 
-Sends periodic server-to-client pings to keep long-lived connections alive ([#2838](https://github.com/prefecthq/fastmcp/pull/2838)):
+Sends periodic server-to-client pings to keep long-lived connections alive ([#2838](https://github.com/PrefectHQ/fastmcp/pull/2838)):
 
 ```python
 from fastmcp import FastMCP
@@ -1258,7 +1258,7 @@ The middleware starts a background ping task on first message from each session,
 
 ### Context.transport Property
 
-Tools can detect which transport is active ([#2850](https://github.com/prefecthq/fastmcp/pull/2850)):
+Tools can detect which transport is active ([#2850](https://github.com/PrefectHQ/fastmcp/pull/2850)):
 
 ```python
 from fastmcp import FastMCP, Context
@@ -1278,7 +1278,7 @@ Returns `Literal["stdio", "sse", "streamable-http"]` when running, or `None` out
 
 ### Automatic Threadpool for Sync Functions
 
-Synchronous tools, resources, and prompts now automatically run in a threadpool, preventing event loop blocking during concurrent requests ([#2865](https://github.com/prefecthq/fastmcp/pull/2865)):
+Synchronous tools, resources, and prompts now automatically run in a threadpool, preventing event loop blocking during concurrent requests ([#2865](https://github.com/PrefectHQ/fastmcp/pull/2865)):
 
 ```python
 import time
@@ -1295,7 +1295,7 @@ Three concurrent calls now execute in parallel (~10s) rather than sequentially (
 
 ### CLI Update Notifications
 
-The CLI notifies users when a newer FastMCP version is available on PyPI ([#2840](https://github.com/prefecthq/fastmcp/pull/2840)).
+The CLI notifies users when a newer FastMCP version is available on PyPI ([#2840](https://github.com/PrefectHQ/fastmcp/pull/2840)).
 
 **Setting**: `FASTMCP_CHECK_FOR_UPDATES`
 - `"stable"` - Check for stable releases (default)
@@ -1332,7 +1332,7 @@ These constructor parameters have been **removed** (not just deprecated) as of r
 
 #### WSTransport Removed
 
-The deprecated `WSTransport` client transport has been removed ([#2826](https://github.com/prefecthq/fastmcp/pull/2826)). Use `StreamableHttpTransport` instead.
+The deprecated `WSTransport` client transport has been removed ([#2826](https://github.com/PrefectHQ/fastmcp/pull/2826)). Use `StreamableHttpTransport` instead.
 
 #### Decorators Return Functions
 
@@ -1411,7 +1411,7 @@ def my_prompt() -> Message:
 
 #### Auth Provider Environment Variables Removed
 
-Auth providers no longer auto-load from environment variables ([#2752](https://github.com/prefecthq/fastmcp/pull/2752)):
+Auth providers no longer auto-load from environment variables ([#2752](https://github.com/PrefectHQ/fastmcp/pull/2752)):
 
 ```python
 # v2.x - auto-loaded from FASTMCP_SERVER_AUTH_GITHUB_*
@@ -1429,7 +1429,7 @@ See `docs/development/v3-notes/auth-provider-env-vars.mdx` for rationale.
 
 #### Server Banner Environment Variable
 
-`FASTMCP_SHOW_CLI_BANNER` → `FASTMCP_SHOW_SERVER_BANNER` ([#2771](https://github.com/prefecthq/fastmcp/pull/2771))
+`FASTMCP_SHOW_CLI_BANNER` → `FASTMCP_SHOW_SERVER_BANNER` ([#2771](https://github.com/PrefectHQ/fastmcp/pull/2771))
 
 Now applies to all server startup methods, not just the CLI.
 

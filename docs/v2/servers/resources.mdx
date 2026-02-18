@@ -415,7 +415,7 @@ def get_repo_info(owner: str, repo: str) -> dict:
 With these two templates defined, clients can request a variety of resources:
 - `weather://london/current` → Returns weather for London
 - `weather://paris/current` → Returns weather for Paris
-- `repos://prefecthq/fastmcp/info` → Returns info about the prefecthq/fastmcp repository
+- `repos://PrefectHQ/fastmcp/info` → Returns info about the PrefectHQ/fastmcp repository
 - `repos://prefecthq/prefect/info` → Returns info about the prefecthq/prefect repository
 
 ### RFC 6570 URI Templates
@@ -456,7 +456,7 @@ def get_path_content(filepath: str) -> str:
 def get_template_file(owner: str, path: str) -> dict:
     """Retrieves a file from a specific repository and path, but
     only if the resource ends with `template.py`"""
-    # Can match repo://prefecthq/fastmcp/src/resources/template.py
+    # Can match repo://PrefectHQ/fastmcp/src/resources/template.py
     return {
         "owner": owner,
         "path": path + "/template.py",

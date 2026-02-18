@@ -181,7 +181,7 @@ async def test_task_cancellation_interrupts_running_coroutine(endpoint_server):
     coroutine receives CancelledError rather than continuing to completion.
     Requires pydocket >= 0.16.2.
 
-    See: https://github.com/prefecthq/fastmcp/issues/2679
+    See: https://github.com/PrefectHQ/fastmcp/issues/2679
     """
     started = asyncio.Event()
     was_interrupted = asyncio.Event()
