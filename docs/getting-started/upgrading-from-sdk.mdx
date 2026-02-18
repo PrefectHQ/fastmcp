@@ -56,7 +56,7 @@ Direct imports from the `mcp` package (e.g., `import mcp.types`, `from mcp.serve
 - from mcp.server.stdio import stdio_server → not needed, mcp.run() handles transport
 
 STEP 5 — DECORATORS (only if treating decorated functions as objects):
-@mcp.tool, @mcp.resource, @mcp.prompt now return the original function, not a component object. Code that accesses .name or .description on the decorated result needs updating.
+@mcp.tool, @mcp.resource, @mcp.prompt now return the original function, not a component object. Code that accesses .name or .description on the decorated result needs updating. Set FASTMCP_DECORATOR_MODE=object temporarily to restore v1 behavior (this compat setting is itself deprecated).
 
 For each issue found, show the original line, explain what changed, and provide the corrected code.
 </Prompt>
