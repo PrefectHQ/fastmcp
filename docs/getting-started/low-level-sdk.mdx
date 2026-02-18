@@ -40,7 +40,7 @@ UPGRADE RULES:
      - Use the docstring for the description (or pass description= to the decorator)
      - Convert the inputSchema JSON Schema into typed Python parameters (e.g., `{"type": "integer"}` → `int`, `{"type": "string"}` → `str`, `{"type": "array", "items": {"type": "string"}}` → `list[str]`)
      - Return plain Python values (`str`, `int`, `dict`, etc.) instead of `list[types.TextContent(...)]`
-     - If the tool returned `types.ImageContent` or `types.EmbeddedResource`, use `fastmcp.Image` or return the appropriate type
+     - If the tool returned `types.ImageContent` or `types.EmbeddedResource`, use `from fastmcp.utilities.types import Image` or return the appropriate type
 
 4. RESOURCES: Replace the list_resources + list_resource_templates + read_resource handler trio with individual @mcp.resource decorators.
    - Delete all three handlers
