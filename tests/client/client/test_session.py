@@ -10,7 +10,7 @@ from fastmcp.client import Client
 class TestSessionTaskErrorPropagation:
     """Tests for ensuring session task errors propagate to client calls.
 
-    Regression tests for https://github.com/prefecthq/fastmcp/issues/2595
+    Regression tests for https://github.com/PrefectHQ/fastmcp/issues/2595
     where the client would hang indefinitely when the session task failed
     (e.g., due to HTTP 4xx/5xx errors) instead of raising an exception.
     """

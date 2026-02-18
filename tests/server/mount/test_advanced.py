@@ -153,7 +153,7 @@ class TestCustomRouteForwarding:
 class TestDeeplyNestedMount:
     """Test deeply nested mount scenarios (3+ levels deep).
 
-    This tests the fix for https://github.com/prefecthq/fastmcp/issues/2583
+    This tests the fix for https://github.com/PrefectHQ/fastmcp/issues/2583
     where tools/resources/prompts mounted more than 2 levels deep would fail
     to invoke even though they were correctly listed.
     """

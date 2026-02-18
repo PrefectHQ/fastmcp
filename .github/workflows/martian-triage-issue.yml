@@ -167,8 +167,8 @@ jobs:
 
             | Repository | Issue or PR | Relevance |
             | --- | --- | --- |
-            | prefecthq/fastmcp | [Add matrix operations support](https://github.com/prefecthq/fastmcp/pull/680) | This pull request directly addresses the feature request for adding matrix operations to the calculator. |
-            | prefecthq/fastmcp | [Add matrix operations support](https://github.com/prefecthq/fastmcp/issues/681) | This issue directly addresses the feature request for adding matrix operations to the calculator. |
+            | PrefectHQ/fastmcp | [Add matrix operations support](https://github.com/PrefectHQ/fastmcp/pull/680) | This pull request directly addresses the feature request for adding matrix operations to the calculator. |
+            | PrefectHQ/fastmcp | [Add matrix operations support](https://github.com/PrefectHQ/fastmcp/issues/681) | This issue directly addresses the feature request for adding matrix operations to the calculator. |
             </details>
 
             <details>

@@ -405,7 +405,7 @@ class TestCompressSchema:
         "Invalid schema for function 'X': In context=('properties', 'Y'),
         'additionalProperties' is required to be supplied and to be false"
 
-        See: https://github.com/prefecthq/fastmcp/issues/3008
+        See: https://github.com/PrefectHQ/fastmcp/issues/3008
         """
         # Schema representing a Pydantic model with extra="forbid"
         schema = {

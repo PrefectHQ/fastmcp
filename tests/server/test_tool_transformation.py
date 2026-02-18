@@ -59,7 +59,7 @@ async def test_transformed_tool_filtering():
 async def test_transformed_tool_structured_output_without_annotation():
     """Test that transformed tools generate structured output when original tool has no return annotation.
 
-    Ref: https://github.com/prefecthq/fastmcp/issues/1369
+    Ref: https://github.com/PrefectHQ/fastmcp/issues/1369
     """
     from fastmcp.client import Client
 
@@ -218,7 +218,7 @@ async def test_tool_transform_config_enabled_true_overrides_earlier_disable():
 async def test_openapi_path_params_not_duplicated_in_description():
     """Path parameter details should live in inputSchema, not the description.
 
-    Regression test for https://github.com/prefecthq/fastmcp/issues/3130 — hiding
+    Regression test for https://github.com/PrefectHQ/fastmcp/issues/3130 — hiding
     a path param via ToolTransform left stale references in the description
     because the description was generated before transforms ran. The fix is to
     keep parameter docs in inputSchema only, where transforms can control them.
