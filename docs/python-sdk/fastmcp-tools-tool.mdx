@@ -7,7 +7,7 @@ sidebarTitle: tool
 
 ## Functions
 
-### `default_serializer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_serializer` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_serializer(data: Any) -> str
@@ -15,17 +15,17 @@ default_serializer(data: Any) -> str
 
 ## Classes
 
-### `ToolResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ToolResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 **Methods:**
 
-#### `to_mcp_result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_mcp_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 to_mcp_result(self) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]] | CallToolResult
 ```
 
-### `Tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Internal tool registration info.
@@ -33,7 +33,7 @@ Internal tool registration info.
 
 **Methods:**
 
-#### `to_mcp_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L163" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_mcp_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool.py#L163" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 to_mcp_tool(self, **overrides: Any) -> MCPTool
@@ -42,7 +42,7 @@ to_mcp_tool(self, **overrides: Any) -> MCPTool
 Convert the FastMCP tool to an MCP tool.
 
 
-#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L190" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool.py#L190" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any]) -> FunctionTool
@@ -51,7 +51,7 @@ from_function(cls, fn: Callable[..., Any]) -> FunctionTool
 Create a Tool from a function.
 
 
-#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L230" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool.py#L230" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, arguments: dict[str, Any]) -> ToolResult
@@ -66,7 +66,7 @@ implemented by subclasses.
 (list of ContentBlocks, dict of structured output).
 
 
-#### `convert_result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L242" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `convert_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool.py#L242" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 convert_result(self, raw_value: Any) -> ToolResult
@@ -78,7 +78,7 @@ Handles ToolResult passthrough and converts raw values using the tool's
 attributes (serializer, output_schema) for proper conversion.
 
 
-#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L334" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool.py#L334" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_with_docket(self, docket: Docket) -> None
@@ -87,7 +87,7 @@ register_with_docket(self, docket: Docket) -> None
 Register this tool with docket for background execution.
 
 
-#### `add_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L340" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool.py#L340" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_to_docket(self, docket: Docket, arguments: dict[str, Any], **kwargs: Any) -> Execution
@@ -103,13 +103,13 @@ Schedule this tool for background execution via docket.
 - `**kwargs`: Additional kwargs passed to docket.add()
 
 
-#### `from_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L364" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool.py#L364" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_tool(cls, tool: Tool) -> TransformedTool
 ```
 
-#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L395" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool.py#L395" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]

@@ -555,7 +555,7 @@ async def test_cancelled_context_entry_waiter_does_not_close_active_session(
 async def test_concurrent_client_context_managers():
     """
     Test that concurrent client usage doesn't cause cross-task cancel scope issues.
-    https://github.com/jlowin/fastmcp/pull/643
+    https://github.com/prefecthq/fastmcp/pull/643
     """
     # Create a simple server
     server = FastMCP("Test Server")

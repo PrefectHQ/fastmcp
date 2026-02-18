@@ -26,7 +26,7 @@ production use with enterprise identity providers.
 
 ## Classes
 
-### `OAuthProxy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `OAuthProxy` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth provider that presents a DCR-compliant interface while proxying to non-DCR IDPs.
@@ -140,7 +140,7 @@ Handles provider-specific requirements:
 
 **Methods:**
 
-#### `set_mcp_path` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L540" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_mcp_path` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L540" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_mcp_path(self, mcp_path: str | None) -> None
@@ -157,7 +157,7 @@ this specific MCP endpoint.
 - `mcp_path`: The path where the MCP endpoint is mounted (e.g., "/mcp")
 
 
-#### `jwt_issuer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L564" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `jwt_issuer` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L564" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 jwt_issuer(self) -> JWTIssuer
@@ -169,7 +169,7 @@ The JWT issuer is created when set_mcp_path() is called (via get_routes()).
 This property ensures a clear error if used before initialization.
 
 
-#### `get_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L601" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_client` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L601" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_client(self, client_id: str) -> OAuthClientInformationFull | None
@@ -182,7 +182,7 @@ For unregistered clients, returns None (which will raise an error in the SDK).
 CIMD clients (URL-based client IDs) are looked up and cached automatically.
 
 
-#### `register_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L645" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_client` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L645" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_client(self, client_info: OAuthClientInformationFull) -> None
@@ -196,7 +196,7 @@ redirect URI will likely be localhost or unknown to the proxied IDP. The
 proxied IDP only knows about this server's fixed redirect URI.
 
 
-#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L698" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `authorize` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L698" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str
@@ -214,7 +214,7 @@ If consent is disabled (require_authorization_consent=False), skip the consent s
 and redirect directly to the upstream IdP.
 
 
-#### `load_authorization_code` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L817" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `load_authorization_code` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L817" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 load_authorization_code(self, client: OAuthClientInformationFull, authorization_code: str) -> AuthorizationCode | None
@@ -226,7 +226,7 @@ Look up our client code and return authorization code object
 with PKCE challenge for validation.
 
 
-#### `exchange_authorization_code` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L865" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `exchange_authorization_code` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L865" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 exchange_authorization_code(self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode) -> OAuthToken
@@ -244,7 +244,7 @@ Implements the token factory pattern:
 PKCE validation is handled by the MCP framework before this method is called.
 
 
-#### `load_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L1111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `load_refresh_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L1111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str) -> RefreshToken | None
@@ -256,7 +256,7 @@ Looks up by token hash and reconstructs the RefreshToken object.
 Validates that the token belongs to the requesting client.
 
 
-#### `exchange_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L1140" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `exchange_refresh_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L1140" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 exchange_refresh_token(self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]) -> OAuthToken
@@ -273,7 +273,7 @@ Implements two-tier refresh:
 6. Keep same FastMCP refresh token (unless upstream rotates)
 
 
-#### `load_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L1370" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `load_access_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L1370" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 load_access_token(self, token: str) -> AccessToken | None
@@ -292,7 +292,7 @@ The FastMCP JWT is a reference token - all authorization data comes
 from validating the upstream token via the TokenVerifier.
 
 
-#### `revoke_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L1429" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `revoke_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L1429" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 revoke_token(self, token: AccessToken | RefreshToken) -> None
@@ -305,7 +305,7 @@ For all tokens, attempts upstream revocation if endpoint is configured.
 Access token JTI mappings expire via TTL.
 
 
-#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L1462" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy/proxy.py#L1462" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_routes(self, mcp_path: str | None = None) -> list[Route]

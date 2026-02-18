@@ -10,7 +10,7 @@ Authentication utility helpers.
 
 ## Functions
 
-### `decode_jwt_header` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/auth.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `decode_jwt_header` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/auth.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 decode_jwt_header(token: str) -> dict[str, Any]
@@ -31,7 +31,7 @@ Useful for extracting the key ID (kid) for JWKS lookup.
 - `ValueError`: If token is not a valid JWT format
 
 
-### `decode_jwt_payload` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/auth.py#L49" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `decode_jwt_payload` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/auth.py#L49" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 decode_jwt_payload(token: str) -> dict[str, Any]
@@ -52,7 +52,7 @@ Use only for tokens received directly from trusted sources (e.g., IdP token endp
 - `ValueError`: If token is not a valid JWT format
 
 
-### `parse_scopes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/auth.py#L66" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `parse_scopes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/auth.py#L66" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 parse_scopes(value: Any) -> list[str] | None

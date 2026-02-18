@@ -161,4 +161,4 @@ If you encounter any issues or wish to contribute, please feel free to open an i
 
 ## 📄 License
 
-This module follows the license of the main [FastMCP](https://github.com/jlowin/fastmcp) project.
+This module follows the license of the main [FastMCP](https://github.com/prefecthq/fastmcp) project.

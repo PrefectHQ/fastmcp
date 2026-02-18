@@ -49,7 +49,7 @@ async def test_github_api_integration():
     
     # Test against real GitHub API
     client = GitHubClient(token)
-    repos = await client.list_repos("jlowin")
+    repos = await client.list_repos("prefecthq")
     assert "fastmcp" in [repo.name for repo in repos]
 
 @pytest.mark.client_process

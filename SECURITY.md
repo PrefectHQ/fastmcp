@@ -11,6 +11,6 @@ FastMCP v2.x receives security updates. Earlier versions are no longer supported
 
 ## Reporting a Vulnerability
 
-Please report security vulnerabilities privately using [GitHub's security advisory feature](https://github.com/jlowin/fastmcp/security/advisories/new).
+Please report security vulnerabilities privately using [GitHub's security advisory feature](https://github.com/prefecthq/fastmcp/security/advisories/new).
 
 Do not open public issues for security concerns.

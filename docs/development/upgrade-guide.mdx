@@ -12,6 +12,16 @@ This guide covers breaking changes and migration steps when upgrading FastMCP.
 
 For most servers, upgrading to v3 requires a single change: swap `from mcp.server.fastmcp import FastMCP` for `from fastmcp import FastMCP`. Everything below covers the less common cases.
 
+<Info>
+**New repository home.** As part of the v3 release, FastMCP's GitHub repository now lives at [`prefecthq/fastmcp`](https://github.com/prefecthq/fastmcp) under [Prefect](https://prefect.io)'s stewardship. GitHub automatically redirects existing clones and bookmarks, so nothing breaks — but you can update your local remote whenever convenient:
+
+```bash
+git remote set-url origin https://github.com/prefecthq/fastmcp.git
+```
+
+If you reference the repository URL in dependency specifications (e.g., `git+https://github.com/jlowin/fastmcp.git`), update those to the new location.
+</Info>
+
 <Prompt description="Copy this prompt into any LLM along with your server code to get automated migration guidance.">
 You are migrating a FastMCP v2 server to FastMCP v3.0. Analyze the provided code and identify every change needed. The full upgrade guide is at https://gofastmcp.com/development/upgrade-guide — fetch it for complete context.
 
@@ -95,7 +105,7 @@ The full list of removed kwargs and their replacements:
 
 **OAuth storage backend changed (diskcache CVE)**
 
-The default OAuth client storage has moved from `DiskStore` to `FileTreeStore` to address a pickle deserialization vulnerability in diskcache ([CVE-2025-69872](https://github.com/jlowin/fastmcp/issues/3166)).
+The default OAuth client storage has moved from `DiskStore` to `FileTreeStore` to address a pickle deserialization vulnerability in diskcache ([CVE-2025-69872](https://github.com/prefecthq/fastmcp/issues/3166)).
 
 If you were using the default storage (i.e., not passing an explicit `client_storage`), clients will need to re-register on their first connection after upgrading. This happens automatically — no user action required, and it's the same flow that already occurs whenever a server restarts with in-memory storage.
 

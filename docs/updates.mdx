@@ -8,7 +8,7 @@ tag: NEW
 <Update label="FastMCP 3.0.0rc1" description="February 12, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v3.0.0rc1: RC-ing is Believing"
-href="https://github.com/jlowin/fastmcp/releases/tag/v3.0.0rc1"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v3.0.0rc1"
 cta="Read the release notes"
 >
 FastMCP 3 RC1 means we believe the API is stable. Beta 2 drew a wave of real-world adoption — production deployments, migration reports, integration testing — and the feedback overwhelmingly confirmed that the architecture works. This release closes gaps that surfaced under load: auth flows that needed to be async, background tasks that needed reliable notification delivery, and APIs still carrying beta-era naming. If nothing unexpected surfaces, this is what 3.0.0 looks like.
@@ -28,7 +28,7 @@ FastMCP 3 RC1 means we believe the API is stable. Beta 2 drew a wave of real-wor
 <Update label="FastMCP 3.0.0b2" description="February 7, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v3.0.0b2: 2 Fast 2 Beta"
-href="https://github.com/jlowin/fastmcp/releases/tag/v3.0.0b2"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v3.0.0b2"
 cta="Read the release notes"
 >
 Beta 2 reflects the huge number of people that kicked the tires on Beta 1. Seven new contributors landed changes, and early migration reports went smoother than expected. Most of Beta 2 is refinement — fixing what people found, filling gaps from real usage, hardening edges — but a few new features landed along the way.
@@ -50,7 +50,7 @@ Beta 2 reflects the huge number of people that kicked the tires on Beta 1. Seven
 <Update label="FastMCP 3.0.0b1" description="January 20, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP 3.0.0b1: This Beta Work"
-href="https://github.com/jlowin/fastmcp/releases/tag/v3.0.0b1"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v3.0.0b1"
 cta="Read the release notes"
 >
 FastMCP 3.0 rebuilds the framework around three primitives: components, providers, and transforms. Providers source components dynamically—from decorators, filesystems, OpenAPI specs, remote servers, or anywhere else. Transforms modify components as they flow to clients. The features that required specialized subsystems in v2 now compose naturally from these building blocks.
@@ -70,7 +70,7 @@ FastMCP 3.0 rebuilds the framework around three primitives: components, provider
 <Update label="FastMCP 2.14.5" description="February 3, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP 2.14.5: Sealed Docket"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.14.5"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.14.5"
 cta="Read the release notes"
 >
 Fixes a memory leak in the memory:// docket broker where cancelled tasks accumulated instead of being cleaned up. Bumps pydocket to ≥0.17.2.
@@ -80,7 +80,7 @@ Fixes a memory leak in the memory:// docket broker where cancelled tasks accumul
 <Update label="FastMCP 2.14.4" description="January 22, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP 2.14.4: Package Deal"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.14.4"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.14.4"
 cta="Read the release notes"
 >
 Fixes a fresh install bug where the packaging library was missing as a direct dependency, plus backports $ref dereferencing in tool schemas and a task capabilities location fix.
@@ -90,7 +90,7 @@ Fixes a fresh install bug where the packaging library was missing as a direct de
 <Update label="FastMCP 2.14.3" description="January 12, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP 2.14.3: Time After Timeout"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.14.3"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.14.3"
 cta="Read the release notes"
 >
 Sometimes five seconds just isn't enough. This release fixes an HTTP transport bug that was cutting connections short, along with OAuth and Redis fixes, better ASGI support, and CLI update notifications so you never miss a beat.
@@ -104,7 +104,7 @@ Sometimes five seconds just isn't enough. This release fixes an HTTP transport b
 <Update label="FastMCP 2.14.2" description="December 31, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.14.2: Port Authority"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.14.2"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.14.2"
 cta="Read the release notes"
 >
 A wave of community contributions arrives safely in the 2.x line. Important backports from 3.0 improve OpenAPI 3.1 compatibility, MCP spec compliance for output schemas and elicitation, and correct a subtle base_url fallback issue.
@@ -118,7 +118,7 @@ A wave of community contributions arrives safely in the 2.x line. Important back
 <Update label="FastMCP 2.14.1" description="December 15, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.14.1: 'Tis a Gift to Be Sample"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.14.1"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.14.1"
 cta="Read the release notes"
 >
 FastMCP 2.14.1 introduces sampling with tools (SEP-1577), enabling servers to pass tools to `ctx.sample()` for agentic workflows where the LLM can automatically execute tool calls in a loop.
@@ -132,7 +132,7 @@ FastMCP 2.14.1 introduces sampling with tools (SEP-1577), enabling servers to pa
 <Update label="FastMCP 2.14.0" description="December 11, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.14.0: Task and You Shall Receive"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.14.0"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.14.0"
 cta="Read the release notes"
 >
 FastMCP 2.14 begins adopting the MCP 2025-11-25 specification, introducing protocol-native background tasks that enable long-running operations to report progress without blocking clients.
@@ -148,7 +148,7 @@ FastMCP 2.14 begins adopting the MCP 2025-11-25 specification, introducing proto
 <Update label="FastMCP 2.13.3" description="December 3, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.13.3: Pin-ish Line"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.13.3"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.13.3"
 cta="Read the release notes"
 >
 Pins `mcp<1.23` as a precaution due to MCP SDK changes related to the 11/25/25 protocol update that break certain FastMCP patches and workarounds. FastMCP 2.14 introduces proper support for the updated protocol.
@@ -158,7 +158,7 @@ Pins `mcp<1.23` as a precaution due to MCP SDK changes related to the 11/25/25 p
 <Update label="FastMCP 2.13.2" description="December 1, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.13.2: Refreshing Changes"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.13.2"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.13.2"
 cta="Read the release notes"
 >
 Polishes the authentication stack with improvements to token refresh, scope handling, and multi-instance deployments.
@@ -174,7 +174,7 @@ Polishes the authentication stack with improvements to token refresh, scope hand
 <Update label="FastMCP 2.13.1" description="November 15, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.13.1: Heavy Meta"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.13.1"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.13.1"
 cta="Read the release notes"
 >
 Introduces meta parameter support for `ToolResult`, enabling tools to return supplementary metadata alongside results for patterns like OpenAI's Apps SDK.
@@ -190,7 +190,7 @@ Introduces meta parameter support for `ToolResult`, enabling tools to return sup
 <Update label="FastMCP 2.13.0" description="October 25, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.13.0: Cache Me If You Can"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.13.0"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.13.0"
 cta="Read the release notes"
 >
 FastMCP 2.13 "Cache Me If You Can" represents a fundamental maturation of the framework. After months of community feedback on authentication and state management, this release delivers the infrastructure FastMCP needs to handle production workloads: persistent storage, response caching, and pragmatic OAuth improvements that reflect real-world deployment challenges.
@@ -208,7 +208,7 @@ FastMCP 2.13 "Cache Me If You Can" represents a fundamental maturation of the fr
 <Update label="FastMCP 2.12.5" description="October 17, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.12.5: Safety Pin"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.12.5"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.12.5"
 cta="Read the release notes"
 >
 Pins MCP SDK version below 1.17 to ensure the `.well-known` payload appears in the expected location when using FastMCP auth providers with composite applications.
@@ -218,7 +218,7 @@ Pins MCP SDK version below 1.17 to ensure the `.well-known` payload appears in t
 <Update label="FastMCP 2.12.4" description="September 26, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.12.4: OIDC What You Did There"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.12.4"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.12.4"
 cta="Read the release notes"
 >
 FastMCP 2.12.4 adds comprehensive OIDC support and expands authentication options with AWS Cognito and Descope providers. The release also includes improvements to logging middleware, URL handling for nested resources, persistent OAuth client registration storage, and various fixes to the experimental OpenAPI parser.
@@ -234,7 +234,7 @@ FastMCP 2.12.4 adds comprehensive OIDC support and expands authentication option
 <Update label="FastMCP 2.12.3" description="September 17, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.12.3: Double Time"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.12.3"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.12.3"
 cta="Read the release notes"
 >
 FastMCP 2.12.3 focuses on performance and developer experience improvements. This release includes optimized auth provider imports that reduce server startup time, enhanced OIDC authentication flows, and automatic inline snapshot creation for testing.
@@ -244,7 +244,7 @@ FastMCP 2.12.3 focuses on performance and developer experience improvements. Thi
 <Update label="FastMCP 2.12.2" description="September 3, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.12.2: Perchance to Stream"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.12.2"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.12.2"
 cta="Read the release notes"
 >
 Hotfix for streamable-http transport validation in fastmcp.json configuration files, resolving a parsing error when CLI arguments were merged against the configuration spec.
@@ -254,7 +254,7 @@ Hotfix for streamable-http transport validation in fastmcp.json configuration fi
 <Update label="FastMCP 2.12.1" description="September 3, 2025" tags={["Releases"]}>
 <Card
 title="FastMCP 2.12.1: OAuth to Joy"
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.12.1"
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.12.1"
 cta="Read the release notes"
 >
 FastMCP 2.12.1 strengthens OAuth proxy implementation with improved client storage reliability, PKCE forwarding, configurable token endpoint authentication methods, and expanded scope handling based on extensive community testing.
@@ -264,7 +264,7 @@ FastMCP 2.12.1 strengthens OAuth proxy implementation with improved client stora
 <Update label="FastMCP 2.12" description="August 31, 2025" tags={["Releases"]}>
 <Card 
 title="FastMCP 2.12: Auth to the Races" 
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.12.0" 
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.12.0" 
 cta="Read the release notes"  
 >
 FastMCP 2.12 represents one of our most significant releases to date. After extensive testing and iteration with the community, we're shipping major improvements to authentication, configuration, and MCP feature adoption.
@@ -280,7 +280,7 @@ FastMCP 2.12 represents one of our most significant releases to date. After exte
 <Update label="FastMCP 2.11" description="August 1, 2025" tags={["Releases"]}>
 <Card 
 title="FastMCP 2.11: Auth to a Good Start" 
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.11.0" 
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.11.0" 
 cta="Read the release notes"  
 >
 FastMCP 2.11 brings enterprise-ready authentication and dramatic performance improvements.
@@ -298,7 +298,7 @@ This release emphasizes speed and simplicity while setting the foundation for fu
 <Update label="FastMCP 2.10" description="July 2, 2025" tags={["Releases"]}>
 <Card 
 title="FastMCP 2.10: Great Spec-tations" 
-href="https://github.com/jlowin/fastmcp/releases/tag/v2.10.0" 
+href="https://github.com/prefecthq/fastmcp/releases/tag/v2.10.0" 
 cta="Read the release notes"  
 >
 FastMCP 2.10 achieves full compliance with the 6/18/2025 MCP specification update, introducing powerful new communication patterns.
@@ -358,7 +358,7 @@ Lastly, to ensure maximum compatibility with the ecosystem, we've made the pragm
 
 <Update label="FastMCP 2.7" description="June 6, 2025" tags={["Releases"]}>
 <Card 
-title="FastMCP 2.7: Pare Programming" href="https://github.com/jlowin/fastmcp/releases/tag/v2.7.0" 
+title="FastMCP 2.7: Pare Programming" href="https://github.com/prefecthq/fastmcp/releases/tag/v2.7.0" 
 img="assets/updates/release-2-7.png" 
 cta="Read the release notes"  
 >

@@ -836,7 +836,7 @@ async def test_multi_server_config_transport(tmp_path: Path):
     """
     Tests that MCPConfigTransport properly handles multi-server configurations.
 
-    Related to https://github.com/jlowin/fastmcp/issues/2802 - verifies the
+    Related to https://github.com/prefecthq/fastmcp/issues/2802 - verifies the
     refactored architecture creates composite servers correctly.
     """
     server_script = inspect.cleandoc("""

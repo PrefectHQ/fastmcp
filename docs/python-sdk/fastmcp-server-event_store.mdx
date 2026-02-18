@@ -16,19 +16,19 @@ AsyncKeyValue protocol, allowing users to configure any compatible backend
 
 ## Classes
 
-### `EventEntry` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/event_store.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `EventEntry` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/event_store.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Stored event entry.
 
 
-### `StreamEventList` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/event_store.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `StreamEventList` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/event_store.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 List of event IDs for a stream.
 
 
-### `EventStore` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/event_store.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `EventStore` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/event_store.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 EventStore implementation backed by AsyncKeyValue.
@@ -45,7 +45,7 @@ following the same pattern as ResponseCachingMiddleware and OAuthProxy.
 
 **Methods:**
 
-#### `store_event` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/event_store.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `store_event` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/event_store.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 store_event(self, stream_id: StreamId, message: JSONRPCMessage | None) -> EventId
@@ -61,7 +61,7 @@ Store an event and return its ID.
 - The generated event ID for the stored event
 
 
-#### `replay_events_after` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/event_store.py#L135" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `replay_events_after` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/event_store.py#L135" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 replay_events_after(self, last_event_id: EventId, send_callback: EventCallback) -> StreamId | None

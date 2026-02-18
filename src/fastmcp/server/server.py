@@ -193,7 +193,7 @@ def _lifespan_proxy(
         if not fastmcp_server._lifespan_result_set:
             raise RuntimeError(
                 "FastMCP server has a lifespan defined but no lifespan result is set, which means the server's context manager was not entered. "
-                + " Are you running the server in a way that supports lifespans? If so, please file an issue at https://github.com/jlowin/fastmcp/issues."
+                + " Are you running the server in a way that supports lifespans? If so, please file an issue at https://github.com/prefecthq/fastmcp/issues."
             )
 
         yield fastmcp_server._lifespan_result

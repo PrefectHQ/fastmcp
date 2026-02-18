@@ -14,7 +14,7 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 
 ## Functions
 
-### `EntraOBOToken` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L658" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `EntraOBOToken` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L658" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 EntraOBOToken(scopes: list[str]) -> str
@@ -43,7 +43,7 @@ or OBO exchange fails
 
 ## Classes
 
-### `AzureProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L31" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AzureProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L31" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Azure (Microsoft Entra) OAuth provider for FastMCP.
@@ -78,7 +78,7 @@ Setup:
 
 **Methods:**
 
-#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L235" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `authorize` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L235" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str
@@ -98,7 +98,7 @@ scopes to determine the resource/audience instead of a separate parameter.
 - Authorization URL to redirect the user to Azure AD
 
 
-#### `create_obo_credential` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L461" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `create_obo_credential` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L461" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_obo_credential(self, user_assertion: str) -> OnBehalfOfCredential
@@ -120,7 +120,7 @@ user's token for downstream API tokens.
 - `ImportError`: If azure-identity is not installed (requires fastmcp[azure]).
 
 
-### `AzureJWTVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L489" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AzureJWTVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L489" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 JWT verifier pre-configured for Azure AD / Microsoft Entra ID.
@@ -157,7 +157,7 @@ Example::
 
 **Methods:**
 
-#### `scopes_supported` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L569" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `scopes_supported` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L569" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 scopes_supported(self) -> list[str]

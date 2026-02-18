@@ -63,7 +63,7 @@ class TestParallelCalls:
 
 
 class TestKeepAlive:
-    # https://github.com/jlowin/fastmcp/issues/581
+    # https://github.com/prefecthq/fastmcp/issues/581
 
     @pytest.fixture
     def stdio_script(self, tmp_path):

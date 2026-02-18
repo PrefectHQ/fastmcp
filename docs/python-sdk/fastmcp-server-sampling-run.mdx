@@ -10,7 +10,7 @@ Sampling types and helper functions for FastMCP servers.
 
 ## Functions
 
-### `determine_handler_mode` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `determine_handler_mode` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 determine_handler_mode(context: Context, needs_tools: bool) -> bool
@@ -30,7 +30,7 @@ Determine whether to use fallback handler or client for sampling.
 - `ValueError`: If client lacks required capability and no fallback configured.
 
 
-### `call_sampling_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L191" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `call_sampling_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L191" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_sampling_handler(context: Context, messages: list[SamplingMessage]) -> CreateMessageResult | CreateMessageResultWithTools
@@ -44,7 +44,7 @@ sampling_handler is set via determine_handler_mode(). The checks below are
 safeguards against internal misuse.
 
 
-### `execute_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L242" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `execute_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L242" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 execute_tools(tool_calls: list[ToolUseContent], tool_map: dict[str, SamplingTool], mask_error_details: bool = False, tool_concurrency: int | None = None) -> list[ToolResultContent]
@@ -71,7 +71,7 @@ regardless of this setting.
 - List of tool result content blocks in the same order as tool_calls.
 
 
-### `prepare_messages` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L352" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `prepare_messages` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L352" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prepare_messages(messages: str | Sequence[str | SamplingMessage]) -> list[SamplingMessage]
@@ -81,7 +81,7 @@ prepare_messages(messages: str | Sequence[str | SamplingMessage]) -> list[Sampli
 Convert various message formats to a list of SamplingMessage objects.
 
 
-### `prepare_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L371" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `prepare_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L371" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prepare_tools(tools: Sequence[SamplingTool | FunctionTool | TransformedTool | Callable[..., Any]] | None) -> list[SamplingTool] | None
@@ -102,7 +102,7 @@ TransformedTool, or plain callable functions.
 - List of SamplingTool instances, or None if tools is None.
 
 
-### `extract_tool_calls` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L407" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `extract_tool_calls` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L407" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 extract_tool_calls(response: CreateMessageResult | CreateMessageResultWithTools) -> list[ToolUseContent]
@@ -112,7 +112,7 @@ extract_tool_calls(response: CreateMessageResult | CreateMessageResultWithTools)
 Extract tool calls from a response.
 
 
-### `create_final_response_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L419" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_final_response_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L419" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_final_response_tool(result_type: type) -> SamplingTool
@@ -125,7 +125,7 @@ This tool is used to capture structured responses from the LLM.
 The tool's schema is derived from the result_type.
 
 
-### `sample_step_impl` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L455" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `sample_step_impl` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L455" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 sample_step_impl(context: Context, messages: str | Sequence[str | SamplingMessage]) -> SampleStep
@@ -138,7 +138,7 @@ Make a single LLM sampling call. This is a stateless function that makes
 exactly one LLM call and optionally executes any requested tools.
 
 
-### `sample_impl` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L572" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `sample_impl` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L572" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 sample_impl(context: Context, messages: str | Sequence[str | SamplingMessage]) -> SamplingResult[ResultT]
@@ -154,7 +154,7 @@ provides a final text response.
 
 ## Classes
 
-### `SamplingResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SamplingResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Result of a sampling operation.
@@ -165,7 +165,7 @@ Result of a sampling operation.
 - `history`: All messages exchanged during sampling.
 
 
-### `SampleStep` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L69" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SampleStep` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L69" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Result of a single sampling call.
@@ -175,7 +175,7 @@ Represents what the LLM returned in this step plus the message history.
 
 **Methods:**
 
-#### `is_tool_use` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L79" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `is_tool_use` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L79" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_tool_use(self) -> bool
@@ -184,7 +184,7 @@ is_tool_use(self) -> bool
 True if the LLM is requesting tool execution.
 
 
-#### `text` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `text` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 text(self) -> str | None
@@ -193,7 +193,7 @@ text(self) -> str | None
 Extract text from the response, if available.
 
 
-#### `tool_calls` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool_calls` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool_calls(self) -> list[ToolUseContent]

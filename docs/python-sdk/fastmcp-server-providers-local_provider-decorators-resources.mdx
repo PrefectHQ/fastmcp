@@ -14,7 +14,7 @@ and template registration functionality to LocalProvider.
 
 ## Classes
 
-### `ResourceDecoratorMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/resources.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResourceDecoratorMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/resources.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Mixin class providing resource decorator functionality for LocalProvider.
@@ -27,7 +27,7 @@ This mixin contains all methods related to:
 
 **Methods:**
 
-#### `add_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/resources.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/resources.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_resource(self: LocalProvider, resource: Resource | ResourceTemplate | Callable[..., Any]) -> Resource | ResourceTemplate
@@ -38,7 +38,7 @@ Add a resource to this provider's storage.
 Accepts either a Resource/ResourceTemplate object or a decorated function with __fastmcp__ metadata.
 
 
-#### `add_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/resources.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/resources.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_template(self: LocalProvider, template: ResourceTemplate) -> ResourceTemplate
@@ -47,7 +47,7 @@ add_template(self: LocalProvider, template: ResourceTemplate) -> ResourceTemplat
 Add a resource template to this provider's storage.
 
 
-#### `resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/resources.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/resources.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resource(self: LocalProvider, uri: str) -> Callable[[AnyFunction], Resource | ResourceTemplate | AnyFunction]

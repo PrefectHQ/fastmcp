@@ -14,7 +14,7 @@ registration functionality to LocalProvider.
 
 ## Classes
 
-### `PromptDecoratorMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/prompts.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `PromptDecoratorMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/prompts.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Mixin class providing prompt decorator functionality for LocalProvider.
@@ -26,7 +26,7 @@ This mixin contains all methods related to:
 
 **Methods:**
 
-#### `add_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/prompts.py#L35" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/prompts.py#L35" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_prompt(self: LocalProvider, prompt: Prompt | Callable[..., Any]) -> Prompt
@@ -37,19 +37,19 @@ Add a prompt to this provider's storage.
 Accepts either a Prompt object or a decorated function with __fastmcp__ metadata.
 
 
-#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/prompts.py#L72" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/prompts.py#L72" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(self: LocalProvider, name_or_fn: AnyFunction) -> FunctionPrompt
 ```
 
-#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/prompts.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/prompts.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(self: LocalProvider, name_or_fn: str | None = None) -> Callable[[AnyFunction], FunctionPrompt]
 ```
 
-#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/prompts.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/local_provider/decorators/prompts.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(self: LocalProvider, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt | partial[Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt]

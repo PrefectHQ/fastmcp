@@ -10,7 +10,8 @@ on:
 jobs:
   triage:
     if: |
-      contains(fromJSON('["jlowin", "strawgate"]'), github.event.issue.user.login)
+      github.event.issue.user.login == 'strawgate' ||
+      (github.event.issue.user.login == 'jlowin' && contains(toJSON(github.event.issue.labels.*.name), 'bug'))
     concurrency:
       group: triage-issue-${{ github.event.issue.number }}
       cancel-in-progress: true
@@ -166,8 +167,8 @@ jobs:
 
             | Repository | Issue or PR | Relevance |
             | --- | --- | --- |
-            | jlowin/fastmcp | [Add matrix operations support](https://github.com/jlowin/fastmcp/pull/680) | This pull request directly addresses the feature request for adding matrix operations to the calculator. |
-            | jlowin/fastmcp | [Add matrix operations support](https://github.com/jlowin/fastmcp/issues/681) | This issue directly addresses the feature request for adding matrix operations to the calculator. |
+            | prefecthq/fastmcp | [Add matrix operations support](https://github.com/prefecthq/fastmcp/pull/680) | This pull request directly addresses the feature request for adding matrix operations to the calculator. |
+            | prefecthq/fastmcp | [Add matrix operations support](https://github.com/prefecthq/fastmcp/issues/681) | This issue directly addresses the feature request for adding matrix operations to the calculator. |
             </details>
 
             <details>

@@ -10,7 +10,7 @@ Async utilities for FastMCP.
 
 ## Functions
 
-### `call_sync_fn_in_threadpool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/async_utils.py#L13" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `call_sync_fn_in_threadpool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/async_utils.py#L13" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_sync_fn_in_threadpool(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any
@@ -23,7 +23,7 @@ Uses anyio.to_thread.run_sync which properly propagates contextvars,
 making this safe for functions that depend on context (like dependency injection).
 
 
-### `gather` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/async_utils.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `gather` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/async_utils.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 gather(*awaitables: Awaitable[T]) -> list[T] | list[T | BaseException]

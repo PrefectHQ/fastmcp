@@ -19,7 +19,7 @@ This format provides:
 
 ## Functions
 
-### `build_task_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `build_task_key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 build_task_key(session_id: str, client_task_id: str, task_type: str, component_identifier: str) -> str
@@ -49,7 +49,7 @@ The component_identifier is URI-encoded to handle special characters (colons, sl
 'session123:task456:resource:file%3A%2F%2Fdata.txt'
 
 
-### `parse_task_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `parse_task_key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 parse_task_key(task_key: str) -> dict[str, str]
@@ -72,7 +72,7 @@ Parse Docket task key to extract metadata.
 `{'session_id': 'session123', 'client_task_id': 'task456', 'task_type': 'resource', 'component_identifier': 'file://data.txt'}`
 
 
-### `get_client_task_id_from_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_client_task_id_from_key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_client_task_id_from_key(task_key: str) -> str

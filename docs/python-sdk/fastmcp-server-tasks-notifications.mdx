@@ -25,7 +25,7 @@ require reliable delivery (input_required prompts, cancel signals).
 
 ## Functions
 
-### `push_notification` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L48" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `push_notification` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L48" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 push_notification(session_id: str, notification: dict[str, Any], docket: Docket) -> None
@@ -43,7 +43,7 @@ that need reliable delivery across distributed processes.
 - `docket`: Docket instance for Redis access
 
 
-### `notification_subscriber_loop` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `notification_subscriber_loop` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 notification_subscriber_loop(session_id: str, session: ServerSession, docket: Docket, fastmcp: FastMCP) -> None
@@ -67,7 +67,7 @@ This loop:
 - `fastmcp`: FastMCP server instance (for elicitation relay)
 
 
-### `ensure_subscriber_running` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ensure_subscriber_running` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 ensure_subscriber_running(session_id: str, session: ServerSession, docket: Docket, fastmcp: FastMCP) -> None
@@ -86,7 +86,7 @@ Safe to call multiple times for the same session.
 - `fastmcp`: FastMCP server instance (for elicitation relay)
 
 
-### `stop_subscriber` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L278" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `stop_subscriber` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L278" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 stop_subscriber(session_id: str) -> None
@@ -102,7 +102,7 @@ for delivery if client reconnects (with TTL expiration).
 - `session_id`: Session identifier
 
 
-### `get_subscriber_count` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_subscriber_count` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_subscriber_count() -> int
