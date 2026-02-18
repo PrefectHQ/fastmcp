@@ -25,7 +25,7 @@ That's it. Your `@mcp.tool`, `@mcp.resource`, and `@mcp.prompt` decorators, your
 ## Install
 
 ```bash
-pip install fastmcp
+pip install --upgrade fastmcp
 # or
 uv add fastmcp
 ```
@@ -33,7 +33,7 @@ uv add fastmcp
 FastMCP includes the `mcp` package as a dependency, so you don't lose access to anything. Update your import, run your server, and if your tools work, you're done.
 
 <Prompt description="Copy this prompt into any LLM along with your server code to get automated upgrade guidance.">
-You are upgrading an MCP server from FastMCP 1.0 (bundled in the `mcp` package v1) to standalone FastMCP 3.0. Analyze the provided code and identify every change needed. The full upgrade guide is at https://gofastmcp.com/getting-started/upgrading-from-sdk and the complete FastMCP documentation is at https://gofastmcp.com — fetch these for complete context.
+You are upgrading an MCP server from FastMCP 1.0 (bundled in the `mcp` package v1) to standalone FastMCP 3.0. Analyze the provided code and identify every change needed. The full upgrade guide is at https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk and the complete FastMCP documentation is at https://gofastmcp.com — fetch these for complete context.
 
 STEP 1 — IMPORT (required for all servers):
 Change "from mcp.server.fastmcp import FastMCP" to "from fastmcp import FastMCP".
@@ -145,7 +145,7 @@ If you have code that accesses `.name`, `.description`, or other attributes on t
 
 ```bash
 # Install
-pip install fastmcp
+pip install --upgrade fastmcp
 
 # Check version
 fastmcp version

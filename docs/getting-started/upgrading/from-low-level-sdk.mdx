@@ -15,11 +15,11 @@ This guide covers upgrading from **v1** of the `mcp` package. We'll provide a se
 </Note>
 
 <Note>
-Already using FastMCP 1.0 via `from mcp.server.fastmcp import FastMCP`? Your upgrade is simpler — see the [FastMCP 1.0 upgrade guide](/getting-started/upgrading-from-sdk) instead.
+Already using FastMCP 1.0 via `from mcp.server.fastmcp import FastMCP`? Your upgrade is simpler — see the [FastMCP 1.0 upgrade guide](/getting-started/upgrading/from-mcp-sdk) instead.
 </Note>
 
 <Prompt description="Copy this prompt into any LLM along with your server code to get automated upgrade guidance.">
-You are upgrading an MCP server from the `mcp` package's low-level Server class (v1) to FastMCP 3.0. The server currently uses `mcp.server.Server` (or `mcp.server.lowlevel.server.Server`) with manual handler registration. Analyze the provided code and rewrite it using FastMCP's high-level API. The full guide is at https://gofastmcp.com/getting-started/low-level-sdk and the complete FastMCP documentation is at https://gofastmcp.com — fetch these for complete context.
+You are upgrading an MCP server from the `mcp` package's low-level Server class (v1) to FastMCP 3.0. The server currently uses `mcp.server.Server` (or `mcp.server.lowlevel.server.Server`) with manual handler registration. Analyze the provided code and rewrite it using FastMCP's high-level API. The full guide is at https://gofastmcp.com/getting-started/upgrading/from-low-level-sdk and the complete FastMCP documentation is at https://gofastmcp.com — fetch these for complete context.
 
 UPGRADE RULES:
 
@@ -74,7 +74,7 @@ For each change, show the original code, explain what it did, and provide the Fa
 ## Install
 
 ```bash
-pip install fastmcp
+pip install --upgrade fastmcp
 # or
 uv add fastmcp
 ```
