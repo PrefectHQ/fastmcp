@@ -10,62 +10,104 @@ This guide covers breaking changes and migration steps when upgrading FastMCP.
 
 ## v3.0.0
 
-Most servers need only one change: update your import from `from mcp.server.fastmcp import FastMCP` to `from fastmcp import FastMCP`. The sections below cover less common breaking changes.
+For most servers, upgrading to v3 requires a single change: swap `from mcp.server.fastmcp import FastMCP` for `from fastmcp import FastMCP`. Everything below covers the less common cases.
+
+<Prompt description="Copy this prompt into any LLM along with your server code to get automated migration guidance.">
+You are migrating a FastMCP v2 server to FastMCP v3.0. Analyze the provided code and identify every change needed. The full upgrade guide is at https://gofastmcp.com/development/upgrade-guide — fetch it for complete context.
+
+BREAKING CHANGES (will crash at import or runtime):
+
+1. IMPORT: "from mcp.server.fastmcp import FastMCP" must become "from fastmcp import FastMCP"
+
+2. CONSTRUCTOR KWARGS REMOVED: FastMCP() no longer accepts these kwargs (raises TypeError):
+   - Transport settings: host, port, log_level, debug, sse_path, streamable_http_path, json_response, stateless_http
+     Fix: pass to run() or run_http_async() instead, e.g. mcp.run(transport="http", host="0.0.0.0", port=8080)
+   - message_path: set via environment variable FASTMCP_MESSAGE_PATH only (not a run() kwarg)
+   - Duplicate handling: on_duplicate_tools, on_duplicate_resources, on_duplicate_prompts
+     Fix: use unified on_duplicate= parameter
+   - Tool settings: tool_serializer, include_tags, exclude_tags, tool_transformations
+     Fix: use ToolResult returns, server.enable()/disable(), server.add_transform()
+
+3. COMPONENT METHODS REMOVED:
+   - tool.enable()/disable() raises NotImplementedError
+     Fix: server.disable(names={"tool_name"}, components={"tool"}) or server.disable(tags={"tag"})
+   - get_tools()/get_resources()/get_prompts()/get_resource_templates() removed
+     Fix: use list_tools()/list_resources()/list_prompts()/list_resource_templates() — these return lists, not dicts
+
+4. ASYNC STATE: ctx.set_state() and ctx.get_state() are now async (must be awaited).
+   State values must be JSON-serializable unless serializable=False is passed.
+
+5. PROMPTS: mcp.types.PromptMessage replaced by fastmcp.prompts.Message.
+   Before: PromptMessage(role="user", content=TextContent(type="text", text="Hello"))
+   After:  Message("Hello")  # role defaults to "user", accepts plain strings
+
+6. AUTH PROVIDERS: No longer auto-load from env vars. Pass client_id, client_secret explicitly via os.environ.
+
+7. WSTRANSPORT: Removed. Use StreamableHttpTransport.
+
+8. OPENAPI: timeout parameter removed from OpenAPIProvider. Set timeout on the httpx.AsyncClient instead.
+
+9. METADATA: Namespace changed from "_fastmcp" to "fastmcp" in tool.meta. The include_fastmcp_meta parameter is removed (always included).
+
+10. ENV VAR: FASTMCP_SHOW_CLI_BANNER renamed to FASTMCP_SHOW_SERVER_BANNER.
+
+11. DECORATORS: @mcp.tool, @mcp.resource, @mcp.prompt now return the original function, not a component object. Code that accesses .name, .description, or other component attributes on the decorated result will crash with AttributeError.
+   Fix: set FASTMCP_DECORATOR_MODE=object for v2 compat (itself deprecated).
+
+12. OAUTH STORAGE: Default OAuth client storage changed from DiskStore to FileTreeStore due to pickle deserialization vulnerability in diskcache (CVE-2025-69872). Clients using default storage will re-register automatically on first connection. If using DiskStore explicitly, switch to FileTreeStore or add pip install 'py-key-value-aio[disk]'.
+
+DEPRECATIONS (still work but emit warnings):
+
+- mount(prefix="x") -> mount(namespace="x")
+- import_server(sub) -> mount(sub)
+- FastMCP.as_proxy(url) -> from fastmcp.server import create_proxy; create_proxy(url)
+- from fastmcp.server.proxy -> from fastmcp.server.providers.proxy
+- from fastmcp.server.openapi import FastMCPOpenAPI -> from fastmcp.server.providers.openapi import OpenAPIProvider; use FastMCP("name", providers=[OpenAPIProvider(...)])
+- mcp.add_tool_transformation(name, cfg) -> from fastmcp.server.transforms import ToolTransform; mcp.add_transform(ToolTransform(...))
+
+For each issue found, show the original line, explain why it breaks, and provide the corrected code.
+</Prompt>
 
 ### Breaking Changes
 
-#### OAuth Storage Backend Changed (diskcache CVE)
+**Transport and server settings removed from constructor**
 
-The default OAuth storage has moved from `DiskStore` to `FileTreeStore` to address a pickle deserialization vulnerability in diskcache ([CVE-2025-69872](https://github.com/jlowin/fastmcp/issues/3166)).
-
-If you were using the default storage (i.e., not passing an explicit `client_storage`), clients will need to re-register on their first connection after upgrading. This happens automatically — no user action required, and it's the same flow that already occurs whenever a server restarts with in-memory storage. No code changes needed.
-
-If you were passing a `DiskStore` explicitly, you have two options:
-
-1. **Keep using DiskStore** by adding the dependency yourself. This re-introduces the vulnerable `diskcache` package into your dependency tree:
-
-```bash
-pip install 'py-key-value-aio[disk]'
-```
-
-2. **Switch to FileTreeStore** (recommended) or any other [storage backend](/servers/storage-backends):
+In v2, you could configure transport settings directly in the `FastMCP()` constructor. In v3, `FastMCP()` is purely about your server's identity and behavior — transport configuration happens when you actually start serving. Passing any of the old kwargs now raises `TypeError` with a migration hint.
 
 ```python
-from pathlib import Path
-from key_value.aio.stores.filetree import (
-    FileTreeStore,
-    FileTreeV1KeySanitizationStrategy,
-    FileTreeV1CollectionSanitizationStrategy,
-)
+# Before
+mcp = FastMCP("server", host="0.0.0.0", port=8080)
+mcp.run()
 
-storage_dir = Path("/var/lib/fastmcp/oauth")
-store = FileTreeStore(
-    data_directory=storage_dir,
-    key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(storage_dir),
-    collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(storage_dir),
-)
+# After
+mcp = FastMCP("server")
+mcp.run(transport="http", host="0.0.0.0", port=8080)
 ```
 
-#### WSTransport Removed
+The full list of removed kwargs and their replacements:
 
-Use `StreamableHttpTransport` instead.
+- `host`, `port`, `log_level`, `debug`, `sse_path`, `streamable_http_path`, `json_response`, `stateless_http` — pass to `run()`, `run_http_async()`, or `http_app()`, or set via environment variables (e.g. `FASTMCP_HOST`)
+- `message_path` — set via environment variable `FASTMCP_MESSAGE_PATH` only (not a `run()` kwarg)
+- `on_duplicate_tools`, `on_duplicate_resources`, `on_duplicate_prompts` — consolidated into a single `on_duplicate=` parameter
+- `tool_serializer` — return [`ToolResult`](/servers/tools#custom-serialization) from your tools instead
+- `include_tags` / `exclude_tags` — use `server.enable(tags=..., only=True)` / `server.disable(tags=...)` after construction
+- `tool_transformations` — use `server.add_transform(ToolTransform(...))` after construction
 
-#### Auth Provider Environment Variables Removed
+**OAuth storage backend changed (diskcache CVE)**
 
-Auth providers no longer auto-load configuration. Read them explicitly:
+The default OAuth client storage has moved from `DiskStore` to `FileTreeStore` to address a pickle deserialization vulnerability in diskcache ([CVE-2025-69872](https://github.com/jlowin/fastmcp/issues/3166)).
 
-```python
-import os
+If you were using the default storage (i.e., not passing an explicit `client_storage`), clients will need to re-register on their first connection after upgrading. This happens automatically — no user action required, and it's the same flow that already occurs whenever a server restarts with in-memory storage.
 
-auth = GitHubProvider(
-    client_id=os.environ["GITHUB_CLIENT_ID"],
-    client_secret=os.environ["GITHUB_CLIENT_SECRET"],
-)
-```
+If you were passing a `DiskStore` explicitly, you can either [switch to `FileTreeStore`](/servers/storage-backends) (recommended) or keep using `DiskStore` by adding the dependency yourself:
 
-#### Component enable()/disable() Moved to Server
+<Warning>
+Keeping `DiskStore` requires `pip install 'py-key-value-aio[disk]'`, which re-introduces the vulnerable `diskcache` package into your dependency tree.
+</Warning>
 
-These methods moved from component objects to the server:
+**Component enable()/disable() moved to server**
+
+In v2, you could enable or disable individual components by calling methods on the component object itself. In v3, visibility is controlled through the server (or provider), which lets you target components by name, tag, or type without needing a reference to the object:
 
 ```python
 # Before
@@ -73,12 +115,14 @@ tool = await server.get_tool("my_tool")
 tool.disable()
 
 # After
-server.disable(names={"my_tool"}, components=["tool"])
+server.disable(names={"my_tool"}, components={"tool"})
 ```
 
-#### Listing Methods Renamed and Return Lists
+Calling `.enable()` or `.disable()` on a component object now raises `NotImplementedError`. See [Visibility](/servers/visibility) for the full API, including tag-based filtering and per-session visibility.
 
-`get_tools()`, `get_resources()`, `get_prompts()`, and `get_resource_templates()` have been replaced by `list_tools()`, `list_resources()`, `list_prompts()`, and `list_resource_templates()`. The new methods return lists instead of dicts:
+**Listing methods renamed and return lists**
+
+The `get_tools()`, `get_resources()`, `get_prompts()`, and `get_resource_templates()` methods have been renamed to `list_tools()`, `list_resources()`, `list_prompts()`, and `list_resource_templates()`. More importantly, they now return lists instead of dicts — so code that indexes by name needs to change:
 
 ```python
 # Before
@@ -90,9 +134,9 @@ tools = await server.list_tools()
 tool = next((t for t in tools if t.name == "my_tool"), None)
 ```
 
-#### Prompts Use Message Class
+**Prompts use Message class**
 
-Use `Message` instead of `mcp.types.PromptMessage`:
+Prompt functions now use FastMCP's `Message` class instead of `mcp.types.PromptMessage`. The new class is simpler — it accepts a plain string and defaults to `role="user"`, so most prompts become one-liners:
 
 ```python
 # Before
@@ -110,9 +154,9 @@ def my_prompt() -> Message:
     return Message("Hello")
 ```
 
-#### Context State Methods Are Async
+**Context state methods are async**
 
-`ctx.set_state()` and `ctx.get_state()` are now async. State persists across the session:
+`ctx.set_state()` and `ctx.get_state()` are now async because state in v3 is session-scoped and backed by a pluggable storage backend (rather than a simple dict). This means state persists across multiple tool calls within the same session:
 
 ```python
 # Before
@@ -124,27 +168,48 @@ await ctx.set_state("key", "value")
 value = await ctx.get_state("key")
 ```
 
-#### State Values Must Be Serializable
-
-Session state values must now be JSON-serializable by default (dicts, lists, strings, numbers, etc.), since state is persisted across requests using a pluggable storage backend.
-
-If you need to store non-serializable values (e.g., passing an HTTP client from middleware to a tool), use `serializable=False`. These values are request-scoped and only available during the current tool call, resource read, or prompt render:
+State values must also be JSON-serializable by default (dicts, lists, strings, numbers, etc.). If you need to store non-serializable values like an HTTP client, pass `serializable=False` — these values are request-scoped and only available during the current tool call:
 
 ```python
-# Middleware sets up a client for the current request
 await ctx.set_state("client", my_http_client, serializable=False)
-
-# Tool retrieves it in the same request
-client = await ctx.get_state("client")
 ```
 
-#### Server Banner Environment Variable Renamed
+**Auth provider environment variables removed**
 
-`FASTMCP_SHOW_CLI_BANNER` is now `FASTMCP_SHOW_SERVER_BANNER`.
+In v2, auth providers like `GitHubProvider` could auto-load configuration from environment variables with a `FASTMCP_SERVER_AUTH_*` prefix. This magic has been removed — pass values explicitly:
 
-#### OpenAPI `timeout` Parameter Removed
+```python
+# Before (v2) — client_id and client_secret loaded automatically
+# from FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID, etc.
+auth = GitHubProvider()
 
-Configure timeout on the httpx client directly. The `client` parameter is now optional — when omitted, a default client is created from the spec's `servers` URL with a 30-second timeout.
+# After (v3) — pass values explicitly
+import os
+from fastmcp.server.auth.providers.github import GitHubProvider
+
+auth = GitHubProvider(
+    client_id=os.environ["GITHUB_CLIENT_ID"],
+    client_secret=os.environ["GITHUB_CLIENT_SECRET"],
+)
+```
+
+**WSTransport removed**
+
+The deprecated WebSocket client transport has been removed. Use `StreamableHttpTransport` instead:
+
+```python
+# Before
+from fastmcp.client.transports import WSTransport
+transport = WSTransport("ws://localhost:8000/ws")
+
+# After
+from fastmcp.client.transports import StreamableHttpTransport
+transport = StreamableHttpTransport("http://localhost:8000/mcp")
+```
+
+**OpenAPI `timeout` parameter removed**
+
+`OpenAPIProvider` no longer accepts a `timeout` parameter. Configure timeout on the httpx client directly. The `client` parameter is also now optional — when omitted, a default client is created from the spec's `servers` URL with a 30-second timeout:
 
 ```python
 # Before
@@ -155,9 +220,9 @@ client = httpx.AsyncClient(base_url="https://api.example.com", timeout=60)
 provider = OpenAPIProvider(spec, client)
 ```
 
-#### Metadata Namespace Renamed
+**Metadata namespace renamed**
 
-The FastMCP metadata namespace changed from `_fastmcp` to `fastmcp`, and metadata is now always included. The `include_fastmcp_meta` parameter has been removed from `FastMCP()` and `to_mcp_tool()`—remove any usage of this parameter.
+The FastMCP metadata key in component `meta` dicts changed from `_fastmcp` to `fastmcp`. If you read metadata from tool or resource objects, update the key:
 
 ```python
 # Before
@@ -167,11 +232,15 @@ tags = tool.meta.get("_fastmcp", {}).get("tags", [])
 tags = tool.meta.get("fastmcp", {}).get("tags", [])
 ```
 
-### Behavior Changes
+Metadata is now always included — the `include_fastmcp_meta` parameter has been removed from `FastMCP()` and `to_mcp_tool()`, so there is no way to suppress it.
 
-#### Decorators Return Functions
+**Server banner environment variable renamed**
 
-Decorators now return your original function instead of a component object. This means functions stay callable for testing:
+`FASTMCP_SHOW_CLI_BANNER` is now `FASTMCP_SHOW_SERVER_BANNER`.
+
+**Decorators return functions**
+
+In v2, `@mcp.tool` transformed your function into a `FunctionTool` object. In v3, decorators return your original function unchanged — which means decorated functions stay callable for testing, reuse, and composition:
 
 ```python
 @mcp.tool
@@ -181,13 +250,13 @@ def greet(name: str) -> str:
 greet("World")  # Works! Returns "Hello, World!"
 ```
 
-If you relied on the old behavior (treating `greet` as a `FunctionTool`), set `FASTMCP_DECORATOR_MODE=object` for v2 compatibility.
+If you have code that treats the decorated result as a `FunctionTool` (e.g., accessing `.name` or `.description`), set `FASTMCP_DECORATOR_MODE=object` for v2 compatibility. This escape hatch is itself deprecated and will be removed in a future release.
 
 ### Deprecated Features
 
 These still work but emit warnings. Update when convenient.
 
-#### mount() prefix → namespace
+**mount() prefix → namespace**
 
 ```python
 # Deprecated
@@ -197,22 +266,44 @@ main.mount(subserver, prefix="api")
 main.mount(subserver, namespace="api")
 ```
 
-#### include_tags/exclude_tags → enable()/disable()
+**import_server() → mount()**
 
 ```python
 # Deprecated
-mcp = FastMCP("server", exclude_tags={"internal"})
+main.import_server(subserver)
 
 # New
-mcp = FastMCP("server")
-mcp.disable(tags={"internal"})
+main.mount(subserver)
 ```
 
-#### tool_serializer → ToolResult
+**Module import paths for proxy and OpenAPI**
 
-Return `ToolResult` from your tools for explicit serialization control instead of using the `tool_serializer` parameter.
+The proxy and OpenAPI modules have moved under `providers` to reflect v3's provider-based architecture:
 
-#### add_tool_transformation() → add_transform()
+```python
+# Deprecated
+from fastmcp.server.proxy import FastMCPProxy
+from fastmcp.server.openapi import FastMCPOpenAPI
+
+# New
+from fastmcp.server.providers.proxy import FastMCPProxy
+from fastmcp.server.providers.openapi import OpenAPIProvider
+```
+
+`FastMCPOpenAPI` itself is deprecated — use `FastMCP` with an `OpenAPIProvider` instead:
+
+```python
+# Deprecated
+from fastmcp.server.openapi import FastMCPOpenAPI
+server = FastMCPOpenAPI(spec, client)
+
+# New
+from fastmcp import FastMCP
+from fastmcp.server.providers.openapi import OpenAPIProvider
+server = FastMCP("my_api", providers=[OpenAPIProvider(spec, client)])
+```
+
+**add_tool_transformation() → add_transform()**
 
 ```python
 # Deprecated
@@ -223,7 +314,7 @@ from fastmcp.server.transforms import ToolTransform
 mcp.add_transform(ToolTransform({"name": config}))
 ```
 
-#### FastMCP.as_proxy() → create_proxy()
+**FastMCP.as_proxy() → create_proxy()**
 
 ```python
 # Deprecated
