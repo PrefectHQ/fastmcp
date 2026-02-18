@@ -7,7 +7,6 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 from fastmcp.server.telemetry import get_auth_span_attributes
 from fastmcp.telemetry import (
-    _LEGACY_TRACE_PARENT_KEY,
     INSTRUMENTATION_NAME,
     TRACE_PARENT_KEY,
     extract_trace_context,
@@ -50,7 +49,6 @@ class TestInjectTraceContext:
         assert meta is not None
         assert TRACE_PARENT_KEY in meta
         assert meta[TRACE_PARENT_KEY].startswith("00-")
-        assert _LEGACY_TRACE_PARENT_KEY not in meta
 
 
 class TestExtractTraceContext:
@@ -60,39 +58,11 @@ class TestExtractTraceContext:
         assert span_ctx.is_valid
         assert format(span_ctx.trace_id, "032x") == "0af7651916cd43dd8448eb211c80319c"
 
-    def test_legacy_traceparent_fallback(self, trace_exporter: InMemorySpanExporter):
-        ctx = extract_trace_context({"fastmcp.traceparent": VALID_TRACEPARENT})
-        span_ctx = trace.get_current_span(ctx).get_span_context()
-        assert span_ctx.is_valid
-        assert format(span_ctx.trace_id, "032x") == "0af7651916cd43dd8448eb211c80319c"
-
-    def test_bare_keys_take_priority(self, trace_exporter: InMemorySpanExporter):
-        other_traceparent = "00-11111111111111111111111111111111-2222222222222222-01"
-        ctx = extract_trace_context(
-            {
-                "traceparent": VALID_TRACEPARENT,
-                "fastmcp.traceparent": other_traceparent,
-            }
-        )
-        span_ctx = trace.get_current_span(ctx).get_span_context()
-        assert format(span_ctx.trace_id, "032x") == "0af7651916cd43dd8448eb211c80319c"
-
     def test_bare_tracestate(self, trace_exporter: InMemorySpanExporter):
         ctx = extract_trace_context(
             {
                 "traceparent": VALID_TRACEPARENT,
                 "tracestate": VALID_TRACESTATE,
-            }
-        )
-        span_ctx = trace.get_current_span(ctx).get_span_context()
-        assert span_ctx.is_valid
-        assert span_ctx.trace_state.get("congo") == "t61rcWkgMzE"
-
-    def test_legacy_tracestate_fallback(self, trace_exporter: InMemorySpanExporter):
-        ctx = extract_trace_context(
-            {
-                "traceparent": VALID_TRACEPARENT,
-                "fastmcp.tracestate": VALID_TRACESTATE,
             }
         )
         span_ctx = trace.get_current_span(ctx).get_span_context()
