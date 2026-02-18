@@ -294,9 +294,11 @@ from fastmcp.server.providers.openapi import OpenAPIProvider
 
 ```python
 # Deprecated
+from fastmcp.server.openapi import FastMCPOpenAPI
 server = FastMCPOpenAPI(spec, client)
 
 # New
+from fastmcp import FastMCP
 from fastmcp.server.providers.openapi import OpenAPIProvider
 server = FastMCP("my_api", providers=[OpenAPIProvider(spec, client)])
 ```
