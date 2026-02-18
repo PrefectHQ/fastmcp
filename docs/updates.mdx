@@ -5,6 +5,29 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 3.0.0" description="February 18, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.0.0: Three at Last"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.0.0"
+cta="Read the release notes"
+img="assets/updates/release-3-0.png"
+>
+FastMCP 3.0 is stable. Two betas, two release candidates, 21 new contributors, and more than 100,000 daily pre-release installs later — the architecture held up, the upgrade path was smooth, and we're shipping it.
+
+The surface API is largely unchanged — `@mcp.tool()` still works exactly as before. What changed is everything underneath: a provider/transform architecture that makes FastMCP extensible, observable, and composable in ways v2 couldn't support.
+
+🔌 **Build servers from anything** — `FileSystemProvider`, `OpenAPIProvider`, `ProxyProvider`, `SkillsProvider`, and composable transforms that rename, namespace, filter, version, and secure components as they flow to clients.
+
+🔐 **Ship to production** — Component versioning, granular authorization with async auth checks, CIMD, Static Client Registration, Azure OBO, OpenTelemetry tracing, and background tasks with distributed Redis notification.
+
+💾 **Adapt per session** — Session state persists across requests, and `ctx.enable_components()` / `ctx.disable_components()` let servers adapt dynamically per client.
+
+⚡ **Develop faster** — `--reload`, standalone decorators, automatic threadpool dispatch, tool timeouts, pagination, and concurrent tool execution.
+
+🖥️ **CLI** — `fastmcp list`, `fastmcp call`, `fastmcp discover`, `fastmcp generate-cli`, and `fastmcp install` for Claude Desktop, Cursor, and Goose.
+</Card>
+</Update>
+
 <Update label="FastMCP 3.0.0rc1" description="February 12, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v3.0.0rc1: RC-ing is Believing"
