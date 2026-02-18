@@ -218,8 +218,6 @@ Metadata is now always included — the `include_fastmcp_meta` parameter has bee
 
 `FASTMCP_SHOW_CLI_BANNER` is now `FASTMCP_SHOW_SERVER_BANNER`.
 
-### Behavior Changes
-
 **Decorators return functions**
 
 In v2, `@mcp.tool` transformed your function into a `FunctionTool` object. In v3, decorators return your original function unchanged — which means decorated functions stay callable for testing, reuse, and composition:
