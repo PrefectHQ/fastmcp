@@ -25,7 +25,7 @@
 
 ---
 
-The [Model Context Protocol](https://modelcontextprotocol.io) (MCP) provides a standardized way to connect AI agents to tools and data. FastMCP makes it easy to build MCP applications with clean, Pythonic code:
+**FastMCP is the standard framework for building MCP applications.** The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) connects LLMs to tools and data. FastMCP gives you everything you need to go from idea to production — build servers that expose capabilities, connect clients to any MCP service, and give your tools interactive UIs:
 
 ```python
 from fastmcp import FastMCP
@@ -79,7 +79,7 @@ FastMCP has three pillars:
 
 **[Servers](https://gofastmcp.com/servers/server)** wrap your Python functions into MCP-compliant tools, resources, and prompts. **[Clients](https://gofastmcp.com/clients/client)** connect to any server with full protocol support. And **[Apps](https://gofastmcp.com/apps/overview)** give your tools interactive UIs rendered directly in the conversation.
 
-**Move fast and make things.**
+Ready to build? Start with the [installation guide](https://gofastmcp.com/getting-started/installation) or jump straight to the [quickstart](https://gofastmcp.com/getting-started/quickstart). When you're ready to deploy, [Prefect Horizon](https://www.prefect.io/horizon) offers free hosting for FastMCP users.
 
 ## Installation
 
