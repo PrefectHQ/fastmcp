@@ -10,7 +10,7 @@ Generate a standalone CLI script and agent skill from an MCP server.
 
 ## Functions
 
-### `serialize_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/generate.py#L122" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `serialize_transport` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/cli/generate.py#L122" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 serialize_transport(resolved: str | dict[str, Any] | ClientTransport) -> tuple[str, set[str]]
@@ -23,7 +23,7 @@ Returns ``(expression, extra_imports)`` where *extra_imports* is a set of
 import lines needed by the expression.
 
 
-### `generate_cli_script` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/generate.py#L283" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `generate_cli_script` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/cli/generate.py#L283" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_cli_script(server_name: str, server_spec: str, transport_code: str, extra_imports: set[str], tools: list[mcp.types.Tool]) -> str
@@ -33,7 +33,7 @@ generate_cli_script(server_name: str, server_spec: str, transport_code: str, ext
 Generate the full CLI script source code.
 
 
-### `generate_skill_content` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/generate.py#L621" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `generate_skill_content` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/cli/generate.py#L621" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_skill_content(server_name: str, cli_filename: str, tools: list[mcp.types.Tool]) -> str
@@ -43,7 +43,7 @@ generate_skill_content(server_name: str, cli_filename: str, tools: list[mcp.type
 Generate a SKILL.md file for a generated CLI script.
 
 
-### `generate_cli_command` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/generate.py#L672" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `generate_cli_command` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/cli/generate.py#L672" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_cli_command(server_spec: Annotated[str, cyclopts.Parameter(help='Server URL, Python file, MCPConfig JSON, discovered name, or .js file')], output: Annotated[str, cyclopts.Parameter(help='Output file path (default: cli.py)')] = 'cli.py') -> None

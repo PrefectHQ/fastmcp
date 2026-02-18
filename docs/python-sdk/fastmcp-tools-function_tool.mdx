@@ -10,7 +10,7 @@ Standalone @tool decorator for FastMCP.
 
 ## Functions
 
-### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L371" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L371" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(name_or_fn: str | Callable[..., Any] | None = None) -> Any
@@ -25,23 +25,23 @@ using mcp.add_tool().
 
 ## Classes
 
-### `DecoratedTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `DecoratedTool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Protocol for functions decorated with @tool.
 
 
-### `ToolMeta` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L63" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ToolMeta` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L63" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Metadata attached to functions by the @tool decorator.
 
 
-### `FunctionTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FunctionTool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 **Methods:**
 
-#### `to_mcp_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L88" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_mcp_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L88" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 to_mcp_tool(self, **overrides: Any) -> mcp.types.Tool
@@ -52,7 +52,7 @@ Convert the FastMCP tool to an MCP tool.
 Extends the base implementation to add task execution mode if enabled.
 
 
-#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L107" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L107" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any]) -> FunctionTool
@@ -68,7 +68,7 @@ individual parameters must not be passed.
 Cannot be used together with metadata parameter.
 
 
-#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L249" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L249" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, arguments: dict[str, Any]) -> ToolResult
@@ -77,7 +77,7 @@ run(self, arguments: dict[str, Any]) -> ToolResult
 Run the tool with arguments.
 
 
-#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L294" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L294" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_with_docket(self, docket: Docket) -> None
@@ -89,7 +89,7 @@ FunctionTool registers the underlying function, which has the user's
 Depends parameters for docket to resolve.
 
 
-#### `add_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L304" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L304" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_to_docket(self, docket: Docket, arguments: dict[str, Any], **kwargs: Any) -> Execution

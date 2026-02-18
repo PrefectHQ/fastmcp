@@ -36,7 +36,7 @@ Example:
 
 ## Functions
 
-### `require_scopes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `require_scopes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 require_scopes(*scopes: str) -> AuthCheck
@@ -52,7 +52,7 @@ in the token (AND logic).
 - `*scopes`: One or more scope strings that must all be present.
 
 
-### `restrict_tag` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `restrict_tag` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 restrict_tag(tag: str) -> AuthCheck
@@ -69,7 +69,7 @@ required scopes. If the component doesn't have the tag, access is allowed.
 - `scopes`: List of scopes required when the tag is present.
 
 
-### `run_auth_checks` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L134" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `run_auth_checks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L134" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run_auth_checks(checks: AuthCheck | list[AuthCheck], ctx: AuthContext) -> bool
@@ -101,7 +101,7 @@ Each check can be sync (returns bool) or async (returns Awaitable[bool]).
 
 ## Classes
 
-### `AuthContext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L48" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AuthContext` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L48" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Context passed to auth check callables.
@@ -117,7 +117,7 @@ access to the current authentication token and the component being accessed.
 
 **Methods:**
 
-#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L64" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/authorization.py#L64" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self) -> Tool | None

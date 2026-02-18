@@ -23,7 +23,7 @@ internal APIs for background task coordination.
 
 ## Functions
 
-### `elicit_for_task` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `elicit_for_task` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit_for_task(task_id: str, session: ServerSession | None, message: str, schema: dict[str, Any], fastmcp: FastMCP) -> mcp.types.ElicitResult
@@ -50,7 +50,7 @@ in a Docket worker context where there's no active MCP request.
 - `McpError`: If the elicitation request fails
 
 
-### `relay_elicitation` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L234" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `relay_elicitation` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L234" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 relay_elicitation(session: ServerSession, session_id: str, task_id: str, elicitation: dict[str, Any], fastmcp: FastMCP) -> None
@@ -72,7 +72,7 @@ response to Redis so the blocked worker can resume.
 - `fastmcp`: FastMCP server instance
 
 
-### `handle_task_input` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L290" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `handle_task_input` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L290" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 handle_task_input(task_id: str, session_id: str, action: str, content: dict[str, Any] | None, fastmcp: FastMCP) -> bool

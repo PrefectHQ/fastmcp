@@ -10,7 +10,7 @@ Tool-related methods for FastMCP Client.
 
 ## Classes
 
-### `ClientToolsMixin` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClientToolsMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Mixin providing tool-related methods for Client.
@@ -18,7 +18,7 @@ Mixin providing tool-related methods for Client.
 
 **Methods:**
 
-#### `list_tools_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L37" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L37" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools_mcp(self: Client) -> mcp.types.ListToolsResult
@@ -38,7 +38,7 @@ containing the list of tools and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools(self: Client) -> list[mcp.types.Tool]
@@ -58,7 +58,7 @@ large result sets incrementally), use list_tools_mcp() with the cursor parameter
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `call_tool_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool_mcp(self: Client, name: str, arguments: dict[str, Any], progress_handler: ProgressHandler | None = None, timeout: datetime.timedelta | float | int | None = None, meta: dict[str, Any] | None = None) -> mcp.types.CallToolResult
@@ -88,19 +88,19 @@ containing the tool result and any additional metadata.
 - `McpError`: If the tool call requests results in a TimeoutError | JSONRPCError
 
 
-#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool(self: Client, name: str, arguments: dict[str, Any] | None = None) -> CallToolResult
 ```
 
-#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L190" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L190" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool(self: Client, name: str, arguments: dict[str, Any] | None = None) -> ToolTask
 ```
 
-#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/tools.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool(self: Client, name: str, arguments: dict[str, Any] | None = None) -> CallToolResult | ToolTask

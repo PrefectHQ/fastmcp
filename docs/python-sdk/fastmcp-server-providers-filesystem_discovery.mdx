@@ -16,7 +16,7 @@ This module provides functions to:
 
 ## Functions
 
-### `discover_files` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `discover_files` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 discover_files(root: Path) -> list[Path]
@@ -34,7 +34,7 @@ Excludes __init__.py files (they're for package structure, not components).
 - List of .py file paths, sorted for deterministic order.
 
 
-### `import_module_from_file` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L109" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `import_module_from_file` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L109" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 import_module_from_file(file_path: Path) -> ModuleType
@@ -57,7 +57,7 @@ imports directly using spec_from_file_location.
 - `ImportError`: If the module cannot be imported.
 
 
-### `extract_components` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L175" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `extract_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L175" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 extract_components(module: ModuleType) -> list[FastMCPComponent]
@@ -77,7 +77,7 @@ or functions decorated with @tool/@resource/@prompt that have __fastmcp__ metada
 - List of component objects (Tool, Resource, ResourceTemplate, Prompt).
 
 
-### `discover_and_import` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L295" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `discover_and_import` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L295" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 discover_and_import(root: Path) -> DiscoveryResult
@@ -97,7 +97,7 @@ This is the main entry point for filesystem-based discovery.
 
 ## Classes
 
-### `DiscoveryResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L24" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `DiscoveryResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/filesystem_discovery.py#L24" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Result of filesystem discovery.
