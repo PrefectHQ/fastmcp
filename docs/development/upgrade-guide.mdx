@@ -175,7 +175,13 @@ await ctx.set_state("client", my_http_client, serializable=False)
 In v2, auth providers like `GitHubProvider` could auto-load configuration from environment variables with a `FASTMCP_SERVER_AUTH_*` prefix. This magic has been removed — pass values explicitly:
 
 ```python
+# Before (v2) — client_id and client_secret loaded automatically
+# from FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID, etc.
+auth = GitHubProvider()
+
+# After (v3) — pass values explicitly
 import os
+from fastmcp.server.auth.providers.github import GitHubProvider
 
 auth = GitHubProvider(
     client_id=os.environ["GITHUB_CLIENT_ID"],
