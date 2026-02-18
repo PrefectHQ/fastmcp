@@ -166,8 +166,8 @@ jobs:
 
             | Repository | Issue or PR | Relevance |
             | --- | --- | --- |
-            | jlowin/fastmcp | [Add matrix operations support](https://github.com/jlowin/fastmcp/pull/680) | This pull request directly addresses the feature request for adding matrix operations to the calculator. |
-            | jlowin/fastmcp | [Add matrix operations support](https://github.com/jlowin/fastmcp/issues/681) | This issue directly addresses the feature request for adding matrix operations to the calculator. |
+            | prefecthq/fastmcp | [Add matrix operations support](https://github.com/prefecthq/fastmcp/pull/680) | This pull request directly addresses the feature request for adding matrix operations to the calculator. |
+            | prefecthq/fastmcp | [Add matrix operations support](https://github.com/prefecthq/fastmcp/issues/681) | This issue directly addresses the feature request for adding matrix operations to the calculator. |
             </details>
 
             <details>

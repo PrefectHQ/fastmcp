@@ -138,7 +138,7 @@ async def wrapped_cpu_task(data: str) -> str:
     return await anyio.to_thread.run_sync(cpu_intensive_task, data)
 ```
 
-Alternative approaches include using `asyncio.get_event_loop().run_in_executor()` or other threading techniques to manage blocking operations without impacting server responsiveness. For example, here's a recipe for using the `asyncer` library (not included in FastMCP) to create a decorator that wraps synchronous functions, courtesy of [@hsheth2](https://github.com/jlowin/fastmcp/issues/864#issuecomment-3103678258):
+Alternative approaches include using `asyncio.get_event_loop().run_in_executor()` or other threading techniques to manage blocking operations without impacting server responsiveness. For example, here's a recipe for using the `asyncer` library (not included in FastMCP) to create a decorator that wraps synchronous functions, courtesy of [@hsheth2](https://github.com/prefecthq/fastmcp/issues/864#issuecomment-3103678258):
 
 <CodeGroup>
 ```python Decorator Recipe

@@ -102,7 +102,10 @@ async def main(enable_posting: bool = False):
                 {
                     "text": "Check out FastMCP and follow @alternatebuild.dev for updates!",
                     "links": [
-                        {"text": "FastMCP", "url": "https://github.com/jlowin/fastmcp"}
+                        {
+                            "text": "FastMCP",
+                            "url": "https://github.com/prefecthq/fastmcp",
+                        }
                     ],
                     "mentions": [
                         {
@@ -203,7 +206,7 @@ async def main(enable_posting: bool = False):
                             "links": [
                                 {
                                     "text": "everything",
-                                    "url": "https://github.com/jlowin/fastmcp",
+                                    "url": "https://github.com/prefecthq/fastmcp",
                                 }
                             ],
                         },

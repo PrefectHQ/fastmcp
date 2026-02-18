@@ -5,7 +5,7 @@
   },
   "environment": {
     "dependencies": [
-      "atproto_mcp@git+https://github.com/jlowin/fastmcp.git#subdirectory=examples/atproto_mcp"
+      "atproto_mcp@git+https://github.com/prefecthq/fastmcp.git#subdirectory=examples/atproto_mcp"
     ]
   }
 }
