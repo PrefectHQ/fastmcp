@@ -6,6 +6,8 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 
 from __future__ import annotations
 
+import hashlib
+from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, cast
 
 from key_value.aio.protocols import AsyncKeyValue
@@ -165,6 +167,12 @@ class AzureProvider(OAuthProxy):
         # Store Azure-specific config for OBO credential creation
         self._tenant_id = tenant_id
         self._base_authority = base_authority
+
+        # Cache of OBO credentials keyed by hash of user assertion token.
+        # Reusing credentials allows the Azure SDK's internal token cache
+        # to avoid redundant OBO exchanges for the same user + scopes.
+        self._obo_credentials: OrderedDict[str, OnBehalfOfCredential] = OrderedDict()
+        self._obo_max_credentials: int = 128
 
         # Apply defaults
         self.identifier_uri = identifier_uri or f"api://{client_id}"
@@ -458,12 +466,12 @@ class AzureProvider(OAuthProxy):
             logger.debug("Failed to extract Azure claims: %s", e)
             return None
 
-    def create_obo_credential(self, user_assertion: str) -> OnBehalfOfCredential:
-        """Create an OnBehalfOfCredential for OBO token exchange.
+    async def get_obo_credential(self, user_assertion: str) -> OnBehalfOfCredential:
+        """Get a cached or new OnBehalfOfCredential for OBO token exchange.
 
-        Uses the AzureProvider's configuration (client_id, client_secret,
-        tenant_id, authority) to create a credential that can exchange the
-        user's token for downstream API tokens.
+        Credentials are cached by user assertion so the Azure SDK's internal
+        token cache can avoid redundant OBO exchanges when the same user
+        calls multiple tools with the same scopes.
 
         Args:
             user_assertion: The user's access token to exchange via OBO.
@@ -477,13 +485,37 @@ class AzureProvider(OAuthProxy):
         _require_azure_identity("OBO token exchange")
         from azure.identity.aio import OnBehalfOfCredential
 
-        return OnBehalfOfCredential(
+        key = hashlib.sha256(user_assertion.encode()).hexdigest()
+
+        if key in self._obo_credentials:
+            self._obo_credentials.move_to_end(key)
+            return self._obo_credentials[key]
+
+        credential = OnBehalfOfCredential(
             tenant_id=self._tenant_id,
             client_id=self._upstream_client_id,
             client_secret=self._upstream_client_secret.get_secret_value(),
             user_assertion=user_assertion,
             authority=f"https://{self._base_authority}",
         )
+        self._obo_credentials[key] = credential
+
+        # Evict oldest if over capacity
+        while len(self._obo_credentials) > self._obo_max_credentials:
+            _, evicted = self._obo_credentials.popitem(last=False)
+            await evicted.close()
+
+        return credential
+
+    async def close_obo_credentials(self) -> None:
+        """Close all cached OBO credentials."""
+        credentials = list(self._obo_credentials.values())
+        self._obo_credentials.clear()
+        for credential in credentials:
+            try:
+                await credential.close()
+            except Exception:
+                logger.debug("Error closing OBO credential", exc_info=True)
 
 
 class AzureJWTVerifier(JWTVerifier):
@@ -611,12 +643,13 @@ class _EntraOBOToken(Dependency):  # type: ignore[misc]
     """Dependency that performs OBO token exchange for Microsoft Entra.
 
     Uses azure.identity's OnBehalfOfCredential for async-native OBO,
-    with automatic token caching and refresh.
+    with automatic token caching and refresh. Credentials are cached on
+    the AzureProvider so repeated tool calls reuse existing credentials
+    and benefit from the Azure SDK's internal token cache.
     """
 
     def __init__(self, scopes: list[str]):
         self.scopes = scopes
-        self._credential: OnBehalfOfCredential | None = None
 
     async def __aenter__(self) -> str:
         _require_azure_identity("EntraOBOToken")
@@ -636,23 +669,12 @@ class _EntraOBOToken(Dependency):  # type: ignore[misc]
                 f"Current provider: {type(server.auth).__name__}"
             )
 
-        self._credential = server.auth.create_obo_credential(
+        credential = await server.auth.get_obo_credential(
             user_assertion=access_token.token,
         )
 
-        try:
-            result = await self._credential.get_token(*self.scopes)
-        except BaseException:
-            await self._credential.close()
-            self._credential = None
-            raise
-
+        result = await credential.get_token(*self.scopes)
         return result.token
-
-    async def __aexit__(self, *args: object) -> None:
-        if self._credential is not None:
-            await self._credential.close()
-            self._credential = None
 
 
 def EntraOBOToken(scopes: list[str]) -> str:
