@@ -88,8 +88,18 @@
                 "pages": [
                   "getting-started/welcome",
                   "getting-started/installation",
-                  "development/upgrade-guide",
-                  "getting-started/quickstart"
+                  "getting-started/quickstart",
+                  {
+                    "collapsed": true,
+                    "group": "Upgrade",
+                    "icon": "up",
+                    "tag": "NEW",
+                    "pages": [
+                      "development/upgrade-guide",
+                      "getting-started/upgrading-from-sdk",
+                      "getting-started/low-level-sdk"
+                    ]
+                  }
                 ]
               },
               {
