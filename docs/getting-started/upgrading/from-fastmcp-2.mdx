@@ -1,6 +1,6 @@
 ---
-title: Upgrade Guide
-sidebarTitle: Upgrade Guide
+title: Upgrading from FastMCP 2
+sidebarTitle: "From FastMCP 2"
 description: Migration instructions for upgrading between FastMCP versions
 icon: up
 tag: NEW
@@ -12,8 +12,20 @@ This guide covers breaking changes and migration steps when upgrading FastMCP.
 
 For most servers, upgrading to v3 requires a single change: swap `from mcp.server.fastmcp import FastMCP` for `from fastmcp import FastMCP`. Everything below covers the less common cases.
 
+### Install
+
+Since you already have `fastmcp` installed, you need to explicitly request the new version — `pip install fastmcp` won't upgrade an existing installation:
+
+```bash
+pip install --upgrade fastmcp
+# or
+uv add fastmcp@latest
+```
+
+If you pin versions in a requirements file or `pyproject.toml`, update your pin to `fastmcp>=3.0.0,<4`.
+
 <Info>
-**New repository home.** As part of the v3 release, FastMCP's GitHub repository now lives at [`prefecthq/fastmcp`](https://github.com/prefecthq/fastmcp) under [Prefect](https://prefect.io)'s stewardship. GitHub automatically redirects existing clones and bookmarks, so nothing breaks — but you can update your local remote whenever convenient:
+**New repository home.** As part of the v3 release, FastMCP's GitHub repository has moved from `jlowin/fastmcp` to [`prefecthq/fastmcp`](https://github.com/prefecthq/fastmcp) under [Prefect](https://prefect.io)'s stewardship. GitHub automatically redirects existing clones and bookmarks, so nothing breaks — but you can update your local remote whenever convenient:
 
 ```bash
 git remote set-url origin https://github.com/prefecthq/fastmcp.git
@@ -22,8 +34,8 @@ git remote set-url origin https://github.com/prefecthq/fastmcp.git
 If you reference the repository URL in dependency specifications (e.g., `git+https://github.com/jlowin/fastmcp.git`), update those to the new location.
 </Info>
 
-<Prompt description="Copy this prompt into any LLM along with your server code to get automated migration guidance.">
-You are migrating a FastMCP v2 server to FastMCP v3.0. Analyze the provided code and identify every change needed. The full upgrade guide is at https://gofastmcp.com/development/upgrade-guide — fetch it for complete context.
+<Prompt description="Copy this prompt into any LLM along with your server code to get automated upgrade guidance.">
+You are upgrading a FastMCP v2 server to FastMCP v3.0. Analyze the provided code and identify every change needed. The full upgrade guide is at https://gofastmcp.com/getting-started/upgrading/from-fastmcp-2 and the complete FastMCP documentation is at https://gofastmcp.com — fetch these for complete context.
 
 BREAKING CHANGES (will crash at import or runtime):
 
@@ -65,6 +77,10 @@ BREAKING CHANGES (will crash at import or runtime):
    Fix: set FASTMCP_DECORATOR_MODE=object for v2 compat (itself deprecated).
 
 12. OAUTH STORAGE: Default OAuth client storage changed from DiskStore to FileTreeStore due to pickle deserialization vulnerability in diskcache (CVE-2025-69872). Clients using default storage will re-register automatically on first connection. If using DiskStore explicitly, switch to FileTreeStore or add pip install 'py-key-value-aio[disk]'.
+
+13. REPO MOVE: GitHub repository moved from jlowin/fastmcp to prefecthq/fastmcp. Update git remotes and dependency URLs that reference the old location.
+
+14. BACKGROUND TASKS: FastMCP's background task system (SEP-1686) is now an optional dependency. If the code uses task=True or TaskConfig, add pip install "fastmcp[tasks]".
 
 DEPRECATIONS (still work but emit warnings):
 
@@ -261,6 +277,16 @@ greet("World")  # Works! Returns "Hello, World!"
 ```
 
 If you have code that treats the decorated result as a `FunctionTool` (e.g., accessing `.name` or `.description`), set `FASTMCP_DECORATOR_MODE=object` for v2 compatibility. This escape hatch is itself deprecated and will be removed in a future release.
+
+**Background tasks require optional dependency**
+
+FastMCP's background task system (SEP-1686) is now behind an optional extra. If your server uses background tasks, install with:
+
+```bash
+pip install "fastmcp[tasks]"
+```
+
+Without the extra, configuring a tool with `task=True` or `TaskConfig` will raise an import error at runtime. See [Background Tasks](/servers/tasks) for details.
 
 ### Deprecated Features
 

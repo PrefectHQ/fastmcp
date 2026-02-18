@@ -88,8 +88,18 @@
                 "pages": [
                   "getting-started/welcome",
                   "getting-started/installation",
-                  "development/upgrade-guide",
-                  "getting-started/quickstart"
+                  "getting-started/quickstart",
+                  {
+                    "collapsed": true,
+                    "group": "Upgrade",
+                    "icon": "up",
+                    "tag": "NEW",
+                    "pages": [
+                      "getting-started/upgrading/from-fastmcp-2",
+                      "getting-started/upgrading/from-mcp-sdk",
+                      "getting-started/upgrading/from-low-level-sdk"
+                    ]
+                  }
                 ]
               },
               {
@@ -940,6 +950,18 @@
     {
       "destination": "/servers/transforms/transforms",
       "source": "/patterns/tool-transformation"
+    },
+    {
+      "destination": "/getting-started/upgrading/from-fastmcp-2",
+      "source": "/development/upgrade-guide"
+    },
+    {
+      "destination": "/getting-started/upgrading/from-mcp-sdk",
+      "source": "/getting-started/upgrading-from-sdk"
+    },
+    {
+      "destination": "/getting-started/upgrading/from-low-level-sdk",
+      "source": "/getting-started/low-level-sdk"
     }
   ],
   "search": {

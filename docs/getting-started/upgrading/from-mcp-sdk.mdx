@@ -1,0 +1,165 @@
+---
+title: Upgrading from the MCP SDK
+sidebarTitle: "From MCP SDK"
+description: Upgrade from FastMCP in the MCP Python SDK to the standalone FastMCP framework
+icon: up
+tag: NEW
+---
+
+If your server starts with `from mcp.server.fastmcp import FastMCP`, you're using FastMCP 1.0 — the version bundled with v1 of the `mcp` package. Upgrading to the standalone FastMCP framework is easy. **For most servers, it's a single import change.**
+
+```python
+# Before
+from mcp.server.fastmcp import FastMCP
+
+# After
+from fastmcp import FastMCP
+```
+
+That's it. Your `@mcp.tool`, `@mcp.resource`, and `@mcp.prompt` decorators, your `mcp.run()` call, and the rest of your server code all work as-is.
+
+<Tip>
+**Why upgrade?** FastMCP 1.0 pioneered the Pythonic MCP server experience, and we're proud it was bundled into the `mcp` package. The standalone FastMCP project has since grown into a full framework for taking MCP servers from prototype to production — with composition, middleware, proxy servers, authentication, and much more. Upgrading gives you access to all of that, plus ongoing updates and fixes.
+</Tip>
+
+## Install
+
+```bash
+pip install --upgrade fastmcp
+# or
+uv add fastmcp
+```
+
+FastMCP includes the `mcp` package as a dependency, so you don't lose access to anything. Update your import, run your server, and if your tools work, you're done.
+
+<Prompt description="Copy this prompt into any LLM along with your server code to get automated upgrade guidance.">
+You are upgrading an MCP server from FastMCP 1.0 (bundled in the `mcp` package v1) to standalone FastMCP 3.0. Analyze the provided code and identify every change needed. The full upgrade guide is at https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk and the complete FastMCP documentation is at https://gofastmcp.com — fetch these for complete context.
+
+STEP 1 — IMPORT (required for all servers):
+Change "from mcp.server.fastmcp import FastMCP" to "from fastmcp import FastMCP".
+
+STEP 2 — CONSTRUCTOR KWARGS (only if FastMCP() receives transport settings):
+FastMCP() no longer accepts: host, port, log_level, debug, sse_path, streamable_http_path, json_response, stateless_http.
+Fix: pass these to run() instead.
+Before: `mcp = FastMCP("server", host="0.0.0.0", port=8080); mcp.run()`
+After:  `mcp = FastMCP("server"); mcp.run(transport="http", host="0.0.0.0", port=8080)`
+
+STEP 3 — PROMPTS (only if using PromptMessage directly):
+mcp.types.PromptMessage is replaced by fastmcp.prompts.Message.
+Before: `PromptMessage(role="user", content=TextContent(type="text", text="Hello"))`
+After:  `Message("Hello")`  — role defaults to "user", accepts plain strings.
+
+STEP 4 — OTHER MCP IMPORTS (only if importing from mcp.* directly):
+Direct imports from the `mcp` package (e.g., `import mcp.types`, `from mcp.server.stdio import stdio_server`) still work because FastMCP includes `mcp` as a dependency. However, prefer FastMCP's own APIs where equivalents exist:
+- mcp.types.TextContent for tool returns → just return plain Python values (str, int, dict, etc.)
+- mcp.types.ImageContent → fastmcp.utilities.types.Image
+- from mcp.server.stdio import stdio_server → not needed, mcp.run() handles transport
+
+STEP 5 — DECORATORS (only if treating decorated functions as objects):
+@mcp.tool, @mcp.resource, @mcp.prompt now return the original function, not a component object. Code that accesses .name or .description on the decorated result needs updating. Set FASTMCP_DECORATOR_MODE=object temporarily to restore v1 behavior (this compat setting is itself deprecated).
+
+For each issue found, show the original line, explain what changed, and provide the corrected code.
+</Prompt>
+
+## What Might Need Updating
+
+Most servers need nothing beyond the import change. Skim the sections below to see if any apply.
+
+### Constructor Settings
+
+If you passed transport settings like `host` or `port` directly to `FastMCP()`, those now belong on `run()`. This keeps your server definition independent of how it's deployed:
+
+```python
+# Before
+mcp = FastMCP("my-server", host="0.0.0.0", port=8080)
+mcp.run()
+
+# After
+mcp = FastMCP("my-server")
+mcp.run(transport="http", host="0.0.0.0", port=8080)
+```
+
+If you pass the old kwargs, you'll get a clear `TypeError` with a migration hint.
+
+### Prompts
+
+If your prompt functions return `mcp.types.PromptMessage` objects, you can upgrade to FastMCP's simpler `Message` class. Or just return a plain string — it's automatically wrapped as a user message:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("prompts")
+
+@mcp.prompt
+def review(code: str) -> str:
+    """Review code for issues"""
+    return f"Please review this code:\n\n{code}"
+```
+
+For multi-turn prompts:
+
+```python
+from fastmcp.prompts import Message
+
+@mcp.prompt
+def debug(error: str) -> list[Message]:
+    """Start a debugging session"""
+    return [
+        Message(f"I'm seeing this error:\n\n{error}"),
+        Message("I'll help debug that. Can you share the relevant code?", role="assistant"),
+    ]
+```
+
+### Other `mcp.*` Imports
+
+If your server imports directly from the `mcp` package — like `import mcp.types` or `from mcp.server.stdio import stdio_server` — those still work. FastMCP includes `mcp` as a dependency, so nothing breaks.
+
+Where FastMCP provides its own API for the same thing, it's worth switching over:
+
+| mcp Package | FastMCP Equivalent |
+|---|---|
+| `mcp.types.TextContent(type="text", text=str(x))` | Just return `x` from your tool |
+| `mcp.types.ImageContent(...)` | `from fastmcp.utilities.types import Image` |
+| `mcp.types.PromptMessage(...)` | `from fastmcp.prompts import Message` |
+| `from mcp.server.stdio import stdio_server` | Not needed — `mcp.run()` handles transport |
+
+For anything without a FastMCP equivalent (e.g., specific protocol types you use directly), the `mcp.*` import is fine to keep.
+
+### Decorated Functions
+
+In FastMCP 1.0, `@mcp.tool` returned a `FunctionTool` object. Now decorators return your original function unchanged — so decorated functions stay callable for testing, reuse, and composition:
+
+```python
+@mcp.tool
+def greet(name: str) -> str:
+    """Greet someone"""
+    return f"Hello, {name}!"
+
+# This works now — the function is still a regular function
+assert greet("World") == "Hello, World!"
+```
+
+If you have code that accesses `.name`, `.description`, or other attributes on the decorated result, that will need updating. This is uncommon — most servers don't interact with the tool object directly. If you need the old behavior temporarily, set `FASTMCP_DECORATOR_MODE=object` to restore it (this compatibility setting is itself deprecated and will be removed in a future release).
+
+## Verify the Upgrade
+
+```bash
+# Install
+pip install --upgrade fastmcp
+
+# Check version
+fastmcp version
+
+# Run your server
+python my_server.py
+```
+
+You can also inspect your server's registered components with the FastMCP CLI:
+
+```bash
+fastmcp inspect my_server.py
+```
+
+## Looking Ahead
+
+The MCP ecosystem is evolving fast. Part of FastMCP's job is to absorb that complexity on your behalf — as the protocol and its tooling grow, we do the work so your server code doesn't have to change.
