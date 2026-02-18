@@ -62,6 +62,8 @@ BREAKING CHANGES (will crash at import or runtime):
 5. PROMPTS: mcp.types.PromptMessage replaced by fastmcp.prompts.Message.
    Before: PromptMessage(role="user", content=TextContent(type="text", text="Hello"))
    After:  Message("Hello")  # role defaults to "user", accepts plain strings
+   Also: if prompts return raw dicts like {"role": "user", "content": "..."}, these must become Message objects.
+   v2 silently coerced dicts; v3 requires typed Message objects or plain strings.
 
 6. AUTH PROVIDERS: No longer auto-load from env vars. Pass client_id, client_secret explicitly via os.environ.
 
@@ -178,6 +180,28 @@ from fastmcp.prompts import Message
 @mcp.prompt
 def my_prompt() -> Message:
     return Message("Hello")
+```
+
+If your prompt functions return raw dicts with `role` and `content` keys, those also need to change. v2 silently coerced dicts into prompt messages, but v3 requires typed `Message` objects (or plain strings for single user messages):
+
+```python
+# Before (v2 accepted this)
+@mcp.prompt
+def my_prompt():
+    return [
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "How can I help?"},
+    ]
+
+# After
+from fastmcp.prompts import Message
+
+@mcp.prompt
+def my_prompt() -> list[Message]:
+    return [
+        Message("Hello"),
+        Message("How can I help?", role="assistant"),
+    ]
 ```
 
 **Context state methods are async**
