@@ -31,8 +31,11 @@ from opentelemetry.trace import get_tracer as otel_get_tracer
 
 INSTRUMENTATION_NAME = "fastmcp"
 
-TRACE_PARENT_KEY = "fastmcp.traceparent"
-TRACE_STATE_KEY = "fastmcp.tracestate"
+TRACE_PARENT_KEY = "traceparent"
+TRACE_STATE_KEY = "tracestate"
+
+_LEGACY_TRACE_PARENT_KEY = "fastmcp.traceparent"
+_LEGACY_TRACE_STATE_KEY = "fastmcp.tracestate"
 
 
 def get_tracer(version: str | None = None) -> Tracer:
@@ -101,10 +104,16 @@ def extract_trace_context(meta: dict[str, Any] | None) -> Context:
         return otel_context.get_current()
 
     carrier: dict[str, str] = {}
+
     if TRACE_PARENT_KEY in meta:
         carrier["traceparent"] = str(meta[TRACE_PARENT_KEY])
+    elif _LEGACY_TRACE_PARENT_KEY in meta:
+        carrier["traceparent"] = str(meta[_LEGACY_TRACE_PARENT_KEY])
+
     if TRACE_STATE_KEY in meta:
         carrier["tracestate"] = str(meta[TRACE_STATE_KEY])
+    elif _LEGACY_TRACE_STATE_KEY in meta:
+        carrier["tracestate"] = str(meta[_LEGACY_TRACE_STATE_KEY])
 
     if carrier:
         return propagate.extract(carrier)
