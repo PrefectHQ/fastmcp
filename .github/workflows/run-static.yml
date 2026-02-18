@@ -38,3 +38,17 @@ jobs:
         uses: j178/prek-action@v1
         env:
           SKIP: no-commit-to-branch
+
+  docs_broken_links:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check for broken links
+        run: cd docs && npx --yes mint@latest broken-links
