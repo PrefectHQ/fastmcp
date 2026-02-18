@@ -466,7 +466,7 @@ class AzureProvider(OAuthProxy):
             logger.debug("Failed to extract Azure claims: %s", e)
             return None
 
-    def get_obo_credential(self, user_assertion: str) -> OnBehalfOfCredential:
+    async def get_obo_credential(self, user_assertion: str) -> OnBehalfOfCredential:
         """Get a cached or new OnBehalfOfCredential for OBO token exchange.
 
         Credentials are cached by user assertion so the Azure SDK's internal
@@ -502,7 +502,8 @@ class AzureProvider(OAuthProxy):
 
         # Evict oldest if over capacity
         while len(self._obo_credentials) > self._obo_max_credentials:
-            self._obo_credentials.popitem(last=False)
+            _, evicted = self._obo_credentials.popitem(last=False)
+            await evicted.close()
 
         return credential
 
@@ -668,7 +669,7 @@ class _EntraOBOToken(Dependency):  # type: ignore[misc]
                 f"Current provider: {type(server.auth).__name__}"
             )
 
-        credential = server.auth.get_obo_credential(
+        credential = await server.auth.get_obo_credential(
             user_assertion=access_token.token,
         )
 
