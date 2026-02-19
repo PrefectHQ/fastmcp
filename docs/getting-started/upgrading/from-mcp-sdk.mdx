@@ -44,10 +44,12 @@ Fix: pass these to run() instead.
 Before: `mcp = FastMCP("server", host="0.0.0.0", port=8080); mcp.run()`
 After:  `mcp = FastMCP("server"); mcp.run(transport="http", host="0.0.0.0", port=8080)`
 
-STEP 3 — PROMPTS (only if using PromptMessage directly):
+STEP 3 — PROMPTS (only if using PromptMessage directly or returning dicts):
 mcp.types.PromptMessage is replaced by fastmcp.prompts.Message.
 Before: `PromptMessage(role="user", content=TextContent(type="text", text="Hello"))`
 After:  `Message("Hello")`  — role defaults to "user", accepts plain strings.
+Also: if prompts return raw dicts like {"role": "user", "content": "..."}, these must become Message objects or plain strings.
+The MCP SDK's FastMCP 1.0 silently coerced dicts; standalone FastMCP requires typed returns.
 
 STEP 4 — OTHER MCP IMPORTS (only if importing from mcp.* directly):
 Direct imports from the `mcp` package (e.g., `import mcp.types`, `from mcp.server.stdio import stdio_server`) still work because FastMCP includes `mcp` as a dependency. However, prefer FastMCP's own APIs where equivalents exist:
@@ -83,7 +85,7 @@ If you pass the old kwargs, you'll get a clear `TypeError` with a migration hint
 
 ### Prompts
 
-If your prompt functions return `mcp.types.PromptMessage` objects, you can upgrade to FastMCP's simpler `Message` class. Or just return a plain string — it's automatically wrapped as a user message:
+If your prompt functions return `mcp.types.PromptMessage` objects or raw dicts with `role`/`content` keys, you'll need to upgrade to FastMCP's `Message` class. Or just return a plain string — it's automatically wrapped as a user message. The MCP SDK's bundled FastMCP 1.0 silently coerced dicts into messages; standalone FastMCP requires typed `Message` objects or strings.
 
 ```python
 from fastmcp import FastMCP
