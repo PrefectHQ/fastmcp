@@ -86,7 +86,7 @@ class FastMCPProviderTool(Tool):
             tags=tool.tags,
             annotations=tool.annotations,
             task_config=tool.task_config,
-            meta=tool.meta,
+            meta=tool.get_meta(),
             title=tool.title,
             icons=tool.icons,
         )
@@ -186,7 +186,7 @@ class FastMCPProviderResource(Resource):
             tags=resource.tags,
             annotations=resource.annotations,
             task_config=resource.task_config,
-            meta=resource.meta,
+            meta=resource.get_meta(),
             title=resource.title,
             icons=resource.icons,
         )
@@ -255,7 +255,7 @@ class FastMCPProviderPrompt(Prompt):
             arguments=prompt.arguments,
             tags=prompt.tags,
             task_config=prompt.task_config,
-            meta=prompt.meta,
+            meta=prompt.get_meta(),
             title=prompt.title,
             icons=prompt.icons,
         )
@@ -359,7 +359,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             tags=template.tags,
             annotations=template.annotations,
             task_config=template.task_config,
-            meta=template.meta,
+            meta=template.get_meta(),
             title=template.title,
             icons=template.icons,
         )
