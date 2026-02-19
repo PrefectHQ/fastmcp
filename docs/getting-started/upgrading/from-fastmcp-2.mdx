@@ -229,6 +229,7 @@ await ctx.set_state("client", my_http_client, serializable=False)
 Each `FastMCP` instance has its own state store. In v2 this wasn't noticeable because mounted tools ran in the parent's context, but in v3's provider architecture each server is isolated. Non-serializable state (`serializable=False`) is request-scoped and automatically shared across mount boundaries. For serializable state, pass the same `session_state_store` to both servers:
 
 ```python
+from fastmcp import FastMCP
 from key_value.aio.stores.memory import MemoryStore
 
 store = MemoryStore()
