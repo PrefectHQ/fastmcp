@@ -56,6 +56,8 @@ BREAKING CHANGES (will crash at import or runtime):
 
 3. ASYNC STATE: ctx.set_state() and ctx.get_state() are now async (must be awaited).
    State values must be JSON-serializable unless serializable=False is passed.
+   Each FastMCP instance has its own state store, so serializable state set by parent middleware isn't visible to mounted tools by default.
+   Fix: pass the same session_state_store to both servers, or use serializable=False (request-scoped state is always shared).
 
 4. PROMPTS: mcp.types.PromptMessage replaced by fastmcp.prompts.Message.
    Before: PromptMessage(role="user", content=TextContent(type="text", text="Hello"))
@@ -220,6 +222,20 @@ State values must also be JSON-serializable by default (dicts, lists, strings, n
 
 ```python
 await ctx.set_state("client", my_http_client, serializable=False)
+```
+
+**Mounted servers have isolated state stores**
+
+Each `FastMCP` instance has its own state store. In v2 this wasn't noticeable because mounted tools ran in the parent's context, but in v3's provider architecture each server is isolated. Non-serializable state (`serializable=False`) is request-scoped and automatically shared across mount boundaries. For serializable state, pass the same `session_state_store` to both servers:
+
+```python
+from fastmcp import FastMCP
+from key_value.aio.stores.memory import MemoryStore
+
+store = MemoryStore()
+parent = FastMCP("Parent", session_state_store=store)
+child = FastMCP("Child", session_state_store=store)
+parent.mount(child, namespace="child")
 ```
 
 **Auth provider environment variables removed**
