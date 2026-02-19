@@ -1068,3 +1068,62 @@ class TestToolCallDenial:
 
         # Verify both admin tools were denied
         assert denied_tools == {"admin_delete", "admin_config"}
+
+
+class TestMiddlewareRequestState:
+    """Non-serializable state set in middleware must be visible to tools/resources.
+
+    Regression test for https://github.com/PrefectHQ/fastmcp/issues/3228.
+    """
+
+    async def test_non_serializable_state_from_middleware_visible_in_tool(self):
+        server = FastMCP("test")
+
+        sentinel = object()
+
+        class StateMiddleware(Middleware):
+            async def on_call_tool(
+                self, context: MiddlewareContext, call_next: CallNext
+            ) -> Any:
+                assert context.fastmcp_context is not None
+                await context.fastmcp_context.set_state(
+                    "obj", sentinel, serializable=False
+                )
+                return await call_next(context)
+
+        server.add_middleware(StateMiddleware())
+
+        @server.tool()
+        async def read_it(ctx: Context) -> str:
+            val = await ctx.get_state("obj")
+            return "found" if val is sentinel else "missing"
+
+        async with Client(server) as client:
+            result = await client.call_tool("read_it")
+            assert result.content[0].text == "found"
+
+    async def test_non_serializable_state_from_middleware_visible_in_resource(self):
+        server = FastMCP("test")
+
+        sentinel = object()
+
+        class StateMiddleware(Middleware):
+            async def on_read_resource(
+                self, context: MiddlewareContext, call_next: CallNext
+            ) -> Any:
+                assert context.fastmcp_context is not None
+                await context.fastmcp_context.set_state(
+                    "obj", sentinel, serializable=False
+                )
+                return await call_next(context)
+
+        server.add_middleware(StateMiddleware())
+
+        @server.resource("test://data")
+        async def read_it(ctx: Context) -> str:
+            val = await ctx.get_state("obj")
+            return "found" if val is sentinel else "missing"
+
+        async with Client(server) as client:
+            result = await client.read_resource("test://data")
+            assert result[0].text == "found"
