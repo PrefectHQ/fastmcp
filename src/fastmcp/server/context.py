@@ -237,6 +237,12 @@ class Context:
 
     async def __aenter__(self) -> Context:
         """Enter the context manager and set this context as the current context."""
+        # Inherit request-scoped state from parent context so middleware
+        # and tool contexts share the same in-memory state dict.
+        parent = _current_context.get(None)
+        if parent is not None:
+            self._request_state = parent._request_state
+
         # Always set this context and save the token
         token = _current_context.set(self)
         self._tokens.append(token)
