@@ -62,7 +62,7 @@ y=2)` will call the parent tool with `x=1` and `y=2`.
 - `RuntimeError`: If called outside a transformed tool context.
 
 
-### `apply_transformations_to_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L977" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `apply_transformations_to_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L979" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 apply_transformations_to_tools(tools: dict[str, Tool], transformations: dict[str, ToolTransformConfig]) -> dict[str, Tool]
@@ -213,7 +213,7 @@ functions.
 #### `from_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L369" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-from_tool(cls, tool: Tool, name: str | None = None, version: str | NotSetT | None = NotSet, title: str | NotSetT | None = NotSet, description: str | NotSetT | None = NotSet, tags: set[str] | None = None, transform_fn: Callable[..., Any] | None = None, transform_args: dict[str, ArgTransform] | None = None, annotations: ToolAnnotations | NotSetT | None = NotSet, output_schema: dict[str, Any] | NotSetT | None = NotSet, serializer: Callable[[Any], str] | NotSetT | None = NotSet, meta: dict[str, Any] | NotSetT | None = NotSet) -> TransformedTool
+from_tool(cls, tool: Tool | Callable[..., Any], name: str | None = None, version: str | NotSetT | None = NotSet, title: str | NotSetT | None = NotSet, description: str | NotSetT | None = NotSet, tags: set[str] | None = None, transform_fn: Callable[..., Any] | None = None, transform_args: dict[str, ArgTransform] | None = None, annotations: ToolAnnotations | NotSetT | None = NotSet, output_schema: dict[str, Any] | NotSetT | None = NotSet, serializer: Callable[[Any], str] | NotSetT | None = NotSet, meta: dict[str, Any] | NotSetT | None = NotSet) -> TransformedTool
 ```
 
 Create a transformed tool from a parent tool.
@@ -293,7 +293,7 @@ async def custom_output(**kwargs) -> ToolResult:
 ```
 
 
-### `ToolTransformConfig` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L923" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ToolTransformConfig` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L925" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Provides a way to transform a tool.
@@ -301,7 +301,7 @@ Provides a way to transform a tool.
 
 **Methods:**
 
-#### `apply` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L956" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `apply` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L958" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 apply(self, tool: Tool) -> TransformedTool

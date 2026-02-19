@@ -363,7 +363,7 @@ class Tool(FastMCPComponent):
     @classmethod
     def from_tool(
         cls,
-        tool: Tool,
+        tool: Tool | Callable[..., Any],
         *,
         name: str | None = None,
         title: str | NotSetT | None = NotSet,
@@ -378,6 +378,8 @@ class Tool(FastMCPComponent):
     ) -> TransformedTool:
         from fastmcp.tools.tool_transform import TransformedTool
 
+        tool = cls._ensure_tool(tool)
+
         return TransformedTool.from_tool(
             tool=tool,
             transform_fn=transform_fn,
@@ -391,6 +393,21 @@ class Tool(FastMCPComponent):
             serializer=serializer,
             meta=meta,
         )
+
+    @classmethod
+    def _ensure_tool(cls, tool: Tool | Callable[..., Any]) -> Tool:
+        """Coerce a callable into a Tool, respecting @tool decorator metadata."""
+        if isinstance(tool, Tool):
+            return tool
+
+        from fastmcp.decorators import get_fastmcp_meta
+        from fastmcp.tools.function_tool import FunctionTool, ToolMeta
+
+        fmeta = get_fastmcp_meta(tool)
+        if isinstance(fmeta, ToolMeta):
+            return FunctionTool.from_function(tool, metadata=fmeta)
+
+        return cls.from_function(tool)
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {

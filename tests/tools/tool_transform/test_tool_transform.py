@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
 from fastmcp.client.client import Client
-from fastmcp.tools import Tool, forward, forward_raw
+from fastmcp.tools import Tool, forward, forward_raw, tool
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool import ToolResult
 from fastmcp.tools.tool_transform import (
@@ -39,6 +39,60 @@ def test_tool_from_tool_no_change(add_tool):
     assert new_tool.parameters == add_tool.parameters
     assert new_tool.name == add_tool.name
     assert new_tool.description == add_tool.description
+
+
+def test_from_tool_accepts_decorated_function():
+    @tool
+    def search(q: str, limit: int = 10) -> list[str]:
+        """Search for items."""
+        return [f"Result {i} for {q}" for i in range(limit)]
+
+    transformed = Tool.from_tool(
+        search,
+        name="find_items",
+        transform_args={"q": ArgTransform(name="query")},
+    )
+    assert isinstance(transformed, TransformedTool)
+    assert transformed.name == "find_items"
+    assert "query" in transformed.parameters["properties"]
+    assert "q" not in transformed.parameters["properties"]
+
+
+def test_from_tool_accepts_plain_function():
+    def search(q: str, limit: int = 10) -> list[str]:
+        return [f"Result {i} for {q}" for i in range(limit)]
+
+    transformed = Tool.from_tool(
+        search,
+        name="find_items",
+        transform_args={"q": ArgTransform(name="query")},
+    )
+    assert isinstance(transformed, TransformedTool)
+    assert transformed.name == "find_items"
+    assert "query" in transformed.parameters["properties"]
+
+
+def test_from_tool_decorated_function_preserves_metadata():
+    @tool(description="Custom description")
+    def search(q: str) -> list[str]:
+        """Original description."""
+        return []
+
+    transformed = Tool.from_tool(search)
+    assert transformed.parent_tool.description == "Custom description"
+
+
+async def test_from_tool_decorated_function_runs(add_tool):
+    @tool
+    def add(x: int, y: int = 10) -> int:
+        return x + y
+
+    transformed = Tool.from_tool(
+        add,
+        transform_args={"x": ArgTransform(name="a")},
+    )
+    result = await transformed.run(arguments={"a": 3, "y": 5})
+    assert result.structured_content == {"result": 8}
 
 
 async def test_renamed_arg_description_is_maintained(add_tool):
@@ -490,6 +544,29 @@ def test_function_with_kwargs_can_add_params(add_tool):
     # extra_param is added, new_x and new_y are available
     assert "extra_param" in tool.parameters["properties"]
     assert "new_x" in tool.parameters["properties"]
+
+
+async def test_from_tool_decorated_function_via_client():
+    @tool
+    def search(q: str, limit: int = 10) -> list[str]:
+        """Search for items."""
+        return [f"Result {i} for {q}" for i in range(limit)]
+
+    better_search = Tool.from_tool(
+        search,
+        name="find_items",
+        transform_args={
+            "q": ArgTransform(name="query", description="The search terms"),
+        },
+    )
+
+    mcp = FastMCP("Server")
+    mcp.add_tool(better_search)
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("find_items", {"query": "hello", "limit": 3})
+        assert isinstance(result.content[0], TextContent)
+        assert "Result 0 for hello" in result.content[0].text
 
 
 class TestProxy:

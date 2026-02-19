@@ -368,7 +368,7 @@ class TransformedTool(Tool):
     @classmethod
     def from_tool(
         cls,
-        tool: Tool,
+        tool: Tool | Callable[..., Any],
         name: str | None = None,
         version: str | NotSetT | None = NotSet,
         title: str | NotSetT | None = NotSet,
@@ -456,6 +456,8 @@ class TransformedTool(Tool):
                 )
             ```
         """
+        tool = Tool._ensure_tool(tool)
+
         if (
             serializer is not NotSet
             and serializer is not None
