@@ -60,7 +60,7 @@ BREAKING CHANGES (will crash at import or runtime):
 4. PROMPTS: mcp.types.PromptMessage replaced by fastmcp.prompts.Message.
    Before: PromptMessage(role="user", content=TextContent(type="text", text="Hello"))
    After:  Message("Hello")  # role defaults to "user", accepts plain strings
-   Also: if prompts return raw dicts like {"role": "user", "content": "..."}, these must become Message objects.
+   Also: if prompts return raw dicts like `{"role": "user", "content": "..."}`, these must become Message objects.
    v2 silently coerced dicts; v3 requires typed Message objects or plain strings.
 
 5. AUTH PROVIDERS: No longer auto-load from env vars. Pass client_id, client_secret explicitly via os.environ.

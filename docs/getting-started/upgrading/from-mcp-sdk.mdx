@@ -48,7 +48,7 @@ STEP 3 — PROMPTS (only if using PromptMessage directly or returning dicts):
 mcp.types.PromptMessage is replaced by fastmcp.prompts.Message.
 Before: `PromptMessage(role="user", content=TextContent(type="text", text="Hello"))`
 After:  `Message("Hello")`  — role defaults to "user", accepts plain strings.
-Also: if prompts return raw dicts like {"role": "user", "content": "..."}, these must become Message objects or plain strings.
+Also: if prompts return raw dicts like `{"role": "user", "content": "..."}`, these must become Message objects or plain strings.
 The MCP SDK's FastMCP 1.0 silently coerced dicts; standalone FastMCP requires typed returns.
 
 STEP 4 — OTHER MCP IMPORTS (only if importing from mcp.* directly):
