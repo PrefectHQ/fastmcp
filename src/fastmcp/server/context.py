@@ -1207,7 +1207,8 @@ class Context:
         """Get a value from the state store.
 
         Checks request-scoped state first (set with ``serializable=False``),
-        then falls back to the session-scoped state store.
+        then falls back to the session-scoped state store, then to the
+        parent state store (for mounted servers inheriting parent middleware state).
 
         Returns None if the key is not found.
         """
@@ -1215,7 +1216,14 @@ class Context:
         if prefixed_key in self._request_state:
             return self._request_state[prefixed_key]
         result = await self.fastmcp._state_store.get(key=prefixed_key)
-        return result.value if result is not None else None
+        if result is not None:
+            return result.value
+        # Fall back to parent state store (for mounted servers)
+        parent_store = self.fastmcp._parent_state_store
+        if parent_store is not None:
+            result = await parent_store.get(key=prefixed_key)
+            return result.value if result is not None else None
+        return None
 
     async def delete_state(self, key: str) -> None:
         """Delete a value from the state store.

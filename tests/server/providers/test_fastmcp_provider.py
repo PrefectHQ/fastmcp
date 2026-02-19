@@ -444,3 +444,28 @@ class TestMiddlewareChain:
             "child:after",
             "parent:after",
         ]
+
+    async def test_parent_middleware_state_visible_to_mounted_tool(self):
+        """State set by parent middleware is readable from mounted sub-server tools."""
+        from fastmcp.server.context import Context
+
+        sub_mcp = FastMCP("Sub")
+
+        @sub_mcp.tool()
+        async def hello_context(ctx: Context) -> str:
+            name = await ctx.get_state("test_ctx_val")
+            return f"Hello, {name}!"
+
+        parent = FastMCP("Parent")
+        parent.mount(sub_mcp, namespace="mounted")
+
+        class StateSettingMiddleware(Middleware):
+            async def on_call_tool(self, context, call_next):
+                await context.fastmcp_context.set_state("test_ctx_val", "wOrLd")
+                return await call_next(context)
+
+        parent.add_middleware(StateSettingMiddleware())
+
+        async with Client(parent) as client:
+            result = await client.call_tool("mounted_hello_context", {})
+            assert result.data == "Hello, wOrLd!"

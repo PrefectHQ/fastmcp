@@ -261,6 +261,8 @@ class FastMCP(
             pydantic_model=StateValue,
             default_collection="fastmcp_state",
         )
+        # Parent state store for mounted servers (set by mount())
+        self._parent_state_store: PydanticAdapter[StateValue] | None = None
 
         # Create LocalProvider for local components
         self._local_provider: LocalProvider = LocalProvider(
@@ -1815,6 +1817,10 @@ class FastMCP(
                 for old_name, new_name in tool_names.items()
             }
             provider = provider.wrap_transform(ToolTransform(transforms))
+
+        # Share parent state store so middleware state propagates to mounted tools
+        if server._parent_state_store is None:
+            server._parent_state_store = self._state_store
 
         # Use add_provider with namespace (applies namespace in AggregateProvider)
         self.add_provider(provider, namespace=namespace or "")
