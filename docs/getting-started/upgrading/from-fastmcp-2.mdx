@@ -10,7 +10,7 @@ This guide covers breaking changes and migration steps when upgrading FastMCP.
 
 ## v3.0.0
 
-For most servers, upgrading to v3 requires a single change: swap `from mcp.server.fastmcp import FastMCP` for `from fastmcp import FastMCP`. Everything below covers the less common cases.
+For most servers, upgrading to v3 is straightforward. The breaking changes below affect deprecated constructor kwargs, sync-to-async shifts, a few renamed methods, and some less commonly used features.
 
 ### Install
 
@@ -39,9 +39,7 @@ You are upgrading a FastMCP v2 server to FastMCP v3.0. Analyze the provided code
 
 BREAKING CHANGES (will crash at import or runtime):
 
-1. IMPORT: "from mcp.server.fastmcp import FastMCP" must become "from fastmcp import FastMCP"
-
-2. CONSTRUCTOR KWARGS REMOVED: FastMCP() no longer accepts these kwargs (raises TypeError):
+1. CONSTRUCTOR KWARGS REMOVED: FastMCP() no longer accepts these kwargs (raises TypeError):
    - Transport settings: host, port, log_level, debug, sse_path, streamable_http_path, json_response, stateless_http
      Fix: pass to run() or run_http_async() instead, e.g. mcp.run(transport="http", host="0.0.0.0", port=8080)
    - message_path: set via environment variable FASTMCP_MESSAGE_PATH only (not a run() kwarg)
@@ -50,39 +48,39 @@ BREAKING CHANGES (will crash at import or runtime):
    - Tool settings: tool_serializer, include_tags, exclude_tags, tool_transformations
      Fix: use ToolResult returns, server.enable()/disable(), server.add_transform()
 
-3. COMPONENT METHODS REMOVED:
+2. COMPONENT METHODS REMOVED:
    - tool.enable()/disable() raises NotImplementedError
      Fix: server.disable(names={"tool_name"}, components={"tool"}) or server.disable(tags={"tag"})
    - get_tools()/get_resources()/get_prompts()/get_resource_templates() removed
      Fix: use list_tools()/list_resources()/list_prompts()/list_resource_templates() — these return lists, not dicts
 
-4. ASYNC STATE: ctx.set_state() and ctx.get_state() are now async (must be awaited).
+3. ASYNC STATE: ctx.set_state() and ctx.get_state() are now async (must be awaited).
    State values must be JSON-serializable unless serializable=False is passed.
 
-5. PROMPTS: mcp.types.PromptMessage replaced by fastmcp.prompts.Message.
+4. PROMPTS: mcp.types.PromptMessage replaced by fastmcp.prompts.Message.
    Before: PromptMessage(role="user", content=TextContent(type="text", text="Hello"))
    After:  Message("Hello")  # role defaults to "user", accepts plain strings
    Also: if prompts return raw dicts like {"role": "user", "content": "..."}, these must become Message objects.
    v2 silently coerced dicts; v3 requires typed Message objects or plain strings.
 
-6. AUTH PROVIDERS: No longer auto-load from env vars. Pass client_id, client_secret explicitly via os.environ.
+5. AUTH PROVIDERS: No longer auto-load from env vars. Pass client_id, client_secret explicitly via os.environ.
 
-7. WSTRANSPORT: Removed. Use StreamableHttpTransport.
+6. WSTRANSPORT: Removed. Use StreamableHttpTransport.
 
-8. OPENAPI: timeout parameter removed from OpenAPIProvider. Set timeout on the httpx.AsyncClient instead.
+7. OPENAPI: timeout parameter removed from OpenAPIProvider. Set timeout on the httpx.AsyncClient instead.
 
-9. METADATA: Namespace changed from "_fastmcp" to "fastmcp" in tool.meta. The include_fastmcp_meta parameter is removed (always included).
+8. METADATA: Namespace changed from "_fastmcp" to "fastmcp" in tool.meta. The include_fastmcp_meta parameter is removed (always included).
 
-10. ENV VAR: FASTMCP_SHOW_CLI_BANNER renamed to FASTMCP_SHOW_SERVER_BANNER.
+9. ENV VAR: FASTMCP_SHOW_CLI_BANNER renamed to FASTMCP_SHOW_SERVER_BANNER.
 
-11. DECORATORS: @mcp.tool, @mcp.resource, @mcp.prompt now return the original function, not a component object. Code that accesses .name, .description, or other component attributes on the decorated result will crash with AttributeError.
+10. DECORATORS: @mcp.tool, @mcp.resource, @mcp.prompt now return the original function, not a component object. Code that accesses .name, .description, or other component attributes on the decorated result will crash with AttributeError.
    Fix: set FASTMCP_DECORATOR_MODE=object for v2 compat (itself deprecated).
 
-12. OAUTH STORAGE: Default OAuth client storage changed from DiskStore to FileTreeStore due to pickle deserialization vulnerability in diskcache (CVE-2025-69872). Clients using default storage will re-register automatically on first connection. If using DiskStore explicitly, switch to FileTreeStore or add pip install 'py-key-value-aio[disk]'.
+11. OAUTH STORAGE: Default OAuth client storage changed from DiskStore to FileTreeStore due to pickle deserialization vulnerability in diskcache (CVE-2025-69872). Clients using default storage will re-register automatically on first connection. If using DiskStore explicitly, switch to FileTreeStore or add pip install 'py-key-value-aio[disk]'.
 
-13. REPO MOVE: GitHub repository moved from jlowin/fastmcp to PrefectHQ/fastmcp. Update git remotes and dependency URLs that reference the old location.
+12. REPO MOVE: GitHub repository moved from jlowin/fastmcp to PrefectHQ/fastmcp. Update git remotes and dependency URLs that reference the old location.
 
-14. BACKGROUND TASKS: FastMCP's background task system (SEP-1686) is now an optional dependency. If the code uses task=True or TaskConfig, add pip install "fastmcp[tasks]".
+13. BACKGROUND TASKS: FastMCP's background task system (SEP-1686) is now an optional dependency. If the code uses task=True or TaskConfig, add pip install "fastmcp[tasks]".
 
 DEPRECATIONS (still work but emit warnings):
 
