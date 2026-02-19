@@ -546,6 +546,29 @@ def test_function_with_kwargs_can_add_params(add_tool):
     assert "new_x" in tool.parameters["properties"]
 
 
+async def test_from_tool_decorated_function_via_client():
+    @tool
+    def search(q: str, limit: int = 10) -> list[str]:
+        """Search for items."""
+        return [f"Result {i} for {q}" for i in range(limit)]
+
+    better_search = Tool.from_tool(
+        search,
+        name="find_items",
+        transform_args={
+            "q": ArgTransform(name="query", description="The search terms"),
+        },
+    )
+
+    mcp = FastMCP("Server")
+    mcp.add_tool(better_search)
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("find_items", {"query": "hello", "limit": 3})
+        assert isinstance(result.content[0], TextContent)
+        assert "Result 0 for hello" in result.content[0].text
+
+
 class TestProxy:
     @pytest.fixture
     def mcp_server(self) -> FastMCP:
