@@ -616,6 +616,8 @@ def without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]:
     }
     wrapper.__name__ = getattr(fn, "__name__", "wrapper")
     wrapper.__doc__ = getattr(fn, "__doc__", None)
+    wrapper.__module__ = fn.__module__
+    wrapper.__qualname__ = getattr(fn, "__qualname__", wrapper.__qualname__)
 
     return wrapper
 
