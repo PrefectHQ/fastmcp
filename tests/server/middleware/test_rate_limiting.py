@@ -323,7 +323,8 @@ class TestRateLimitingMiddlewareIntegration:
             for i in range(30):
                 try:
                     await client.call_tool("quick_action", {"message": str(i)})
-                except (ToolError, McpError):
+                except (ToolError, McpError) as exc:
+                    assert "Rate limit exceeded" in str(exc)
                     hit_limit = True
                     break
             assert hit_limit, "Rate limit was never triggered"
