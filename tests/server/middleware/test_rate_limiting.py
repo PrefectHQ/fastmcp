@@ -4,7 +4,6 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from mcp.shared.exceptions import McpError
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -323,7 +322,7 @@ class TestRateLimitingMiddlewareIntegration:
             for i in range(30):
                 try:
                     await client.call_tool("quick_action", {"message": str(i)})
-                except (ToolError, McpError) as exc:
+                except ToolError as exc:
                     assert "Rate limit exceeded" in str(exc)
                     hit_limit = True
                     break
