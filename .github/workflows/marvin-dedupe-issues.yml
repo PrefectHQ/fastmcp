@@ -88,7 +88,7 @@ jobs:
             --allowedTools Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh api:*),Bash(gh issue comment:*),Task
           settings: |
             {
-              "model": "claude-sonnet-4-5-20250929",
+              "model": "claude-sonnet-4-6",
               "env": {
                 "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}"
               }

@@ -142,7 +142,7 @@ jobs:
             --allowedTools Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__get_pull_request_files
           settings: |
             {
-              "model": "claude-sonnet-4-5-20250929",
+              "model": "claude-sonnet-4-6",
               "env": {
                 "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}"
               }
