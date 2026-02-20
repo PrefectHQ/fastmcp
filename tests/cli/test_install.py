@@ -1,4 +1,6 @@
+import shlex
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from fastmcp.cli.install import install_app
 from fastmcp.cli.install.stdio import install_stdio
@@ -441,3 +443,91 @@ class TestInstallCommandParsing:
             command, bound, _ = install_app.parse_args(cmd_args)
             assert command is not None
             assert str(bound.arguments["project"]) == str(Path("/path/to/project"))
+
+
+class TestShellInjectionProtection:
+    """Test that install commands properly escape server names to prevent shell injection."""
+
+    @patch("fastmcp.cli.install.gemini_cli.find_gemini_command")
+    @patch("fastmcp.cli.install.gemini_cli.subprocess.run")
+    def test_gemini_cli_escapes_shell_metacharacters(
+        self, mock_subprocess, mock_find_gemini
+    ):
+        """Test that gemini-cli install properly escapes server names with shell metacharacters."""
+        from fastmcp.cli.install.gemini_cli import install_gemini_cli
+
+        # Mock gemini command as available
+        mock_find_gemini.return_value = "/usr/bin/gemini"
+        mock_subprocess.return_value = MagicMock(returncode=0)
+
+        # Test with various dangerous characters
+        dangerous_names = ["test&calc", "test|whoami", "test;ls", "test$USER"]
+
+        for dangerous_name in dangerous_names:
+            mock_subprocess.reset_mock()
+
+            # Call install function
+            install_gemini_cli(
+                file=Path("/tmp/server.py"),
+                server_object=None,
+                name=dangerous_name,
+            )
+
+            # Verify subprocess was called
+            assert mock_subprocess.called
+            cmd_parts = mock_subprocess.call_args[0][0]
+
+            # Verify the name was shell-quoted
+            # shlex.quote() wraps strings with special chars in single quotes
+            expected_quoted = shlex.quote(dangerous_name)
+            assert expected_quoted in cmd_parts, (
+                f"Expected {expected_quoted} in command but got {cmd_parts}"
+            )
+
+            # Verify the original unquoted name is NOT in the command
+            # (unless it happens to be the same as the quoted version)
+            if expected_quoted != dangerous_name:
+                assert dangerous_name not in cmd_parts, (
+                    f"Unquoted name {dangerous_name} should not appear in command"
+                )
+
+    @patch("fastmcp.cli.install.claude_code.find_claude_command")
+    @patch("fastmcp.cli.install.claude_code.subprocess.run")
+    def test_claude_code_escapes_shell_metacharacters(
+        self, mock_subprocess, mock_find_claude
+    ):
+        """Test that claude-code install properly escapes server names with shell metacharacters."""
+        from fastmcp.cli.install.claude_code import install_claude_code
+
+        # Mock claude command as available
+        mock_find_claude.return_value = "/usr/bin/claude"
+        mock_subprocess.return_value = MagicMock(returncode=0)
+
+        # Test with various dangerous characters
+        dangerous_names = ["test&calc", "test|whoami", "test;ls", "test$USER"]
+
+        for dangerous_name in dangerous_names:
+            mock_subprocess.reset_mock()
+
+            # Call install function
+            install_claude_code(
+                file=Path("/tmp/server.py"),
+                server_object=None,
+                name=dangerous_name,
+            )
+
+            # Verify subprocess was called
+            assert mock_subprocess.called
+            cmd_parts = mock_subprocess.call_args[0][0]
+
+            # Verify the name was shell-quoted
+            expected_quoted = shlex.quote(dangerous_name)
+            assert expected_quoted in cmd_parts, (
+                f"Expected {expected_quoted} in command but got {cmd_parts}"
+            )
+
+            # Verify the original unquoted name is NOT in the command
+            if expected_quoted != dangerous_name:
+                assert dangerous_name not in cmd_parts, (
+                    f"Unquoted name {dangerous_name} should not appear in command"
+                )

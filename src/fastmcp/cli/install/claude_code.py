@@ -1,5 +1,6 @@
 """Claude Code integration for FastMCP install using Cyclopts."""
 
+import shlex
 import shutil
 import subprocess
 import sys
@@ -124,8 +125,8 @@ def install_claude_code(
     # Build the full command
     full_command = env_config.build_command(["fastmcp", "run", server_spec])
 
-    # Build claude mcp add command
-    cmd_parts = [claude_cmd, "mcp", "add", name]
+    # Build claude mcp add command (escape name to prevent shell injection)
+    cmd_parts = [claude_cmd, "mcp", "add", shlex.quote(name)]
 
     # Add environment variables if specified
     if env_vars:
