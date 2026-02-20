@@ -607,15 +607,23 @@ def without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]:
                     result = await result
                 return result
 
-    # Set wrapper metadata (only parameter annotations, not return type)
+    # Resolve string annotations (from `from __future__ import annotations`) using
+    # the original function's module context. The wrapper's __globals__ points to
+    # this module (dependencies.py) and is read-only, so some Pydantic versions
+    # can't resolve names like Annotated or Literal from string annotations.
+    try:
+        resolved_hints = get_type_hints(fn, include_extras=True)
+    except Exception:
+        resolved_hints = getattr(fn, "__annotations__", {})
+
     wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
     wrapper.__annotations__ = {
-        k: v
-        for k, v in getattr(fn, "__annotations__", {}).items()
-        if k not in exclude and k != "return"
+        k: v for k, v in resolved_hints.items() if k not in exclude and k != "return"
     }
     wrapper.__name__ = getattr(fn, "__name__", "wrapper")
     wrapper.__doc__ = getattr(fn, "__doc__", None)
+    wrapper.__module__ = fn.__module__
+    wrapper.__qualname__ = getattr(fn, "__qualname__", wrapper.__qualname__)
 
     return wrapper
 
