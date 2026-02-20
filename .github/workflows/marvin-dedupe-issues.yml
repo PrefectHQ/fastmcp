@@ -45,9 +45,9 @@ jobs:
 
           3. Then, launch 3 parallel agents using the Task tool to search GitHub for duplicates of this issue, using diverse keywords and search approaches, using the summary from step 2
 
-          4. Next, consider the results from steps 2 and 3 and filter out false positives that are likely not actually duplicates of the original issue. If there are no duplicates remaining, do not proceed.
+          4. Next, consider the results from steps 2 and 3 and filter out false positives that are likely not actually duplicates of the original issue. Be conservative — only flag issues that describe the same underlying problem, not issues that merely share keywords or involve the same subsystem. If there are no duplicates remaining, do not proceed.
 
-          5. Finally, comment back on the issue with a list of up to three duplicate issues (or zero, if there are no likely duplicates). If there are no duplicates, DO NOT COMMENT. Just exit. After commenting, add the `potential-duplicate` label to the issue using `gh issue edit`.
+          5. Finally, comment back on the issue with a list of up to three duplicate issues (or zero, if there are no likely duplicates). If there are no duplicates, DO NOT COMMENT. Just exit. Do NOT add any labels — labeling is handled by a later workflow step.
 
           Notes for your agents:
           - Use `gh` to interact with GitHub, rather than web fetch
@@ -61,7 +61,7 @@ jobs:
           Found 3 possible duplicate issues:
 
           1. #123: Issue title here
-          2. #456: Another issue title  
+          2. #456: Another issue title
           3. #789: Third issue title
 
           This issue will be automatically closed as a duplicate in 3 days.
@@ -85,7 +85,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
           allowed_non_write_users: "*"
           claude_args: |
-            --allowedTools Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh api:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Task
+            --allowedTools Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh api:*),Bash(gh issue comment:*),Task
           settings: |
             {
               "model": "claude-sonnet-4-5-20250929",
@@ -93,3 +93,24 @@ jobs:
                 "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}"
               }
             }
+
+      - name: Add potential-duplicate label if bot commented in this run
+        env:
+          GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+        run: |
+          ISSUE=${{ github.event.issue.number || inputs.issue_number }}
+          # Only match bot comments created in the last 10 minutes (this run)
+          CUTOFF=$(date -u -d '10 minutes ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+            || date -u -v-10M '+%Y-%m-%dT%H:%M:%SZ')
+          HAS_RECENT=$(gh api "repos/${{ github.repository }}/issues/${ISSUE}/comments?sort=created&direction=desc&per_page=10" \
+            --jq "[.[] | select(
+              .user.type == \"Bot\" and
+              (.body | test(\"possible duplicate issues\"; \"i\")) and
+              .created_at >= \"${CUTOFF}\"
+            )] | length")
+          if [ "$HAS_RECENT" -gt 0 ]; then
+            gh issue edit "$ISSUE" --add-label "potential-duplicate" -R "${{ github.repository }}"
+            echo "Added potential-duplicate label to #${ISSUE}"
+          else
+            echo "No recent duplicate comment found, skipping label"
+          fi
