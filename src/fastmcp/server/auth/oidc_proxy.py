@@ -335,9 +335,13 @@ class OIDCProxy(OAuthProxy):
 
         # Use custom verifier if provided, otherwise create default JWTVerifier
         if token_verifier is None:
+            # When verifying id_tokens, the aud claim is always the OAuth
+            # client_id (per OIDC Core §2), not the API audience. Use
+            # client_id for the verifier so audience validation succeeds.
+            verifier_audience = client_id if verify_id_token else audience
             token_verifier = self.get_token_verifier(
                 algorithm=algorithm,
-                audience=audience,
+                audience=verifier_audience,
                 required_scopes=required_scopes,
                 timeout_seconds=timeout_seconds,
             )

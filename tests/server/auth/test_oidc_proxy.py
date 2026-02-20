@@ -1065,3 +1065,60 @@ class TestVerifyIdToken:
             token_set.access_token = "new-access-token"
 
             assert proxy._get_verification_token(token_set) == "refreshed-id-token"
+
+    def test_verify_id_token_uses_client_id_as_verifier_audience(
+        self, valid_oidc_configuration_dict
+    ):
+        """When verify_id_token is enabled, the verifier audience should be
+        client_id (matching id_token.aud), not the API audience parameter."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+                audience="https://api.example.com",
+                verify_id_token=True,
+            )
+
+            assert isinstance(proxy._token_validator, JWTVerifier)
+            assert proxy._token_validator.audience == TEST_CLIENT_ID
+
+            # The API audience should still be sent upstream
+            assert (
+                proxy._extra_authorize_params["audience"] == "https://api.example.com"
+            )
+            assert proxy._extra_token_params["audience"] == "https://api.example.com"
+
+    def test_verify_id_token_without_audience_uses_client_id(
+        self, valid_oidc_configuration_dict
+    ):
+        """When verify_id_token is enabled without an audience param,
+        the verifier audience should still be client_id."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+                verify_id_token=True,
+            )
+
+            assert isinstance(proxy._token_validator, JWTVerifier)
+            assert proxy._token_validator.audience == TEST_CLIENT_ID
