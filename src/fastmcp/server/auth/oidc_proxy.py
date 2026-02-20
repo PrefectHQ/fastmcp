@@ -400,9 +400,16 @@ class OIDCProxy(OAuthProxy):
 
         # When verify_id_token strips scopes from the verifier, restore
         # them on the provider so they're still advertised to clients
-        # and enforced at the FastMCP token level.
+        # and enforced at the FastMCP token level.  We also need to
+        # recompute derived state that OAuthProxy.__init__ already built
+        # from the (empty) verifier scopes.
         if verify_id_token and required_scopes:
             self.required_scopes = required_scopes
+            self._default_scope_str = " ".join(required_scopes)
+            if self.client_registration_options:
+                self.client_registration_options.valid_scopes = required_scopes
+            if self._cimd_manager is not None:
+                self._cimd_manager.default_scope = self._default_scope_str
 
     def _get_verification_token(
         self, upstream_token_set: UpstreamTokenSet

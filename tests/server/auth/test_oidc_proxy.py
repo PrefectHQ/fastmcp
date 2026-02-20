@@ -1151,3 +1151,11 @@ class TestVerifyIdToken:
 
             # Scopes should still be advertised via the proxy's required_scopes
             assert proxy.required_scopes == ["read", "write"]
+
+            # Derived scope state should also be recomputed
+            assert proxy._default_scope_str == "read write"
+            assert proxy.client_registration_options is not None
+            assert proxy.client_registration_options.valid_scopes == [
+                "read",
+                "write",
+            ]
