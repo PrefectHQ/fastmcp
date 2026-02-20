@@ -335,18 +335,22 @@ class OIDCProxy(OAuthProxy):
 
         # Use custom verifier if provided, otherwise create default JWTVerifier
         if token_verifier is None:
-            # When verifying id_tokens, the aud claim is always the OAuth
-            # client_id (per OIDC Core §2), not the API audience. Use
-            # client_id for the verifier so audience validation succeeds.
+            # When verifying id_tokens:
+            # - aud is always the OAuth client_id (per OIDC Core §2), not
+            #   the API audience, so use client_id for audience validation.
+            # - id_tokens don't carry scope/scp claims, so don't pass
+            #   required_scopes to the verifier (scope enforcement happens
+            #   at the FastMCP token level instead).
             verifier_audience = client_id if verify_id_token else audience
+            verifier_scopes = None if verify_id_token else required_scopes
             token_verifier = self.get_token_verifier(
                 algorithm=algorithm,
                 audience=verifier_audience,
-                required_scopes=required_scopes,
+                required_scopes=verifier_scopes,
                 timeout_seconds=timeout_seconds,
             )
 
-        init_kwargs = {
+        init_kwargs: dict[str, object] = {
             "upstream_authorization_endpoint": str(
                 self.oidc_config.authorization_endpoint
             ),
@@ -393,6 +397,12 @@ class OIDCProxy(OAuthProxy):
         super().__init__(**init_kwargs)  # ty: ignore[invalid-argument-type]
 
         self._verify_id_token = verify_id_token
+
+        # When verify_id_token strips scopes from the verifier, restore
+        # them on the provider so they're still advertised to clients
+        # and enforced at the FastMCP token level.
+        if verify_id_token and required_scopes:
+            self.required_scopes = required_scopes
 
     def _get_verification_token(
         self, upstream_token_set: UpstreamTokenSet

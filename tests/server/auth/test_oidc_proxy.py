@@ -1122,3 +1122,32 @@ class TestVerifyIdToken:
 
             assert isinstance(proxy._token_validator, JWTVerifier)
             assert proxy._token_validator.audience == TEST_CLIENT_ID
+
+    def test_verify_id_token_does_not_enforce_scopes_on_verifier(
+        self, valid_oidc_configuration_dict
+    ):
+        """When verify_id_token is enabled, required_scopes should not be
+        passed to the JWTVerifier since id_tokens don't carry scope claims."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+                required_scopes=["read", "write"],
+                verify_id_token=True,
+            )
+
+            assert isinstance(proxy._token_validator, JWTVerifier)
+            assert proxy._token_validator.required_scopes == []
+
+            # Scopes should still be advertised via the proxy's required_scopes
+            assert proxy.required_scopes == ["read", "write"]
