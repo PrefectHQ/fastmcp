@@ -40,6 +40,7 @@ jobs:
         with:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+          owner: PrefectHQ
 
       - name: Set triage prompt
         id: triage-prompt
