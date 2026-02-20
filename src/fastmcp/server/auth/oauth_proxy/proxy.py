@@ -1259,7 +1259,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     time.time() + new_refresh_expires_in
                 )
 
-        upstream_token_set.raw_token_data = token_response
+        upstream_token_set.raw_token_data = {
+            **upstream_token_set.raw_token_data,
+            **token_response,
+        }
         # Calculate refresh TTL for storage
         refresh_ttl = new_refresh_expires_in or (
             int(upstream_token_set.refresh_token_expires_at - time.time())
@@ -1367,6 +1370,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     # Token Validation
     # -------------------------------------------------------------------------
 
+    def _get_verification_token(
+        self, upstream_token_set: UpstreamTokenSet
+    ) -> str | None:
+        """Get the token string to pass to the token verifier.
+
+        Returns the upstream access token by default. Subclasses can override
+        to verify a different token (e.g., the OIDC id_token for providers
+        that issue opaque access tokens).
+        """
+        return upstream_token_set.access_token
+
     async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
         """Validate FastMCP JWT by swapping for upstream token.
 
@@ -1405,13 +1419,30 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
             # 3. Validate with upstream provider (delegated to TokenVerifier)
             # This calls the real token validator (GitHub API, JWKS, etc.)
-            validated = await self._token_validator.verify_token(
-                upstream_token_set.access_token
-            )
+            verification_token = self._get_verification_token(upstream_token_set)
+            if verification_token is None:
+                logger.debug("No verification token available")
+                return None
+            validated = await self._token_validator.verify_token(verification_token)
 
             if not validated:
                 logger.debug("Upstream token validation failed")
                 return None
+
+            # When the verification token differs from the access token
+            # (e.g., id_token verification), ensure the returned AccessToken
+            # carries the upstream access token and its scopes, not the
+            # verification token's values.
+            if verification_token != upstream_token_set.access_token:
+                validated = validated.model_copy(
+                    update={
+                        "token": upstream_token_set.access_token,
+                        "scopes": upstream_token_set.scope.split()
+                        if upstream_token_set.scope
+                        else validated.scopes,
+                        "expires_at": int(upstream_token_set.expires_at),
+                    }
+                )
 
             logger.debug(
                 "Token swap successful for JTI=%s (upstream validated)", jti[:8]
