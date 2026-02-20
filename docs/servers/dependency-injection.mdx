@@ -237,6 +237,37 @@ The `AccessToken` object provides:
 - **`expires_at`**: Token expiration timestamp (if available)
 - **`claims`**: Dictionary of all token claims (JWT claims or provider-specific data)
 
+### Token Claims
+
+When you need just one specific value from the token—like a user ID or tenant identifier—`TokenClaim()` extracts it directly without needing the full token object.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.dependencies import TokenClaim
+
+mcp = FastMCP("Demo")
+
+
+@mcp.tool
+async def add_expense(
+    amount: float,
+    user_id: str = TokenClaim("oid"),  # Azure object ID
+) -> dict:
+    await db.insert({"user_id": user_id, "amount": amount})
+    return {"status": "created", "user_id": user_id}
+```
+
+`TokenClaim()` raises a `RuntimeError` if the claim doesn't exist, listing available claims to help with debugging.
+
+Common claims vary by identity provider:
+
+| Provider | User ID Claim | Email Claim | Name Claim |
+|----------|--------------|-------------|------------|
+| Azure/Entra | `oid` | `email` | `name` |
+| GitHub | `sub` | `email` | `name` |
+| Google | `sub` | `email` | `name` |
+| Auth0 | `sub` | `email` | `name` |
+
 ### Background Task Dependencies
 
 <VersionBadge version="2.3.0" />

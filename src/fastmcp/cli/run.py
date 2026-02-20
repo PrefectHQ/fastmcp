@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import json
+import os
 import re
 import signal
 import sys
@@ -288,10 +289,34 @@ def _watch_filter(_change: Change, path: str) -> bool:
 
 
 async def _terminate_process(process: asyncio.subprocess.Process) -> None:
-    """Terminate a subprocess immediately."""
+    """Terminate a subprocess and all its children.
+
+    Sends SIGTERM to the process group first for graceful shutdown,
+    then falls back to SIGKILL if the process doesn't exit in time.
+    """
     if process.returncode is not None:
         return
-    process.kill()
+
+    pid = process.pid
+
+    if sys.platform != "win32":
+        # Send SIGTERM to the entire process group for graceful shutdown
+        with contextlib.suppress(ProcessLookupError, OSError):
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+
+        # Wait briefly for graceful exit
+        try:
+            await asyncio.wait_for(process.wait(), timeout=3.0)
+            return
+        except asyncio.TimeoutError:
+            pass
+
+        # Force kill the entire process group
+        with contextlib.suppress(ProcessLookupError, OSError):
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+    else:
+        process.kill()
+
     await process.wait()
 
 
@@ -347,11 +372,13 @@ async def run_with_reload(
                 stdin=None,
                 stdout=None,
                 stderr=None,
+                # Own process group so _terminate_process can kill the whole tree
+                start_new_session=sys.platform != "win32",
             )
 
             # Watch for either: file changes OR process death
             watch_task = asyncio.create_task(
-                anext(aiter(awatch(*watch_paths, watch_filter=_watch_filter)))
+                anext(aiter(awatch(*watch_paths, watch_filter=_watch_filter)))  # ty: ignore[invalid-argument-type]
             )
             wait_task = asyncio.create_task(process.wait())
             shutdown_task = asyncio.create_task(shutdown_event.wait())
@@ -382,7 +409,7 @@ async def run_with_reload(
 
                 # Wait for file change or shutdown (avoid hot loop on crash)
                 watch_task = asyncio.create_task(
-                    anext(aiter(awatch(*watch_paths, watch_filter=_watch_filter)))
+                    anext(aiter(awatch(*watch_paths, watch_filter=_watch_filter)))  # ty: ignore[invalid-argument-type]
                 )
                 shutdown_task = asyncio.create_task(shutdown_event.wait())
                 done, pending = await asyncio.wait(

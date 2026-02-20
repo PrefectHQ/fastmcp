@@ -15,10 +15,10 @@ TEST_ISSUER = "https://example.com"
 TEST_AUTHORIZATION_ENDPOINT = "https://example.com/authorize"
 TEST_TOKEN_ENDPOINT = "https://example.com/oauth/token"
 
-TEST_CONFIG_URL = "https://example.com/.well-known/openid-configuration"
+TEST_CONFIG_URL = AnyHttpUrl("https://example.com/.well-known/openid-configuration")
 TEST_CLIENT_ID = "test-client-id"
 TEST_CLIENT_SECRET = "test-client-secret"
-TEST_BASE_URL = "https://example.com:8000/"
+TEST_BASE_URL = AnyHttpUrl("https://example.com:8000/")
 
 
 # =============================================================================
@@ -366,7 +366,7 @@ def validate_get_oidc_configuration(oidc_configuration, strict, timeout_seconds)
         mock_get.return_value = mock_response
 
         config = OIDCConfiguration.get_oidc_configuration(
-            config_url=AnyHttpUrl(TEST_CONFIG_URL),
+            config_url=TEST_CONFIG_URL,
             strict=strict,
             timeout_seconds=timeout_seconds,
         )
@@ -376,7 +376,7 @@ def validate_get_oidc_configuration(oidc_configuration, strict, timeout_seconds)
         mock_get.assert_called_once()
 
         call_args = mock_get.call_args
-        assert call_args[0][0] == TEST_CONFIG_URL
+        assert str(call_args[0][0]) == str(TEST_CONFIG_URL)
 
         return call_args
 
@@ -415,7 +415,7 @@ class TestGetOIDCConfiguration:
             mock_get.return_value = mock_response
 
             OIDCConfiguration.get_oidc_configuration(
-                config_url=AnyHttpUrl(TEST_CONFIG_URL),
+                config_url=TEST_CONFIG_URL,
                 strict=False,
                 timeout_seconds=10,
             )
@@ -423,7 +423,7 @@ class TestGetOIDCConfiguration:
             mock_get.assert_called_once()
 
             call_args = mock_get.call_args
-            assert call_args[0][0] == TEST_CONFIG_URL
+            assert str(call_args[0][0]) == str(TEST_CONFIG_URL)
 
 
 def validate_proxy(mock_get, proxy, oidc_config):
@@ -431,13 +431,13 @@ def validate_proxy(mock_get, proxy, oidc_config):
     mock_get.assert_called_once()
 
     call_args = mock_get.call_args
-    assert str(call_args[0][0]) == TEST_CONFIG_URL
+    assert str(call_args[0][0]) == str(TEST_CONFIG_URL)
 
     assert proxy._upstream_authorization_endpoint == TEST_AUTHORIZATION_ENDPOINT
     assert proxy._upstream_token_endpoint == TEST_TOKEN_ENDPOINT
     assert proxy._upstream_client_id == TEST_CLIENT_ID
     assert proxy._upstream_client_secret.get_secret_value() == TEST_CLIENT_SECRET
-    assert str(proxy.base_url) == TEST_BASE_URL
+    assert str(proxy.base_url) == str(TEST_BASE_URL)
     assert proxy.oidc_config == oidc_config
 
 

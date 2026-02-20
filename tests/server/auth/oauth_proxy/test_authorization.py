@@ -3,6 +3,7 @@
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
@@ -67,6 +68,7 @@ class TestOAuthProxyPKCE:
             base_url="https://proxy.example.com",
             forward_pkce=True,
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
     @pytest.fixture
@@ -82,6 +84,7 @@ class TestOAuthProxyPKCE:
             base_url="https://proxy.example.com",
             forward_pkce=False,
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
     async def test_pkce_forwarding_enabled(self, proxy_with_pkce):
@@ -172,6 +175,7 @@ class TestParameterForwarding:
                 "prompt": "consent",
                 "max_age": "3600",
             },
+            client_storage=MemoryStore(),
         )
 
         client = OAuthClientInformationFull(

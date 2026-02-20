@@ -300,7 +300,7 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
                 content=[mcp.types.TextContent(type="text", text=str(error))],
                 isError=True,
                 _meta={  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
-                    "modelcontextprotocol.io/related-task": {
+                    "io.modelcontextprotocol/related-task": {
                         "taskId": client_task_id,
                     }
                 },
@@ -342,7 +342,7 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
 
         # Build related-task metadata
         related_task_meta = {
-            "modelcontextprotocol.io/related-task": {
+            "io.modelcontextprotocol/related-task": {
                 "taskId": client_task_id,
             }
         }

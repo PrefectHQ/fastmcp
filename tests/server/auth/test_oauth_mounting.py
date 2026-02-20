@@ -8,6 +8,7 @@ The fix uses MCP SDK 1.17+ which implements RFC 9728 path-scoped well-known URLs
 
 import httpx
 import pytest
+from key_value.aio.stores.memory import MemoryStore
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.routing import Mount
@@ -220,6 +221,7 @@ class TestOAuthMounting:
             token_verifier=token_verifier,
             base_url="https://api.example.com/api",  # Includes mount prefix
             issuer_url="https://api.example.com",  # Root level
+            client_storage=MemoryStore(),
         )
 
         mcp = FastMCP("test-server", auth=auth_provider)
@@ -290,6 +292,7 @@ class TestOAuthMounting:
             upstream_client_secret="test-client-secret",
             token_verifier=token_verifier,
             base_url="https://api.example.com/api",  # Has path, no explicit issuer_url
+            client_storage=MemoryStore(),
         )
 
         mcp = FastMCP("test-server", auth=auth_provider)
@@ -366,6 +369,7 @@ class TestOAuthMounting:
             token_verifier=token_verifier,
             base_url="https://api.example.com/api",
             issuer_url="https://api.example.com",  # Explicitly root
+            client_storage=MemoryStore(),
         )
 
         well_known_routes = auth_provider.get_well_known_routes(mcp_path="/mcp")

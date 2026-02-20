@@ -231,17 +231,15 @@ class TransportMixin:
 
         # Resolve from settings/env var if not explicitly set
         if stateless_http is None:
-            stateless_http = self._deprecated_settings.stateless_http
+            stateless_http = fastmcp.settings.stateless_http
 
         # SSE doesn't support stateless mode
         if stateless_http and transport == "sse":
             raise ValueError("SSE transport does not support stateless mode")
 
-        host = host or self._deprecated_settings.host
-        port = port or self._deprecated_settings.port
-        default_log_level_to_use = (
-            log_level or self._deprecated_settings.log_level
-        ).lower()
+        host = host or fastmcp.settings.host
+        port = port or fastmcp.settings.port
+        default_log_level_to_use = (log_level or fastmcp.settings.log_level).lower()
 
         app = self.http_app(
             path=path,
@@ -311,31 +309,30 @@ class TransportMixin:
         if transport in ("streamable-http", "http"):
             return create_streamable_http_app(
                 server=self,
-                streamable_http_path=path
-                or self._deprecated_settings.streamable_http_path,
+                streamable_http_path=path or fastmcp.settings.streamable_http_path,
                 event_store=event_store,
                 retry_interval=retry_interval,
                 auth=self.auth,
                 json_response=(
                     json_response
                     if json_response is not None
-                    else self._deprecated_settings.json_response
+                    else fastmcp.settings.json_response
                 ),
                 stateless_http=(
                     stateless_http
                     if stateless_http is not None
-                    else self._deprecated_settings.stateless_http
+                    else fastmcp.settings.stateless_http
                 ),
-                debug=self._deprecated_settings.debug,
+                debug=fastmcp.settings.debug,
                 middleware=middleware,
             )
         elif transport == "sse":
             return create_sse_app(
                 server=self,
-                message_path=self._deprecated_settings.message_path,
-                sse_path=path or self._deprecated_settings.sse_path,
+                message_path=fastmcp.settings.message_path,
+                sse_path=path or fastmcp.settings.sse_path,
                 auth=self.auth,
-                debug=self._deprecated_settings.debug,
+                debug=fastmcp.settings.debug,
                 middleware=middleware,
             )
         else:

@@ -1,6 +1,7 @@
 """Tests for OAuth proxy configuration and validation."""
 
 import pytest
+from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import AuthorizationParams, AuthorizeError
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyHttpUrl, AnyUrl
@@ -76,6 +77,7 @@ class TestResourceURLValidation:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
         # Use non-default path to prove fix isn't relying on old hardcoded /mcp
         proxy.set_mcp_path("/api/v2/mcp")
@@ -261,6 +263,7 @@ class TestResourceURLValidation:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
         proxy.set_mcp_path("/mcp")
         # Simulate server configured with query params for tenant scoping
@@ -300,6 +303,7 @@ class TestResourceURLValidation:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
         proxy.set_mcp_path("/mcp")
         # Simulate server configured with query params for tenant scoping
@@ -337,6 +341,7 @@ class TestResourceURLValidation:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
         proxy.set_mcp_path("/mcp")
         # Simulate server configured with query params for tenant scoping
@@ -374,6 +379,7 @@ class TestResourceURLValidation:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
         # Before set_mcp_path, _jwt_issuer is None
@@ -397,6 +403,7 @@ class TestResourceURLValidation:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
         proxy.set_mcp_path(None)
@@ -413,6 +420,7 @@ class TestResourceURLValidation:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
         with pytest.raises(RuntimeError) as exc_info:
@@ -430,6 +438,7 @@ class TestResourceURLValidation:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
         # Before get_routes, _jwt_issuer is None

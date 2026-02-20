@@ -2,16 +2,25 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+from key_value.aio.stores.memory import MemoryStore
+
 from fastmcp.server.auth.providers.github import (
     GitHubProvider,
     GitHubTokenVerifier,
 )
 
 
+@pytest.fixture
+def memory_storage() -> MemoryStore:
+    """Provide a MemoryStore for tests to avoid SQLite initialization on Windows."""
+    return MemoryStore()
+
+
 class TestGitHubProvider:
     """Test GitHubProvider initialization."""
 
-    def test_init_with_explicit_params(self):
+    def test_init_with_explicit_params(self, memory_storage: MemoryStore):
         """Test initialization with explicit parameters."""
         provider = GitHubProvider(
             client_id="test_client",
@@ -21,6 +30,7 @@ class TestGitHubProvider:
             required_scopes=["user", "repo"],
             timeout_seconds=30,
             jwt_signing_key="test-secret",
+            client_storage=memory_storage,
         )
 
         # Check that the provider was initialized correctly
@@ -31,13 +41,14 @@ class TestGitHubProvider:
         )  # URLs get normalized with trailing slash
         assert provider._redirect_path == "/custom/callback"
 
-    def test_init_defaults(self):
+    def test_init_defaults(self, memory_storage: MemoryStore):
         """Test that default values are applied correctly."""
         provider = GitHubProvider(
             client_id="test_client",
             client_secret="test_secret",
             base_url="https://example.com",
             jwt_signing_key="test-secret",
+            client_storage=memory_storage,
         )
 
         # Check defaults
@@ -49,7 +60,7 @@ class TestGitHubProvider:
 class TestGitHubTokenVerifier:
     """Test GitHubTokenVerifier."""
 
-    def test_init_with_custom_scopes(self):
+    def test_init_with_custom_scopes(self, memory_storage: MemoryStore):
         """Test initialization with custom required scopes."""
         verifier = GitHubTokenVerifier(
             required_scopes=["user", "repo"],
@@ -59,7 +70,7 @@ class TestGitHubTokenVerifier:
         assert verifier.required_scopes == ["user", "repo"]
         assert verifier.timeout_seconds == 30
 
-    def test_init_defaults(self):
+    def test_init_defaults(self, memory_storage: MemoryStore):
         """Test initialization with defaults."""
         verifier = GitHubTokenVerifier()
 

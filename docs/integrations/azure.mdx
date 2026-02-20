@@ -282,3 +282,179 @@ Parameters (`jwt_signing_key` and `client_storage`) work together to ensure toke
 
 For complete details on these parameters, see the [OAuth Proxy documentation](/servers/auth/oauth-proxy#configuration-parameters).
 </Note>
+
+## Token Verification Only (Managed Identity)
+
+<VersionBadge version="2.15.0" />
+
+For deployments where your server only needs to **validate incoming tokens** — such as Azure Container Apps with Managed Identity — use `AzureJWTVerifier` with `RemoteAuthProvider` instead of the full `AzureProvider`.
+
+This pattern is ideal when:
+- Your infrastructure handles authentication (e.g., Managed Identity)
+- You don't need the OAuth proxy flow (no `client_secret` required)
+- You just need to verify that incoming Azure AD tokens are valid
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.providers.azure import AzureJWTVerifier
+from pydantic import AnyHttpUrl
+
+tenant_id = "your-tenant-id"
+client_id = "your-client-id"
+
+# AzureJWTVerifier auto-configures JWKS, issuer, and audience
+verifier = AzureJWTVerifier(
+    client_id=client_id,
+    tenant_id=tenant_id,
+    required_scopes=["access_as_user"],  # Scope names from Azure Portal
+)
+
+auth = RemoteAuthProvider(
+    token_verifier=verifier,
+    authorization_servers=[
+        AnyHttpUrl(f"https://login.microsoftonline.com/{tenant_id}/v2.0")
+    ],
+    base_url="https://your-container-app.azurecontainerapps.io",
+)
+
+mcp = FastMCP(name="Azure MI App", auth=auth)
+```
+
+`AzureJWTVerifier` handles Azure's scope format automatically. You write scope names exactly as they appear in Azure Portal under **Expose an API** (e.g., `access_as_user`). The verifier validates tokens using the short-form scopes that Azure puts in the `scp` claim, while advertising the full URI scopes (e.g., `api://your-client-id/access_as_user`) in OAuth metadata so MCP clients know what to request.
+
+<Note>
+For Azure Government, pass `base_authority="login.microsoftonline.us"` to `AzureJWTVerifier`.
+</Note>
+
+## On-Behalf-Of (OBO)
+
+<VersionBadge version="3.0.0" />
+
+The On-Behalf-Of (OBO) flow allows your FastMCP server to call downstream Microsoft APIs—like Microsoft Graph—using the authenticated user's identity. When a user authenticates to your MCP server, you receive a token for your API. OBO exchanges that token for a new token that can call other services, maintaining the user's identity and permissions throughout the chain.
+
+This pattern is useful when your tools need to access user-specific data from Microsoft services: reading emails, accessing calendar events, querying SharePoint, or any other Graph API operation that requires user context.
+
+<Note>
+OBO features require the `azure` extra:
+
+```bash
+pip install 'fastmcp[azure]'
+```
+</Note>
+
+### Azure Portal Setup
+
+OBO requires additional configuration in your Azure App registration beyond basic authentication.
+
+<Steps>
+<Step title="Add API Permissions">
+    In your App registration, navigate to **API permissions** and add the Microsoft Graph permissions your tools will need.
+
+    - Click **Add a permission** → **Microsoft Graph** → **Delegated permissions**
+    - Select the permissions required for your use case (e.g., `Mail.Read`, `Calendars.Read`, `User.Read`)
+    - Repeat for any other APIs you need to call
+
+    <Warning>
+    Only add delegated permissions for OBO. Application permissions bypass user context entirely and are inappropriate for the OBO flow.
+    </Warning>
+</Step>
+
+<Step title="Grant Admin Consent">
+    OBO requires admin consent for the permissions you've added. In the **API permissions** page, click **Grant admin consent for [Your Organization]**.
+
+    Without admin consent, OBO token exchanges will fail with an `AADSTS65001` error indicating the user or administrator hasn't consented to use the application.
+
+    <Tip>
+    For development, you can grant consent for just your own account. For production, an Azure AD administrator must grant tenant-wide consent.
+    </Tip>
+</Step>
+</Steps>
+
+### Configure AzureProvider for OBO
+
+The `additional_authorize_scopes` parameter tells Azure which downstream API permissions to include during the initial authorization. These scopes establish what your server can request through OBO later.
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.azure import AzureProvider
+
+auth_provider = AzureProvider(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    tenant_id="your-tenant-id",
+    base_url="http://localhost:8000",
+    required_scopes=["mcp-access"],  # Your API scope
+    # Include Graph scopes for OBO
+    additional_authorize_scopes=[
+        "https://graph.microsoft.com/Mail.Read",
+        "https://graph.microsoft.com/User.Read",
+        "offline_access",  # Enables refresh tokens
+    ],
+)
+
+mcp = FastMCP(name="Graph-Enabled Server", auth=auth_provider)
+```
+
+Scopes listed in `additional_authorize_scopes` are requested during the initial OAuth flow but aren't validated on incoming tokens. They establish permission for your server to later exchange the user's token for downstream API access.
+
+<Info>
+Use fully-qualified scope URIs for downstream APIs (e.g., `https://graph.microsoft.com/Mail.Read`). Short forms like `Mail.Read` work for authorization requests, but fully-qualified URIs are clearer and avoid ambiguity.
+</Info>
+
+### EntraOBOToken Dependency
+
+The `EntraOBOToken` dependency handles the complete OBO flow automatically. Declare it as a parameter default with the scopes you need, and FastMCP exchanges the user's token for a downstream API token before your function runs.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.azure import AzureProvider, EntraOBOToken
+import httpx
+
+auth_provider = AzureProvider(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    tenant_id="your-tenant-id",
+    base_url="http://localhost:8000",
+    required_scopes=["mcp-access"],
+    additional_authorize_scopes=[
+        "https://graph.microsoft.com/Mail.Read",
+        "https://graph.microsoft.com/User.Read",
+    ],
+)
+
+mcp = FastMCP(name="Email Reader", auth=auth_provider)
+
+@mcp.tool
+async def get_recent_emails(
+    count: int = 10,
+    graph_token: str = EntraOBOToken(["https://graph.microsoft.com/Mail.Read"]),
+) -> list[dict]:
+    """Get the user's recent emails from Microsoft Graph."""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"https://graph.microsoft.com/v1.0/me/messages?$top={count}",
+            headers={"Authorization": f"Bearer {graph_token}"},
+        )
+        response.raise_for_status()
+        data = response.json()
+
+    return [
+        {"subject": msg["subject"], "from": msg["from"]["emailAddress"]["address"]}
+        for msg in data.get("value", [])
+    ]
+```
+
+The `graph_token` parameter receives a ready-to-use access token for Microsoft Graph. FastMCP handles the OBO exchange transparently—your function just uses the token to call the API.
+
+<Warning>
+**Scope alignment is critical.** The scopes passed to `EntraOBOToken` must be a subset of the scopes in `additional_authorize_scopes`. If you request a scope during OBO that wasn't included in the initial authorization, the exchange will fail.
+</Warning>
+
+<Tip>
+For advanced OBO scenarios, use `CurrentAccessToken()` to get the user's token, then construct an `azure.identity.aio.OnBehalfOfCredential` directly with your Azure credentials.
+</Tip>
+
+<Tip>
+For a complete working example of Azure OBO with FastMCP, see [Pamela Fox's blog post on OBO flow for Entra-based MCP servers](https://blog.pamelafox.org/2026/01/using-on-behalf-of-flow-for-entra-based.html).
+</Tip>

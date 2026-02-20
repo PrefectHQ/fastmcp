@@ -18,9 +18,13 @@ The authorization model centers on a simple concept: callable functions that rec
 Authorization relies on OAuth tokens which are only available with HTTP transports (SSE, Streamable HTTP). In STDIO mode, there's no OAuth mechanism, so `get_access_token()` returns `None` and all auth checks are skipped.
 </Note>
 
+<Note>
+When an `AuthProvider` is configured, all requests to the MCP endpoint must carry a valid token—unauthenticated requests are rejected at the transport level before any auth checks run. Authorization checks therefore differentiate between authenticated users based on their scopes and claims, not between authenticated and unauthenticated users.
+</Note>
+
 ## Auth Checks
 
-An auth check is any callable that accepts an `AuthContext` and returns a boolean. The `AuthContext` provides access to the current token (if any) and the component being accessed.
+An auth check is any callable that accepts an `AuthContext` and returns a boolean. Auth checks can be synchronous or asynchronous, so checks that need to perform async operations (like reading server state or calling external services) work naturally.
 
 ```python
 from fastmcp.server.auth import AuthContext
@@ -31,27 +35,11 @@ def my_custom_check(ctx: AuthContext) -> bool:
     return ctx.token is not None and "special" in ctx.token.scopes
 ```
 
-FastMCP provides three built-in auth checks that cover common authorization patterns.
-
-### require_auth
-
-The simplest check verifies that any valid authentication token is present. Unauthenticated requests are denied.
-
-```python
-from fastmcp import FastMCP
-from fastmcp.server.auth import require_auth
-
-mcp = FastMCP("Protected Server")
-
-@mcp.tool(auth=require_auth)
-def protected_operation() -> str:
-    """Only accessible to authenticated users."""
-    return "Success"
-```
+FastMCP provides two built-in auth checks that cover common authorization patterns.
 
 ### require_scopes
 
-For scope-based authorization, `require_scopes` checks that the token contains all specified OAuth scopes. When multiple scopes are provided, all must be present (AND logic).
+Scope-based authorization checks that the token contains all specified OAuth scopes. When multiple scopes are provided, all must be present (AND logic).
 
 ```python
 from fastmcp import FastMCP
@@ -103,13 +91,13 @@ Multiple auth checks can be combined by passing a list. All checks must pass for
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth import require_auth, require_scopes
+from fastmcp.server.auth import require_scopes
 
 mcp = FastMCP("Combined Auth Server")
 
-@mcp.tool(auth=[require_auth, require_scopes("admin")])
+@mcp.tool(auth=[require_scopes("admin"), require_scopes("write")])
 def secure_admin_action() -> str:
-    """Requires authentication AND the 'admin' scope."""
+    """Requires both 'admin' AND 'write' scopes."""
     return "Secure admin action"
 ```
 
@@ -149,6 +137,34 @@ def advanced_feature() -> str:
     return "Advanced feature"
 ```
 
+### Async Auth Checks
+
+Auth checks can be `async` functions, which is useful when the authorization decision depends on asynchronous operations like reading server state or querying external services.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth import AuthContext
+
+mcp = FastMCP("Async Auth Server")
+
+async def check_user_permissions(ctx: AuthContext) -> bool:
+    """Async auth check that reads server state."""
+    if ctx.token is None:
+        return False
+    user_id = ctx.token.claims.get("sub")
+    # Async operations work naturally in auth checks
+    permissions = await fetch_user_permissions(user_id)
+    return "admin" in permissions
+
+@mcp.tool(auth=check_user_permissions)
+def admin_tool() -> str:
+    return "Admin action completed"
+```
+
+Sync and async checks can be freely combined in a list — each check is handled according to its type.
+
+### Error Handling
+
 Auth checks can raise exceptions for explicit denial with custom messages:
 
 - **`AuthorizationError`**: Propagates with its custom message, useful for explaining why access was denied
@@ -169,18 +185,18 @@ def require_verified_email(ctx: AuthContext) -> bool:
 
 ## Component-Level Authorization
 
-The `auth` parameter on decorators controls visibility of individual components. When auth checks fail for the current request, the component is hidden from list responses—it simply doesn't appear.
+The `auth` parameter on decorators controls visibility and access for individual components. When auth checks fail for the current request, the component is hidden from list responses and direct access returns not-found.
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth import require_auth, require_scopes
+from fastmcp.server.auth import require_scopes
 
 mcp = FastMCP("Component Auth Server")
 
-@mcp.tool(auth=require_auth)
-def authenticated_tool() -> str:
-    """Only visible to authenticated users."""
-    return "Authenticated"
+@mcp.tool(auth=require_scopes("write"))
+def write_tool() -> str:
+    """Only visible to users with 'write' scope."""
+    return "Written"
 
 @mcp.resource("secret://data", auth=require_scopes("read"))
 def secret_resource() -> str:
@@ -193,38 +209,59 @@ def admin_prompt() -> str:
     return "Admin prompt content"
 ```
 
-<Warning>
-Component-level `auth` only controls visibility in list operations. It does not block direct access. Use `AuthMiddleware` to enforce authorization on execution.
-</Warning>
+<Note>
+Component-level `auth` controls both visibility (list filtering) and access (direct lookups return not-found for unauthorized requests). Additionally use `AuthMiddleware` to apply server-wide authorization rules and get explicit `AuthorizationError` responses on unauthorized execution attempts.
+</Note>
 
 ## Server-Level Authorization
 
-For server-wide authorization enforcement, use `AuthMiddleware`. This middleware applies auth checks globally to all components—filtering list responses and blocking unauthorized execution.
+For server-wide authorization enforcement, use `AuthMiddleware`. This middleware applies auth checks globally to all components—filtering list responses and blocking unauthorized execution with explicit `AuthorizationError` responses.
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth import require_auth
+from fastmcp.server.auth import require_scopes
 from fastmcp.server.middleware import AuthMiddleware
 
 mcp = FastMCP(
     "Enforced Auth Server",
-    middleware=[AuthMiddleware(auth=require_auth)]
+    middleware=[AuthMiddleware(auth=require_scopes("api"))]
 )
 
 @mcp.tool
 def any_tool() -> str:
-    """Requires authentication to see AND call."""
+    """Requires 'api' scope to see AND call."""
     return "Protected"
 ```
 
-### Filtering vs Enforcement
+### Component Auth + Middleware
 
-| Behavior | Component-level `auth` | `AuthMiddleware` |
-|----------|------------------------|------------------|
-| Filters list responses | Yes | Yes |
-| Blocks execution | No | Yes (raises `AuthorizationError`) |
+Component-level `auth` and `AuthMiddleware` work together as complementary layers. The middleware applies server-wide rules to all components, while component-level auth adds per-component requirements. Both layers are checked—all checks must pass.
 
-Component-level auth is useful for hiding components from unauthorized users while still allowing advanced clients to access them directly. `AuthMiddleware` provides complete enforcement by raising `AuthorizationError` when unauthorized requests attempt execution.
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth import require_scopes, restrict_tag
+from fastmcp.server.middleware import AuthMiddleware
+
+mcp = FastMCP(
+    "Layered Auth Server",
+    middleware=[
+        AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"]))
+    ]
+)
+
+# Requires "write" scope (component-level)
+# Also requires "admin" scope if tagged "admin" (middleware-level)
+@mcp.tool(auth=require_scopes("write"), tags={"admin"})
+def admin_write() -> str:
+    """Requires both 'write' AND 'admin' scopes."""
+    return "Admin write"
+
+# Requires "write" scope (component-level only)
+@mcp.tool(auth=require_scopes("write"))
+def user_write() -> str:
+    """Requires 'write' scope."""
+    return "User write"
+```
 
 ### Tag-Based Global Authorization
 
@@ -337,8 +374,7 @@ def require_matching_tag(ctx: AuthContext) -> bool:
 from fastmcp.server.auth import (
     AccessToken,       # Token with .token, .client_id, .scopes, .expires_at, .claims
     AuthContext,       # Context with .token, .component
-    AuthCheck,         # Type alias: Callable[[AuthContext], bool]
-    require_auth,      # Built-in: requires any valid token
+    AuthCheck,         # Type alias: sync or async Callable[[AuthContext], bool]
     require_scopes,    # Built-in: requires specific scopes
     restrict_tag,      # Built-in: tag-based scope requirements
     run_auth_checks,   # Utility: run checks with AND logic

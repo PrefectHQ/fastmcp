@@ -326,6 +326,11 @@ def create_streamable_http_app(
         )
 
         # Create protected HTTP endpoint route
+        # Stateless servers have no session tracking, so GET SSE streams
+        # (for server-initiated notifications) serve no purpose.
+        http_methods = (
+            ["POST", "DELETE"] if stateless_http else ["GET", "POST", "DELETE"]
+        )
         server_routes.append(
             Route(
                 streamable_http_path,
@@ -334,15 +339,17 @@ def create_streamable_http_app(
                     auth.required_scopes,
                     resource_metadata_url,
                 ),
-                methods=["GET", "POST", "DELETE"],
+                methods=http_methods,
             )
         )
     else:
         # No auth required
+        http_methods = ["POST", "DELETE"] if stateless_http else None
         server_routes.append(
             Route(
                 streamable_http_path,
                 endpoint=streamable_http_app,
+                methods=http_methods,
             )
         )
 

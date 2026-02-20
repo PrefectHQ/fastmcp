@@ -103,10 +103,16 @@ class SupabaseProvider(RemoteAuthProvider):
 
         # Create default JWT verifier if none provided
         if token_verifier is None:
+            logger.warning(
+                "SupabaseProvider cannot validate token audience for the specific resource "
+                "because Supabase Auth does not support RFC 8707 resource indicators. "
+                "This may leave the server vulnerable to cross-server token replay."
+            )
             token_verifier = JWTVerifier(
                 jwks_uri=f"{self.project_url}/{self.auth_route}/.well-known/jwks.json",
                 issuer=f"{self.project_url}/{self.auth_route}",
                 algorithm=algorithm,
+                audience="authenticated",
                 required_scopes=parsed_scopes,
             )
 

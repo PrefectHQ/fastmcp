@@ -4,6 +4,7 @@ import time
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.handlers.token import TokenErrorResponse
 from mcp.server.auth.handlers.token import TokenHandler as SDKTokenHandler
 from mcp.server.auth.provider import AuthorizationCode
@@ -35,6 +36,7 @@ class TestOAuthProxyTokenEndpointAuth:
             base_url="https://proxy.example.com",
             token_endpoint_auth_method="client_secret_post",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
         assert proxy_post._token_endpoint_auth_method == "client_secret_post"
 
@@ -48,6 +50,7 @@ class TestOAuthProxyTokenEndpointAuth:
             base_url="https://proxy.example.com",
             token_endpoint_auth_method="client_secret_basic",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
         assert proxy_basic._token_endpoint_auth_method == "client_secret_basic"
 
@@ -60,6 +63,7 @@ class TestOAuthProxyTokenEndpointAuth:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
         assert proxy_default._token_endpoint_auth_method is None
 
@@ -74,6 +78,7 @@ class TestOAuthProxyTokenEndpointAuth:
             base_url="https://proxy.example.com",
             token_endpoint_auth_method="client_secret_post",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
         # Initialize JWT issuer before token operations
@@ -296,6 +301,7 @@ class TestFallbackAccessTokenExpiry:
             base_url="http://localhost:8000",
             jwt_signing_key="test-signing-key",
             fallback_access_token_expiry_seconds=86400,
+            client_storage=MemoryStore(),
         )
 
         assert provider._fallback_access_token_expiry_seconds == 86400
@@ -313,6 +319,7 @@ class TestFallbackAccessTokenExpiry:
             ),
             base_url="http://localhost:8000",
             jwt_signing_key="test-signing-key",
+            client_storage=MemoryStore(),
         )
 
         assert provider._fallback_access_token_expiry_seconds is None
@@ -345,6 +352,7 @@ class TestUpstreamTokenStorageTTL:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
         )
         proxy.set_mcp_path("/mcp")
         return proxy

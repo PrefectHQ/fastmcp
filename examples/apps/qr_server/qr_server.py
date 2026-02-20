@@ -1,7 +1,7 @@
 """QR Code MCP App Server — generates QR codes with an interactive view UI.
 
 Demonstrates MCP Apps with FastMCP:
-- Tool linked to a ui:// resource via ToolUI
+- Tool linked to a ui:// resource via AppConfig
 - HTML resource with CSP metadata for CDN-loaded dependencies
 - Embedded HTML using the @modelcontextprotocol/ext-apps JS SDK
 - ImageContent return type for binary data
@@ -26,7 +26,7 @@ import qrcode  # type: ignore[import-untyped]
 from mcp import types
 
 from fastmcp import FastMCP
-from fastmcp.server.apps import ResourceCSP, ResourceUI, ToolUI
+from fastmcp.server.apps import AppConfig, ResourceCSP
 from fastmcp.tools import ToolResult
 
 VIEW_URI: str = "ui://qr-server/view.html"
@@ -104,7 +104,7 @@ EMBEDDED_VIEW_HTML: str = """\
 </html>"""
 
 
-@mcp.tool(ui=ToolUI(resource_uri=VIEW_URI))
+@mcp.tool(app=AppConfig(resource_uri=VIEW_URI))
 def generate_qr(
     text: str = "https://gofastmcp.com",
     box_size: int = 10,
@@ -159,7 +159,7 @@ def generate_qr(
 
 @mcp.resource(
     VIEW_URI,
-    ui=ResourceUI(csp=ResourceCSP(resource_domains=["https://unpkg.com"])),
+    app=AppConfig(csp=ResourceCSP(resource_domains=["https://unpkg.com"])),
 )
 def view() -> str:
     """Interactive QR code viewer — renders tool results as images."""

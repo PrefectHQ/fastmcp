@@ -30,6 +30,7 @@ class TestToolFromFunction:
                 "description": "Add two numbers.",
                 "tags": set(),
                 "parameters": {
+                    "additionalProperties": False,
                     "properties": {
                         "a": {"type": "integer"},
                         "b": {"type": "integer"},
@@ -83,6 +84,7 @@ class TestToolFromFunction:
                 "description": "Fetch data from URL.",
                 "tags": set(),
                 "parameters": {
+                    "additionalProperties": False,
                     "properties": {"url": {"type": "string"}},
                     "required": ["url"],
                     "type": "object",
@@ -117,6 +119,7 @@ class TestToolFromFunction:
                 "description": "Adds two numbers.",
                 "tags": set(),
                 "parameters": {
+                    "additionalProperties": False,
                     "properties": {
                         "x": {"type": "integer"},
                         "y": {"type": "integer"},
@@ -153,6 +156,7 @@ class TestToolFromFunction:
                 "description": "Adds two numbers.",
                 "tags": set(),
                 "parameters": {
+                    "additionalProperties": False,
                     "properties": {
                         "x": {"type": "integer"},
                         "y": {"type": "integer"},
@@ -192,8 +196,8 @@ class TestToolFromFunction:
                 "description": "Create a new user.",
                 "tags": set(),
                 "parameters": {
-                    "properties": {
-                        "user": {
+                    "$defs": {
+                        "UserInput": {
                             "properties": {
                                 "name": {"type": "string"},
                                 "age": {"type": "integer"},
@@ -201,6 +205,10 @@ class TestToolFromFunction:
                             "required": ["name", "age"],
                             "type": "object",
                         },
+                    },
+                    "additionalProperties": False,
+                    "properties": {
+                        "user": {"$ref": "#/$defs/UserInput"},
                         "flag": {"type": "boolean"},
                     },
                     "required": ["user", "flag"],
@@ -270,6 +278,7 @@ class TestToolFromFunction:
                 "name": "my_tool",
                 "tags": set(),
                 "parameters": {
+                    "additionalProperties": False,
                     "properties": {"x": {"title": "X"}},
                     "required": ["x"],
                     "type": "object",
@@ -302,6 +311,7 @@ class TestToolFromFunction:
                 "description": "Add two numbers.",
                 "tags": set(),
                 "parameters": {
+                    "additionalProperties": False,
                     "properties": {
                         "_a": {"type": "integer"},
                         "_b": {"type": "integer"},
@@ -353,6 +363,7 @@ class TestToolFromFunction:
                 "description": "Add two numbers.",
                 "tags": set(),
                 "parameters": {
+                    "additionalProperties": False,
                     "properties": {
                         "x": {"type": "integer"},
                         "y": {"type": "integer"},

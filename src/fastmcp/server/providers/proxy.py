@@ -16,6 +16,7 @@ from urllib.parse import quote
 import mcp.types
 from mcp import ServerSession
 from mcp.client.session import ClientSession
+from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import LifespanContextT, RequestContext
 from mcp.shared.exceptions import McpError
 from mcp.types import (
@@ -121,6 +122,12 @@ class ProxyTool(Tool):
             client = await self._get_client()
             async with client:
                 ctx = context or get_context()
+                # StatefulProxyClient reuses sessions across requests, so
+                # its receive-loop task has stale ContextVars from the first
+                # request. Stash the current RequestContext in the shared
+                # ref so handlers can restore it before forwarding.
+                if isinstance(client, StatefulProxyClient):
+                    cast(list[Any], client._proxy_rc_ref)[0] = ctx.request_context
                 # Build meta dict from request context
                 meta: dict[str, Any] | None = None
                 if hasattr(ctx, "request_context"):
@@ -781,15 +788,49 @@ async def default_proxy_progress_handler(
     await ctx.report_progress(progress, total, message)
 
 
+def _restore_request_context(
+    rc_ref: list[Any],
+) -> None:
+    """Set the ``request_ctx`` ContextVar from a stashed RequestContext.
+
+    Called at the start of proxy handler invocations in
+    ``StatefulProxyClient`` to fix stale ContextVars in the receive-loop
+    task.  Only overrides when the ContextVar is genuinely stale (same
+    session, different request_id) to avoid corrupting the concurrent
+    case where multiple sessions share the same ref via ``copy.copy``.
+    """
+    rc = rc_ref[0]
+    if rc is None:
+        return
+    try:
+        current_rc = request_ctx.get()
+    except LookupError:
+        request_ctx.set(rc)
+        return
+    if current_rc.session is rc.session and current_rc.request_id != rc.request_id:
+        request_ctx.set(rc)
+
+
+def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
+    """Wrap a proxy handler to restore request_ctx before delegating.
+
+    The wrapper is a plain ``async def`` so it passes
+    ``inspect.isfunction()`` checks in handler registration paths
+    (e.g., ``create_roots_callback``).
+    """
+
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        _restore_request_context(rc_ref)
+        return await handler(*args, **kwargs)
+
+    return wrapper
+
+
 class ProxyClient(Client[ClientTransportT]):
     """A proxy client that forwards advanced interactions between a remote MCP server and the proxy's connected clients.
 
     Supports forwarding roots, sampling, elicitation, logging, and progress.
     """
-
-    # Stored context for handlers when contextvar isn't available
-    # (e.g., when receive loop was started before any request context)
-    _proxy_context: Context | None = None
 
     def __init__(
         self,
@@ -826,9 +867,39 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
 
     This is useful to proxy a stateful mcp server such as the Playwright MCP server.
     Note that it is essential to ensure that the proxy server itself is also stateful.
+
+    Because session reuse means the receive-loop task inherits a stale
+    ``request_ctx`` ContextVar snapshot, the default proxy handlers are
+    replaced with versions that restore the ContextVar before forwarding.
+    ``ProxyTool.run`` stashes the current ``RequestContext`` in
+    ``_proxy_rc_ref`` before each backend call, and the handlers consult
+    it to detect (and correct) staleness.
     """
 
+    # Mutable list shared across copies (Client.new() uses copy.copy,
+    # which preserves references to mutable containers).  ProxyTool.run
+    # writes [0] before each backend call; handlers read it to detect
+    # stale ContextVars and restore the correct request_ctx.
+    #
+    # We store the concrete RequestContext (not fastmcp's Context) because
+    # Context properties are themselves ContextVar-dependent and resolve
+    # in the caller's async context — which is stale in the receive loop.
+    _proxy_rc_ref: list[Any]
+
     def __init__(self, *args: Any, **kwargs: Any):
+        # Install context-restoring handler wrappers BEFORE super().__init__
+        # registers them with the Client's session kwargs.
+        self._proxy_rc_ref = [None]
+        for key, default_fn in (
+            ("roots", default_proxy_roots_handler),
+            ("sampling_handler", default_proxy_sampling_handler),
+            ("elicitation_handler", default_proxy_elicitation_handler),
+            ("log_handler", default_proxy_log_handler),
+            ("progress_handler", default_proxy_progress_handler),
+        ):
+            if key not in kwargs:
+                kwargs[key] = _make_restoring_handler(default_fn, self._proxy_rc_ref)
+
         super().__init__(*args, **kwargs)
         self._caches: dict[ServerSession, Client[ClientTransportT]] = {}
 

@@ -289,6 +289,45 @@ def search(query: str) -> str:
 
 `ToolError` messages always pass through to the LLM, making it the escape hatch for errors you want the LLM to see and handle.
 
+### Concurrent Tool Execution
+
+By default, tools execute sequentially — one at a time, in order. When your tools are independent (no shared state between them), you can execute them in parallel with `tool_concurrency`:
+
+```python
+result = await ctx.sample(
+    messages="Research these three topics",
+    tools=[search, fetch_url],
+    tool_concurrency=0,  # Unlimited parallel execution
+)
+```
+
+The `tool_concurrency` parameter controls how many tools run at once:
+
+- **`None`** (default): Sequential execution
+- **`0`**: Unlimited parallel execution
+- **`N > 0`**: Execute at most N tools concurrently
+
+For tools that must not run concurrently (file writes, shared state mutations, etc.), mark them as `sequential` when creating the `SamplingTool`:
+
+```python
+from fastmcp.server.sampling import SamplingTool
+
+db_writer = SamplingTool.from_function(
+    write_to_db,
+    sequential=True,  # Forces all tools in the batch to run sequentially
+)
+
+result = await ctx.sample(
+    messages="Process this data",
+    tools=[search, db_writer],
+    tool_concurrency=0,  # Would be parallel, but db_writer forces sequential
+)
+```
+
+<Note>
+When any tool in a batch has `sequential=True`, the entire batch executes sequentially regardless of `tool_concurrency`. This is a conservative guarantee — if one tool needs ordering, all tools in that batch respect it.
+</Note>
+
 ### Client Requirements
 
 <Note>
@@ -463,6 +502,10 @@ tool_result = ToolResultContent(
       If True, mask detailed error messages from tool execution. When None (default), uses the global `settings.mask_error_details` value. Tools can raise `ToolError` to bypass masking and provide specific error messages to the LLM.
     </ResponseField>
 
+    <ResponseField name="tool_concurrency" type="int | None" default="None">
+      Controls parallel execution of tools. `None` (default) for sequential, `0` for unlimited parallel, or a positive integer for bounded concurrency. If any tool has `sequential=True`, all tools execute sequentially regardless.
+    </ResponseField>
+
   </Expandable>
 
   <Expandable title="Response">
@@ -510,6 +553,10 @@ tool_result = ToolResultContent(
 
     <ResponseField name="mask_error_details" type="bool | None" default="None">
       If True, mask detailed error messages from tool execution.
+    </ResponseField>
+
+    <ResponseField name="tool_concurrency" type="int | None" default="None">
+      Controls parallel execution of tools. `None` (default) for sequential, `0` for unlimited parallel, or a positive integer for bounded concurrency.
     </ResponseField>
   </Expandable>
 

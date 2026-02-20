@@ -81,9 +81,9 @@ mcp.add_prompt(my_prompt)
 Remove components by name or URI:
 
 ```python
-mcp.remove_tool("my_tool")
-mcp.remove_resource("data://info")
-mcp.remove_prompt("my_prompt")
+mcp.local_provider.remove_tool("my_tool")
+mcp.local_provider.remove_resource("data://info")
+mcp.local_provider.remove_prompt("my_prompt")
 ```
 
 ## Duplicate Handling

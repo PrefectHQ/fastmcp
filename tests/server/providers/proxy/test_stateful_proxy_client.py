@@ -1,15 +1,18 @@
 import asyncio
+from dataclasses import dataclass
 
 import pytest
 from anyio import create_task_group
 from mcp.types import LoggingLevel
 
 from fastmcp import Client, Context, FastMCP
+from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.logging import LogMessage
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
+from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp.server.providers.proxy import FastMCPProxy, StatefulProxyClient
-from fastmcp.utilities.tests import find_available_port
+from fastmcp.utilities.tests import find_available_port, run_server_async
 
 
 @pytest.fixture
@@ -145,3 +148,54 @@ class TestStatefulProxyClient:
             result_b = await client.call_tool("b_tool_b", {})
             assert result_a.data == "a"
             assert result_b.data == "b"
+
+    @pytest.mark.timeout(10)
+    async def test_stateful_proxy_elicitation_over_http(self):
+        """Elicitation through a stateful proxy over HTTP must not hang.
+
+        When StatefulProxyClient reuses a session, the receive-loop task
+        inherits a stale request_ctx ContextVar from the first request.
+        The streamable-HTTP transport uses related_request_id to route
+        server-initiated messages (like elicitation) back to the correct
+        HTTP response stream.  A stale request_id routes to a closed
+        stream, causing the elicitation to hang forever.
+
+        This test runs the proxy over HTTP (not in-process) so the
+        transport's related_request_id routing is exercised.
+        """
+
+        @dataclass
+        class Person:
+            name: str
+
+        backend = FastMCP("backend")
+
+        @backend.tool
+        async def ask_name(ctx: Context) -> str:
+            result = await ctx.elicit("What is your name?", response_type=Person)
+            if isinstance(result, AcceptedElicitation):
+                assert isinstance(result.data, Person)
+                return f"Hello, {result.data.name}!"
+            return "declined"
+
+        stateful_client = StatefulProxyClient(backend)
+        proxy = FastMCPProxy(
+            client_factory=stateful_client.new_stateful,
+            name="proxy",
+        )
+
+        async def elicitation_handler(message, response_type, params, ctx):
+            return ElicitResult(action="accept", content=response_type(name="Alice"))
+
+        # Run the proxy over HTTP so the transport uses
+        # related_request_id routing for server-initiated messages.
+        async with run_server_async(proxy) as proxy_url:
+            async with Client(
+                proxy_url, elicitation_handler=elicitation_handler
+            ) as client:
+                result1 = await client.call_tool("ask_name", {})
+                assert result1.data == "Hello, Alice!"
+                # Second call reuses the stateful session — this is the
+                # one that would hang without the fix.
+                result2 = await client.call_tool("ask_name", {})
+                assert result2.data == "Hello, Alice!"

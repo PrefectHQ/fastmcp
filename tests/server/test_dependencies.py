@@ -1045,3 +1045,115 @@ class TestVendoredDI:
         db_dep = deps["db"]
         assert isinstance(db_dep, _Depends)
         assert db_dep.dependency is get_db
+
+
+class TestAuthDependencies:
+    """Tests for authentication dependencies (CurrentAccessToken, TokenClaim)."""
+
+    def test_current_access_token_is_importable(self):
+        """Test that CurrentAccessToken can be imported."""
+        from fastmcp.server.dependencies import CurrentAccessToken
+
+        assert CurrentAccessToken is not None
+
+    def test_token_claim_is_importable(self):
+        """Test that TokenClaim can be imported."""
+        from fastmcp.server.dependencies import TokenClaim
+
+        assert TokenClaim is not None
+
+    def test_current_access_token_is_dependency(self):
+        """Test that CurrentAccessToken is a Dependency instance."""
+        # Import the Dependency class the same way the code does
+        # (docket if available, vendored otherwise)
+        try:
+            from docket.dependencies import Dependency
+        except ImportError:
+            from fastmcp._vendor.docket_di import Dependency
+
+        from fastmcp.server.dependencies import _CurrentAccessToken
+
+        dep = _CurrentAccessToken()
+        assert isinstance(dep, Dependency)
+
+    def test_token_claim_creates_dependency(self):
+        """Test that TokenClaim creates a Dependency instance."""
+        # Import the Dependency class the same way the code does
+        try:
+            from docket.dependencies import Dependency
+        except ImportError:
+            from fastmcp._vendor.docket_di import Dependency
+
+        from fastmcp.server.dependencies import TokenClaim, _TokenClaim
+
+        dep = TokenClaim("oid")
+        assert isinstance(dep, _TokenClaim)
+        assert isinstance(dep, Dependency)
+        assert dep.claim_name == "oid"
+
+    async def test_current_access_token_raises_without_token(self):
+        """Test that CurrentAccessToken raises when no token is available."""
+        from fastmcp.server.dependencies import _CurrentAccessToken
+
+        dep = _CurrentAccessToken()
+        with pytest.raises(RuntimeError, match="No access token found"):
+            await dep.__aenter__()
+
+    async def test_token_claim_raises_without_token(self):
+        """Test that TokenClaim raises when no token is available."""
+        from fastmcp.server.dependencies import _TokenClaim
+
+        dep = _TokenClaim("oid")
+        with pytest.raises(RuntimeError, match="No access token available"):
+            await dep.__aenter__()
+
+    async def test_current_access_token_excluded_from_tool_schema(self, mcp: FastMCP):
+        """Test that CurrentAccessToken dependency is excluded from tool schema."""
+        import mcp.types as mcp_types
+
+        from fastmcp.server.auth import AccessToken
+        from fastmcp.server.dependencies import CurrentAccessToken
+
+        @mcp.tool()
+        async def tool_with_token(
+            name: str,
+            token: AccessToken = CurrentAccessToken(),
+        ) -> str:
+            return name
+
+        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
+        tool = next(t for t in result.tools if t.name == "tool_with_token")
+
+        assert "name" in tool.inputSchema["properties"]
+        assert "token" not in tool.inputSchema["properties"]
+
+    async def test_token_claim_excluded_from_tool_schema(self, mcp: FastMCP):
+        """Test that TokenClaim dependency is excluded from tool schema."""
+        import mcp.types as mcp_types
+
+        from fastmcp.server.dependencies import TokenClaim
+
+        @mcp.tool()
+        async def tool_with_claim(
+            name: str,
+            user_id: str = TokenClaim("oid"),
+        ) -> str:
+            return name
+
+        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
+        tool = next(t for t in result.tools if t.name == "tool_with_claim")
+
+        assert "name" in tool.inputSchema["properties"]
+        assert "user_id" not in tool.inputSchema["properties"]
+
+    def test_current_access_token_exported_from_all(self):
+        """Test that CurrentAccessToken is exported from __all__."""
+        from fastmcp.server import dependencies
+
+        assert "CurrentAccessToken" in dependencies.__all__
+
+    def test_token_claim_exported_from_all(self):
+        """Test that TokenClaim is exported from __all__."""
+        from fastmcp.server import dependencies
+
+        assert "TokenClaim" in dependencies.__all__

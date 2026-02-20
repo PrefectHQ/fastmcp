@@ -238,13 +238,31 @@ async def get_counter(ctx: Context) -> int:
 Each client session has its own isolated state—two different clients calling `increment_counter` will each have their own counter.
 
 **Method signatures:**
-- **`await ctx.set_state(key: str, value: Any) -> None`**: Store a value in session state
-- **`await ctx.get_state(key: str) -> Any`**: Retrieve a value (returns None if not found)
-- **`await ctx.delete_state(key: str) -> None`**: Remove a value from session state
+- **`await ctx.set_state(key, value, *, serializable=True)`**: Store a value in session state
+- **`await ctx.get_state(key)`**: Retrieve a value (returns None if not found)
+- **`await ctx.delete_state(key)`**: Remove a value from session state
 
 <Note>
 State methods are async and require `await`. State expires after 1 day to prevent unbounded memory growth.
 </Note>
+
+#### Non-Serializable Values
+
+By default, state values must be JSON-serializable (dicts, lists, strings, numbers, etc.) so they can be persisted across requests. For non-serializable values like HTTP clients or database connections, pass `serializable=False`:
+
+```python
+@mcp.tool
+async def my_tool(ctx: Context) -> str:
+    # This object can't be JSON-serialized
+    client = SomeHTTPClient(base_url="https://api.example.com")
+    await ctx.set_state("client", client, serializable=False)
+
+    # Retrieve it later in the same request
+    client = await ctx.get_state("client")
+    return await client.fetch("/data")
+```
+
+Values stored with `serializable=False` only live for the current MCP request (a single tool call, resource read, or prompt render). They will not be available in subsequent requests within the session.
 
 #### Custom Storage Backends
 

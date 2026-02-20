@@ -13,6 +13,7 @@ from mcp.types import ToolAnnotations
 from pydantic import ConfigDict
 from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
+from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.tools.function_parsing import ParsedFunction
@@ -253,9 +254,11 @@ class TransformedTool(Tool):
 
     model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
-    parent_tool: Tool
-    fn: Callable[..., Any]
-    forwarding_fn: Callable[..., Any]  # Always present, handles arg transformation
+    parent_tool: SkipJsonSchema[Tool]
+    fn: SkipJsonSchema[Callable[..., Any]]
+    forwarding_fn: SkipJsonSchema[
+        Callable[..., Any]
+    ]  # Always present, handles arg transformation
     transform_args: dict[str, ArgTransform]
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
@@ -365,7 +368,7 @@ class TransformedTool(Tool):
     @classmethod
     def from_tool(
         cls,
-        tool: Tool,
+        tool: Tool | Callable[..., Any],
         name: str | None = None,
         version: str | NotSetT | None = NotSet,
         title: str | NotSetT | None = NotSet,
@@ -453,6 +456,8 @@ class TransformedTool(Tool):
                 )
             ```
         """
+        tool = Tool._ensure_tool(tool)
+
         if (
             serializer is not NotSet
             and serializer is not None
@@ -682,6 +687,7 @@ class TransformedTool(Tool):
             "type": "object",
             "properties": new_props,
             "required": list(new_required),
+            "additionalProperties": False,
         }
 
         if parent_defs:
@@ -865,6 +871,7 @@ class TransformedTool(Tool):
             "type": "object",
             "properties": merged_props,
             "required": list(final_required),
+            "additionalProperties": False,
         }
 
         if merged_defs:

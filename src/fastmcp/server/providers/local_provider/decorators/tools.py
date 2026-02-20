@@ -16,9 +16,10 @@ import mcp.types
 from mcp.types import AnyFunction, ToolAnnotations
 
 import fastmcp
+from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import AuthCheckCallable, Tool
+from fastmcp.tools.tool import Tool
 from fastmcp.utilities.types import NotSet, NotSetT
 
 if TYPE_CHECKING:
@@ -46,26 +47,38 @@ class ToolDecoratorMixin:
             from fastmcp.decorators import get_fastmcp_meta
             from fastmcp.tools.function_tool import ToolMeta
 
-            meta = get_fastmcp_meta(tool)
-            if meta is not None and isinstance(meta, ToolMeta):
-                resolved_task = meta.task if meta.task is not None else False
-                enabled = meta.enabled
+            fmeta = get_fastmcp_meta(tool)
+            if fmeta is not None and isinstance(fmeta, ToolMeta):
+                resolved_task = fmeta.task if fmeta.task is not None else False
+                enabled = fmeta.enabled
+
+                # Merge ToolMeta.app into the meta dict
+                tool_meta = fmeta.meta
+                if fmeta.app is not None:
+                    from fastmcp.server.apps import app_config_to_meta_dict
+
+                    tool_meta = dict(tool_meta) if tool_meta else {}
+                    if fmeta.app is True:
+                        tool_meta["ui"] = True
+                    else:
+                        tool_meta["ui"] = app_config_to_meta_dict(fmeta.app)
+
                 tool = Tool.from_function(
                     tool,
-                    name=meta.name,
-                    version=meta.version,
-                    title=meta.title,
-                    description=meta.description,
-                    icons=meta.icons,
-                    tags=meta.tags,
-                    output_schema=meta.output_schema,
-                    annotations=meta.annotations,
-                    meta=meta.meta,
+                    name=fmeta.name,
+                    version=fmeta.version,
+                    title=fmeta.title,
+                    description=fmeta.description,
+                    icons=fmeta.icons,
+                    tags=fmeta.tags,
+                    output_schema=fmeta.output_schema,
+                    annotations=fmeta.annotations,
+                    meta=tool_meta,
                     task=resolved_task,
-                    exclude_args=meta.exclude_args,
-                    serializer=meta.serializer,
-                    timeout=meta.timeout,
-                    auth=meta.auth,
+                    exclude_args=fmeta.exclude_args,
+                    serializer=fmeta.serializer,
+                    timeout=fmeta.timeout,
+                    auth=fmeta.auth,
                 )
             else:
                 tool = Tool.from_function(tool)
@@ -93,7 +106,7 @@ class ToolDecoratorMixin:
         task: bool | TaskConfig | None = None,
         serializer: ToolResultSerializerType | None = None,  # Deprecated
         timeout: float | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionTool: ...
 
     @overload
@@ -115,7 +128,7 @@ class ToolDecoratorMixin:
         task: bool | TaskConfig | None = None,
         serializer: ToolResultSerializerType | None = None,  # Deprecated
         timeout: float | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> Callable[[AnyFunction], FunctionTool]: ...
 
     # NOTE: This method mirrors fastmcp.tools.tool() but adds registration,
@@ -140,7 +153,7 @@ class ToolDecoratorMixin:
         task: bool | TaskConfig | None = None,
         serializer: ToolResultSerializerType | None = None,  # Deprecated
         timeout: float | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> (
         Callable[[AnyFunction], FunctionTool]
         | FunctionTool

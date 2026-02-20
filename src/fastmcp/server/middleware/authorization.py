@@ -6,12 +6,12 @@ AuthMiddleware applies auth checks globally to all components on the server.
 Example:
     ```python
     from fastmcp import FastMCP
-    from fastmcp.server.auth import require_auth, require_scopes, restrict_tag
+    from fastmcp.server.auth import require_scopes, restrict_tag
     from fastmcp.server.middleware import AuthMiddleware
 
-    # Require auth for all components
+    # Require specific scope for all components
     mcp = FastMCP(middleware=[
-        AuthMiddleware(auth=require_auth)
+        AuthMiddleware(auth=require_scopes("api"))
     ])
 
     # Tag-based: components tagged "admin" require "admin" scope
@@ -67,17 +67,14 @@ class AuthMiddleware(Middleware):
     Example:
         ```python
         from fastmcp import FastMCP
-        from fastmcp.server.auth import require_auth, require_scopes
-
-        # Require any authentication for all components
-        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_auth)])
+        from fastmcp.server.auth import require_scopes
 
         # Require specific scope for all components
         mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("api"))])
 
-        # Combined checks (AND logic)
+        # Multiple scopes (AND logic)
         mcp = FastMCP(middleware=[
-            AuthMiddleware(auth=[require_auth, require_scopes("api")])
+            AuthMiddleware(auth=require_scopes("read", "api"))
         ])
         ```
     """
@@ -105,7 +102,7 @@ class AuthMiddleware(Middleware):
         authorized_tools: list[Tool] = []
         for tool in tools:
             ctx = AuthContext(token=token, component=tool)
-            if run_auth_checks(self.auth, ctx):
+            if await run_auth_checks(self.auth, ctx):
                 authorized_tools.append(tool)
 
         return authorized_tools
@@ -146,7 +143,7 @@ class AuthMiddleware(Middleware):
         # Global auth check
         token = get_access_token()
         ctx = AuthContext(token=token, component=tool)
-        if not run_auth_checks(self.auth, ctx):
+        if not await run_auth_checks(self.auth, ctx):
             raise AuthorizationError(
                 f"Authorization failed for tool '{tool_name}': insufficient permissions"
             )
@@ -172,7 +169,7 @@ class AuthMiddleware(Middleware):
         authorized_resources: list[Resource] = []
         for resource in resources:
             ctx = AuthContext(token=token, component=resource)
-            if run_auth_checks(self.auth, ctx):
+            if await run_auth_checks(self.auth, ctx):
                 authorized_resources.append(resource)
 
         return authorized_resources
@@ -213,7 +210,7 @@ class AuthMiddleware(Middleware):
         # Global auth check
         token = get_access_token()
         ctx = AuthContext(token=token, component=component)
-        if not run_auth_checks(self.auth, ctx):
+        if not await run_auth_checks(self.auth, ctx):
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': insufficient permissions"
             )
@@ -241,7 +238,7 @@ class AuthMiddleware(Middleware):
         authorized_templates: list[ResourceTemplate] = []
         for template in templates:
             ctx = AuthContext(token=token, component=template)
-            if run_auth_checks(self.auth, ctx):
+            if await run_auth_checks(self.auth, ctx):
                 authorized_templates.append(template)
 
         return authorized_templates
@@ -265,7 +262,7 @@ class AuthMiddleware(Middleware):
         authorized_prompts: list[Prompt] = []
         for prompt in prompts:
             ctx = AuthContext(token=token, component=prompt)
-            if run_auth_checks(self.auth, ctx):
+            if await run_auth_checks(self.auth, ctx):
                 authorized_prompts.append(prompt)
 
         return authorized_prompts
@@ -304,7 +301,7 @@ class AuthMiddleware(Middleware):
         # Global auth check
         token = get_access_token()
         ctx = AuthContext(token=token, component=prompt)
-        if not run_auth_checks(self.auth, ctx):
+        if not await run_auth_checks(self.auth, ctx):
             raise AuthorizationError(
                 f"Authorization failed for prompt '{prompt_name}': insufficient permissions"
             )

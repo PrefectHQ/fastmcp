@@ -70,12 +70,20 @@ class ClientPromptsMixin:
         """
         all_prompts: list[mcp.types.Prompt] = []
         cursor: str | None = None
+        seen_cursors: set[str] = set()
 
         while True:
             result = await self.list_prompts_mcp(cursor=cursor)
             all_prompts.extend(result.prompts)
-            if result.nextCursor is None:
+            if not result.nextCursor:
                 break
+            if result.nextCursor in seen_cursors:
+                logger.warning(
+                    f"[{self.name}] Server returned duplicate pagination cursor"
+                    f" {result.nextCursor!r} for list_prompts; stopping pagination"
+                )
+                break
+            seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
 
         return all_prompts

@@ -99,9 +99,9 @@ class FileSystemSource(Source):
             logger.error("Could not load module", extra={"file": str(file_path)})
             sys.exit(1)
 
-        module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        module = importlib.util.module_from_spec(spec)
         sys.modules["server_module"] = module  # Register in sys.modules
-        spec.loader.exec_module(module)  # type: ignore[union-attr]
+        spec.loader.exec_module(module)
 
         return module
 

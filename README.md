@@ -3,9 +3,9 @@
 <!-- omit in toc -->
 
 <picture>
-  <source width="550" media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/f-watercolor-waves-dark-2.png">
-  <source width="550" media="(prefers-color-scheme: light)" srcset="docs/assets/brand/f-watercolor-waves-2.png">
-  <img width="550" alt="FastMCP Logo" src="docs/assets/brand/f-watercolor-waves-2.png">
+  <source width="550" media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/brand/f-watercolor-waves-4-dark.png">
+  <source width="550" media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/brand/f-watercolor-waves-4.png">
+  <img width="550" alt="FastMCP Logo" src="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/brand/f-watercolor-waves-2.png">
 </picture>
 
 # FastMCP 🚀
@@ -17,15 +17,15 @@
 [![Docs](https://img.shields.io/badge/docs-gofastmcp.com-blue)](https://gofastmcp.com)
 [![Discord](https://img.shields.io/badge/community-discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/uu8dJCgttd)
 [![PyPI - Version](https://img.shields.io/pypi/v/fastmcp.svg)](https://pypi.org/project/fastmcp)
-[![Tests](https://github.com/jlowin/fastmcp/actions/workflows/run-tests.yml/badge.svg)](https://github.com/jlowin/fastmcp/actions/workflows/run-tests.yml)
-[![License](https://img.shields.io/github/license/jlowin/fastmcp.svg)](https://github.com/jlowin/fastmcp/blob/main/LICENSE)
+[![Tests](https://github.com/PrefectHQ/fastmcp/actions/workflows/run-tests.yml/badge.svg)](https://github.com/PrefectHQ/fastmcp/actions/workflows/run-tests.yml)
+[![License](https://img.shields.io/github/license/PrefectHQ/fastmcp.svg)](https://github.com/PrefectHQ/fastmcp/blob/main/LICENSE)
 
-<a href="https://trendshift.io/repositories/13266" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13266" alt="jlowin%2Ffastmcp | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/13266" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13266" alt="prefecthq%2Ffastmcp | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </div>
 
 ---
 
-The [Model Context Protocol](https://modelcontextprotocol.io) (MCP) provides a standardized way to connect AI agents to tools and data. FastMCP makes it easy to build MCP applications with clean, Pythonic code:
+The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) connects LLMs to tools and data. FastMCP gives you everything you need to go from prototype to production:
 
 ```python
 from fastmcp import FastMCP
@@ -43,30 +43,43 @@ if __name__ == "__main__":
 
 ## Why FastMCP
 
-MCP lets you give agents access to your tools and data. But building an effective MCP server is harder than it looks.
+Building an effective MCP application is harder than it looks. FastMCP handles all of it. Declare a tool with a Python function, and the schema, validation, and documentation are generated automatically. Connect to a server with a URL, and transport negotiation, authentication, and protocol lifecycle are managed for you. You focus on your logic, and the MCP part just works: **with FastMCP, best practices are built in.**
 
-Give your agent too much—hundreds of tools, verbose responses—and it gets overwhelmed. Give it too little and it can't do its job. The protocol itself is complex, with layers of serialization, validation, and error handling that have nothing to do with your business logic. And the spec keeps evolving; what worked last month might already need updating.
+**That's why FastMCP is the standard framework for working with MCP.** FastMCP 1.0 was incorporated into the official MCP Python SDK in 2024. Today, the actively maintained standalone project is downloaded a million times a day, and some version of FastMCP powers 70% of MCP servers across all languages.
 
-The real challenge isn't implementing the protocol. It's delivering **the right information at the right time**.
+FastMCP has three pillars:
 
-That's the problem FastMCP solves—and why it's become the standard. FastMCP 1.0 was incorporated into the official MCP SDK in 2024. Today, the actively maintained standalone project is downloaded a million times a day, and some version of FastMCP powers 70% of MCP servers across all languages.
+<table>
+<tr>
+<td align="center" valign="top" width="33%">
+<a href="https://gofastmcp.com/servers/server">
+<img src="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/images/servers-card.png" alt="Servers" />
+<br /><strong>Servers</strong>
+</a>
+<br />Expose tools, resources, and prompts to LLMs.
+</td>
+<td align="center" valign="top" width="33%">
+<a href="https://gofastmcp.com/apps/overview">
+<img src="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/images/apps-card.png" alt="Apps" />
+<br /><strong>Apps</strong>
+</a>
+<br />Give your tools interactive UIs rendered directly in the conversation.
+</td>
+<td align="center" valign="top" width="33%">
+<a href="https://gofastmcp.com/clients/client">
+<img src="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/images/clients-card.png" alt="Clients" />
+<br /><strong>Clients</strong>
+</a>
+<br />Connect to any MCP server — local or remote, programmatic or CLI.
+</td>
+</tr>
+</table>
 
-The framework is built on three abstractions that map to the decisions you actually need to make:
+**[Servers](https://gofastmcp.com/servers/server)** wrap your Python functions into MCP-compliant tools, resources, and prompts. **[Clients](https://gofastmcp.com/clients/client)** connect to any server with full protocol support. And **[Apps](https://gofastmcp.com/apps/overview)** give your tools interactive UIs rendered directly in the conversation.
 
-- **Components** are what you expose: tools, resources, and prompts. Wrap a Python function, and FastMCP handles the schema, validation, and docs.
-- **Providers** are where components come from: decorated functions, files on disk, OpenAPI specs, remote servers—your logic can live anywhere.
-- **Transforms** shape what clients see: namespacing, filtering, authorization, versioning. The same server can present differently to different users.
-
-These compose cleanly, so complex patterns don't require complex code. And because FastMCP is opinionated about the details, like serialization, error handling, and protocol compliance, **best practices are the path of least resistance**. You focus on your logic; the MCP part just works.
-
-**Move fast and make things.**
+Ready to build? Start with the [installation guide](https://gofastmcp.com/getting-started/installation) or jump straight to the [quickstart](https://gofastmcp.com/getting-started/quickstart). When you're ready to deploy, [Prefect Horizon](https://www.prefect.io/horizon) offers free hosting for FastMCP users.
 
 ## Installation
-
-> [!Note]
-> FastMCP 3.0 is currently in beta. Install with: `pip install fastmcp==3.0.0b1`
->
-> For production systems requiring stability, pin to v2: `pip install 'fastmcp<3'`
 
 We recommend installing FastMCP with [uv](https://docs.astral.sh/uv/):
 
@@ -75,6 +88,11 @@ uv pip install fastmcp
 ```
 
 For full installation instructions, including verification and upgrading, see the [**Installation Guide**](https://gofastmcp.com/getting-started/installation).
+
+**Upgrading?** We have guides for:
+- [Upgrading from FastMCP v2](https://gofastmcp.com/getting-started/upgrading/from-fastmcp-2)
+- [Upgrading from the MCP Python SDK](https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk)
+- [Upgrading from the low-level SDK](https://gofastmcp.com/getting-started/upgrading/from-low-level-sdk)
 
 ## 📚 Documentation
 

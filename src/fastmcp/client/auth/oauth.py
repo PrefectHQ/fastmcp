@@ -143,56 +143,110 @@ class OAuth(OAuthClientProvider):
     a browser for user authorization and running a local callback server.
     """
 
+    _bound: bool
+
     def __init__(
         self,
-        mcp_url: str,
+        mcp_url: str | None = None,
         scopes: str | list[str] | None = None,
         client_name: str = "FastMCP Client",
         token_storage: AsyncKeyValue | None = None,
         additional_client_metadata: dict[str, Any] | None = None,
         callback_port: int | None = None,
         httpx_client_factory: McpHttpClientFactory | None = None,
+        # Alternative to dynamic client registration:
+        # --- Clients host a static JSON document at an HTTPS URL ---
+        client_metadata_url: str | None = None,
+        # --- OR clients provide full client information ---
+        client_id: str | None = None,
+        client_secret: str | None = None,
     ):
         """
         Initialize OAuth client provider for an MCP server.
 
         Args:
-            mcp_url: Full URL to the MCP endpoint (e.g. "http://host/mcp/sse/")
+            mcp_url: Full URL to the MCP endpoint (e.g. "http://host/mcp/sse/").
+                Optional when OAuth is passed to Client(auth=...), which provides
+                the URL automatically from the transport.
             scopes: OAuth scopes to request. Can be a
             space-separated string or a list of strings.
             client_name: Name for this client during registration
             token_storage: An AsyncKeyValue-compatible token store, tokens are stored in memory if not provided
             additional_client_metadata: Extra fields for OAuthClientMetadata
             callback_port: Fixed port for OAuth callback (default: random available port)
+            client_metadata_url: A CIMD (Client ID Metadata Document) URL. When
+                provided, this URL is used as the client_id instead of performing
+                Dynamic Client Registration. Must be an HTTPS URL with a non-root
+                path (e.g. "https://myapp.example.com/oauth/client.json").
+            client_id: Pre-registered OAuth client ID. When provided, skips dynamic
+                client registration and uses these static credentials instead.
+            client_secret: OAuth client secret (optional, used with client_id)
         """
-        # Normalize the MCP URL (strip trailing slashes for consistency)
+        # Store config for deferred binding if mcp_url not yet known
+        self._scopes = scopes
+        self._client_name = client_name
+        self._token_storage = token_storage
+        self._additional_client_metadata = additional_client_metadata
+        self._callback_port = callback_port
+        self._client_metadata_url = client_metadata_url
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._static_client_info = None
+        self.httpx_client_factory = httpx_client_factory or httpx.AsyncClient
+        self._bound = False
+
+        if mcp_url is not None:
+            self._bind(mcp_url)
+
+    def _bind(self, mcp_url: str) -> None:
+        """Bind this OAuth provider to a specific MCP server URL.
+
+        Called automatically when mcp_url is provided to __init__, or by the
+        transport when OAuth is used without an explicit URL.
+        """
+        if self._bound:
+            return
+
         mcp_url = mcp_url.rstrip("/")
 
-        # Setup OAuth client
-        self.httpx_client_factory = httpx_client_factory or httpx.AsyncClient
-        self.redirect_port = callback_port or find_available_port()
+        self.redirect_port = self._callback_port or find_available_port()
         redirect_uri = f"http://localhost:{self.redirect_port}/callback"
 
         scopes_str: str
-        if isinstance(scopes, list):
-            scopes_str = " ".join(scopes)
-        elif scopes is not None:
-            scopes_str = str(scopes)
+        if isinstance(self._scopes, list):
+            scopes_str = " ".join(self._scopes)
+        elif self._scopes is not None:
+            scopes_str = str(self._scopes)
         else:
             scopes_str = ""
 
         client_metadata = OAuthClientMetadata(
-            client_name=client_name,
+            client_name=self._client_name,
             redirect_uris=[AnyHttpUrl(redirect_uri)],
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
-            # token_endpoint_auth_method="client_secret_post",
             scope=scopes_str,
-            **(additional_client_metadata or {}),
+            **(self._additional_client_metadata or {}),
         )
 
-        # Create server-specific token storage
-        token_storage = token_storage or MemoryStore()
+        if self._client_id:
+            # Create the full static client info directly which will avoid DCR.
+            # Spread client_metadata so redirect_uris, grant_types, response_types,
+            # scope, etc. are included — servers may validate these fields.
+            metadata = client_metadata.model_dump(exclude_none=True)
+            # Default token_endpoint_auth_method based on whether a secret is
+            # provided, unless the caller already set it via additional_client_metadata.
+            if "token_endpoint_auth_method" not in metadata:
+                metadata["token_endpoint_auth_method"] = (
+                    "client_secret_post" if self._client_secret else "none"
+                )
+            self._static_client_info = OAuthClientInformationFull(
+                client_id=self._client_id,
+                client_secret=self._client_secret,
+                **metadata,
+            )
+
+        token_storage = self._token_storage or MemoryStore()
 
         if isinstance(token_storage, MemoryStore):
             from warnings import warn
@@ -209,24 +263,27 @@ class OAuth(OAuthClientProvider):
             async_key_value=token_storage, server_url=mcp_url
         )
 
-        # Store full MCP URL for use in callback_handler display
         self.mcp_url = mcp_url
 
-        # Initialize parent class with full URL for proper OAuth metadata discovery
         super().__init__(
             server_url=mcp_url,
             client_metadata=client_metadata,
             storage=self.token_storage_adapter,
             redirect_handler=self.redirect_handler,
             callback_handler=self.callback_handler,
+            client_metadata_url=self._client_metadata_url,
         )
+
+        self._bound = True
 
     async def _initialize(self) -> None:
         """Load stored tokens and client info, properly setting token expiry."""
-        # Call parent's _initialize to load tokens and client info
         await super()._initialize()
 
-        # If tokens were loaded and have expires_in, update the context's token_expiry_time
+        if self._static_client_info is not None:
+            self.context.client_info = self._static_client_info
+            await self.token_storage_adapter.set_client_info(self._static_client_info)
+
         if self.context.current_tokens and self.context.current_tokens.expires_in:
             self.context.update_token_expiry(self.context.current_tokens)
 
@@ -298,6 +355,11 @@ class OAuth(OAuthClientProvider):
         If the OAuth flow fails due to invalid/stale client credentials,
         clears the cache and retries once with fresh registration.
         """
+        if not self._bound:
+            raise RuntimeError(
+                "OAuth provider has no server URL. Either pass mcp_url to OAuth() "
+                "or use it with Client(auth=...) which provides the URL automatically."
+            )
         try:
             # First attempt with potentially cached credentials
             async with aclosing(super().async_auth_flow(request)) as gen:
@@ -311,6 +373,15 @@ class OAuth(OAuthClientProvider):
                         break
 
         except ClientNotFoundError:
+            # Static credentials are fixed — retrying won't help. Surface the
+            # error so the user can correct their client_id / client_secret.
+            if self._static_client_info is not None:
+                raise ClientNotFoundError(
+                    "OAuth server rejected the static client credentials. "
+                    "Verify that the client_id (and client_secret, if provided) "
+                    "are correct and that the client is registered with the server."
+                ) from None
+
             logger.debug(
                 "OAuth client not found on server, clearing cache and retrying..."
             )

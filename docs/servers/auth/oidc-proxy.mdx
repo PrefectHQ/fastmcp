@@ -232,6 +232,22 @@ OAuth scopes are configured with `required_scopes` to automatically request the 
 
 Dynamic clients created by the proxy will automatically include these scopes in their authorization requests.
 
+## CIMD Support
+
+<VersionBadge version="3.0.0" />
+
+The OIDC proxy inherits full CIMD (Client ID Metadata Document) support from `OAuthProxy`. Clients can use HTTPS URLs as their `client_id` instead of registering dynamically, and the proxy will fetch and validate their metadata document.
+
+See the [OAuth Proxy CIMD documentation](/servers/auth/oauth-proxy#cimd-support) for complete details on how CIMD works, including private key JWT authentication and security considerations.
+
+The CIMD-related parameters available on `OIDCProxy` are:
+
+<Card icon="code" title="CIMD Parameters">
+<ParamField body="enable_cimd" type="bool" default="True">
+  Whether to accept CIMD URLs as client identifiers.
+</ParamField>
+</Card>
+
 ## Production Configuration
 
 For production deployments, load sensitive credentials from environment variables:

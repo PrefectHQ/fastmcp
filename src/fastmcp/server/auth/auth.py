@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse
 
 from mcp.server.auth.handlers.token import TokenErrorResponse
@@ -9,7 +9,13 @@ from mcp.server.auth.handlers.token import TokenHandler as _SDKTokenHandler
 from mcp.server.auth.json_response import PydanticJSONResponse
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
-from mcp.server.auth.middleware.client_auth import ClientAuthenticator
+from mcp.server.auth.middleware.client_auth import (
+    AuthenticationError,
+    ClientAuthenticator,
+)
+from mcp.server.auth.middleware.client_auth import (
+    ClientAuthenticator as _SDKClientAuthenticator,
+)
 from mcp.server.auth.provider import (
     AccessToken as _SDKAccessToken,
 )
@@ -30,12 +36,17 @@ from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
 )
+from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyHttpUrl, Field
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.requests import Request
 from starlette.routing import Route
 
 from fastmcp.utilities.logging import get_logger
+
+if TYPE_CHECKING:
+    from fastmcp.server.auth.cimd import CIMDClientManager
 
 logger = get_logger(__name__)
 
@@ -106,6 +117,91 @@ class TokenHandler(_SDKTokenHandler):
                 pass  # Not JSON or unexpected format, return as-is
 
         return response
+
+
+# Expected assertion type for private_key_jwt
+JWT_BEARER_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+
+
+class PrivateKeyJWTClientAuthenticator(_SDKClientAuthenticator):
+    """Client authenticator with private_key_jwt support for CIMD clients.
+
+    Extends the SDK's ClientAuthenticator to add support for the `private_key_jwt`
+    authentication method per RFC 7523. This is required for CIMD (Client ID Metadata
+    Document) clients that use asymmetric keys for authentication.
+
+    The authenticator:
+    1. Delegates to SDK for standard methods (client_secret_basic, client_secret_post, none)
+    2. Adds private_key_jwt handling for CIMD clients
+    3. Validates JWT assertions against client's JWKS
+    """
+
+    def __init__(
+        self,
+        provider: OAuthAuthorizationServerProvider[Any, Any, Any],
+        cimd_manager: CIMDClientManager,
+        token_endpoint_url: str,
+    ):
+        """Initialize the authenticator.
+
+        Args:
+            provider: OAuth provider for client lookups
+            cimd_manager: CIMD manager for private_key_jwt validation
+            token_endpoint_url: Token endpoint URL for audience validation
+        """
+        super().__init__(provider)
+        self._cimd_manager = cimd_manager
+        self._token_endpoint_url = token_endpoint_url
+
+    async def authenticate_request(
+        self, request: Request
+    ) -> OAuthClientInformationFull:
+        """Authenticate a client from an HTTP request.
+
+        Extends SDK authentication to support private_key_jwt for CIMD clients.
+        Delegates to SDK for client_secret_basic (Authorization header) and
+        client_secret_post (form body) authentication.
+        """
+        form_data = await request.form()
+        client_id = form_data.get("client_id")
+
+        # If client_id is not in form data, delegate to SDK
+        # This handles client_secret_basic which sends credentials in Authorization header
+        if not client_id:
+            return await super().authenticate_request(request)
+
+        client = await self.provider.get_client(str(client_id))
+        if not client:
+            raise AuthenticationError("Invalid client_id")
+
+        # Handle private_key_jwt authentication for CIMD clients
+        if client.token_endpoint_auth_method == "private_key_jwt":
+            # Validate assertion parameters
+            assertion_type = form_data.get("client_assertion_type")
+            assertion = form_data.get("client_assertion")
+
+            if assertion_type != JWT_BEARER_ASSERTION_TYPE:
+                raise AuthenticationError(
+                    f"Invalid client_assertion_type: expected {JWT_BEARER_ASSERTION_TYPE}"
+                )
+
+            if not assertion or not isinstance(assertion, str):
+                raise AuthenticationError("Missing client_assertion")
+
+            # Validate the JWT assertion using CIMD manager
+            try:
+                await self._cimd_manager.validate_private_key_jwt(
+                    assertion=assertion,
+                    client=client,
+                    token_endpoint=self._token_endpoint_url,
+                )
+            except ValueError as e:
+                raise AuthenticationError(f"Invalid client assertion: {e}") from e
+
+            return client
+
+        # Delegate to SDK for other authentication methods
+        return await super().authenticate_request(request)
 
 
 class AuthProvider(TokenVerifierProtocol):
@@ -274,6 +370,17 @@ class TokenVerifier(AuthProvider):
         """
         super().__init__(base_url=base_url, required_scopes=required_scopes)
 
+    @property
+    def scopes_supported(self) -> list[str]:
+        """Scopes to advertise in OAuth metadata.
+
+        Defaults to required_scopes. Override in subclasses when the
+        advertised scopes differ from the validation scopes (e.g., Azure AD
+        where tokens contain short-form scopes but clients request full URI
+        scopes).
+        """
+        return self.required_scopes or []
+
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a bearer token and return access info if valid."""
         raise NotImplementedError("Subclasses must implement verify_token")
@@ -299,6 +406,7 @@ class RemoteAuthProvider(AuthProvider):
         token_verifier: TokenVerifier,
         authorization_servers: list[AnyHttpUrl],
         base_url: AnyHttpUrl | str,
+        scopes_supported: list[str] | None = None,
         resource_name: str | None = None,
         resource_documentation: AnyHttpUrl | None = None,
     ):
@@ -308,6 +416,10 @@ class RemoteAuthProvider(AuthProvider):
             token_verifier: TokenVerifier instance for token validation
             authorization_servers: List of authorization servers that issue valid tokens
             base_url: The base URL of this server
+            scopes_supported: Scopes to advertise in OAuth metadata. If None,
+                uses the token verifier's scopes_supported property. Use this
+                when the scopes clients request differ from the scopes that
+                appear in tokens (e.g., Azure AD full URI scopes vs short-form).
             resource_name: Optional name for the protected resource
             resource_documentation: Optional documentation URL for the protected resource
         """
@@ -317,6 +429,7 @@ class RemoteAuthProvider(AuthProvider):
         )
         self.token_verifier = token_verifier
         self.authorization_servers = authorization_servers
+        self._scopes_supported = scopes_supported
         self.resource_name = resource_name
         self.resource_documentation = resource_documentation
 
@@ -343,7 +456,11 @@ class RemoteAuthProvider(AuthProvider):
                 create_protected_resource_routes(
                     resource_url=resource_url,
                     authorization_servers=self.authorization_servers,
-                    scopes_supported=self.token_verifier.required_scopes,
+                    scopes_supported=(
+                        self._scopes_supported
+                        if self._scopes_supported is not None
+                        else self.token_verifier.scopes_supported
+                    ),
                     resource_name=self.resource_name,
                     resource_documentation=self.resource_documentation,
                 )

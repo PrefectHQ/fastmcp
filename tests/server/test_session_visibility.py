@@ -618,3 +618,151 @@ class TestConcurrentSessionIsolation:
             assert results[f"non_activated_{i}"] is False, (
                 f"Non-activated session {i} should NOT see premium tool"
             )
+
+
+class TestSessionVisibilityResetBug:
+    """Regression tests for #3034: visibility marks leak via shared component mutation."""
+
+    async def test_disable_then_reset_restores_tools(self):
+        """After disable + reset within the same session, tools should reappear."""
+        from fastmcp import Client
+
+        mcp = FastMCP("test")
+
+        @mcp.tool(tags={"system"})
+        def my_tool() -> str:
+            return "hello"
+
+        @mcp.tool(tags={"env"})
+        async def enter_env(ctx: Context) -> str:
+            await ctx.disable_components(tags={"system"})
+            return "entered"
+
+        @mcp.tool(tags={"env"})
+        async def exit_env(ctx: Context) -> str:
+            await ctx.reset_visibility()
+            return "exited"
+
+        async with Client(mcp) as client:
+            # Tool visible initially
+            tools = await client.list_tools()
+            assert any(t.name == "my_tool" for t in tools)
+
+            # Disable it
+            await client.call_tool("enter_env", {})
+            tools = await client.list_tools()
+            assert not any(t.name == "my_tool" for t in tools)
+
+            # Reset — tool should come back
+            await client.call_tool("exit_env", {})
+            tools = await client.list_tools()
+            assert any(t.name == "my_tool" for t in tools), (
+                "Tool should be visible again after reset_visibility"
+            )
+
+    async def test_disable_reset_loop(self):
+        """Repeated disable/reset cycles should work every time (the exact bug from #3034)."""
+        from fastmcp import Client
+
+        mcp = FastMCP("test")
+
+        @mcp.tool(tags={"system"})
+        def create_project() -> str:
+            return "created"
+
+        @mcp.tool(tags={"env"})
+        async def enter_env(ctx: Context) -> str:
+            await ctx.disable_components(tags={"system"})
+            return "entered"
+
+        @mcp.tool(tags={"env"})
+        async def exit_env(ctx: Context) -> str:
+            await ctx.reset_visibility()
+            return "exited"
+
+        async with Client(mcp) as client:
+            for i in range(3):
+                # create_project should be visible
+                tools = await client.list_tools()
+                assert any(t.name == "create_project" for t in tools), (
+                    f"Iteration {i}: create_project should be visible before enter_env"
+                )
+
+                # Enter env — disables system tools
+                await client.call_tool("enter_env", {})
+                tools = await client.list_tools()
+                assert not any(t.name == "create_project" for t in tools), (
+                    f"Iteration {i}: create_project should be hidden after enter_env"
+                )
+
+                # Exit env — reset
+                await client.call_tool("exit_env", {})
+
+    async def test_session_disable_does_not_leak_to_concurrent_session(self):
+        """Disabling tools in one session must not affect a concurrent session."""
+        from fastmcp import Client
+
+        mcp = FastMCP("test")
+
+        @mcp.tool(tags={"system"})
+        def shared_tool() -> str:
+            return "shared"
+
+        @mcp.tool
+        async def disable_system(ctx: Context) -> str:
+            await ctx.disable_components(tags={"system"})
+            return "disabled"
+
+        session_b_sees_tool = False
+        ready = anyio.Event()
+        check_done = anyio.Event()
+
+        async def session_a():
+            async with Client(mcp) as client:
+                await client.call_tool("disable_system", {})
+                ready.set()
+                await check_done.wait()
+
+        async def session_b():
+            nonlocal session_b_sees_tool
+            await ready.wait()
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+                session_b_sees_tool = any(t.name == "shared_tool" for t in tools)
+                check_done.set()
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(session_a)
+            tg.start_soon(session_b)
+
+        assert session_b_sees_tool is True, (
+            "Session B should still see shared_tool despite Session A disabling it"
+        )
+
+    async def test_session_disable_does_not_leak_to_sequential_session(self):
+        """Disabling tools in one session must not affect a later session."""
+        from fastmcp import Client
+
+        mcp = FastMCP("test")
+
+        @mcp.tool(tags={"system"})
+        def shared_tool() -> str:
+            return "shared"
+
+        @mcp.tool
+        async def disable_system(ctx: Context) -> str:
+            await ctx.disable_components(tags={"system"})
+            return "disabled"
+
+        # Session A disables the tool (no reset)
+        async with Client(mcp) as client_a:
+            await client_a.call_tool("disable_system", {})
+            tools = await client_a.list_tools()
+            assert not any(t.name == "shared_tool" for t in tools)
+
+        # Session B should see it fresh
+        async with Client(mcp) as client_b:
+            tools = await client_b.list_tools()
+            assert any(t.name == "shared_tool" for t in tools), (
+                "New session should see shared_tool regardless of previous session"
+            )

@@ -2,6 +2,7 @@
 
 from unittest.mock import Mock
 
+from key_value.aio.stores.memory import MemoryStore
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 
@@ -76,6 +77,7 @@ class TestErrorPageRendering:
             ),
             base_url="http://localhost:8000",
             jwt_signing_key="test-signing-key",
+            client_storage=MemoryStore(),
         )
 
         # Mock a request with an error from the IdP

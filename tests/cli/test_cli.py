@@ -39,7 +39,8 @@ class TestMainCLI:
 class TestVersionCommand:
     """Test the version command."""
 
-    def test_version_command_execution(self):
+    @patch("fastmcp.cli.cli.check_for_newer_version", return_value=None)
+    def test_version_command_execution(self, mock_check):
         """Test that version command executes properly."""
         # The version command should execute without raising SystemExit
         command, bound, _ = app.parse_args(["version"])
@@ -90,10 +91,10 @@ class TestVersionCommand:
 class TestDevCommand:
     """Test the dev command."""
 
-    def test_dev_command_parsing(self):
-        """Test that dev command can be parsed with various options."""
+    def test_dev_inspector_command_parsing(self):
+        """Test that dev inspector command can be parsed with various options."""
         # Test basic parsing
-        command, bound, _ = app.parse_args(["dev", "server.py"])
+        command, bound, _ = app.parse_args(["dev", "inspector", "server.py"])
         assert command is not None
         assert bound.arguments["server_spec"] == "server.py"
 
@@ -101,6 +102,7 @@ class TestDevCommand:
         command, bound, _ = app.parse_args(
             [
                 "dev",
+                "inspector",
                 "server.py",
                 "--with",
                 "package1",
@@ -114,11 +116,12 @@ class TestDevCommand:
         assert bound.arguments["inspector_version"] == "1.0.0"
         assert bound.arguments["ui_port"] == 3000
 
-    def test_dev_command_parsing_with_new_options(self):
-        """Test dev command parsing with new uv options."""
+    def test_dev_inspector_command_parsing_with_new_options(self):
+        """Test dev inspector command parsing with new uv options."""
         command, bound, _ = app.parse_args(
             [
                 "dev",
+                "inspector",
                 "server.py",
                 "--python",
                 "3.10",

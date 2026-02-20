@@ -14,15 +14,18 @@ import mcp.types
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
-from fastmcp.server.dependencies import _current_docket, get_context
+from fastmcp.server.dependencies import _current_docket, get_access_token, get_context
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.tasks.keys import build_task_key
+from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from fastmcp.prompts.prompt import Prompt
     from fastmcp.resources.resource import Resource
     from fastmcp.resources.template import ResourceTemplate
     from fastmcp.tools.tool import Tool
+
+logger = get_logger(__name__)
 
 # Redis mapping TTL buffer: Add 15 minutes to Docket's execution_ttl
 TASK_MAPPING_TTL_BUFFER_SECONDS = 15 * 60
@@ -96,26 +99,55 @@ async def submit_to_docket(
         f"fastmcp:task:{session_id}:{server_task_id}:poll_interval"
     )
     poll_interval_ms = int(component.task_config.poll_interval.total_seconds() * 1000)
+
+    # Snapshot the current access token (if any) for background task access (#3095)
+    access_token = get_access_token()
+    access_token_key = docket.key(
+        f"fastmcp:task:{session_id}:{server_task_id}:access_token"
+    )
+
     async with docket.redis() as redis:
         await redis.set(task_meta_key, task_key, ex=ttl_seconds)
         await redis.set(created_at_key, created_at.isoformat(), ex=ttl_seconds)
         await redis.set(poll_interval_key, str(poll_interval_ms), ex=ttl_seconds)
+        if access_token is not None:
+            await redis.set(
+                access_token_key, access_token.model_dump_json(), ex=ttl_seconds
+            )
 
-    # Send notifications/tasks/created per SEP-1686 (mandatory)
-    # Send BEFORE queuing to avoid race where task completes before notification
-    notification = mcp.types.JSONRPCNotification(
-        jsonrpc="2.0",
-        method="notifications/tasks/created",
-        params={},  # Empty params per spec
-        _meta={  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
-            "modelcontextprotocol.io/related-task": {
+    # Register session for Context access in background workers (SEP-1686)
+    # This enables elicitation/sampling from background tasks via weakref
+    # Skip for "internal" sessions (programmatic calls without MCP session)
+    if session_id != "internal":
+        from fastmcp.server.dependencies import register_task_session
+
+        register_task_session(session_id, ctx.session)
+
+    # Send an initial tasks/status notification before queueing.
+    # This guarantees clients can observe task creation immediately.
+    notification = mcp.types.TaskStatusNotification.model_validate(
+        {
+            "method": "notifications/tasks/status",
+            "params": {
                 "taskId": server_task_id,
-            }
-        },
+                "status": "working",
+                "statusMessage": "Task submitted",
+                "createdAt": created_at,
+                "lastUpdatedAt": created_at,
+                "ttl": ttl_ms,
+                "pollInterval": poll_interval_ms,
+            },
+            "_meta": {
+                "io.modelcontextprotocol/related-task": {
+                    "taskId": server_task_id,
+                }
+            },
+        }
     )
+    server_notification = mcp.types.ServerNotification(notification)
     with suppress(Exception):
         # Don't let notification failures break task creation
-        await ctx.session.send_notification(notification)  # type: ignore[arg-type]
+        await ctx.session.send_notification(server_notification)
 
     # Queue function to Docket by key (result storage via execution_ttl)
     # Use component.add_to_docket() which handles calling conventions
@@ -142,6 +174,34 @@ async def submit_to_docket(
                 docket,
                 poll_interval_ms,
             )
+
+    # Start notification subscriber for distributed elicitation (idempotent)
+    # This enables ctx.elicit() to work when workers run in separate processes
+    # Subscriber forwards notifications from Redis queue to client session
+    from fastmcp.server.tasks.notifications import (
+        ensure_subscriber_running,
+        stop_subscriber,
+    )
+
+    try:
+        await ensure_subscriber_running(session_id, ctx.session, docket, ctx.fastmcp)
+
+        # Register cleanup callback on session exit (once per session)
+        # This ensures subscriber is stopped when the session disconnects
+        if (
+            hasattr(ctx.session, "_exit_stack")
+            and ctx.session._exit_stack is not None
+            and not getattr(ctx.session, "_notification_cleanup_registered", False)
+        ):
+
+            async def _cleanup_subscriber() -> None:
+                await stop_subscriber(session_id)
+
+            ctx.session._exit_stack.push_async_callback(_cleanup_subscriber)
+            ctx.session._notification_cleanup_registered = True  # type: ignore[attr-defined]
+    except Exception as e:
+        # Non-fatal: elicitation will still work via polling fallback
+        logger.debug("Failed to start notification subscriber: %s", e)
 
     # Return CreateTaskResult with proper Task object
     # Tasks MUST begin in "working" status per SEP-1686 final spec (line 381)

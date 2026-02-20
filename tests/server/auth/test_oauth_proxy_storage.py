@@ -1,14 +1,15 @@
 """Tests for OAuth proxy with persistent storage."""
 
+import tempfile
+import warnings
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from diskcache.core import tempfile
 from inline_snapshot import snapshot
 from key_value.aio.protocols import AsyncKeyValue
-from key_value.aio.stores.disk import MultiDiskStore
+from key_value.aio.stores.filetree import FileTreeStore
 from key_value.aio.stores.memory import MemoryStore
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
@@ -29,12 +30,12 @@ class TestOAuthProxyStorage:
         return verifier
 
     @pytest.fixture
-    async def temp_storage(self) -> AsyncGenerator[MultiDiskStore, None]:
+    async def temp_storage(self) -> AsyncGenerator[FileTreeStore, None]:
         """Create file-based storage for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            disk_store = MultiDiskStore(base_directory=Path(temp_dir))
-            yield disk_store
-            await disk_store.close()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                yield FileTreeStore(data_directory=Path(temp_dir))
 
     @pytest.fixture
     def memory_storage(self) -> MemoryStore:
@@ -112,7 +113,7 @@ class TestOAuthProxyStorage:
     async def test_proxy_dcr_client_redirect_validation(
         self, jwt_verifier: TokenVerifier, temp_storage: AsyncKeyValue
     ):
-        """Test that ProxyDCRClient is created with redirect URI patterns."""
+        """Test that OAuthProxyClient is created with redirect URI patterns."""
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
             upstream_token_endpoint="https://github.com/login/oauth/access_token",
@@ -132,11 +133,11 @@ class TestOAuthProxyStorage:
         )
         await proxy.register_client(client_info)
 
-        # Get client back - should be ProxyDCRClient
+        # Get client back - should be OAuthProxyClient
         client = await proxy.get_client("test-proxy-client")
         assert client is not None
 
-        # ProxyDCRClient should validate dynamic localhost ports
+        # OAuthProxyClient should validate dynamic localhost ports
         validated = client.validate_redirect_uri(
             AnyUrl("http://localhost:12345/callback")
         )
@@ -205,5 +206,7 @@ class TestOAuthProxyStorage:
                 "client_id_issued_at": None,
                 "client_secret_expires_at": None,
                 "allowed_redirect_uri_patterns": None,
+                "cimd_document": None,
+                "cimd_fetched_at": None,
             }
         )

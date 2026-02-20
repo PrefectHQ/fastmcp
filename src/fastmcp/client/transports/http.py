@@ -76,11 +76,17 @@ class StreamableHttpTransport(ClientTransport):
         self._get_session_id_cb: Callable[[], str | None] | None = None
 
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
+        resolved: httpx.Auth | None
         if auth == "oauth":
-            auth = OAuth(self.url, httpx_client_factory=self.httpx_client_factory)
+            resolved = OAuth(self.url, httpx_client_factory=self.httpx_client_factory)
+        elif isinstance(auth, OAuth):
+            auth._bind(self.url)
+            resolved = auth
         elif isinstance(auth, str):
-            auth = BearerAuth(auth)
-        self.auth = auth
+            resolved = BearerAuth(auth)
+        else:
+            resolved = auth
+        self.auth: httpx.Auth | None = resolved
 
     @contextlib.asynccontextmanager
     async def connect_session(

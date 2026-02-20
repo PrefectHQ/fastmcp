@@ -4,7 +4,7 @@ An MCP App server that generates QR codes with an interactive viewer UI. Ported 
 
 ## What it demonstrates
 
-- Linking a tool to a `ui://` resource via `ToolUI`
+- Linking a tool to a `ui://` resource via `AppConfig`
 - Serving embedded HTML with the `@modelcontextprotocol/ext-apps` JS SDK from CDN
 - Declaring CSP resource domains via `ResourceCSP`
 - Returning `ImageContent` (base64 PNG) from a tool

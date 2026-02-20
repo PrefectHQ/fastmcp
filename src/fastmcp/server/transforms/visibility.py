@@ -171,23 +171,23 @@ class Visibility(Transform):
         return self.tags is None or bool(component.tags & self.tags)
 
     def _mark_component(self, component: T) -> T:
-        """Set visibility state in component metadata if rule matches."""
+        """Set visibility state in component metadata if rule matches.
+
+        Returns a copy of the component with updated metadata to avoid
+        mutating shared objects cached in providers.
+        """
         if not self._matches(component):
             return component
 
-        # Create new dicts to avoid mutating shared dicts
-        # (e.g., when Tool.from_tool shares the meta dict between tools)
         if component.meta is None:
-            component.meta = {
-                _FASTMCP_KEY: {_INTERNAL_KEY: {"visibility": self._enabled}}
-            }
+            new_meta = {_FASTMCP_KEY: {_INTERNAL_KEY: {"visibility": self._enabled}}}
         else:
             old_fastmcp = component.meta.get(_FASTMCP_KEY, {})
             old_internal = old_fastmcp.get(_INTERNAL_KEY, {})
             new_internal = {**old_internal, "visibility": self._enabled}
             new_fastmcp = {**old_fastmcp, _INTERNAL_KEY: new_internal}
-            component.meta = {**component.meta, _FASTMCP_KEY: new_fastmcp}
-        return component
+            new_meta = {**component.meta, _FASTMCP_KEY: new_fastmcp}
+        return component.model_copy(update={"meta": new_meta})
 
     # -------------------------------------------------------------------------
     # Transform methods (mark components, don't filter)

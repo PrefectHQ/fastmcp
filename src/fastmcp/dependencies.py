@@ -26,6 +26,7 @@ from fastmcp.server.dependencies import (
     CurrentWorker,
     Progress,
     ProgressLike,
+    TokenClaim,
 )
 
 __all__ = [
@@ -39,4 +40,5 @@ __all__ = [
     "Depends",
     "Progress",
     "ProgressLike",
+    "TokenClaim",
 ]

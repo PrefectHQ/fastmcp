@@ -17,8 +17,8 @@ import fastmcp
 from fastmcp.resources.function_resource import resource as standalone_resource
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
+from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.tools.tool import AuthCheckCallable
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider
@@ -117,7 +117,7 @@ class ResourceDecoratorMixin:
         annotations: Annotations | dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> Callable[[AnyFunction], Resource | ResourceTemplate | AnyFunction]:
         """Decorator to register a function as a resource.
 

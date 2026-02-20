@@ -175,6 +175,12 @@ By default, FastMCP converts Python functions into MCP tools by inspecting the f
 
 <Note>
 FastMCP automatically dereferences `$ref` entries in tool schemas to ensure compatibility with MCP clients that don't fully support JSON Schema references (e.g., VS Code Copilot, Claude Desktop). This means complex Pydantic models with shared types are inlined in the schema rather than using `$defs` references.
+
+Dereferencing happens at serve-time via middleware, so your schemas are stored with `$ref` intact and only inlined when sent to clients. If you know your clients handle `$ref` correctly and prefer smaller schemas, you can opt out:
+
+```python
+mcp = FastMCP("my-server", dereference_schemas=False)
+```
 </Note>
 
 ### Type Annotations
@@ -738,7 +744,7 @@ def get_config() -> ToolResult:
 ```
 
 <Tip>
-For reusable serialization across multiple tools, create a wrapper decorator that returns `ToolResult`. This lets you compose serializers with other behaviors (logging, validation, caching) and keeps the serialization visible at the tool definition. See [examples/custom_tool_serializer_decorator.py](https://github.com/jlowin/fastmcp/blob/main/examples/custom_tool_serializer_decorator.py) for a complete implementation.
+For reusable serialization across multiple tools, create a wrapper decorator that returns `ToolResult`. This lets you compose serializers with other behaviors (logging, validation, caching) and keeps the serialization visible at the tool definition. See [examples/custom_tool_serializer_decorator.py](https://github.com/PrefectHQ/fastmcp/blob/main/examples/custom_tool_serializer_decorator.py) for a complete implementation.
 </Tip>
 
 ## Error Handling
@@ -969,7 +975,7 @@ def example_tool() -> str:
 mcp.add_tool(example_tool)              # Sends tools/list_changed notification
 mcp.disable(keys={"tool:example_tool"}) # Sends tools/list_changed notification
 mcp.enable(keys={"tool:example_tool"})  # Sends tools/list_changed notification
-mcp.remove_tool("example_tool")         # Sends tools/list_changed notification
+mcp.local_provider.remove_tool("example_tool")  # Sends tools/list_changed notification
 ```
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
@@ -1054,7 +1060,7 @@ The duplicate behavior options are:
 
 <VersionBadge version="2.3.4" />
 
-You can dynamically remove tools from a server using the `remove_tool` method:
+You can dynamically remove tools from a server through its [local provider](/servers/providers/local):
 
 ```python
 from fastmcp import FastMCP
@@ -1066,7 +1072,7 @@ def calculate_sum(a: int, b: int) -> int:
     """Add two numbers together."""
     return a + b
 
-mcp.remove_tool("calculate_sum")
+mcp.local_provider.remove_tool("calculate_sum")
 ```
 
 ## Versioning

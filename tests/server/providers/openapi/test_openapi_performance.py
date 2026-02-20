@@ -5,6 +5,7 @@ and don't regress to the slow performance we had before optimization.
 """
 
 import time
+from typing import Any
 
 import httpx
 import pytest
@@ -72,7 +73,7 @@ class TestOpenAPIPerformance:
         for performance testing in CI environments.
         """
         # Create a medium-sized synthetic schema
-        schema = {
+        schema: dict[str, Any] = {
             "openapi": "3.0.0",
             "info": {"title": "Test API", "version": "1.0.0"},
             "paths": {},
@@ -81,7 +82,7 @@ class TestOpenAPIPerformance:
         # Generate multiple paths to create a reasonably sized schema
         for i in range(100):
             path = f"/test/{i}"
-            schema["paths"][path] = {  # type: ignore[index]
+            schema["paths"][path] = {
                 "get": {
                     "operationId": f"test_{i}",
                     "parameters": [

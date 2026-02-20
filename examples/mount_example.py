@@ -71,9 +71,9 @@ app.mount(server=news_app, prefix="news")
 async def get_server_details():
     """Print information about mounted resources."""
     # Print available tools
-    tools = await app.get_tools()
+    tools = await app.list_tools()
     print(f"\nAvailable tools ({len(tools)}):")
-    for _, tool in tools.items():
+    for tool in tools:
         print(f"  - {tool.name}: {tool.description}")
 
     # Print available resources
@@ -82,20 +82,20 @@ async def get_server_details():
     # Distinguish between native and imported resources
     # Native resources would be those directly in the main app (not prefixed)
 
-    resources = await app.get_resources()
+    resources = await app.list_resources()
 
     native_resources = [
-        uri
-        for uri, _ in resources.items()
-        if urlparse(uri).netloc not in ("weather", "news")
+        str(r.uri)
+        for r in resources
+        if urlparse(str(r.uri)).netloc not in ("weather", "news")
     ]
 
     # Imported resources - categorized by source app
     weather_resources = [
-        uri for uri, _ in resources.items() if urlparse(uri).netloc == "weather"
+        str(r.uri) for r in resources if urlparse(str(r.uri)).netloc == "weather"
     ]
     news_resources = [
-        uri for uri, _ in resources.items() if urlparse(uri).netloc == "news"
+        str(r.uri) for r in resources if urlparse(str(r.uri)).netloc == "news"
     ]
 
     print(f"  - Native app resources: {native_resources}")

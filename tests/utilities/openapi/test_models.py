@@ -4,8 +4,10 @@ import pytest
 from inline_snapshot import snapshot
 
 from fastmcp.utilities.openapi.models import (
+    HttpMethod,
     HTTPRoute,
     ParameterInfo,
+    ParameterLocation,
     RequestBodyInfo,
     ResponseInfo,
 )
@@ -51,7 +53,7 @@ class TestParameterInfo:
         assert param.style == "deepObject"
 
     @pytest.mark.parametrize("location", ["path", "query", "header", "cookie"])
-    def test_valid_parameter_locations(self, location):
+    def test_valid_parameter_locations(self, location: ParameterLocation):
         """Test that all valid parameter locations are accepted."""
         param = ParameterInfo(
             name="test",
@@ -286,7 +288,7 @@ class TestHTTPRoute:
     @pytest.mark.parametrize(
         "method", ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
     )
-    def test_valid_http_methods(self, method):
+    def test_valid_http_methods(self, method: HttpMethod):
         """Test that all valid HTTP methods are accepted."""
         route = HTTPRoute(
             path="/test",

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import AuthorizationCode, AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
@@ -30,6 +31,7 @@ class TestOAuthProxyE2E:
             token_verifier=MockTokenVerifier(),
             base_url="http://localhost:8000",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
         # Create FastMCP server with proxy
@@ -84,6 +86,7 @@ class TestOAuthProxyE2E:
             token_verifier=MockTokenVerifier(),
             base_url="http://localhost:8000",
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
         # Initialize JWT issuer before token operations
@@ -201,6 +204,7 @@ class TestOAuthProxyE2E:
             base_url="http://localhost:8000",
             forward_pkce=True,  # Enable PKCE forwarding
             jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
         )
 
         client = OAuthClientInformationFull(

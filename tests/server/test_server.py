@@ -1,4 +1,5 @@
 import os
+import warnings
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from textwrap import dedent
@@ -7,6 +8,7 @@ from unittest import mock
 from mcp.types import TextContent, TextResourceContents
 
 from fastmcp import Client, FastMCP
+from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import FunctionTool
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.tests import temporary_settings
@@ -116,6 +118,80 @@ class TestServerDelegation:
         assert any(t.name == "local_tool" for t in tools)
 
 
+class TestLocalProviderProperty:
+    """Test the public local_provider property."""
+
+    async def test_local_provider_returns_local_provider(self):
+        mcp = FastMCP()
+        assert isinstance(mcp.local_provider, LocalProvider)
+        assert mcp.local_provider is mcp._local_provider
+
+    async def test_remove_tool_via_local_provider(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def my_tool() -> str:
+            return "result"
+
+        assert await mcp.local_provider.get_tool("my_tool") is not None
+        mcp.local_provider.remove_tool("my_tool")
+        tools = await mcp.list_tools()
+        assert not any(t.name == "my_tool" for t in tools)
+
+    async def test_remove_resource_via_local_provider(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://test")
+        def my_resource() -> str:
+            return "data"
+
+        mcp.local_provider.remove_resource("resource://test")
+        resources = await mcp.list_resources()
+        assert not any(r.uri == "resource://test" for r in resources)
+
+    async def test_remove_prompt_via_local_provider(self):
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def my_prompt() -> str:
+            return "hello"
+
+        mcp.local_provider.remove_prompt("my_prompt")
+        prompts = await mcp.list_prompts()
+        assert not any(p.name == "my_prompt" for p in prompts)
+
+
+class TestRemoveToolDeprecation:
+    async def test_remove_tool_emits_deprecation_warning(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def my_tool() -> str:
+            return "result"
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            mcp.remove_tool("my_tool")
+
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "local_provider" in str(w[0].message)
+
+    async def test_remove_tool_still_works(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def my_tool() -> str:
+            return "result"
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            mcp.remove_tool("my_tool")
+
+        tools = await mcp.list_tools()
+        assert not any(t.name == "my_tool" for t in tools)
+
+
 class TestResourcePrefixMounting:
     """Test resource prefixing in mounted servers."""
 
@@ -211,9 +287,9 @@ class TestAbstractCollectionTypes:
             "test",
             middleware=(),  # Empty tuple
             tools=(Tool.from_function(dummy_tool),),  # Tuple of tools
-            include_tags={"tag1", "tag2"},  # Set
-            exclude_tags={"tag3"},  # Set
         )
+        mcp.enable(tags={"tag1", "tag2"}, only=True)
+        mcp.disable(tags={"tag3"})
         assert mcp is not None
         assert mcp.name == "test"
         assert isinstance(mcp.middleware, list)  # Should be converted to list

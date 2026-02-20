@@ -32,6 +32,8 @@ def create_consent_html(
     server_website_url: str | None = None,
     client_website_url: str | None = None,
     csp_policy: str | None = None,
+    is_cimd_client: bool = False,
+    cimd_domain: str | None = None,
 ) -> str:
     """Create a styled HTML consent page for OAuth authorization requests.
 
@@ -59,6 +61,17 @@ def create_consent_html(
             <p>The application <strong>{client_display}</strong> wants to access the MCP server <strong>{server_display}</strong>. Please ensure you recognize the callback address below.</p>
         </div>
     """
+
+    # Build CIMD verified domain badge if applicable
+    cimd_badge = ""
+    if is_cimd_client and cimd_domain:
+        cimd_domain_escaped = html_module.escape(cimd_domain)
+        cimd_badge = f"""
+        <div class="cimd-badge">
+            <span class="cimd-check">&#x2713;</span>
+            Verified domain: <strong>{cimd_domain_escaped}</strong>
+        </div>
+        """
 
     # Build redirect URI section (yellow box, centered)
     redirect_uri_escaped = html_module.escape(redirect_uri)
@@ -144,6 +157,7 @@ def create_consent_html(
             {create_logo(icon_url=server_icon_url, alt_text=server_name or "FastMCP")}
             <h1>Application Access Request</h1>
             {intro_box}
+            {cimd_badge}
             {redirect_section}
             {advanced_details}
             {form}
@@ -152,6 +166,23 @@ def create_consent_html(
     """
 
     # Additional styles needed for this page
+    cimd_badge_styles = """
+        .cimd-badge {
+            background: #ecfdf5;
+            border: 1px solid #6ee7b7;
+            border-radius: 8px;
+            padding: 8px 16px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            color: #065f46;
+            text-align: center;
+        }
+        .cimd-check {
+            color: #059669;
+            font-weight: bold;
+            margin-right: 4px;
+        }
+    """
     additional_styles = (
         INFO_BOX_STYLES
         + REDIRECT_SECTION_STYLES
@@ -159,6 +190,7 @@ def create_consent_html(
         + DETAIL_BOX_STYLES
         + BUTTON_STYLES
         + TOOLTIP_STYLES
+        + cimd_badge_styles
     )
 
     # Determine CSP policy to use

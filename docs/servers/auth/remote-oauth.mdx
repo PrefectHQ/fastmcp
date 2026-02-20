@@ -127,6 +127,21 @@ This configuration creates a server that accepts tokens issued by `auth.yourcomp
 
 The `authorization_servers` list tells MCP clients which identity providers you trust. The `base_url` identifies your server in OAuth metadata, enabling proper token audience validation. **Important**: The `base_url` should point to your server base URL - for example, if your MCP server is accessible at `https://api.yourcompany.com/mcp`, use `https://api.yourcompany.com` as the base URL.
 
+### Overriding Advertised Scopes
+
+Some identity providers use different scope formats for authorization requests versus token claims. For example, Azure AD requires clients to request full URI scopes like `api://client-id/read`, but the token's `scp` claim contains just `read`. The `scopes_supported` parameter lets you advertise the full-form scopes in metadata while validating against the short form:
+
+```python
+auth = RemoteAuthProvider(
+    token_verifier=token_verifier,
+    authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+    base_url="https://api.example.com",
+    scopes_supported=["api://my-api/read", "api://my-api/write"],
+)
+```
+
+When not set, `scopes_supported` defaults to the token verifier's `required_scopes`. For Azure AD specifically, see the [AzureJWTVerifier](/integrations/azure#token-verification-only-managed-identity) which handles this automatically.
+
 ### Custom Endpoints
 
 You can extend `RemoteAuthProvider` to add additional endpoints beyond the standard OAuth protected resource metadata. These don't have to be OAuth-specific - you can add any endpoints your authentication integration requires.

@@ -246,6 +246,7 @@ class TestMountedServerVersioning:
 
         # Calling the v1.0 wrapper should execute v1.0's logic
         result = await v1_tool.run({"x": 5})
+        assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "50"  # 5 * 10, not 5 * 100
 
     async def test_mounted_resource_wrapper_reads_correct_version(self):

@@ -24,7 +24,9 @@ from mcp.types import (
 )
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
@@ -35,10 +37,6 @@ from fastmcp.utilities.types import (
     NotSet,
     NotSetT,
 )
-
-# Runtime type alias for auth checks to avoid circular imports with authorization.py
-# AuthCheck is Callable[[AuthContext], bool] but we use Any to avoid the import
-AuthCheckCallable: TypeAlias = Callable[[Any], bool]
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -140,13 +138,13 @@ class Tool(FastMCPComponent):
         Field(description="Task execution configuration (SEP-1686)"),
     ] = None
     serializer: Annotated[
-        ToolResultSerializerType | None,
+        SkipJsonSchema[ToolResultSerializerType | None],
         Field(
             description="Deprecated. Return ToolResult from your tools for full control over serialization."
         ),
     ] = None
     auth: Annotated[
-        AuthCheckCallable | list[AuthCheckCallable] | None,
+        SkipJsonSchema[AuthCheck | list[AuthCheck] | None],
         Field(description="Authorization checks for this tool", exclude=True),
     ] = None
     timeout: Annotated[
@@ -206,7 +204,7 @@ class Tool(FastMCPComponent):
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
-        auth: AuthCheckCallable | list[AuthCheckCallable] | None = None,
+        auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
         from fastmcp.tools.function_tool import FunctionTool
@@ -365,7 +363,7 @@ class Tool(FastMCPComponent):
     @classmethod
     def from_tool(
         cls,
-        tool: Tool,
+        tool: Tool | Callable[..., Any],
         *,
         name: str | None = None,
         title: str | NotSetT | None = NotSet,
@@ -380,6 +378,8 @@ class Tool(FastMCPComponent):
     ) -> TransformedTool:
         from fastmcp.tools.tool_transform import TransformedTool
 
+        tool = cls._ensure_tool(tool)
+
         return TransformedTool.from_tool(
             tool=tool,
             transform_fn=transform_fn,
@@ -393,6 +393,21 @@ class Tool(FastMCPComponent):
             serializer=serializer,
             meta=meta,
         )
+
+    @classmethod
+    def _ensure_tool(cls, tool: Tool | Callable[..., Any]) -> Tool:
+        """Coerce a callable into a Tool, respecting @tool decorator metadata."""
+        if isinstance(tool, Tool):
+            return tool
+
+        from fastmcp.decorators import get_fastmcp_meta
+        from fastmcp.tools.function_tool import FunctionTool, ToolMeta
+
+        fmeta = get_fastmcp_meta(tool)
+        if isinstance(fmeta, ToolMeta):
+            return FunctionTool.from_function(tool, metadata=fmeta)
+
+        return cls.from_function(tool)
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {

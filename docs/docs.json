@@ -40,7 +40,7 @@
   "footer": {
     "socials": {
       "discord": "https://discord.gg/uu8dJCgttd",
-      "github": "https://github.com/jlowin/fastmcp",
+      "github": "https://github.com/PrefectHQ/fastmcp",
       "website": "https://www.prefect.io",
       "x": "https://x.com/fastmcp"
     }
@@ -72,7 +72,7 @@
       }
     ],
     "primary": {
-      "href": "https://github.com/jlowin/fastmcp",
+      "href": "https://github.com/PrefectHQ/fastmcp",
       "type": "github"
     }
   },
@@ -88,9 +88,18 @@
                 "pages": [
                   "getting-started/welcome",
                   "getting-started/installation",
-                  "development/upgrade-guide",
                   "getting-started/quickstart",
-                  "updates"
+                  {
+                    "collapsed": true,
+                    "group": "Upgrade",
+                    "icon": "up",
+                    "tag": "NEW",
+                    "pages": [
+                      "getting-started/upgrading/from-fastmcp-2",
+                      "getting-started/upgrading/from-mcp-sdk",
+                      "getting-started/upgrading/from-low-level-sdk"
+                    ]
+                  }
                 ]
               },
               {
@@ -98,6 +107,7 @@
                 "pages": [
                   "servers/server",
                   {
+                    "collapsed": true,
                     "group": "Core Components",
                     "icon": "toolbox",
                     "pages": [
@@ -108,7 +118,9 @@
                     ]
                   },
                   {
+                    "collapsed": true,
                     "group": "Features",
+                    "tag": "NEW",
                     "icon": "stars",
                     "pages": [
                       "servers/tasks",
@@ -127,6 +139,36 @@
                     ]
                   },
                   {
+                    "collapsed": true,
+                    "group": "Providers",
+                    "tag": "NEW",
+                    "icon": "layer-group",
+                    "pages": [
+                      "servers/providers/overview",
+                      "servers/providers/local",
+                      "servers/providers/filesystem",
+                      "servers/providers/proxy",
+                      "servers/providers/skills",
+                      "servers/providers/custom",
+                      "servers/providers/mounting"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
+                    "group": "Transforms",
+                    "tag": "NEW",
+                    "icon": "wand-magic-sparkles",
+                    "pages": [
+                      "servers/transforms/transforms",
+                      "servers/transforms/namespace",
+                      "servers/transforms/tool-transformation",
+                      "servers/visibility",
+                      "servers/transforms/resources-as-tools",
+                      "servers/transforms/prompts-as-tools"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
                     "group": "Authentication",
                     "icon": "key",
                     "pages": [
@@ -138,30 +180,27 @@
                       "servers/auth/full-oauth-server"
                     ]
                   },
-                  "servers/authorization"
+                  "servers/authorization",
+                  {
+                    "collapsed": true,
+                    "group": "Deployment",
+                    "icon": "rocket",
+                    "pages": [
+                      "deployment/running-server",
+                      "deployment/http",
+                      "deployment/prefect-horizon",
+                      "deployment/server-configuration",
+                      "patterns/cli",
+                      "patterns/testing"
+                    ]
+                  }
                 ]
               },
               {
-                "group": "MCP Providers",
+                "group": "Apps",
                 "pages": [
-                  "servers/providers/overview",
-                  "servers/providers/local",
-                  "servers/providers/filesystem",
-                  "servers/providers/proxy",
-                  "servers/providers/skills",
-                  "servers/providers/custom",
-                  "servers/providers/mounting"
-                ]
-              },
-              {
-                "group": "MCP Transforms",
-                "pages": [
-                  "servers/transforms/transforms",
-                  "servers/transforms/namespace",
-                  "servers/transforms/tool-transformation",
-                  "servers/visibility",
-                  "servers/transforms/resources-as-tools",
-                  "servers/transforms/prompts-as-tools"
+                  "apps/overview",
+                  "apps/low-level"
                 ]
               },
               {
@@ -170,6 +209,17 @@
                   "clients/client",
                   "clients/transports",
                   {
+                    "collapsed": true,
+                    "group": "CLI",
+                    "tag": "NEW",
+                    "icon": "terminal",
+                    "pages": [
+                      "clients/cli",
+                      "clients/generate-cli"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
                     "group": "Core Operations",
                     "icon": "toolbox",
                     "pages": [
@@ -179,6 +229,7 @@
                     ]
                   },
                   {
+                    "collapsed": true,
                     "group": "Handlers",
                     "icon": "hand",
                     "pages": [
@@ -192,24 +243,16 @@
                     ]
                   },
                   {
+                    "collapsed": true,
                     "group": "Authentication",
+                    "tag": "NEW",
                     "icon": "key",
                     "pages": [
                       "clients/auth/oauth",
+                      "clients/auth/cimd",
                       "clients/auth/bearer"
                     ]
                   }
-                ]
-              },
-              {
-                "group": "Deployment",
-                "pages": [
-                  "deployment/running-server",
-                  "deployment/http",
-                  "deployment/prefect-horizon",
-                  "deployment/server-configuration",
-                  "patterns/cli",
-                  "patterns/testing"
                 ]
               },
               {
@@ -238,6 +281,7 @@
                     ]
                   },
                   {
+                    "collapsed": true,
                     "group": "Web Frameworks",
                     "icon": "code",
                     "pages": [
@@ -277,6 +321,7 @@
                   "development/contributing",
                   "development/tests",
                   "development/releases",
+                  "updates",
                   "changelog",
                   "patterns/contrib"
                 ]
@@ -300,7 +345,12 @@
                     "group": "fastmcp.cli",
                     "pages": [
                       "python-sdk/fastmcp-cli-__init__",
+                      "python-sdk/fastmcp-cli-auth",
+                      "python-sdk/fastmcp-cli-cimd",
                       "python-sdk/fastmcp-cli-cli",
+                      "python-sdk/fastmcp-cli-client",
+                      "python-sdk/fastmcp-cli-discovery",
+                      "python-sdk/fastmcp-cli-generate",
                       {
                         "group": "install",
                         "pages": [
@@ -311,7 +361,8 @@
                           "python-sdk/fastmcp-cli-install-gemini_cli",
                           "python-sdk/fastmcp-cli-install-goose",
                           "python-sdk/fastmcp-cli-install-mcp_json",
-                          "python-sdk/fastmcp-cli-install-shared"
+                          "python-sdk/fastmcp-cli-install-shared",
+                          "python-sdk/fastmcp-cli-install-stdio"
                         ]
                       },
                       "python-sdk/fastmcp-cli-run",
@@ -400,12 +451,14 @@
                     "group": "fastmcp.server",
                     "pages": [
                       "python-sdk/fastmcp-server-__init__",
+                      "python-sdk/fastmcp-server-apps",
                       {
                         "group": "auth",
                         "pages": [
                           "python-sdk/fastmcp-server-auth-__init__",
                           "python-sdk/fastmcp-server-auth-auth",
                           "python-sdk/fastmcp-server-auth-authorization",
+                          "python-sdk/fastmcp-server-auth-cimd",
                           "python-sdk/fastmcp-server-auth-jwt_issuer",
                           "python-sdk/fastmcp-server-auth-middleware",
                           {
@@ -440,7 +493,8 @@
                               "python-sdk/fastmcp-server-auth-providers-workos"
                             ]
                           },
-                          "python-sdk/fastmcp-server-auth-redirect_validation"
+                          "python-sdk/fastmcp-server-auth-redirect_validation",
+                          "python-sdk/fastmcp-server-auth-ssrf"
                         ]
                       },
                       "python-sdk/fastmcp-server-context",
@@ -456,11 +510,13 @@
                           "python-sdk/fastmcp-server-middleware-__init__",
                           "python-sdk/fastmcp-server-middleware-authorization",
                           "python-sdk/fastmcp-server-middleware-caching",
+                          "python-sdk/fastmcp-server-middleware-dereference",
                           "python-sdk/fastmcp-server-middleware-error_handling",
                           "python-sdk/fastmcp-server-middleware-logging",
                           "python-sdk/fastmcp-server-middleware-middleware",
                           "python-sdk/fastmcp-server-middleware-ping",
                           "python-sdk/fastmcp-server-middleware-rate_limiting",
+                          "python-sdk/fastmcp-server-middleware-response_limiting",
                           "python-sdk/fastmcp-server-middleware-timing",
                           "python-sdk/fastmcp-server-middleware-tool_injection"
                         ]
@@ -547,8 +603,10 @@
                           "python-sdk/fastmcp-server-tasks-__init__",
                           "python-sdk/fastmcp-server-tasks-capabilities",
                           "python-sdk/fastmcp-server-tasks-config",
+                          "python-sdk/fastmcp-server-tasks-elicitation",
                           "python-sdk/fastmcp-server-tasks-handlers",
                           "python-sdk/fastmcp-server-tasks-keys",
+                          "python-sdk/fastmcp-server-tasks-notifications",
                           "python-sdk/fastmcp-server-tasks-requests",
                           "python-sdk/fastmcp-server-tasks-routing",
                           "python-sdk/fastmcp-server-tasks-subscriptions"
@@ -652,7 +710,7 @@
             "icon": "code"
           }
         ],
-        "version": "v3.0.0 (beta 1)"
+        "version": "v3"
       },
       {
         "dropdowns": [
@@ -849,7 +907,7 @@
             "icon": "book"
           }
         ],
-        "version": "v2.14.3"
+        "version": "v2.14.5"
       }
     ]
   },
@@ -893,6 +951,18 @@
     {
       "destination": "/servers/transforms/transforms",
       "source": "/patterns/tool-transformation"
+    },
+    {
+      "destination": "/getting-started/upgrading/from-fastmcp-2",
+      "source": "/development/upgrade-guide"
+    },
+    {
+      "destination": "/getting-started/upgrading/from-mcp-sdk",
+      "source": "/getting-started/upgrading-from-sdk"
+    },
+    {
+      "destination": "/getting-started/upgrading/from-low-level-sdk",
+      "source": "/getting-started/low-level-sdk"
     }
   ],
   "search": {
@@ -909,6 +979,6 @@
   "theme": "almond",
   "thumbnails": {
     "appearance": "light",
-    "background": "/assets/brand/thumbnail-background-2.png"
+    "background": "/assets/brand/thumbnail-background-4.jpeg"
   }
 }

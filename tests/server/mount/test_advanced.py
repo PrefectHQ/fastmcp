@@ -53,8 +53,8 @@ class TestDynamicChanges:
         tools = await main_app.list_tools()
         assert any(t.name == "sub_temp_tool" for t in tools)
 
-        # Remove the tool from sub_app using public API
-        sub_app.remove_tool("temp_tool")
+        # Remove the tool from sub_app
+        sub_app.local_provider.remove_tool("temp_tool")
 
         # The tool should no longer be accessible
         tools = await main_app.list_tools()
@@ -153,7 +153,7 @@ class TestCustomRouteForwarding:
 class TestDeeplyNestedMount:
     """Test deeply nested mount scenarios (3+ levels deep).
 
-    This tests the fix for https://github.com/jlowin/fastmcp/issues/2583
+    This tests the fix for https://github.com/PrefectHQ/fastmcp/issues/2583
     where tools/resources/prompts mounted more than 2 levels deep would fail
     to invoke even though they were correctly listed.
     """

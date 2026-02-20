@@ -127,6 +127,7 @@ class ScalekitProvider(RemoteAuthProvider):
                 jwks_uri=f"{self.environment_url}/keys",
                 issuer=self.environment_url,
                 algorithm="RS256",
+                audience=self.resource_id,
                 required_scopes=self.required_scopes or None,
             )
         else:

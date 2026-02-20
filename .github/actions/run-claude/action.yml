@@ -1,0 +1,95 @@
+# Composite Action for running Claude Code Action
+#
+# Wraps anthropics/claude-code-action with MCP server configuration.
+# Template based on elastic/ai-github-actions base action.
+#
+# Usage:
+#   - uses: ./.github/actions/run-claude
+#     with:
+#       prompt: "Your prompt here"
+#       claude-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+#       github-token: ${{ steps.marvin-token.outputs.token }}
+#       allowed-tools: "Edit,Read,Write,Bash(*),mcp__github__add_issue_comment"
+#
+name: "Run Claude"
+description: "Run Claude Code with MCP servers"
+author: "FastMCP"
+
+branding:
+  icon: "cpu"
+  color: "orange"
+
+inputs:
+  prompt:
+    description: "Prompt to pass to Claude"
+    required: true
+
+  claude-oauth-token:
+    description: "Claude Code OAuth token for authentication"
+    required: true
+
+  github-token:
+    description: "GitHub token for Claude to operate with"
+    required: true
+
+  allowed-tools:
+    description: "Comma-separated list of allowed tools (e.g. Edit,Write,Bash(npm test))"
+    required: false
+    default: ""
+
+  model:
+    description: "Model to use for Claude"
+    required: false
+    default: "claude-opus-4-6"
+
+  allowed-bots:
+    description: "Allowed bot usernames, or '*' for all bots"
+    required: false
+    default: ""
+
+  track-progress:
+    description: "Whether Claude should track progress"
+    required: false
+    default: "true"
+
+  mcp-servers:
+    description: "MCP server configuration JSON"
+    required: false
+    default: '{"mcpServers":{"agents-md-generator":{"type":"http","url":"https://agents-md-generator.fastmcp.app/mcp"},"public-code-search":{"type":"http","url":"https://public-code-search.fastmcp.app/mcp"}}}'
+
+  trigger-phrase:
+    description: "Trigger phrase (for mention workflows)"
+    required: false
+    default: "/marvin"
+
+outputs:
+  conclusion:
+    description: "The conclusion of the Claude Code run"
+    value: ${{ steps.claude.outputs.conclusion }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Clean up stale Claude locks
+      shell: bash
+      run: rm -rf ~/.claude/.locks ~/.local/state/claude/locks || true
+
+    - name: Run Claude Code
+      id: claude
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      uses: anthropics/claude-code-action@v1
+      with:
+        github_token: ${{ inputs.github-token }}
+        claude_code_oauth_token: ${{ inputs.claude-oauth-token }}
+        bot_name: "Marvin Context Protocol"
+        trigger_phrase: ${{ inputs.trigger-phrase }}
+        allowed_bots: ${{ inputs.allowed-bots }}
+        track_progress: ${{ inputs.track-progress }}
+        prompt: ${{ inputs.prompt }}
+        claude_args: |
+          ${{ (inputs.allowed-tools != '' || inputs.extra-allowed-tools != '') && format('--allowedTools {0}{1}', inputs.allowed-tools, inputs.extra-allowed-tools != '' && format(',{0}', inputs.extra-allowed-tools) || '') || '' }}
+          ${{ inputs.mcp-servers != '' && format('--mcp-config ''{0}''', inputs.mcp-servers) || '' }}
+          --model ${{ inputs.model }}
+        settings: |
+          {"model": "${{ inputs.model }}"}

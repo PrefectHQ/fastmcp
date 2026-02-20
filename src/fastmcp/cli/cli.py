@@ -19,6 +19,9 @@ from rich.table import Table
 
 import fastmcp
 from fastmcp.cli import run as run_module
+from fastmcp.cli.auth import auth_app
+from fastmcp.cli.client import call_command, discover_command, list_command
+from fastmcp.cli.generate import generate_cli_command
 from fastmcp.cli.install import install_app
 from fastmcp.cli.tasks import tasks_app
 from fastmcp.utilities.cli import is_already_in_uv_subprocess, load_and_merge_config
@@ -131,8 +134,12 @@ def version(
             console.print("[dim]Run: pip install --upgrade fastmcp[/dim]")
 
 
-@app.command
-async def dev(
+# Create dev subcommand group
+dev_app = cyclopts.App(name="dev", help="Development tools for MCP servers")
+
+
+@dev_app.command
+async def inspector(
     server_spec: str | None = None,
     *,
     with_editable: Annotated[
@@ -943,6 +950,9 @@ async def prepare(
         sys.exit(1)
 
 
+# Add dev subcommand group
+app.command(dev_app)
+
 # Add project subcommand group
 app.command(project_app)
 
@@ -951,6 +961,15 @@ app.command(install_app)
 
 # Add tasks subcommand group
 app.command(tasks_app)
+
+# Add client query commands
+app.command(list_command, name="list")
+app.command(call_command, name="call")
+app.command(discover_command, name="discover")
+app.command(generate_cli_command, name="generate-cli")
+
+# Add auth subcommand group (includes CIMD commands)
+app.command(auth_app)
 
 
 if __name__ == "__main__":

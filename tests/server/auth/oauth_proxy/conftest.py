@@ -288,6 +288,8 @@ def jwt_verifier():
 @pytest.fixture
 def oauth_proxy(jwt_verifier):
     """Create a standard OAuthProxy instance for testing."""
+    from key_value.aio.stores.memory import MemoryStore
+
     return OAuthProxy(
         upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
         upstream_token_endpoint="https://github.com/login/oauth/access_token",
@@ -297,6 +299,7 @@ def oauth_proxy(jwt_verifier):
         base_url="https://myserver.com",
         redirect_path="/auth/callback",
         jwt_signing_key="test-secret",
+        client_storage=MemoryStore(),
     )
 
 

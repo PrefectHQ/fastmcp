@@ -31,7 +31,13 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client
 from cryptography.fernet import Fernet
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1CollectionSanitizationStrategy,
+    FileTreeV1KeySanitizationStrategy,
+)
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from mcp.server.auth.handlers.metadata import MetadataHandler
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
@@ -40,6 +46,7 @@ from mcp.server.auth.provider import (
     RefreshToken,
     TokenError,
 )
+from mcp.server.auth.routes import build_metadata, cors_middleware
 from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
@@ -52,7 +59,13 @@ from starlette.routing import Route
 from typing_extensions import override
 
 from fastmcp import settings
-from fastmcp.server.auth.auth import OAuthProvider, TokenVerifier
+from fastmcp.server.auth.auth import (
+    OAuthProvider,
+    PrivateKeyJWTClientAuthenticator,
+    TokenHandler,
+    TokenVerifier,
+)
+from fastmcp.server.auth.cimd import CIMDClientManager
 from fastmcp.server.auth.handlers.authorize import AuthorizationHandler
 from fastmcp.server.auth.jwt_issuer import (
     JWTIssuer,
@@ -248,6 +261,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         consent_csp_policy: str | None = None,
         # Token expiry fallback
         fallback_access_token_expiry_seconds: int | None = None,
+        # CIMD (Client ID Metadata Document) support
+        enable_cimd: bool = True,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -282,7 +297,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             extra_token_params: Additional parameters to forward to the upstream token endpoint.
                 Useful for provider-specific parameters during token exchange.
             client_storage: Storage backend for OAuth state (client registrations, tokens).
-                If None, an encrypted DiskStore will be created in the data directory.
+                If None, an encrypted file store will be created in the data directory.
             jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes).
                 If bytes are provided, they will be used as-is.
                 If a string is provided, it will be derived into a 32-byte key using PBKDF2 (1.2M iterations).
@@ -302,6 +317,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 defaults: 1 hour if a refresh token is available (since we can refresh),
                 or 1 year if no refresh token (for API-key-style tokens like GitHub OAuth Apps).
                 Set explicitly to override these defaults.
+            enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
+                client IDs. When True, clients can authenticate using HTTPS URLs as client
+                IDs, with metadata fetched from the URL. Supports private_key_jwt auth.
         """
 
         # Always enable DCR since we implement it locally for MCP clients
@@ -400,18 +418,35 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # JWTIssuer will be created in set_mcp_path() with correct audience
         self._jwt_issuer: JWTIssuer | None = None
 
-        # If the user does not provide a store, we will provide an encrypted disk store
+        # If the user does not provide a store, we will provide an encrypted file store.
+        # The storage directory is derived from the encryption key so that different
+        # keys get isolated directories (e.g. two servers on the same machine with
+        # different keys won't collide). Decryption errors are treated as cache misses
+        # rather than hard failures, so key rotation just causes re-registration.
         if client_storage is None:
-            # Import lazily to avoid sqlite3 dependency when not using OAuthProxy
-            from key_value.aio.stores.disk import DiskStore
-
             storage_encryption_key = derive_jwt_key(
                 high_entropy_material=jwt_signing_key.decode(),
                 salt="fastmcp-storage-encryption-key",
             )
+
+            key_fingerprint = hashlib.sha256(storage_encryption_key).hexdigest()[:12]
+            storage_dir = settings.home / "oauth-proxy" / key_fingerprint
+            storage_dir.mkdir(parents=True, exist_ok=True)
+
+            file_store = FileTreeStore(
+                data_directory=storage_dir,
+                key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(
+                    storage_dir
+                ),
+                collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(
+                    storage_dir
+                ),
+            )
+
             client_storage = FernetEncryptionWrapper(
-                key_value=DiskStore(directory=settings.home / "oauth-proxy"),
+                key_value=file_store,
                 fernet=Fernet(key=storage_encryption_key),
+                raise_on_decryption_error=False,
             )
 
         self._client_storage: AsyncKeyValue = client_storage
@@ -483,6 +518,15 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         # Use the provided token validator
         self._token_validator: TokenVerifier = token_verifier
+
+        # CIMD (Client ID Metadata Document) support
+        self._cimd_manager: CIMDClientManager | None = None
+        if enable_cimd:
+            self._cimd_manager = CIMDClientManager(
+                enable_cimd=True,
+                default_scope=self._default_scope_str,
+                allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
+            )
 
         logger.debug(
             "Initialized OAuth proxy provider with upstream server %s",
@@ -559,15 +603,43 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         provided to the DCR client during registration, not the upstream client ID.
 
         For unregistered clients, returns None (which will raise an error in the SDK).
+        CIMD clients (URL-based client IDs) are looked up and cached automatically.
         """
         # Load from storage
-        if not (client := await self._client_store.get(key=client_id)):
-            return None
+        client = await self._client_store.get(key=client_id)
 
-        if client.allowed_redirect_uri_patterns is None:
-            client.allowed_redirect_uri_patterns = self._allowed_client_redirect_uris
+        if client is not None:
+            if client.allowed_redirect_uri_patterns is None:
+                client.allowed_redirect_uri_patterns = (
+                    self._allowed_client_redirect_uris
+                )
 
-        return client
+            # Refresh CIMD clients using HTTP cache-aware fetcher.
+            if self._cimd_manager is not None and client.cimd_document is not None:
+                try:
+                    refreshed = await self._cimd_manager.get_client(client_id)
+                    if refreshed is not None:
+                        await self._client_store.put(key=client_id, value=refreshed)
+                        return refreshed
+                except Exception as e:
+                    logger.debug(
+                        "CIMD refresh failed for %s, using cached client: %s",
+                        client_id,
+                        e,
+                    )
+
+            return client
+
+        # Client not in storage — try CIMD lookup for URL-based client IDs
+        if self._cimd_manager is not None and self._cimd_manager.is_cimd_client_id(
+            client_id
+        ):
+            cimd_client = await self._cimd_manager.get_client(client_id)
+            if cimd_client is not None:
+                await self._client_store.put(key=client_id, value=cimd_client)
+                return cimd_client
+
+        return None
 
     @override
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
@@ -1437,6 +1509,61 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         methods=["GET", "POST"],
                     )
                 )
+            elif (
+                self._cimd_manager is not None
+                and isinstance(route, Route)
+                and route.path == "/token"
+                and route.methods is not None
+                and "POST" in route.methods
+            ):
+                # Replace the token endpoint authenticator with one that supports
+                # private_key_jwt for CIMD clients
+                token_endpoint_url = f"{self.base_url}/token"
+                cimd_authenticator = PrivateKeyJWTClientAuthenticator(
+                    provider=self,
+                    cimd_manager=self._cimd_manager,
+                    token_endpoint_url=token_endpoint_url,
+                )
+                token_handler = TokenHandler(
+                    provider=self, client_authenticator=cimd_authenticator
+                )
+                custom_routes.append(
+                    Route(
+                        path="/token",
+                        endpoint=cors_middleware(
+                            token_handler.handle, ["POST", "OPTIONS"]
+                        ),
+                        methods=["POST", "OPTIONS"],
+                    )
+                )
+            elif (
+                self._cimd_manager is not None
+                and isinstance(route, Route)
+                and route.path.startswith("/.well-known/oauth-authorization-server")
+            ):
+                client_registration_options = (
+                    self.client_registration_options or ClientRegistrationOptions()
+                )
+                revocation_options = self.revocation_options or RevocationOptions()
+                metadata = build_metadata(
+                    self.base_url,  # ty: ignore[invalid-argument-type]
+                    self.service_documentation_url,
+                    client_registration_options,
+                    revocation_options,
+                )
+                metadata.client_id_metadata_document_supported = True
+                handler = MetadataHandler(metadata)
+                methods = route.methods or ["GET", "OPTIONS"]
+
+                custom_routes.append(
+                    Route(
+                        path=route.path,
+                        endpoint=cors_middleware(handler.handle, ["GET", "OPTIONS"]),
+                        methods=methods,
+                        name=route.name,
+                        include_in_schema=route.include_in_schema,
+                    )
+                )
             else:
                 # Keep all other standard OAuth routes unchanged
                 custom_routes.append(route)
@@ -1512,6 +1639,38 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     error_message="Invalid or expired authorization transaction. Please try authenticating again.",
                 )
                 return HTMLResponse(content=html_content, status_code=400)
+            # Verify consent binding cookie to prevent confused deputy attacks.
+            # When consent is enabled, the browser that approved consent receives
+            # a signed cookie. A different browser (e.g., a victim lured to the
+            # IdP URL) won't have this cookie and will be rejected.
+            if self._require_authorization_consent:
+                consent_token = transaction_model.consent_token
+                if not consent_token:
+                    logger.error("Transaction %s missing consent_token", txn_id)
+                    html_content = create_error_html(
+                        error_title="Authorization Error",
+                        error_message="Invalid authorization flow. Please try authenticating again.",
+                    )
+                    return HTMLResponse(content=html_content, status_code=403)
+
+                if not self._verify_consent_binding_cookie(
+                    request, txn_id, consent_token
+                ):
+                    logger.warning(
+                        "Consent binding cookie missing or invalid for transaction %s "
+                        "(possible confused deputy attack)",
+                        txn_id,
+                    )
+                    html_content = create_error_html(
+                        error_title="Authorization Error",
+                        error_message=(
+                            "Authorization session mismatch. This can happen if you "
+                            "followed a link from another person or your session expired. "
+                            "Please try authenticating again."
+                        ),
+                    )
+                    return HTMLResponse(content=html_content, status_code=403)
+
             transaction = transaction_model.model_dump()
 
             # Exchange IdP code for tokens (server-side)
@@ -1624,7 +1783,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
             logger.debug(f"Forwarding to client callback for transaction {txn_id}")
 
-            return RedirectResponse(url=client_callback_url, status_code=302)
+            response = RedirectResponse(url=client_callback_url, status_code=302)
+            self._clear_consent_binding_cookie(request, response, txn_id)
+            return response
 
         except Exception as e:
             logger.error("Error in IdP callback handler: %s", e, exc_info=True)

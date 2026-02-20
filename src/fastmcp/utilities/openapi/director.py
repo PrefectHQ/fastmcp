@@ -166,12 +166,18 @@ class RequestDirector:
         body = None
         if body_props:
             # If we have body properties, construct the body object
-            if route.request_body and route.request_body.content_schema:
-                # Check if the request body expects an object with properties
+            if (
+                route.request_body
+                and route.request_body.content_schema
+                and len(route.request_body.content_schema) > 0
+            ):
                 content_type = next(iter(route.request_body.content_schema))
                 body_schema = route.request_body.content_schema[content_type]
 
-                if body_schema.get("type") == "object":
+                if (
+                    isinstance(body_schema, dict)
+                    and body_schema.get("type") == "object"
+                ):
                     body = body_props
                 elif len(body_props) == 1:
                     # If body schema is not an object and we have exactly one property,
