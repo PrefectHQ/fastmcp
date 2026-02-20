@@ -94,17 +94,23 @@ jobs:
               }
             }
 
-      - name: Add potential-duplicate label if bot commented
+      - name: Add potential-duplicate label if bot commented in this run
         env:
           GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
         run: |
           ISSUE=${{ github.event.issue.number || inputs.issue_number }}
-          # Check if a bot comment with the duplicate marker was just posted
-          HAS_COMMENT=$(gh api "repos/${{ github.repository }}/issues/${ISSUE}/comments" \
-            --jq '[.[] | select(.user.type == "Bot" and (.body | test("possible duplicate issues"; "i")))] | length')
-          if [ "$HAS_COMMENT" -gt 0 ]; then
+          # Only match bot comments created in the last 10 minutes (this run)
+          CUTOFF=$(date -u -d '10 minutes ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+            || date -u -v-10M '+%Y-%m-%dT%H:%M:%SZ')
+          HAS_RECENT=$(gh api "repos/${{ github.repository }}/issues/${ISSUE}/comments" \
+            --jq "[.[] | select(
+              .user.type == \"Bot\" and
+              (.body | test(\"possible duplicate issues\"; \"i\")) and
+              .created_at >= \"${CUTOFF}\"
+            )] | length")
+          if [ "$HAS_RECENT" -gt 0 ]; then
             gh issue edit "$ISSUE" --add-label "potential-duplicate" -R "${{ github.repository }}"
             echo "Added potential-duplicate label to #${ISSUE}"
           else
-            echo "No duplicate comment found, skipping label"
+            echo "No recent duplicate comment found, skipping label"
           fi
