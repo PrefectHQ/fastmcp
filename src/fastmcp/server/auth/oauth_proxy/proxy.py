@@ -1429,6 +1429,21 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 logger.debug("Upstream token validation failed")
                 return None
 
+            # When the verification token differs from the access token
+            # (e.g., id_token verification), ensure the returned AccessToken
+            # carries the upstream access token and its scopes, not the
+            # verification token's values.
+            if verification_token != upstream_token_set.access_token:
+                validated = validated.model_copy(
+                    update={
+                        "token": upstream_token_set.access_token,
+                        "scopes": upstream_token_set.scope.split()
+                        if upstream_token_set.scope
+                        else validated.scopes,
+                        "expires_at": int(upstream_token_set.expires_at),
+                    }
+                )
+
             logger.debug(
                 "Token swap successful for JTI=%s (upstream validated)", jti[:8]
             )
