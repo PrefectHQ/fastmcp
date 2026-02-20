@@ -1259,7 +1259,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     time.time() + new_refresh_expires_in
                 )
 
-        upstream_token_set.raw_token_data = token_response
+        upstream_token_set.raw_token_data = {
+            **upstream_token_set.raw_token_data,
+            **token_response,
+        }
         # Calculate refresh TTL for storage
         refresh_ttl = new_refresh_expires_in or (
             int(upstream_token_set.refresh_token_expires_at - time.time())

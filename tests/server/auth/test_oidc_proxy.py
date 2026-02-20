@@ -998,3 +998,70 @@ class TestVerifyIdToken:
 
             assert proxy._get_verification_token(token_set) == "jwt-id-token"
             assert proxy._token_validator is custom_verifier
+
+    def test_verify_id_token_survives_refresh_without_id_token(
+        self, valid_oidc_configuration_dict
+    ):
+        """id_token from original auth is preserved when refresh omits it."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+                verify_id_token=True,
+            )
+
+            token_set = _make_upstream_token_set(id_token="original-id-token")
+
+            # Simulate a refresh response that omits id_token —
+            # the merge in exchange_refresh_token should preserve it
+            refresh_response = {
+                "access_token": "new-access-token",
+                "token_type": "Bearer",
+            }
+            token_set.raw_token_data = {**token_set.raw_token_data, **refresh_response}
+            token_set.access_token = "new-access-token"
+
+            assert proxy._get_verification_token(token_set) == "original-id-token"
+
+    def test_verify_id_token_updated_when_refresh_includes_it(
+        self, valid_oidc_configuration_dict
+    ):
+        """id_token is updated when refresh response includes a new one."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+                verify_id_token=True,
+            )
+
+            token_set = _make_upstream_token_set(id_token="original-id-token")
+
+            # Simulate a refresh response that includes a new id_token
+            refresh_response = {
+                "access_token": "new-access-token",
+                "id_token": "refreshed-id-token",
+            }
+            token_set.raw_token_data = {**token_set.raw_token_data, **refresh_response}
+            token_set.access_token = "new-access-token"
+
+            assert proxy._get_verification_token(token_set) == "refreshed-id-token"
