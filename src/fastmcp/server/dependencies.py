@@ -607,7 +607,6 @@ def without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]:
                     result = await result
                 return result
 
-    # Set wrapper metadata (only parameter annotations, not return type)
     wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
     wrapper.__annotations__ = {
         k: v
