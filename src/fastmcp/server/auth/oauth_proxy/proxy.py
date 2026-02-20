@@ -1367,6 +1367,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     # Token Validation
     # -------------------------------------------------------------------------
 
+    def _get_verification_token(
+        self, upstream_token_set: UpstreamTokenSet
+    ) -> str | None:
+        """Get the token string to pass to the token verifier.
+
+        Returns the upstream access token by default. Subclasses can override
+        to verify a different token (e.g., the OIDC id_token for providers
+        that issue opaque access tokens).
+        """
+        return upstream_token_set.access_token
+
     async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
         """Validate FastMCP JWT by swapping for upstream token.
 
@@ -1405,9 +1416,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
             # 3. Validate with upstream provider (delegated to TokenVerifier)
             # This calls the real token validator (GitHub API, JWKS, etc.)
-            validated = await self._token_validator.verify_token(
-                upstream_token_set.access_token
-            )
+            verification_token = self._get_verification_token(upstream_token_set)
+            if verification_token is None:
+                logger.debug("No verification token available")
+                return None
+            validated = await self._token_validator.verify_token(verification_token)
 
             if not validated:
                 logger.debug("Upstream token validation failed")
