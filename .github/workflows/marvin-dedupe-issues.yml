@@ -102,7 +102,7 @@ jobs:
           # Only match bot comments created in the last 10 minutes (this run)
           CUTOFF=$(date -u -d '10 minutes ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
             || date -u -v-10M '+%Y-%m-%dT%H:%M:%SZ')
-          HAS_RECENT=$(gh api "repos/${{ github.repository }}/issues/${ISSUE}/comments" \
+          HAS_RECENT=$(gh api "repos/${{ github.repository }}/issues/${ISSUE}/comments?sort=created&direction=desc&per_page=10" \
             --jq "[.[] | select(
               .user.type == \"Bot\" and
               (.body | test(\"possible duplicate issues\"; \"i\")) and
