@@ -122,7 +122,7 @@ class OpenAPIProvider(Provider):
 
         # Create openapi-core Spec and RequestDirector
         try:
-            self._spec = SchemaPath.from_dict(openapi_spec)  # type: ignore[arg-type]
+            self._spec = SchemaPath.from_dict(openapi_spec)  # ty: ignore[invalid-argument-type]
             self._director = RequestDirector(self._spec)
         except Exception as e:
             logger.exception("Failed to initialize RequestDirector")
