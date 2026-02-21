@@ -19,7 +19,7 @@ from contextlib import (
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
 import httpx
 import mcp.types
@@ -99,6 +99,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+F = TypeVar("F", bound=Callable[..., Any])
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
@@ -1300,7 +1301,7 @@ class FastMCP(
     @overload
     def tool(
         self,
-        name_or_fn: AnyFunction,
+        name_or_fn: F,
         *,
         name: str | None = None,
         version: str | int | None = None,
@@ -1316,7 +1317,7 @@ class FastMCP(
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> FunctionTool: ...
+    ) -> F: ...
 
     @overload
     def tool(
@@ -1337,7 +1338,7 @@ class FastMCP(
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> Callable[[AnyFunction], FunctionTool]: ...
+    ) -> Callable[[F], F]: ...
 
     def tool(
         self,
@@ -1478,7 +1479,7 @@ class FastMCP(
         app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> Callable[[AnyFunction], Resource | ResourceTemplate | AnyFunction]:
+    ) -> Callable[[F], F]:
         """Decorator to register a function as a resource.
 
         The function will be called when the resource is read to generate its content.
@@ -1579,10 +1580,7 @@ class FastMCP(
             auth=auth,
         )
 
-        def decorator(fn: AnyFunction) -> Resource | ResourceTemplate | AnyFunction:
-            return inner_decorator(fn)
-
-        return decorator
+        return inner_decorator
 
     def add_prompt(self, prompt: Prompt | Callable[..., Any]) -> Prompt:
         """Add a prompt to the server.
@@ -1598,7 +1596,7 @@ class FastMCP(
     @overload
     def prompt(
         self,
-        name_or_fn: AnyFunction,
+        name_or_fn: F,
         *,
         name: str | None = None,
         version: str | int | None = None,
@@ -1609,7 +1607,7 @@ class FastMCP(
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> FunctionPrompt: ...
+    ) -> F: ...
 
     @overload
     def prompt(
@@ -1625,7 +1623,7 @@ class FastMCP(
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> Callable[[AnyFunction], FunctionPrompt]: ...
+    ) -> Callable[[F], F]: ...
 
     def prompt(
         self,

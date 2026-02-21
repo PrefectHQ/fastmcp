@@ -10,7 +10,7 @@ import inspect
 import warnings
 from collections.abc import Callable
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
 import mcp.types
 from mcp.types import AnyFunction, ToolAnnotations
@@ -25,6 +25,8 @@ from fastmcp.utilities.types import NotSet, NotSetT
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider
     from fastmcp.tools.tool import ToolResultSerializerType
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 DuplicateBehavior = Literal["error", "warn", "replace", "ignore"]
 
@@ -90,7 +92,7 @@ class ToolDecoratorMixin:
     @overload
     def tool(
         self: LocalProvider,
-        name_or_fn: AnyFunction,
+        name_or_fn: F,
         *,
         name: str | None = None,
         version: str | int | None = None,
@@ -107,7 +109,7 @@ class ToolDecoratorMixin:
         serializer: ToolResultSerializerType | None = None,  # Deprecated
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> FunctionTool: ...
+    ) -> F: ...
 
     @overload
     def tool(
@@ -129,7 +131,7 @@ class ToolDecoratorMixin:
         serializer: ToolResultSerializerType | None = None,  # Deprecated
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> Callable[[AnyFunction], FunctionTool]: ...
+    ) -> Callable[[F], F]: ...
 
     # NOTE: This method mirrors fastmcp.tools.tool() but adds registration,
     # the `enabled` param, and supports deprecated params (serializer, exclude_args).
