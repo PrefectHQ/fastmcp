@@ -84,7 +84,7 @@ class OpenAISamplingHandler:
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": openai_messages,
-            "max_tokens": params.maxTokens,
+            "max_completion_tokens": params.maxTokens,
         }
         if params.temperature is not None:
             kwargs["temperature"] = params.temperature
