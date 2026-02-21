@@ -9,7 +9,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable
 from functools import partial
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 import mcp.types
 from mcp.types import AnyFunction
@@ -22,6 +22,8 @@ from fastmcp.server.tasks.config import TaskConfig
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 class PromptDecoratorMixin:
@@ -71,7 +73,7 @@ class PromptDecoratorMixin:
     @overload
     def prompt(
         self: LocalProvider,
-        name_or_fn: AnyFunction,
+        name_or_fn: F,
         *,
         name: str | None = None,
         version: str | int | None = None,
@@ -83,7 +85,7 @@ class PromptDecoratorMixin:
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> FunctionPrompt: ...
+    ) -> F: ...
 
     @overload
     def prompt(
@@ -100,7 +102,7 @@ class PromptDecoratorMixin:
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> Callable[[AnyFunction], FunctionPrompt]: ...
+    ) -> Callable[[F], F]: ...
 
     def prompt(
         self: LocalProvider,
