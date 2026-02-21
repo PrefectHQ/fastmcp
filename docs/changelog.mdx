@@ -5,6 +5,39 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v3.0.1" description="2026-02-20">
+
+**[v3.0.1: Three-covery Mode](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.0.1)**
+
+First patch after 3.0 — mostly smoothing out rough edges discovered in the wild. The big ones: middleware state that wasn't surviving the trip to tool handlers now does, `Tool.from_tool()` accepts callables again, OpenAPI schemas with circular references no longer crash discovery, and decorator overloads now return the correct types in function mode. Also adds `verify_id_token` to OIDCProxy for providers (like some Azure AD configs) that issue opaque access tokens but standard JWT id_tokens.
+
+### Enhancements 🔧
+* Add verify_id_token option to OIDCProxy by [@jlowin](https://github.com/jlowin) in [#3248](https://github.com/PrefectHQ/fastmcp/pull/3248)
+
+### Fixes 🐞
+* Fix v3.0.0 changelog compare link by [@jlowin](https://github.com/jlowin) in [#3223](https://github.com/PrefectHQ/fastmcp/pull/3223)
+* Fix MDX parse error in upgrade guide prompts by [@jlowin](https://github.com/jlowin) in [#3227](https://github.com/PrefectHQ/fastmcp/pull/3227)
+* Fix non-serializable state lost between middleware and tools by [@jlowin](https://github.com/jlowin) in [#3234](https://github.com/PrefectHQ/fastmcp/pull/3234)
+* Accept callables in Tool.from_tool() by [@jlowin](https://github.com/jlowin) in [#3235](https://github.com/PrefectHQ/fastmcp/pull/3235)
+* Preserve skill metadata through provider wrapping by [@jlowin](https://github.com/jlowin) in [#3237](https://github.com/PrefectHQ/fastmcp/pull/3237)
+* Fix circular reference crash in OpenAPI schemas by [@jlowin](https://github.com/jlowin) in [#3245](https://github.com/PrefectHQ/fastmcp/pull/3245)
+* Fix NameError with future annotations and Context/Depends parameters by [@jlowin](https://github.com/jlowin) in [#3243](https://github.com/PrefectHQ/fastmcp/pull/3243)
+* Fix ty ignore syntax in OpenAPI provider by [@jlowin](https://github.com/jlowin) in [#3253](https://github.com/PrefectHQ/fastmcp/pull/3253)
+* Use max_completion_tokens instead of deprecated max_tokens in OpenAI handler by [@jlowin](https://github.com/jlowin) in [#3254](https://github.com/PrefectHQ/fastmcp/pull/3254)
+* Fix ty compatibility with upgraded deps by [@jlowin](https://github.com/jlowin) in [#3257](https://github.com/PrefectHQ/fastmcp/pull/3257)
+* Fix decorator overload return types for function mode by [@jlowin](https://github.com/jlowin) in [#3258](https://github.com/PrefectHQ/fastmcp/pull/3258)
+
+### Docs 📚
+* Sync README with welcome.mdx, fix install count by [@jlowin](https://github.com/jlowin) in [#3224](https://github.com/PrefectHQ/fastmcp/pull/3224)
+* Document dict-to-Message prompt migration in upgrade guides by [@jlowin](https://github.com/jlowin) in [#3225](https://github.com/PrefectHQ/fastmcp/pull/3225)
+* Fix v2 upgrade guide: remove incorrect v1 import advice by [@jlowin](https://github.com/jlowin) in [#3226](https://github.com/PrefectHQ/fastmcp/pull/3226)
+* Animated banner by [@jlowin](https://github.com/jlowin) in [#3231](https://github.com/PrefectHQ/fastmcp/pull/3231)
+* Document mounted server state store isolation in upgrade guide by [@jlowin](https://github.com/jlowin) in [#3236](https://github.com/PrefectHQ/fastmcp/pull/3236)
+
+**Full Changelog**: [v3.0.0...v3.0.1](https://github.com/PrefectHQ/fastmcp/compare/v3.0.0...v3.0.1)
+
+</Update>
+
 <Update label="v3.0.0" description="2026-02-18">
 
 **[v3.0.0: Three at Last](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.0.0)**
