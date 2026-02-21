@@ -80,8 +80,6 @@ jobs:
             </task>
 
             <constraints>
-            This workflow allows read, write, and execute capabilities but cannot push changes.
-
             You CAN: Read/analyze code, modify files, write code, run tests, execute commands
             You CAN: Commit code, push changes, create branches, create pull requests
 
