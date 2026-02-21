@@ -1048,7 +1048,7 @@ class _CurrentHeaders(Dependency):  # type: ignore[misc]
     """Async context manager for HTTP Headers dependency."""
 
     async def __aenter__(self) -> dict[str, str]:
-        return get_http_headers()
+        return get_http_headers(include={"authorization"})
 
     async def __aexit__(self, *args: object) -> None:
         pass
@@ -1057,9 +1057,10 @@ class _CurrentHeaders(Dependency):  # type: ignore[misc]
 def CurrentHeaders() -> dict[str, str]:
     """Get the current HTTP request headers.
 
-    This dependency provides access to the HTTP headers for the current request.
-    Returns an empty dictionary when no HTTP request is available, making it
-    safe to use in code that might run over any transport.
+    This dependency provides access to the HTTP headers for the current request,
+    including the authorization header. Returns an empty dictionary when no HTTP
+    request is available, making it safe to use in code that might run over any
+    transport.
 
     Returns:
         A dependency that resolves to a dictionary of header name -> value
