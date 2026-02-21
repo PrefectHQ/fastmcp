@@ -434,14 +434,22 @@ def get_http_request() -> Request:
     return request
 
 
-def get_http_headers(include_all: bool = False) -> dict[str, str]:
+def get_http_headers(
+    include_all: bool = False,
+    include: set[str] | None = None,
+) -> dict[str, str]:
     """Extract headers from the current HTTP request if available.
 
     Never raises an exception, even if there is no active HTTP request (in which case
     an empty dict is returned).
 
-    By default, strips problematic headers like `content-length` that cause issues
-    if forwarded to downstream clients. If `include_all` is True, all headers are returned.
+    By default, strips problematic headers like `content-length` and `authorization`
+    that cause issues if forwarded to downstream services. If `include_all` is True,
+    all headers are returned.
+
+    The `include` parameter allows specific headers to be included even if they would
+    normally be excluded. This is useful for proxy transports that need to forward
+    authorization headers to upstream MCP servers.
     """
     if include_all:
         exclude_headers: set[str] = set()
@@ -457,7 +465,6 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             "keep-alive",
             "expect",
             "accept",
-            # Auth headers should not be forwarded to downstream APIs
             "authorization",
             # Proxy-related headers
             "proxy-authenticate",
@@ -466,6 +473,8 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             # MCP-related headers
             "mcp-session-id",
         }
+        if include:
+            exclude_headers -= {h.lower() for h in include}
         # (just in case)
         if not all(h.lower() == h for h in exclude_headers):
             raise ValueError("Excluded headers must be lowercase")
