@@ -457,6 +457,10 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             "keep-alive",
             "expect",
             "accept",
+            # Auth headers — the MCP transport's credentials must not leak
+            # to downstream APIs (e.g. OpenAPI backends) which have their
+            # own authentication configured on the httpx client.
+            "authorization",
             # Proxy-related headers
             "proxy-authenticate",
             "proxy-authorization",

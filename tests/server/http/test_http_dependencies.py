@@ -166,3 +166,39 @@ async def test_get_http_headers_excludes_content_type(sse_server: str):
             # Custom headers should be included
             assert "x-custom-header" in headers
             assert headers["x-custom-header"] == "should-be-included"
+
+
+async def test_get_http_headers_excludes_authorization():
+    """Test that get_http_headers() excludes the authorization header (#3260).
+
+    The MCP transport's auth credentials must not be forwarded to downstream
+    APIs (e.g. OpenAPI backends) which use their own authentication.
+    """
+    from fastmcp.server.dependencies import get_http_headers
+
+    server = FastMCP()
+
+    @server.tool
+    def check_auth_header() -> dict[str, str]:
+        """Return filtered headers to verify authorization is excluded."""
+        return get_http_headers()
+
+    async with run_server_async(server, transport="sse") as url:
+        async with Client(
+            transport=SSETransport(
+                url,
+                headers={
+                    "Authorization": "Bearer mcp-client-token",
+                    "X-Custom-Header": "should-be-included",
+                },
+            )
+        ) as client:
+            result = await client.call_tool("check_auth_header")
+            headers = result.data
+
+            # Authorization header must be excluded
+            assert "authorization" not in headers
+
+            # Custom headers should still be included
+            assert "x-custom-header" in headers
+            assert headers["x-custom-header"] == "should-be-included"
