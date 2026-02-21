@@ -287,7 +287,9 @@ class FastMCP(
 
         # Handle Lifespan instances (they're callable) or regular lifespan functions
         if lifespan is not None:
-            self._lifespan: LifespanCallable[LifespanResultT] = lifespan
+            self._lifespan: LifespanCallable[LifespanResultT] = cast(
+                LifespanCallable[LifespanResultT], lifespan
+            )
         else:
             self._lifespan = cast(LifespanCallable[LifespanResultT], default_lifespan)
         self._lifespan_result: LifespanResultT | None = None

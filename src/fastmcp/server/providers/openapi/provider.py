@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import httpx
 from jsonschema_path import SchemaPath
@@ -122,7 +122,7 @@ class OpenAPIProvider(Provider):
 
         # Create openapi-core Spec and RequestDirector
         try:
-            self._spec = SchemaPath.from_dict(openapi_spec)  # ty: ignore[invalid-argument-type]
+            self._spec = SchemaPath.from_dict(cast(Any, openapi_spec))
             self._director = RequestDirector(self._spec)
         except Exception as e:
             logger.exception("Failed to initialize RequestDirector")
