@@ -61,6 +61,7 @@ You don't need to pass `mcp_url` when using `OAuth` with `Client(auth=...)` — 
 - **`token_storage`** (`AsyncKeyValue`, optional): Storage backend for persisting OAuth tokens. Defaults to in-memory storage (tokens lost on restart). See [Token Storage](#token-storage) for encrypted storage options
 - **`additional_client_metadata`** (`dict[str, Any]`, optional): Extra metadata for client registration
 - **`callback_port`** (`int`, optional): Fixed port for OAuth callback server. If not specified, uses a random available port
+- **`authorization_server_url`** (`str`, optional): URL of the OAuth authorization server. When provided, skips the initial 401 round-trip and protected resource metadata discovery, going straight to fetching authorization server metadata from this URL. See [Pre-Configured Authorization Server](#pre-configured-authorization-server)
 - **`httpx_client_factory`** (`McpHttpClientFactory`, optional): Factory for creating httpx clients
 
 
@@ -184,3 +185,37 @@ oauth = OAuth(client_id="my-public-client-id")
 <Note>
 When using pre-registered credentials, the client will not attempt Dynamic Client Registration. If the server rejects the credentials, the error is surfaced immediately rather than falling back to DCR.
 </Note>
+
+## Pre-Configured Authorization Server
+
+<VersionBadge version="3.0.0" />
+
+By default, the OAuth client discovers the authorization server by first sending an unauthenticated request, receiving a `401`, and then following the discovery chain (Protected Resource Metadata → Authorization Server Metadata). When you already know the authorization server URL — e.g. from a config file or environment variable — you can skip this round-trip entirely by providing `authorization_server_url`.
+
+```python
+from fastmcp import Client
+from fastmcp.client.auth import OAuth
+
+async with Client(
+    "https://mcp-server.example.com/mcp",
+    auth=OAuth(
+        client_id="my-client",
+        client_secret="my-secret",
+        authorization_server_url="https://auth.example.com",
+    ),
+) as client:
+    # No 401 round-trip — goes straight to OASM fetch → token exchange
+    await client.ping()
+```
+
+When `authorization_server_url` is provided, the client:
+
+1. Fetches Authorization Server Metadata from the given URL directly
+2. Registers or authenticates using the discovered metadata
+3. Sends the first real request already authenticated
+
+When omitted, the behavior is exactly as before (401-triggered discovery).
+
+<Tip>
+This is useful in controlled/enterprise environments where the auth server is always known, saving one full round-trip of latency on the first connection. It also complements [Token Storage](#token-storage) — token storage avoids repeated 401s on subsequent connections, while `authorization_server_url` avoids the 401 on the very first connection.
+</Tip>

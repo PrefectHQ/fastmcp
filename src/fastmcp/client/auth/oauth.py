@@ -12,6 +12,15 @@ from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
 from mcp.client.auth import OAuthClientProvider, TokenStorage
+from mcp.client.auth.utils import (
+    build_oauth_authorization_server_metadata_discovery_urls,
+    create_client_info_from_metadata_url,
+    create_client_registration_request,
+    create_oauth_metadata_request,
+    handle_auth_metadata_response,
+    handle_registration_response,
+    should_use_client_metadata_url,
+)
 from mcp.shared._httpx_utils import McpHttpClientFactory
 from mcp.shared.auth import (
     OAuthClientInformationFull,
@@ -160,6 +169,8 @@ class OAuth(OAuthClientProvider):
         # --- OR clients provide full client information ---
         client_id: str | None = None,
         client_secret: str | None = None,
+        # Skip 401-triggered discovery by providing the auth server URL directly
+        authorization_server_url: str | None = None,
     ):
         """
         Initialize OAuth client provider for an MCP server.
@@ -181,6 +192,11 @@ class OAuth(OAuthClientProvider):
             client_id: Pre-registered OAuth client ID. When provided, skips dynamic
                 client registration and uses these static credentials instead.
             client_secret: OAuth client secret (optional, used with client_id)
+            authorization_server_url: URL of the OAuth authorization server. When
+                provided, skips the initial 401 round-trip and protected resource
+                metadata discovery, going straight to fetching the authorization
+                server metadata from this URL. This saves latency when the auth
+                server is already known (e.g. from configuration).
         """
         # Store config for deferred binding if mcp_url not yet known
         self._scopes = scopes
@@ -192,6 +208,7 @@ class OAuth(OAuthClientProvider):
         self._client_id = client_id
         self._client_secret = client_secret
         self._static_client_info = None
+        self._authorization_server_url = authorization_server_url
         self.httpx_client_factory = httpx_client_factory or httpx.AsyncClient
         self._bound = False
 
@@ -347,6 +364,70 @@ class OAuth(OAuthClientProvider):
 
         raise RuntimeError("OAuth callback handler could not be started")
 
+    async def _proactive_auth(self) -> None:
+        """Proactively obtain tokens when authorization_server_url is known.
+
+        Skips the 401 round-trip and protected resource metadata discovery by
+        going straight to OASM fetch, client registration, and token exchange.
+        """
+        assert self._authorization_server_url is not None
+
+        self.context.auth_server_url = self._authorization_server_url
+
+        async with self.httpx_client_factory() as client:
+            # Step 1: Discover OAuth Authorization Server Metadata (OASM)
+            asm_urls = build_oauth_authorization_server_metadata_discovery_urls(
+                self._authorization_server_url, self.context.server_url
+            )
+
+            for url in asm_urls:
+                oauth_metadata_request = create_oauth_metadata_request(url)
+                response = await client.send(oauth_metadata_request)
+
+                ok, asm = await handle_auth_metadata_response(response)
+                if not ok:
+                    break
+                if ok and asm:
+                    self.context.oauth_metadata = asm
+                    break
+                else:
+                    logger.debug(f"OAuth metadata discovery failed: {url}")
+
+            # Step 2: Register client if needed
+            if not self.context.client_info:
+                if should_use_client_metadata_url(
+                    self.context.oauth_metadata, self.context.client_metadata_url
+                ):
+                    client_information = create_client_info_from_metadata_url(
+                        self.context.client_metadata_url,  # type: ignore[arg-type]
+                        redirect_uris=self.context.client_metadata.redirect_uris,
+                    )
+                else:
+                    registration_request = create_client_registration_request(
+                        self.context.oauth_metadata,
+                        self.context.client_metadata,
+                        self.context.get_authorization_base_url(
+                            self.context.server_url
+                        ),
+                    )
+                    registration_response = await client.send(registration_request)
+                    client_information = await handle_registration_response(
+                        registration_response
+                    )
+
+                self.context.client_info = client_information
+                await self.context.storage.set_client_info(client_information)
+
+            # Step 3: Perform authorization code grant (browser + callback)
+            auth_code, code_verifier = await self._perform_authorization_code_grant()
+
+            # Step 4: Exchange authorization code for tokens
+            token_request = await self._exchange_token_authorization_code(
+                auth_code, code_verifier
+            )
+            token_response = await client.send(token_request)
+            await self._handle_token_response(token_response)
+
     async def async_auth_flow(
         self, request: httpx.Request
     ) -> AsyncGenerator[httpx.Request, httpx.Response]:
@@ -360,6 +441,18 @@ class OAuth(OAuthClientProvider):
                 "OAuth provider has no server URL. Either pass mcp_url to OAuth() "
                 "or use it with Client(auth=...) which provides the URL automatically."
             )
+
+        # Proactive auth: when authorization_server_url is known, obtain tokens
+        # before the first request to skip the 401 round-trip.
+        if self._authorization_server_url:
+            if not self._initialized:
+                await self._initialize()
+            if (
+                not self.context.is_token_valid()
+                and not self.context.can_refresh_token()
+            ):
+                await self._proactive_auth()
+
         try:
             # First attempt with potentially cached credentials
             async with aclosing(super().async_auth_flow(request)) as gen:
