@@ -434,14 +434,22 @@ def get_http_request() -> Request:
     return request
 
 
-def get_http_headers(include_all: bool = False) -> dict[str, str]:
+def get_http_headers(
+    include_all: bool = False,
+    include: set[str] | None = None,
+) -> dict[str, str]:
     """Extract headers from the current HTTP request if available.
 
     Never raises an exception, even if there is no active HTTP request (in which case
     an empty dict is returned).
 
-    By default, strips problematic headers like `content-length` that cause issues
-    if forwarded to downstream clients. If `include_all` is True, all headers are returned.
+    By default, strips problematic headers like `content-length` and `authorization`
+    that cause issues if forwarded to downstream services. If `include_all` is True,
+    all headers are returned.
+
+    The `include` parameter allows specific headers to be included even if they would
+    normally be excluded. This is useful for proxy transports that need to forward
+    authorization headers to upstream MCP servers.
     """
     if include_all:
         exclude_headers: set[str] = set()
@@ -457,6 +465,7 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             "keep-alive",
             "expect",
             "accept",
+            "authorization",
             # Proxy-related headers
             "proxy-authenticate",
             "proxy-authorization",
@@ -464,6 +473,8 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             # MCP-related headers
             "mcp-session-id",
         }
+        if include:
+            exclude_headers -= {h.lower() for h in include}
         # (just in case)
         if not all(h.lower() == h for h in exclude_headers):
             raise ValueError("Excluded headers must be lowercase")
@@ -1037,7 +1048,7 @@ class _CurrentHeaders(Dependency):  # type: ignore[misc]
     """Async context manager for HTTP Headers dependency."""
 
     async def __aenter__(self) -> dict[str, str]:
-        return get_http_headers()
+        return get_http_headers(include={"authorization"})
 
     async def __aexit__(self, *args: object) -> None:
         pass
@@ -1046,9 +1057,10 @@ class _CurrentHeaders(Dependency):  # type: ignore[misc]
 def CurrentHeaders() -> dict[str, str]:
     """Get the current HTTP request headers.
 
-    This dependency provides access to the HTTP headers for the current request.
-    Returns an empty dictionary when no HTTP request is available, making it
-    safe to use in code that might run over any transport.
+    This dependency provides access to the HTTP headers for the current request,
+    including the authorization header. Returns an empty dictionary when no HTTP
+    request is available, making it safe to use in code that might run over any
+    transport.
 
     Returns:
         A dependency that resolves to a dictionary of header name -> value
