@@ -457,6 +457,8 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             "keep-alive",
             "expect",
             "accept",
+            # Auth headers should not be forwarded to downstream APIs
+            "authorization",
             # Proxy-related headers
             "proxy-authenticate",
             "proxy-authorization",
