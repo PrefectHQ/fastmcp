@@ -893,16 +893,32 @@ class _CurrentContext(Dependency):  # type: ignore[misc]
             self._context = None
 
 
-class _OptionalCurrentContext(_CurrentContext):
-    """Context dependency that degrades to None when no context is active."""
+class _OptionalCurrentContext(Dependency):  # type: ignore[misc]
+    """Context dependency that degrades to None when no context is active.
+
+    This is implemented as a wrapper (composition), not a subclass of
+    `_CurrentContext`, to avoid overriding `__aenter__` with an incompatible
+    return type.
+    """
+
+    _inner: _CurrentContext | None = None
 
     async def __aenter__(self) -> Context | None:
+        inner = _CurrentContext()
         try:
-            return await super().__aenter__()
+            context = await inner.__aenter__()
         except RuntimeError as exc:
             if "No active context found" in str(exc):
                 return None
             raise
+        self._inner = inner
+        return context
+
+    async def __aexit__(self, *args: object) -> None:
+        if self._inner is None:
+            return
+        await self._inner.__aexit__(*args)
+        self._inner = None
 
 
 def CurrentContext() -> Context:
