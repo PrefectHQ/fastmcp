@@ -5,6 +5,20 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 3.0.1" description="February 20, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.0.1: Three-covery Mode"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.0.1"
+cta="Read the release notes"
+>
+First patch after 3.0 — mostly smoothing out rough edges discovered in the wild. The big ones: middleware state that wasn't surviving the trip to tool handlers now does, `Tool.from_tool()` accepts callables again, OpenAPI schemas with circular references no longer crash discovery, and decorator overloads now return the correct types in function mode.
+
+🔐 **OIDC `verify_id_token`** — New option for providers that issue opaque access tokens but standard JWT id_tokens. Verifies identity via the id_token while using the access_token for upstream API calls.
+
+🐞 **11 bug fixes** — State serialization, future annotations with `Context`/`Depends`, OpenAI handler deprecation warnings, type checker compatibility, and more.
+</Card>
+</Update>
+
 <Update label="FastMCP 3.0.0" description="February 18, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v3.0.0: Three at Last"
