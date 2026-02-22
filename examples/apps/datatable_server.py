@@ -2,7 +2,7 @@
 
 Demonstrates `fastmcp[apps]` with Prefab UI components:
 - `app=True` for automatic renderer wiring
-- `UIResponse` with `DataTable` for rich tabular output
+- `PrefabApp` with `DataTable` for rich tabular views
 - Searchable, sortable, paginated tables
 - Layout composition with `Column`, `Heading`, `Text`, and `Badge`
 
@@ -22,7 +22,7 @@ from prefab_ui.components import (
     Muted,
     Row,
 )
-from prefab_ui.response import UIResponse
+from prefab_ui.app import PrefabApp
 
 from fastmcp import FastMCP
 
@@ -117,7 +117,7 @@ EMPLOYEES = [
 
 
 @mcp.tool(app=True)
-def list_team(department: str | None = None) -> UIResponse:
+def list_team(department: str | None = None) -> PrefabApp:
     """Browse the team directory with sorting and search.
 
     Args:
@@ -154,10 +154,10 @@ def list_team(department: str | None = None) -> UIResponse:
             page_size=10,
         )
 
-    return UIResponse(
+    return PrefabApp(
+        title="Team Directory",
         view=view,
         state={"total": len(rows), "active": active},
-        text=f"Team directory: {len(rows)} members ({active} active)",
     )
 
 

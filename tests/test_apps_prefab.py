@@ -1,7 +1,7 @@
 """Tests for MCP Apps Phase 2 — Prefab integration.
 
-Covers ``convert_result`` for UIResponse/Component, ``app=True`` auto-wiring,
-return type inference, output schema suppression, and end-to-end round trips.
+Covers ``convert_result`` for PrefabApp/Component, ``app=True`` auto-wiring,
+return-type inference, output-schema suppression, and end-to-end round trips.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 from mcp.types import TextContent
 from prefab_ui.components import Column, Heading, Text
 from prefab_ui.components.base import Component
-from prefab_ui.response import UIResponse
+from prefab_ui.app import PrefabApp
 
 from fastmcp import Client, FastMCP
 from fastmcp.resources.types import TextResource
@@ -25,17 +25,17 @@ from fastmcp.tools.tool import Tool, ToolResult
 
 
 class TestConvertResult:
-    def test_ui_response(self):
+    def test_prefab_app(self):
         with Column() as view:
             Heading("Hello")
-        response = UIResponse(view=view, state={"name": "Alice"})
+        response = PrefabApp(view=view, state={"name": "Alice"})
 
         tool = Tool(name="t", parameters={})
         result = tool.convert_result(response)
 
         assert isinstance(result, ToolResult)
         assert isinstance(result.content[0], TextContent)
-        assert result.content[0].text == response.text_fallback()
+        assert "Prefab" in result.content[0].text
         assert result.structured_content is not None
         assert result.structured_content["version"] == "0.2"
         assert result.structured_content["state"] == {"name": "Alice"}
@@ -52,14 +52,14 @@ class TestConvertResult:
         assert result.structured_content["version"] == "0.2"
         assert result.structured_content["view"]["type"] == "Heading"
 
-    def test_custom_text_fallback(self):
-        response = UIResponse(view=Heading("Hello"), text="Custom fallback text")
+    def test_text_fallback_uses_title(self):
+        response = PrefabApp(title="My Dashboard", view=Heading("Hello"))
 
         tool = Tool(name="t", parameters={})
         result = tool.convert_result(response)
 
         assert isinstance(result.content[0], TextContent)
-        assert result.content[0].text == "Custom fallback text"
+        assert "My Dashboard" in result.content[0].text
 
     def test_tool_result_passthrough(self):
         """ToolResult should still pass through unchanged."""
@@ -146,8 +146,8 @@ class TestAppTrue:
         mcp = FastMCP("test")
 
         @mcp.tool(app=AppConfig(resource_uri="ui://custom/app.html"))
-        def my_tool() -> UIResponse:
-            return UIResponse(view=Heading("hi"))
+        def my_tool() -> PrefabApp:
+            return PrefabApp(view=Heading("hi"))
 
         tools = mcp._local_provider._components
         tool = next(
@@ -168,8 +168,8 @@ class TestInference:
         mcp = FastMCP("test")
 
         @mcp.tool
-        def my_tool() -> UIResponse:
-            return UIResponse(view=Heading("hi"))
+        def my_tool() -> PrefabApp:
+            return PrefabApp(view=Heading("hi"))
 
         tools = mcp._local_provider._components
         tool = next(
@@ -230,7 +230,7 @@ class TestInference:
         mcp = FastMCP("test")
 
         @mcp.tool
-        def my_tool() -> UIResponse | None:
+        def my_tool() -> PrefabApp | None:
             return None
 
         tools = mcp._local_provider._components
@@ -253,8 +253,8 @@ class TestOutputSchema:
         mcp = FastMCP("test")
 
         @mcp.tool
-        def my_tool() -> UIResponse:
-            return UIResponse(view=Heading("hi"))
+        def my_tool() -> PrefabApp:
+            return PrefabApp(view=Heading("hi"))
 
         tools = mcp._local_provider._components
         tool = next(
@@ -292,11 +292,11 @@ class TestIntegration:
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)
-        def greet(name: str) -> UIResponse:
+        def greet(name: str) -> PrefabApp:
             with Column() as view:
                 Heading("Hello")
                 Text(f"Welcome, {name}!")
-            return UIResponse(view=view, state={"name": name})
+            return PrefabApp(view=view, state={"name": name})
 
         async with Client(mcp) as client:
             result = await client.call_tool("greet", {"name": "Alice"})
@@ -309,8 +309,8 @@ class TestIntegration:
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)
-        def my_tool() -> UIResponse:
-            return UIResponse(view=Heading("hi"))
+        def my_tool() -> PrefabApp:
+            return PrefabApp(view=Heading("hi"))
 
         async with Client(mcp) as client:
             tools = await client.list_tools()

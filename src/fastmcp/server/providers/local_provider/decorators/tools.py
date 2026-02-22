@@ -23,8 +23,8 @@ from fastmcp.tools.tool import Tool
 from fastmcp.utilities.types import NotSet, NotSetT
 
 try:
+    from prefab_ui.app import PrefabApp as _PrefabApp
     from prefab_ui.components.base import Component as _PrefabComponent
-    from prefab_ui.response import UIResponse as _PrefabUIResponse
 
     _HAS_PREFAB = True
 except ImportError:
@@ -49,14 +49,14 @@ def _has_prefab_return_type(tool: Tool) -> bool:
     if rt is None or rt is inspect.Parameter.empty:
         return False
     # Direct type check
-    if isinstance(rt, type) and issubclass(rt, (_PrefabUIResponse, _PrefabComponent)):
+    if isinstance(rt, type) and issubclass(rt, (_PrefabApp, _PrefabComponent)):
         return True
     # Check Union args (e.g., UIResponse | None)
     from typing import get_args
 
     args = get_args(rt)
     return any(
-        isinstance(a, type) and issubclass(a, (_PrefabUIResponse, _PrefabComponent))
+        isinstance(a, type) and issubclass(a, (_PrefabApp, _PrefabComponent))
         for a in args
     )
 

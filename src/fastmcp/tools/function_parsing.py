@@ -28,10 +28,10 @@ from fastmcp.utilities.types import (
 )
 
 try:
+    from prefab_ui.app import PrefabApp as _PrefabApp
     from prefab_ui.components.base import Component as _PrefabComponent
-    from prefab_ui.response import UIResponse as _PrefabUIResponse
 
-    _PREFAB_TYPES: tuple[type, ...] = (_PrefabUIResponse, _PrefabComponent)
+    _PREFAB_TYPES: tuple[type, ...] = (_PrefabApp, _PrefabComponent)
 except ImportError:
     _PREFAB_TYPES = ()
 

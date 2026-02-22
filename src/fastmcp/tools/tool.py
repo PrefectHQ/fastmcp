@@ -39,8 +39,8 @@ from fastmcp.utilities.types import (
 )
 
 try:
+    from prefab_ui.app import PrefabApp as _PrefabApp
     from prefab_ui.components.base import Component as _PrefabComponent
-    from prefab_ui.response import UIResponse as _PrefabUIResponse
 
     _HAS_PREFAB = True
 except ImportError:
@@ -261,10 +261,10 @@ class Tool(FastMCPComponent):
             return raw_value
 
         if _HAS_PREFAB:
-            if isinstance(raw_value, _PrefabUIResponse):
+            if isinstance(raw_value, _PrefabApp):
                 return _ui_response_to_tool_result(raw_value)
             if isinstance(raw_value, _PrefabComponent):
-                return _ui_response_to_tool_result(_PrefabUIResponse(view=raw_value))
+                return _ui_response_to_tool_result(_PrefabApp(view=raw_value))
 
         content = _convert_to_content(raw_value, serializer=self.serializer)
 
@@ -473,9 +473,10 @@ def _convert_to_single_content_block(
 
 
 def _ui_response_to_tool_result(response: Any) -> ToolResult:
-    """Convert a prefab UIResponse to a FastMCP ToolResult."""
-    text = response.text_fallback()
+    """Convert a PrefabApp to a FastMCP ToolResult."""
     envelope = response.to_json()
+    title = getattr(response, "title", None) or "Prefab"
+    text = f"[{title} UI]"
     return ToolResult(
         content=[TextContent(type="text", text=text)],
         structured_content=envelope,

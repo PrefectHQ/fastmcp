@@ -20,7 +20,7 @@ from prefab_ui.components import (
     LineChart,
     Muted,
 )
-from prefab_ui.response import UIResponse
+from prefab_ui.app import PrefabApp
 
 from fastmcp import FastMCP
 
@@ -37,7 +37,7 @@ MONTHLY_SALES = [
 
 
 @mcp.tool(app=True)
-def sales_overview(stacked: bool = False) -> UIResponse:
+def sales_overview(stacked: bool = False) -> PrefabApp:
     """View monthly sales broken down by channel.
 
     Args:
@@ -61,14 +61,14 @@ def sales_overview(stacked: bool = False) -> UIResponse:
             show_legend=True,
         )
 
-    return UIResponse(
+    return PrefabApp(
+        title="Sales Dashboard",
         view=view,
-        text=f"Monthly sales: ${total:,} total revenue across 2 channels",
     )
 
 
 @mcp.tool(app=True)
-def sales_trend(curve: str = "linear") -> UIResponse:
+def sales_trend(curve: str = "linear") -> PrefabApp:
     """View sales trends over time as a line chart.
 
     Args:
@@ -91,9 +91,9 @@ def sales_trend(curve: str = "linear") -> UIResponse:
             show_legend=True,
         )
 
-    return UIResponse(
+    return PrefabApp(
+        title="Sales Trend",
         view=view,
-        text="Sales trend across online and retail channels",
     )
 
 
