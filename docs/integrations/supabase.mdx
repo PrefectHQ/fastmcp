@@ -11,21 +11,43 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 This guide shows you how to secure your FastMCP server using **Supabase Auth**. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern, where Supabase handles user authentication and your FastMCP server validates the tokens.
 
+<Warning>
+Supabase Auth does not currently support [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html) resource indicators, so FastMCP cannot validate that tokens were issued for the specific resource server.
+</Warning>
+
+## Consent UI Requirement
+
+Supabase's OAuth Server delegates the user consent screen to your application. When an MCP client initiates authorization, Supabase authenticates the user and then redirects to your application at a configured callback URL (e.g., `https://your-app.com/oauth/callback?authorization_id=...`). Your application must host a page that calls Supabase's `approveAuthorization()` or `denyAuthorization()` APIs to complete the flow.
+
+`SupabaseProvider` handles the resource server side (token verification and metadata), but you are responsible for building and hosting the consent UI separately. See [Supabase's OAuth Server documentation](https://supabase.com/docs/guides/auth/oauth-server/getting-started) for details on implementing the authorization page.
+
 ## Configuration
 
 ### Prerequisites
 
 Before you begin, you will need:
 1. A **[Supabase Account](https://supabase.com/)** with a project or a self-hosted **Supabase Auth** instance
-2. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`)
+2. **OAuth Server enabled** in your Supabase Dashboard (Authentication → OAuth Server)
+3. **Dynamic Client Registration enabled** in the same settings
+4. A **consent UI** hosted at your configured authorization path (see above)
+5. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`)
 
-### Step 1: Get Supabase Project URL
+### Step 1: Enable Supabase OAuth Server
+
+In your Supabase Dashboard:
+1. Go to **Authentication → OAuth Server**
+2. Enable the **OAuth Server**
+3. Set your **Site URL** to where your consent UI is hosted
+4. Set the **Authorization Path** (e.g., `/oauth/callback`)
+5. Enable **Allow Dynamic OAuth Apps** for MCP client registration
+
+### Step 2: Get Supabase Project URL
 
 In your Supabase Dashboard:
 1. Go to **Project Settings**
 2. Copy your **Project URL** (e.g., `https://abc123.supabase.co`)
 
-### Step 2: FastMCP Configuration
+### Step 3: FastMCP Configuration
 
 Create your FastMCP server using the `SupabaseProvider`:
 
@@ -33,12 +55,9 @@ Create your FastMCP server using the `SupabaseProvider`:
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.supabase import SupabaseProvider
 
-# Configure Supabase Auth
 auth = SupabaseProvider(
     project_url="https://abc123.supabase.co",
     base_url="http://localhost:8000",
-    # Optional: customize auth_route for self-hosted Supabase Auth with custom routes
-    # auth_route="/my/auth/route"
 )
 
 mcp = FastMCP("Supabase Protected Server", auth=auth)
@@ -62,8 +81,6 @@ Start your FastMCP server with HTTP transport to enable OAuth flows:
 fastmcp run server.py --transport http --port 8000
 ```
 
-Your server is now running and protected by Supabase authentication.
-
 ### Testing with a Client
 
 Create a test client that authenticates with your Supabase-protected server:
@@ -73,12 +90,9 @@ from fastmcp import Client
 import asyncio
 
 async def main():
-    # The client will automatically handle Supabase OAuth
     async with Client("http://localhost:8000/mcp", auth="oauth") as client:
-        # First-time connection will open Supabase login in your browser
-        print("✓ Authenticated with Supabase!")
+        print("Authenticated with Supabase!")
 
-        # Test the protected tool
         result = await client.call_tool("protected_tool", {"message": "Hello!"})
         print(result)
 
@@ -87,9 +101,9 @@ if __name__ == "__main__":
 ```
 
 When you run the client for the first time:
-1. Your browser will open to Supabase's authorization page
-2. After you authorize, you'll be redirected back
-3. The client receives the token and can make authenticated requests
+1. Your browser will open to Supabase's authorization endpoint
+2. After authenticating, Supabase redirects to your consent UI
+3. After you approve, the client receives the token and can make authenticated requests
 
 ## Production Configuration
 
@@ -100,11 +114,9 @@ import os
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.supabase import SupabaseProvider
 
-# Load configuration from environment variables
 auth = SupabaseProvider(
     project_url=os.environ["SUPABASE_PROJECT_URL"],
     base_url=os.environ.get("BASE_URL", "https://your-server.com"),
-    auth_route=os.environ.get("SUPABASE_AUTH_ROUTE", "/auth/v1"),  # Optional: for custom routes
 )
 
 mcp = FastMCP(name="Supabase Secured App", auth=auth)

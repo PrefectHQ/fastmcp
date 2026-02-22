@@ -10,7 +10,7 @@ OpenAPI component classes: Tool, Resource, and ResourceTemplate.
 
 ## Classes
 
-### `OpenAPITool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/components.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `OpenAPITool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/openapi/components.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Tool implementation for OpenAPI endpoints.
@@ -18,7 +18,7 @@ Tool implementation for OpenAPI endpoints.
 
 **Methods:**
 
-#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/components.py#L160" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/openapi/components.py#L160" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, arguments: dict[str, Any]) -> ToolResult
@@ -27,7 +27,7 @@ run(self, arguments: dict[str, Any]) -> ToolResult
 Execute the HTTP request using RequestDirector.
 
 
-### `OpenAPIResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/components.py#L233" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `OpenAPIResource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/openapi/components.py#L233" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Resource implementation for OpenAPI endpoints.
@@ -35,7 +35,7 @@ Resource implementation for OpenAPI endpoints.
 
 **Methods:**
 
-#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/components.py#L263" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/openapi/components.py#L263" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read(self) -> ResourceResult
@@ -44,7 +44,7 @@ read(self) -> ResourceResult
 Fetch the resource data by making an HTTP request.
 
 
-### `OpenAPIResourceTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/components.py#L347" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `OpenAPIResourceTemplate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/openapi/components.py#L347" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Resource template implementation for OpenAPI endpoints.
@@ -52,7 +52,7 @@ Resource template implementation for OpenAPI endpoints.
 
 **Methods:**
 
-#### `create_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/providers/openapi/components.py#L379" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/openapi/components.py#L379" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_resource(self, uri: str, params: dict[str, Any], context: Context | None = None) -> Resource

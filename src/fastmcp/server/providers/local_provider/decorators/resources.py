@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import mcp.types
 from mcp.types import Annotations, AnyFunction
@@ -22,6 +22,8 @@ from fastmcp.server.tasks.config import TaskConfig
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 class ResourceDecoratorMixin:
@@ -118,7 +120,7 @@ class ResourceDecoratorMixin:
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> Callable[[AnyFunction], Resource | ResourceTemplate | AnyFunction]:
+    ) -> Callable[[F], F]:
         """Decorator to register a function as a resource.
 
         If the URI contains parameters (e.g. "resource://{param}") or the function
@@ -166,7 +168,7 @@ class ResourceDecoratorMixin:
 
         resolved_task: bool | TaskConfig = task if task is not None else False
 
-        def decorator(fn: AnyFunction) -> Resource | ResourceTemplate | AnyFunction:
+        def decorator(fn: AnyFunction) -> Any:
             # Check for unbound method
             try:
                 params = list(inspect.signature(fn).parameters.keys())

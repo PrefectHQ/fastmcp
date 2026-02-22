@@ -116,8 +116,8 @@ def _replace_ref_with_defs(
     elif item_schema := schema.get("items"):
         schema["items"] = _replace_ref_with_defs(item_schema)
     for section in ["anyOf", "allOf", "oneOf"]:
-        for i, item in enumerate(schema.get(section, [])):
-            schema[section][i] = _replace_ref_with_defs(item)
+        if section in schema:
+            schema[section] = [_replace_ref_with_defs(item) for item in schema[section]]
     if additionalProperties := schema.get("additionalProperties"):
         if not isinstance(additionalProperties, bool):
             schema["additionalProperties"] = _replace_ref_with_defs(

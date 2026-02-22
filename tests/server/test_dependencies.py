@@ -754,6 +754,42 @@ async def test_validation_error_propagates_from_dependency(mcp: FastMCP):
 class TestTransformContextAnnotations:
     """Tests for the transform_context_annotations function."""
 
+    async def test_optional_context_degrades_to_none_without_active_context(self):
+        """Optional Context should resolve to None when no context is active."""
+        import inspect
+
+        from fastmcp.server.dependencies import transform_context_annotations
+
+        async def fn_with_optional_ctx(name: str, ctx: Context | None = None) -> str:
+            return name
+
+        transform_context_annotations(fn_with_optional_ctx)
+        sig = inspect.signature(fn_with_optional_ctx)
+        ctx_dependency = sig.parameters["ctx"].default
+
+        resolved_ctx = await ctx_dependency.__aenter__()
+        try:
+            assert resolved_ctx is None
+        finally:
+            await ctx_dependency.__aexit__(None, None, None)
+
+    async def test_optional_context_still_injected_in_foreground_requests(
+        self, mcp: FastMCP
+    ):
+        """Optional Context should still be injected for normal MCP requests."""
+
+        @mcp.tool()
+        async def tool_with_optional_context(
+            name: str, ctx: Context | None = None
+        ) -> str:
+            if ctx is None:
+                return f"missing:{name}"
+            return f"present:{ctx.session_id}:{name}"
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("tool_with_optional_context", {"name": "x"})
+            assert result.content[0].text.startswith("present:")
+
     async def test_basic_context_transformation(self, mcp: FastMCP):
         """Test basic Context type annotation is transformed."""
 

@@ -11,7 +11,7 @@
       if (!banner) {
         banner = document.createElement('div');
         banner.id = 'v2-banner';
-        banner.innerHTML = 'These are the docs for FastMCP 2.0. The beta of <a href="/getting-started/welcome" style="color: white; text-decoration: underline; font-weight: 700;">FastMCP 3.0</a> is now available.';
+        banner.innerHTML = 'These are the docs for FastMCP 2.0. <a href="/getting-started/welcome" style="color: white; text-decoration: underline; font-weight: 700;">FastMCP 3.0</a> is now available.';
         container.insertBefore(banner, container.firstChild);
       }
     } else if (!isV2 && banner) {

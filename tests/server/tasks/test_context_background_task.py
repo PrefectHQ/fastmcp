@@ -14,6 +14,7 @@ from mcp import ServerSession
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.elicitation import ElicitResult
+from fastmcp.dependencies import CurrentDocket
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_access_token
@@ -228,6 +229,43 @@ class TestBackgroundTaskIntegration:
         assert captured["task_id"] is not None
         assert captured["session_id"] is not None
         assert captured["is_background"] is True
+
+    async def test_origin_request_id_round_trips_through_background_task(self):
+        """E2E: origin_request_id captured at submit time is restored in worker.
+
+        We validate this by comparing ctx.origin_request_id with the value
+        stored in Docket's Redis for this task.
+        """
+
+        mcp = FastMCP("origin-request-id-roundtrip")
+
+        @mcp.tool(task=True)
+        async def check_origin_request_id(ctx: Context, docket=CurrentDocket()) -> str:
+            assert ctx.is_background_task is True
+            assert ctx.request_context is None
+            assert ctx.task_id is not None
+
+            origin = ctx.origin_request_id
+            assert origin is not None
+            assert isinstance(origin, str)
+            assert origin != ""
+
+            key = docket.key(
+                f"fastmcp:task:{ctx.session_id}:{ctx.task_id}:origin_request_id"
+            )
+            async with docket.redis() as redis:
+                raw = await redis.get(key)
+
+            assert raw is not None
+            if isinstance(raw, bytes):
+                raw = raw.decode()
+            assert str(raw) == origin
+            return "ok"
+
+        async with Client(mcp) as client:
+            task = await client.call_tool("check_origin_request_id", {}, task=True)
+            result = await task.result()
+            assert result.data == "ok"
 
     async def test_elicit_accept_flow(self):
         """E2E: tool elicits input, client accepts via elicitation_handler."""

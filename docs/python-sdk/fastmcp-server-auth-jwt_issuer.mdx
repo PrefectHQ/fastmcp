@@ -15,7 +15,7 @@ This maintains proper OAuth 2.0 token audience boundaries.
 
 ## Functions
 
-### `derive_jwt_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L37" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `derive_jwt_key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L37" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 derive_jwt_key() -> bytes
@@ -27,7 +27,7 @@ Derive JWT signing key from a high-entropy or low-entropy key material and serve
 
 ## Classes
 
-### `JWTIssuer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L74" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `JWTIssuer` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L74" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Issues and validates FastMCP-signed JWT tokens using HS256.
@@ -39,7 +39,7 @@ a key derived from the upstream client secret.
 
 **Methods:**
 
-#### `issue_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `issue_access_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 issue_access_token(self, client_id: str, scopes: list[str], jti: str, expires_in: int = 3600, upstream_claims: dict[str, Any] | None = None) -> str
@@ -62,7 +62,7 @@ which contains actual user identity and authorization data.
 - Signed JWT token
 
 
-#### `issue_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L152" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `issue_refresh_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L152" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 issue_refresh_token(self, client_id: str, scopes: list[str], jti: str, expires_in: int, upstream_claims: dict[str, Any] | None = None) -> str
@@ -85,7 +85,7 @@ token which contains actual user identity and authorization data.
 - Signed JWT token
 
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> dict[str, Any]

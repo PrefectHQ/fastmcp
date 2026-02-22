@@ -1,14 +1,15 @@
 """Tests for OAuth proxy with persistent storage."""
 
+import tempfile
+import warnings
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from diskcache.core import tempfile
 from inline_snapshot import snapshot
 from key_value.aio.protocols import AsyncKeyValue
-from key_value.aio.stores.disk import MultiDiskStore
+from key_value.aio.stores.filetree import FileTreeStore
 from key_value.aio.stores.memory import MemoryStore
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
@@ -29,12 +30,12 @@ class TestOAuthProxyStorage:
         return verifier
 
     @pytest.fixture
-    async def temp_storage(self) -> AsyncGenerator[MultiDiskStore, None]:
+    async def temp_storage(self) -> AsyncGenerator[FileTreeStore, None]:
         """Create file-based storage for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            disk_store = MultiDiskStore(base_directory=Path(temp_dir))
-            yield disk_store
-            await disk_store.close()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                yield FileTreeStore(data_directory=Path(temp_dir))
 
     @pytest.fixture
     def memory_storage(self) -> MemoryStore:

@@ -6,6 +6,53 @@ from typing import Any
 from jsonref import JsonRefError, replace_refs
 
 
+def _defs_have_cycles(defs: dict[str, Any]) -> bool:
+    """Check whether any definitions in ``$defs`` form a reference cycle.
+
+    A cycle means a definition directly or transitively references itself
+    (e.g. Node → children → Node, or A → B → A).  ``jsonref.replace_refs``
+    silently produces Python-level object cycles for these, which Pydantic's
+    serializer rejects.
+    """
+    if not defs:
+        return False
+
+    # Build adjacency: def_name -> set of def_names it references.
+    edges: dict[str, set[str]] = defaultdict(set)
+
+    def _collect_refs(obj: Any, source: str) -> None:
+        if isinstance(obj, dict):
+            ref = obj.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                edges[source].add(ref.split("/")[-1])
+            for v in obj.values():
+                _collect_refs(v, source)
+        elif isinstance(obj, list):
+            for item in obj:
+                _collect_refs(item, source)
+
+    for name, definition in defs.items():
+        _collect_refs(definition, name)
+
+    # DFS cycle detection.
+    UNVISITED, IN_STACK, DONE = 0, 1, 2
+    state: dict[str, int] = defaultdict(int)
+
+    def _has_cycle(node: str) -> bool:
+        state[node] = IN_STACK
+        for neighbor in edges.get(node, ()):
+            if neighbor not in defs:
+                continue
+            if state[neighbor] == IN_STACK:
+                return True
+            if state[neighbor] == UNVISITED and _has_cycle(neighbor):
+                return True
+        state[node] = DONE
+        return False
+
+    return any(state[name] == UNVISITED and _has_cycle(name) for name in defs)
+
+
 def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     """Resolve all $ref references in a JSON schema by inlining definitions.
 
@@ -35,6 +82,13 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         >>> resolved = dereference_refs(schema)
         >>> # Result: {"properties": {"cat": {"enum": ["a", "b"], "type": "string", "default": "a"}}}
     """
+    # Circular $defs can't be fully inlined — jsonref.replace_refs produces
+    # Python dicts with object-identity cycles that Pydantic's model_dump
+    # rejects with "Circular reference detected (id repeated)".
+    # Detect cycles up front and fall back to root-only resolution.
+    if _defs_have_cycles(schema.get("$defs", {})):
+        return resolve_root_ref(schema)
+
     try:
         # Use jsonref to resolve all $ref references
         # proxies=False returns plain dicts (not proxy objects)

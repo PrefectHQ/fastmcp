@@ -58,8 +58,8 @@ def enable_fastmcp_logger_propagation(caplog):
 def isolate_settings_home(tmp_path: Path):
     """Ensure each test uses an isolated settings.home directory.
 
-    This prevents SQLite database locking issues on Windows when multiple
-    tests share the same DiskStore directory in settings.home / "oauth-proxy".
+    This prevents file locking issues when multiple tests share the same
+    storage directory in settings.home / "oauth-proxy".
     """
     test_home = tmp_path / "fastmcp-test-home"
     test_home.mkdir(exist_ok=True)

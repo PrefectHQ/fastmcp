@@ -95,7 +95,7 @@ class StreamableHttpTransport(ClientTransport):
         # Load headers from an active HTTP request, if available. This will only be true
         # if the client is used in a FastMCP Proxy, in which case the MCP client headers
         # need to be forwarded to the remote server.
-        headers = get_http_headers() | self.headers
+        headers = get_http_headers(include={"authorization"}) | self.headers
 
         # Configure timeout if provided, preserving MCP's 30s connect default
         timeout: httpx.Timeout | None = None

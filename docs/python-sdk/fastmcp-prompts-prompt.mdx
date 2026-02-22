@@ -10,7 +10,7 @@ Base classes for FastMCP prompts.
 
 ## Classes
 
-### `Message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Wrapper for prompt message with auto-serialization.
@@ -21,7 +21,7 @@ Accepts any content - strings pass through, other types
 
 **Methods:**
 
-#### `to_mcp_prompt_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L91" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_mcp_prompt_message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L91" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 to_mcp_prompt_message(self) -> PromptMessage
@@ -30,13 +30,13 @@ to_mcp_prompt_message(self) -> PromptMessage
 Convert to MCP PromptMessage.
 
 
-### `PromptArgument` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `PromptArgument` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 An argument that can be passed to a prompt.
 
 
-### `PromptResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L108" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `PromptResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L108" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Canonical result type for prompt rendering.
@@ -47,7 +47,7 @@ roles, and metadata at both the message and result level.
 
 **Methods:**
 
-#### `to_mcp_prompt_result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L180" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_mcp_prompt_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L180" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 to_mcp_prompt_result(self) -> GetPromptResult
@@ -56,7 +56,7 @@ to_mcp_prompt_result(self) -> GetPromptResult
 Convert to MCP GetPromptResult.
 
 
-### `Prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L190" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L190" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A prompt template that can be rendered with parameters.
@@ -64,7 +64,7 @@ A prompt template that can be rendered with parameters.
 
 **Methods:**
 
-#### `to_mcp_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L202" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_mcp_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L202" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 to_mcp_prompt(self, **overrides: Any) -> SDKPrompt
@@ -73,7 +73,7 @@ to_mcp_prompt(self, **overrides: Any) -> SDKPrompt
 Convert the prompt to an MCP prompt.
 
 
-#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L228" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L228" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any]) -> FunctionPrompt
@@ -87,7 +87,7 @@ The function can return:
 - PromptResult: used directly
 
 
-#### `render` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L264" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `render` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L264" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 render(self, arguments: dict[str, Any] | None = None) -> str | list[Message | str] | PromptResult
@@ -101,7 +101,7 @@ Subclasses must implement this method. Return one of:
 - PromptResult: Used directly
 
 
-#### `convert_result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L277" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `convert_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L277" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 convert_result(self, raw_value: Any) -> PromptResult
@@ -113,7 +113,7 @@ Convert a raw return value to PromptResult.
 - `TypeError`: for unsupported types
 
 
-#### `register_with_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L367" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L367" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_with_docket(self, docket: Docket) -> None
@@ -122,7 +122,7 @@ register_with_docket(self, docket: Docket) -> None
 Register this prompt with docket for background execution.
 
 
-#### `add_to_docket` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L373" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L373" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_to_docket(self, docket: Docket, arguments: dict[str, Any] | None, **kwargs: Any) -> Execution
@@ -138,7 +138,7 @@ Schedule this prompt for background execution via docket.
 - `**kwargs`: Additional kwargs passed to docket.add()
 
 
-#### `get_span_attributes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L396" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/prompt.py#L396" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]
