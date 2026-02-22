@@ -8,9 +8,10 @@ on:
     types: [created]
 
 permissions:
+  actions: read
   contents: write
   issues: write
-  pull-requests: read
+  pull-requests: write
   id-token: write
 
 jobs:
@@ -20,7 +21,7 @@ jobs:
       contains(github.event.comment.body, '/marvin') &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -79,12 +80,9 @@ jobs:
             </task>
 
             <constraints>
-            This workflow allows read, write, and execute capabilities but cannot push changes.
-
             You CAN: Read/analyze code, modify files, write code, run tests, execute commands
-            You CANNOT: Commit code, push changes, create branches, checkout branches, create pull requests
+            You CAN: Commit code, push changes, create branches, create pull requests
 
-            **Important**: You cannot push changes to the repository - you can only make changes locally and provide feedback or recommendations.
             </constraints>
 
             <allowed_tools>

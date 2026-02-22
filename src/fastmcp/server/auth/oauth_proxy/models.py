@@ -56,6 +56,7 @@ class OAuthTransaction(BaseModel):
     proxy_code_verifier: str | None = None
     csrf_token: str | None = None
     csrf_expires_at: float | None = None
+    consent_token: str | None = None
 
 
 class ClientCode(BaseModel):

@@ -1,0 +1,31 @@
+---
+title: Apps
+sidebarTitle: Overview
+description: Give your tools interactive UIs rendered directly in the conversation.
+icon: grid-2
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.0.0" />
+
+MCP Apps let your tools return interactive UIs — rendered in a sandboxed iframe right inside the host client's conversation. Instead of returning plain text or JSON, a tool can show a chart, a form, an image viewer, or anything you can build with HTML and JavaScript.
+
+FastMCP implements the [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps), so you can start building apps today. FastMCP 3.1 will introduce a full Python-native app framework that makes building rich UIs dramatically simpler — no HTML or JavaScript required.
+
+## What's Available Today
+
+FastMCP provides typed models and helpers for working with the MCP Apps extension directly:
+
+- **`AppConfig`** to link tools to UI resources and control visibility
+- **`ui://` resources** that automatically serve HTML with the correct MIME type
+- **`ResourceCSP`** and **`ResourcePermissions`** for security and sandboxing
+
+This is the [low-level API](/apps/low-level) — you write the HTML yourself and wire up communication with the host via the `@modelcontextprotocol/ext-apps` JavaScript SDK. It gives you full control over the UI.
+
+## What's Coming in 3.1
+
+FastMCP 3.1 will ship a Python-native app framework that lets you build interactive UIs entirely in Python. Define layouts, handle events, and manage state without writing any HTML or JavaScript — FastMCP generates the app for you.
+
+Stay tuned. In the meantime, the [low-level API](/apps/low-level) is ready to use.

@@ -31,6 +31,11 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client
 from cryptography.fernet import Fernet
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1CollectionSanitizationStrategy,
+    FileTreeV1KeySanitizationStrategy,
+)
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.server.auth.handlers.metadata import MetadataHandler
 from mcp.server.auth.provider import (
@@ -292,7 +297,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             extra_token_params: Additional parameters to forward to the upstream token endpoint.
                 Useful for provider-specific parameters during token exchange.
             client_storage: Storage backend for OAuth state (client registrations, tokens).
-                If None, an encrypted DiskStore will be created in the data directory.
+                If None, an encrypted file store will be created in the data directory.
             jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes).
                 If bytes are provided, they will be used as-is.
                 If a string is provided, it will be derived into a 32-byte key using PBKDF2 (1.2M iterations).
@@ -413,18 +418,35 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # JWTIssuer will be created in set_mcp_path() with correct audience
         self._jwt_issuer: JWTIssuer | None = None
 
-        # If the user does not provide a store, we will provide an encrypted disk store
+        # If the user does not provide a store, we will provide an encrypted file store.
+        # The storage directory is derived from the encryption key so that different
+        # keys get isolated directories (e.g. two servers on the same machine with
+        # different keys won't collide). Decryption errors are treated as cache misses
+        # rather than hard failures, so key rotation just causes re-registration.
         if client_storage is None:
-            # Import lazily to avoid sqlite3 dependency when not using OAuthProxy
-            from key_value.aio.stores.disk import DiskStore
-
             storage_encryption_key = derive_jwt_key(
                 high_entropy_material=jwt_signing_key.decode(),
                 salt="fastmcp-storage-encryption-key",
             )
+
+            key_fingerprint = hashlib.sha256(storage_encryption_key).hexdigest()[:12]
+            storage_dir = settings.home / "oauth-proxy" / key_fingerprint
+            storage_dir.mkdir(parents=True, exist_ok=True)
+
+            file_store = FileTreeStore(
+                data_directory=storage_dir,
+                key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(
+                    storage_dir
+                ),
+                collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(
+                    storage_dir
+                ),
+            )
+
             client_storage = FernetEncryptionWrapper(
-                key_value=DiskStore(directory=settings.home / "oauth-proxy"),
+                key_value=file_store,
                 fernet=Fernet(key=storage_encryption_key),
+                raise_on_decryption_error=False,
             )
 
         self._client_storage: AsyncKeyValue = client_storage
@@ -1237,7 +1259,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     time.time() + new_refresh_expires_in
                 )
 
-        upstream_token_set.raw_token_data = token_response
+        upstream_token_set.raw_token_data = {
+            **upstream_token_set.raw_token_data,
+            **token_response,
+        }
         # Calculate refresh TTL for storage
         refresh_ttl = new_refresh_expires_in or (
             int(upstream_token_set.refresh_token_expires_at - time.time())
@@ -1345,6 +1370,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     # Token Validation
     # -------------------------------------------------------------------------
 
+    def _get_verification_token(
+        self, upstream_token_set: UpstreamTokenSet
+    ) -> str | None:
+        """Get the token string to pass to the token verifier.
+
+        Returns the upstream access token by default. Subclasses can override
+        to verify a different token (e.g., the OIDC id_token for providers
+        that issue opaque access tokens).
+        """
+        return upstream_token_set.access_token
+
     async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
         """Validate FastMCP JWT by swapping for upstream token.
 
@@ -1383,13 +1419,30 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
             # 3. Validate with upstream provider (delegated to TokenVerifier)
             # This calls the real token validator (GitHub API, JWKS, etc.)
-            validated = await self._token_validator.verify_token(
-                upstream_token_set.access_token
-            )
+            verification_token = self._get_verification_token(upstream_token_set)
+            if verification_token is None:
+                logger.debug("No verification token available")
+                return None
+            validated = await self._token_validator.verify_token(verification_token)
 
             if not validated:
                 logger.debug("Upstream token validation failed")
                 return None
+
+            # When the verification token differs from the access token
+            # (e.g., id_token verification), ensure the returned AccessToken
+            # carries the upstream access token and its scopes, not the
+            # verification token's values.
+            if verification_token != upstream_token_set.access_token:
+                validated = validated.model_copy(
+                    update={
+                        "token": upstream_token_set.access_token,
+                        "scopes": upstream_token_set.scope.split()
+                        if upstream_token_set.scope
+                        else validated.scopes,
+                        "expires_at": int(upstream_token_set.expires_at),
+                    }
+                )
 
             logger.debug(
                 "Token swap successful for JTI=%s (upstream validated)", jti[:8]
@@ -1617,6 +1670,38 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     error_message="Invalid or expired authorization transaction. Please try authenticating again.",
                 )
                 return HTMLResponse(content=html_content, status_code=400)
+            # Verify consent binding cookie to prevent confused deputy attacks.
+            # When consent is enabled, the browser that approved consent receives
+            # a signed cookie. A different browser (e.g., a victim lured to the
+            # IdP URL) won't have this cookie and will be rejected.
+            if self._require_authorization_consent:
+                consent_token = transaction_model.consent_token
+                if not consent_token:
+                    logger.error("Transaction %s missing consent_token", txn_id)
+                    html_content = create_error_html(
+                        error_title="Authorization Error",
+                        error_message="Invalid authorization flow. Please try authenticating again.",
+                    )
+                    return HTMLResponse(content=html_content, status_code=403)
+
+                if not self._verify_consent_binding_cookie(
+                    request, txn_id, consent_token
+                ):
+                    logger.warning(
+                        "Consent binding cookie missing or invalid for transaction %s "
+                        "(possible confused deputy attack)",
+                        txn_id,
+                    )
+                    html_content = create_error_html(
+                        error_title="Authorization Error",
+                        error_message=(
+                            "Authorization session mismatch. This can happen if you "
+                            "followed a link from another person or your session expired. "
+                            "Please try authenticating again."
+                        ),
+                    )
+                    return HTMLResponse(content=html_content, status_code=403)
+
             transaction = transaction_model.model_dump()
 
             # Exchange IdP code for tokens (server-side)
@@ -1729,7 +1814,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
             logger.debug(f"Forwarding to client callback for transaction {txn_id}")
 
-            return RedirectResponse(url=client_callback_url, status_code=302)
+            response = RedirectResponse(url=client_callback_url, status_code=302)
+            self._clear_consent_binding_cookie(request, response, txn_id)
+            return response
 
         except Exception as e:
             logger.error("Error in IdP callback handler: %s", e, exc_info=True)

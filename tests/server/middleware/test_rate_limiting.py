@@ -306,21 +306,27 @@ class TestRateLimitingMiddlewareIntegration:
 
     async def test_rate_limiting_blocks_rapid_requests(self, rate_limit_server):
         """Test that rate limiting blocks rapid successive requests."""
-        # Very restrictive rate limit (accounting for initialization and list_tools calls)
-        # Requests: 1 initialize + 1 list_tools + 4 call_tools = 6 total before limit
+        # Use a generous burst but near-zero refill rate so tokens never
+        # replenish.  The MCP SDK sends internal messages (initialize,
+        # notifications, list_tools for validation) whose exact count
+        # varies, so we give enough burst for init + several calls, then
+        # keep firing until we hit the limit.
         rate_limit_server.add_middleware(
-            RateLimitingMiddleware(max_requests_per_second=10.0, burst_capacity=6)
+            RateLimitingMiddleware(max_requests_per_second=0.001, burst_capacity=20)
         )
 
         async with Client(rate_limit_server) as client:
-            # First few should succeed (within burst capacity)
-            await client.call_tool("quick_action", {"message": "1"})
-            await client.call_tool("quick_action", {"message": "2"})
-            await client.call_tool("quick_action", {"message": "3"})
-
-            # Next should be rate limited
-            with pytest.raises(ToolError, match="Rate limit exceeded"):
-                await client.call_tool("quick_action", {"message": "4"})
+            # Fire enough calls to exhaust the burst.  With near-zero
+            # refill, we must eventually hit the limit.
+            hit_limit = False
+            for i in range(30):
+                try:
+                    await client.call_tool("quick_action", {"message": str(i)})
+                except ToolError as exc:
+                    assert "Rate limit exceeded" in str(exc)
+                    hit_limit = True
+                    break
+            assert hit_limit, "Rate limit was never triggered"
 
     async def test_rate_limiting_with_concurrent_requests(self, rate_limit_server):
         """Test rate limiting behavior with concurrent requests."""

@@ -162,8 +162,8 @@ class WorkOSProvider(OAuthProxy):
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
-                If None, a DiskStore will be created in the data directory (derived from `platformdirs`). The
-                disk store will be encrypted using a key derived from the JWT Signing Key.
+                If None, an encrypted file store will be created in the data directory
+                (derived from `platformdirs`).
             jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes). If bytes are provided,
                 they will be used as is. If a string is provided, it will be derived into a 32-byte key. If not
                 provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
@@ -252,6 +252,7 @@ class AuthKitProvider(RemoteAuthProvider):
         *,
         authkit_domain: AnyHttpUrl | str,
         base_url: AnyHttpUrl | str,
+        client_id: str | None = None,
         required_scopes: list[str] | None = None,
         token_verifier: TokenVerifier | None = None,
     ):
@@ -260,6 +261,9 @@ class AuthKitProvider(RemoteAuthProvider):
         Args:
             authkit_domain: Your AuthKit domain (e.g., "https://your-app.authkit.app")
             base_url: Public URL of this FastMCP server
+            client_id: Your WorkOS project client ID (e.g., "client_01ABC..."). Used to
+                validate the JWT audience claim. Found in your WorkOS Dashboard under
+                API Keys. This is the project-level client ID, not individual MCP client IDs.
             required_scopes: Optional list of scopes to require for all requests
             token_verifier: Optional token verifier. If None, creates JWT verifier for AuthKit
         """
@@ -273,10 +277,17 @@ class AuthKitProvider(RemoteAuthProvider):
 
         # Create default JWT verifier if none provided
         if token_verifier is None:
+            logger.warning(
+                "AuthKitProvider cannot validate token audience for the specific resource "
+                "because AuthKit does not support RFC 8707 resource indicators. "
+                "This may leave the server vulnerable to cross-server token replay. "
+                "Consider using WorkOSProvider (OAuth proxy) for audience-bound tokens."
+            )
             token_verifier = JWTVerifier(
                 jwks_uri=f"{self.authkit_domain}/oauth2/jwks",
                 issuer=self.authkit_domain,
                 algorithm="RS256",
+                audience=client_id,
                 required_scopes=parsed_scopes,
             )
 

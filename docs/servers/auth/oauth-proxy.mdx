@@ -404,10 +404,12 @@ sequenceDiagram
     Note over Proxy: Store transaction with client PKCE<br/>Generate proxy PKCE pair
     Proxy->>User: 4. Show consent page<br/>(client details, redirect URI, scopes)
     User->>Proxy: 5. Approve/deny consent
+    Note over Proxy: Set consent binding cookie<br/>(binds browser to this flow)
     Proxy->>Provider: 6. Redirect to provider<br/>redirect_uri=server:8000/auth/callback<br/>code_challenge=PROXY_CHALLENGE
 
     Note over Provider, Proxy: Provider Callback
     Provider->>Proxy: 7. GET /auth/callback<br/>with authorization code
+    Note over Proxy: Verify consent binding cookie<br/>(reject if missing or mismatched)
     Proxy->>Provider: 8. Exchange code for tokens<br/>code_verifier=PROXY_VERIFIER
     Provider-->>Proxy: 9. Access & refresh tokens
 
@@ -432,18 +434,19 @@ The client initiates OAuth by redirecting to the proxy's `/authorize` endpoint. 
 1. Stores the client's transaction with its PKCE challenge
 2. Generates its own PKCE parameters for upstream security
 3. Shows the user a consent page with the client's details, redirect URI, and requested scopes
-4. If the user approves (or the client was previously approved), redirects to the upstream provider using the fixed callback URL
+4. If the user approves (or the client was previously approved), sets a consent binding cookie and redirects to the upstream provider using the fixed callback URL
 
-This dual-PKCE approach maintains end-to-end security at both the client-to-proxy and proxy-to-provider layers. The consent step protects against confused deputy attacks by ensuring you explicitly approve each client before it can complete authorization.
+This dual-PKCE approach maintains end-to-end security at both the client-to-proxy and proxy-to-provider layers. The consent step protects against confused deputy attacks by ensuring you explicitly approve each client before it can complete authorization, and the consent binding cookie ensures that only the browser that approved consent can complete the callback.
 
 ### Callback Phase
 
 After user authorization, the provider redirects back to the proxy's fixed callback URL. The proxy:
 
-1. Exchanges the authorization code for tokens with the provider
-2. Stores these tokens temporarily
-3. Generates a new authorization code for the client
-4. Redirects to the client's original dynamic callback URL
+1. Verifies the consent binding cookie matches the transaction (rejecting requests from a different browser)
+2. Exchanges the authorization code for tokens with the provider
+3. Stores these tokens temporarily
+4. Generates a new authorization code for the client
+5. Redirects to the client's original dynamic callback URL
 
 ### Token Exchange Phase
 
@@ -618,13 +621,15 @@ The OAuth proxy works by bridging DCR clients to traditional auth providers, whi
 
 #### Mitigation
 
-FastMCP's OAuth proxy requires you to explicitly consent whenever any new or unrecognized client attempts to connect to your server. Before any authorization happens, you see a consent page showing the client's details, redirect URI, and requested scopes. This gives you the opportunity to review and deny suspicious requests. Once you approve a client, it's remembered so you don't see the consent page again for that client. The consent mechanism is implemented with CSRF tokens and cryptographically signed cookies to prevent tampering.
+FastMCP's OAuth proxy defends against confused deputy attacks with two layers of protection:
+
+**Consent screen.** Before any authorization happens, you see a consent page showing the client's details, redirect URI, and requested scopes. This gives you the opportunity to review and deny suspicious requests. Once you approve a client, it's remembered so you don't see the consent page again for that client. The consent mechanism is implemented with CSRF tokens and cryptographically signed cookies to prevent tampering.
 
 ![](/assets/images/oauth-proxy-consent-screen.png)
 
 The consent page automatically displays your server's name, icon, and website URL, if available. These visual identifiers help users confirm they're authorizing the correct server.
 
-
+**Browser-session binding.** When you approve consent (or when a previously-approved client auto-approves), the proxy sets a cryptographically signed cookie that binds your browser session to the authorization flow. When the identity provider redirects back to the proxy's callback, the proxy verifies that this cookie is present and matches the expected transaction. A different browser — such as a victim who was sent the authorization URL by an attacker — won't have this cookie, and the callback will be rejected with a 403 error. This prevents the attack even when the identity provider skips the consent page for previously-authorized applications.
 
 **Learn more:**
 - [MCP Security Best Practices](https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices#confused-deputy-problem) - Official specification guidance

@@ -10,7 +10,7 @@ Lifespan utilities for combining async context manager lifespans.
 
 ## Functions
 
-### `combine_lifespans` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/lifespan.py#L12" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `combine_lifespans` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/lifespan.py#L12" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 combine_lifespans(*lifespans: Callable[[AppT], AbstractAsyncContextManager[Mapping[str, Any] | None]]) -> Callable[[AppT], AbstractAsyncContextManager[dict[str, Any]]]

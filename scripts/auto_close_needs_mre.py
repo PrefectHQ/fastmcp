@@ -313,7 +313,7 @@ def main():
     if not token:
         raise ValueError("GITHUB_TOKEN environment variable is required")
 
-    owner = os.environ.get("GITHUB_REPOSITORY_OWNER", "jlowin")
+    owner = os.environ.get("GITHUB_REPOSITORY_OWNER", "prefecthq")
     repo = os.environ.get("GITHUB_REPOSITORY_NAME", "fastmcp")
 
     print(f"[DEBUG] Repository: {owner}/{repo}")

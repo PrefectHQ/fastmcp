@@ -104,7 +104,7 @@ class TestGithubMCPRemote:
         async with streamable_http_client:
             assert streamable_http_client.is_connected()
             result = await streamable_http_client.call_tool(
-                "list_commits", {"owner": "jlowin", "repo": "fastmcp"}
+                "list_commits", {"owner": "prefecthq", "repo": "fastmcp"}
             )
 
             # at this time, the github server does not support structured content

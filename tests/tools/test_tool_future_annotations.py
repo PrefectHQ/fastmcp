@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Annotated, Any, Literal, cast
 
 import mcp.types
-import pytest
+from pydantic import Field
 
 from fastmcp import Context, FastMCP
 from fastmcp.client import Client
@@ -55,6 +55,20 @@ async def async_with_context(ctx: Context) -> str:
     return f"Async request: {ctx.request_id}"
 
 
+@fastmcp_server.tool
+def annotated_with_context(
+    query: Annotated[str, Field(description="Search query")], ctx: Context
+) -> str:
+    """Tool using Annotated + Field with context."""
+    return f"Result for: {query}"
+
+
+@fastmcp_server.tool
+def literal_with_context(mode: Literal["fast", "slow"], ctx: Context) -> str:
+    """Tool using Literal with context."""
+    return f"Mode: {mode}"
+
+
 class TestFutureAnnotations:
     async def test_simple_with_context(self):
         async with Client(fastmcp_server) as client:
@@ -102,6 +116,23 @@ class TestFutureAnnotations:
                 "Async request:" in cast(mcp.types.TextContent, result.content[0]).text
             )
 
+    async def test_annotated_with_context(self):
+        """Test Annotated[str, Field(...)] works with Context and future annotations."""
+        async with Client(fastmcp_server) as client:
+            result = await client.call_tool(
+                "annotated_with_context", {"query": "hello"}
+            )
+            assert (
+                "Result for: hello"
+                in cast(mcp.types.TextContent, result.content[0]).text
+            )
+
+    async def test_literal_with_context(self):
+        """Test Literal types work with Context and future annotations."""
+        async with Client(fastmcp_server) as client:
+            result = await client.call_tool("literal_with_context", {"mode": "fast"})
+            assert "Mode: fast" in cast(mcp.types.TextContent, result.content[0]).text
+
     async def test_modern_union_syntax_works(self):
         """Test that modern | union syntax works with future annotations."""
         # This demonstrates that our solution works with | syntax when types
@@ -138,33 +169,16 @@ class TestFutureAnnotations:
             )
 
 
-@pytest.mark.xfail(
-    reason="Closure-scoped types cannot be resolved with 'from __future__ import annotations'. "
-    "When using future annotations, all type annotations become strings that need to be evaluated "
-    "using eval() in the function's global namespace. Types defined only in closure scope "
-    "(like local imports or type aliases) are not available in the function's __globals__ "
-    "and therefore cannot be resolved by get_type_hints()."
-)
-def test_closure_scoped_types_limitation():
-    """
-    This test demonstrates that closure-scoped types don't work with future annotations.
+def test_closure_scoped_types_with_builtins():
+    """Closure-scoped tools work when annotations only reference builtins."""
 
-    The fundamental issue is that 'from __future__ import annotations' converts all
-    annotations to strings, and those strings can only be resolved using the function's
-    global namespace, not local variables from closures.
-    """
-
-    def create_failing_closure():
-        # This import is only available in the closure scope
-
+    def create_closure():
         mcp = FastMCP()
 
         @mcp.tool
         def closure_tool(value: str | None) -> str:
-            """This will fail because Optional can't be resolved from closure import."""
             return str(value)
 
         return mcp
 
-    # This should raise an error during tool registration
-    create_failing_closure()
+    create_closure()

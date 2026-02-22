@@ -11,6 +11,9 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 This guide shows you how to secure your FastMCP server using WorkOS's **AuthKit**, a complete authentication and user management solution. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern, where AuthKit handles user login and your FastMCP server validates the tokens.
 
+<Warning>
+AuthKit does not currently support [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html) resource indicators, so FastMCP cannot validate that tokens were issued for the specific resource server. If you need resource-specific audience validation, consider using [WorkOSProvider](/integrations/workos) (OAuth proxy pattern) instead.
+</Warning>
 
 ## Configuration
 ### Prerequisites
@@ -62,20 +65,22 @@ To test your server, you can use the `fastmcp` CLI to run it locally. Assuming y
 fastmcp run server.py --transport http --port 8000
 ```
 
-Now, you can use a FastMCP client to test that you can reach your server after authenticating:
+AuthKit defaults DCR clients to `client_secret_basic` for token exchange, which conflicts with how some MCP clients send credentials. To avoid token exchange errors, register as a public client by setting `token_endpoint_auth_method` to `"none"`:
 
-```python
+```python client.py
 from fastmcp import Client
+from fastmcp.client.auth import OAuth
 import asyncio
 
+auth = OAuth(additional_client_metadata={"token_endpoint_auth_method": "none"})
+
 async def main():
-    async with Client("http://localhost:8000/mcp", auth="oauth") as client:
+    async with Client("http://localhost:8000/mcp", auth=auth) as client:
         assert await client.ping()
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
-
 
 ## Production Configuration
 

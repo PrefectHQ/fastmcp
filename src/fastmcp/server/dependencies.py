@@ -270,11 +270,14 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
 
     # First pass: identify which params need transformation
     params_to_transform: set[str] = set()
+    optional_context_params: set[str] = set()
     for name, param in sig.parameters.items():
         annotation = type_hints.get(name, param.annotation)
         if is_class_member_of_type(annotation, Context):
             if not isinstance(param.default, Dependency):
                 params_to_transform.add(name)
+                if param.default is None:
+                    optional_context_params.add(name)
 
     if not params_to_transform:
         return fn
@@ -300,7 +303,10 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
             # We use CurrentContext() instead of Depends(get_context) because
             # get_context() returns the Context which is an AsyncContextManager,
             # and the DI system would try to enter it again (it's already entered)
-            param = param.replace(default=CurrentContext())
+            if name in optional_context_params:
+                param = param.replace(default=OptionalCurrentContext())
+            else:
+                param = param.replace(default=CurrentContext())
 
         # Sort into buckets based on parameter kind
         if param.kind == P.POSITIONAL_ONLY:
@@ -434,14 +440,22 @@ def get_http_request() -> Request:
     return request
 
 
-def get_http_headers(include_all: bool = False) -> dict[str, str]:
+def get_http_headers(
+    include_all: bool = False,
+    include: set[str] | None = None,
+) -> dict[str, str]:
     """Extract headers from the current HTTP request if available.
 
     Never raises an exception, even if there is no active HTTP request (in which case
     an empty dict is returned).
 
-    By default, strips problematic headers like `content-length` that cause issues
-    if forwarded to downstream clients. If `include_all` is True, all headers are returned.
+    By default, strips problematic headers like `content-length` and `authorization`
+    that cause issues if forwarded to downstream services. If `include_all` is True,
+    all headers are returned.
+
+    The `include` parameter allows specific headers to be included even if they would
+    normally be excluded. This is useful for proxy transports that need to forward
+    authorization headers to upstream MCP servers.
     """
     if include_all:
         exclude_headers: set[str] = set()
@@ -457,6 +471,7 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             "keep-alive",
             "expect",
             "accept",
+            "authorization",
             # Proxy-related headers
             "proxy-authenticate",
             "proxy-authorization",
@@ -464,6 +479,8 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             # MCP-related headers
             "mcp-session-id",
         }
+        if include:
+            exclude_headers -= {h.lower() for h in include}
         # (just in case)
         if not all(h.lower() == h for h in exclude_headers):
             raise ValueError("Excluded headers must be lowercase")
@@ -607,15 +624,23 @@ def without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]:
                     result = await result
                 return result
 
-    # Set wrapper metadata (only parameter annotations, not return type)
+    # Resolve string annotations (from `from __future__ import annotations`) using
+    # the original function's module context. The wrapper's __globals__ points to
+    # this module (dependencies.py) and is read-only, so some Pydantic versions
+    # can't resolve names like Annotated or Literal from string annotations.
+    try:
+        resolved_hints = get_type_hints(fn, include_extras=True)
+    except Exception:
+        resolved_hints = getattr(fn, "__annotations__", {})
+
     wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
     wrapper.__annotations__ = {
-        k: v
-        for k, v in getattr(fn, "__annotations__", {}).items()
-        if k not in exclude and k != "return"
+        k: v for k, v in resolved_hints.items() if k not in exclude and k != "return"
     }
     wrapper.__name__ = getattr(fn, "__name__", "wrapper")
     wrapper.__doc__ = getattr(fn, "__doc__", None)
+    wrapper.__module__ = fn.__module__
+    wrapper.__qualname__ = getattr(fn, "__qualname__", wrapper.__qualname__)
 
     return wrapper
 
@@ -773,6 +798,36 @@ async def _restore_task_access_token(
     return None
 
 
+async def _restore_task_origin_request_id(session_id: str, task_id: str) -> str | None:
+    """Restore the origin request ID snapshot for a background task.
+
+    Returns None if no request ID was captured at submission time.
+    """
+    docket = _current_docket.get()
+    if docket is None:
+        return None
+
+    request_id_key = docket.key(
+        f"fastmcp:task:{session_id}:{task_id}:origin_request_id"
+    )
+    try:
+        async with docket.redis() as redis:
+            request_id_data = await redis.get(request_id_key)
+        if request_id_data is None:
+            return None
+        if isinstance(request_id_data, bytes):
+            return request_id_data.decode()
+        return str(request_id_data)
+    except Exception:
+        _logger.warning(
+            "Failed to restore origin request ID for task %s:%s",
+            session_id,
+            task_id,
+            exc_info=True,
+        )
+        return None
+
+
 class _CurrentContext(Dependency):  # type: ignore[misc]
     """Async context manager for Context dependency.
 
@@ -799,11 +854,15 @@ class _CurrentContext(Dependency):  # type: ignore[misc]
             session = get_task_session(task_info.session_id)
             # Get server from ContextVar
             server = get_server()
+            origin_request_id = await _restore_task_origin_request_id(
+                task_info.session_id, task_info.task_id
+            )
             # Create task-aware Context
             self._context = Context(
                 fastmcp=server,
                 session=session,
                 task_id=task_info.task_id,
+                origin_request_id=origin_request_id,
             )
             # Enter the context to set up ContextVars
             await self._context.__aenter__()
@@ -834,6 +893,34 @@ class _CurrentContext(Dependency):  # type: ignore[misc]
             self._context = None
 
 
+class _OptionalCurrentContext(Dependency):  # type: ignore[misc]
+    """Context dependency that degrades to None when no context is active.
+
+    This is implemented as a wrapper (composition), not a subclass of
+    `_CurrentContext`, to avoid overriding `__aenter__` with an incompatible
+    return type.
+    """
+
+    _inner: _CurrentContext | None = None
+
+    async def __aenter__(self) -> Context | None:
+        inner = _CurrentContext()
+        try:
+            context = await inner.__aenter__()
+        except RuntimeError as exc:
+            if "No active context found" in str(exc):
+                return None
+            raise
+        self._inner = inner
+        return context
+
+    async def __aexit__(self, *args: object) -> None:
+        if self._inner is None:
+            return
+        await self._inner.__aexit__(*args)
+        self._inner = None
+
+
 def CurrentContext() -> Context:
     """Get the current FastMCP Context instance.
 
@@ -857,6 +944,11 @@ def CurrentContext() -> Context:
         ```
     """
     return cast("Context", _CurrentContext())
+
+
+def OptionalCurrentContext() -> Context | None:
+    """Get the current FastMCP Context, or None when no context is active."""
+    return cast("Context | None", _OptionalCurrentContext())
 
 
 class _CurrentDocket(Dependency):  # type: ignore[misc]
@@ -1029,7 +1121,7 @@ class _CurrentHeaders(Dependency):  # type: ignore[misc]
     """Async context manager for HTTP Headers dependency."""
 
     async def __aenter__(self) -> dict[str, str]:
-        return get_http_headers()
+        return get_http_headers(include={"authorization"})
 
     async def __aexit__(self, *args: object) -> None:
         pass
@@ -1038,9 +1130,10 @@ class _CurrentHeaders(Dependency):  # type: ignore[misc]
 def CurrentHeaders() -> dict[str, str]:
     """Get the current HTTP request headers.
 
-    This dependency provides access to the HTTP headers for the current request.
-    Returns an empty dictionary when no HTTP request is available, making it
-    safe to use in code that might run over any transport.
+    This dependency provides access to the HTTP headers for the current request,
+    including the authorization header. Returns an empty dictionary when no HTTP
+    request is available, making it safe to use in code that might run over any
+    transport.
 
     Returns:
         A dependency that resolves to a dictionary of header name -> value

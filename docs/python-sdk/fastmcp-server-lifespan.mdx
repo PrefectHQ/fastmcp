@@ -52,7 +52,7 @@ To compose with existing `@asynccontextmanager` lifespans, wrap them explicitly:
 
 ## Functions
 
-### `lifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/lifespan.py#L172" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/lifespan.py#L172" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 lifespan(fn: LifespanFn) -> Lifespan
@@ -74,7 +74,7 @@ a dict for the lifespan context.
 
 ## Classes
 
-### `Lifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/lifespan.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/lifespan.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Composable lifespan wrapper.
@@ -83,7 +83,7 @@ Wraps an async generator function and enables composition via the `|` operator.
 The wrapped function should yield a dict that becomes part of the lifespan context.
 
 
-### `ContextManagerLifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/lifespan.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ContextManagerLifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/lifespan.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Lifespan wrapper for already-wrapped context manager functions.
@@ -91,7 +91,7 @@ Lifespan wrapper for already-wrapped context manager functions.
 Use this for functions already decorated with @asynccontextmanager.
 
 
-### `ComposedLifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/lifespan.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ComposedLifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/lifespan.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Two lifespans composed together.

@@ -1219,10 +1219,10 @@ class TestAzureJWTVerifier:
 
 
 class TestAzureOBOIntegration:
-    """Tests for azure.identity OBO integration (create_obo_credential, EntraOBOToken)."""
+    """Tests for azure.identity OBO integration (get_obo_credential, EntraOBOToken)."""
 
-    def test_create_obo_credential_returns_configured_credential(self):
-        """Test that create_obo_credential returns a properly configured credential."""
+    async def test_get_obo_credential_returns_configured_credential(self):
+        """Test that get_obo_credential returns a properly configured credential."""
         from unittest.mock import MagicMock, patch
 
         provider = AzureProvider(
@@ -1238,7 +1238,9 @@ class TestAzureOBOIntegration:
         with patch(
             "azure.identity.aio.OnBehalfOfCredential", return_value=mock_credential
         ) as mock_class:
-            credential = provider.create_obo_credential(user_assertion="user-token-123")
+            credential = await provider.get_obo_credential(
+                user_assertion="user-token-123"
+            )
 
             mock_class.assert_called_once_with(
                 tenant_id="test-tenant-id",
@@ -1249,8 +1251,109 @@ class TestAzureOBOIntegration:
             )
             assert credential is mock_credential
 
-    def test_create_obo_credential_with_custom_authority(self):
-        """Test that create_obo_credential uses custom base_authority."""
+    async def test_get_obo_credential_caches_by_assertion(self):
+        """Test that the same assertion returns the cached credential."""
+        from unittest.mock import MagicMock, patch
+
+        provider = AzureProvider(
+            client_id="test-client-id",
+            client_secret="test-client-secret",
+            tenant_id="test-tenant-id",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+
+        mock_credential = MagicMock()
+        with patch(
+            "azure.identity.aio.OnBehalfOfCredential", return_value=mock_credential
+        ) as mock_class:
+            first = await provider.get_obo_credential(user_assertion="same-token")
+            second = await provider.get_obo_credential(user_assertion="same-token")
+
+            assert first is second
+            mock_class.assert_called_once()
+
+    async def test_get_obo_credential_different_assertions_get_different_credentials(
+        self,
+    ):
+        """Test that different assertions produce different credentials."""
+        from unittest.mock import MagicMock, patch
+
+        provider = AzureProvider(
+            client_id="test-client-id",
+            client_secret="test-client-secret",
+            tenant_id="test-tenant-id",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+
+        creds = [MagicMock(), MagicMock()]
+        with patch("azure.identity.aio.OnBehalfOfCredential", side_effect=creds):
+            first = await provider.get_obo_credential(user_assertion="token-a")
+            second = await provider.get_obo_credential(user_assertion="token-b")
+
+            assert first is not second
+            assert first is creds[0]
+            assert second is creds[1]
+
+    async def test_get_obo_credential_evicts_oldest_when_over_capacity(self):
+        """Test that credentials are evicted LRU-style when cache is full."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        provider = AzureProvider(
+            client_id="test-client-id",
+            client_secret="test-client-secret",
+            tenant_id="test-tenant-id",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+        provider._obo_max_credentials = 2
+
+        creds = [MagicMock(close=AsyncMock()) for _ in range(3)]
+        with patch("azure.identity.aio.OnBehalfOfCredential", side_effect=creds):
+            await provider.get_obo_credential(user_assertion="token-1")
+            await provider.get_obo_credential(user_assertion="token-2")
+            await provider.get_obo_credential(user_assertion="token-3")
+
+            assert len(provider._obo_credentials) == 2
+            creds[0].close.assert_awaited_once()
+            # token-1's credential was evicted
+            assert (
+                await provider.get_obo_credential(user_assertion="token-2") is creds[1]
+            )
+            assert (
+                await provider.get_obo_credential(user_assertion="token-3") is creds[2]
+            )
+
+    async def test_close_obo_credentials(self):
+        """Test that close_obo_credentials closes all cached credentials."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        provider = AzureProvider(
+            client_id="test-client-id",
+            client_secret="test-client-secret",
+            tenant_id="test-tenant-id",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+
+        creds = [MagicMock(close=AsyncMock()) for _ in range(2)]
+        with patch("azure.identity.aio.OnBehalfOfCredential", side_effect=creds):
+            await provider.get_obo_credential(user_assertion="token-a")
+            await provider.get_obo_credential(user_assertion="token-b")
+
+        await provider.close_obo_credentials()
+
+        assert len(provider._obo_credentials) == 0
+        for cred in creds:
+            cred.close.assert_awaited_once()
+
+    async def test_get_obo_credential_with_custom_authority(self):
+        """Test that get_obo_credential uses custom base_authority."""
         from unittest.mock import MagicMock, patch
 
         provider = AzureProvider(
@@ -1267,7 +1370,7 @@ class TestAzureOBOIntegration:
         with patch(
             "azure.identity.aio.OnBehalfOfCredential", return_value=mock_credential
         ) as mock_class:
-            provider.create_obo_credential(user_assertion="user-token")
+            await provider.get_obo_credential(user_assertion="user-token")
 
             call_kwargs = mock_class.call_args[1]
             assert call_kwargs["authority"] == "https://login.microsoftonline.us"

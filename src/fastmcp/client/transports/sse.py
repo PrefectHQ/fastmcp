@@ -69,7 +69,9 @@ class SSETransport(ClientTransport):
         # load headers from an active HTTP request, if available. This will only be true
         # if the client is used in a FastMCP Proxy, in which case the MCP client headers
         # need to be forwarded to the remote server.
-        client_kwargs["headers"] = get_http_headers() | self.headers
+        client_kwargs["headers"] = (
+            get_http_headers(include={"authorization"}) | self.headers
+        )
 
         # sse_read_timeout has a default value set, so we can't pass None without overriding it
         # instead we simply leave the kwarg out if it's not provided

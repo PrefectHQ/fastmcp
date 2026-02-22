@@ -838,10 +838,12 @@ async def call_command(
     or nested arguments.
 
     Examples:
+        ```
         fastmcp call server.py greet name=World
         fastmcp call server.py resource://docs/readme
         fastmcp call server.py analyze --prompt data='[1,2,3]'
         fastmcp call http://server/mcp create --input-json '{"tags": ["a","b"]}'
+        ```
     """
 
     if not target:

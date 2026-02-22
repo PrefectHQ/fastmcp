@@ -41,6 +41,7 @@ class TestFastMCPProviderTracing:
 
         # Verify delegate span has correct attributes
         delegate_span = next(s for s in spans if s.name == "delegate child_tool")
+        assert delegate_span.attributes is not None
         assert delegate_span.attributes["fastmcp.provider.type"] == "FastMCPProvider"
         assert delegate_span.attributes["fastmcp.component.key"] == "child_tool"
 
@@ -96,6 +97,7 @@ class TestFastMCPProviderTracing:
 
         # Verify delegate span has correct attributes
         delegate_span = next(s for s in spans if s.name == "delegate child_prompt")
+        assert delegate_span.attributes is not None
         assert delegate_span.attributes["fastmcp.provider.type"] == "FastMCPProvider"
 
 
@@ -125,5 +127,7 @@ class TestProviderSpanHierarchy:
         child_span = next(s for s in spans if s.name == "tools/call greet")
 
         # Verify parent-child relationships
+        assert delegate_span.parent is not None
+        assert child_span.parent is not None
         assert delegate_span.parent.span_id == parent_span.context.span_id
         assert child_span.parent.span_id == delegate_span.context.span_id

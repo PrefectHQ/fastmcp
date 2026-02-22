@@ -31,8 +31,8 @@ from opentelemetry.trace import get_tracer as otel_get_tracer
 
 INSTRUMENTATION_NAME = "fastmcp"
 
-TRACE_PARENT_KEY = "fastmcp.traceparent"
-TRACE_STATE_KEY = "fastmcp.tracestate"
+TRACE_PARENT_KEY = "traceparent"
+TRACE_STATE_KEY = "tracestate"
 
 
 def get_tracer(version: str | None = None) -> Tracer:

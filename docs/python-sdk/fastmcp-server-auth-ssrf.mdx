@@ -16,7 +16,7 @@ This module provides SSRF-protected HTTP fetching with:
 
 ## Functions
 
-### `format_ip_for_url` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `format_ip_for_url` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 format_ip_for_url(ip_str: str) -> str
@@ -35,7 +35,7 @@ the port separator. For example: https://[2001:db8::1]:443/path
 - IP string suitable for URL (IPv6 addresses are bracketed)
 
 
-### `is_ip_allowed` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L55" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `is_ip_allowed` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L55" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_ip_allowed(ip_str: str) -> bool
@@ -60,7 +60,7 @@ Additionally blocks multicast addresses (not caught by is_global).
 - True if the IP is allowed (public unicast internet), False if blocked
 
 
-### `resolve_hostname` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resolve_hostname` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_hostname(hostname: str, port: int = 443) -> list[str]
@@ -80,7 +80,7 @@ Resolve hostname to IP addresses using DNS.
 - `SSRFError`: If resolution fails
 
 
-### `validate_url` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L147" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `validate_url` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L147" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_url(url: str, require_path: bool = False) -> ValidatedURL
@@ -100,7 +100,7 @@ Validate URL for SSRF and resolve to IPs.
 - `SSRFError`: If URL is invalid or resolves to blocked IPs
 
 
-### `ssrf_safe_fetch` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ssrf_safe_fetch` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 ssrf_safe_fetch(url: str) -> bytes
@@ -132,7 +132,7 @@ Security measures:
 - `SSRFFetchError`: If fetch fails
 
 
-### `ssrf_safe_fetch_response` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L239" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ssrf_safe_fetch_response` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L239" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 ssrf_safe_fetch_response(url: str) -> SSRFFetchResponse
@@ -147,25 +147,25 @@ and status code, and supports conditional request headers.
 
 ## Classes
 
-### `SSRFError` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SSRFError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Raised when an SSRF protection check fails.
 
 
-### `SSRFFetchError` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SSRFFetchError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Raised when SSRF-safe fetch fails.
 
 
-### `ValidatedURL` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ValidatedURL` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A URL that has been validated for SSRF with resolved IPs.
 
 
-### `SSRFFetchResponse` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L139" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SSRFFetchResponse` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/ssrf.py#L139" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Response payload from an SSRF-safe fetch.

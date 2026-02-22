@@ -15,8 +15,7 @@ from fastmcp import FastMCP
 from fastmcp.server.auth.providers.workos import AuthKitProvider
 
 auth = AuthKitProvider(
-    authkit_domain=os.getenv("FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_AUTHKIT_DOMAIN")
-    or "",
+    authkit_domain=os.getenv("AUTHKIT_DOMAIN") or "",
     base_url="http://localhost:8000",
 )
 

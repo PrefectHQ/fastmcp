@@ -10,7 +10,7 @@ Pagination utilities for MCP list operations.
 
 ## Functions
 
-### `paginate_sequence` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/pagination.py#L50" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `paginate_sequence` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/pagination.py#L50" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 paginate_sequence(items: Sequence[T], cursor: str | None, page_size: int) -> tuple[list[T], str | None]
@@ -33,7 +33,7 @@ Paginate a sequence of items.
 
 ## Classes
 
-### `CursorState` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/pagination.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CursorState` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/pagination.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Internal representation of pagination cursor state.
@@ -44,7 +44,7 @@ per the MCP spec - they should not parse or modify cursors.
 
 **Methods:**
 
-#### `encode` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/pagination.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `encode` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/pagination.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 encode(self) -> str
@@ -53,7 +53,7 @@ encode(self) -> str
 Encode cursor state to an opaque string.
 
 
-#### `decode` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/pagination.py#L31" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `decode` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/pagination.py#L31" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 decode(cls, cursor: str) -> CursorState

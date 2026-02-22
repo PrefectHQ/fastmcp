@@ -15,7 +15,7 @@ UI metadata for clients that support interactive app rendering.
 
 ## Functions
 
-### `app_config_to_meta_dict` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/apps.py#L115" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `app_config_to_meta_dict` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/apps.py#L115" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]
@@ -25,7 +25,7 @@ app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]
 Convert an AppConfig or dict to the wire-format dict for ``meta["ui"]``.
 
 
-### `resolve_ui_mime_type` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/apps.py#L122" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resolve_ui_mime_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/apps.py#L122" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_ui_mime_type(uri: str, explicit_mime_type: str | None) -> str | None
@@ -49,7 +49,7 @@ the standalone @resource decorator, or resource templates).
 
 ## Classes
 
-### `ResourceCSP` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/apps.py#L18" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResourceCSP` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/apps.py#L18" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Content Security Policy for MCP App resources.
@@ -59,7 +59,7 @@ load resources from.  Hosts use these declarations to build the
 ``Content-Security-Policy`` header for the sandboxed iframe.
 
 
-### `ResourcePermissions` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/apps.py#L50" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResourcePermissions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/apps.py#L50" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Iframe sandbox permissions for MCP App resources.
@@ -70,7 +70,7 @@ iframe.  Hosts MAY honour these; apps should use JS feature detection
 as a fallback.
 
 
-### `AppConfig` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/apps.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AppConfig` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/apps.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration for MCP App tools and resources.

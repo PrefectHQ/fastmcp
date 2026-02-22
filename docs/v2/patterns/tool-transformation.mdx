@@ -705,3 +705,35 @@ You can chain transformations by using an already transformed tool as the parent
 
 ### Context-Aware Tool Factories
 You can write functions that act as "factories," generating specialized versions of a tool for different contexts. For example, you could create a `get_my_data` tool that is specific to the currently logged-in user by hiding the `user_id` parameter and providing it automatically.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.tools import Tool, tool
+from fastmcp.tools.tool_transform import ArgTransform
+
+# A generic tool that requires a user_id
+@tool
+def get_user_data(user_id: str, query: str) -> str:
+    """Fetch data for a specific user."""
+    return f"Data for user {user_id}: {query}"
+
+
+def create_user_tool(user_id: str) -> Tool:
+    """Factory that creates a user-specific version of get_user_data."""
+    return Tool.from_tool(
+        get_user_data,
+        name="get_my_data",
+        description="Fetch your data. No need to specify a user ID.",
+        transform_args={
+            "user_id": ArgTransform(hide=True, default=user_id),
+        },
+    )
+
+
+# Create a server with a tool customized for the current user
+mcp = FastMCP("User Server")
+current_user_id = "user-123"  # e.g., from auth context
+mcp.add_tool(create_user_tool(current_user_id))
+
+# Clients see "get_my_data(query: str)" — user_id is injected automatically
+```

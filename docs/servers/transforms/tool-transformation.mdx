@@ -191,3 +191,41 @@ mcp.add_tool(safe_division)
 The `forward()` function handles argument mapping automatically. Call it with the transformed argument names, and it maps them back to the original function's parameters.
 
 For direct access to the original function without mapping, use `forward_raw()` with the original parameter names.
+
+## Context-Aware Tool Factories
+
+You can write functions that act as "factories," generating specialized versions of a tool for different contexts. For example, create a `get_my_data` tool for the current user by hiding the `user_id` parameter and providing it automatically.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.tools import Tool, tool
+from fastmcp.tools.tool_transform import ArgTransform
+
+# A generic tool that requires a user_id
+@tool
+def get_user_data(user_id: str, query: str) -> str:
+    """Fetch data for a specific user."""
+    return f"Data for user {user_id}: {query}"
+
+
+def create_user_tool(user_id: str) -> Tool:
+    """Factory that creates a user-specific version of get_user_data."""
+    return Tool.from_tool(
+        get_user_data,
+        name="get_my_data",
+        description="Fetch your data. No need to specify a user ID.",
+        transform_args={
+            "user_id": ArgTransform(hide=True, default=user_id),
+        },
+    )
+
+
+# Create a server with a tool customized for the current user
+mcp = FastMCP("User Server")
+current_user_id = "user-123"  # e.g., from auth context
+mcp.add_tool(create_user_tool(current_user_id))
+
+# Clients see "get_my_data(query: str)" — user_id is injected automatically
+```
+
+This pattern is useful for multi-tenant servers where each connection gets tools pre-configured with their identity, or for wrapping generic tools with environment-specific defaults.

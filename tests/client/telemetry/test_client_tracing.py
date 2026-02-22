@@ -60,6 +60,7 @@ class TestClientToolTracing:
             None,
         )
         assert client_span is not None
+        assert client_span.attributes is not None
         # Standard MCP semantic conventions
         assert client_span.attributes["mcp.method.name"] == "tools/call"
         # Standard RPC semantic conventions
@@ -119,6 +120,7 @@ class TestClientResourceTracing:
             None,
         )
         assert client_span is not None
+        assert client_span.attributes is not None
         # Standard MCP semantic conventions
         assert client_span.attributes["mcp.method.name"] == "resources/read"
         assert "data://" in str(client_span.attributes["mcp.resource.uri"])
@@ -178,6 +180,7 @@ class TestClientPromptTracing:
             None,
         )
         assert client_span is not None
+        assert client_span.attributes is not None
         # Standard MCP semantic conventions
         assert client_span.attributes["mcp.method.name"] == "prompts/get"
         # Standard RPC semantic conventions
@@ -230,7 +233,9 @@ class TestClientServerSpanHierarchy:
 
         # Both spans should exist
         assert client_span is not None, "Client should create a span"
+        assert client_span.attributes is not None
         assert server_span is not None, "Server should create a span"
+        assert server_span.attributes is not None
 
         # Verify span kinds are correct
         assert client_span.kind == SpanKind.CLIENT, "Client span should be CLIENT kind"
@@ -539,6 +544,7 @@ class TestSessionIdOnSpans:
         )
 
         assert client_span is not None, "Client should create a span"
+        assert client_span.attributes is not None
         assert "mcp.session.id" in client_span.attributes
         assert client_span.attributes["mcp.session.id"] is not None
 
@@ -570,6 +576,7 @@ class TestSessionIdOnSpans:
         )
 
         assert server_span is not None, "Server should create a span"
+        assert server_span.attributes is not None
         assert "mcp.session.id" in server_span.attributes
         assert server_span.attributes["mcp.session.id"] is not None
 
@@ -611,7 +618,9 @@ class TestSessionIdOnSpans:
         )
 
         assert client_span is not None
+        assert client_span.attributes is not None
         assert server_span is not None
+        assert server_span.attributes is not None
 
         # Both should have session IDs and they should match
         client_session = client_span.attributes.get("mcp.session.id")

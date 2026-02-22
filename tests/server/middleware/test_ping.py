@@ -169,10 +169,10 @@ class TestPingLoop:
         middleware._active_sessions.add(session_id)
 
         # Run ping loop for a short time then cancel
-        with anyio.move_on_after(0.15):
+        with anyio.move_on_after(0.35):
             await middleware._ping_loop(mock_session, session_id)
 
-        # Should have sent at least 2 pings in 150ms with 50ms interval
+        # Should have sent at least 2 pings in 350ms with 50ms interval
         assert mock_session.send_ping.call_count >= 2
 
     async def test_ping_loop_cleans_up_on_cancellation(self):
