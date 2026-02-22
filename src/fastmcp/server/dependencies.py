@@ -270,11 +270,14 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
 
     # First pass: identify which params need transformation
     params_to_transform: set[str] = set()
+    optional_context_params: set[str] = set()
     for name, param in sig.parameters.items():
         annotation = type_hints.get(name, param.annotation)
         if is_class_member_of_type(annotation, Context):
             if not isinstance(param.default, Dependency):
                 params_to_transform.add(name)
+                if param.default is None:
+                    optional_context_params.add(name)
 
     if not params_to_transform:
         return fn
@@ -300,7 +303,10 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
             # We use CurrentContext() instead of Depends(get_context) because
             # get_context() returns the Context which is an AsyncContextManager,
             # and the DI system would try to enter it again (it's already entered)
-            param = param.replace(default=CurrentContext())
+            if name in optional_context_params:
+                param = param.replace(default=OptionalCurrentContext())
+            else:
+                param = param.replace(default=CurrentContext())
 
         # Sort into buckets based on parameter kind
         if param.kind == P.POSITIONAL_ONLY:
@@ -792,6 +798,36 @@ async def _restore_task_access_token(
     return None
 
 
+async def _restore_task_origin_request_id(session_id: str, task_id: str) -> str | None:
+    """Restore the origin request ID snapshot for a background task.
+
+    Returns None if no request ID was captured at submission time.
+    """
+    docket = _current_docket.get()
+    if docket is None:
+        return None
+
+    request_id_key = docket.key(
+        f"fastmcp:task:{session_id}:{task_id}:origin_request_id"
+    )
+    try:
+        async with docket.redis() as redis:
+            request_id_data = await redis.get(request_id_key)
+        if request_id_data is None:
+            return None
+        if isinstance(request_id_data, bytes):
+            return request_id_data.decode()
+        return str(request_id_data)
+    except Exception:
+        _logger.warning(
+            "Failed to restore origin request ID for task %s:%s",
+            session_id,
+            task_id,
+            exc_info=True,
+        )
+        return None
+
+
 class _CurrentContext(Dependency):  # type: ignore[misc]
     """Async context manager for Context dependency.
 
@@ -818,11 +854,15 @@ class _CurrentContext(Dependency):  # type: ignore[misc]
             session = get_task_session(task_info.session_id)
             # Get server from ContextVar
             server = get_server()
+            origin_request_id = await _restore_task_origin_request_id(
+                task_info.session_id, task_info.task_id
+            )
             # Create task-aware Context
             self._context = Context(
                 fastmcp=server,
                 session=session,
                 task_id=task_info.task_id,
+                origin_request_id=origin_request_id,
             )
             # Enter the context to set up ContextVars
             await self._context.__aenter__()
@@ -853,6 +893,34 @@ class _CurrentContext(Dependency):  # type: ignore[misc]
             self._context = None
 
 
+class _OptionalCurrentContext(Dependency):  # type: ignore[misc]
+    """Context dependency that degrades to None when no context is active.
+
+    This is implemented as a wrapper (composition), not a subclass of
+    `_CurrentContext`, to avoid overriding `__aenter__` with an incompatible
+    return type.
+    """
+
+    _inner: _CurrentContext | None = None
+
+    async def __aenter__(self) -> Context | None:
+        inner = _CurrentContext()
+        try:
+            context = await inner.__aenter__()
+        except RuntimeError as exc:
+            if "No active context found" in str(exc):
+                return None
+            raise
+        self._inner = inner
+        return context
+
+    async def __aexit__(self, *args: object) -> None:
+        if self._inner is None:
+            return
+        await self._inner.__aexit__(*args)
+        self._inner = None
+
+
 def CurrentContext() -> Context:
     """Get the current FastMCP Context instance.
 
@@ -876,6 +944,11 @@ def CurrentContext() -> Context:
         ```
     """
     return cast("Context", _CurrentContext())
+
+
+def OptionalCurrentContext() -> Context | None:
+    """Get the current FastMCP Context, or None when no context is active."""
+    return cast("Context | None", _OptionalCurrentContext())
 
 
 class _CurrentDocket(Dependency):  # type: ignore[misc]
