@@ -160,6 +160,8 @@ class OAuth(OAuthClientProvider):
         # --- OR clients provide full client information ---
         client_id: str | None = None,
         client_secret: str | None = None,
+        # Direct authorization server URL (bypasses PRM discovery):
+        authorization_server: str | None = None,
     ):
         """
         Initialize OAuth client provider for an MCP server.
@@ -181,6 +183,11 @@ class OAuth(OAuthClientProvider):
             client_id: Pre-registered OAuth client ID. When provided, skips dynamic
                 client registration and uses these static credentials instead.
             client_secret: OAuth client secret (optional, used with client_id)
+            authorization_server: Direct URL of the OAuth authorization server. When
+                provided, the client uses this URL instead of discovering it via
+                Protected Resource Metadata (RFC 9728). Useful when the MCP server
+                does not serve PRM endpoints. If the server does serve PRM, the
+                PRM-discovered authorization server takes precedence.
         """
         # Store config for deferred binding if mcp_url not yet known
         self._scopes = scopes
@@ -192,6 +199,7 @@ class OAuth(OAuthClientProvider):
         self._client_id = client_id
         self._client_secret = client_secret
         self._static_client_info = None
+        self._authorization_server = authorization_server
         self.httpx_client_factory = httpx_client_factory or httpx.AsyncClient
         self._bound = False
 
@@ -273,6 +281,13 @@ class OAuth(OAuthClientProvider):
             callback_handler=self.callback_handler,
             client_metadata_url=self._client_metadata_url,
         )
+
+        # Pre-set the authorization server URL on the SDK context. This is used
+        # as a fallback when Protected Resource Metadata discovery fails (e.g.,
+        # the MCP server doesn't serve PRM endpoints). If PRM discovery succeeds,
+        # the PRM-discovered AS URL takes precedence over this value.
+        if self._authorization_server:
+            self.context.auth_server_url = self._authorization_server.rstrip("/")
 
         self._bound = True
 

@@ -176,6 +176,77 @@ class TestOAuthClientUrlHandling:
         assert oauth.token_storage_adapter._server_url == mcp_url
 
 
+class TestAuthorizationServer:
+    """Tests for the authorization_server parameter on OAuth."""
+
+    def test_authorization_server_sets_context(self):
+        """When authorization_server is provided, it should be set on the SDK context."""
+        oauth = OAuth(
+            mcp_url="https://mcp.example.com/mcp",
+            authorization_server="https://auth.example.com",
+        )
+        assert oauth.context.auth_server_url == "https://auth.example.com"
+
+    def test_authorization_server_strips_trailing_slash(self):
+        """Trailing slashes should be normalized."""
+        oauth = OAuth(
+            mcp_url="https://mcp.example.com",
+            authorization_server="https://auth.example.com/",
+        )
+        assert oauth.context.auth_server_url == "https://auth.example.com"
+
+    def test_no_authorization_server_leaves_context_default(self):
+        """Without authorization_server, auth_server_url should remain None."""
+        oauth = OAuth(mcp_url="https://mcp.example.com")
+        assert oauth.context.auth_server_url is None
+
+    def test_authorization_server_deferred_binding(self):
+        """authorization_server should work with deferred URL binding."""
+        oauth = OAuth(authorization_server="https://auth.example.com")
+        assert not oauth._bound
+
+        # Simulate what transport._set_auth does
+        oauth._bind("https://mcp.example.com/mcp")
+        assert oauth._bound
+        assert oauth.context.auth_server_url == "https://auth.example.com"
+
+    def test_authorization_server_with_client_id(self):
+        """authorization_server should work alongside pre-registered client credentials."""
+        oauth = OAuth(
+            mcp_url="https://mcp.example.com",
+            authorization_server="https://auth.example.com",
+            client_id="my-client",
+            client_secret="my-secret",
+        )
+        assert oauth.context.auth_server_url == "https://auth.example.com"
+        assert oauth._static_client_info is not None
+        assert oauth._static_client_info.client_id == "my-client"
+
+
+class TestAuthorizationServerIntegration:
+    """Integration test: authorization_server with a live server that has PRM."""
+
+    async def test_oauth_flow_succeeds_with_authorization_server(
+        self, streamable_http_server: str
+    ):
+        """The OAuth flow should succeed when authorization_server is provided
+        alongside a server that serves PRM. PRM discovery should override the
+        configured value."""
+        parsed_url = urlparse(streamable_http_server)
+        server_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
+        client = Client(
+            transport=StreamableHttpTransport(streamable_http_server),
+            auth=HeadlessOAuth(
+                mcp_url=streamable_http_server,
+                scopes=["read", "write"],
+                authorization_server=server_base_url,
+            ),
+        )
+        async with client:
+            assert await client.ping()
+
+
 class TestOAuthGeneratorCleanup:
     """Tests for OAuth async generator cleanup (issue #2643).
 

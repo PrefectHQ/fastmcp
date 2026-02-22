@@ -60,6 +60,7 @@ You don't need to pass `mcp_url` when using `OAuth` with `Client(auth=...)` — 
 - **`client_metadata_url`** (`str`, optional): URL-based client identity (CIMD). See [CIMD Authentication](/clients/auth/cimd) for details
 - **`token_storage`** (`AsyncKeyValue`, optional): Storage backend for persisting OAuth tokens. Defaults to in-memory storage (tokens lost on restart). See [Token Storage](#token-storage) for encrypted storage options
 - **`additional_client_metadata`** (`dict[str, Any]`, optional): Extra metadata for client registration
+- **`authorization_server`** (`str`, optional): Direct URL of the OAuth authorization server. When provided, the client uses this URL instead of discovering it via Protected Resource Metadata (RFC 9728). See [Direct Authorization Server](#direct-authorization-server)
 - **`callback_port`** (`int`, optional): Fixed port for OAuth callback server. If not specified, uses a random available port
 - **`httpx_client_factory`** (`McpHttpClientFactory`, optional): Factory for creating httpx clients
 
@@ -73,7 +74,7 @@ The OAuth flow is triggered when you use a FastMCP `Client` configured to use OA
 The client first checks the configured `token_storage` backend for existing, valid tokens for the target server. If one is found, it will be used to authenticate the client.
 </Step>
 <Step title="OAuth Server Discovery">
-If no valid tokens exist, the client attempts to discover the OAuth server's endpoints using a well-known URI (e.g., `/.well-known/oauth-authorization-server`) based on the `mcp_url`.
+If no valid tokens exist, the client discovers the authorization server via [Protected Resource Metadata](https://www.rfc-editor.org/rfc/rfc9728) (RFC 9728) at `/.well-known/oauth-protected-resource`, then fetches OAuth server metadata from the discovered AS URL. If `authorization_server` is configured, it is used as a fallback when PRM discovery fails.
 </Step>
 <Step title="Client Registration">
 If a `client_id` is provided, the client uses those pre-registered credentials directly and skips this step entirely. Otherwise, if a `client_metadata_url` is configured and the server supports CIMD, the client uses its metadata URL as its identity. As a fallback, the client performs Dynamic Client Registration (RFC 7591) if the server supports it.
@@ -154,6 +155,43 @@ async with Client(
 ```
 
 See the [CIMD Authentication](/clients/auth/cimd) page for complete documentation on creating, hosting, and validating CIMD documents.
+
+## Direct Authorization Server
+
+<VersionBadge version="3.0.2" />
+
+By default, the client discovers the authorization server through [Protected Resource Metadata](https://www.rfc-editor.org/rfc/rfc9728) (RFC 9728) — a well-known endpoint on the MCP server that declares which authorization server it trusts. This is the spec-compliant flow that cryptographically binds the server to its AS via TLS.
+
+Some MCP servers don't serve PRM endpoints. For these cases, you can provide the authorization server URL directly:
+
+```python
+from fastmcp import Client
+from fastmcp.client.auth import OAuth
+
+async with Client(
+    "https://mcp-server.example.com/mcp",
+    auth=OAuth(
+        authorization_server="https://auth.example.com",
+    ),
+) as client:
+    await client.ping()
+```
+
+The configured URL acts as a fallback — if the MCP server does serve PRM, the PRM-discovered authorization server takes precedence. This means you can safely set `authorization_server` even if you're unsure whether the server supports PRM.
+
+<Warning>
+When you provide `authorization_server` directly, you're bypassing the trust assertion that PRM provides. Only use this with authorization servers you trust and have verified are correct for the target MCP server.
+</Warning>
+
+This is commonly combined with [pre-registered credentials](#pre-registered-clients) for environments where both PRM and Dynamic Client Registration are unavailable:
+
+```python
+oauth = OAuth(
+    authorization_server="https://auth.example.com",
+    client_id="my-registered-client-id",
+    client_secret="my-client-secret",
+)
+```
 
 ## Pre-Registered Clients
 
