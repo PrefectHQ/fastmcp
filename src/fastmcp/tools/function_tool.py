@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import warnings
 from collections.abc import Callable
@@ -452,7 +453,7 @@ def tool(
             return create_tool(fn, tool_name)  # type: ignore[return-value]
         return attach_metadata(fn, tool_name)
 
-    if inspect.isroutine(name_or_fn):
+    if inspect.isroutine(name_or_fn) or isinstance(name_or_fn, functools.partial):
         return decorator(name_or_fn, name)
     elif isinstance(name_or_fn, str):
         if name is not None:
