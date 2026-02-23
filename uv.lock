@@ -845,7 +845,7 @@ requires-dist = [
     { name = "opentelemetry-api", specifier = ">=1.20.0" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "platformdirs", specifier = ">=4.0.0" },
-    { name = "prefab-ui", marker = "extra == 'apps'", editable = "../prefab" },
+    { name = "prefab-ui", marker = "extra == 'apps'", specifier = ">=0.6.0" },
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], specifier = ">=0.4.4,<0.5.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.17.2" },
@@ -1711,34 +1711,16 @@ wheels = [
 
 [[package]]
 name = "prefab-ui"
-source = { editable = "../prefab" }
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cyclopts" },
     { name = "pydantic" },
     { name = "rich" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "cyclopts", specifier = ">=4" },
-    { name = "pydantic", specifier = ">=2.10" },
-    { name = "rich", specifier = ">=13" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "jsonschema", specifier = ">=4.26.0" },
-    { name = "loq", specifier = ">=0.1.0a3" },
-    { name = "prek", specifier = ">=0.1.0" },
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=1.2.0" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-timeout", specifier = ">=2.4.0" },
-    { name = "pytest-xdist", specifier = ">=3.6.1" },
-    { name = "ruff", specifier = ">=0.12.8" },
-    { name = "ty", specifier = ">=0.0.7" },
-    { name = "uvicorn", specifier = ">=0.34.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/b9/a9/12326910bbc756a7d43b25e9d4b16d1624cbc2a4b54a12b0bc01095b8204/prefab_ui-0.6.0.tar.gz", hash = "sha256:00e02bd91b32a595702228a847780cfc691f2d9f254de285f45bc7dc3e7ac2e9", size = 2658903, upload-time = "2026-02-23T01:52:02.057Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/27/96/f3f39400a11d0b3e2e0bdbe23c9155e4a3ace4a6fb8f6624ea756d501660/prefab_ui-0.6.0-py3-none-any.whl", hash = "sha256:5bd97e130f6edae40806346ca5c75ffbdd834f6102fa8a8d1a3f3838fe087017", size = 791554, upload-time = "2026-02-23T01:51:59.952Z" },
 ]
 
 [[package]]
@@ -2749,8 +2731,8 @@ name = "taskgroup"
 version = "0.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "exceptiongroup" },
-    { name = "typing-extensions" },
+    { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f0/8d/e218e0160cc1b692e6e0e5ba34e8865dbb171efeb5fc9a704544b3020605/taskgroup-0.2.2.tar.gz", hash = "sha256:078483ac3e78f2e3f973e2edbf6941374fbea81b9c5d0a96f51d297717f4752d", size = 11504, upload-time = "2025-01-03T09:24:13.761Z" }
 wheels = [
