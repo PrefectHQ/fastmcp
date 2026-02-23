@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from docket.execution import ExecutionState
 from mcp.types import TaskStatusNotification, TaskStatusNotificationParams
 
+from fastmcp.server.tasks.config import DEFAULT_TTL_MS
 from fastmcp.server.tasks.keys import parse_task_key
 from fastmcp.server.tasks.requests import DOCKET_TO_MCP_STATE
 from fastmcp.utilities.logging import get_logger
@@ -133,7 +134,7 @@ async def _send_status_notification(
         "status": mcp_status,
         "createdAt": created_at,
         "lastUpdatedAt": datetime.now(timezone.utc).isoformat(),
-        "ttl": 60000,
+        "ttl": DEFAULT_TTL_MS,
         "pollInterval": poll_interval_ms,
     }
 
@@ -198,7 +199,7 @@ async def _send_progress_notification(
         "status": mcp_status,
         "createdAt": created_at,
         "lastUpdatedAt": datetime.now(timezone.utc).isoformat(),
-        "ttl": 60000,
+        "ttl": DEFAULT_TTL_MS,
         "pollInterval": poll_interval_ms,
         "statusMessage": execution.progress.message,
     }
