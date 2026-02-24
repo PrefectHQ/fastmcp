@@ -1,0 +1,123 @@
+---
+title: Code Mode (Experimental)
+sidebarTitle: Code Mode
+description: Collapse many tools into programmable search and execute tools
+icon: flask
+tag: EXPERIMENTAL
+---
+
+`CodeMode` is an experimental transform that replaces a large tool surface with two meta-tools:
+
+- `search`: inspect tool metadata by writing Python code
+- `execute`: run tool calls from Python code via `call_tool(...)`
+
+This is useful when you want an LLM to plan multi-step API/tool workflows with a small interface.
+
+For background and design context, see Cloudflare's Code Mode post: [https://blog.cloudflare.com/code-mode-mcp/](https://blog.cloudflare.com/code-mode-mcp/).
+
+## Install Monty (Optional)
+
+`CodeMode` defaults to `MontySandboxProvider`, which requires the optional Monty dependency.
+
+```bash
+pip install "fastmcp[monty]"
+```
+
+If you do not want Monty, pass a custom sandbox provider.
+
+## Basic Transform Usage
+
+```python
+from fastmcp import FastMCP
+from fastmcp.experimental.transforms import CodeMode
+
+mcp = FastMCP("Server")
+
+@mcp.tool
+def add(x: int, y: int) -> int:
+    return x + y
+
+mcp.add_transform(CodeMode(mcp))
+# Clients now see only: search, execute
+```
+
+`CodeMode` is a transform-first API. Attach it with `mcp.add_transform(...)`.
+Backend tools are hidden from listings, while `execute` can still call them.
+
+## OpenAPI + Code Mode
+
+You can place `CodeMode` on top of an OpenAPI-backed provider so clients only see `search` and `execute` while the backing tools come from your API spec.
+
+```python
+import httpx
+from fastmcp import FastMCP
+from fastmcp.experimental.transforms import CodeMode
+from fastmcp.server.providers.openapi import OpenAPIProvider
+
+openapi_spec = httpx.get("https://api.example.com/openapi.json").json()
+api_client = httpx.AsyncClient(base_url="https://api.example.com")
+
+provider = OpenAPIProvider(
+    openapi_spec=openapi_spec,
+    client=api_client,
+    validate_output=False,  # Optional: tolerate APIs that don't match their response schemas exactly
+)
+
+mcp = FastMCP("API Code Mode", providers=[provider])
+mcp.add_transform(CodeMode(mcp))
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+Equivalent shortcut:
+
+```python
+mcp = FastMCP.from_openapi(openapi_spec=openapi_spec, client=api_client, name="API Code Mode")
+mcp.add_transform(CodeMode(mcp))
+```
+
+## Default Prompt Behavior
+
+- `search` receives `tools: list[dict]` with metadata fields including `parameters` and `output_schema`.
+- `execute` exposes a single callable: `call_tool(tool_name_or_key, params)`.
+- `execute` is intended for chaining multiple `await call_tool(...)` steps in one block and returning the final value.
+
+## Custom Tool Names and Descriptions
+
+```python
+code_mode = CodeMode(
+    mcp,
+    search_tool_name="search_meta",
+    execute_tool_name="execute_meta",
+    search_description="Find available tools by metadata",
+    execute_description="Run multi-step tool workflows",
+)
+```
+
+## Custom Sandbox Providers
+
+Third-party sandbox providers (including remote providers) can integrate by implementing the `SandboxProvider` protocol.
+
+```python
+from collections.abc import Callable
+from typing import Any
+
+from fastmcp.experimental.transforms import CodeMode, SandboxProvider
+
+class RemoteSandboxProvider:
+    async def run(
+        self,
+        code: str,
+        *,
+        inputs: dict[str, Any] | None = None,
+        external_functions: dict[str, Callable[..., Any]] | None = None,
+    ) -> Any:
+        # Send code + inputs to your remote runtime.
+        # Implement callback semantics for external_functions as needed.
+        ...
+
+mcp.add_transform(CodeMode(mcp, sandbox_provider=RemoteSandboxProvider()))
+```
+
+`CodeMode` treats the sandbox provider as a pluggable execution backend, so provider-specific security and isolation can evolve independently.

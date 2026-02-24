@@ -53,6 +53,7 @@ classifiers = [
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40.0"]
 azure = ["azure-identity>=1.16.0"]
+monty = ["pydantic-monty>=0.0.7"]
 openai = ["openai>=1.102.0"]
 tasks = ["pydocket>=0.17.2"]
 
