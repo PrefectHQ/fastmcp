@@ -24,6 +24,7 @@ Example:
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import time
 from dataclasses import dataclass
@@ -100,6 +101,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
         base_url: AnyHttpUrl | str | None = None,
         cache_ttl_seconds: int | None = None,
         max_cache_size: int | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ):
         """
         Initialize the introspection token verifier.
@@ -119,6 +121,9 @@ class IntrospectionTokenVerifier(TokenVerifier):
                 (e.g., 300 for 5 minutes).
             max_cache_size: Maximum number of tokens to cache when caching is
                 enabled. Default: 10000.
+            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+                the client is reused across calls and the caller is responsible for its
+                lifecycle. When None (default), a fresh client is created per call.
         """
         # Parse scopes if provided as string
         parsed_required_scopes = (
@@ -146,6 +151,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
         self.client_auth_method: ClientAuthMethod = client_auth_method
 
         self.timeout_seconds = timeout_seconds
+        self._http_client = http_client
         self.logger = get_logger(__name__)
 
         # Cache configuration (None or 0 = disabled)
@@ -293,7 +299,11 @@ class IntrospectionTokenVerifier(TokenVerifier):
             return cached_result
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async with (
+                contextlib.nullcontext(self._http_client)
+                if self._http_client is not None
+                else httpx.AsyncClient(timeout=self.timeout_seconds)
+            ) as client:
                 # Prepare introspection request per RFC 7662
                 # Build request data with token and token_type_hint
                 data = {

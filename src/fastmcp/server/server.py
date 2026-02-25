@@ -62,7 +62,6 @@ from fastmcp.server.apps import (
     resolve_ui_mime_type,
 )
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
-from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
@@ -162,6 +161,8 @@ def _get_auth_context() -> tuple[bool, Any]:
     is_stdio = _current_transport.get() == "stdio"
     if is_stdio:
         return (True, None)
+    from fastmcp.server.dependencies import get_access_token
+
     return (False, get_access_token())
 
 
