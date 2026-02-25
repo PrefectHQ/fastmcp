@@ -328,6 +328,17 @@ class CodeMode(Transform):
                     raise NotFoundError(f"Unknown tool: {tool_name_or_key}")
 
                 accepted_args = set(tool.parameters.get("properties", {}).keys())
+                skipped = {
+                    key
+                    for key in defaults
+                    if key not in params and key not in accepted_args
+                }
+                if skipped:
+                    logger.debug(
+                        "default_arguments keys %s not accepted by tool %r, skipping",
+                        skipped,
+                        tool.name,
+                    )
                 merged = {
                     key: value
                     for key, value in defaults.items()

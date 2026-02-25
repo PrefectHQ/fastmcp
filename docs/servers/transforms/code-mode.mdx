@@ -37,7 +37,7 @@ mcp = FastMCP("Server")
 def add(x: int, y: int) -> int:
     return x + y
 
-mcp.add_transform(CodeMode(mcp))
+mcp.add_transform(CodeMode())
 # Clients now see only: search, execute
 ```
 
@@ -64,7 +64,7 @@ provider = OpenAPIProvider(
 )
 
 mcp = FastMCP("API Code Mode", providers=[provider])
-mcp.add_transform(CodeMode(mcp))
+mcp.add_transform(CodeMode())
 
 if __name__ == "__main__":
     mcp.run()
@@ -74,7 +74,7 @@ Equivalent shortcut:
 
 ```python
 mcp = FastMCP.from_openapi(openapi_spec=openapi_spec, client=api_client, name="API Code Mode")
-mcp.add_transform(CodeMode(mcp))
+mcp.add_transform(CodeMode())
 ```
 
 ## Default Prompt Behavior
@@ -87,7 +87,6 @@ mcp.add_transform(CodeMode(mcp))
 
 ```python
 code_mode = CodeMode(
-    mcp,
     search_tool_name="search_meta",
     execute_tool_name="execute_meta",
     search_description="Find available tools by metadata",
@@ -117,7 +116,7 @@ class RemoteSandboxProvider:
         # Implement callback semantics for external_functions as needed.
         ...
 
-mcp.add_transform(CodeMode(mcp, sandbox_provider=RemoteSandboxProvider()))
+mcp.add_transform(CodeMode(sandbox_provider=RemoteSandboxProvider()))
 ```
 
 `CodeMode` treats the sandbox provider as a pluggable execution backend, so provider-specific security and isolation can evolve independently.

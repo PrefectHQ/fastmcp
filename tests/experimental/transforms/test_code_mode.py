@@ -55,6 +55,8 @@ class _UnsafeTestSandboxProvider:
                 {key: _ensure_async(value) for key, value in external_functions.items()}
             )
 
+        # Naive indent — works for test inputs but breaks on dedented lines
+        # (blank lines, column-0 comments). Fine for controlled test code.
         wrapped = "async def __test_main__():\n"
         for line in code.splitlines():
             wrapped += f"    {line}\n"
@@ -456,3 +458,22 @@ async def test_code_mode_get_tool_returns_meta_tools_and_passes_through() -> Non
     ping_tool = await mcp.get_tool("ping")
     assert ping_tool is not None
     assert ping_tool.name == "ping"
+
+
+async def test_code_mode_sandbox_error_surfaces_as_tool_error() -> None:
+    """Syntax errors and runtime errors in sandbox code surface as ToolError."""
+    mcp = FastMCP("CodeMode Errors")
+
+    @mcp.tool
+    def ping() -> str:
+        return "pong"
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    # Syntax error
+    with pytest.raises(ToolError):
+        await _run_tool(mcp, "search", {"code": "return [["})
+
+    # Runtime error
+    with pytest.raises(ToolError):
+        await _run_tool(mcp, "execute", {"code": "raise ValueError('boom')"})
