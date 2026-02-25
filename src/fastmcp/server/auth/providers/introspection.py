@@ -43,7 +43,7 @@ logger = get_logger(__name__)
 class _IntrospectionCacheEntry:
     """Cached introspection result with expiration."""
 
-    result: AccessToken | None
+    result: AccessToken
     expires_at: float
 
 
@@ -189,7 +189,6 @@ class IntrospectionTokenVerifier(TokenVerifier):
         Returns:
             Tuple of (is_cached, result):
             - (True, AccessToken) if cached valid token
-            - (True, None) if cached as invalid
             - (False, None) if not in cache or expired
         """
         if self._cache_ttl <= 0 or self._max_cache_size <= 0:
@@ -206,11 +205,14 @@ class IntrospectionTokenVerifier(TokenVerifier):
             return (False, None)  # Expired
 
         # Return a copy to prevent mutations from affecting cached value
-        result = entry.result.model_copy(deep=True) if entry.result else None
-        return (True, result)
+        return (True, entry.result.model_copy(deep=True))
 
-    def _set_cached(self, token: str, result: AccessToken | None) -> None:
-        """Cache introspection result with TTL."""
+    def _set_cached(self, token: str, result: AccessToken) -> None:
+        """Cache a valid introspection result with TTL.
+
+        Only successful validations are cached. Failures (inactive, expired,
+        missing scopes, errors) are never cached to avoid sticky false negatives.
+        """
         if self._cache_ttl <= 0 or self._max_cache_size <= 0:
             return  # Caching disabled
 
@@ -229,13 +231,12 @@ class IntrospectionTokenVerifier(TokenVerifier):
 
         # Use token's expiration if available and sooner than TTL
         expires_at = time.time() + self._cache_ttl
-        if result and result.expires_at:
+        if result.expires_at:
             expires_at = min(expires_at, float(result.expires_at))
 
         # Store a deep copy to prevent mutations from affecting cached value
-        cached_result = result.model_copy(deep=True) if result else None
         self._cache[cache_key] = _IntrospectionCacheEntry(
-            result=cached_result,
+            result=result.model_copy(deep=True),
             expires_at=expires_at,
         )
 
@@ -357,6 +358,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
                 scopes = self._extract_scopes(introspection_data)
 
                 # Check required scopes
+                # Don't cache scope failures - permissions may be updated dynamically
                 if self.required_scopes:
                     token_scopes = set(scopes)
                     required_scopes = set(self.required_scopes)
@@ -366,8 +368,6 @@ class IntrospectionTokenVerifier(TokenVerifier):
                             token_scopes,
                             required_scopes,
                         )
-                        # Cache scope failures - token is valid but doesn't have required scopes
-                        self._set_cached(token, None)
                         return None
 
                 # Create AccessToken with introspection response data
