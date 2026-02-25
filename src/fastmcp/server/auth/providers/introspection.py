@@ -24,6 +24,7 @@ Example:
 from __future__ import annotations
 
 import base64
+import contextlib
 import time
 from typing import Any, Literal, get_args
 
@@ -80,6 +81,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
         timeout_seconds: int = 10,
         required_scopes: list[str] | None = None,
         base_url: AnyHttpUrl | str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ):
         """
         Initialize the introspection token verifier.
@@ -93,6 +95,9 @@ class IntrospectionTokenVerifier(TokenVerifier):
             timeout_seconds: HTTP request timeout in seconds (default: 10)
             required_scopes: Required scopes for all tokens (optional)
             base_url: Base URL for TokenVerifier protocol
+            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+                the client is reused across calls and the caller is responsible for its
+                lifecycle. When None (default), a fresh client is created per call.
         """
         # Parse scopes if provided as string
         parsed_required_scopes = (
@@ -120,6 +125,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
         self.client_auth_method: ClientAuthMethod = client_auth_method
 
         self.timeout_seconds = timeout_seconds
+        self._http_client = http_client
         self.logger = get_logger(__name__)
 
     def _create_basic_auth_header(self) -> str:
@@ -166,7 +172,11 @@ class IntrospectionTokenVerifier(TokenVerifier):
             AccessToken object if valid and active, None if invalid, inactive, or expired
         """
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async with (
+                contextlib.nullcontext(self._http_client)
+                if self._http_client is not None
+                else httpx.AsyncClient(timeout=self.timeout_seconds)
+            ) as client:
                 # Prepare introspection request per RFC 7662
                 # Build request data with token and token_type_hint
                 data = {

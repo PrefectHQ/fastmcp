@@ -10,6 +10,7 @@ import hashlib
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, cast
 
+import httpx
 from key_value.aio.protocols import AsyncKeyValue
 
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
@@ -107,6 +108,7 @@ class AzureProvider(OAuthProxy):
         jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
         base_authority: str = "login.microsoftonline.com",
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """Initialize Azure OAuth provider.
 
@@ -151,6 +153,9 @@ class AzureProvider(OAuthProxy):
                 When True, users see a consent screen before being redirected to Azure.
                 When False, authorization proceeds directly without user confirmation.
                 SECURITY WARNING: Only disable for local development or testing environments.
+            http_client: Optional httpx.AsyncClient for connection pooling in JWKS fetches.
+                When provided, the client is reused for JWT key fetches and the caller
+                is responsible for its lifecycle. When None (default), a fresh client is created per fetch.
         """
         # Parse scopes if provided as string
         parsed_required_scopes = parse_scopes(required_scopes)
@@ -202,6 +207,7 @@ class AzureProvider(OAuthProxy):
             audience=client_id,
             algorithm="RS256",
             required_scopes=validation_scopes,  # Only validate non-OIDC scopes
+            http_client=http_client,
         )
 
         # Build Azure OAuth endpoints with tenant

@@ -321,6 +321,77 @@ print(f"Test token: {test_token}")
 
 This pattern enables comprehensive testing of JWT validation logic without depending on external token issuers. The generated tokens are cryptographically valid and will pass all standard JWT validation checks.
 
+## HTTP Client Customization
+
+<VersionBadge version="2.18.0" />
+
+All token verifiers that make HTTP calls accept an optional `http_client` parameter. This lets you provide your own `httpx.AsyncClient` for connection pooling, custom TLS configuration, or proxy settings.
+
+### Connection Pooling
+
+By default, each token verification call creates a fresh HTTP client. Under high load, this means repeated TCP connections and TLS handshakes. Providing a shared client enables connection pooling across calls:
+
+```python
+import httpx
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
+
+# Create a shared client with connection pooling
+http_client = httpx.AsyncClient(
+    timeout=10,
+    limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+)
+
+verifier = IntrospectionTokenVerifier(
+    introspection_url="https://auth.yourcompany.com/oauth/introspect",
+    client_id="mcp-resource-server",
+    client_secret="your-client-secret",
+    http_client=http_client,
+)
+
+mcp = FastMCP(name="Protected API", auth=verifier)
+```
+
+The same pattern works for `JWTVerifier` when using JWKS endpoints:
+
+```python
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+verifier = JWTVerifier(
+    jwks_uri="https://auth.yourcompany.com/.well-known/jwks.json",
+    issuer="https://auth.yourcompany.com",
+    http_client=http_client,
+)
+```
+
+<Note>
+When you provide an `http_client`, you are responsible for its lifecycle. The verifier will not close it. Use the server's `lifespan` to manage client cleanup:
+
+```python
+from contextlib import asynccontextmanager
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
+
+http_client = httpx.AsyncClient(timeout=10)
+
+verifier = IntrospectionTokenVerifier(
+    introspection_url="https://auth.example.com/introspect",
+    client_id="my-service",
+    client_secret="secret",
+    http_client=http_client,
+)
+
+@asynccontextmanager
+async def lifespan(app):
+    yield
+    await http_client.aclose()
+
+mcp = FastMCP(name="My API", auth=verifier, lifespan=lifespan)
+```
+</Note>
+
+The convenience providers (`GitHubProvider`, `GoogleProvider`, `DiscordProvider`, `WorkOSProvider`, `AzureProvider`) also accept `http_client` and pass it through to their internal token verifier.
+
 ## Production Configuration
 
 For production deployments, load sensitive configuration from environment variables:
