@@ -11,6 +11,7 @@ from types import EllipsisType, UnionType
 from typing import (
     Annotated,
     Any,
+    Literal,
     Protocol,
     TypeAlias,
     Union,
@@ -23,6 +24,14 @@ import mcp.types
 from mcp.types import Annotations, ContentBlock, ModelPreferences, SamplingMessage
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, TypeAdapter, UrlConstraints
 from typing_extensions import TypeVar
+
+# Forward-compatible import: use IconTheme from mcp.types when available (v2+),
+# otherwise define locally for MCP SDK v1.x compatibility.
+# See https://modelcontextprotocol.io/specification/2025-11-25/schema#icon
+try:
+    from mcp.types import IconTheme  # ty: ignore[unresolved-import]
+except ImportError:
+    IconTheme: TypeAlias = Literal["light", "dark"]
 
 T = TypeVar("T", default=Any)
 

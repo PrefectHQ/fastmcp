@@ -18,6 +18,7 @@ Icons use the standard MCP Icon type from the MCP protocol specification. Each i
 - **src**: URL or data URI pointing to the icon image
 - **mimeType** (optional): MIME type of the image (e.g., "image/png", "image/svg+xml")
 - **sizes** (optional): Array of size descriptors (e.g., ["48x48"], ["any"])
+- **theme** (optional): `"light"` or `"dark"` — indicates whether the icon is designed for a light or dark background
 
 ```python
 from mcp.types import Icon
@@ -25,7 +26,8 @@ from mcp.types import Icon
 icon = Icon(
     src="https://example.com/icon.png",
     mimeType="image/png",
-    sizes=["48x48"]
+    sizes=["48x48"],
+    theme="light"
 )
 ```
 
@@ -56,6 +58,36 @@ mcp = FastMCP(
 ```
 
 Server icons appear in MCP client interfaces to help users identify your server among others they may have installed.
+
+## Theme Variants
+
+Use the `theme` field to provide separate icon variants for light and dark UI themes. Clients can select the appropriate icon based on their current appearance. The `IconTheme` type from FastMCP provides type safety for this field.
+
+```python
+from fastmcp import FastMCP
+from mcp.types import Icon
+
+mcp = FastMCP(
+    name="GitHubServer",
+    icons=[
+        Icon(
+            src="https://github.githubassets.com/favicons/favicon-dark.svg",
+            mimeType="image/svg+xml",
+            theme="dark",
+        ),
+        Icon(
+            src="https://github.githubassets.com/favicons/favicon-light.svg",
+            mimeType="image/svg+xml",
+            theme="light",
+        ),
+    ]
+)
+```
+
+<Tip>
+For type checking, use `from fastmcp import IconTheme` to annotate theme variables:
+`theme: IconTheme = "light"`
+</Tip>
 
 ## Component Icons
 

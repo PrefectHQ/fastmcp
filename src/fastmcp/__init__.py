@@ -18,6 +18,7 @@ import fastmcp.server
 
 from fastmcp.client import Client
 from . import client
+from .utilities.types import IconTheme
 
 __version__ = _version("fastmcp")
 
@@ -31,5 +32,6 @@ __all__ = [
     "Client",
     "Context",
     "FastMCP",
+    "IconTheme",
     "settings",
 ]

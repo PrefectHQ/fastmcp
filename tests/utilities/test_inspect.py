@@ -849,6 +849,85 @@ class TestIconExtraction:
         assert info.tools[0].icons[0]["src"] == data_uri
         assert info.tools[0].icons[0]["mimeType"] == "image/png"
 
+    async def test_icon_theme_light_and_dark(self):
+        """Test that icon theme field is preserved for light/dark variants."""
+        from mcp.types import Icon
+
+        mcp = FastMCP(
+            "ThemeIconServer",
+            icons=[
+                Icon(
+                    src="https://example.com/icon-dark.svg",
+                    mimeType="image/svg+xml",
+                    theme="dark",  # ty: ignore[unknown-argument]
+                ),
+                Icon(
+                    src="https://example.com/icon-light.svg",
+                    mimeType="image/svg+xml",
+                    theme="light",  # ty: ignore[unknown-argument]
+                ),
+            ],
+        )
+
+        info = await inspect_fastmcp(mcp)
+
+        assert info.icons is not None
+        assert len(info.icons) == 2
+        assert info.icons[0]["theme"] == "dark"
+        assert info.icons[1]["theme"] == "light"
+
+    async def test_icon_theme_on_tool(self):
+        """Test that tool icons preserve the theme field."""
+        from mcp.types import Icon
+
+        mcp = FastMCP("ToolThemeServer")
+
+        @mcp.tool(
+            icons=[
+                Icon(
+                    src="https://example.com/tool-dark.png",
+                    mimeType="image/png",
+                    theme="dark",  # ty: ignore[unknown-argument]
+                ),
+                Icon(
+                    src="https://example.com/tool-light.png",
+                    mimeType="image/png",
+                    theme="light",  # ty: ignore[unknown-argument]
+                ),
+            ]
+        )
+        def themed_tool() -> str:
+            """A tool with light and dark theme icons."""
+            return "themed"
+
+        info = await inspect_fastmcp(mcp)
+
+        assert len(info.tools) == 1
+        assert info.tools[0].icons is not None
+        assert len(info.tools[0].icons) == 2
+        assert info.tools[0].icons[0]["theme"] == "dark"
+        assert info.tools[0].icons[1]["theme"] == "light"
+
+    async def test_icon_theme_type_import(self):
+        """Test that IconTheme can be imported from fastmcp."""
+        from fastmcp import IconTheme
+
+        # Verify that IconTheme accepts valid values
+        light: IconTheme = "light"
+        dark: IconTheme = "dark"
+        assert light == "light"
+        assert dark == "dark"
+
+    async def test_icon_without_theme(self):
+        """Test that icons without theme still work (theme defaults to absent)."""
+        from mcp.types import Icon
+
+        icon = Icon(src="https://example.com/icon.png")
+        dumped = icon.model_dump()
+
+        # theme should not appear unless explicitly set
+        assert "theme" not in dumped or dumped.get("theme") is None
+
     async def test_icons_in_fastmcp_v1(self):
         """Test that icons are extracted from FastMCP 1.x servers."""
         from mcp.types import Icon
