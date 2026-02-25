@@ -364,6 +364,10 @@ verifier = JWTVerifier(
 )
 ```
 
+<Warning>
+`JWTVerifier` does not support `http_client` when `ssrf_safe=True`. SSRF-safe mode requires a hardened transport that validates DNS resolution and connection targets, which cannot be guaranteed with a user-provided client. Attempting to use both will raise a `ValueError`.
+</Warning>
+
 <Note>
 When you provide an `http_client`, you are responsible for its lifecycle. The verifier will not close it. Use the server's `lifespan` to manage client cleanup:
 

@@ -180,21 +180,17 @@ class TestJWTVerifierHttpClient:
         assert result is not None
         assert not shared_client.is_closed
 
-    async def test_ssrf_safe_ignores_http_client(
+    def test_ssrf_safe_rejects_http_client(
         self,
         shared_client: httpx.AsyncClient,
     ):
-        """When ssrf_safe=True, the custom http_client should NOT be used."""
-        verifier = JWTVerifier(
-            jwks_uri="https://auth.example.com/.well-known/jwks.json",
-            ssrf_safe=True,
-            http_client=shared_client,
-        )
-
-        # ssrf_safe uses ssrf_safe_fetch instead of httpx.AsyncClient
-        # The http_client is stored but not used in this code path
-        assert verifier._http_client is shared_client
-        assert verifier.ssrf_safe is True
+        """ssrf_safe=True and http_client cannot be used together."""
+        with pytest.raises(ValueError, match="cannot be used with ssrf_safe=True"):
+            JWTVerifier(
+                jwks_uri="https://auth.example.com/.well-known/jwks.json",
+                ssrf_safe=True,
+                http_client=shared_client,
+            )
 
 
 class TestGitHubHttpClient:

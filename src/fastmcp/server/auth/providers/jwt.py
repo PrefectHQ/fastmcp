@@ -189,16 +189,23 @@ class JWTVerifier(TokenVerifier):
             http_client: Optional httpx.AsyncClient for connection pooling. When provided,
                 the client is reused for JWKS fetches and the caller is responsible for
                 its lifecycle. When None (default), a fresh client is created per fetch.
-                Only used when ssrf_safe is False; SSRF-safe fetches use their own transport.
+                Cannot be used with ssrf_safe=True.
 
         Raises:
-            ValueError: If neither or both of `public_key` and `jwks_uri` are provided, or if `algorithm` is unsupported.
+            ValueError: If neither or both of `public_key` and `jwks_uri` are provided,
+                if `algorithm` is unsupported, or if `http_client` is provided with `ssrf_safe=True`.
         """
         if not public_key and not jwks_uri:
             raise ValueError("Either public_key or jwks_uri must be provided")
 
         if public_key and jwks_uri:
             raise ValueError("Provide either public_key or jwks_uri, not both")
+
+        if ssrf_safe and http_client is not None:
+            raise ValueError(
+                "http_client cannot be used with ssrf_safe=True; "
+                "SSRF-safe mode requires its own hardened transport"
+            )
 
         algorithm = algorithm or "RS256"
         if algorithm not in {
