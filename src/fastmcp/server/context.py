@@ -406,10 +406,9 @@ class Context:
             return
 
         try:
-            from docket.dependencies import Dependency
+            from docket.dependencies import current_execution
 
-            # Get current execution from worker context
-            execution = Dependency.execution.get()
+            execution = current_execution.get()
 
             # Update progress in Redis using Docket's progress API.
             # Docket only exposes increment() (relative), so we compute

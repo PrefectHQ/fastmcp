@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from key_value.aio.protocols import AsyncKeyValue
+from uncalled_for import Dependency
 
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
@@ -627,12 +628,6 @@ class AzureJWTVerifier(JWTVerifier):
 # --- Dependency injection support ---
 # These require fastmcp[azure] extra for azure-identity
 
-# Check if DI engine is available
-try:
-    from docket.dependencies import Dependency
-except ImportError:
-    from fastmcp._vendor.docket_di import Dependency
-
 
 def _require_azure_identity(feature: str) -> None:
     """Raise ImportError with install instructions if azure-identity is not available."""
@@ -645,7 +640,7 @@ def _require_azure_identity(feature: str) -> None:
         ) from e
 
 
-class _EntraOBOToken(Dependency):  # type: ignore[misc]
+class _EntraOBOToken(Dependency):
     """Dependency that performs OBO token exchange for Microsoft Entra.
 
     Uses azure.identity's OnBehalfOfCredential for async-native OBO,
