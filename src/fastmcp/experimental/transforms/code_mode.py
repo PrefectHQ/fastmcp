@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import logging
 from collections.abc import Callable, Sequence
 from typing import Annotated, Any, Protocol
 
@@ -12,6 +13,8 @@ from fastmcp.exceptions import NotFoundError
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
+
+logger = logging.getLogger(__name__)
 
 
 def _strip_circular(obj: Any, _seen: frozenset[int] = frozenset()) -> Any:
@@ -100,7 +103,9 @@ class CodeMode(Transform):
         execute_description: str | None = None,
     ) -> None:
         if search_tool_name == execute_tool_name:
-            raise ValueError("search_tool_name and execute_tool_name must be different.")
+            raise ValueError(
+                "search_tool_name and execute_tool_name must be different."
+            )
 
         self._server = server
         self._default_arguments = default_arguments or {}
@@ -118,11 +123,16 @@ class CodeMode(Transform):
         return fn
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
-        self._backend_tools = [
-            tool
-            for tool in tools
-            if tool.name not in {self.search_tool_name, self.execute_tool_name}
-        ]
+        meta_names = {self.search_tool_name, self.execute_tool_name}
+        colliding = [tool.name for tool in tools if tool.name in meta_names]
+        if colliding:
+            logger.warning(
+                "CodeMode is hiding backend tool(s) %s because they collide "
+                "with meta-tool names. Use search_tool_name/execute_tool_name "
+                "to choose different meta-tool names.",
+                colliding,
+            )
+        self._backend_tools = [tool for tool in tools if tool.name not in meta_names]
         return [self._make_search_tool(), self._make_execute_tool()]
 
     async def get_tool(
@@ -204,9 +214,6 @@ class CodeMode(Transform):
         if name_matches:
             return max(name_matches, key=version_sort_key)  # type: ignore[type-var]
 
-        get_tool = getattr(self._server, "_get_tool", None)
-        if get_tool is not None:
-            return await get_tool(name)
         return await self._server.get_tool(name)
 
     def _make_search_tool(self) -> Tool:
@@ -220,7 +227,7 @@ class CodeMode(Transform):
                         "Python async code to search available tools and their schemas"
                     )
                 ),
-            ]
+            ],
         ) -> Any:
             """Search for tools using Python code."""
             backend_tools = await transform._get_backend_tools()
@@ -258,7 +265,7 @@ class CodeMode(Transform):
                         "Python async code to execute tool calls via call_tool(name_or_key, arguments)"
                     )
                 ),
-            ]
+            ],
         ) -> Any:
             """Execute tool calls using Python code."""
             defaults = transform._default_arguments
@@ -276,7 +283,9 @@ class CodeMode(Transform):
                 }
                 merged.update(params)
 
-                version = VersionSpec(eq=tool.version) if tool.version is not None else None
+                version = (
+                    VersionSpec(eq=tool.version) if tool.version is not None else None
+                )
                 result = await transform._server.call_tool(
                     tool.name,
                     merged,
@@ -295,14 +304,15 @@ class CodeMode(Transform):
                         return structured["result"]
                     return structured
 
-                texts = [
-                    content.text
-                    for content in result.content
-                    if isinstance(content, TextContent)
-                ]
-                if len(texts) == 1:
-                    return texts[0]
-                return texts
+                contents = []
+                for content in result.content:
+                    if isinstance(content, TextContent):
+                        contents.append(content.text)
+                    else:
+                        contents.append(content.model_dump())
+                if len(contents) == 1:
+                    return contents[0]
+                return contents
 
             return await transform.sandbox_provider.run(
                 code,

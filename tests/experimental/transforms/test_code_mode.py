@@ -1,10 +1,11 @@
 import asyncio
 import importlib
 import json
+import logging
 from typing import Any
 
 import pytest
-from mcp.types import TextContent
+from mcp.types import ImageContent, TextContent
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import NotFoundError
@@ -59,10 +60,7 @@ class _TestSandboxProvider:
             namespace.update(inputs)
         if external_functions:
             namespace.update(
-                {
-                    key: _ensure_async(value)
-                    for key, value in external_functions.items()
-                }
+                {key: _ensure_async(value) for key, value in external_functions.items()}
             )
 
         wrapped = "async def __test_main__():\n"
@@ -75,7 +73,9 @@ class _TestSandboxProvider:
         return await namespace["__test_main__"]()
 
 
-async def _run_tool(server: FastMCP, name: str, arguments: dict[str, Any]) -> ToolResult:
+async def _run_tool(
+    server: FastMCP, name: str, arguments: dict[str, Any]
+) -> ToolResult:
     tool = await server.get_tool(name)
     assert tool is not None
     return await tool.run(arguments)
@@ -183,7 +183,10 @@ async def test_code_mode_default_descriptions_encourage_search_then_execute() ->
     assert "`key`" in search_description
     assert "single block" in execute_description
     assert "Use `return` to produce output." in execute_description
-    assert "Only `call_tool(tool_name_or_key: str, params: dict) -> Any` is available in scope." in execute_description
+    assert (
+        "Only `call_tool(tool_name_or_key: str, params: dict) -> Any` is available in scope."
+        in execute_description
+    )
     assert "call_tool(tool_name_or_key: str, params: dict)" in execute_description
 
 
@@ -309,6 +312,60 @@ async def test_code_mode_search_respects_tool_auth() -> None:
     )
     assert result.structured_content is None
     assert result.content == []
+
+
+async def test_code_mode_warns_on_colliding_tool_names(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mcp = FastMCP("CodeMode Collision")
+
+    @mcp.tool
+    def search() -> str:
+        return "real search"
+
+    @mcp.tool
+    def ping() -> str:
+        return "pong"
+
+    mcp.add_transform(CodeMode(mcp, sandbox_provider=_TestSandboxProvider()))
+
+    with caplog.at_level(
+        logging.WARNING, logger="fastmcp.experimental.transforms.code_mode"
+    ):
+        listed_tools = await mcp.list_tools(run_middleware=False)
+
+    assert {tool.name for tool in listed_tools} == {"search", "execute"}
+    assert "hiding backend tool(s)" in caplog.text
+    assert "'search'" in caplog.text
+
+    # The non-colliding tool should still be searchable
+    result = await _run_tool(
+        mcp,
+        "search",
+        {"code": "return [tool['name'] for tool in tools]"},
+    )
+    assert _unwrap_result(result) == ["ping"]
+
+
+async def test_code_mode_execute_preserves_non_text_content() -> None:
+    mcp = FastMCP("CodeMode NonText")
+
+    @mcp.tool
+    def image_tool() -> ImageContent:
+        return ImageContent(type="image", data="base64data", mimeType="image/png")
+
+    mcp.add_transform(CodeMode(mcp, sandbox_provider=_TestSandboxProvider()))
+
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {"code": "return await call_tool('image_tool', {})"},
+    )
+    unwrapped = _unwrap_result(result)
+    assert isinstance(unwrapped, dict)
+    assert unwrapped["type"] == "image"
+    assert unwrapped["data"] == "base64data"
+    assert unwrapped["mimeType"] == "image/png"
 
 
 async def test_monty_provider_raises_informative_error_when_missing(
