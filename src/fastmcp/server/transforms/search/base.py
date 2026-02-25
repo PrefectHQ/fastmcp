@@ -139,6 +139,7 @@ class BaseSearchTransform(Transform):
 
     def _make_call_tool(self) -> Tool:
         """Create the call_tool proxy that executes discovered tools."""
+        transform = self
 
         async def call_tool(
             name: Annotated[str, "The name of the tool to call"],
@@ -151,6 +152,10 @@ class BaseSearchTransform(Transform):
 
             Use this to execute tools discovered via search_tools.
             """
+            if name in {transform._call_tool_name, transform._search_tool_name}:
+                raise ValueError(
+                    f"'{name}' is a synthetic search tool and cannot be called via the call_tool proxy"
+                )
             return await ctx.fastmcp.call_tool(name, arguments)
 
         return Tool.from_function(fn=call_tool, name=self._call_tool_name)

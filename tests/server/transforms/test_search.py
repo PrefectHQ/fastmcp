@@ -4,15 +4,21 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Any
+from unittest.mock import MagicMock
 
 import mcp.types as mcp_types
+import pytest
 from mcp.types import TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.transforms import Visibility
-from fastmcp.server.transforms.search.bm25 import BM25SearchTransform, _BM25Index
+from fastmcp.server.transforms.search.bm25 import (
+    BM25SearchTransform,
+    _BM25Index,
+    _catalog_hash,
+)
 from fastmcp.server.transforms.search.regex import RegexSearchTransform
 from fastmcp.tools.tool import Tool, ToolResult
 
@@ -404,3 +410,73 @@ class TestBM25Index:
         index = _BM25Index()
         index.build(["alpha beta gamma"])
         assert index.query("zzz", 5) == []
+
+
+# ---------------------------------------------------------------------------
+# call_tool self-reference guard
+# ---------------------------------------------------------------------------
+
+
+class TestCallToolGuard:
+    async def test_call_tool_proxy_rejects_itself(self):
+        """Calling call_tool(name='call_tool') must not recurse infinitely."""
+        mcp = _make_server_with_tools()
+        mcp.add_transform(RegexSearchTransform())
+
+        async with Client(mcp) as client:
+            with pytest.raises(Exception):
+                await client.call_tool(
+                    "call_tool", {"name": "call_tool", "arguments": {}}
+                )
+
+    async def test_call_tool_proxy_rejects_search_tool(self):
+        """Calling call_tool(name='search_tools') must be rejected."""
+        mcp = _make_server_with_tools()
+        mcp.add_transform(RegexSearchTransform())
+
+        async with Client(mcp) as client:
+            with pytest.raises(Exception):
+                await client.call_tool(
+                    "call_tool",
+                    {"name": "search_tools", "arguments": {"pattern": "add"}},
+                )
+
+    async def test_call_tool_proxy_rejects_custom_names(self):
+        """Guard works when synthetic tools have custom names."""
+        mcp = _make_server_with_tools()
+        mcp.add_transform(
+            RegexSearchTransform(
+                search_tool_name="find_tools", call_tool_name="run_tool"
+            )
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(Exception):
+                await client.call_tool(
+                    "run_tool", {"name": "run_tool", "arguments": {}}
+                )
+            with pytest.raises(Exception):
+                await client.call_tool(
+                    "run_tool", {"name": "find_tools", "arguments": {"pattern": "add"}}
+                )
+
+
+# ---------------------------------------------------------------------------
+# catalog hash staleness
+# ---------------------------------------------------------------------------
+
+
+class TestCatalogHash:
+    def test_hash_differs_for_same_name_different_description(self):
+        """Hash must change when a tool's description changes, not just its name."""
+        tool_a = MagicMock()
+        tool_a.name = "search"
+        tool_a.description = "find records in the database"
+        tool_a.parameters = {}
+
+        tool_b = MagicMock()
+        tool_b.name = "search"
+        tool_b.description = "send an email to a recipient"
+        tool_b.parameters = {}
+
+        assert _catalog_hash([tool_a]) != _catalog_hash([tool_b])
