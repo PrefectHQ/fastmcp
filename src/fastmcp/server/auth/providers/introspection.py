@@ -24,7 +24,9 @@ Example:
 from __future__ import annotations
 
 import base64
+import hashlib
 import time
+from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
 import httpx
@@ -35,6 +37,15 @@ from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class _IntrospectionCacheEntry:
+    """Cached introspection result with expiration."""
+
+    result: AccessToken | None
+    expires_at: float
+
 
 ClientAuthMethod = Literal["client_secret_basic", "client_secret_post"]
 
@@ -70,6 +81,10 @@ class IntrospectionTokenVerifier(TokenVerifier):
         ```
     """
 
+    # Default cache settings
+    DEFAULT_CACHE_TTL_SECONDS = 300  # 5 minutes
+    DEFAULT_MAX_CACHE_SIZE = 10000
+
     def __init__(
         self,
         *,
@@ -80,6 +95,8 @@ class IntrospectionTokenVerifier(TokenVerifier):
         timeout_seconds: int = 10,
         required_scopes: list[str] | None = None,
         base_url: AnyHttpUrl | str | None = None,
+        cache_ttl_seconds: int | None = None,
+        max_cache_size: int | None = None,
     ):
         """
         Initialize the introspection token verifier.
@@ -93,6 +110,9 @@ class IntrospectionTokenVerifier(TokenVerifier):
             timeout_seconds: HTTP request timeout in seconds (default: 10)
             required_scopes: Required scopes for all tokens (optional)
             base_url: Base URL for TokenVerifier protocol
+            cache_ttl_seconds: How long to cache introspection results in seconds.
+                Set to 0 to disable caching. Default: 300 (5 minutes).
+            max_cache_size: Maximum number of tokens to cache. Default: 10000.
         """
         # Parse scopes if provided as string
         parsed_required_scopes = (
@@ -121,6 +141,98 @@ class IntrospectionTokenVerifier(TokenVerifier):
 
         self.timeout_seconds = timeout_seconds
         self.logger = get_logger(__name__)
+
+        # Cache configuration
+        self._cache_ttl = (
+            cache_ttl_seconds
+            if cache_ttl_seconds is not None
+            else self.DEFAULT_CACHE_TTL_SECONDS
+        )
+        self._max_cache_size = (
+            max_cache_size
+            if max_cache_size is not None
+            else self.DEFAULT_MAX_CACHE_SIZE
+        )
+        self._cache: dict[str, _IntrospectionCacheEntry] = {}
+        self._last_cleanup = time.monotonic()
+        self._cleanup_interval = 60  # Cleanup every 60 seconds
+
+    def _hash_token(self, token: str) -> str:
+        """Hash token for use as cache key.
+
+        Using SHA-256 for:
+        - Memory efficiency (fixed 64-char hex vs potentially long tokens)
+        - Privacy (original token not stored in memory as dict key)
+        """
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def _cleanup_expired_cache(self) -> None:
+        """Remove expired entries from cache."""
+        now = time.time()
+        expired = [key for key, entry in self._cache.items() if entry.expires_at < now]
+        for key in expired:
+            del self._cache[key]
+        if expired:
+            self.logger.debug("Cleaned up %d expired cache entries", len(expired))
+
+    def _maybe_cleanup(self) -> None:
+        """Periodically cleanup expired entries to prevent unbounded growth."""
+        now = time.monotonic()
+        if now - self._last_cleanup > self._cleanup_interval:
+            self._cleanup_expired_cache()
+            self._last_cleanup = now
+
+    def _get_cached(self, token: str) -> tuple[bool, AccessToken | None]:
+        """Get cached introspection result.
+
+        Returns:
+            Tuple of (is_cached, result):
+            - (True, AccessToken) if cached valid token
+            - (True, None) if cached as invalid
+            - (False, None) if not in cache or expired
+        """
+        if self._cache_ttl <= 0:
+            return (False, None)  # Caching disabled
+
+        cache_key = self._hash_token(token)
+        entry = self._cache.get(cache_key)
+
+        if entry is None:
+            return (False, None)  # Not in cache
+
+        if entry.expires_at < time.time():
+            del self._cache[cache_key]
+            return (False, None)  # Expired
+
+        return (True, entry.result)
+
+    def _set_cached(self, token: str, result: AccessToken | None) -> None:
+        """Cache introspection result with TTL."""
+        if self._cache_ttl <= 0:
+            return  # Caching disabled
+
+        # Periodic cleanup
+        self._maybe_cleanup()
+
+        # Check cache size limit
+        if len(self._cache) >= self._max_cache_size:
+            self._cleanup_expired_cache()
+            # If still at limit after cleanup, evict oldest entry
+            if len(self._cache) >= self._max_cache_size:
+                oldest_key = next(iter(self._cache))
+                del self._cache[oldest_key]
+
+        cache_key = self._hash_token(token)
+
+        # Use token's expiration if available and sooner than TTL
+        expires_at = time.time() + self._cache_ttl
+        if result and result.expires_at:
+            expires_at = min(expires_at, float(result.expires_at))
+
+        self._cache[cache_key] = _IntrospectionCacheEntry(
+            result=result,
+            expires_at=expires_at,
+        )
 
     def _create_basic_auth_header(self) -> str:
         """Create HTTP Basic Auth header value from client credentials."""
@@ -159,12 +271,21 @@ class IntrospectionTokenVerifier(TokenVerifier):
         authenticated using the configured client authentication method (client_secret_basic
         or client_secret_post).
 
+        Results are cached in-memory to reduce load on the introspection endpoint.
+        Cache TTL and size are configurable via constructor parameters.
+
         Args:
             token: The opaque token string to validate
 
         Returns:
             AccessToken object if valid and active, None if invalid, inactive, or expired
         """
+        # Check cache first
+        is_cached, cached_result = self._get_cached(token)
+        if is_cached:
+            self.logger.debug("Token introspection cache hit")
+            return cached_result
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 # Prepare introspection request per RFC 7662
@@ -193,7 +314,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
                     headers=headers,
                 )
 
-                # Check for HTTP errors
+                # Check for HTTP errors - don't cache HTTP errors (may be transient)
                 if response.status_code != 200:
                     self.logger.debug(
                         "Token introspection failed: HTTP %d - %s",
@@ -205,8 +326,10 @@ class IntrospectionTokenVerifier(TokenVerifier):
                 introspection_data = response.json()
 
                 # Check if token is active (required field per RFC 7662)
+                # Cache inactive tokens - the server definitively says they're invalid
                 if not introspection_data.get("active", False):
                     self.logger.debug("Token introspection returned active=false")
+                    self._set_cached(token, None)
                     return None
 
                 # Extract client_id (should be present for active tokens)
@@ -223,6 +346,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
                             "Token validation failed: expired token for client %s",
                             client_id,
                         )
+                        self._set_cached(token, None)
                         return None
 
                 # Extract scopes
@@ -238,16 +362,20 @@ class IntrospectionTokenVerifier(TokenVerifier):
                             token_scopes,
                             required_scopes,
                         )
+                        # Cache scope failures - token is valid but doesn't have required scopes
+                        self._set_cached(token, None)
                         return None
 
                 # Create AccessToken with introspection response data
-                return AccessToken(
+                result = AccessToken(
                     token=token,
                     client_id=str(client_id),
                     scopes=scopes,
                     expires_at=int(exp) if exp else None,
                     claims=introspection_data,  # Store full response for extensibility
                 )
+                self._set_cached(token, result)
+                return result
 
         except httpx.TimeoutException:
             self.logger.debug(

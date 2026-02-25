@@ -523,6 +523,284 @@ class TestIntrospectionTokenVerifier:
         assert "client_secret=" not in body
 
 
+class TestIntrospectionCaching:
+    """Test in-memory caching for token introspection."""
+
+    @pytest.fixture
+    def verifier_with_cache(self) -> IntrospectionTokenVerifier:
+        """Create verifier with caching enabled."""
+        return IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+            cache_ttl_seconds=300,  # 5 minutes
+            max_cache_size=100,
+        )
+
+    @pytest.fixture
+    def verifier_no_cache(self) -> IntrospectionTokenVerifier:
+        """Create verifier with caching disabled."""
+        return IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+            cache_ttl_seconds=0,  # Disabled
+        )
+
+    def test_default_cache_settings(self):
+        """Test that caching is enabled by default with sensible defaults."""
+        verifier = IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+        )
+        assert verifier._cache_ttl == 300  # 5 minutes
+        assert verifier._max_cache_size == 10000
+
+    def test_custom_cache_settings(self):
+        """Test that cache settings can be customized."""
+        verifier = IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+            cache_ttl_seconds=60,
+            max_cache_size=500,
+        )
+        assert verifier._cache_ttl == 60
+        assert verifier._max_cache_size == 500
+
+    def test_cache_disabled_with_zero_ttl(self):
+        """Test that cache is disabled when TTL is 0."""
+        verifier = IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+            cache_ttl_seconds=0,
+        )
+        assert verifier._cache_ttl == 0
+
+    async def test_cache_hit_returns_cached_result(
+        self, verifier_with_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
+    ):
+        """Test that cached valid tokens are returned without introspection call."""
+        # First call - introspection endpoint called
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={
+                "active": True,
+                "client_id": "user-123",
+                "scope": "read write",
+                "exp": int(time.time()) + 3600,
+            },
+        )
+
+        # First verification
+        result1 = await verifier_with_cache.verify_token("test-token")
+        assert result1 is not None
+        assert result1.client_id == "user-123"
+
+        # Verify one request was made
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 1
+
+        # Second verification - should use cache, no new request
+        result2 = await verifier_with_cache.verify_token("test-token")
+        assert result2 is not None
+        assert result2.client_id == "user-123"
+
+        # Still only one request
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 1
+
+    async def test_cache_hit_returns_cached_invalid_result(
+        self, verifier_with_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
+    ):
+        """Test that cached invalid tokens are returned without introspection call."""
+        # First call - token is inactive
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={"active": False},
+        )
+
+        # First verification
+        result1 = await verifier_with_cache.verify_token("invalid-token")
+        assert result1 is None
+
+        # Verify one request was made
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 1
+
+        # Second verification - should use cache
+        result2 = await verifier_with_cache.verify_token("invalid-token")
+        assert result2 is None
+
+        # Still only one request
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 1
+
+    async def test_cache_disabled_makes_every_call(
+        self, verifier_no_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
+    ):
+        """Test that with caching disabled, every call makes a request."""
+        # Add multiple responses for the same token
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={"active": True, "client_id": "user-123"},
+        )
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={"active": True, "client_id": "user-123"},
+        )
+
+        # First call
+        await verifier_no_cache.verify_token("test-token")
+
+        # Second call - should also make a request
+        await verifier_no_cache.verify_token("test-token")
+
+        # Two requests were made
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 2
+
+    async def test_different_tokens_are_cached_separately(
+        self, verifier_with_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
+    ):
+        """Test that different tokens have separate cache entries."""
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={"active": True, "client_id": "user-1"},
+        )
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={"active": True, "client_id": "user-2"},
+        )
+
+        # Verify two different tokens
+        result1 = await verifier_with_cache.verify_token("token-1")
+        result2 = await verifier_with_cache.verify_token("token-2")
+
+        assert result1 is not None
+        assert result1.client_id == "user-1"
+        assert result2 is not None
+        assert result2.client_id == "user-2"
+
+        # Two requests were made
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 2
+
+        # Verify both again - no new requests
+        await verifier_with_cache.verify_token("token-1")
+        await verifier_with_cache.verify_token("token-2")
+
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 2
+
+    async def test_http_errors_are_not_cached(
+        self, verifier_with_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
+    ):
+        """Test that HTTP errors are not cached (transient failures)."""
+        # First call - HTTP error
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            status_code=500,
+            text="Internal Server Error",
+        )
+        # Second call - success
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={"active": True, "client_id": "user-123"},
+        )
+
+        # First verification - fails
+        result1 = await verifier_with_cache.verify_token("test-token")
+        assert result1 is None
+
+        # Second verification - should retry since error wasn't cached
+        result2 = await verifier_with_cache.verify_token("test-token")
+        assert result2 is not None
+        assert result2.client_id == "user-123"
+
+        # Two requests were made
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 2
+
+    async def test_timeout_errors_are_not_cached(
+        self, verifier_with_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
+    ):
+        """Test that timeout errors are not cached (transient failures)."""
+        from httpx import TimeoutException
+
+        # First call - timeout
+        httpx_mock.add_exception(
+            TimeoutException("Request timed out"),
+            url="https://auth.example.com/oauth/introspect",
+        )
+        # Second call - success
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={"active": True, "client_id": "user-123"},
+        )
+
+        # First verification - times out
+        result1 = await verifier_with_cache.verify_token("test-token")
+        assert result1 is None
+
+        # Second verification - should retry since timeout wasn't cached
+        result2 = await verifier_with_cache.verify_token("test-token")
+        assert result2 is not None
+
+        # Two requests were made
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 2
+
+    def test_token_hashing(self, verifier_with_cache: IntrospectionTokenVerifier):
+        """Test that tokens are hashed consistently."""
+        hash1 = verifier_with_cache._hash_token("test-token")
+        hash2 = verifier_with_cache._hash_token("test-token")
+        hash3 = verifier_with_cache._hash_token("different-token")
+
+        # Same token produces same hash
+        assert hash1 == hash2
+        # Different tokens produce different hashes
+        assert hash1 != hash3
+        # Hash is a hex string (SHA-256 = 64 chars)
+        assert len(hash1) == 64
+
+    async def test_cache_respects_token_expiration(
+        self, verifier_with_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
+    ):
+        """Test that cache respects token's exp claim for TTL."""
+        # Token expiring in 60 seconds (shorter than cache TTL of 300)
+        short_exp = int(time.time()) + 60
+
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={
+                "active": True,
+                "client_id": "user-123",
+                "exp": short_exp,
+            },
+        )
+
+        await verifier_with_cache.verify_token("test-token")
+
+        # Check that cache entry uses the shorter expiration
+        cache_key = verifier_with_cache._hash_token("test-token")
+        entry = verifier_with_cache._cache[cache_key]
+        # Cache expiration should be at or before token expiration
+        assert entry.expires_at <= short_exp
+
+
 class TestIntrospectionTokenVerifierIntegration:
     """Integration tests with FastMCP server."""
 
