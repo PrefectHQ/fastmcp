@@ -1030,15 +1030,17 @@ class TestDependencyInjection:
         require_docket("test feature")
 
     def test_dependency_class_exists(self):
-        """Test Dependency class is importable from uncalled_for."""
-        from uncalled_for import Dependency, Depends
+        """Test Dependency and Depends are importable from fastmcp."""
+        from fastmcp.dependencies import Dependency, Depends
 
         assert Dependency is not None
         assert Depends is not None
 
     def test_depends_works(self):
         """Test Depends() creates proper dependency wrapper."""
-        from uncalled_for import Depends, _Depends
+        from uncalled_for import _Depends
+
+        from fastmcp.dependencies import Depends
 
         def get_value() -> str:
             return "test_value"
@@ -1059,7 +1061,9 @@ class TestDependencyInjection:
 
     def test_get_dependency_parameters(self):
         """Test get_dependency_parameters finds dependency defaults."""
-        from uncalled_for import Depends, _Depends, get_dependency_parameters
+        from uncalled_for import _Depends, get_dependency_parameters
+
+        from fastmcp.dependencies import Depends
 
         def get_db() -> str:
             return "database"
@@ -1091,8 +1095,7 @@ class TestAuthDependencies:
 
     def test_current_access_token_is_dependency(self):
         """Test that CurrentAccessToken is a Dependency instance."""
-        from uncalled_for import Dependency
-
+        from fastmcp.dependencies import Dependency
         from fastmcp.server.dependencies import _CurrentAccessToken
 
         dep = _CurrentAccessToken()
@@ -1100,8 +1103,7 @@ class TestAuthDependencies:
 
     def test_token_claim_creates_dependency(self):
         """Test that TokenClaim creates a Dependency instance."""
-        from uncalled_for import Dependency
-
+        from fastmcp.dependencies import Dependency
         from fastmcp.server.dependencies import TokenClaim, _TokenClaim
 
         dep = TokenClaim("oid")
