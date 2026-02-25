@@ -67,10 +67,12 @@ class IntrospectionTokenVerifier(TokenVerifier):
     Use this when:
     - Your authorization server issues opaque (non-JWT) tokens
     - You need to validate tokens from Auth0, Okta, Keycloak, or other OAuth servers
-    - Your tokens require revocation checking (set ``cache_ttl_seconds=0`` for
-      real-time checking; the default 5-minute cache trades freshness for
-      reduced load on the introspection endpoint)
+    - Your tokens require real-time revocation checking
     - Your authorization server supports RFC 7662 introspection
+
+    Caching is disabled by default to preserve real-time revocation semantics.
+    Set ``cache_ttl_seconds`` to enable caching and reduce load on the
+    introspection endpoint (e.g., ``cache_ttl_seconds=300`` for 5 minutes).
 
     Example:
         ```python
@@ -84,7 +86,6 @@ class IntrospectionTokenVerifier(TokenVerifier):
     """
 
     # Default cache settings
-    DEFAULT_CACHE_TTL_SECONDS = 300  # 5 minutes
     DEFAULT_MAX_CACHE_SIZE = 10000
 
     def __init__(
@@ -113,8 +114,11 @@ class IntrospectionTokenVerifier(TokenVerifier):
             required_scopes: Required scopes for all tokens (optional)
             base_url: Base URL for TokenVerifier protocol
             cache_ttl_seconds: How long to cache introspection results in seconds.
-                Set to 0 to disable caching. Default: 300 (5 minutes).
-            max_cache_size: Maximum number of tokens to cache. Default: 10000.
+                Caching is disabled by default (None) to preserve real-time
+                revocation semantics. Set to a positive integer to enable caching
+                (e.g., 300 for 5 minutes).
+            max_cache_size: Maximum number of tokens to cache when caching is
+                enabled. Default: 10000.
         """
         # Parse scopes if provided as string
         parsed_required_scopes = (
@@ -144,12 +148,8 @@ class IntrospectionTokenVerifier(TokenVerifier):
         self.timeout_seconds = timeout_seconds
         self.logger = get_logger(__name__)
 
-        # Cache configuration
-        self._cache_ttl = (
-            cache_ttl_seconds
-            if cache_ttl_seconds is not None
-            else self.DEFAULT_CACHE_TTL_SECONDS
-        )
+        # Cache configuration (None or 0 = disabled)
+        self._cache_ttl = cache_ttl_seconds or 0
         self._max_cache_size = (
             max_cache_size
             if max_cache_size is not None

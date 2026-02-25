@@ -548,13 +548,13 @@ class TestIntrospectionCaching:
         )
 
     def test_default_cache_settings(self):
-        """Test that caching is enabled by default with sensible defaults."""
+        """Test that caching is disabled by default."""
         verifier = IntrospectionTokenVerifier(
             introspection_url="https://auth.example.com/oauth/introspect",
             client_id="test-client",
             client_secret="test-secret",
         )
-        assert verifier._cache_ttl == 300  # 5 minutes
+        assert verifier._cache_ttl == 0  # Disabled by default
         assert verifier._max_cache_size == 10000
 
     def test_custom_cache_settings(self):
@@ -570,7 +570,8 @@ class TestIntrospectionCaching:
         assert verifier._max_cache_size == 500
 
     def test_cache_disabled_with_zero_ttl(self):
-        """Test that cache is disabled when TTL is 0."""
+        """Test that cache is disabled when TTL is 0 or None."""
+        # Explicit 0
         verifier = IntrospectionTokenVerifier(
             introspection_url="https://auth.example.com/oauth/introspect",
             client_id="test-client",
@@ -578,6 +579,15 @@ class TestIntrospectionCaching:
             cache_ttl_seconds=0,
         )
         assert verifier._cache_ttl == 0
+
+        # Explicit None (same as default)
+        verifier2 = IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+            cache_ttl_seconds=None,
+        )
+        assert verifier2._cache_ttl == 0
 
     async def test_cache_hit_returns_cached_result(
         self, verifier_with_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
