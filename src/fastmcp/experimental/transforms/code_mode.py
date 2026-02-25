@@ -119,7 +119,7 @@ class CodeMode(Transform):
 
     def search_helper(self, fn: Callable[..., Any]) -> Callable[..., Any]:
         """Register a helper function available in search code."""
-        self._helpers[fn.__name__] = fn
+        self._helpers[fn.__name__] = fn  # type: ignore[unresolved-attribute]
         return fn
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
