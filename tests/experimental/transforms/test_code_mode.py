@@ -8,7 +8,7 @@ import pytest
 from mcp.types import ImageContent, TextContent
 
 from fastmcp import FastMCP
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.experimental.transforms import CodeMode, MontySandboxProvider
 from fastmcp.tools.tool import ToolResult
 
@@ -76,9 +76,7 @@ class _TestSandboxProvider:
 async def _run_tool(
     server: FastMCP, name: str, arguments: dict[str, Any]
 ) -> ToolResult:
-    tool = await server.get_tool(name)
-    assert tool is not None
-    return await tool.run(arguments)
+    return await server.call_tool(name, arguments)
 
 
 async def test_code_mode_transform_hides_backend_tools_and_supports_defaults() -> None:
@@ -94,7 +92,6 @@ async def test_code_mode_transform_hides_backend_tools_and_supports_defaults() -
 
     mcp.add_transform(
         CodeMode(
-            mcp,
             default_arguments={"workspace_id": "ws-default"},
             sandbox_provider=_TestSandboxProvider(),
         )
@@ -132,7 +129,7 @@ async def test_code_mode_transform_replaces_listed_tools() -> None:
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(mcp, sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
 
     listed_tools = await mcp.list_tools(run_middleware=False)
     assert {tool.name for tool in listed_tools} == {"search", "execute"}
@@ -147,7 +144,6 @@ async def test_code_mode_tool_descriptions_are_configurable() -> None:
 
     mcp.add_transform(
         CodeMode(
-            mcp,
             sandbox_provider=_TestSandboxProvider(),
             search_tool_name="search_meta",
             execute_tool_name="execute_meta",
@@ -170,7 +166,7 @@ async def test_code_mode_default_descriptions_encourage_search_then_execute() ->
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(mcp, sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
 
     listed_tools = await mcp.list_tools(run_middleware=False)
     by_name = {tool.name: tool for tool in listed_tools}
@@ -197,12 +193,12 @@ async def test_code_mode_search_helpers_are_available_to_search_code() -> None:
     def add(x: int, y: int) -> int:
         return x + y
 
-    code_mode = CodeMode(mcp, sandbox_provider=_TestSandboxProvider())
+    code_mode = CodeMode(sandbox_provider=_TestSandboxProvider())
 
     @code_mode.search_helper
     async def has_tag(tool: dict[str, Any], tag: str) -> bool:
-        tags = tool.get("tags") or {}
-        return bool(tags.get(tag))
+        tags = tool.get("tags") or []
+        return tag in tags
 
     mcp.add_transform(code_mode)
 
@@ -224,7 +220,7 @@ async def test_code_mode_search_includes_output_schema() -> None:
     def square(x: int) -> int:
         return x * x
 
-    mcp.add_transform(CodeMode(mcp, sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
 
     result = await _run_tool(
         mcp,
@@ -250,9 +246,9 @@ async def test_code_mode_execute_respects_disabled_tool_visibility() -> None:
         return "nope"
 
     mcp.disable(names={"secret"}, components={"tool"})
-    mcp.add_transform(CodeMode(mcp, sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
 
-    with pytest.raises(NotFoundError, match=r"Unknown tool"):
+    with pytest.raises(ToolError, match=r"Unknown tool"):
         await _run_tool(
             mcp,
             "execute",
@@ -268,7 +264,7 @@ async def test_code_mode_search_respects_disabled_tool_visibility() -> None:
         return "nope"
 
     mcp.disable(names={"secret"}, components={"tool"})
-    mcp.add_transform(CodeMode(mcp, sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
 
     result = await _run_tool(
         mcp,
@@ -286,9 +282,9 @@ async def test_code_mode_execute_respects_tool_auth() -> None:
     def protected() -> str:
         return "nope"
 
-    mcp.add_transform(CodeMode(mcp, sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
 
-    with pytest.raises(NotFoundError, match=r"Unknown tool"):
+    with pytest.raises(ToolError, match=r"Unknown tool"):
         await _run_tool(
             mcp,
             "execute",
@@ -303,7 +299,7 @@ async def test_code_mode_search_respects_tool_auth() -> None:
     def protected() -> str:
         return "nope"
 
-    mcp.add_transform(CodeMode(mcp, sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
 
     result = await _run_tool(
         mcp,
@@ -327,7 +323,7 @@ async def test_code_mode_warns_on_colliding_tool_names(
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(mcp, sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
 
     with caplog.at_level(
         logging.WARNING, logger="fastmcp.experimental.transforms.code_mode"
@@ -354,7 +350,7 @@ async def test_code_mode_execute_preserves_non_text_content() -> None:
     def image_tool() -> ImageContent:
         return ImageContent(type="image", data="base64data", mimeType="image/png")
 
-    mcp.add_transform(CodeMode(mcp, sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
 
     result = await _run_tool(
         mcp,

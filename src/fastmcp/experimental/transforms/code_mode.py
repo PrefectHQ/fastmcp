@@ -4,17 +4,25 @@ import asyncio
 import importlib
 import logging
 from collections.abc import Callable, Sequence
+from contextvars import ContextVar
 from typing import Annotated, Any, Protocol
 
 from mcp.types import TextContent
 from pydantic import Field
 
 from fastmcp.exceptions import NotFoundError
+from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext, Transform
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 logger = logging.getLogger(__name__)
+
+# When True, CodeMode passes through in ``list_tools()`` instead of
+# hiding tools.  This lets the search/execute tools call back into the
+# server's ``list_tools()`` to get the auth-filtered catalog without
+# recursively hiding everything behind the meta-tools.
+_code_mode_bypass: ContextVar[bool] = ContextVar("_code_mode_bypass", default=False)
 
 
 def _strip_circular(obj: Any, _seen: frozenset[int] = frozenset()) -> Any:
@@ -40,7 +48,41 @@ def _ensure_async(fn: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
+def _unwrap_tool_result(result: ToolResult, tool: Tool) -> Any:
+    """Extract a Python-friendly value from a ToolResult."""
+    if result.structured_content is not None:
+        structured = result.structured_content
+        wrap_result = bool(
+            (tool.output_schema or {}).get("x-fastmcp-wrap-result")
+        )
+        if (
+            wrap_result
+            and isinstance(structured, dict)
+            and set(structured) == {"result"}
+        ):
+            return structured["result"]
+        return structured
+
+    contents = []
+    for content in result.content:
+        if isinstance(content, TextContent):
+            contents.append(content.text)
+        else:
+            contents.append(content.model_dump())
+    if len(contents) == 1:
+        return contents[0]
+    return contents
+
+
 class SandboxProvider(Protocol):
+    """Interface for executing LLM-generated Python code in a sandbox.
+
+    WARNING: The ``code`` parameter passed to ``run`` contains untrusted,
+    LLM-generated Python.  Implementations MUST execute it in an isolated
+    sandbox — never with plain ``exec()``.  Use ``MontySandboxProvider``
+    (backed by ``pydantic-monty``) for production workloads.
+    """
+
     async def run(
         self,
         code: str,
@@ -93,7 +135,7 @@ class CodeMode(Transform):
 
     def __init__(
         self,
-        server: Any,
+        server: Any = None,
         *,
         default_arguments: dict[str, Any] | None = None,
         sandbox_provider: SandboxProvider | None = None,
@@ -107,10 +149,13 @@ class CodeMode(Transform):
                 "search_tool_name and execute_tool_name must be different."
             )
 
-        self._server = server
+        if server is not None:
+            logger.warning(
+                "Passing 'server' to CodeMode is deprecated and ignored. "
+                "CodeMode now accesses the server via Context."
+            )
         self._default_arguments = default_arguments or {}
         self._helpers: dict[str, Callable[..., Any]] = {}
-        self._backend_tools: Sequence[Tool] = ()
         self.search_tool_name = search_tool_name
         self.execute_tool_name = execute_tool_name
         self.search_description = search_description
@@ -119,10 +164,18 @@ class CodeMode(Transform):
 
     def search_helper(self, fn: Callable[..., Any]) -> Callable[..., Any]:
         """Register a helper function available in search code."""
-        self._helpers[fn.__name__] = fn  # type: ignore[unresolved-attribute]
+        name = getattr(fn, "__name__", None)
+        if name is None:
+            raise TypeError(
+                "search_helper requires a named function (must have __name__)"
+            )
+        self._helpers[name] = fn
         return fn
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+        if _code_mode_bypass.get():
+            return tools
+
         meta_names = {self.search_tool_name, self.execute_tool_name}
         colliding = [tool.name for tool in tools if tool.name in meta_names]
         if colliding:
@@ -132,7 +185,6 @@ class CodeMode(Transform):
                 "to choose different meta-tool names.",
                 colliding,
             )
-        self._backend_tools = [tool for tool in tools if tool.name not in meta_names]
         return [self._make_search_tool(), self._make_execute_tool()]
 
     async def get_tool(
@@ -176,35 +228,27 @@ class CodeMode(Transform):
             "Only `call_tool(tool_name_or_key: str, params: dict) -> Any` is available in scope."
         )
 
-    async def _get_backend_tools(self) -> Sequence[Tool]:
-        if self._backend_tools:
-            raw_tools = self._backend_tools
-        else:
-            list_tools = getattr(self._server, "_list_tools", None)
-            if list_tools is not None:
-                raw_tools = await list_tools()
-            else:
-                raw_tools = await self._server.list_tools()
+    async def _get_visible_tools(self, ctx: Context) -> Sequence[Tool]:
+        """Get the auth-filtered tool catalog.
 
-        backend_tools = [
-            tool
-            for tool in raw_tools
-            if tool.name not in {self.search_tool_name, self.execute_tool_name}
-        ]
+        Calls the server's ``list_tools()`` with a bypass flag so this
+        transform passes through instead of hiding everything.  The rest
+        of the pipeline — middleware, visibility, component auth — runs
+        normally, so the result only contains tools the current user is
+        authorized to see.
+        """
+        token = _code_mode_bypass.set(True)
+        try:
+            tools = await ctx.fastmcp.list_tools()
+        finally:
+            _code_mode_bypass.reset(token)
+        meta_names = {self.search_tool_name, self.execute_tool_name}
+        return [t for t in tools if t.name not in meta_names]
 
-        visible_tools: list[Tool] = []
-        for tool in backend_tools:
-            version = VersionSpec(eq=tool.version) if tool.version is not None else None
-            resolved = await self._server.get_tool(tool.name, version=version)
-            if resolved is None:
-                continue
-            if resolved.key != tool.key:
-                continue
-            visible_tools.append(resolved)
-        return visible_tools
-
-    async def _resolve_backend_tool(self, name: str) -> Tool | None:
-        backend_tools = await self._get_backend_tools()
+    async def _resolve_backend_tool(
+        self, name: str, ctx: Context
+    ) -> Tool | None:
+        backend_tools = await self._get_visible_tools(ctx)
 
         for tool in backend_tools:
             if tool.key == name:
@@ -214,7 +258,7 @@ class CodeMode(Transform):
         if name_matches:
             return max(name_matches, key=version_sort_key)  # type: ignore[type-var]
 
-        return await self._server.get_tool(name)
+        return None
 
     def _make_search_tool(self) -> Tool:
         transform = self
@@ -228,15 +272,16 @@ class CodeMode(Transform):
                     )
                 ),
             ],
+            ctx: Context = None,  # type: ignore[assignment]
         ) -> Any:
             """Search for tools using Python code."""
-            backend_tools = await transform._get_backend_tools()
+            backend_tools = await transform._get_visible_tools(ctx)
             tool_dicts = [
                 {
                     "name": tool.name,
                     "key": tool.key,
                     "description": tool.description or "",
-                    "tags": dict.fromkeys(tool.tags, True) if tool.tags else None,
+                    "tags": sorted(tool.tags) if tool.tags else None,
                     "parameters": _strip_circular(tool.parameters),
                     "output_schema": _strip_circular(tool.output_schema),
                 }
@@ -266,12 +311,13 @@ class CodeMode(Transform):
                     )
                 ),
             ],
+            ctx: Context = None,  # type: ignore[assignment]
         ) -> Any:
             """Execute tool calls using Python code."""
             defaults = transform._default_arguments
 
             async def call_tool(tool_name_or_key: str, params: dict[str, Any]) -> Any:
-                tool = await transform._resolve_backend_tool(tool_name_or_key)
+                tool = await transform._resolve_backend_tool(tool_name_or_key, ctx)
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {tool_name_or_key}")
 
@@ -279,40 +325,12 @@ class CodeMode(Transform):
                 merged = {
                     key: value
                     for key, value in defaults.items()
-                    if key not in params and value is not None and key in accepted_args
+                    if key not in params and key in accepted_args
                 }
                 merged.update(params)
 
-                version = (
-                    VersionSpec(eq=tool.version) if tool.version is not None else None
-                )
-                result = await transform._server.call_tool(
-                    tool.name,
-                    merged,
-                    version=version,
-                )
-                if result.structured_content is not None:
-                    structured = result.structured_content
-                    wrap_result = bool(
-                        (tool.output_schema or {}).get("x-fastmcp-wrap-result")
-                    )
-                    if (
-                        wrap_result
-                        and isinstance(structured, dict)
-                        and set(structured) == {"result"}
-                    ):
-                        return structured["result"]
-                    return structured
-
-                contents = []
-                for content in result.content:
-                    if isinstance(content, TextContent):
-                        contents.append(content.text)
-                    else:
-                        contents.append(content.model_dump())
-                if len(contents) == 1:
-                    return contents[0]
-                return contents
+                result = await ctx.fastmcp.call_tool(tool.name, merged)
+                return _unwrap_tool_result(result, tool)
 
             return await transform.sandbox_provider.run(
                 code,
