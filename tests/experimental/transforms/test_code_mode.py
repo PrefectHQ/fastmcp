@@ -477,3 +477,13 @@ async def test_code_mode_sandbox_error_surfaces_as_tool_error() -> None:
     # Runtime error
     with pytest.raises(ToolError):
         await _run_tool(mcp, "execute", {"code": "raise ValueError('boom')"})
+
+
+def test_code_mode_rejects_identical_tool_names() -> None:
+    """CodeMode raises ValueError when search and execute names collide."""
+    with pytest.raises(ValueError, match="must be different"):
+        CodeMode(
+            search_tool_name="tools",
+            execute_tool_name="tools",
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+        )

@@ -31,7 +31,11 @@ _code_mode_bypass: ContextVar[int | None] = ContextVar(
 
 
 def _strip_circular(obj: Any, _seen: frozenset[int] = frozenset()) -> Any:
-    """Deep-copy a JSON-like object, replacing circular references with None."""
+    """Deep-copy a JSON-like object, replacing circular references with ``None``.
+
+    Uses ``id()`` for cycle detection, which is safe as long as the input objects
+    stay alive for the duration of the traversal (true for tool metadata dicts).
+    """
     obj_id = id(obj)
     if obj_id in _seen:
         return None
@@ -54,7 +58,11 @@ def _ensure_async(fn: Callable[..., Any]) -> Callable[..., Any]:
 
 
 def _unwrap_tool_result(result: ToolResult, tool: Tool) -> Any:
-    """Extract a Python-friendly value from a ToolResult."""
+    """Extract a Python-friendly value from a ToolResult.
+
+    Handles the ``x-fastmcp-wrap-result`` output-schema convention that wraps
+    non-object return types in ``{"result": value}``.
+    """
     if result.structured_content is not None:
         structured = result.structured_content
         wrap_result = bool((tool.output_schema or {}).get("x-fastmcp-wrap-result"))
@@ -230,14 +238,15 @@ class CodeMode(Transform):
         """Get the auth-filtered tool catalog.
 
         Calls the server's ``list_tools()`` with a bypass flag so this
-        transform passes through instead of hiding everything.  The rest
-        of the pipeline — middleware, visibility, component auth — runs
-        normally, so the result only contains tools the current user is
-        authorized to see.
+        transform passes through instead of hiding everything.  Middleware
+        is skipped (``run_middleware=False``) because the outer search/execute
+        call already ran through middleware; running it again would double-count
+        rate limits, logging, etc.  Auth filtering and visibility checks still
+        run because they are applied after middleware in the server pipeline.
         """
         token = _code_mode_bypass.set(self._instance_id)
         try:
-            tools = await ctx.fastmcp.list_tools()
+            tools = await ctx.fastmcp.list_tools(run_middleware=False)
         finally:
             _code_mode_bypass.reset(token)
         meta_names = {self.search_tool_name, self.execute_tool_name}
@@ -346,7 +355,9 @@ class CodeMode(Transform):
                 }
                 merged.update(params)
 
-                result = await ctx.fastmcp.call_tool(tool.name, merged)
+                result = await ctx.fastmcp.call_tool(
+                    tool.name, merged, version=tool.version
+                )
                 return _unwrap_tool_result(result, tool)
 
             return await transform.sandbox_provider.run(
