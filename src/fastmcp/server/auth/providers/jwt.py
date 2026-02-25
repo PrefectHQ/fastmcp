@@ -201,7 +201,8 @@ class JWTVerifier(TokenVerifier):
         if public_key and jwks_uri:
             raise ValueError("Provide either public_key or jwks_uri, not both")
 
-        if ssrf_safe and http_client is not None:
+        # Only enforce ssrf_safe/http_client exclusivity when JWKS fetching is used
+        if jwks_uri and ssrf_safe and http_client is not None:
             raise ValueError(
                 "http_client cannot be used with ssrf_safe=True; "
                 "SSRF-safe mode requires its own hardened transport"

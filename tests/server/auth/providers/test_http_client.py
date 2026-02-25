@@ -180,17 +180,32 @@ class TestJWTVerifierHttpClient:
         assert result is not None
         assert not shared_client.is_closed
 
-    def test_ssrf_safe_rejects_http_client(
+    def test_ssrf_safe_rejects_http_client_with_jwks(
         self,
         shared_client: httpx.AsyncClient,
     ):
-        """ssrf_safe=True and http_client cannot be used together."""
+        """ssrf_safe=True and http_client cannot be used together with JWKS."""
         with pytest.raises(ValueError, match="cannot be used with ssrf_safe=True"):
             JWTVerifier(
                 jwks_uri="https://auth.example.com/.well-known/jwks.json",
                 ssrf_safe=True,
                 http_client=shared_client,
             )
+
+    def test_ssrf_safe_allows_http_client_with_static_key(
+        self,
+        rsa_key_pair: RSAKeyPair,
+        shared_client: httpx.AsyncClient,
+    ):
+        """ssrf_safe with http_client is allowed when using static public_key (no HTTP)."""
+        # This should NOT raise — static key means no JWKS fetching
+        verifier = JWTVerifier(
+            public_key=rsa_key_pair.public_key,
+            ssrf_safe=True,
+            http_client=shared_client,
+        )
+        assert verifier._http_client is shared_client
+        assert verifier.ssrf_safe is True
 
 
 class TestGitHubHttpClient:
