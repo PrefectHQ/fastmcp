@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import itertools
 import logging
 from collections.abc import Callable, Sequence
 from contextvars import ContextVar
@@ -17,6 +18,9 @@ from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 logger = logging.getLogger(__name__)
+
+# Monotonic counter for assigning unique IDs to CodeMode instances.
+_code_mode_id_counter = itertools.count()
 
 # Holds the instance ID of the CodeMode that is currently bypassed.
 # When set, the matching CodeMode passes through in ``list_tools()``
@@ -159,7 +163,7 @@ class CodeMode(Transform):
                 "search_tool_name and execute_tool_name must be different."
             )
 
-        self._instance_id = id(self)
+        self._instance_id = next(_code_mode_id_counter)
         self._default_arguments = default_arguments or {}
         self._helpers: dict[str, Callable[..., Any]] = {}
         self.search_tool_name = search_tool_name
@@ -167,6 +171,8 @@ class CodeMode(Transform):
         self.search_description = search_description
         self.execute_description = execute_description
         self.sandbox_provider = sandbox_provider or MontySandboxProvider()
+        self._cached_search_tool: Tool | None = None
+        self._cached_execute_tool: Tool | None = None
 
     def search_helper(self, fn: Callable[..., Any]) -> Callable[..., Any]:
         """Register a helper function available in search code."""
@@ -185,13 +191,12 @@ class CodeMode(Transform):
         meta_names = {self.search_tool_name, self.execute_tool_name}
         colliding = [tool.name for tool in tools if tool.name in meta_names]
         if colliding:
-            logger.warning(
-                "CodeMode is hiding backend tool(s) %s because they collide "
-                "with meta-tool names. Use search_tool_name/execute_tool_name "
-                "to choose different meta-tool names.",
-                colliding,
+            raise ValueError(
+                f"Backend tool(s) {colliding} collide with CodeMode meta-tool "
+                f"names. Use search_tool_name/execute_tool_name to choose "
+                f"different meta-tool names."
             )
-        return [self._make_search_tool(), self._make_execute_tool()]
+        return [self._get_search_tool(), self._get_execute_tool()]
 
     async def get_tool(
         self,
@@ -201,9 +206,9 @@ class CodeMode(Transform):
         version: VersionSpec | None = None,
     ) -> Tool | None:
         if name == self.search_tool_name:
-            return self._make_search_tool()
+            return self._get_search_tool()
         if name == self.execute_tool_name:
-            return self._make_execute_tool()
+            return self._get_execute_tool()
         return await call_next(name, version=version)
 
     def _build_search_description(self) -> str:
@@ -264,6 +269,16 @@ class CodeMode(Transform):
             return max(name_matches, key=version_sort_key)  # type: ignore[type-var]
 
         return None
+
+    def _get_search_tool(self) -> Tool:
+        if self._cached_search_tool is None:
+            self._cached_search_tool = self._make_search_tool()
+        return self._cached_search_tool
+
+    def _get_execute_tool(self) -> Tool:
+        if self._cached_execute_tool is None:
+            self._cached_execute_tool = self._make_execute_tool()
+        return self._cached_execute_tool
 
     def _make_search_tool(self) -> Tool:
         transform = self
@@ -355,9 +370,8 @@ class CodeMode(Transform):
                 }
                 merged.update(params)
 
-                result = await ctx.fastmcp.call_tool(
-                    tool.name, merged, version=tool.version
-                )
+                version = VersionSpec(eq=tool.version) if tool.version else None
+                result = await ctx.fastmcp.call_tool(tool.name, merged, version=version)
                 return _unwrap_tool_result(result, tool)
 
             return await transform.sandbox_provider.run(

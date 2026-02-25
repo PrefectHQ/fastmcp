@@ -1,6 +1,5 @@
 import importlib
 import json
-import logging
 from typing import Any
 
 import pytest
@@ -304,9 +303,7 @@ async def test_code_mode_search_respects_tool_auth() -> None:
     assert result.content == []
 
 
-async def test_code_mode_warns_on_colliding_tool_names(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+async def test_code_mode_raises_on_colliding_tool_names() -> None:
     mcp = FastMCP("CodeMode Collision")
 
     @mcp.tool
@@ -319,22 +316,8 @@ async def test_code_mode_warns_on_colliding_tool_names(
 
     mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
-    with caplog.at_level(
-        logging.WARNING, logger="fastmcp.experimental.transforms.code_mode"
-    ):
-        listed_tools = await mcp.list_tools(run_middleware=False)
-
-    assert {tool.name for tool in listed_tools} == {"search", "execute"}
-    assert "hiding backend tool(s)" in caplog.text
-    assert "'search'" in caplog.text
-
-    # The non-colliding tool should still be searchable
-    result = await _run_tool(
-        mcp,
-        "search",
-        {"code": "return [tool['name'] for tool in tools]"},
-    )
-    assert _unwrap_result(result) == ["ping"]
+    with pytest.raises(ValueError, match="collide"):
+        await mcp.list_tools(run_middleware=False)
 
 
 async def test_code_mode_execute_preserves_non_text_content() -> None:

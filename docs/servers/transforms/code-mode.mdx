@@ -79,8 +79,8 @@ mcp.add_transform(CodeMode())
 
 ## Default Prompt Behavior
 
-- `search` receives `tools: list[dict]` with metadata fields including `parameters` and `output_schema`.
-- `execute` exposes a single callable: `call_tool(tool_name_or_key, params)`.
+- `search` receives `tools: list[dict]` with metadata fields including `name`, `key`, `parameters`, and `output_schema`. Use `key` when tools have versions — it uniquely identifies a specific tool version.
+- `execute` exposes a single callable: `call_tool(tool_name_or_key, params)`. Prefer passing `key` for versioned tools.
 - `execute` is intended for chaining multiple `await call_tool(...)` steps in one block and returning the final value.
 
 ## Custom Tool Names and Descriptions
