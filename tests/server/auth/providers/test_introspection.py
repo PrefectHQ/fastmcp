@@ -662,6 +662,42 @@ class TestIntrospectionCaching:
         requests = httpx_mock.get_requests()
         assert len(requests) == 1
 
+    async def test_cache_returns_defensive_copy(
+        self, verifier_with_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
+    ):
+        """Test that cached tokens are defensive copies (mutations don't leak)."""
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={
+                "active": True,
+                "client_id": "user-123",
+                "scope": "read write",
+                "exp": int(time.time()) + 3600,
+                "custom_claim": "original",
+            },
+        )
+
+        # First verification
+        result1 = await verifier_with_cache.verify_token("test-token")
+        assert result1 is not None
+        assert result1.claims["custom_claim"] == "original"
+
+        # Mutate the result (simulating request-path code adding derived claims)
+        result1.claims["custom_claim"] = "mutated"
+        result1.claims["new_claim"] = "injected"
+        result1.scopes.append("admin")
+
+        # Second verification - should get clean copy, not mutated one
+        result2 = await verifier_with_cache.verify_token("test-token")
+        assert result2 is not None
+        assert result2.claims["custom_claim"] == "original"
+        assert "new_claim" not in result2.claims
+        assert "admin" not in result2.scopes
+
+        # Verify they are different object instances
+        assert result1 is not result2
+
     async def test_inactive_tokens_not_cached(
         self, verifier_with_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
     ):

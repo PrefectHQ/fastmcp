@@ -205,7 +205,9 @@ class IntrospectionTokenVerifier(TokenVerifier):
             del self._cache[cache_key]
             return (False, None)  # Expired
 
-        return (True, entry.result)
+        # Return a copy to prevent mutations from affecting cached value
+        result = entry.result.model_copy(deep=True) if entry.result else None
+        return (True, result)
 
     def _set_cached(self, token: str, result: AccessToken | None) -> None:
         """Cache introspection result with TTL."""
@@ -230,8 +232,10 @@ class IntrospectionTokenVerifier(TokenVerifier):
         if result and result.expires_at:
             expires_at = min(expires_at, float(result.expires_at))
 
+        # Store a deep copy to prevent mutations from affecting cached value
+        cached_result = result.model_copy(deep=True) if result else None
         self._cache[cache_key] = _IntrospectionCacheEntry(
-            result=result,
+            result=cached_result,
             expires_at=expires_at,
         )
 
