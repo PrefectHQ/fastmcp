@@ -662,11 +662,16 @@ class TestIntrospectionCaching:
         requests = httpx_mock.get_requests()
         assert len(requests) == 1
 
-    async def test_cache_hit_returns_cached_invalid_result(
+    async def test_inactive_tokens_not_cached(
         self, verifier_with_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
     ):
-        """Test that cached invalid tokens are returned without introspection call."""
-        # First call - token is inactive
+        """Test that inactive tokens are NOT cached (may become valid later)."""
+        # Add two responses - inactive tokens should trigger re-introspection
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={"active": False},
+        )
         httpx_mock.add_response(
             url="https://auth.example.com/oauth/introspect",
             method="POST",
@@ -674,20 +679,20 @@ class TestIntrospectionCaching:
         )
 
         # First verification
-        result1 = await verifier_with_cache.verify_token("invalid-token")
+        result1 = await verifier_with_cache.verify_token("inactive-token")
         assert result1 is None
 
         # Verify one request was made
         requests = httpx_mock.get_requests()
         assert len(requests) == 1
 
-        # Second verification - should use cache
-        result2 = await verifier_with_cache.verify_token("invalid-token")
+        # Second verification - should NOT use cache, makes another request
+        result2 = await verifier_with_cache.verify_token("inactive-token")
         assert result2 is None
 
-        # Still only one request
+        # Two requests made (inactive tokens not cached)
         requests = httpx_mock.get_requests()
-        assert len(requests) == 1
+        assert len(requests) == 2
 
     async def test_cache_disabled_makes_every_call(
         self, verifier_no_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock

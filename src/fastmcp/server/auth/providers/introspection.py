@@ -327,10 +327,10 @@ class IntrospectionTokenVerifier(TokenVerifier):
                 introspection_data = response.json()
 
                 # Check if token is active (required field per RFC 7662)
-                # Cache inactive tokens - the server definitively says they're invalid
+                # Don't cache inactive tokens - they may become valid later
+                # (e.g., tokens with future nbf, or propagation delays)
                 if not introspection_data.get("active", False):
                     self.logger.debug("Token introspection returned active=false")
-                    self._set_cached(token, None)
                     return None
 
                 # Extract client_id (should be present for active tokens)
@@ -347,7 +347,6 @@ class IntrospectionTokenVerifier(TokenVerifier):
                             "Token validation failed: expired token for client %s",
                             client_id,
                         )
-                        self._set_cached(token, None)
                         return None
 
                 # Extract scopes
