@@ -192,7 +192,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
             - (True, None) if cached as invalid
             - (False, None) if not in cache or expired
         """
-        if self._cache_ttl <= 0:
+        if self._cache_ttl <= 0 or self._max_cache_size <= 0:
             return (False, None)  # Caching disabled
 
         cache_key = self._hash_token(token)
@@ -209,7 +209,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
 
     def _set_cached(self, token: str, result: AccessToken | None) -> None:
         """Cache introspection result with TTL."""
-        if self._cache_ttl <= 0:
+        if self._cache_ttl <= 0 or self._max_cache_size <= 0:
             return  # Caching disabled
 
         # Periodic cleanup

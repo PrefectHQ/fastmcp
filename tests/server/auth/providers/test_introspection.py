@@ -589,6 +589,45 @@ class TestIntrospectionCaching:
         )
         assert verifier2._cache_ttl == 0
 
+    async def test_cache_disabled_with_zero_or_negative_max_size(
+        self, httpx_mock: HTTPXMock
+    ):
+        """Test that cache is disabled when max_cache_size is 0 or negative."""
+        # Add two responses for the two verifiers
+        for _ in range(2):
+            httpx_mock.add_response(
+                url="https://auth.example.com/oauth/introspect",
+                method="POST",
+                json={
+                    "active": True,
+                    "client_id": "user-123",
+                    "scope": "read",
+                },
+            )
+
+        # Zero max_cache_size should disable caching (not raise StopIteration)
+        verifier = IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+            cache_ttl_seconds=300,
+            max_cache_size=0,
+        )
+        result = await verifier.verify_token("test-token")
+        assert result is not None
+        assert result.client_id == "user-123"
+
+        # Negative max_cache_size should also disable caching
+        verifier2 = IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+            cache_ttl_seconds=300,
+            max_cache_size=-1,
+        )
+        result2 = await verifier2.verify_token("test-token")
+        assert result2 is not None
+
     async def test_cache_hit_returns_cached_result(
         self, verifier_with_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
     ):
