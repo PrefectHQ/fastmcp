@@ -18,11 +18,16 @@ from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 logger = logging.getLogger(__name__)
 
-# When True, CodeMode passes through in ``list_tools()`` instead of
-# hiding tools.  This lets the search/execute tools call back into the
-# server's ``list_tools()`` to get the auth-filtered catalog without
-# recursively hiding everything behind the meta-tools.
-_code_mode_bypass: ContextVar[bool] = ContextVar("_code_mode_bypass", default=False)
+# Holds the instance ID of the CodeMode that is currently bypassed.
+# When set, the matching CodeMode passes through in ``list_tools()``
+# instead of hiding tools.  This lets the search/execute tools call
+# back into the server's ``list_tools()`` to get the auth-filtered
+# catalog without recursively hiding everything.  Scoped to a specific
+# instance so multiple CodeMode transforms in the same process (e.g.
+# mounted servers) don't interfere with each other.
+_code_mode_bypass: ContextVar[int | None] = ContextVar(
+    "_code_mode_bypass", default=None
+)
 
 
 def _strip_circular(obj: Any, _seen: frozenset[int] = frozenset()) -> Any:
@@ -52,9 +57,7 @@ def _unwrap_tool_result(result: ToolResult, tool: Tool) -> Any:
     """Extract a Python-friendly value from a ToolResult."""
     if result.structured_content is not None:
         structured = result.structured_content
-        wrap_result = bool(
-            (tool.output_schema or {}).get("x-fastmcp-wrap-result")
-        )
+        wrap_result = bool((tool.output_schema or {}).get("x-fastmcp-wrap-result"))
         if (
             wrap_result
             and isinstance(structured, dict)
@@ -135,7 +138,6 @@ class CodeMode(Transform):
 
     def __init__(
         self,
-        server: Any = None,
         *,
         default_arguments: dict[str, Any] | None = None,
         sandbox_provider: SandboxProvider | None = None,
@@ -149,11 +151,7 @@ class CodeMode(Transform):
                 "search_tool_name and execute_tool_name must be different."
             )
 
-        if server is not None:
-            logger.warning(
-                "Passing 'server' to CodeMode is deprecated and ignored. "
-                "CodeMode now accesses the server via Context."
-            )
+        self._instance_id = id(self)
         self._default_arguments = default_arguments or {}
         self._helpers: dict[str, Callable[..., Any]] = {}
         self.search_tool_name = search_tool_name
@@ -173,7 +171,7 @@ class CodeMode(Transform):
         return fn
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
-        if _code_mode_bypass.get():
+        if _code_mode_bypass.get() == self._instance_id:
             return tools
 
         meta_names = {self.search_tool_name, self.execute_tool_name}
@@ -237,7 +235,7 @@ class CodeMode(Transform):
         normally, so the result only contains tools the current user is
         authorized to see.
         """
-        token = _code_mode_bypass.set(True)
+        token = _code_mode_bypass.set(self._instance_id)
         try:
             tools = await ctx.fastmcp.list_tools()
         finally:
@@ -245,16 +243,14 @@ class CodeMode(Transform):
         meta_names = {self.search_tool_name, self.execute_tool_name}
         return [t for t in tools if t.name not in meta_names]
 
-    async def _resolve_backend_tool(
-        self, name: str, ctx: Context
-    ) -> Tool | None:
-        backend_tools = await self._get_visible_tools(ctx)
-
-        for tool in backend_tools:
+    @staticmethod
+    def _find_tool(name: str, tools: Sequence[Tool]) -> Tool | None:
+        """Find a tool by key or name from a pre-fetched list."""
+        for tool in tools:
             if tool.key == name:
                 return tool
 
-        name_matches = [tool for tool in backend_tools if tool.name == name]
+        name_matches = [tool for tool in tools if tool.name == name]
         if name_matches:
             return max(name_matches, key=version_sort_key)  # type: ignore[type-var]
 
@@ -315,9 +311,19 @@ class CodeMode(Transform):
         ) -> Any:
             """Execute tool calls using Python code."""
             defaults = transform._default_arguments
+            # Cache the tool catalog for the duration of this execute block
+            # so multiple call_tool() invocations don't each trigger list_tools().
+            cached_tools: Sequence[Tool] | None = None
+
+            async def _get_cached_tools() -> Sequence[Tool]:
+                nonlocal cached_tools
+                if cached_tools is None:
+                    cached_tools = await transform._get_visible_tools(ctx)
+                return cached_tools
 
             async def call_tool(tool_name_or_key: str, params: dict[str, Any]) -> Any:
-                tool = await transform._resolve_backend_tool(tool_name_or_key, ctx)
+                backend_tools = await _get_cached_tools()
+                tool = transform._find_tool(tool_name_or_key, backend_tools)
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {tool_name_or_key}")
 

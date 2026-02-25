@@ -1,4 +1,3 @@
-import asyncio
 import importlib
 import json
 import logging
@@ -8,8 +7,9 @@ import pytest
 from mcp.types import ImageContent, TextContent
 
 from fastmcp import FastMCP
-from fastmcp.exceptions import NotFoundError, ToolError
+from fastmcp.exceptions import ToolError
 from fastmcp.experimental.transforms import CodeMode, MontySandboxProvider
+from fastmcp.experimental.transforms.code_mode import _ensure_async
 from fastmcp.tools.tool import ToolResult
 
 
@@ -37,17 +37,9 @@ def _unwrap_result(result: ToolResult) -> Any:
     return values
 
 
-def _ensure_async(fn: Any) -> Any:
-    if asyncio.iscoroutinefunction(fn):
-        return fn
+class _UnsafeTestSandboxProvider:
+    """UNSAFE: Uses exec() for testing only. Never use in production."""
 
-    async def wrapper(*args: Any, **kwargs: Any) -> Any:
-        return fn(*args, **kwargs)
-
-    return wrapper
-
-
-class _TestSandboxProvider:
     async def run(
         self,
         code: str,
@@ -93,7 +85,7 @@ async def test_code_mode_transform_hides_backend_tools_and_supports_defaults() -
     mcp.add_transform(
         CodeMode(
             default_arguments={"workspace_id": "ws-default"},
-            sandbox_provider=_TestSandboxProvider(),
+            sandbox_provider=_UnsafeTestSandboxProvider(),
         )
     )
 
@@ -129,7 +121,7 @@ async def test_code_mode_transform_replaces_listed_tools() -> None:
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     listed_tools = await mcp.list_tools(run_middleware=False)
     assert {tool.name for tool in listed_tools} == {"search", "execute"}
@@ -144,7 +136,7 @@ async def test_code_mode_tool_descriptions_are_configurable() -> None:
 
     mcp.add_transform(
         CodeMode(
-            sandbox_provider=_TestSandboxProvider(),
+            sandbox_provider=_UnsafeTestSandboxProvider(),
             search_tool_name="search_meta",
             execute_tool_name="execute_meta",
             search_description="Custom search description",
@@ -166,7 +158,7 @@ async def test_code_mode_default_descriptions_encourage_search_then_execute() ->
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     listed_tools = await mcp.list_tools(run_middleware=False)
     by_name = {tool.name: tool for tool in listed_tools}
@@ -193,7 +185,7 @@ async def test_code_mode_search_helpers_are_available_to_search_code() -> None:
     def add(x: int, y: int) -> int:
         return x + y
 
-    code_mode = CodeMode(sandbox_provider=_TestSandboxProvider())
+    code_mode = CodeMode(sandbox_provider=_UnsafeTestSandboxProvider())
 
     @code_mode.search_helper
     async def has_tag(tool: dict[str, Any], tag: str) -> bool:
@@ -220,7 +212,7 @@ async def test_code_mode_search_includes_output_schema() -> None:
     def square(x: int) -> int:
         return x * x
 
-    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(
         mcp,
@@ -246,7 +238,7 @@ async def test_code_mode_execute_respects_disabled_tool_visibility() -> None:
         return "nope"
 
     mcp.disable(names={"secret"}, components={"tool"})
-    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     with pytest.raises(ToolError, match=r"Unknown tool"):
         await _run_tool(
@@ -264,7 +256,7 @@ async def test_code_mode_search_respects_disabled_tool_visibility() -> None:
         return "nope"
 
     mcp.disable(names={"secret"}, components={"tool"})
-    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(
         mcp,
@@ -282,7 +274,7 @@ async def test_code_mode_execute_respects_tool_auth() -> None:
     def protected() -> str:
         return "nope"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     with pytest.raises(ToolError, match=r"Unknown tool"):
         await _run_tool(
@@ -299,7 +291,7 @@ async def test_code_mode_search_respects_tool_auth() -> None:
     def protected() -> str:
         return "nope"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(
         mcp,
@@ -323,7 +315,7 @@ async def test_code_mode_warns_on_colliding_tool_names(
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     with caplog.at_level(
         logging.WARNING, logger="fastmcp.experimental.transforms.code_mode"
@@ -350,7 +342,7 @@ async def test_code_mode_execute_preserves_non_text_content() -> None:
     def image_tool() -> ImageContent:
         return ImageContent(type="image", data="base64data", mimeType="image/png")
 
-    mcp.add_transform(CodeMode(sandbox_provider=_TestSandboxProvider()))
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(
         mcp,
@@ -379,3 +371,88 @@ async def test_monty_provider_raises_informative_error_when_missing(
 
     with pytest.raises(ImportError, match=r"fastmcp\[monty\]"):
         await provider.run("return 1")
+
+
+async def test_code_mode_execute_multi_tool_chaining() -> None:
+    """Execute block can chain multiple call_tool() calls."""
+    mcp = FastMCP("CodeMode Chaining")
+
+    @mcp.tool
+    def double(x: int) -> int:
+        return x * 2
+
+    @mcp.tool
+    def add_one(x: int) -> int:
+        return x + 1
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": (
+                "a = await call_tool('double', {'x': 3})\n"
+                "b = await call_tool('add_one', {'x': a})\n"
+                "return b"
+            )
+        },
+    )
+    assert _unwrap_result(result) == 7
+
+
+async def test_code_mode_execute_default_arguments_overridden_by_explicit() -> None:
+    """Explicit params in call_tool() override default_arguments."""
+    mcp = FastMCP("CodeMode Override")
+
+    @mcp.tool
+    def greet(name: str, greeting: str) -> str:
+        return f"{greeting}, {name}!"
+
+    mcp.add_transform(
+        CodeMode(
+            default_arguments={"greeting": "Hello"},
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+        )
+    )
+
+    # Default should apply
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {"code": "return await call_tool('greet', {'name': 'World'})"},
+    )
+    assert _unwrap_result(result) == "Hello, World!"
+
+    # Explicit should override
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": "return await call_tool('greet', {'name': 'World', 'greeting': 'Hi'})"
+        },
+    )
+    assert _unwrap_result(result) == "Hi, World!"
+
+
+async def test_code_mode_get_tool_returns_meta_tools_and_passes_through() -> None:
+    """get_tool returns meta-tools by name and passes through backend tools."""
+    mcp = FastMCP("CodeMode GetTool")
+
+    @mcp.tool
+    def ping() -> str:
+        return "pong"
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    search_tool = await mcp.get_tool("search")
+    assert search_tool is not None
+    assert search_tool.name == "search"
+
+    execute_tool = await mcp.get_tool("execute")
+    assert execute_tool is not None
+    assert execute_tool.name == "execute"
+
+    ping_tool = await mcp.get_tool("ping")
+    assert ping_tool is not None
+    assert ping_tool.name == "ping"
