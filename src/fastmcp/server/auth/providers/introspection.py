@@ -67,7 +67,9 @@ class IntrospectionTokenVerifier(TokenVerifier):
     Use this when:
     - Your authorization server issues opaque (non-JWT) tokens
     - You need to validate tokens from Auth0, Okta, Keycloak, or other OAuth servers
-    - Your tokens require real-time revocation checking
+    - Your tokens require revocation checking (set ``cache_ttl_seconds=0`` for
+      real-time checking; the default 5-minute cache trades freshness for
+      reduced load on the introspection endpoint)
     - Your authorization server supports RFC 7662 introspection
 
     Example:
@@ -160,9 +162,8 @@ class IntrospectionTokenVerifier(TokenVerifier):
     def _hash_token(self, token: str) -> str:
         """Hash token for use as cache key.
 
-        Using SHA-256 for:
-        - Memory efficiency (fixed 64-char hex vs potentially long tokens)
-        - Privacy (original token not stored in memory as dict key)
+        Using SHA-256 for memory efficiency (fixed 64-char hex digest
+        regardless of token length).
         """
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 

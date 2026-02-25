@@ -800,6 +800,70 @@ class TestIntrospectionCaching:
         # Cache expiration should be at or before token expiration
         assert entry.expires_at <= short_exp
 
+    async def test_expired_cache_entry_triggers_new_introspection(
+        self, httpx_mock: HTTPXMock
+    ):
+        """Test that expired cache entries are evicted and a new call is made."""
+        verifier = IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+            cache_ttl_seconds=1,  # 1 second TTL
+        )
+
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={"active": True, "client_id": "user-123"},
+        )
+        httpx_mock.add_response(
+            url="https://auth.example.com/oauth/introspect",
+            method="POST",
+            json={"active": True, "client_id": "user-123"},
+        )
+
+        # First call — caches the result
+        await verifier.verify_token("test-token")
+        assert len(httpx_mock.get_requests()) == 1
+
+        # Expire the cache entry manually
+        cache_key = verifier._hash_token("test-token")
+        verifier._cache[cache_key].expires_at = time.time() - 1
+
+        # Second call — cache miss, new introspection
+        await verifier.verify_token("test-token")
+        assert len(httpx_mock.get_requests()) == 2
+
+    async def test_cache_eviction_at_max_size(self, httpx_mock: HTTPXMock):
+        """Test that cache evicts entries when max size is reached."""
+        verifier = IntrospectionTokenVerifier(
+            introspection_url="https://auth.example.com/oauth/introspect",
+            client_id="test-client",
+            client_secret="test-secret",
+            cache_ttl_seconds=300,
+            max_cache_size=2,
+        )
+
+        for i in range(3):
+            httpx_mock.add_response(
+                url="https://auth.example.com/oauth/introspect",
+                method="POST",
+                json={"active": True, "client_id": f"user-{i}"},
+            )
+
+        # Fill cache to capacity
+        await verifier.verify_token("token-0")
+        await verifier.verify_token("token-1")
+        assert len(verifier._cache) == 2
+
+        # Third token should evict the oldest entry
+        await verifier.verify_token("token-2")
+        assert len(verifier._cache) == 2
+
+        # token-0 should have been evicted (FIFO)
+        hash_0 = verifier._hash_token("token-0")
+        assert hash_0 not in verifier._cache
+
 
 class TestIntrospectionTokenVerifierIntegration:
     """Integration tests with FastMCP server."""
