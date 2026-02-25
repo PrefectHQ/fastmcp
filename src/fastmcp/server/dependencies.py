@@ -796,7 +796,7 @@ async def _restore_task_origin_request_id(session_id: str, task_id: str) -> str 
         return None
 
 
-class _CurrentContext(Dependency):
+class _CurrentContext(Dependency["Context"]):
     """Async context manager for Context dependency.
 
     In foreground (request) mode: returns the active context from _current_context.
@@ -861,7 +861,7 @@ class _CurrentContext(Dependency):
             self._context = None
 
 
-class _OptionalCurrentContext(Dependency):
+class _OptionalCurrentContext(Dependency["Context | None"]):
     """Context dependency that degrades to None when no context is active.
 
     This is implemented as a wrapper (composition), not a subclass of
@@ -919,7 +919,7 @@ def OptionalCurrentContext() -> Context | None:
     return cast("Context | None", _OptionalCurrentContext())
 
 
-class _CurrentDocket(Dependency):
+class _CurrentDocket(Dependency["Docket"]):
     """Async context manager for Docket dependency."""
 
     async def __aenter__(self) -> Docket:
@@ -964,7 +964,7 @@ def CurrentDocket() -> Docket:
     return cast("Docket", _CurrentDocket())
 
 
-class _CurrentWorker(Dependency):
+class _CurrentWorker(Dependency["Worker"]):
     """Async context manager for Worker dependency."""
 
     async def __aenter__(self) -> Worker:
@@ -1008,7 +1008,7 @@ def CurrentWorker() -> Worker:
     return cast("Worker", _CurrentWorker())
 
 
-class _CurrentFastMCP(Dependency):
+class _CurrentFastMCP(Dependency["FastMCP"]):
     """Async context manager for FastMCP server dependency."""
 
     async def __aenter__(self) -> FastMCP:
@@ -1049,7 +1049,7 @@ def CurrentFastMCP() -> FastMCP:
     return cast(FastMCP, _CurrentFastMCP())
 
 
-class _CurrentRequest(Dependency):
+class _CurrentRequest(Dependency[Request]):
     """Async context manager for HTTP Request dependency."""
 
     async def __aenter__(self) -> Request:
@@ -1085,7 +1085,7 @@ def CurrentRequest() -> Request:
     return cast(Request, _CurrentRequest())
 
 
-class _CurrentHeaders(Dependency):
+class _CurrentHeaders(Dependency[dict[str, str]]):
     """Async context manager for HTTP Headers dependency."""
 
     async def __aenter__(self) -> dict[str, str]:
@@ -1282,7 +1282,7 @@ class Progress(Dependency["Progress"]):
 # --- Access Token dependency ---
 
 
-class _CurrentAccessToken(Dependency):
+class _CurrentAccessToken(Dependency[AccessToken]):
     """Async context manager for AccessToken dependency."""
 
     _access_token_cv_token: Token[AccessToken | None] | None = None
@@ -1342,7 +1342,7 @@ def CurrentAccessToken() -> AccessToken:
 # --- Token Claim dependency ---
 
 
-class _TokenClaim(Dependency):
+class _TokenClaim(Dependency[str]):
     """Dependency that extracts a specific claim from the access token."""
 
     def __init__(self, claim_name: str):

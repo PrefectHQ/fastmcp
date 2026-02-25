@@ -640,7 +640,7 @@ def _require_azure_identity(feature: str) -> None:
         ) from e
 
 
-class _EntraOBOToken(Dependency):
+class _EntraOBOToken(Dependency[str]):
     """Dependency that performs OBO token exchange for Microsoft Entra.
 
     Uses azure.identity's OnBehalfOfCredential for async-native OBO,
