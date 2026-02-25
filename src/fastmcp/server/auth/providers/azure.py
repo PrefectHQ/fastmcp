@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from key_value.aio.protocols import AsyncKeyValue
-from uncalled_for import Dependency
 
+from fastmcp.dependencies import Dependency
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.auth import decode_jwt_payload, parse_scopes

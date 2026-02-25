@@ -8,7 +8,7 @@ using the uncalled-for DI engine. Only task-related dependencies (CurrentDocket,
 CurrentWorker) and background task execution require fastmcp[tasks].
 """
 
-from uncalled_for import Depends
+from uncalled_for import Dependency, Depends
 
 from fastmcp.server.dependencies import (
     CurrentAccessToken,
@@ -31,6 +31,7 @@ __all__ = [
     "CurrentHeaders",
     "CurrentRequest",
     "CurrentWorker",
+    "Dependency",
     "Depends",
     "Progress",
     "ProgressLike",
