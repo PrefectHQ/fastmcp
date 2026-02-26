@@ -332,15 +332,7 @@ notice_resource = TextResource(
 )
 mcp.add_resource(notice_resource)
 
-# 3. Using a custom key different from the URI
-special_resource = TextResource(
-    uri="resource://common-notice",
-    name="Special Notice",
-    text="This is a special notice with a custom storage key.",
-)
-mcp.add_resource(special_resource, key="resource://custom-key")
-
-# 4. Exposing a directory listing
+# 3. Exposing a directory listing
 data_dir_path = Path("./app_data").resolve()
 if data_dir_path.is_dir():
     data_listing_resource = DirectoryResource(
@@ -363,24 +355,6 @@ if data_dir_path.is_dir():
 -   (`FunctionResource`: Internal class used by `@mcp.resource`).
 
 Use these when the content is static or sourced directly from a file/URL, bypassing the need for a dedicated Python function.
-
-#### Custom Resource Keys
-
-<VersionBadge version="2.2.0" />
-
-When adding resources directly with `mcp.add_resource()`, you can optionally provide a custom storage key:
-
-```python
-# Creating a resource with standard URI as the key
-resource = TextResource(uri="resource://data")
-mcp.add_resource(resource)  # Will be stored and accessed using "resource://data"
-
-# Creating a resource with a custom key
-special_resource = TextResource(uri="resource://special-data")
-mcp.add_resource(special_resource, key="internal://data-v2")  # Will be stored and accessed using "internal://data-v2"
-```
-
-Note that this parameter is only available when using `add_resource()` directly and not through the `@resource` decorator, as URIs are provided explicitly when using the decorator.
 
 ### Notifications
 
