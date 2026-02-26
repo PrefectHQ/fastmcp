@@ -6,6 +6,31 @@ from typing import Any
 from jsonref import JsonRefError, replace_refs
 
 
+
+from typing import Any
+
+def _normalize_component_refs_inplace(obj: Any) -> None:
+    if isinstance(obj, dict):
+        ref = obj.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+            obj["$ref"] = ref.replace("#/components/schemas/", "#/$defs/")
+        for v in obj.values():
+            _normalize_component_refs_inplace(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            _normalize_component_refs_inplace(item)
+
+def _migrate_components_to_defs(schema: dict[str, Any]) -> None:
+    comps = schema.get("components", {})
+    comp_defs = comps.get("schemas")
+    if isinstance(comp_defs, dict) and comp_defs:
+        dst = schema.setdefault("$defs", {})
+        for k, v in comp_defs.items():
+            dst.setdefault(k, v)
+
+
+
+
 def _defs_have_cycles(defs: dict[str, Any]) -> bool:
     """Check whether any definitions in ``$defs`` form a reference cycle.
 
@@ -86,6 +111,15 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     # Python dicts with object-identity cycles that Pydantic's model_dump
     # rejects with "Circular reference detected (id repeated)".
     # Detect cycles up front and fall back to root-only resolution.
+
+
+
+
+    _migrate_components_to_defs(schema)
+    _normalize_component_refs_inplace(schema)
+
+
+    
     if _defs_have_cycles(schema.get("$defs", {})):
         return resolve_root_ref(schema)
 
@@ -205,6 +239,10 @@ def resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]:
         >>> resolved = resolve_root_ref(schema)
         >>> # Result: {"type": "object", "properties": {...}, "$defs": {...}}
     """
+    
+    _migrate_components_to_defs(schema)
+    _normalize_component_refs_inplace(schema)
+
     # Only resolve if we have $ref at root level with $defs but no explicit type
     if "$ref" in schema and "$defs" in schema and "type" not in schema:
         ref = schema["$ref"]
