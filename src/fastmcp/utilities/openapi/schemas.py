@@ -123,6 +123,19 @@ def _replace_ref_with_defs(
             schema["additionalProperties"] = _replace_ref_with_defs(
                 additionalProperties
             )
+    # Handle propertyNames
+    if property_names := schema.get("propertyNames"):
+        if isinstance(property_names, dict):
+            schema["propertyNames"] = _replace_ref_with_defs(property_names)
+    # Handle patternProperties
+    if pattern_properties := schema.get("patternProperties"):
+        if isinstance(pattern_properties, dict):
+            schema["patternProperties"] = {
+                pattern: _replace_ref_with_defs(subschema)
+                if isinstance(subschema, dict)
+                else subschema
+                for pattern, subschema in pattern_properties.items()
+            }
     if info.get("description", description) and not schema.get("description"):
         schema["description"] = description
     return schema
