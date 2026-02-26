@@ -31,7 +31,7 @@ Example:
 
 ## Classes
 
-### `IntrospectionTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/introspection.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `IntrospectionTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/introspection.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth 2.0 Token Introspection verifier (RFC 7662).
@@ -52,10 +52,14 @@ Use this when:
 - Your tokens require real-time revocation checking
 - Your authorization server supports RFC 7662 introspection
 
+Caching is disabled by default to preserve real-time revocation semantics.
+Set ``cache_ttl_seconds`` to enable caching and reduce load on the
+introspection endpoint (e.g., ``cache_ttl_seconds=300`` for 5 minutes).
+
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/introspection.py#L154" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/introspection.py#L278" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -66,6 +70,9 @@ Verify a bearer token using OAuth 2.0 Token Introspection (RFC 7662).
 This method makes a POST request to the introspection endpoint with the token,
 authenticated using the configured client authentication method (client_secret_basic
 or client_secret_post).
+
+Results are cached in-memory to reduce load on the introspection endpoint.
+Cache TTL and size are configurable via constructor parameters.
 
 **Args:**
 - `token`: The opaque token string to validate
