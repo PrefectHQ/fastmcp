@@ -133,7 +133,7 @@ def _replace_ref_with_defs(
             schema["patternProperties"] = {
                 pattern: _replace_ref_with_defs(subschema)
                 for pattern, subschema in pattern_properties.items()
-        }
+            }
     if info.get("description", description) and not schema.get("description"):
         schema["description"] = description
     return schema
