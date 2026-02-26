@@ -1441,16 +1441,19 @@ class FastMCP(
         return result
 
     def add_resource(
-        self, resource: Resource | Callable[..., Any]
+        self, resource: Resource | Callable[..., Any], key: str | None = None
     ) -> Resource | ResourceTemplate:
         """Add a resource to the server.
 
         Args:
             resource: A Resource instance or @resource-decorated function to add
+            key: The custom resource key for the resource
 
         Returns:
             The resource instance that was added to the server.
         """
+        if key and isinstance(resource, Resource):
+            resource.uri = AnyUrl(key)
         return self._local_provider.add_resource(resource)
 
     def add_template(self, template: ResourceTemplate) -> ResourceTemplate:
