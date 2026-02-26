@@ -6,6 +6,7 @@ handle task-augmented execution as specified in SEP-1686.
 
 from __future__ import annotations
 
+import functools
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -124,7 +125,11 @@ class TaskConfig:
 
         # Unwrap callable classes and staticmethods
         fn_to_check = fn
-        if not inspect.isroutine(fn) and callable(fn):
+        if (
+            not inspect.isroutine(fn)
+            and not isinstance(fn, functools.partial)
+            and callable(fn)
+        ):
             fn_to_check = fn.__call__
         if isinstance(fn_to_check, staticmethod):
             fn_to_check = fn_to_check.__func__

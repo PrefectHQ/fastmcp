@@ -228,7 +228,7 @@ class PromptDecoratorMixin:
                 self.add_prompt(fn)
                 return fn
 
-        if inspect.isroutine(name_or_fn):
+        if inspect.isroutine(name_or_fn) or isinstance(name_or_fn, partial):
             return decorate_and_register(name_or_fn, name)
 
         elif isinstance(name_or_fn, str):

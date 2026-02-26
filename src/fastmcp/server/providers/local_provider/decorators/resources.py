@@ -6,6 +6,7 @@ and template registration functionality to LocalProvider.
 
 from __future__ import annotations
 
+import functools
 import inspect
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -159,7 +160,7 @@ class ResourceDecoratorMixin:
         if isinstance(annotations, dict):
             annotations = Annotations(**annotations)
 
-        if inspect.isroutine(uri):
+        if inspect.isroutine(uri) or isinstance(uri, functools.partial):
             raise TypeError(
                 "The @resource decorator was used incorrectly. "
                 "It requires a URI as the first argument. "

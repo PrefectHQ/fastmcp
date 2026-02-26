@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import warnings
 from collections.abc import Callable
@@ -169,8 +170,16 @@ class FunctionResource(Resource):
             task_config = task_value
         task_config.validate_function(fn, func_name)
 
+        # if the fn is a functools.partial, strip __wrapped__ (set by
+        # update_wrapper) so that inspect.signature() and Pydantic see the
+        # partial's own signature with bound args removed, not the original's
+        if isinstance(fn, functools.partial) and hasattr(fn, "__wrapped__"):
+            fn = functools.partial(fn.func, *fn.args, **fn.keywords)
+
         # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn):
+        # functools.partial is not a routine but Pydantic handles it natively,
+        # so we must not unwrap it to __call__ (which yields a method-wrapper)
+        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
@@ -256,7 +265,7 @@ def resource(
     if isinstance(annotations, dict):
         annotations = Annotations(**annotations)
 
-    if inspect.isroutine(uri):
+    if inspect.isroutine(uri) or isinstance(uri, functools.partial):
         raise TypeError(
             "The @resource decorator requires a URI. "
             "Use @resource('uri') instead of @resource"
