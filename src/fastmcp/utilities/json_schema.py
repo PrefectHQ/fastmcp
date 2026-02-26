@@ -6,102 +6,6 @@ from typing import Any
 from jsonref import JsonRefError, replace_refs
 
 
-
-from typing import Any
-
-def _normalize_component_refs_inplace(obj: Any) -> None:
-    if isinstance(obj, dict):
-        ref = obj.get("$ref")
-        if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
-            obj["$ref"] = ref.replace("#/components/schemas/", "#/$defs/")
-        for v in obj.values():
-            _normalize_component_refs_inplace(v)
-    elif isinstance(obj, list):
-        for item in obj:
-            _normalize_component_refs_inplace(item)
-
-
-def _rewrite_refs(obj: Any, old: str, new: str) -> None:
-    """
-    Recursively rewrite exact $ref matches from `old` to `new`.
-    """
-    if isinstance(obj, dict):
-        if obj.get("$ref") == old:
-            obj["$ref"] = new
-        else:
-            for v in obj.values():
-                _rewrite_refs(v, old, new)
-    elif isinstance(obj, list):
-        for item in obj:
-            _rewrite_refs(item, old, new)
-
-
-def _collect_defs_ref_names(obj: Any) -> set[str]:
-    """
-    Collect names referenced via '#/$defs/<Name>' anywhere in the schema.
-    """
-    names: set[str] = set()
-
-    def _walk(x: Any) -> None:
-        if isinstance(x, dict):
-            ref = x.get("$ref")
-            if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                names.add(ref.split("/")[-1])
-            for v in x.values():
-                _walk(v)
-        elif isinstance(x, list):
-            for it in x:
-                _walk(it)
-
-    _walk(obj)
-    return names
-
-
-def _migrate_components_to_defs(schema: dict[str, Any]) -> None:
-    """
-    Deterministic migration of OpenAPI components/schemas into $defs:
-    - Always install components.schemas[Name] into $defs[Name] (components win).
-    - If $defs[Name] already exists and differs:
-        * If #/$defs/Name is referenced anywhere, preserve the old one under a
-          new alias (#/$defs/Name__preexisting or with numeric suffix),
-          and rewrite *those* direct $defs refs to the new alias.
-        * Then overwrite $defs[Name] with the component schema.
-    """
-    comps = schema.get("components", {})
-    comp_defs = comps.get("schemas")
-    if not isinstance(comp_defs, dict) or not comp_defs:
-        return
-
-    defs = schema.setdefault("$defs", {})
-
-    # Gather which $defs names are referenced directly in the schema
-    direct_defs_refs = _collect_defs_ref_names(schema)
-
-    for name, comp_schema in comp_defs.items():
-        if name in defs:
-            # If equal, do nothing
-            if defs[name] == comp_schema:
-                continue
-
-            # Preserve old $defs[Name] if direct refs exist, by aliasing it
-            if name in direct_defs_refs:
-                suffix_base = f"{name}__preexisting"
-                alias = suffix_base
-                i = 1
-                while alias in defs:
-                    i += 1
-                    alias = f"{suffix_base}{i}"
-
-                # Move old def to alias and rewrite only those direct refs
-                defs[alias] = defs.pop(name)
-                _rewrite_refs(schema, f"#/$defs/{name}", f"#/$defs/{alias}")
-
-        # Components win for the canonical name
-        defs[name] = comp_schema
-
-
-
-
 def _defs_have_cycles(defs: dict[str, Any]) -> bool:
     """Check whether any definitions in ``$defs`` form a reference cycle.
 
@@ -182,15 +86,6 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     # Python dicts with object-identity cycles that Pydantic's model_dump
     # rejects with "Circular reference detected (id repeated)".
     # Detect cycles up front and fall back to root-only resolution.
-
-
-
-
-    _migrate_components_to_defs(schema)
-    _normalize_component_refs_inplace(schema)
-
-
-    
     if _defs_have_cycles(schema.get("$defs", {})):
         return resolve_root_ref(schema)
 
@@ -310,10 +205,6 @@ def resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]:
         >>> resolved = resolve_root_ref(schema)
         >>> # Result: {"type": "object", "properties": {...}, "$defs": {...}}
     """
-    
-    _migrate_components_to_defs(schema)
-    _normalize_component_refs_inplace(schema)
-
     # Only resolve if we have $ref at root level with $defs but no explicit type
     if "$ref" in schema and "$defs" in schema and "type" not in schema:
         ref = schema["$ref"]
