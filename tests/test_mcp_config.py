@@ -935,27 +935,27 @@ async def test_multi_server_timeout_propagation():
             )
 
 
-async def test_multi_server_proxy_clients_connected(tmp_path: Path):
-    """Test that ProxyClients are connected for the duration of connect_session().
+async def test_multi_server_session_persistence(tmp_path: Path):
+    """Test that session IDs persist across tool calls in multi-server mode.
 
     Regression test for https://github.com/PrefectHQ/fastmcp/issues/2790 —
-    MCPConfigTransport was not connecting ProxyClients, so each tool call
-    opened a new session with the backend server.
+    MCPConfigTransport was not connecting ProxyClients before mounting, so
+    each tool call opened a new session with the backend server.
     """
     server_script = inspect.cleandoc("""
-        from fastmcp import FastMCP
+        from fastmcp import FastMCP, Context
 
         mcp = FastMCP()
 
         @mcp.tool
-        def greet(name: str) -> str:
-            return f"Hello, {name}!"
+        def get_session(ctx: Context) -> str:
+            return ctx.session_id
 
         if __name__ == '__main__':
             mcp.run()
         """)
 
-    script_path = tmp_path / "greet_server.py"
+    script_path = tmp_path / "session_server.py"
     script_path.write_text(server_script)
 
     config = {
@@ -973,14 +973,17 @@ async def test_multi_server_proxy_clients_connected(tmp_path: Path):
 
     client = Client(config)
     async with client:
-        # Call the same tool twice — both should work within one session
-        result1 = await client.call_tool("server1_greet", {"name": "Alice"})
+        result1 = await client.call_tool("server1_get_session", {})
         assert isinstance(result1.content[0], TextContent)
-        assert "Hello, Alice!" in result1.content[0].text
+        session_id_1 = result1.content[0].text
 
-        result2 = await client.call_tool("server1_greet", {"name": "Bob"})
+        result2 = await client.call_tool("server1_get_session", {})
         assert isinstance(result2.content[0], TextContent)
-        assert "Hello, Bob!" in result2.content[0].text
+        session_id_2 = result2.content[0].text
+
+        assert session_id_1 == session_id_2, (
+            f"Session ID changed between calls: {session_id_1} != {session_id_2}"
+        )
 
 
 async def test_single_server_config_transport():
