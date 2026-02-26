@@ -935,6 +935,54 @@ async def test_multi_server_timeout_propagation():
             )
 
 
+async def test_multi_server_proxy_clients_connected(tmp_path: Path):
+    """Test that ProxyClients are connected for the duration of connect_session().
+
+    Regression test for https://github.com/PrefectHQ/fastmcp/issues/2790 —
+    MCPConfigTransport was not connecting ProxyClients, so each tool call
+    opened a new session with the backend server.
+    """
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "greet_server.py"
+    script_path.write_text(server_script)
+
+    config = {
+        "mcpServers": {
+            "server1": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+            "server2": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+        }
+    }
+
+    client = Client(config)
+    async with client:
+        # Call the same tool twice — both should work within one session
+        result1 = await client.call_tool("server1_greet", {"name": "Alice"})
+        assert isinstance(result1.content[0], TextContent)
+        assert "Hello, Alice!" in result1.content[0].text
+
+        result2 = await client.call_tool("server1_greet", {"name": "Bob"})
+        assert isinstance(result2.content[0], TextContent)
+        assert "Hello, Bob!" in result2.content[0].text
+
+
 async def test_single_server_config_transport():
     """Test that single-server configs delegate directly without creating a composite."""
     config = MCPConfig(
