@@ -132,6 +132,8 @@ def _replace_ref_with_defs(
         if isinstance(pattern_properties, dict):
             schema["patternProperties"] = {
                 pattern: _replace_ref_with_defs(subschema)
+                if isinstance(subschema, dict)
+                else subschema
                 for pattern, subschema in pattern_properties.items()
             }
     if info.get("description", description) and not schema.get("description"):
