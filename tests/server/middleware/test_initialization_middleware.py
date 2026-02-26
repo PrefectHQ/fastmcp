@@ -25,7 +25,7 @@ class InitializationMiddleware(Middleware):
         self.client_info = None
         self.session_data = {}
 
-    async def on_initialize(
+    async def on_initialize(  # type: ignore[override]
         self,
         context: MiddlewareContext[mt.InitializeRequest],
         call_next: CallNext[mt.InitializeRequest, None],
@@ -63,7 +63,7 @@ class ClientDetectionMiddleware(Middleware):
         self.tools_modified = False
         self.initialization_called = False
 
-    async def on_initialize(
+    async def on_initialize(  # type: ignore[override]
         self,
         context: MiddlewareContext[mt.InitializeRequest],
         call_next: CallNext[mt.InitializeRequest, None],
@@ -77,7 +77,7 @@ class ClientDetectionMiddleware(Middleware):
 
         return await call_next(context)
 
-    async def on_list_tools(
+    async def on_list_tools(  # type: ignore[override]
         self,
         context: MiddlewareContext[mt.ListToolsRequest],
         call_next: CallNext[mt.ListToolsRequest, list],
@@ -109,7 +109,7 @@ async def test_simple_initialization_hook():
             super().__init__()
             self.called = False
 
-        async def on_initialize(
+        async def on_initialize(  # type: ignore[override]
             self,
             context: MiddlewareContext[mt.InitializeRequest],
             call_next: CallNext[mt.InitializeRequest, None],
@@ -301,7 +301,7 @@ async def test_middleware_mcp_error_during_initialization():
     server = FastMCP("TestServer")
 
     class ErrorThrowingMiddleware(Middleware):
-        async def on_initialize(
+        async def on_initialize(  # type: ignore[override]
             self,
             context: MiddlewareContext[mt.InitializeRequest],
             call_next: CallNext[mt.InitializeRequest, None],
@@ -327,7 +327,7 @@ async def test_middleware_mcp_error_before_call_next():
     server = FastMCP("TestServer")
 
     class EarlyErrorMiddleware(Middleware):
-        async def on_initialize(
+        async def on_initialize(  # type: ignore[override]
             self,
             context: MiddlewareContext[mt.InitializeRequest],
             call_next: CallNext[mt.InitializeRequest, None],

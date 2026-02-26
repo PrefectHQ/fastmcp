@@ -1,6 +1,6 @@
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import TypeAlias
+from typing import TypeAlias, cast
 
 import mcp.types
 import pydantic
@@ -65,7 +65,7 @@ def _create_roots_callback_from_fn(
         try:
             roots = fn(context)
             if inspect.isawaitable(roots):
-                roots = await roots
+                roots = cast(RootsList, await roots)
             return mcp.types.ListRootsResult(roots=convert_roots_list(roots))
         except Exception as e:
             return mcp.types.ErrorData(
