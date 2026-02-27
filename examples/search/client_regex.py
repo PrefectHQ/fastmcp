@@ -47,7 +47,7 @@ async def main():
             Panel(
                 _tool_table(visible),
                 title="[bold]list_tools()[/bold]",
-                subtitle="[dim]only synthetic tools are visible[/dim]",
+                subtitle="[dim]real tools are discoverable via search[/dim]",
                 border_style="blue",
             )
         )
