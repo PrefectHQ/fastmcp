@@ -254,8 +254,7 @@ class CodeMode(CatalogTransform):
                 }
                 merged.update(params)
 
-                version = VersionSpec(eq=tool.version) if tool.version else None
-                result = await ctx.fastmcp.call_tool(tool.name, merged, version=version)
+                result = await ctx.fastmcp.call_tool(tool.name, merged)
                 return _unwrap_tool_result(result)
 
             return await transform.sandbox_provider.run(
