@@ -1,0 +1,164 @@
+---
+title: PropelAuth 🤝 FastMCP
+sidebarTitle: PropelAuth
+description: Secure your FastMCP server with PropelAuth
+icon: shield-check
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx";
+
+<VersionBadge version="3.0.3" />
+
+This guide shows you how to secure your FastMCP server using [**PropelAuth**](https://www.propelauth.com), a complete authentication and user management solution. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern, where PropelAuth handles user login, consent management, and your FastMCP server validates the tokens.
+
+## Configuration
+
+### Prerequisites
+
+Before you begin, you will need:
+
+1. A [PropelAuth](https://www.propelauth.com) account
+2. Your FastMCP server's base URL (can be localhost for development, e.g., `http://localhost:8000`)
+
+### Step 1: Configure PropelAuth
+
+<Steps>
+<Step title="Enable MCP Authentication">
+    Navigate to the **MCP** section in your PropelAuth dashboard, click **Enable MCP**, and choose which environments to enable it for (Test, Staging, Prod).
+</Step>
+
+<Step title="Configure Allowed MCP Clients">
+    Under **MCP > Allowed MCP Clients**, add redirect URIs for each MCP client you want to allow. PropelAuth provides templates for popular clients like Claude, Cursor, and ChatGPT.
+</Step>
+
+<Step title="Configure Scopes">
+    Under **MCP > Scopes**, define the permissions available to MCP clients (e.g., `read:user_data`).
+</Step>
+
+<Step title="Choose How Users Create OAuth Clients">
+    Under **MCP > Settings > How Do Users Create OAuth Clients?**, you can optionally enable:
+    - **Dynamic Client Registration** — clients self-register automatically via the DCR protocol
+    - **Manually via Hosted Pages** — PropelAuth creates a UI for your users to register OAuth clients
+
+    You can enable neither, one, or both. If you enable neither, you'll manage OAuth client creation yourself.
+</Step>
+
+<Step title="Generate Introspection Credentials">
+    Go to **MCP > Request Validation** and click **Create Credentials**. Note the **Client ID** and **Client Secret** - you'll need these to validate tokens.
+</Step>
+
+<Step title="Note Your Auth URL">
+    Find your Auth URL in the **Backend Integration** section of the dashboard (e.g., `https://auth.yourdomain.com`).
+</Step>
+</Steps>
+
+For more details, see the [PropelAuth MCP documentation](https://docs.propelauth.com/mcp-authentication/overview).
+
+### Step 2: Environment Setup
+
+Create a `.env` file with your PropelAuth configuration:
+
+```bash
+PROPELAUTH_AUTH_URL=https://auth.yourdomain.com          # From Backend Integration page
+PROPELAUTH_INTROSPECTION_CLIENT_ID=your-client-id        # From MCP > Request Validation
+PROPELAUTH_INTROSPECTION_CLIENT_SECRET=your-client-secret # From MCP > Request Validation
+SERVER_URL=http://localhost:8000                          # Your server's base URL
+```
+
+### Step 3: FastMCP Configuration
+
+Create your FastMCP server file and use the PropelAuthProvider to handle all the OAuth integration automatically:
+
+```python server.py
+import os
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.propelauth import PropelAuthProvider
+
+auth_provider = PropelAuthProvider(
+    auth_url=os.environ["PROPELAUTH_AUTH_URL"],
+    introspection_client_id=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_ID"],
+    introspection_client_secret=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_SECRET"],
+    base_url=os.environ["SERVER_URL"],
+    required_scopes=["read:user_data"],                          # Optional scope enforcement
+)
+
+mcp = FastMCP(name="My PropelAuth Protected Server", auth=auth_provider)
+```
+
+## Testing
+
+With your `.env` loaded, start the server:
+
+```bash
+fastmcp run server.py --transport http --port 8000
+```
+
+Then use a FastMCP client to verify authentication works:
+
+```python
+from fastmcp import Client
+import asyncio
+
+async def main():
+    async with Client("http://localhost:8000/mcp", auth="oauth") as client:
+        assert await client.ping()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## Accessing User Information
+
+You can use `get_access_token()` inside your tools to identify the authenticated user:
+
+```python server.py
+import os
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.propelauth import PropelAuthProvider
+from fastmcp.server.dependencies import get_access_token
+
+auth = PropelAuthProvider(
+    auth_url=os.environ["PROPELAUTH_AUTH_URL"],
+    introspection_client_id=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_ID"],
+    introspection_client_secret=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_SECRET"],
+    base_url=os.environ["SERVER_URL"],
+    required_scopes=["read:user_data"],
+)
+
+mcp = FastMCP(name="My PropelAuth Protected Server", auth=auth)
+
+@mcp.tool
+def whoami() -> dict:
+    """Return the authenticated user's ID."""
+    token = get_access_token()
+    if token is None:
+        return {"error": "Not authenticated"}
+    user_id = token.claims.get("sub")
+    return {"user_id": user_id}
+```
+
+## Advanced Configuration
+
+The `PropelAuthProvider` supports optional overrides for token introspection behavior, including caching and request timeouts:
+
+```python server.py
+import os
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.propelauth import PropelAuthProvider
+
+auth = PropelAuthProvider(
+    auth_url=os.environ["PROPELAUTH_AUTH_URL"],
+    introspection_client_id=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_ID"],
+    introspection_client_secret=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_SECRET"],
+    base_url=os.environ.get("BASE_URL", "https://your-server.com"),
+    required_scopes=["read:user_data"],
+    resource="https://your-server.com/mcp",              # Restrict to tokens intended for this server (RFC 8707)
+    token_introspection_overrides={
+        "cache_ttl_seconds": 300,       # Cache introspection results for 5 minutes
+        "max_cache_size": 1000,         # Maximum cached tokens
+        "timeout_seconds": 15,          # HTTP request timeout
+    },
+)
+
+mcp = FastMCP(name="My PropelAuth Protected Server", auth=auth)
+```
