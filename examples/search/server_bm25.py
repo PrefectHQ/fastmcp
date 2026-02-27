@@ -12,6 +12,8 @@ Run with:
     uv run python examples/search/server_bm25.py
 """
 
+import os
+
 from fastmcp import FastMCP
 from fastmcp.server.transforms.search import BM25SearchTransform
 
@@ -62,8 +64,6 @@ def to_uppercase(text: str) -> str:
 @mcp.tool
 def list_files(directory: str) -> list[str]:
     """List files in a directory."""
-    import os
-
     return os.listdir(directory)
 
 
