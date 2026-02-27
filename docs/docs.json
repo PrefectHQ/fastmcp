@@ -165,7 +165,8 @@
                       "servers/visibility",
                       "servers/transforms/tool-search",
                       "servers/transforms/resources-as-tools",
-                      "servers/transforms/prompts-as-tools"
+                      "servers/transforms/prompts-as-tools",
+                      "servers/transforms/code-mode"
                     ]
                   },
                   {
