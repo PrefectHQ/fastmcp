@@ -227,6 +227,7 @@ class FastMCP(
         auth: AuthProvider | None = None,
         middleware: Sequence[Middleware] | None = None,
         providers: Sequence[Provider] | None = None,
+        transforms: Sequence[Transform] | None = None,
         lifespan: LifespanCallable | Lifespan | None = None,
         tools: Sequence[Tool | Callable[..., Any]] | None = None,
         on_duplicate: DuplicateBehavior | None = None,
@@ -274,6 +275,9 @@ class FastMCP(
         self.add_provider(self._local_provider)
         for p in providers or []:
             self.add_provider(p)
+
+        for t in transforms or []:
+            self.add_transform(t)
 
         # Store mask_error_details for execution error handling
         self._mask_error_details: bool = (

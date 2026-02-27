@@ -8,7 +8,7 @@ tag: EXPERIMENTAL
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
 
-<VersionBadge version="3.0.0" />
+<VersionBadge version="3.1.0" />
 
 Standard MCP tool usage has two scaling problems. First, every tool in the catalog is loaded into the LLM's context upfront — with hundreds of tools, that's tens of thousands of tokens spent before the LLM even reads the user's request. Second, every tool call is a round-trip: the LLM calls a tool, the result passes back through the context window, the LLM reasons about it, calls another tool, and so on. Intermediate results that only exist to feed the next step still burn tokens flowing through the model.
 
@@ -26,7 +26,7 @@ CodeMode requires a sandbox to execute LLM-generated code safely. The default sa
 from fastmcp import FastMCP
 from fastmcp.experimental.transforms import CodeMode
 
-mcp = FastMCP("Server")
+mcp = FastMCP("Server", transforms=[CodeMode()])
 
 @mcp.tool
 def add(x: int, y: int) -> int:
@@ -37,11 +37,6 @@ def add(x: int, y: int) -> int:
 def multiply(x: int, y: int) -> int:
     """Multiply two numbers."""
     return x * y
-
-mcp.add_transform(CodeMode())
-
-if __name__ == "__main__":
-    mcp.run()
 ```
 
 Clients now see only two tools. The LLM discovers the real tools through `search`, then orchestrates them through `execute`:
@@ -71,11 +66,9 @@ Search uses BM25 ranking by default, matching against tool names and description
 ```python
 from fastmcp.server.transforms.search import RegexSearchTransform
 
-mcp.add_transform(
-    CodeMode(
-        search_transform=RegexSearchTransform(),
-    )
-)
+mcp = FastMCP("Server", transforms=[
+    CodeMode(search_transform=RegexSearchTransform())
+])
 ```
 
 ## Execute
@@ -95,9 +88,10 @@ Use `return` to produce the final output from the script.
 When tools share common parameters (like workspace IDs or API keys), `default_arguments` injects them automatically:
 
 ```python
-mcp.add_transform(CodeMode(
-    default_arguments={"workspace_id": "ws-123"}
-))
+mcp = FastMCP(
+    "Server",
+    transforms=[CodeMode(default_arguments={"workspace_id": "ws-123"})],
+)
 ```
 
 Defaults are only injected when the tool actually accepts the parameter and the LLM hasn't provided it explicitly. Parameters that a tool doesn't accept are silently skipped.
@@ -121,8 +115,7 @@ provider = OpenAPIProvider(
     client=api_client,
 )
 
-mcp = FastMCP("API Code Mode", providers=[provider])
-mcp.add_transform(CodeMode())
+mcp = FastMCP("API Code Mode", providers=[provider], transforms=[CodeMode()])
 ```
 
 ## Configuration
@@ -132,11 +125,16 @@ mcp.add_transform(CodeMode())
 The default `search` and `execute` names can be changed:
 
 ```python
-mcp.add_transform(CodeMode(
-    search_tool_name="find_tools",
-    execute_tool_name="run_workflow",
-    execute_description="Run multi-step API workflows",
-))
+mcp = FastMCP(
+    "Server",
+    transforms=[
+        CodeMode(
+            search_tool_name="find_tools",
+            execute_tool_name="run_workflow",
+            execute_description="Run multi-step API workflows",
+        )
+    ],
+)
 ```
 
 ### Custom Sandbox Providers
@@ -160,7 +158,7 @@ class RemoteSandboxProvider:
         # Send code to your remote sandbox runtime
         ...
 
-mcp.add_transform(CodeMode(sandbox_provider=RemoteSandboxProvider()))
+mcp = FastMCP("Server", transforms=[CodeMode(sandbox_provider=RemoteSandboxProvider())])
 ```
 
 The `external_functions` dict contains async callables injected into the sandbox scope — `execute` uses this to provide `call_tool`.
