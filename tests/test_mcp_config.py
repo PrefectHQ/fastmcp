@@ -902,17 +902,16 @@ async def test_multi_server_timeout_propagation():
     transport = MCPConfigTransport(config)
     timeout = timedelta(seconds=42)
 
-    # Patch _create_proxy to verify timeout is passed correctly
-    with (
-        patch("fastmcp.client.transports.FastMCP.as_proxy") as mock_as_proxy,
-        patch.object(
-            transport, "_create_proxy", wraps=transport._create_proxy
-        ) as mock_create_proxy,
-    ):
-        # Make as_proxy return a mock FastMCP
-        mock_proxy = FastMCP(name="MockProxy")
-        mock_as_proxy.return_value = mock_proxy
+    # Mock _create_proxy to avoid actual connections while verifying timeout
+    mock_transport = AsyncMock()
+    mock_proxy = FastMCP(name="MockProxy")
 
+    async def fake_create_proxy(name, config, timeout_arg, stack):
+        return (mock_transport, AsyncMock(), mock_proxy)
+
+    mock_create_proxy = AsyncMock(side_effect=fake_create_proxy)
+
+    with patch.object(transport, "_create_proxy", mock_create_proxy):
         # Mock connect_session on FastMCPTransport to avoid actual connection
         with patch(
             "fastmcp.client.transports.FastMCPTransport.connect_session"
@@ -927,9 +926,8 @@ async def test_multi_server_timeout_propagation():
         # Verify _create_proxy was called with the timeout for each server
         assert mock_create_proxy.call_count == 2
         for call in mock_create_proxy.call_args_list:
-            _, kwargs = call.args, call.kwargs if call.kwargs else {}
-            # Third positional arg is timeout
-            call_timeout = call[0][2] if len(call[0]) > 2 else kwargs.get("timeout")
+            # Args: (name, config, timeout, stack)
+            call_timeout = call[0][2]
             assert call_timeout == timeout, (
                 f"Expected timeout {timeout}, got {call_timeout}"
             )

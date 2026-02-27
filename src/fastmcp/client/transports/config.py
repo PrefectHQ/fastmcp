@@ -136,7 +136,7 @@ class MCPConfigTransport(ClientTransport):
         Returns a tuple of (transport, proxy_client, proxy_server).
         """
         # Import here to avoid circular dependency
-        from fastmcp.server.providers.proxy import ProxyClient
+        from fastmcp.server.providers.proxy import StatefulProxyClient
 
         tool_transforms = None
         include_tags = None
@@ -156,7 +156,7 @@ class MCPConfigTransport(ClientTransport):
         else:
             transport = config.to_transport()
 
-        client = ProxyClient(transport=transport, timeout=timeout)
+        client = StatefulProxyClient(transport=transport, timeout=timeout)
         # Connect the client *before* create_proxy so _create_client_factory
         # detects it as connected and reuses it for all tool calls, preserving
         # the session ID across requests.
