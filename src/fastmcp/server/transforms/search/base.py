@@ -29,19 +29,13 @@ Example::
 
 from abc import abstractmethod
 from collections.abc import Sequence
-from contextvars import ContextVar
 from typing import Annotated, Any
 
 from fastmcp.server.context import Context
-from fastmcp.server.transforms import GetToolNext, Transform
+from fastmcp.server.transforms import GetToolNext
+from fastmcp.server.transforms.catalog import CatalogTransform
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec
-
-# When True, search transforms pass through in ``list_tools()`` instead
-# of hiding tools.  This lets the search tool call back into the server's
-# ``list_tools()`` to get the auth-filtered catalog without recursively
-# hiding everything behind the search interface.
-_search_bypass: ContextVar[bool] = ContextVar("_search_bypass", default=False)
 
 
 def _extract_searchable_text(tool: Tool) -> str:
@@ -70,7 +64,7 @@ def _serialize_tools_for_output(tools: Sequence[Tool]) -> list[dict[str, Any]]:
     ]
 
 
-class BaseSearchTransform(Transform):
+class BaseSearchTransform(CatalogTransform):
     """Replace the tool listing with a search interface.
 
     When this transform is active, ``list_tools()`` returns only:
@@ -101,6 +95,7 @@ class BaseSearchTransform(Transform):
         search_tool_name: str = "search_tools",
         call_tool_name: str = "call_tool",
     ) -> None:
+        super().__init__()
         self._max_results = max_results
         self._always_visible = set(always_visible or [])
         self._search_tool_name = search_tool_name
@@ -110,11 +105,8 @@ class BaseSearchTransform(Transform):
     # Transform interface
     # ------------------------------------------------------------------
 
-    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
-        """Return only pinned + synthetic tools, or pass through if bypassed."""
-        if _search_bypass.get():
-            return tools
-
+    async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+        """Replace the catalog with pinned + synthetic search/call tools."""
         pinned = [t for t in tools if t.name in self._always_visible]
         return [*pinned, self._make_search_tool(), self._make_call_tool()]
 
@@ -165,19 +157,8 @@ class BaseSearchTransform(Transform):
     # ------------------------------------------------------------------
 
     async def _get_visible_tools(self, ctx: Context) -> Sequence[Tool]:
-        """Get the auth-filtered tool catalog.
-
-        Calls the server's ``list_tools()`` with a bypass flag so this
-        transform passes through instead of hiding everything.  The rest
-        of the pipeline — middleware, visibility, component auth — runs
-        normally, so the result only contains tools the current user is
-        authorized to see.
-        """
-        token = _search_bypass.set(True)
-        try:
-            tools = await ctx.fastmcp.list_tools()
-        finally:
-            _search_bypass.reset(token)
+        """Get the auth-filtered tool catalog, excluding pinned tools."""
+        tools = await self.get_tool_catalog(ctx)
         return [t for t in tools if t.name not in self._always_visible]
 
     # ------------------------------------------------------------------
