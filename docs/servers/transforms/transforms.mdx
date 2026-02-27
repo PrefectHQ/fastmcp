@@ -81,13 +81,11 @@ Server transforms apply to all components from all providers. They run after pro
 from fastmcp import FastMCP
 from fastmcp.server.transforms import Namespace
 
-mcp = FastMCP("Server")
+mcp = FastMCP("Server", transforms=[Namespace("v1")])
 
 @mcp.tool
 def greet(name: str) -> str:
     return f"Hello, {name}!"
-
-mcp.add_transform(Namespace("v1"))
 
 # All tools become v1_toolname
 ```
