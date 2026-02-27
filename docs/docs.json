@@ -277,6 +277,7 @@
                       "integrations/github",
                       "integrations/google",
                       "integrations/oci",
+                      "integrations/propelauth",
                       "integrations/scalekit",
                       "integrations/supabase",
                       "integrations/workos",
