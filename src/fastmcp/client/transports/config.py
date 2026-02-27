@@ -136,7 +136,7 @@ class MCPConfigTransport(ClientTransport):
         Returns a tuple of (transport, proxy_client, proxy_server).
         """
         # Import here to avoid circular dependency
-        from fastmcp.server.providers.proxy import ProxyClient
+        from fastmcp.server.providers.proxy import StatefulProxyClient
 
         tool_transforms = None
         include_tags = None
@@ -156,11 +156,23 @@ class MCPConfigTransport(ClientTransport):
         else:
             transport = config.to_transport()
 
-        client = ProxyClient(transport=transport, timeout=timeout)
+        client = StatefulProxyClient(transport=transport, timeout=timeout)
         # Connect the client *before* create_proxy so _create_client_factory
         # detects it as connected and reuses it for all tool calls, preserving
-        # the session ID across requests.
-        await stack.enter_async_context(client)
+        # the session ID across requests. StatefulProxyClient is used instead
+        # of ProxyClient because its context-restoring handler wrappers prevent
+        # stale ContextVars in the reused session's receive loop.
+        #
+        # StatefulProxyClient.__aexit__ is a no-op (by design, for the
+        # new_stateful() use case), so we cannot rely on enter_async_context
+        # alone to clean up.  Instead we connect manually and push an
+        # explicit force-disconnect callback so the subprocess is terminated
+        # when the AsyncExitStack unwinds.
+        await client.__aenter__()
+        # Callbacks run LIFO: transport.close() must run *after*
+        # client._disconnect so push it first.
+        stack.push_async_callback(transport.close)
+        stack.push_async_callback(client._disconnect, force=True)
         # Create proxy without include_tags/exclude_tags - we'll add them after tool transforms
         proxy = create_proxy(
             client,

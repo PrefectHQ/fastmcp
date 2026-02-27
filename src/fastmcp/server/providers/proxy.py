@@ -127,7 +127,10 @@ class ProxyTool(Tool):
                 # request. Stash the current RequestContext in the shared
                 # ref so handlers can restore it before forwarding.
                 if isinstance(client, StatefulProxyClient):
-                    cast(list[Any], client._proxy_rc_ref)[0] = ctx.request_context
+                    cast(list[Any], client._proxy_rc_ref)[0] = (
+                        ctx.request_context,
+                        ctx,
+                    )
                 # Build meta dict from request context
                 meta: dict[str, Any] | None = None
                 if hasattr(ctx, "request_context"):
@@ -791,7 +794,7 @@ async def default_proxy_progress_handler(
 def _restore_request_context(
     rc_ref: list[Any],
 ) -> None:
-    """Set the ``request_ctx`` ContextVar from a stashed RequestContext.
+    """Set the ``request_ctx`` and ``_current_context`` ContextVars from stashed values.
 
     Called at the start of proxy handler invocations in
     ``StatefulProxyClient`` to fix stale ContextVars in the receive-loop
@@ -799,16 +802,24 @@ def _restore_request_context(
     session, different request_id) to avoid corrupting the concurrent
     case where multiple sessions share the same ref via ``copy.copy``.
     """
-    rc = rc_ref[0]
-    if rc is None:
+    from fastmcp.server.context import _current_context
+
+    stashed = rc_ref[0]
+    if stashed is None:
         return
+
+    rc, ctx = stashed
     try:
         current_rc = request_ctx.get()
     except LookupError:
         request_ctx.set(rc)
+        if ctx is not None:
+            _current_context.set(ctx)
         return
     if current_rc.session is rc.session and current_rc.request_id != rc.request_id:
         request_ctx.set(rc)
+        if ctx is not None:
+            _current_context.set(ctx)
 
 
 def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
