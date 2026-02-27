@@ -31,25 +31,22 @@ def _ensure_async(fn: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-def _unwrap_tool_result(result: ToolResult) -> Any:
-    """Extract a Python-friendly value from a ToolResult.
+def _unwrap_tool_result(result: ToolResult) -> dict[str, Any] | str:
+    """Convert a ToolResult for use in the sandbox.
 
-    Returns structured content as-is (preserving the ``{"result": value}``
-    wrapping when present) so that return values match output schemas exactly.
-    For text-only results, extracts the text content.
+    - Output schema present → structured_content dict (matches the schema)
+    - Otherwise → concatenated text content as a string
     """
     if result.structured_content is not None:
         return result.structured_content
 
-    contents = []
+    parts: list[str] = []
     for content in result.content:
         if isinstance(content, TextContent):
-            contents.append(content.text)
+            parts.append(content.text)
         else:
-            contents.append(content.model_dump())
-    if len(contents) == 1:
-        return contents[0]
-    return contents
+            parts.append(str(content))
+    return "\n".join(parts)
 
 
 class SandboxProvider(Protocol):

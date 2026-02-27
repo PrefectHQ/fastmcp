@@ -313,7 +313,7 @@ async def test_code_mode_shadows_colliding_tool_names() -> None:
     assert _unwrap_result(result) == {"result": "pong"}
 
 
-async def test_code_mode_execute_preserves_non_text_content() -> None:
+async def test_code_mode_execute_non_text_content_stringified() -> None:
     mcp = FastMCP("CodeMode NonText")
 
     @mcp.tool
@@ -328,10 +328,8 @@ async def test_code_mode_execute_preserves_non_text_content() -> None:
         {"code": "return await call_tool('image_tool', {})"},
     )
     unwrapped = _unwrap_result(result)
-    assert isinstance(unwrapped, dict)
-    assert unwrapped["type"] == "image"
-    assert unwrapped["data"] == "base64data"
-    assert unwrapped["mimeType"] == "image/png"
+    assert isinstance(unwrapped, str)
+    assert "base64data" in unwrapped
 
 
 async def test_monty_provider_raises_informative_error_when_missing(
