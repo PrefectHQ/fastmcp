@@ -138,8 +138,12 @@ async def main():
             },
         )
         console.print(
-            f'  word_count("BM25 search makes tool discovery easy") '
-            f"→ [bold green]{_get_result(result)}[/bold green]"
+            Panel(
+                f'call_tool(name="word_count", arguments={{"text": "BM25 search makes tool discovery easy"}})\n→ [bold green]{_get_result(result)}[/bold green]',
+                title="[bold]call_tool()[/bold]",
+                title_align="left",
+                border_style="magenta",
+            )
         )
         console.print()
 

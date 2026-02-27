@@ -133,16 +133,26 @@ async def main():
             "call_tool", {"name": "add", "arguments": {"a": 17, "b": 25}}
         )
         console.print(
-            f"  add(a=17, b=25) → [bold green]{_get_result(result)}[/bold green]"
+            Panel(
+                f'call_tool(name="add", arguments={{"a": 17, "b": 25}})\n→ [bold green]{_get_result(result)}[/bold green]',
+                title="[bold]call_tool()[/bold]",
+                title_align="left",
+                border_style="magenta",
+            )
         )
+        console.print()
 
         result = await client.call_tool(
             "call_tool",
             {"name": "reverse_string", "arguments": {"text": "hello world"}},
         )
         console.print(
-            f'  reverse_string("hello world") '
-            f"→ [bold green]{_get_result(result)}[/bold green]"
+            Panel(
+                f'call_tool(name="reverse_string", arguments={{"text": "hello world"}})\n→ [bold green]{_get_result(result)}[/bold green]',
+                title="[bold]call_tool()[/bold]",
+                title_align="left",
+                border_style="magenta",
+            )
         )
         console.print()
 
