@@ -225,9 +225,7 @@ async def call_sampling_handler(
     )
 
     if inspect.isawaitable(result):
-        result = cast(
-            str | CreateMessageResult | CreateMessageResultWithTools, await result
-        )
+        result = await result
 
     # Convert string to CreateMessageResult
     if isinstance(result, str):

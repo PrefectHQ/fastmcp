@@ -28,7 +28,8 @@ from mcp.server.auth.provider import (
 )
 from mcp.server.lowlevel.server import request_ctx
 from starlette.requests import Request
-from uncalled_for import Dependency, _Depends, get_dependency_parameters
+from uncalled_for import Dependency, get_dependency_parameters
+from uncalled_for.resolution import _Depends
 
 from fastmcp.exceptions import FastMCPError
 from fastmcp.server.auth import AccessToken
@@ -350,7 +351,7 @@ def _clear_signature_caches(fn: Callable[..., Any]) -> None:
     Called after modifying a function's signature to ensure downstream
     code sees the updated signature.
     """
-    from uncalled_for import _parameter_cache, _signature_cache
+    from uncalled_for.introspection import _parameter_cache, _signature_cache
 
     _signature_cache.pop(fn, None)
     _parameter_cache.pop(fn, None)

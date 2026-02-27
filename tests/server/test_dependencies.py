@@ -67,7 +67,7 @@ async def test_depends_with_async_function(mcp: FastMCP):
         return 42
 
     @mcp.tool()
-    async def greet_user(name: str, user_id: int = Depends(get_user_id)) -> str:  # type: ignore[assignment]
+    async def greet_user(name: str, user_id: int = Depends(get_user_id)) -> str:
         return f"Hello {name}, your ID is {user_id}"
 
     result = await mcp.call_tool("greet_user", {"name": "Alice"})
@@ -198,7 +198,7 @@ async def test_sync_tool_with_async_dependency(mcp: FastMCP):
         return "loaded_config"
 
     @mcp.tool()
-    def process_data(value: int, config: str = Depends(fetch_config)) -> str:  # type: ignore[assignment]
+    def process_data(value: int, config: str = Depends(fetch_config)) -> str:
         return f"Processing {value} with {config}"
 
     result = await mcp.call_tool("process_data", {"value": 100})
@@ -1038,7 +1038,7 @@ class TestDependencyInjection:
 
     def test_depends_works(self):
         """Test Depends() creates proper dependency wrapper."""
-        from uncalled_for import _Depends
+        from uncalled_for.resolution import _Depends
 
         from fastmcp.dependencies import Depends
 
@@ -1061,7 +1061,8 @@ class TestDependencyInjection:
 
     def test_get_dependency_parameters(self):
         """Test get_dependency_parameters finds dependency defaults."""
-        from uncalled_for import _Depends, get_dependency_parameters
+        from uncalled_for import get_dependency_parameters
+        from uncalled_for.resolution import _Depends
 
         from fastmcp.dependencies import Depends
 
