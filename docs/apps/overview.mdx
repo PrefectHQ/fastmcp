@@ -14,11 +14,11 @@ MCP Apps let your tools return interactive UIs — rendered in a sandboxed ifram
 
 FastMCP implements the [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) and provides two approaches:
 
-## Prefab UI (Recommended)
+## Prefab Apps (Recommended)
 
 <VersionBadge version="3.1.0" />
 
-[Prefab UI](/apps/prefab) is a Python component library that lets you build tool UIs without writing any HTML or JavaScript. Describe your layout in Python, and FastMCP handles the renderer and protocol wiring automatically.
+[Prefab UI](https://prefab.prefect.io) is a declarative UI framework for Python. You describe layouts, charts, tables, forms, and interactive behaviors using a Python DSL — and the framework compiles them to a JSON protocol that a shared renderer interprets. It started as a component library inside FastMCP and grew into its own framework with [comprehensive documentation](https://prefab.prefect.io).
 
 ```python
 from prefab_ui.components import Column, Heading, BarChart, ChartSeries
@@ -43,7 +43,7 @@ def sales_chart(year: int) -> PrefabApp:
     return PrefabApp(view=view)
 ```
 
-Install with `pip install "fastmcp[apps]"` and see [Prefab UI](/apps/prefab) for the full guide.
+Install with `pip install "fastmcp[apps]"` and see [Prefab Apps](/apps/prefab) for the integration guide.
 
 ## Custom HTML Apps
 

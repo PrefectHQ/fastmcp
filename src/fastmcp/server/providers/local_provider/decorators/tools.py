@@ -10,7 +10,7 @@ import inspect
 import warnings
 from collections.abc import Callable
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args, overload
 
 import mcp.types
 from mcp.types import AnyFunction, ToolAnnotations
@@ -52,8 +52,6 @@ def _has_prefab_return_type(tool: Tool) -> bool:
     if isinstance(rt, type) and issubclass(rt, (_PrefabApp, _PrefabComponent)):
         return True
     # Check Union args (e.g., PrefabApp | None)
-    from typing import get_args
-
     args = get_args(rt)
     return any(
         isinstance(a, type) and issubclass(a, (_PrefabApp, _PrefabComponent))

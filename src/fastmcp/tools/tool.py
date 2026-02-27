@@ -46,10 +46,6 @@ try:
 except ImportError:
     _HAS_PREFAB = False
 
-# Runtime type alias for auth checks to avoid circular imports with authorization.py
-# AuthCheck is Callable[[AuthContext], bool] but we use Any to avoid the import
-AuthCheckCallable: TypeAlias = Callable[[Any], bool]
-
 if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution

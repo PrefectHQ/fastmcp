@@ -201,9 +201,7 @@
                 "pages": [
                   "apps/overview",
                   "apps/prefab",
-                  "apps/mini-apps",
-                  "apps/full-apps",
-                  "apps/generative-uis",
+                  "apps/patterns",
                   "apps/low-level"
                 ]
               },
