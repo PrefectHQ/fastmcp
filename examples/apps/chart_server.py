@@ -24,7 +24,6 @@ from prefab_ui.components import (
 )
 
 from fastmcp import FastMCP
-from fastmcp.tools import ToolResult
 
 mcp = FastMCP("Sales Dashboard")
 
