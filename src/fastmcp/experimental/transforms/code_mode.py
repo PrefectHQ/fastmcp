@@ -219,12 +219,6 @@ class CodeMode(CatalogTransform):
             "Only `call_tool(tool_name_or_key: str, params: dict) -> Any` is available in scope."
         )
 
-    async def _get_visible_tools(self, ctx: Context) -> Sequence[Tool]:
-        """Get the auth-filtered tool catalog, excluding meta-tools."""
-        tools = await self.get_tool_catalog(ctx)
-        meta_names = {self.search_tool_name, self.execute_tool_name}
-        return [t for t in tools if t.name not in meta_names]
-
     @staticmethod
     def _find_tool(name: str, tools: Sequence[Tool]) -> Tool | None:
         """Find a tool by key or name from a pre-fetched list."""
@@ -263,7 +257,7 @@ class CodeMode(CatalogTransform):
             ctx: Context = None,  # type: ignore[assignment]
         ) -> Any:
             """Search for tools using Python code."""
-            backend_tools = await transform._get_visible_tools(ctx)
+            backend_tools = await transform.get_tool_catalog(ctx)
             tool_dicts = [
                 {
                     "name": tool.name,
@@ -310,7 +304,7 @@ class CodeMode(CatalogTransform):
             async def _get_cached_tools() -> Sequence[Tool]:
                 nonlocal cached_tools
                 if cached_tools is None:
-                    cached_tools = await transform._get_visible_tools(ctx)
+                    cached_tools = await transform.get_tool_catalog(ctx)
                 return cached_tools
 
             async def call_tool(tool_name_or_key: str, params: dict[str, Any]) -> Any:
