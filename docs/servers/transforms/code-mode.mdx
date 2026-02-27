@@ -12,38 +12,13 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 Standard MCP tool usage has two scaling problems. First, every tool in the catalog is loaded into the LLM's context upfront — with hundreds of tools, that's tens of thousands of tokens spent before the LLM even reads the user's request. Second, every tool call is a round-trip: the LLM calls a tool, the result passes back through the context window, the LLM reasons about it, calls another tool, and so on. Intermediate results that only exist to feed the next step still burn tokens flowing through the model.
 
-`CodeMode` solves both problems by letting the LLM write code instead of calling tools directly. LLMs are excellent at writing code — they've trained on billions of lines of it — and a script can chain calls together, filter intermediate results, and return only what matters. All of that executes server-side in a sandbox. One round-trip instead of ten; tool definitions loaded only when needed instead of all at once.
+`CodeMode` solves both problems by replacing the tool catalog with two meta-tools — `search` for discovering tools by keyword, and `execute` for running Python scripts that chain tool calls in a sandbox. The LLM discovers what it needs, writes a script, and gets back only the final answer. One round-trip instead of ten; tool definitions loaded only when needed instead of all at once.
 
-```python
-# Without CodeMode: each step is a round-trip through the LLM
-result1 = await client.call_tool("get_user", {"id": "123"})
-# ... 50K tokens of user data flow through the LLM's context ...
-result2 = await client.call_tool("get_orders", {"user_id": "123"})
-# ... another round-trip ...
-result3 = await client.call_tool("get_order_details", {"order_id": "456"})
-
-# With CodeMode: one script, one round-trip, data stays server-side
-await client.call_tool("execute", {"code": """
-user = await call_tool("get_user", {"id": "123"})
-orders = await call_tool("get_orders", {"user_id": user["id"]})
-details = [await call_tool("get_order_details", {"order_id": o["id"]}) for o in orders]
-return {"user": user["name"], "recent_orders": details[:5]}
-"""})
-```
-
-`CodeMode` is a transform that replaces the tool catalog with two meta-tools — `search` for discovering tools by keyword query, and `execute` for running tool workflows as scripts in a sandbox. The approach was introduced by Cloudflare in [Code Mode](https://blog.cloudflare.com/code-mode/) and explored further by Anthropic in [Code Execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp).
+The approach was introduced by Cloudflare in [Code Mode](https://blog.cloudflare.com/code-mode/) and explored further by Anthropic in [Code Execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp).
 
 <Note>
 CodeMode requires a sandbox to execute LLM-generated code safely. The default sandbox uses [pydantic-monty](https://github.com/pydantic/pydantic-monty), installed via `pip install "fastmcp[monty]"`. You can also provide your own sandbox — see [Custom Sandbox Providers](#custom-sandbox-providers).
 </Note>
-
-## How It Works
-
-When you add `CodeMode`, `list_tools()` returns just two tools:
-
-**`search`** takes a `query` string and returns matching tools ranked by relevance. Under the hood it uses the same [search transforms](/servers/transforms/tool-search) available elsewhere in FastMCP — BM25 by default, or any `BaseSearchTransform` you provide.
-
-**`execute`** takes a `code` string containing Python. The code runs in a sandbox with `call_tool(name, params)` available as an async function. The LLM chains multiple `await call_tool(...)` calls to orchestrate workflows and uses `return` to produce output.
 
 ## Basic Usage
 
@@ -64,30 +39,31 @@ def multiply(x: int, y: int) -> int:
     return x * y
 
 mcp.add_transform(CodeMode())
-# Clients now see only: search, execute
 ```
 
-Here's what the LLM's interactions look like from the client side:
+Clients now see only two tools. The LLM discovers the real tools through `search`, then orchestrates them through `execute`:
 
 ```python
-# LLM discovers tools with a keyword search
-result = await client.call_tool("search", {"query": "math arithmetic"})
-# Returns: [{"name": "add", "description": "Add two numbers.", ...}, ...]
+# Discover tools with a keyword search
+result = await client.call_tool("search", {"query": "add multiply numbers"})
+# [{"name": "add", "inputSchema": {...}, ...}, {"name": "multiply", ...}]
 
-# LLM chains multiple calls in a single execute block
+# Chain tool calls in a single round-trip
 result = await client.call_tool("execute", {
     "code": """
-sum_result = await call_tool("add", {"x": 3, "y": 4})
-final = await call_tool("multiply", {"x": sum_result, "y": 2})
-return final
+a = await call_tool("add", {"x": 3, "y": 4})
+b = await call_tool("multiply", {"x": a["result"], "y": 2})
+return b
 """
 })
-# Returns: 14
+# {"result": 14}
 ```
 
 ## Search
 
-The `search` tool uses BM25 ranking by default, matching against tool names and descriptions. You can swap in any search transform — for example, regex-based search:
+The `search` meta-tool takes a `query` string and returns matching tools ranked by relevance, including their full `inputSchema` and `outputSchema`. The LLM uses these schemas to understand how to call each tool and what to expect back.
+
+Search uses BM25 ranking by default, matching against tool names and descriptions. You can swap in any [search transform](/servers/transforms/tool-search):
 
 ```python
 from fastmcp.server.transforms.search import RegexSearchTransform
@@ -97,32 +73,26 @@ mcp.add_transform(CodeMode(
 ))
 ```
 
-Search results use the same format as `list_tools`, including `name`, `description`, `inputSchema`, and `outputSchema`.
-
-See [Tool Search](/servers/transforms/tool-search) for the full set of available search strategies and configuration options.
-
 ## Execute
 
-The `execute` tool exposes a single async function in the sandbox:
+The `execute` meta-tool takes a `code` string containing async Python. Inside the sandbox, one function is available:
 
 ```python
-result = await call_tool(tool_name: str, params: dict) -> Any
+await call_tool(tool_name, params)  # -> dict | str
 ```
 
-Results are automatically unwrapped from the MCP `ToolResult` format into plain Python values — strings, dicts, lists, etc.
+The return type depends on whether the tool declares an output schema. When it does, `call_tool` returns the structured content dict exactly as the schema describes — for example, `{"result": 42}` for a tool returning `int`. When there's no output schema, `call_tool` returns the text content as a string. The LLM can tell which to expect from the `outputSchema` field in search results.
+
+Use `return` to produce the final output from the script.
 
 ### Default Arguments
 
-When calling tools that share common parameters (like API keys or base URLs), `default_arguments` avoids repeating them in every `call_tool` invocation:
+When tools share common parameters (like workspace IDs or API keys), `default_arguments` injects them automatically:
 
 ```python
 mcp.add_transform(CodeMode(
-    default_arguments={"api_key": "sk-...", "timeout": 30}
+    default_arguments={"workspace_id": "ws-123"}
 ))
-
-# LLM code doesn't need to pass api_key or timeout:
-# result = await call_tool("fetch_data", {"query": "users"})
-# api_key and timeout are injected automatically
 ```
 
 Defaults are only injected when the tool actually accepts the parameter and the LLM hasn't provided it explicitly. Parameters that a tool doesn't accept are silently skipped.
@@ -133,6 +103,7 @@ Defaults are only injected when the tool actually accepts the parameter and the 
 
 ```python
 import httpx
+
 from fastmcp import FastMCP
 from fastmcp.experimental.transforms import CodeMode
 from fastmcp.server.providers.openapi import OpenAPIProvider
@@ -153,7 +124,7 @@ mcp.add_transform(CodeMode())
 
 ### Custom Tool Names
 
-The default `search` and `execute` names can be changed to avoid conflicts:
+The default `search` and `execute` names can be changed:
 
 ```python
 mcp.add_transform(CodeMode(
