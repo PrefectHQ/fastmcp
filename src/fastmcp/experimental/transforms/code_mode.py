@@ -31,22 +31,15 @@ def _ensure_async(fn: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-def _unwrap_tool_result(result: ToolResult, tool: Tool) -> Any:
+def _unwrap_tool_result(result: ToolResult) -> Any:
     """Extract a Python-friendly value from a ToolResult.
 
-    Handles the ``x-fastmcp-wrap-result`` output-schema convention that wraps
-    non-object return types in ``{"result": value}``.
+    Returns structured content as-is (preserving the ``{"result": value}``
+    wrapping when present) so that return values match output schemas exactly.
+    For text-only results, extracts the text content.
     """
     if result.structured_content is not None:
-        structured = result.structured_content
-        wrap_result = bool((tool.output_schema or {}).get("x-fastmcp-wrap-result"))
-        if (
-            wrap_result
-            and isinstance(structured, dict)
-            and set(structured) == {"result"}
-        ):
-            return structured["result"]
-        return structured
+        return result.structured_content
 
     contents = []
     for content in result.content:
@@ -266,7 +259,7 @@ class CodeMode(CatalogTransform):
 
                 version = VersionSpec(eq=tool.version) if tool.version else None
                 result = await ctx.fastmcp.call_tool(tool.name, merged, version=version)
-                return _unwrap_tool_result(result, tool)
+                return _unwrap_tool_result(result)
 
             return await transform.sandbox_provider.run(
                 code,

@@ -118,14 +118,14 @@ async def test_code_mode_transform_hides_backend_tools_and_supports_defaults() -
         "execute",
         {"code": "return await call_tool('add', {'x': 2, 'y': 3})"},
     )
-    assert _unwrap_result(execute_result) == "ws-default:5"
+    assert _unwrap_result(execute_result) == {"result": "ws-default:5"}
 
     status_result = await _run_tool(
         mcp,
         "execute",
         {"code": "return await call_tool('status', {})"},
     )
-    assert _unwrap_result(status_result) == "ok"
+    assert _unwrap_result(status_result) == {"result": "ok"}
 
 
 async def test_code_mode_transform_replaces_listed_tools() -> None:
@@ -310,9 +310,7 @@ async def test_code_mode_shadows_colliding_tool_names() -> None:
     result = await _run_tool(
         mcp, "execute", {"code": 'return await call_tool("ping", {})'}
     )
-    first = result.content[0]
-    assert isinstance(first, TextContent)
-    assert first.text == "pong"
+    assert _unwrap_result(result) == {"result": "pong"}
 
 
 async def test_code_mode_execute_preserves_non_text_content() -> None:
@@ -373,12 +371,12 @@ async def test_code_mode_execute_multi_tool_chaining() -> None:
         {
             "code": (
                 "a = await call_tool('double', {'x': 3})\n"
-                "b = await call_tool('add_one', {'x': a})\n"
+                "b = await call_tool('add_one', {'x': a['result']})\n"
                 "return b"
             )
         },
     )
-    assert _unwrap_result(result) == 7
+    assert _unwrap_result(result) == {"result": 7}
 
 
 async def test_code_mode_execute_default_arguments_overridden_by_explicit() -> None:
@@ -401,7 +399,7 @@ async def test_code_mode_execute_default_arguments_overridden_by_explicit() -> N
         "execute",
         {"code": "return await call_tool('greet', {'name': 'World'})"},
     )
-    assert _unwrap_result(result) == "Hello, World!"
+    assert _unwrap_result(result) == {"result": "Hello, World!"}
 
     result = await _run_tool(
         mcp,
@@ -410,7 +408,7 @@ async def test_code_mode_execute_default_arguments_overridden_by_explicit() -> N
             "code": "return await call_tool('greet', {'name': 'World', 'greeting': 'Hi'})"
         },
     )
-    assert _unwrap_result(result) == "Hi, World!"
+    assert _unwrap_result(result) == {"result": "Hi, World!"}
 
 
 async def test_code_mode_get_tool_returns_meta_tools_and_passes_through() -> None:
