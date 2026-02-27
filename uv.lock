@@ -853,7 +853,7 @@ requires-dist = [
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], specifier = ">=0.4.4,<0.5.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pydantic-monty", marker = "extra == 'code-mode'", specifier = ">=0.0.7" },
-    { name = "pydocket", marker = "extra == 'tasks'", git = "https://github.com/chrisguidry/docket.git?rev=use-uncalled-for" },
+    { name = "pydocket", marker = "extra == 'tasks'", git = "https://github.com/chrisguidry/docket.git?rev=main" },
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "pyyaml", specifier = ">=6.0,<7.0" },
@@ -2095,8 +2095,8 @@ wheels = [
 
 [[package]]
 name = "pydocket"
-version = "0.17.10.dev4+gf66850991"
-source = { git = "https://github.com/chrisguidry/docket.git?rev=use-uncalled-for#f66850991d6eef9b5f42db40f40271474150f447" }
+version = "0.17.10.dev3+g3484ea952"
+source = { git = "https://github.com/chrisguidry/docket.git?rev=main#3484ea9525ef5ff277d9bf442c2fd83f12508976" }
 dependencies = [
     { name = "cloudpickle" },
     { name = "croniter" },

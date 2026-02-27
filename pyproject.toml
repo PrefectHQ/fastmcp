@@ -57,7 +57,7 @@ apps = ["prefab-ui>=0.6.0"]
 azure = ["azure-identity>=1.16.0"]
 code-mode = ["pydantic-monty>=0.0.7"]
 openai = ["openai>=1.102.0"]
-tasks = ["pydocket @ git+https://github.com/chrisguidry/docket.git@use-uncalled-for"]
+tasks = ["pydocket @ git+https://github.com/chrisguidry/docket.git@main"]
 
 [dependency-groups]
 dev = [
