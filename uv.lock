@@ -786,6 +786,9 @@ dependencies = [
 anthropic = [
     { name = "anthropic" },
 ]
+apps = [
+    { name = "prefab-ui" },
+]
 azure = [
     { name = "azure-identity" },
 ]
@@ -803,7 +806,7 @@ tasks = [
 dev = [
     { name = "dirty-equals" },
     { name = "fastapi" },
-    { name = "fastmcp", extra = ["anthropic", "azure", "code-mode", "openai", "tasks"] },
+    { name = "fastmcp", extra = ["anthropic", "apps", "azure", "code-mode", "openai", "tasks"] },
     { name = "inline-snapshot", extra = ["dirty-equals"] },
     { name = "ipython", version = "8.38.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "ipython", version = "9.10.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -845,6 +848,7 @@ requires-dist = [
     { name = "opentelemetry-api", specifier = ">=1.20.0" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "platformdirs", specifier = ">=4.0.0" },
+    { name = "prefab-ui", marker = "extra == 'apps'", specifier = ">=0.6.0" },
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], specifier = ">=0.4.4,<0.5.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pydantic-monty", marker = "extra == 'code-mode'", specifier = ">=0.0.7" },
@@ -857,13 +861,13 @@ requires-dist = [
     { name = "watchfiles", specifier = ">=1.0.0" },
     { name = "websockets", specifier = ">=15.0.1" },
 ]
-provides-extras = ["anthropic", "azure", "code-mode", "openai", "tasks"]
+provides-extras = ["anthropic", "apps", "azure", "code-mode", "openai", "tasks"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "dirty-equals", specifier = ">=0.9.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "fastmcp", extras = ["anthropic", "azure", "code-mode", "openai", "tasks"] },
+    { name = "fastmcp", extras = ["anthropic", "apps", "azure", "code-mode", "openai", "tasks"] },
     { name = "inline-snapshot", extras = ["dirty-equals"], specifier = ">=0.27.2" },
     { name = "ipython", specifier = ">=8.12.3" },
     { name = "loq", specifier = ">=0.1.0a3" },
@@ -1707,6 +1711,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
+]
+
+[[package]]
+name = "prefab-ui"
+version = "0.8.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cyclopts" },
+    { name = "pydantic" },
+    { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/04/32/e7bc3db47cd93e2683241bd2a328b3136c44c4332a4277a2ac2f3f6beca4/prefab_ui-0.8.3.tar.gz", hash = "sha256:bfe1304f0fc457da764763232f533bff732160e8cc8ce12977ba48f8e7574152", size = 2819196, upload-time = "2026-02-27T14:44:10.52Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ed/23/cbc8decc176428a1f03b676fee4242f8a8d0ae7e76d5fc76ff96f13f13c1/prefab_ui-0.8.3-py3-none-any.whl", hash = "sha256:b1bac064958f08b20694e67b916ad8ab82de8db883578c31ba4437b521b425e1", size = 803888, upload-time = "2026-02-27T14:44:09.31Z" },
 ]
 
 [[package]]

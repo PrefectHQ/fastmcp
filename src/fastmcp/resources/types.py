@@ -26,7 +26,11 @@ class TextResource(Resource):
     async def read(self) -> ResourceResult:
         """Read the text content."""
         return ResourceResult(
-            contents=[ResourceContent(content=self.text, mime_type=self.mime_type)]
+            contents=[
+                ResourceContent(
+                    content=self.text, mime_type=self.mime_type, meta=self.meta
+                )
+            ]
         )
 
 
@@ -38,7 +42,11 @@ class BinaryResource(Resource):
     async def read(self) -> ResourceResult:
         """Read the binary content."""
         return ResourceResult(
-            contents=[ResourceContent(content=self.data, mime_type=self.mime_type)]
+            contents=[
+                ResourceContent(
+                    content=self.data, mime_type=self.mime_type, meta=self.meta
+                )
+            ]
         )
 
 
