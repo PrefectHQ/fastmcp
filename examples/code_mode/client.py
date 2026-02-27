@@ -118,9 +118,9 @@ async def main():
         console.print()
         code = """\
 a = await call_tool("add", {"a": 3, "b": 4})
-b = await call_tool("multiply", {"x": a, "y": 2})
-fib = await call_tool("fibonacci", {"n": b})
-return {"sum": a, "product": b, "fibonacci": fib}
+b = await call_tool("multiply", {"x": a["result"], "y": 2})
+fib = await call_tool("fibonacci", {"n": b["result"]})
+return {"sum": a["result"], "product": b["result"], "fibonacci": fib["result"]}
 """
         result = await client.call_tool("execute", {"code": code})
         console.print(
