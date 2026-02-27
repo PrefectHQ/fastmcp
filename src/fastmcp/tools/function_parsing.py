@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import inspect
+import types
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Generic, get_type_hints
+from typing import Annotated, Any, Generic, Union, get_args, get_origin, get_type_hints
 
 import mcp.types
 from pydantic import PydanticSchemaGenerationError
@@ -34,6 +35,17 @@ try:
     _PREFAB_TYPES: tuple[type, ...] = (_PrefabApp, _PrefabComponent)
 except ImportError:
     _PREFAB_TYPES = ()
+
+
+def _contains_prefab_type(tp: Any) -> bool:
+    """Check if *tp* is or contains a prefab type, recursing through unions and Annotated."""
+    if isinstance(tp, type) and issubclass(tp, _PREFAB_TYPES):
+        return True
+    origin = get_origin(tp)
+    if origin is Union or origin is types.UnionType or origin is Annotated:
+        return any(_contains_prefab_type(a) for a in get_args(tp))
+    return False
+
 
 T = TypeVarExt("T", default=Any)
 
@@ -160,12 +172,10 @@ class ParsedFunction:
         if output_type not in (inspect._empty, None, Any, ...):
             # Prefab component subclasses (Column, Card, etc.) shouldn't
             # produce output schemas — replace_type only does exact matching,
-            # so we handle subclass matching explicitly here.
-            if (
-                _PREFAB_TYPES
-                and isinstance(output_type, type)
-                and issubclass(output_type, _PREFAB_TYPES)
-            ):
+            # so we handle subclass matching explicitly here.  We also need
+            # to handle composite types like ``Column | None`` and
+            # ``Annotated[PrefabApp, ...]`` by recursing into their args.
+            if _PREFAB_TYPES and _contains_prefab_type(output_type):
                 output_type = _UnserializableType
 
             # there are a variety of types that we don't want to attempt to

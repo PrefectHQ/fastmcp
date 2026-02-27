@@ -7,10 +7,21 @@ registration functionality to LocalProvider.
 from __future__ import annotations
 
 import inspect
+import types
 import warnings
 from collections.abc import Callable
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args, overload
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Literal,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+    overload,
+)
 
 import mcp.types
 from mcp.types import AnyFunction, ToolAnnotations
@@ -41,6 +52,16 @@ DuplicateBehavior = Literal["error", "warn", "replace", "ignore"]
 PREFAB_RENDERER_URI = "ui://prefab/renderer.html"
 
 
+def _is_prefab_type(tp: Any) -> bool:
+    """Check if *tp* is or contains a prefab type, recursing through unions and Annotated."""
+    if isinstance(tp, type) and issubclass(tp, (_PrefabApp, _PrefabComponent)):
+        return True
+    origin = get_origin(tp)
+    if origin is Union or origin is types.UnionType or origin is Annotated:
+        return any(_is_prefab_type(a) for a in get_args(tp))
+    return False
+
+
 def _has_prefab_return_type(tool: Tool) -> bool:
     """Check if a FunctionTool's return type annotation is a prefab type."""
     if not _HAS_PREFAB or not isinstance(tool, FunctionTool):
@@ -48,15 +69,7 @@ def _has_prefab_return_type(tool: Tool) -> bool:
     rt = tool.return_type
     if rt is None or rt is inspect.Parameter.empty:
         return False
-    # Direct type check
-    if isinstance(rt, type) and issubclass(rt, (_PrefabApp, _PrefabComponent)):
-        return True
-    # Check Union args (e.g., PrefabApp | None)
-    args = get_args(rt)
-    return any(
-        isinstance(a, type) and issubclass(a, (_PrefabApp, _PrefabComponent))
-        for a in args
-    )
+    return _is_prefab_type(rt)
 
 
 def _ensure_prefab_renderer(provider: LocalProvider) -> None:

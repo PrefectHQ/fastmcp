@@ -6,6 +6,8 @@ return-type inference, output-schema suppression, and end-to-end round trips.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from mcp.types import TextContent
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import Column, Heading, Text
@@ -262,6 +264,38 @@ class TestInference:
         assert tool.meta is not None
         assert tool.meta["ui"]["resourceUri"] == PREFAB_RENDERER_URI
 
+    def test_annotated_prefab_app_inferred(self):
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        def my_tool() -> Annotated[PrefabApp | None, "some metadata"]:
+            return None
+
+        tools = mcp._local_provider._components
+        tool = next(
+            v
+            for v in tools.values()
+            if hasattr(v, "parameters") and v.name == "my_tool"
+        )
+        assert tool.meta is not None
+        assert tool.meta["ui"]["resourceUri"] == PREFAB_RENDERER_URI
+
+    def test_component_subclass_union_inferred(self):
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        def my_tool() -> Column | None:
+            return None
+
+        tools = mcp._local_provider._components
+        tool = next(
+            v
+            for v in tools.values()
+            if hasattr(v, "parameters") and v.name == "my_tool"
+        )
+        assert tool.meta is not None
+        assert tool.meta["ui"]["resourceUri"] == PREFAB_RENDERER_URI
+
 
 # ---------------------------------------------------------------------------
 # Output schema suppression
@@ -290,6 +324,32 @@ class TestOutputSchema:
             with Column() as view:
                 Heading("hi")
             return view
+
+        tools = mcp._local_provider._components
+        tool: Tool = next(
+            v for v in tools.values() if isinstance(v, Tool) and v.name == "my_tool"
+        )
+        assert tool.output_schema is None
+
+    def test_optional_component_no_output_schema(self):
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        def my_tool() -> Column | None:
+            return None
+
+        tools = mcp._local_provider._components
+        tool: Tool = next(
+            v for v in tools.values() if isinstance(v, Tool) and v.name == "my_tool"
+        )
+        assert tool.output_schema is None
+
+    def test_annotated_prefab_app_no_output_schema(self):
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        def my_tool() -> Annotated[PrefabApp | None, "metadata"]:
+            return None
 
         tools = mcp._local_provider._components
         tool: Tool = next(
