@@ -163,6 +163,7 @@
                       "servers/transforms/namespace",
                       "servers/transforms/tool-transformation",
                       "servers/visibility",
+                      "servers/transforms/tool-search",
                       "servers/transforms/resources-as-tools",
                       "servers/transforms/prompts-as-tools"
                     ]
