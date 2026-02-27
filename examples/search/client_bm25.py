@@ -10,7 +10,14 @@ Run with:
 import asyncio
 import json
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
 from fastmcp.client import Client
+
+console = Console()
 
 
 def _get_text(result) -> str:
@@ -18,39 +25,55 @@ def _get_text(result) -> str:
     return result.content[0].text
 
 
+def _tool_table(tools: list[dict], *, ranked: bool = False) -> Table:
+    table = Table(show_header=True, show_edge=False, pad_edge=False, expand=True)
+    if ranked:
+        table.add_column("#", style="dim", width=3, justify="right")
+    table.add_column("Tool", style="cyan", no_wrap=True)
+    table.add_column("Description", style="dim")
+    for i, tool in enumerate(tools, 1):
+        row = [tool["name"], tool.get("description", "")]
+        if ranked:
+            row.insert(0, str(i))
+        table.add_row(*row)
+    return table
+
+
 async def main():
     async with Client("examples/search/server_bm25.py") as client:
-        # list_files is pinned via always_visible, so it appears alongside
-        # the synthetic search/call tools
-        print("=== Available Tools ===")
+        console.print()
+        console.rule("[bold]BM25 Search Transform[/bold]")
+        console.print()
+
+        # list_files is pinned via always_visible
         tools = await client.list_tools()
-        for tool in tools:
-            print(f"  - {tool.name}: {tool.description}")
-        print()
-
-        # Natural language search — BM25 ranks by relevance
-        print("=== Search: 'work with numbers' ===")
-        result = await client.call_tool("search_tools", {"query": "work with numbers"})
-        for tool in json.loads(_get_text(result)):
-            print(f"  - {tool['name']}: {tool.get('description', '')}")
-        print()
-
-        print("=== Search: 'manipulate text strings' ===")
-        result = await client.call_tool(
-            "search_tools", {"query": "manipulate text strings"}
+        visible = [{"name": t.name, "description": t.description} for t in tools]
+        console.print(
+            Panel(
+                _tool_table(visible),
+                title="[bold]list_tools()[/bold]",
+                subtitle="[dim]list_files pinned via always_visible[/dim]",
+                border_style="blue",
+            )
         )
-        for tool in json.loads(_get_text(result)):
-            print(f"  - {tool['name']}: {tool.get('description', '')}")
-        print()
+        console.print()
 
-        print("=== Search: 'file operations' ===")
-        result = await client.call_tool("search_tools", {"query": "file operations"})
-        for tool in json.loads(_get_text(result)):
-            print(f"  - {tool['name']}: {tool.get('description', '')}")
-        print()
+        # Natural language searches — BM25 ranks by relevance
+        queries = ["work with numbers", "manipulate text strings", "file operations"]
+        for query in queries:
+            result = await client.call_tool("search_tools", {"query": query})
+            found = json.loads(_get_text(result))
+            console.print(
+                Panel(
+                    _tool_table(found, ranked=True),
+                    title=f'[bold]search_tools[/bold][dim](query="{query}")[/dim]',
+                    subtitle=f"[dim]{len(found)} result{'s' if len(found) != 1 else ''}[/dim]",
+                    border_style="green",
+                )
+            )
+            console.print()
 
         # Call a discovered tool
-        print("=== Calling 'word_count' via call_tool ===")
         result = await client.call_tool(
             "call_tool",
             {
@@ -58,7 +81,12 @@ async def main():
                 "arguments": {"text": "BM25 search makes tool discovery easy"},
             },
         )
-        print(f"  Result: {_get_text(result)}")
+        call_label = Text.assemble(
+            ("call_tool", "bold"),
+            ('(word_count, text="BM25 search makes tool discovery easy")', "dim"),
+        )
+        console.print(call_label, "→", f"[bold green]{_get_text(result)}[/bold green]")
+        console.print()
 
 
 if __name__ == "__main__":
