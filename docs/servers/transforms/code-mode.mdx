@@ -1,31 +1,53 @@
 ---
 title: Code Mode (Experimental)
 sidebarTitle: Code Mode
-description: Collapse many tools into programmable search and execute tools
+description: Let LLMs write Python to search and orchestrate tools
 icon: flask
 tag: EXPERIMENTAL
 ---
 
-`CodeMode` is an experimental transform that replaces a large tool surface with two meta-tools:
+import { VersionBadge } from '/snippets/version-badge.mdx'
 
-- `search`: inspect tool metadata by writing Python code
-- `execute`: run tool calls from Python code via `call_tool(...)`
+<VersionBadge version="3.0.0" />
 
-This is useful when you want an LLM to plan multi-step API/tool workflows with a small interface.
+Standard MCP tool usage has two scaling problems. First, every tool in the catalog is loaded into the LLM's context upfront — with hundreds of tools, that's tens of thousands of tokens spent before the LLM even reads the user's request. Second, every tool call is a round-trip: the LLM calls a tool, the result passes back through the context window, the LLM reasons about it, calls another tool, and so on. Intermediate results that only exist to feed the next step still burn tokens flowing through the model.
 
-For background and design context, see Cloudflare's Code Mode post: [https://blog.cloudflare.com/code-mode-mcp/](https://blog.cloudflare.com/code-mode-mcp/).
+`CodeMode` solves both problems by letting the LLM write code instead of calling tools directly. LLMs are excellent at writing code — they've trained on billions of lines of it — and a script can discover tools on demand, chain calls together, filter intermediate results, and return only what matters. All of that executes server-side in a sandbox. One round-trip instead of ten; tool definitions loaded only when needed instead of all at once.
 
-## Install Monty (Optional)
+```python
+# Without CodeMode: each step is a round-trip through the LLM
+result1 = await client.call_tool("get_user", {"id": "123"})
+# ... 50K tokens of user data flow through the LLM's context ...
+result2 = await client.call_tool("get_orders", {"user_id": "123"})
+# ... another round-trip ...
+result3 = await client.call_tool("get_order_details", {"order_id": "456"})
 
-`CodeMode` defaults to `MontySandboxProvider`, which requires the optional Monty dependency.
-
-```bash
-pip install "fastmcp[monty]"
+# With CodeMode: one script, one round-trip, data stays server-side
+await client.call_tool("execute", {"code": """
+user = await call_tool("get_user", {"id": "123"})
+orders = await call_tool("get_orders", {"user_id": user["id"]})
+details = [await call_tool("get_order_details", {"order_id": o["id"]}) for o in orders]
+return {"user": user["name"], "recent_orders": details[:5]}
+"""})
 ```
 
-If you do not want Monty, pass a custom sandbox provider.
+`CodeMode` is a transform that replaces the tool catalog with two meta-tools — `search` for discovering tools by writing Python filters over their metadata, and `execute` for running tool workflows as scripts in a sandbox. The approach was introduced by Cloudflare in [Code Mode](https://blog.cloudflare.com/code-mode/) and explored further by Anthropic in [Code Execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp).
 
-## Basic Transform Usage
+<Note>
+CodeMode requires a sandbox to execute LLM-generated code safely. The default sandbox uses [pydantic-monty](https://github.com/pydantic/pydantic-monty), installed via `pip install "fastmcp[monty]"`. You can also provide your own sandbox — see [Custom Sandbox Providers](#custom-sandbox-providers).
+</Note>
+
+## How It Works
+
+When you add `CodeMode`, `list_tools()` returns just two tools:
+
+**`search`** receives a `code` parameter containing Python code. The code runs in a sandbox with `tools: list[dict]` in scope — a list of all backend tool metadata including names, descriptions, parameters, and output schemas. The LLM writes filters and comprehensions to find what it needs.
+
+**`execute`** also receives a `code` parameter. The code runs in a sandbox with `call_tool(name_or_key, params)` available as an async function. The LLM chains multiple `await call_tool(...)` calls to orchestrate workflows and returns the final result.
+
+Both tools use `return` to produce output.
+
+## Basic Usage
 
 ```python
 from fastmcp import FastMCP
@@ -35,18 +57,100 @@ mcp = FastMCP("Server")
 
 @mcp.tool
 def add(x: int, y: int) -> int:
+    """Add two numbers."""
     return x + y
+
+@mcp.tool
+def multiply(x: int, y: int) -> int:
+    """Multiply two numbers."""
+    return x * y
 
 mcp.add_transform(CodeMode())
 # Clients now see only: search, execute
 ```
 
-`CodeMode` is a transform-first API. Attach it with `mcp.add_transform(...)`.
-Backend tools are hidden from listings, while `execute` can still call them.
+Here's what the LLM's interactions look like from the client side:
 
-## OpenAPI + Code Mode
+```python
+# LLM searches for math tools by writing Python
+result = await client.call_tool("search", {
+    "code": "return [t['name'] for t in tools if 'number' in t['description']]"
+})
+# Returns: ["add", "multiply"]
 
-You can place `CodeMode` on top of an OpenAPI-backed provider so clients only see `search` and `execute` while the backing tools come from your API spec.
+# LLM chains multiple calls in a single execute block
+result = await client.call_tool("execute", {
+    "code": """
+sum_result = await call_tool("add", {"x": 3, "y": 4})
+final = await call_tool("multiply", {"x": sum_result, "y": 2})
+return final
+"""
+})
+# Returns: 14
+```
+
+## Search Tool Details
+
+The `search` tool exposes a `tools` variable — a list of dicts with these fields:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Tool name |
+| `key` | Unique identifier (includes version if applicable) |
+| `description` | Tool description |
+| `tags` | Sorted list of tags, or `None` |
+| `parameters` | JSON Schema for the tool's input |
+| `output_schema` | JSON Schema for the tool's output |
+
+The `key` field is important for versioned tools — when multiple versions of a tool exist, `key` uniquely identifies each version while `name` is shared across them.
+
+### Search Helpers
+
+You can register helper functions that become available inside `search` code. This is useful for domain-specific filtering logic you want the LLM to use:
+
+```python
+code_mode = CodeMode()
+
+@code_mode.search_helper
+def has_param(tool: dict, param_name: str) -> bool:
+    """Check if a tool accepts a given parameter."""
+    return param_name in tool.get("parameters", {}).get("properties", {})
+
+mcp.add_transform(code_mode)
+
+# LLM can now use the helper in search code:
+# return [t['name'] for t in tools if has_param(t, 'user_id')]
+```
+
+## Execute Tool Details
+
+The `execute` tool exposes a single async function:
+
+```python
+result = await call_tool(tool_name_or_key: str, params: dict) -> Any
+```
+
+The function resolves the tool by key first (exact match), then by name (highest version if multiple exist). Results are automatically unwrapped from the MCP `ToolResult` format into plain Python values.
+
+### Default Arguments
+
+When calling tools that share common parameters (like API keys or base URLs), `default_arguments` avoids repeating them in every `call_tool` invocation:
+
+```python
+mcp.add_transform(CodeMode(
+    default_arguments={"api_key": "sk-...", "timeout": 30}
+))
+
+# LLM code doesn't need to pass api_key or timeout:
+# result = await call_tool("fetch_data", {"query": "users"})
+# api_key and timeout are injected automatically
+```
+
+Defaults are only injected when the tool actually accepts the parameter and the LLM hasn't provided it explicitly. Parameters that a tool doesn't accept are silently skipped.
+
+## OpenAPI Integration
+
+`CodeMode` pairs naturally with OpenAPI-backed providers, where a single API spec can expose hundreds of endpoints as tools:
 
 ```python
 import httpx
@@ -60,43 +164,30 @@ api_client = httpx.AsyncClient(base_url="https://api.example.com")
 provider = OpenAPIProvider(
     openapi_spec=openapi_spec,
     client=api_client,
-    validate_output=False,  # Optional: tolerate APIs that don't match their response schemas exactly
 )
 
 mcp = FastMCP("API Code Mode", providers=[provider])
 mcp.add_transform(CodeMode())
-
-if __name__ == "__main__":
-    mcp.run()
 ```
 
-Equivalent shortcut:
+## Configuration
+
+### Custom Tool Names
+
+The default `search` and `execute` names can be changed to avoid conflicts:
 
 ```python
-mcp = FastMCP.from_openapi(openapi_spec=openapi_spec, client=api_client, name="API Code Mode")
-mcp.add_transform(CodeMode())
+mcp.add_transform(CodeMode(
+    search_tool_name="find_tools",
+    execute_tool_name="run_workflow",
+    search_description="Find available API endpoints",
+    execute_description="Run multi-step API workflows",
+))
 ```
 
-## Default Prompt Behavior
+### Custom Sandbox Providers
 
-- `search` receives `tools: list[dict]` with metadata fields including `name`, `key`, `parameters`, and `output_schema`. Use `key` when tools have versions — it uniquely identifies a specific tool version.
-- `execute` exposes a single callable: `call_tool(tool_name_or_key, params)`. Prefer passing `key` for versioned tools.
-- `execute` is intended for chaining multiple `await call_tool(...)` steps in one block and returning the final value.
-
-## Custom Tool Names and Descriptions
-
-```python
-code_mode = CodeMode(
-    search_tool_name="search_meta",
-    execute_tool_name="execute_meta",
-    search_description="Find available tools by metadata",
-    execute_description="Run multi-step tool workflows",
-)
-```
-
-## Custom Sandbox Providers
-
-Third-party sandbox providers (including remote providers) can integrate by implementing the `SandboxProvider` protocol.
+The default `MontySandboxProvider` uses [pydantic-monty](https://github.com/pydantic/pydantic-monty) for sandboxed execution. You can replace it with any object implementing the `SandboxProvider` protocol:
 
 ```python
 from collections.abc import Callable
@@ -112,11 +203,10 @@ class RemoteSandboxProvider:
         inputs: dict[str, Any] | None = None,
         external_functions: dict[str, Callable[..., Any]] | None = None,
     ) -> Any:
-        # Send code + inputs to your remote runtime.
-        # Implement callback semantics for external_functions as needed.
+        # Send code to your remote sandbox runtime
         ...
 
 mcp.add_transform(CodeMode(sandbox_provider=RemoteSandboxProvider()))
 ```
 
-`CodeMode` treats the sandbox provider as a pluggable execution backend, so provider-specific security and isolation can evolve independently.
+The `inputs` dict contains named variables to inject into the code scope (used by `search` to provide `tools`). The `external_functions` dict contains async callables (used by `execute` to provide `call_tool`).
