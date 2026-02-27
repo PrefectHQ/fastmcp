@@ -858,7 +858,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "pyyaml", specifier = ">=6.0,<7.0" },
     { name = "rich", specifier = ">=13.9.4" },
-    { name = "uncalled-for", specifier = ">=0.1.2" },
+    { name = "uncalled-for", specifier = ">=0.2.0" },
     { name = "uvicorn", specifier = ">=0.35" },
     { name = "watchfiles", specifier = ">=1.0.0" },
     { name = "websockets", specifier = ">=15.0.1" },
@@ -2957,11 +2957,11 @@ wheels = [
 
 [[package]]
 name = "uncalled-for"
-version = "0.1.2"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/eb/5a/b726094d69b1e1feaffacfddddb42e6f1e4ba2154d6ebea2d2b478154e41/uncalled_for-0.1.2.tar.gz", hash = "sha256:f65e2956e410353c6d56a9c9aa40fd3c2bd01b8176c19510921d8fe1703f0f85", size = 47075, upload-time = "2026-02-25T20:55:19.935Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/02/7c/b5b7d8136f872e3f13b0584e576886de0489d7213a12de6bebf29ff6ebfc/uncalled_for-0.2.0.tar.gz", hash = "sha256:b4f8fdbcec328c5a113807d653e041c5094473dd4afa7c34599ace69ccb7e69f", size = 49488, upload-time = "2026-02-27T17:40:58.137Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b7/13/9bdcf067d60d50c11b64ea24a53cd2bf8531161cd2ed4fd862c747877e1d/uncalled_for-0.1.2-py3-none-any.whl", hash = "sha256:8d1a63ab090046143a576676febe675e15e4543ae461c0bdcbfa7c23396e8667", size = 7290, upload-time = "2026-02-25T20:55:18.747Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/7f/4320d9ce3be404e6310b915c3629fe27bf1e2f438a1a7a3cb0396e32e9a9/uncalled_for-0.2.0-py3-none-any.whl", hash = "sha256:2c0bd338faff5f930918f79e7eb9ff48290df2cb05fcc0b40a7f334e55d4d85f", size = 11351, upload-time = "2026-02-27T17:40:56.804Z" },
 ]
 
 [[package]]
