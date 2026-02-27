@@ -1,0 +1,166 @@
+---
+title: Code Mode (Experimental)
+sidebarTitle: Code Mode
+description: Let LLMs write Python to orchestrate tools in a sandbox
+icon: flask
+tag: EXPERIMENTAL
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.0.0" />
+
+Standard MCP tool usage has two scaling problems. First, every tool in the catalog is loaded into the LLM's context upfront — with hundreds of tools, that's tens of thousands of tokens spent before the LLM even reads the user's request. Second, every tool call is a round-trip: the LLM calls a tool, the result passes back through the context window, the LLM reasons about it, calls another tool, and so on. Intermediate results that only exist to feed the next step still burn tokens flowing through the model.
+
+`CodeMode` solves both problems by replacing the tool catalog with two meta-tools — `search` for discovering tools by keyword, and `execute` for running Python scripts that chain tool calls in a sandbox. The LLM discovers what it needs, writes a script, and gets back only the final answer. One round-trip instead of ten; tool definitions loaded only when needed instead of all at once.
+
+The approach was introduced by Cloudflare in [Code Mode](https://blog.cloudflare.com/code-mode/) and explored further by Anthropic in [Code Execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp).
+
+<Note>
+CodeMode requires a sandbox to execute LLM-generated code safely. The default sandbox uses [pydantic-monty](https://github.com/pydantic/pydantic-monty), installed via `pip install "fastmcp[code-mode]"`. You can also provide your own sandbox — see [Custom Sandbox Providers](#custom-sandbox-providers).
+</Note>
+
+## Basic Usage
+
+```python
+from fastmcp import FastMCP
+from fastmcp.experimental.transforms import CodeMode
+
+mcp = FastMCP("Server")
+
+@mcp.tool
+def add(x: int, y: int) -> int:
+    """Add two numbers."""
+    return x + y
+
+@mcp.tool
+def multiply(x: int, y: int) -> int:
+    """Multiply two numbers."""
+    return x * y
+
+mcp.add_transform(CodeMode())
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+Clients now see only two tools. The LLM discovers the real tools through `search`, then orchestrates them through `execute`:
+
+```python
+# Discover tools with a keyword search
+result = await client.call_tool("search", {"query": "add multiply numbers"})
+# [{"name": "add", "inputSchema": {...}, ...}, {"name": "multiply", ...}]
+
+# Chain tool calls in a single round-trip
+result = await client.call_tool("execute", {
+    "code": """
+a = await call_tool("add", {"x": 3, "y": 4})
+b = await call_tool("multiply", {"x": a["result"], "y": 2})
+return b
+"""
+})
+# {"result": 14}
+```
+
+## Search
+
+The `search` meta-tool takes a `query` string and returns matching tools ranked by relevance, including their full `inputSchema` and `outputSchema`. The LLM uses these schemas to understand how to call each tool and what to expect back.
+
+Search uses BM25 ranking by default, matching against tool names and descriptions. You can swap in any [search transform](/servers/transforms/tool-search):
+
+```python
+from fastmcp.server.transforms.search import RegexSearchTransform
+
+mcp.add_transform(
+    CodeMode(
+        search_transform=RegexSearchTransform(),
+    )
+)
+```
+
+## Execute
+
+The `execute` meta-tool takes a `code` string containing async Python. Inside the sandbox, one function is available:
+
+```python
+await call_tool(tool_name, params)  # -> dict | str
+```
+
+The return type depends on whether the tool declares an output schema. When it does, `call_tool` returns the structured content dict exactly as the schema describes — for example, `{"result": 42}` for a tool returning `int`. When there's no output schema, `call_tool` returns the text content as a string. The LLM can tell which to expect from the `outputSchema` field in search results.
+
+Use `return` to produce the final output from the script.
+
+### Default Arguments
+
+When tools share common parameters (like workspace IDs or API keys), `default_arguments` injects them automatically:
+
+```python
+mcp.add_transform(CodeMode(
+    default_arguments={"workspace_id": "ws-123"}
+))
+```
+
+Defaults are only injected when the tool actually accepts the parameter and the LLM hasn't provided it explicitly. Parameters that a tool doesn't accept are silently skipped.
+
+## OpenAPI Integration
+
+`CodeMode` pairs naturally with OpenAPI-backed providers, where a single API spec can expose hundreds of endpoints as tools:
+
+```python
+import httpx
+
+from fastmcp import FastMCP
+from fastmcp.experimental.transforms import CodeMode
+from fastmcp.server.providers.openapi import OpenAPIProvider
+
+openapi_spec = httpx.get("https://api.example.com/openapi.json").json()
+api_client = httpx.AsyncClient(base_url="https://api.example.com")
+
+provider = OpenAPIProvider(
+    openapi_spec=openapi_spec,
+    client=api_client,
+)
+
+mcp = FastMCP("API Code Mode", providers=[provider])
+mcp.add_transform(CodeMode())
+```
+
+## Configuration
+
+### Custom Tool Names
+
+The default `search` and `execute` names can be changed:
+
+```python
+mcp.add_transform(CodeMode(
+    search_tool_name="find_tools",
+    execute_tool_name="run_workflow",
+    execute_description="Run multi-step API workflows",
+))
+```
+
+### Custom Sandbox Providers
+
+The default `MontySandboxProvider` uses [pydantic-monty](https://github.com/pydantic/pydantic-monty) for sandboxed execution. You can replace it with any object implementing the `SandboxProvider` protocol:
+
+```python
+from collections.abc import Callable
+from typing import Any
+
+from fastmcp.experimental.transforms import CodeMode, SandboxProvider
+
+class RemoteSandboxProvider:
+    async def run(
+        self,
+        code: str,
+        *,
+        inputs: dict[str, Any] | None = None,
+        external_functions: dict[str, Callable[..., Any]] | None = None,
+    ) -> Any:
+        # Send code to your remote sandbox runtime
+        ...
+
+mcp.add_transform(CodeMode(sandbox_provider=RemoteSandboxProvider()))
+```
+
+The `external_functions` dict contains async callables injected into the sandbox scope — `execute` uses this to provide `call_tool`.
