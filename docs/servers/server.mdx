@@ -68,13 +68,6 @@ The `FastMCP` constructor accepts several configuration options. The most common
 </ParamField>
 
 
-<ParamField body="include_tags" type="set[str] | None">
-  Only expose components with at least one matching tag
-</ParamField>
-
-<ParamField body="exclude_tags" type="set[str] | None">
-  Hide components with any matching tag
-</ParamField>
 
 <ParamField body="on_duplicate" type='Literal["warn", "error", "replace", "ignore"]' default="warn">
   How to handle duplicate component registrations
@@ -169,25 +162,28 @@ def admin_tool() -> str:
 ```
 
 The filtering logic works as follows:
-- **Include tags**: If specified, only components with at least one matching tag are exposed
-- **Exclude tags**: Components with any matching tag are filtered out
-- **Precedence**: Exclude tags always take priority over include tags
+- **Enable with `only=True`**: Switches to allowlist mode — only components with at least one matching tag are exposed
+- **Disable**: Components with any matching tag are hidden
+- **Precedence**: Later calls override earlier ones, so call `disable` after `enable` to exclude from an allowlist
 
 <Tip>
 To ensure a component is never exposed, you can set `enabled=False` on the component itself. See the component-specific documentation for details.
 </Tip>
 
-Configure tag-based filtering when creating your server.
+Configure tag-based filtering after creating your server.
 
 ```python
 # Only expose components tagged with "public"
-mcp = FastMCP(include_tags={"public"})
+mcp = FastMCP()
+mcp.enable(tags={"public"}, only=True)
 
 # Hide components tagged as "internal" or "deprecated"
-mcp = FastMCP(exclude_tags={"internal", "deprecated"})
+mcp = FastMCP()
+mcp.disable(tags={"internal", "deprecated"})
 
 # Combine both: show admin tools but hide deprecated ones
-mcp = FastMCP(include_tags={"admin"}, exclude_tags={"deprecated"})
+mcp = FastMCP()
+mcp.enable(tags={"admin"}, only=True).disable(tags={"deprecated"})
 ```
 
 This filtering applies to all component types (tools, resources, resource templates, and prompts) and affects both listing and access.
