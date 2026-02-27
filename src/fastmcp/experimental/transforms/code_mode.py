@@ -11,27 +11,14 @@ from fastmcp.exceptions import NotFoundError
 from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
+from fastmcp.server.transforms.search.base import (
+    BaseSearchTransform,
+    _serialize_tools_for_output,
+)
 from fastmcp.tools.tool import Tool, ToolResult
-from fastmcp.utilities.versions import VersionSpec, version_sort_key
+from fastmcp.utilities.versions import VersionSpec
 
 logger = logging.getLogger(__name__)
-
-
-def _strip_circular(obj: Any, _seen: frozenset[int] = frozenset()) -> Any:
-    """Deep-copy a JSON-like object, replacing circular references with ``None``.
-
-    Uses ``id()`` for cycle detection, which is safe as long as the input objects
-    stay alive for the duration of the traversal (true for tool metadata dicts).
-    """
-    obj_id = id(obj)
-    if obj_id in _seen:
-        return None
-    _seen = _seen | {obj_id}
-    if isinstance(obj, dict):
-        return {key: _strip_circular(value, _seen) for key, value in obj.items()}
-    if isinstance(obj, list):
-        return [_strip_circular(value, _seen) for value in obj]
-    return obj
 
 
 def _ensure_async(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -136,9 +123,9 @@ class CodeMode(CatalogTransform):
         *,
         default_arguments: dict[str, Any] | None = None,
         sandbox_provider: SandboxProvider | None = None,
+        search_transform: BaseSearchTransform | None = None,
         search_tool_name: str = "search",
         execute_tool_name: str = "execute",
-        search_description: str | None = None,
         execute_description: str | None = None,
     ) -> None:
         if search_tool_name == execute_tool_name:
@@ -148,34 +135,20 @@ class CodeMode(CatalogTransform):
 
         super().__init__()
         self._default_arguments = default_arguments or {}
-        self._helpers: dict[str, Callable[..., Any]] = {}
         self.search_tool_name = search_tool_name
         self.execute_tool_name = execute_tool_name
-        self.search_description = search_description
         self.execute_description = execute_description
         self.sandbox_provider = sandbox_provider or MontySandboxProvider()
         self._cached_search_tool: Tool | None = None
         self._cached_execute_tool: Tool | None = None
 
-    def search_helper(self, fn: Callable[..., Any]) -> Callable[..., Any]:
-        """Register a helper function available in search code."""
-        name = getattr(fn, "__name__", None)
-        if name is None:
-            raise TypeError(
-                "search_helper requires a named function (must have __name__)"
-            )
-        self._helpers[name] = fn
-        return fn
+        if search_transform is None:
+            from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
+
+            search_transform = BM25SearchTransform()
+        self._search_transform = search_transform
 
     async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
-        meta_names = {self.search_tool_name, self.execute_tool_name}
-        colliding = [tool.name for tool in tools if tool.name in meta_names]
-        if colliding:
-            raise ValueError(
-                f"Backend tool(s) {colliding} collide with CodeMode meta-tool "
-                f"names. Use search_tool_name/execute_tool_name to choose "
-                f"different meta-tool names."
-            )
         return [self._get_search_tool(), self._get_execute_tool()]
 
     async def get_tool(
@@ -191,24 +164,6 @@ class CodeMode(CatalogTransform):
             return self._get_execute_tool()
         return await call_next(name, version=version)
 
-    def _build_search_description(self) -> str:
-        if self.search_description is not None:
-            return self.search_description
-
-        lines = [
-            "Search tools with Python list comprehensions (async/await supported).",
-            "Use `return` to produce output.",
-            "Available in scope: `tools: list[dict]`.",
-            "Tool dict fields: `name`, `key`, `description`, `tags`, `parameters`, `output_schema`.",
-        ]
-        if self._helpers:
-            lines.append("")
-            lines.append("Helpers:")
-            for name, fn in self._helpers.items():
-                doc = (fn.__doc__ or "").strip()
-                lines.append(f"  - {name}(...) — {doc}")
-        return "\n".join(lines)
-
     def _build_execute_description(self) -> str:
         if self.execute_description is not None:
             return self.execute_description
@@ -216,20 +171,15 @@ class CodeMode(CatalogTransform):
         return (
             "Chain `await call_tool(...)` calls in one Python block; prefer returning the final answer from a single block.\n"
             "Use `return` to produce output.\n"
-            "Only `call_tool(tool_name_or_key: str, params: dict) -> Any` is available in scope."
+            "Only `call_tool(tool_name: str, params: dict) -> Any` is available in scope."
         )
 
     @staticmethod
     def _find_tool(name: str, tools: Sequence[Tool]) -> Tool | None:
-        """Find a tool by key or name from a pre-fetched list."""
+        """Find a tool by name from a pre-fetched list."""
         for tool in tools:
-            if tool.key == name:
+            if tool.name == name:
                 return tool
-
-        name_matches = [tool for tool in tools if tool.name == name]
-        if name_matches:
-            return max(name_matches, key=version_sort_key)  # type: ignore[type-var]
-
         return None
 
     def _get_search_tool(self) -> Tool:
@@ -246,40 +196,22 @@ class CodeMode(CatalogTransform):
         transform = self
 
         async def search(
-            code: Annotated[
+            query: Annotated[
                 str,
-                Field(
-                    description=(
-                        "Python async code to search available tools and their schemas"
-                    )
-                ),
+                "Search query to find available tools",
             ],
             ctx: Context = None,  # type: ignore[assignment]
-        ) -> Any:
-            """Search for tools using Python code."""
-            backend_tools = await transform.get_tool_catalog(ctx)
-            tool_dicts = [
-                {
-                    "name": tool.name,
-                    "key": tool.key,
-                    "description": tool.description or "",
-                    "tags": sorted(tool.tags) if tool.tags else None,
-                    "parameters": _strip_circular(tool.parameters),
-                    "output_schema": _strip_circular(tool.output_schema),
-                }
-                for tool in backend_tools
-            ]
-            return await transform.sandbox_provider.run(
-                code,
-                inputs={"tools": tool_dicts},
-                external_functions=dict(transform._helpers),
-            )
+        ) -> list[dict[str, Any]]:
+            """Search for available tools by query.
 
-        return Tool.from_function(
-            fn=search,
-            name=self.search_tool_name,
-            description=self._build_search_description(),
-        )
+            Returns matching tool definitions ranked by relevance,
+            in the same format as list_tools.
+            """
+            tools = await transform.get_tool_catalog(ctx)
+            results = await transform._search_transform._search(tools, query)
+            return _serialize_tools_for_output(results)
+
+        return Tool.from_function(fn=search, name=self.search_tool_name)
 
     def _make_execute_tool(self) -> Tool:
         transform = self
@@ -289,7 +221,7 @@ class CodeMode(CatalogTransform):
                 str,
                 Field(
                     description=(
-                        "Python async code to execute tool calls via call_tool(name_or_key, arguments)"
+                        "Python async code to execute tool calls via call_tool(name, arguments)"
                     )
                 ),
             ],
@@ -307,11 +239,11 @@ class CodeMode(CatalogTransform):
                     cached_tools = await transform.get_tool_catalog(ctx)
                 return cached_tools
 
-            async def call_tool(tool_name_or_key: str, params: dict[str, Any]) -> Any:
+            async def call_tool(tool_name: str, params: dict[str, Any]) -> Any:
                 backend_tools = await _get_cached_tools()
-                tool = transform._find_tool(tool_name_or_key, backend_tools)
+                tool = transform._find_tool(tool_name, backend_tools)
                 if tool is None:
-                    raise NotFoundError(f"Unknown tool: {tool_name_or_key}")
+                    raise NotFoundError(f"Unknown tool: {tool_name}")
 
                 accepted_args = set(tool.parameters.get("properties", {}).keys())
                 skipped = {

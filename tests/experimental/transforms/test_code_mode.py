@@ -13,13 +13,15 @@ from fastmcp.tools.tool import ToolResult
 
 
 def _unwrap_result(result: ToolResult) -> Any:
+    """Extract the logical return value from a ToolResult."""
     if result.structured_content is not None:
         return result.structured_content
 
     text_blocks = [
         content.text for content in result.content if isinstance(content, TextContent)
     ]
-    assert text_blocks, "Expected at least one text block in tool result."
+    if not text_blocks:
+        return None
 
     if len(text_blocks) == 1:
         try:
@@ -34,6 +36,20 @@ def _unwrap_result(result: ToolResult) -> Any:
         except json.JSONDecodeError:
             values.append(text)
     return values
+
+
+def _unwrap_search_results(result: ToolResult) -> list[dict[str, Any]]:
+    """Extract the list of tool dicts from a search ToolResult.
+
+    The search tool returns ``list[dict]`` which gets wrapped in
+    ``{"result": [...]}`` by the structured-output convention.
+    """
+    data = _unwrap_result(result)
+    if isinstance(data, dict) and "result" in data:
+        return data["result"]
+    if isinstance(data, list):
+        return data
+    raise AssertionError(f"Unexpected search result shape: {data!r}")
 
 
 class _UnsafeTestSandboxProvider:
@@ -54,8 +70,6 @@ class _UnsafeTestSandboxProvider:
                 {key: _ensure_async(value) for key, value in external_functions.items()}
             )
 
-        # Naive indent — works for test inputs but breaks on dedented lines
-        # (blank lines, column-0 comments). Fine for controlled test code.
         wrapped = "async def __test_main__():\n"
         for line in code.splitlines():
             wrapped += f"    {line}\n"
@@ -77,11 +91,13 @@ async def test_code_mode_transform_hides_backend_tools_and_supports_defaults() -
 
     @mcp.tool
     def add(x: int, y: int, workspace_id: str) -> str:
+        """Add two numbers with workspace context."""
         return f"{workspace_id}:{x + y}"
 
     @mcp.tool
-    def status() -> dict[str, str]:
-        return {"result": "ok"}
+    def status() -> str:
+        """Get current status."""
+        return "ok"
 
     mcp.add_transform(
         CodeMode(
@@ -93,12 +109,9 @@ async def test_code_mode_transform_hides_backend_tools_and_supports_defaults() -
     listed_tools = await mcp.list_tools(run_middleware=False)
     assert {tool.name for tool in listed_tools} == {"search", "execute"}
 
-    search_result = await _run_tool(
-        mcp,
-        "search",
-        {"code": "return [tool['name'] for tool in tools]"},
-    )
-    assert sorted(_unwrap_result(search_result)) == ["add", "status"]
+    search_result = await _run_tool(mcp, "search", {"query": "add numbers"})
+    names = [t["name"] for t in _unwrap_search_results(search_result)]
+    assert "add" in names
 
     execute_result = await _run_tool(
         mcp,
@@ -112,7 +125,7 @@ async def test_code_mode_transform_hides_backend_tools_and_supports_defaults() -
         "execute",
         {"code": "return await call_tool('status', {})"},
     )
-    assert _unwrap_result(status_result) == {"result": "ok"}
+    assert _unwrap_result(status_result) == "ok"
 
 
 async def test_code_mode_transform_replaces_listed_tools() -> None:
@@ -140,7 +153,6 @@ async def test_code_mode_tool_descriptions_are_configurable() -> None:
             sandbox_provider=_UnsafeTestSandboxProvider(),
             search_tool_name="search_meta",
             execute_tool_name="execute_meta",
-            search_description="Custom search description",
             execute_description="Custom execute description",
         )
     )
@@ -148,11 +160,10 @@ async def test_code_mode_tool_descriptions_are_configurable() -> None:
     listed_tools = await mcp.list_tools(run_middleware=False)
     by_name = {tool.name: tool for tool in listed_tools}
 
-    assert by_name["search_meta"].description == "Custom search description"
     assert by_name["execute_meta"].description == "Custom execute description"
 
 
-async def test_code_mode_default_descriptions_encourage_search_then_execute() -> None:
+async def test_code_mode_default_execute_description() -> None:
     mcp = FastMCP("CodeMode Defaults")
 
     @mcp.tool
@@ -164,71 +175,52 @@ async def test_code_mode_default_descriptions_encourage_search_then_execute() ->
     listed_tools = await mcp.list_tools(run_middleware=False)
     by_name = {tool.name: tool for tool in listed_tools}
 
-    search_description = by_name["search"].description or ""
     execute_description = by_name["execute"].description or ""
 
-    assert "tools: list[dict]" in search_description
-    assert "Use `return` to produce output." in search_description
-    assert "`key`" in search_description
     assert "single block" in execute_description
     assert "Use `return` to produce output." in execute_description
     assert (
-        "Only `call_tool(tool_name_or_key: str, params: dict) -> Any` is available in scope."
+        "Only `call_tool(tool_name: str, params: dict) -> Any` is available in scope."
         in execute_description
     )
-    assert "call_tool(tool_name_or_key: str, params: dict)" in execute_description
 
 
-async def test_code_mode_search_helpers_are_available_to_search_code() -> None:
-    mcp = FastMCP("CodeMode Helpers")
+async def test_code_mode_search_returns_matching_tools() -> None:
+    mcp = FastMCP("CodeMode Search")
 
-    @mcp.tool(tags={"math"})
-    def add(x: int, y: int) -> int:
-        return x + y
+    @mcp.tool
+    def square(x: int) -> int:
+        """Compute the square of a number."""
+        return x * x
 
-    code_mode = CodeMode(sandbox_provider=_UnsafeTestSandboxProvider())
+    @mcp.tool
+    def greet(name: str) -> str:
+        """Say hello to someone."""
+        return f"Hello, {name}!"
 
-    @code_mode.search_helper
-    async def has_tag(tool: dict[str, Any], tag: str) -> bool:
-        tags = tool.get("tags") or []
-        return tag in tags
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
-    mcp.add_transform(code_mode)
-
-    result = await _run_tool(
-        mcp,
-        "search",
-        {
-            "code": "return [tool['name'] for tool in tools if await has_tag(tool, 'math')]"
-        },
-    )
-
-    assert _unwrap_result(result) == ["add"]
+    result = await _run_tool(mcp, "search", {"query": "square number"})
+    tools = _unwrap_search_results(result)
+    assert len(tools) > 0
+    assert tools[0]["name"] == "square"
 
 
-async def test_code_mode_search_includes_output_schema() -> None:
+async def test_code_mode_search_results_include_schema() -> None:
     mcp = FastMCP("CodeMode Output Schema")
 
     @mcp.tool
     def square(x: int) -> int:
+        """Compute the square of a number."""
         return x * x
 
     mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
-    result = await _run_tool(
-        mcp,
-        "search",
-        {
-            "code": (
-                "tool = [tool for tool in tools if tool['name'] == 'square'][0]\n"
-                "return tool['output_schema']"
-            )
-        },
-    )
-
-    output_schema = _unwrap_result(result)
-    assert isinstance(output_schema, dict)
-    assert "type" in output_schema or "$ref" in output_schema
+    result = await _run_tool(mcp, "search", {"query": "square"})
+    tools = _unwrap_search_results(result)
+    assert len(tools) > 0
+    tool_dict = tools[0]
+    assert "inputSchema" in tool_dict
 
 
 async def test_code_mode_execute_respects_disabled_tool_visibility() -> None:
@@ -254,18 +246,15 @@ async def test_code_mode_search_respects_disabled_tool_visibility() -> None:
 
     @mcp.tool
     def secret() -> str:
+        """A secret tool."""
         return "nope"
 
     mcp.disable(names={"secret"}, components={"tool"})
     mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
-    result = await _run_tool(
-        mcp,
-        "search",
-        {"code": "return [tool['name'] for tool in tools]"},
-    )
-    assert result.structured_content is None
-    assert result.content == []
+    result = await _run_tool(mcp, "search", {"query": "secret"})
+    tools = _unwrap_search_results(result)
+    assert tools == []
 
 
 async def test_code_mode_execute_respects_tool_auth() -> None:
@@ -290,20 +279,18 @@ async def test_code_mode_search_respects_tool_auth() -> None:
 
     @mcp.tool(auth=lambda _ctx: False)
     def protected() -> str:
+        """A protected tool."""
         return "nope"
 
     mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
-    result = await _run_tool(
-        mcp,
-        "search",
-        {"code": "return [tool['name'] for tool in tools]"},
-    )
-    assert result.structured_content is None
-    assert result.content == []
+    result = await _run_tool(mcp, "search", {"query": "protected"})
+    tools = _unwrap_search_results(result)
+    assert tools == []
 
 
-async def test_code_mode_raises_on_colliding_tool_names() -> None:
+async def test_code_mode_shadows_colliding_tool_names() -> None:
+    """Backend tools with the same name as meta-tools are shadowed, not rejected."""
     mcp = FastMCP("CodeMode Collision")
 
     @mcp.tool
@@ -316,8 +303,16 @@ async def test_code_mode_raises_on_colliding_tool_names() -> None:
 
     mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
-    with pytest.raises(ValueError, match="collide"):
-        await mcp.list_tools(run_middleware=False)
+    tools = await mcp.list_tools(run_middleware=False)
+    tool_names = {t.name for t in tools}
+    assert tool_names == {"search", "execute"}
+
+    result = await _run_tool(
+        mcp, "execute", {"code": 'return await call_tool("ping", {})'}
+    )
+    first = result.content[0]
+    assert isinstance(first, TextContent)
+    assert first.text == "pong"
 
 
 async def test_code_mode_execute_preserves_non_text_content() -> None:
@@ -401,7 +396,6 @@ async def test_code_mode_execute_default_arguments_overridden_by_explicit() -> N
         )
     )
 
-    # Default should apply
     result = await _run_tool(
         mcp,
         "execute",
@@ -409,7 +403,6 @@ async def test_code_mode_execute_default_arguments_overridden_by_explicit() -> N
     )
     assert _unwrap_result(result) == "Hello, World!"
 
-    # Explicit should override
     result = await _run_tool(
         mcp,
         "execute",
@@ -444,7 +437,7 @@ async def test_code_mode_get_tool_returns_meta_tools_and_passes_through() -> Non
 
 
 async def test_code_mode_sandbox_error_surfaces_as_tool_error() -> None:
-    """Syntax errors and runtime errors in sandbox code surface as ToolError."""
+    """Runtime errors in sandbox code surface as ToolError."""
     mcp = FastMCP("CodeMode Errors")
 
     @mcp.tool
@@ -453,11 +446,6 @@ async def test_code_mode_sandbox_error_surfaces_as_tool_error() -> None:
 
     mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
-    # Syntax error
-    with pytest.raises(ToolError):
-        await _run_tool(mcp, "search", {"code": "return [["})
-
-    # Runtime error
     with pytest.raises(ToolError):
         await _run_tool(mcp, "execute", {"code": "raise ValueError('boom')"})
 

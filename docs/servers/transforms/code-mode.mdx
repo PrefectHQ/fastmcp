@@ -1,7 +1,7 @@
 ---
 title: Code Mode (Experimental)
 sidebarTitle: Code Mode
-description: Let LLMs write Python to search and orchestrate tools
+description: Let LLMs write Python to orchestrate tools in a sandbox
 icon: flask
 tag: EXPERIMENTAL
 ---
@@ -12,7 +12,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 Standard MCP tool usage has two scaling problems. First, every tool in the catalog is loaded into the LLM's context upfront — with hundreds of tools, that's tens of thousands of tokens spent before the LLM even reads the user's request. Second, every tool call is a round-trip: the LLM calls a tool, the result passes back through the context window, the LLM reasons about it, calls another tool, and so on. Intermediate results that only exist to feed the next step still burn tokens flowing through the model.
 
-`CodeMode` solves both problems by letting the LLM write code instead of calling tools directly. LLMs are excellent at writing code — they've trained on billions of lines of it — and a script can discover tools on demand, chain calls together, filter intermediate results, and return only what matters. All of that executes server-side in a sandbox. One round-trip instead of ten; tool definitions loaded only when needed instead of all at once.
+`CodeMode` solves both problems by letting the LLM write code instead of calling tools directly. LLMs are excellent at writing code — they've trained on billions of lines of it — and a script can chain calls together, filter intermediate results, and return only what matters. All of that executes server-side in a sandbox. One round-trip instead of ten; tool definitions loaded only when needed instead of all at once.
 
 ```python
 # Without CodeMode: each step is a round-trip through the LLM
@@ -31,7 +31,7 @@ return {"user": user["name"], "recent_orders": details[:5]}
 """})
 ```
 
-`CodeMode` is a transform that replaces the tool catalog with two meta-tools — `search` for discovering tools by writing Python filters over their metadata, and `execute` for running tool workflows as scripts in a sandbox. The approach was introduced by Cloudflare in [Code Mode](https://blog.cloudflare.com/code-mode/) and explored further by Anthropic in [Code Execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp).
+`CodeMode` is a transform that replaces the tool catalog with two meta-tools — `search` for discovering tools by keyword query, and `execute` for running tool workflows as scripts in a sandbox. The approach was introduced by Cloudflare in [Code Mode](https://blog.cloudflare.com/code-mode/) and explored further by Anthropic in [Code Execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp).
 
 <Note>
 CodeMode requires a sandbox to execute LLM-generated code safely. The default sandbox uses [pydantic-monty](https://github.com/pydantic/pydantic-monty), installed via `pip install "fastmcp[monty]"`. You can also provide your own sandbox — see [Custom Sandbox Providers](#custom-sandbox-providers).
@@ -41,11 +41,9 @@ CodeMode requires a sandbox to execute LLM-generated code safely. The default sa
 
 When you add `CodeMode`, `list_tools()` returns just two tools:
 
-**`search`** receives a `code` parameter containing Python code. The code runs in a sandbox with `tools: list[dict]` in scope — a list of all backend tool metadata including names, descriptions, parameters, and output schemas. The LLM writes filters and comprehensions to find what it needs.
+**`search`** takes a `query` string and returns matching tools ranked by relevance. Under the hood it uses the same [search transforms](/servers/transforms/tool-search) available elsewhere in FastMCP — BM25 by default, or any `BaseSearchTransform` you provide.
 
-**`execute`** also receives a `code` parameter. The code runs in a sandbox with `call_tool(name_or_key, params)` available as an async function. The LLM chains multiple `await call_tool(...)` calls to orchestrate workflows and returns the final result.
-
-Both tools use `return` to produce output.
+**`execute`** takes a `code` string containing Python. The code runs in a sandbox with `call_tool(name, params)` available as an async function. The LLM chains multiple `await call_tool(...)` calls to orchestrate workflows and uses `return` to produce output.
 
 ## Basic Usage
 
@@ -72,11 +70,9 @@ mcp.add_transform(CodeMode())
 Here's what the LLM's interactions look like from the client side:
 
 ```python
-# LLM searches for math tools by writing Python
-result = await client.call_tool("search", {
-    "code": "return [t['name'] for t in tools if 'number' in t['description']]"
-})
-# Returns: ["add", "multiply"]
+# LLM discovers tools with a keyword search
+result = await client.call_tool("search", {"query": "math arithmetic"})
+# Returns: [{"name": "add", "description": "Add two numbers.", ...}, ...]
 
 # LLM chains multiple calls in a single execute block
 result = await client.call_tool("execute", {
@@ -89,48 +85,31 @@ return final
 # Returns: 14
 ```
 
-## Search Tool Details
+## Search
 
-The `search` tool exposes a `tools` variable — a list of dicts with these fields:
-
-| Field | Description |
-|-------|-------------|
-| `name` | Tool name |
-| `key` | Unique identifier (includes version if applicable) |
-| `description` | Tool description |
-| `tags` | Sorted list of tags, or `None` |
-| `parameters` | JSON Schema for the tool's input |
-| `output_schema` | JSON Schema for the tool's output |
-
-The `key` field is important for versioned tools — when multiple versions of a tool exist, `key` uniquely identifies each version while `name` is shared across them.
-
-### Search Helpers
-
-You can register helper functions that become available inside `search` code. This is useful for domain-specific filtering logic you want the LLM to use:
+The `search` tool uses BM25 ranking by default, matching against tool names and descriptions. You can swap in any search transform — for example, regex-based search:
 
 ```python
-code_mode = CodeMode()
+from fastmcp.server.transforms.search import RegexSearchTransform
 
-@code_mode.search_helper
-def has_param(tool: dict, param_name: str) -> bool:
-    """Check if a tool accepts a given parameter."""
-    return param_name in tool.get("parameters", {}).get("properties", {})
-
-mcp.add_transform(code_mode)
-
-# LLM can now use the helper in search code:
-# return [t['name'] for t in tools if has_param(t, 'user_id')]
+mcp.add_transform(CodeMode(
+    search_transform=RegexSearchTransform(),
+))
 ```
 
-## Execute Tool Details
+Search results use the same format as `list_tools`, including `name`, `description`, `inputSchema`, and `outputSchema`.
 
-The `execute` tool exposes a single async function:
+See [Tool Search](/servers/transforms/tool-search) for the full set of available search strategies and configuration options.
+
+## Execute
+
+The `execute` tool exposes a single async function in the sandbox:
 
 ```python
-result = await call_tool(tool_name_or_key: str, params: dict) -> Any
+result = await call_tool(tool_name: str, params: dict) -> Any
 ```
 
-The function resolves the tool by key first (exact match), then by name (highest version if multiple exist). Results are automatically unwrapped from the MCP `ToolResult` format into plain Python values.
+Results are automatically unwrapped from the MCP `ToolResult` format into plain Python values — strings, dicts, lists, etc.
 
 ### Default Arguments
 
@@ -180,7 +159,6 @@ The default `search` and `execute` names can be changed to avoid conflicts:
 mcp.add_transform(CodeMode(
     search_tool_name="find_tools",
     execute_tool_name="run_workflow",
-    search_description="Find available API endpoints",
     execute_description="Run multi-step API workflows",
 ))
 ```
@@ -209,4 +187,4 @@ class RemoteSandboxProvider:
 mcp.add_transform(CodeMode(sandbox_provider=RemoteSandboxProvider()))
 ```
 
-The `inputs` dict contains named variables to inject into the code scope (used by `search` to provide `tools`). The `external_functions` dict contains async callables (used by `execute` to provide `call_tool`).
+The `external_functions` dict contains async callables injected into the sandbox scope — `execute` uses this to provide `call_tool`.
