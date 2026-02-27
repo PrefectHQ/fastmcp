@@ -76,16 +76,8 @@ The `FastMCP` constructor accepts several configuration options. The most common
   Hide components with any matching tag
 </ParamField>
 
-<ParamField body="on_duplicate_tools" type='Literal["error", "warn", "replace"]' default="error">
-  How to handle duplicate tool registrations
-</ParamField>
-
-<ParamField body="on_duplicate_resources" type='Literal["error", "warn", "replace"]' default="warn">
-  How to handle duplicate resource registrations
-</ParamField>
-
-<ParamField body="on_duplicate_prompts" type='Literal["error", "warn", "replace"]' default="replace">
-  How to handle duplicate prompt registrations
+<ParamField body="on_duplicate" type='Literal["warn", "error", "replace", "ignore"]' default="warn">
+  How to handle duplicate component registrations
 </ParamField>
 
 
