@@ -78,7 +78,7 @@ class ProxyTool(Tool):
         """Gets a client instance by calling the sync or async factory."""
         client = self._client_factory()
         if inspect.isawaitable(client):
-            client = await client
+            client = cast(Client, await client)
         return client
 
     def model_copy(self, **kwargs: Any) -> ProxyTool:
@@ -189,7 +189,7 @@ class ProxyResource(Resource):
         """Gets a client instance by calling the sync or async factory."""
         client = self._client_factory()
         if inspect.isawaitable(client):
-            client = await client
+            client = cast(Client, await client)
         return client
 
     def model_copy(self, **kwargs: Any) -> ProxyResource:
@@ -288,7 +288,7 @@ class ProxyTemplate(ResourceTemplate):
         """Gets a client instance by calling the sync or async factory."""
         client = self._client_factory()
         if inspect.isawaitable(client):
-            client = await client
+            client = cast(Client, await client)
         return client
 
     def model_copy(self, **kwargs: Any) -> ProxyTemplate:
@@ -403,7 +403,7 @@ class ProxyPrompt(Prompt):
         """Gets a client instance by calling the sync or async factory."""
         client = self._client_factory()
         if inspect.isawaitable(client):
-            client = await client
+            client = cast(Client, await client)
         return client
 
     def model_copy(self, **kwargs: Any) -> ProxyPrompt:
@@ -517,7 +517,7 @@ class ProxyProvider(Provider):
         """Gets a client instance by calling the sync or async factory."""
         client = self.client_factory()
         if inspect.isawaitable(client):
-            client = await client
+            client = cast(Client, await client)
         return client
 
     # -------------------------------------------------------------------------

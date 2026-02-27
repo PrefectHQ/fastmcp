@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from dataclasses import dataclass
@@ -168,6 +169,7 @@ class JWTVerifier(TokenVerifier):
         required_scopes: list[str] | None = None,
         base_url: AnyHttpUrl | str | None = None,
         ssrf_safe: bool = False,
+        http_client: httpx.AsyncClient | None = None,
     ):
         """
         Initialize a JWTVerifier configured to validate JWTs using either a static key or a JWKS endpoint.
@@ -184,15 +186,27 @@ class JWTVerifier(TokenVerifier):
                 public IPs, DNS pinning). Enable when the JWKS URI comes from
                 untrusted input (e.g. CIMD documents). Defaults to False so
                 operator-configured JWKS URIs (including localhost) work normally.
+            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+                the client is reused for JWKS fetches and the caller is responsible for
+                its lifecycle. When None (default), a fresh client is created per fetch.
+                Cannot be used with ssrf_safe=True.
 
         Raises:
-            ValueError: If neither or both of `public_key` and `jwks_uri` are provided, or if `algorithm` is unsupported.
+            ValueError: If neither or both of `public_key` and `jwks_uri` are provided,
+                if `algorithm` is unsupported, or if `http_client` is provided with `ssrf_safe=True`.
         """
         if not public_key and not jwks_uri:
             raise ValueError("Either public_key or jwks_uri must be provided")
 
         if public_key and jwks_uri:
             raise ValueError("Provide either public_key or jwks_uri, not both")
+
+        # Only enforce ssrf_safe/http_client exclusivity when JWKS fetching is used
+        if jwks_uri and ssrf_safe and http_client is not None:
+            raise ValueError(
+                "http_client cannot be used with ssrf_safe=True; "
+                "SSRF-safe mode requires its own hardened transport"
+            )
 
         algorithm = algorithm or "RS256"
         if algorithm not in {
@@ -228,6 +242,7 @@ class JWTVerifier(TokenVerifier):
         self.public_key = public_key
         self.jwks_uri = jwks_uri
         self.ssrf_safe = ssrf_safe
+        self._http_client = http_client
         self.jwt = JsonWebToken([self.algorithm])
         self.logger = get_logger(__name__)
 
@@ -328,7 +343,11 @@ class JWTVerifier(TokenVerifier):
             )
             return json.loads(content)
         else:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+            async with (
+                contextlib.nullcontext(self._http_client)
+                if self._http_client is not None
+                else httpx.AsyncClient(timeout=httpx.Timeout(10.0))
+            ) as client:
                 response = await client.get(self.jwks_uri)
                 response.raise_for_status()
                 return response.json()

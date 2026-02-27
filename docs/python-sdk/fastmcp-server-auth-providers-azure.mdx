@@ -14,7 +14,7 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 
 ## Functions
 
-### `EntraOBOToken` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L680" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `EntraOBOToken` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L686" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 EntraOBOToken(scopes: list[str]) -> str
@@ -43,7 +43,7 @@ or OBO exchange fails
 
 ## Classes
 
-### `AzureProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L33" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AzureProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Azure (Microsoft Entra) OAuth provider for FastMCP.
@@ -78,7 +78,7 @@ Setup:
 
 **Methods:**
 
-#### `authorize` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L243" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `authorize` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L249" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str
@@ -98,7 +98,7 @@ scopes to determine the resource/audience instead of a separate parameter.
 - Authorization URL to redirect the user to Azure AD
 
 
-#### `get_obo_credential` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L469" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_obo_credential` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L475" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_obo_credential(self, user_assertion: str) -> OnBehalfOfCredential
@@ -120,7 +120,7 @@ calls multiple tools with the same scopes.
 - `ImportError`: If azure-identity is not installed (requires fastmcp[azure]).
 
 
-#### `close_obo_credentials` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L510" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `close_obo_credentials` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L516" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 close_obo_credentials(self) -> None
@@ -129,7 +129,7 @@ close_obo_credentials(self) -> None
 Close all cached OBO credentials.
 
 
-### `AzureJWTVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L521" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AzureJWTVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L527" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 JWT verifier pre-configured for Azure AD / Microsoft Entra ID.
@@ -166,7 +166,7 @@ Example::
 
 **Methods:**
 
-#### `scopes_supported` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L601" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `scopes_supported` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L607" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 scopes_supported(self) -> list[str]
