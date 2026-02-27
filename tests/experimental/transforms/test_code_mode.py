@@ -335,7 +335,7 @@ async def test_code_mode_execute_non_text_content_stringified() -> None:
 async def test_monty_provider_raises_informative_error_when_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    provider = MontySandboxProvider(install_hint="fastmcp[monty]")
+    provider = MontySandboxProvider(install_hint="fastmcp[code-mode]")
     real_import_module = importlib.import_module
 
     def _fake_import_module(name: str, package: str | None = None):
@@ -345,7 +345,7 @@ async def test_monty_provider_raises_informative_error_when_missing(
 
     monkeypatch.setattr(importlib, "import_module", _fake_import_module)
 
-    with pytest.raises(ImportError, match=r"fastmcp\[monty\]"):
+    with pytest.raises(ImportError, match=r"fastmcp\[code-mode\]"):
         await provider.run("return 1")
 
 

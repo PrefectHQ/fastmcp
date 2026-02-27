@@ -6,7 +6,7 @@ tool calls in a sandbox). This dramatically reduces round-trips and
 context window usage when an LLM needs to orchestrate many tools.
 
 Requires pydantic-monty for the sandbox:
-    pip install "fastmcp[monty]"
+    pip install "fastmcp[code-mode]"
 
 Run with:
     uv run python examples/code_mode/server.py

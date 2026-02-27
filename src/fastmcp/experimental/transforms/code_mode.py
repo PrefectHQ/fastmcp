@@ -70,7 +70,7 @@ class SandboxProvider(Protocol):
 class MontySandboxProvider:
     """Sandbox provider backed by `pydantic-monty`."""
 
-    def __init__(self, *, install_hint: str = "fastmcp[monty]") -> None:
+    def __init__(self, *, install_hint: str = "fastmcp[code-mode]") -> None:
         self.install_hint = install_hint
 
     async def run(

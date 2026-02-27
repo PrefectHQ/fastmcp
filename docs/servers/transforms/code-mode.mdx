@@ -17,7 +17,7 @@ Standard MCP tool usage has two scaling problems. First, every tool in the catal
 The approach was introduced by Cloudflare in [Code Mode](https://blog.cloudflare.com/code-mode/) and explored further by Anthropic in [Code Execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp).
 
 <Note>
-CodeMode requires a sandbox to execute LLM-generated code safely. The default sandbox uses [pydantic-monty](https://github.com/pydantic/pydantic-monty), installed via `pip install "fastmcp[monty]"`. You can also provide your own sandbox — see [Custom Sandbox Providers](#custom-sandbox-providers).
+CodeMode requires a sandbox to execute LLM-generated code safely. The default sandbox uses [pydantic-monty](https://github.com/pydantic/pydantic-monty), installed via `pip install "fastmcp[code-mode]"`. You can also provide your own sandbox — see [Custom Sandbox Providers](#custom-sandbox-providers).
 </Note>
 
 ## Basic Usage
@@ -39,6 +39,9 @@ def multiply(x: int, y: int) -> int:
     return x * y
 
 mcp.add_transform(CodeMode())
+
+if __name__ == "__main__":
+    mcp.run()
 ```
 
 Clients now see only two tools. The LLM discovers the real tools through `search`, then orchestrates them through `execute`:
@@ -68,9 +71,11 @@ Search uses BM25 ranking by default, matching against tool names and description
 ```python
 from fastmcp.server.transforms.search import RegexSearchTransform
 
-mcp.add_transform(CodeMode(
-    search_transform=RegexSearchTransform(),
-))
+mcp.add_transform(
+    CodeMode(
+        search_transform=RegexSearchTransform(),
+    )
+)
 ```
 
 ## Execute
