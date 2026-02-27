@@ -37,7 +37,7 @@ FastMCP provides two search transforms. They share the same interface — two sy
 from fastmcp import FastMCP
 from fastmcp.server.transforms.search import RegexSearchTransform
 
-mcp = FastMCP("My Server")
+mcp = FastMCP("My Server", transforms=[RegexSearchTransform()])
 
 @mcp.tool
 def search_database(query: str, limit: int = 10) -> list[dict]:
@@ -53,8 +53,6 @@ def delete_record(record_id: str) -> bool:
 def send_email(to: str, subject: str, body: str) -> bool:
     """Send an email to the given recipient."""
     ...
-
-mcp.add_transform(RegexSearchTransform())
 ```
 
 The LLM's `search_tools` call takes a `pattern` parameter — a regex string:
@@ -79,11 +77,9 @@ Results are returned in catalog order. If the pattern is invalid regex, the sear
 from fastmcp import FastMCP
 from fastmcp.server.transforms.search import BM25SearchTransform
 
-mcp = FastMCP("My Server")
+mcp = FastMCP("My Server", transforms=[BM25SearchTransform()])
 
 # ... define tools ...
-
-mcp.add_transform(BM25SearchTransform())
 ```
 
 The LLM's `search_tools` call takes a `query` parameter — natural language:
