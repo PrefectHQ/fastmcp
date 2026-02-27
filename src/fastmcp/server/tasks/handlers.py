@@ -98,7 +98,13 @@ async def submit_to_docket(
     poll_interval_key = docket.key(
         f"fastmcp:task:{session_id}:{server_task_id}:poll_interval"
     )
+    origin_request_id_key = docket.key(
+        f"fastmcp:task:{session_id}:{server_task_id}:origin_request_id"
+    )
     poll_interval_ms = int(component.task_config.poll_interval.total_seconds() * 1000)
+    origin_request_id = (
+        str(ctx.request_context.request_id) if ctx.request_context is not None else None
+    )
 
     # Snapshot the current access token (if any) for background task access (#3095)
     access_token = get_access_token()
@@ -110,6 +116,8 @@ async def submit_to_docket(
         await redis.set(task_meta_key, task_key, ex=ttl_seconds)
         await redis.set(created_at_key, created_at.isoformat(), ex=ttl_seconds)
         await redis.set(poll_interval_key, str(poll_interval_ms), ex=ttl_seconds)
+        if origin_request_id is not None:
+            await redis.set(origin_request_id_key, origin_request_id, ex=ttl_seconds)
         if access_token is not None:
             await redis.set(
                 access_token_key, access_token.model_dump_json(), ex=ttl_seconds

@@ -172,7 +172,9 @@ class OpenAPITool(Tool):
 
             mcp_headers = get_http_headers()
             if mcp_headers:
-                request.headers.update(mcp_headers)
+                for key, value in mcp_headers.items():
+                    if key not in request.headers:
+                        request.headers[key] = value
         except Exception as e:
             raise ValueError(
                 f"Error building request for {self._route.method.upper()} "
