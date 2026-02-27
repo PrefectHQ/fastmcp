@@ -66,9 +66,10 @@ Search uses BM25 ranking by default, matching against tool names and description
 ```python
 from fastmcp.server.transforms.search import RegexSearchTransform
 
-mcp = FastMCP("Server", transforms=[
-    CodeMode(search_transform=RegexSearchTransform())
-])
+mcp = FastMCP(
+    "Server",
+    transforms=[CodeMode(search_transform=RegexSearchTransform())],
+)
 ```
 
 ## Execute
