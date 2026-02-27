@@ -280,6 +280,12 @@ class Context:
         if server._worker is not None:
             self._worker_token = _current_worker.set(server._worker)
 
+        # Ensure SharedContext is active for Shared() dependencies.
+        # When running through the lifespan, SharedContext is already set up
+        # (by _docket_lifespan or the Worker). When calling call_tool/read_resource
+        # directly, we lazily start one scoped to the server instance.
+        await server._ensure_shared_context()
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:

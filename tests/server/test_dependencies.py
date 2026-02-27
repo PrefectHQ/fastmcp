@@ -8,7 +8,7 @@ from mcp.types import TextContent, TextResourceContents
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.dependencies import CurrentContext, Depends
+from fastmcp.dependencies import CurrentContext, Depends, Shared
 from fastmcp.server.context import Context
 
 HUZZAH = "huzzah!"
@@ -1178,3 +1178,186 @@ class TestAuthDependencies:
         from fastmcp.server import dependencies
 
         assert "TokenClaim" in dependencies.__all__
+
+
+class TestSharedDependencies:
+    """Tests for Shared() dependencies that resolve once and are reused."""
+
+    async def test_shared_sync_function(self, mcp: FastMCP):
+        """Shared dependency from a sync function resolves and is reused."""
+
+        call_count = 0
+
+        def get_config() -> dict[str, str]:
+            nonlocal call_count
+            call_count += 1
+            return {"key": "value"}
+
+        @mcp.tool()
+        async def tool_a(config: dict[str, str] = Shared(get_config)) -> str:
+            return config["key"]
+
+        @mcp.tool()
+        async def tool_b(config: dict[str, str] = Shared(get_config)) -> str:
+            return config["key"]
+
+        result_a = await mcp.call_tool("tool_a", {})
+        result_b = await mcp.call_tool("tool_b", {})
+
+        assert result_a.structured_content is not None
+        assert result_a.structured_content["result"] == "value"
+        assert result_b.structured_content is not None
+        assert result_b.structured_content["result"] == "value"
+        assert call_count == 1
+
+    async def test_shared_async_function(self, mcp: FastMCP):
+        """Shared dependency from an async function resolves and is reused."""
+
+        call_count = 0
+
+        async def get_session() -> str:
+            nonlocal call_count
+            call_count += 1
+            return "session-abc"
+
+        @mcp.tool()
+        async def tool_a(session: str = Shared(get_session)) -> str:
+            return session
+
+        @mcp.tool()
+        async def tool_b(session: str = Shared(get_session)) -> str:
+            return session
+
+        result_a = await mcp.call_tool("tool_a", {})
+        result_b = await mcp.call_tool("tool_b", {})
+
+        assert result_a.structured_content is not None
+        assert result_a.structured_content["result"] == "session-abc"
+        assert result_b.structured_content is not None
+        assert result_b.structured_content["result"] == "session-abc"
+        assert call_count == 1
+
+    async def test_shared_async_context_manager(self, mcp: FastMCP):
+        """Shared dependency from an async context manager stays open across calls."""
+
+        enter_count = 0
+
+        @asynccontextmanager
+        async def get_connection():
+            nonlocal enter_count
+            enter_count += 1
+            conn = Connection()
+            async with conn:
+                yield conn
+
+        @mcp.tool()
+        async def tool_a(conn: Connection = Shared(get_connection)) -> bool:
+            return conn.is_open
+
+        @mcp.tool()
+        async def tool_b(conn: Connection = Shared(get_connection)) -> bool:
+            return conn.is_open
+
+        result_a = await mcp.call_tool("tool_a", {})
+        result_b = await mcp.call_tool("tool_b", {})
+
+        assert result_a.structured_content is not None
+        assert result_a.structured_content["result"] is True
+        assert result_b.structured_content is not None
+        assert result_b.structured_content["result"] is True
+        assert enter_count == 1
+
+    async def test_shared_with_depends(self, mcp: FastMCP):
+        """Shared and Depends can coexist in the same tool."""
+
+        shared_calls = 0
+        depends_calls = 0
+
+        def get_config() -> str:
+            nonlocal shared_calls
+            shared_calls += 1
+            return "shared-config"
+
+        def get_request_id() -> str:
+            nonlocal depends_calls
+            depends_calls += 1
+            return "request-123"
+
+        @mcp.tool()
+        async def my_tool(
+            config: str = Shared(get_config),
+            request_id: str = Depends(get_request_id),
+        ) -> str:
+            return f"{config}/{request_id}"
+
+        result1 = await mcp.call_tool("my_tool", {})
+        result2 = await mcp.call_tool("my_tool", {})
+
+        assert result1.structured_content is not None
+        assert result1.structured_content["result"] == "shared-config/request-123"
+        assert result2.structured_content is not None
+        assert result2.structured_content["result"] == "shared-config/request-123"
+        assert shared_calls == 1
+        assert depends_calls == 2
+
+    async def test_shared_excluded_from_schema(self, mcp: FastMCP):
+        """Shared dependencies are not exposed in the tool schema."""
+
+        def get_db() -> str:
+            return "db"
+
+        @mcp.tool()
+        async def my_tool(name: str, db: str = Shared(get_db)) -> str:
+            return name
+
+        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
+        tool = next(t for t in result.tools if t.name == "my_tool")
+
+        assert "name" in tool.inputSchema["properties"]
+        assert "db" not in tool.inputSchema["properties"]
+
+    async def test_shared_in_resource(self, mcp: FastMCP):
+        """Shared dependencies work in resource functions."""
+
+        call_count = 0
+
+        def get_config() -> str:
+            nonlocal call_count
+            call_count += 1
+            return "resource-config"
+
+        @mcp.resource("test://config")
+        async def config_resource(config: str = Shared(get_config)) -> str:
+            return config
+
+        result = await mcp.read_resource("test://config")
+        assert result.contents[0].content == "resource-config"
+
+        result = await mcp.read_resource("test://config")
+        assert result.contents[0].content == "resource-config"
+        assert call_count == 1
+
+    async def test_shared_in_prompt(self, mcp: FastMCP):
+        """Shared dependencies work in prompt functions."""
+
+        call_count = 0
+
+        def get_system_prompt() -> str:
+            nonlocal call_count
+            call_count += 1
+            return "You are a helpful assistant."
+
+        @mcp.prompt()
+        async def my_prompt(topic: str, system: str = Shared(get_system_prompt)) -> str:
+            return f"{system} Talk about {topic}."
+
+        result = await mcp.render_prompt("my_prompt", {"topic": "dogs"})
+        content = result.messages[0].content
+        assert isinstance(content, TextContent)
+        assert "You are a helpful assistant. Talk about dogs." in content.text
+
+        result = await mcp.render_prompt("my_prompt", {"topic": "cats"})
+        content = result.messages[0].content
+        assert isinstance(content, TextContent)
+        assert "You are a helpful assistant. Talk about cats." in content.text
+        assert call_count == 1
