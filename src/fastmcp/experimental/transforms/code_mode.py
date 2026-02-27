@@ -1,11 +1,7 @@
-from __future__ import annotations
-
 import asyncio
 import importlib
-import itertools
 import logging
 from collections.abc import Callable, Sequence
-from contextvars import ContextVar
 from typing import Annotated, Any, Protocol
 
 from mcp.types import TextContent
@@ -13,25 +9,12 @@ from pydantic import Field
 
 from fastmcp.exceptions import NotFoundError
 from fastmcp.server.context import Context
-from fastmcp.server.transforms import GetToolNext, Transform
+from fastmcp.server.transforms import GetToolNext
+from fastmcp.server.transforms.catalog import CatalogTransform
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 logger = logging.getLogger(__name__)
-
-# Monotonic counter for assigning unique IDs to CodeMode instances.
-_code_mode_id_counter = itertools.count()
-
-# Holds the instance ID of the CodeMode that is currently bypassed.
-# When set, the matching CodeMode passes through in ``list_tools()``
-# instead of hiding tools.  This lets the search/execute tools call
-# back into the server's ``list_tools()`` to get the auth-filtered
-# catalog without recursively hiding everything.  Scoped to a specific
-# instance so multiple CodeMode transforms in the same process (e.g.
-# mounted servers) don't interfere with each other.
-_code_mode_bypass: ContextVar[int | None] = ContextVar(
-    "_code_mode_bypass", default=None
-)
 
 
 def _strip_circular(obj: Any, _seen: frozenset[int] = frozenset()) -> Any:
@@ -145,7 +128,7 @@ class MontySandboxProvider:
         return await pydantic_monty.run_monty_async(monty, **run_kwargs)
 
 
-class CodeMode(Transform):
+class CodeMode(CatalogTransform):
     """Transform that collapses all tools into `search` + `execute` meta-tools."""
 
     def __init__(
@@ -163,7 +146,7 @@ class CodeMode(Transform):
                 "search_tool_name and execute_tool_name must be different."
             )
 
-        self._instance_id = next(_code_mode_id_counter)
+        super().__init__()
         self._default_arguments = default_arguments or {}
         self._helpers: dict[str, Callable[..., Any]] = {}
         self.search_tool_name = search_tool_name
@@ -184,10 +167,7 @@ class CodeMode(Transform):
         self._helpers[name] = fn
         return fn
 
-    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
-        if _code_mode_bypass.get() == self._instance_id:
-            return tools
-
+    async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         meta_names = {self.search_tool_name, self.execute_tool_name}
         colliding = [tool.name for tool in tools if tool.name in meta_names]
         if colliding:
@@ -240,20 +220,8 @@ class CodeMode(Transform):
         )
 
     async def _get_visible_tools(self, ctx: Context) -> Sequence[Tool]:
-        """Get the auth-filtered tool catalog.
-
-        Calls the server's ``list_tools()`` with a bypass flag so this
-        transform passes through instead of hiding everything.  Middleware
-        is skipped (``run_middleware=False``) because the outer search/execute
-        call already ran through middleware; running it again would double-count
-        rate limits, logging, etc.  Auth filtering and visibility checks still
-        run because they are applied after middleware in the server pipeline.
-        """
-        token = _code_mode_bypass.set(self._instance_id)
-        try:
-            tools = await ctx.fastmcp.list_tools(run_middleware=False)
-        finally:
-            _code_mode_bypass.reset(token)
+        """Get the auth-filtered tool catalog, excluding meta-tools."""
+        tools = await self.get_tool_catalog(ctx)
         meta_names = {self.search_tool_name, self.execute_tool_name}
         return [t for t in tools if t.name not in meta_names]
 
