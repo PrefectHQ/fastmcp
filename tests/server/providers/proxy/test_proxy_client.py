@@ -7,6 +7,8 @@ from mcp.types import (
     LoggingLevel,
     ModelHint,
     ModelPreferences,
+    SamplingCapability,
+    SamplingToolsCapability,
     TextContent,
 )
 from pydantic import BaseModel, Field
@@ -183,12 +185,10 @@ class TestProxyClient:
         `tools` field, ensuring compatibility with servers that don't support it.
         See: https://github.com/PrefectHQ/fastmcp/issues/3329
         """
-        import mcp.types
-
         client = ProxyClient(fastmcp_server)
         caps = client._session_kwargs.get("sampling_capabilities")
         assert caps is not None
-        assert isinstance(caps, mcp.types.SamplingCapability)
+        assert isinstance(caps, SamplingCapability)
         # Must not include tools — some servers reject unknown fields
         assert caps.tools is None
 
@@ -198,10 +198,8 @@ class TestProxyClient:
         """
         Test that ProxyClient respects explicit sampling_capabilities.
         """
-        import mcp.types
-
-        custom_caps = mcp.types.SamplingCapability(
-            tools=mcp.types.SamplingToolsCapability()
+        custom_caps = SamplingCapability(
+            tools=SamplingToolsCapability()
         )
         client = ProxyClient(fastmcp_server, sampling_capabilities=custom_caps)
         caps = client._session_kwargs.get("sampling_capabilities")
