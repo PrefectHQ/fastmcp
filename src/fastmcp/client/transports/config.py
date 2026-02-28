@@ -99,6 +99,11 @@ class MCPConfigTransport(ClientTransport):
         composite = FastMCP[Any](name="MCPRouter")
 
         async with contextlib.AsyncExitStack() as stack:
+            # Close any previous transports from prior connections to avoid leaking
+            for t in self._transports:
+                await t.close()
+            self._transports = []
+
             try:
                 for name, server_config in self.config.mcpServers.items():
                     transport, _client, proxy = await self._create_proxy(
