@@ -192,6 +192,41 @@ class TestMultiAuthRoutes:
         auth = MultiAuth(verifiers=[v])
         assert auth.get_routes() == []
 
+    def test_well_known_routes_delegate_to_server(self):
+        """get_well_known_routes delegates to the server's implementation."""
+        verifier = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
+        server = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+        )
+        auth = MultiAuth(server=server)
+        well_known = auth.get_well_known_routes(mcp_path="/mcp")
+        server_well_known = server.get_well_known_routes(mcp_path="/mcp")
+        # MultiAuth should produce the same well-known routes as the server
+        assert len(well_known) == len(server_well_known)
+        assert [r.path for r in well_known] == [r.path for r in server_well_known]
+
+    def test_well_known_routes_empty_without_server(self):
+        v = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
+        auth = MultiAuth(verifiers=[v])
+        assert auth.get_well_known_routes() == []
+
+    def test_required_scopes_explicit_empty_list(self):
+        """Passing required_scopes=[] explicitly clears inherited scopes."""
+        verifier = StaticTokenVerifier(
+            tokens={"t": {"client_id": "c", "scopes": ["read"]}},
+            required_scopes=["read"],
+        )
+        server = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+        )
+        # Server has required_scopes=["read"], but we explicitly clear them
+        auth = MultiAuth(server=server, required_scopes=[])
+        assert auth.required_scopes == []
+
 
 class TestMultiAuthIntegration:
     """Integration tests: MultiAuth with a real FastMCP HTTP app."""

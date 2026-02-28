@@ -519,8 +519,10 @@ class MultiAuth(AuthProvider):
             raise ValueError("MultiAuth requires at least a server or one verifier")
 
         effective_base_url = base_url or (server.base_url if server else None)
-        effective_scopes = required_scopes or (
-            server.required_scopes if server else None
+        effective_scopes = (
+            required_scopes
+            if required_scopes is not None
+            else (server.required_scopes if server else None)
         )
 
         super().__init__(base_url=effective_base_url, required_scopes=effective_scopes)
@@ -551,6 +553,16 @@ class MultiAuth(AuthProvider):
         """Delegate route creation to the server."""
         if self.server is not None:
             return self.server.get_routes(mcp_path)
+        return []
+
+    def get_well_known_routes(self, mcp_path: str | None = None) -> list[Route]:
+        """Delegate well-known route creation to the server.
+
+        This ensures that server-specific well-known route logic (e.g.,
+        OAuthProvider's RFC 8414 path-aware discovery) is preserved.
+        """
+        if self.server is not None:
+            return self.server.get_well_known_routes(mcp_path)
         return []
 
 
