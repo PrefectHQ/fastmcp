@@ -198,9 +198,7 @@ class TestProxyClient:
         """
         Test that ProxyClient respects explicit sampling_capabilities.
         """
-        custom_caps = SamplingCapability(
-            tools=SamplingToolsCapability()
-        )
+        custom_caps = SamplingCapability(tools=SamplingToolsCapability())
         client = ProxyClient(fastmcp_server, sampling_capabilities=custom_caps)
         caps = client._session_kwargs.get("sampling_capabilities")
         assert caps is not None
