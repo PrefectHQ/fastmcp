@@ -3,7 +3,7 @@ import pytest
 from pydantic import AnyHttpUrl
 
 from fastmcp import FastMCP
-from fastmcp.server.auth import AccessToken, MultiAuth, RemoteAuthProvider
+from fastmcp.server.auth import MultiAuth, RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
 
@@ -131,21 +131,15 @@ class TestMultiAuthVerifyToken:
 
     async def test_no_match_returns_none(self):
         """When no server or verifier accepts the token, returns None."""
-        v = StaticTokenVerifier(
-            tokens={"known": {"client_id": "c", "scopes": []}}
-        )
+        v = StaticTokenVerifier(tokens={"known": {"client_id": "c", "scopes": []}})
         auth = MultiAuth(verifiers=[v])
         result = await auth.verify_token("unknown")
         assert result is None
 
     async def test_verifiers_only_no_server(self):
         """MultiAuth with only verifiers (no server) works."""
-        v1 = StaticTokenVerifier(
-            tokens={"token_a": {"client_id": "a", "scopes": []}}
-        )
-        v2 = StaticTokenVerifier(
-            tokens={"token_b": {"client_id": "b", "scopes": []}}
-        )
+        v1 = StaticTokenVerifier(tokens={"token_a": {"client_id": "a", "scopes": []}})
+        v2 = StaticTokenVerifier(tokens={"token_b": {"client_id": "b", "scopes": []}})
 
         auth = MultiAuth(verifiers=[v1, v2])
 
@@ -182,9 +176,7 @@ class TestMultiAuthRoutes:
     """Test that routes delegate to the server."""
 
     def test_routes_from_server(self):
-        verifier = StaticTokenVerifier(
-            tokens={"t": {"client_id": "c", "scopes": []}}
-        )
+        verifier = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
         server = RemoteAuthProvider(
             token_verifier=verifier,
             authorization_servers=[AnyHttpUrl("https://auth.example.com")],
@@ -243,17 +235,13 @@ class TestMultiAuthIntegration:
 
     async def test_multi_auth_with_server_provides_routes(self):
         """MultiAuth with a server exposes the server's metadata routes."""
-        verifier = StaticTokenVerifier(
-            tokens={"t": {"client_id": "c", "scopes": []}}
-        )
+        verifier = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
         server = RemoteAuthProvider(
             token_verifier=verifier,
             authorization_servers=[AnyHttpUrl("https://auth.example.com")],
             base_url="https://api.example.com",
         )
-        extra = StaticTokenVerifier(
-            tokens={"m2m": {"client_id": "svc", "scopes": []}}
-        )
+        extra = StaticTokenVerifier(tokens={"m2m": {"client_id": "svc", "scopes": []}})
 
         auth = MultiAuth(server=server, verifiers=[extra])
         mcp = FastMCP("test", auth=auth)
@@ -264,9 +252,7 @@ class TestMultiAuthIntegration:
             base_url="https://api.example.com",
         ) as client:
             # Protected resource metadata should be available
-            response = await client.get(
-                "/.well-known/oauth-protected-resource/mcp"
-            )
+            response = await client.get("/.well-known/oauth-protected-resource/mcp")
             assert response.status_code == 200
             data = response.json()
             assert data["resource"] == "https://api.example.com/mcp"
