@@ -68,10 +68,22 @@ class SandboxProvider(Protocol):
 
 
 class MontySandboxProvider:
-    """Sandbox provider backed by `pydantic-monty`."""
+    """Sandbox provider backed by `pydantic-monty`.
 
-    def __init__(self, *, install_hint: str = "fastmcp[code-mode]") -> None:
-        self.install_hint = install_hint
+    Args:
+        limits: Resource limits for sandbox execution. Supported keys:
+            ``max_duration_secs`` (float), ``max_allocations`` (int),
+            ``max_memory`` (int), ``max_recursion_depth`` (int),
+            ``gc_interval`` (int).  All are optional; omit a key to
+            leave that limit uncapped.
+    """
+
+    def __init__(
+        self,
+        *,
+        limits: dict[str, Any] | None = None,
+    ) -> None:
+        self.limits = limits
 
     async def run(
         self,
@@ -85,7 +97,7 @@ class MontySandboxProvider:
         except ModuleNotFoundError as exc:
             raise ImportError(
                 "CodeMode requires pydantic-monty for the Monty sandbox provider. "
-                f"Install it with `{self.install_hint}` or pass a custom SandboxProvider."
+                "Install it with `fastmcp[code-mode]` or pass a custom SandboxProvider."
             ) from exc
 
         inputs = inputs or {}
@@ -102,6 +114,8 @@ class MontySandboxProvider:
         run_kwargs: dict[str, Any] = {"external_functions": async_functions}
         if inputs:
             run_kwargs["inputs"] = inputs
+        if self.limits is not None:
+            run_kwargs["limits"] = self.limits
         return await pydantic_monty.run_monty_async(monty, **run_kwargs)
 
 
