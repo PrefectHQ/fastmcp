@@ -145,11 +145,11 @@ The default `MontySandboxProvider` can enforce execution limits on sandboxed cod
 ```python
 from fastmcp.experimental.transforms import CodeMode, MontySandboxProvider
 
-mcp.add_transform(CodeMode(
-    sandbox_provider=MontySandboxProvider(
-        limits={"max_duration_secs": 10, "max_memory": 50_000_000},
-    ),
-))
+sandbox = MontySandboxProvider(
+    limits={"max_duration_secs": 10, "max_memory": 50_000_000},
+)
+
+mcp = FastMCP("Server", transforms=[CodeMode(sandbox_provider=sandbox)])
 ```
 
 All keys are optional — omit any to leave that dimension uncapped:
