@@ -619,5 +619,3 @@ class TestApplyMiddlewareParameter:
             "add", {"a": 5, "b": 3}, run_middleware=False
         )
         assert result_without.structured_content["result"] == 8  # type: ignore[union-attr,index]
-
-

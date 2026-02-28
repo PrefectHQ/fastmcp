@@ -540,5 +540,3 @@ class TestCIMDFetcherHTTP:
         with pytest.raises(CIMDValidationError) as exc_info:
             await fetcher.fetch(url)
         assert "Invalid CIMD document" in str(exc_info.value)
-
-

@@ -1,4 +1,3 @@
-
 import pytest
 
 from fastmcp.resources import ResourceTemplate

@@ -746,5 +746,3 @@ async def test_validation_error_propagates_from_dependency(mcp: FastMCP):
         assert result.is_error
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "Invalid input format"
-
-

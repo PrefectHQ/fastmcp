@@ -657,5 +657,3 @@ class TestConsentSecurity:
             assert r2.headers.get("location", "").startswith(
                 "https://github.com/login/oauth/authorize"
             )
-
-

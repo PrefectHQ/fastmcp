@@ -876,5 +876,3 @@ class TestOIDCProxyInitialization:
                 "audience": "original-audience",
                 "custom": "value",
             }
-
-

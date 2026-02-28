@@ -1,6 +1,5 @@
 """Comprehensive tests for transitive and nested reference handling (Issue #1372)."""
 
-
 from fastmcp.utilities.openapi.models import (
     HTTPRoute,
     ParameterInfo,

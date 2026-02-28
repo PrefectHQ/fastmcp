@@ -574,5 +574,3 @@ class TestBearerTokenJWKS:
 
         access_token = await jwks_provider.load_access_token(token)
         assert access_token is None
-
-

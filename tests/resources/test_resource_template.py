@@ -747,5 +747,3 @@ class TestContextHandling:
             # read() returns the raw value
             result = await resource.read()
             assert result == "item: 42"
-
-

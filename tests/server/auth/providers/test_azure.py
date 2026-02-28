@@ -734,4 +734,3 @@ class TestAzureProvider:
         # Should have 3 items (read deduplicated, plus offline_access)
         assert len(result) == 3
         assert result.count("api://my-api/read") == 1
-
