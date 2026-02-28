@@ -126,6 +126,12 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 
   Optional version identifier for this tool. See [Versioning](/servers/versioning) for details.
 </ParamField>
+
+<ParamField body="output_schema" type="dict[str, Any] | None">
+  <VersionBadge version="2.10.0" />
+
+  Optional JSON schema for the tool's output. When provided, the tool must return structured output matching this schema. If not provided, FastMCP automatically generates a schema from the function's return type annotation. See [Output Schemas](#output-schemas) for details.
+</ParamField>
 </Card>
 
 ### Using with Methods

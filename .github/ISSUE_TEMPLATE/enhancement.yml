@@ -17,6 +17,7 @@ body:
         - 🔍 **Check if this has already been requested** - search existing issues first
         - 💭 **Think about the broader impact** - how would this affect other users?
         - 📋 **Consider implementation complexity** - is this a small change or a major feature?
+        - ✂️ **Keep it short.** Describe the problem you're trying to solve and why existing behavior falls short. Skip proposed implementations unless you have a specific, well-considered suggestion — we don't need LLM-generated API designs. Requests that are difficult to parse may be closed without response.
 
         Thanks for helping to make FastMCP better! 🚀
 

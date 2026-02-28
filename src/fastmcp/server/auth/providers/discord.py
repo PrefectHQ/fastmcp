@@ -21,6 +21,7 @@ Example:
 
 from __future__ import annotations
 
+import contextlib
 import time
 from datetime import datetime
 
@@ -49,20 +50,29 @@ class DiscordTokenVerifier(TokenVerifier):
         *,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
+        http_client: httpx.AsyncClient | None = None,
     ):
         """Initialize the Discord token verifier.
 
         Args:
             required_scopes: Required OAuth scopes (e.g., ['email'])
             timeout_seconds: HTTP request timeout
+            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+                the client is reused across calls and the caller is responsible for its
+                lifecycle. When None (default), a fresh client is created per call.
         """
         super().__init__(required_scopes=required_scopes)
         self.timeout_seconds = timeout_seconds
+        self._http_client = http_client
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify Discord OAuth token by calling Discord's tokeninfo API."""
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async with (
+                contextlib.nullcontext(self._http_client)
+                if self._http_client is not None
+                else httpx.AsyncClient(timeout=self.timeout_seconds)
+            ) as client:
                 # Use Discord's tokeninfo endpoint to validate the token
                 headers = {
                     "Authorization": f"Bearer {token}",
@@ -183,6 +193,7 @@ class DiscordProvider(OAuthProxy):
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
+        http_client: httpx.AsyncClient | None = None,
     ):
         """Initialize Discord OAuth provider.
 
@@ -210,6 +221,9 @@ class DiscordProvider(OAuthProxy):
                 When True, users see a consent screen before being redirected to Discord.
                 When False, authorization proceeds directly without user confirmation.
                 SECURITY WARNING: Only disable for local development or testing environments.
+            http_client: Optional httpx.AsyncClient for connection pooling in token verification.
+                When provided, the client is reused across verify_token calls and the caller
+                is responsible for its lifecycle. When None (default), a fresh client is created per call.
         """
         # Parse scopes if provided as string
         required_scopes_final = (
@@ -222,6 +236,7 @@ class DiscordProvider(OAuthProxy):
         token_verifier = DiscordTokenVerifier(
             required_scopes=required_scopes_final,
             timeout_seconds=timeout_seconds,
+            http_client=http_client,
         )
 
         # Initialize OAuth proxy with Discord endpoints
