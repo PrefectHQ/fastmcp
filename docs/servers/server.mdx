@@ -67,7 +67,11 @@ The `FastMCP` constructor accepts several configuration options. The most common
   A list of tools (or functions to convert to tools) to add to the server. In some cases, providing tools programmatically may be more convenient than using the `@mcp.tool` decorator
 </ParamField>
 
+<ParamField body="transforms" type="list[Transform] | None">
+  <VersionBadge version="3.1.0" />
 
+  Server-level [transforms](/servers/transforms/transforms) to apply to all components. Transforms modify how tools, resources, and prompts are presented to clients — for example, [search transforms](/servers/transforms/tool-search) replace large catalogs with on-demand discovery, and [CodeMode](/servers/transforms/code-mode) lets LLMs write scripts that chain tool calls in a sandbox
+</ParamField>
 
 <ParamField body="on_duplicate" type='Literal["warn", "error", "replace", "ignore"]' default="warn">
   How to handle duplicate component registrations
