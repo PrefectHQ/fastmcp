@@ -836,9 +836,7 @@ class TestRunModuleMode:
         mock_result.returncode = 0
 
         with (
-            patch(
-                "fastmcp.cli.run.subprocess.run", return_value=mock_result
-            ),
+            patch("fastmcp.cli.run.subprocess.run", return_value=mock_result),
             pytest.raises(SystemExit),
             caplog.at_level("WARNING"),
         ):
@@ -897,9 +895,7 @@ class TestInspectorModuleMode:
                 "fastmcp.cli.cli.load_and_merge_config",
                 return_value=(mock_config, "my_module"),
             ),
-            patch(
-                "fastmcp.cli.cli._get_npx_command", return_value="npx"
-            ),
+            patch("fastmcp.cli.cli._get_npx_command", return_value="npx"),
             patch(
                 "fastmcp.cli.cli.subprocess.run", return_value=mock_process
             ) as mock_subprocess,
