@@ -273,7 +273,11 @@ def run_module_command(
             with environment setup (e.g. ``UVEnvironment.build_command``).
         extra_args: Extra arguments forwarded after the module name.
     """
-    cmd: list[str] = [sys.executable, "-m", module_name]
+    # Use bare "python" when an env wrapper (e.g. uv run) is active so that
+    # the wrapper can resolve the interpreter via --python / environment config.
+    # Fall back to sys.executable for direct execution without a wrapper.
+    python = "python" if env_command_builder is not None else sys.executable
+    cmd: list[str] = [python, "-m", module_name]
     if extra_args:
         cmd.extend(extra_args)
 
