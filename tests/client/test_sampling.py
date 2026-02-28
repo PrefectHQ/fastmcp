@@ -174,6 +174,64 @@ async def test_sampling_with_image(fastmcp_server: FastMCP):
         ]
 
 
+class TestSamplingDefaultCapabilities:
+    """Tests for default sampling capability advertisement (issue #3329)."""
+
+    async def test_default_sampling_capabilities_omit_tools(self):
+        """Default sampling capabilities should not include tools field.
+
+        When serialized with exclude_none=True (as the MCP session does),
+        the capability should produce {"sampling": {}} rather than
+        {"sampling": {"tools": {}}}, ensuring compatibility with servers
+        that don't recognize the tools sub-field (e.g. older Java MCP SDK).
+        """
+        import mcp.types as mcp_types
+
+        server = FastMCP()
+
+        def handler(
+            messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
+        ) -> str:
+            return "ok"
+
+        client = Client(server, sampling_handler=handler)
+        caps = client._session_kwargs["sampling_capabilities"]
+        assert isinstance(caps, mcp_types.SamplingCapability)
+        assert caps.tools is None
+
+    async def test_set_sampling_callback_default_capabilities_omit_tools(self):
+        """set_sampling_callback should also default to no tools capability."""
+        import mcp.types as mcp_types
+
+        server = FastMCP()
+        client = Client(server)
+        client.set_sampling_callback(lambda msgs, params, ctx: "ok")
+        caps = client._session_kwargs["sampling_capabilities"]
+        assert isinstance(caps, mcp_types.SamplingCapability)
+        assert caps.tools is None
+
+    async def test_explicit_tools_capability_is_preserved(self):
+        """Explicitly passing tools capability should be respected."""
+        import mcp.types as mcp_types
+
+        server = FastMCP()
+
+        def handler(
+            messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
+        ) -> str:
+            return "ok"
+
+        explicit_caps = mcp_types.SamplingCapability(
+            tools=mcp_types.SamplingToolsCapability()
+        )
+        client = Client(
+            server, sampling_handler=handler, sampling_capabilities=explicit_caps
+        )
+        caps = client._session_kwargs["sampling_capabilities"]
+        assert isinstance(caps, mcp_types.SamplingCapability)
+        assert caps.tools is not None
+
+
 class TestSamplingWithTools:
     """Tests for sampling with tools functionality."""
 
