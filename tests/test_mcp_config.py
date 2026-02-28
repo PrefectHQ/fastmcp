@@ -902,35 +902,32 @@ async def test_multi_server_timeout_propagation():
     transport = MCPConfigTransport(config)
     timeout = timedelta(seconds=42)
 
-    # Mock _create_proxy to avoid actual connections while verifying timeout
-    mock_transport = AsyncMock()
-    mock_proxy = FastMCP(name="MockProxy")
+    # Mock _create_proxy to avoid real stdio connections and verify timeout
+    mock_create_proxy = AsyncMock(
+        return_value=(AsyncMock(), AsyncMock(), FastMCP(name="MockProxy"))
+    )
 
-    async def fake_create_proxy(name, config, timeout_arg, stack):
-        return (mock_transport, AsyncMock(), mock_proxy)
-
-    mock_create_proxy = AsyncMock(side_effect=fake_create_proxy)
-
-    with patch.object(transport, "_create_proxy", mock_create_proxy):
-        # Mock connect_session on FastMCPTransport to avoid actual connection
-        with patch(
+    with (
+        patch.object(transport, "_create_proxy", mock_create_proxy),
+        patch(
             "fastmcp.client.transports.FastMCPTransport.connect_session"
-        ) as mock_connect:
-            mock_session = AsyncMock()
-            mock_connect.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_connect.return_value.__aexit__ = AsyncMock(return_value=None)
+        ) as mock_connect,
+    ):
+        mock_session = AsyncMock()
+        mock_connect.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_connect.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            async with transport.connect_session(read_timeout_seconds=timeout):
-                pass
+        async with transport.connect_session(read_timeout_seconds=timeout):
+            pass
 
-        # Verify _create_proxy was called with the timeout for each server
-        assert mock_create_proxy.call_count == 2
-        for call in mock_create_proxy.call_args_list:
-            # Args: (name, config, timeout, stack)
-            call_timeout = call[0][2]
-            assert call_timeout == timeout, (
-                f"Expected timeout {timeout}, got {call_timeout}"
-            )
+    # Verify _create_proxy was called with the timeout for each server
+    assert mock_create_proxy.call_count == 2
+    for call in mock_create_proxy.call_args_list:
+        # Third positional arg is timeout
+        call_timeout = call[0][2] if len(call[0]) > 2 else call.kwargs.get("timeout")
+        assert call_timeout == timeout, (
+            f"Expected timeout {timeout}, got {call_timeout}"
+        )
 
 
 async def test_multi_server_session_persistence(tmp_path: Path):
