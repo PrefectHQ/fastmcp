@@ -767,6 +767,8 @@ class TestRunModuleCommand:
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "uv"
         assert cmd[1] == "run"
+        # Should use bare "python" (not sys.executable) so uv resolves the interpreter
+        assert cmd[2] == "python"
         assert "-m" in cmd
         assert "my_package" in cmd
 
