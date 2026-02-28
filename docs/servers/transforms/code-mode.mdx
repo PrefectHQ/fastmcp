@@ -138,6 +138,30 @@ mcp = FastMCP(
 )
 ```
 
+### Resource Limits
+
+The default `MontySandboxProvider` can enforce execution limits on sandboxed code — timeouts, memory caps, recursion depth, and more. Without limits, LLM-generated scripts can run indefinitely.
+
+```python
+from fastmcp.experimental.transforms import CodeMode, MontySandboxProvider
+
+mcp.add_transform(CodeMode(
+    sandbox_provider=MontySandboxProvider(
+        limits={"max_duration_secs": 10, "max_memory": 50_000_000},
+    ),
+))
+```
+
+All keys are optional — omit any to leave that dimension uncapped:
+
+| Key | Type | Description |
+|---|---|---|
+| `max_duration_secs` | `float` | Maximum wall-clock execution time |
+| `max_memory` | `int` | Memory ceiling in bytes |
+| `max_allocations` | `int` | Cap on total object allocations |
+| `max_recursion_depth` | `int` | Maximum recursion depth |
+| `gc_interval` | `int` | Garbage collection frequency |
+
 ### Custom Sandbox Providers
 
 The default `MontySandboxProvider` uses [pydantic-monty](https://github.com/pydantic/pydantic-monty) for sandboxed execution. You can replace it with any object implementing the `SandboxProvider` protocol:
