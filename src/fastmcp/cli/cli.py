@@ -261,7 +261,11 @@ async def inspector(
             logger.error("No configuration available")
             sys.exit(1)
         assert config is not None  # For type checker
-        await config.source.load_server()
+
+        # Skip server-object validation in module mode — the module
+        # manages its own startup and may not expose an importable server.
+        if not module:
+            await config.source.load_server()
 
         env_vars = {}
         if ui_port:
