@@ -1,6 +1,5 @@
 from typing import cast
 
-import pytest
 from mcp.types import TextContent
 
 from fastmcp import Client, Context, FastMCP

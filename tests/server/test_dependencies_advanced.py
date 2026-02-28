@@ -325,7 +325,6 @@ class TestVendoredDI:
         """Test that Depends can be imported from fastmcp.dependencies."""
         # This tests the import path, not the actual fallback behavior
         # since docket is always installed in dev
-        from fastmcp.dependencies import Depends
 
         def get_config() -> dict:
             return {"key": "value"}

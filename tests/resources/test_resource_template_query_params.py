@@ -1,13 +1,7 @@
-import functools
-from urllib.parse import quote
 
 import pytest
-from pydantic import BaseModel
 
-from fastmcp import Context, FastMCP
 from fastmcp.resources import ResourceTemplate
-from fastmcp.resources.function_resource import FunctionResource
-from fastmcp.resources.template import match_uri_template
 
 
 class TestQueryParameterExtraction:

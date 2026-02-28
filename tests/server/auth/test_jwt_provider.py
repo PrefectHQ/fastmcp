@@ -2,12 +2,10 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import patch
 
-import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
-from fastmcp import Client, FastMCP
-from fastmcp.client.auth.bearer import BearerAuth
+from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import JWKData, JWKSData, JWTVerifier, RSAKeyPair
 from fastmcp.utilities.tests import run_server_async
 

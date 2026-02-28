@@ -6,7 +6,6 @@ import mcp.types
 import pytest
 
 from fastmcp import Client, FastMCP
-from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult

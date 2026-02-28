@@ -4,7 +4,7 @@ from typing import Any, Literal, cast
 
 import pytest
 from mcp.types import ElicitRequestFormParams, ElicitRequestParams
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing_extensions import TypedDict
 
 from fastmcp import Context, FastMCP
@@ -15,7 +15,6 @@ from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
     DeclinedElicitation,
-    get_elicitation_schema,
     validate_elicitation_json_schema,
 )
 from fastmcp.utilities.types import TypeAdapter

@@ -7,7 +7,6 @@ import pytest
 from httpx import Response
 from pydantic import AnyHttpUrl
 
-from fastmcp.server.auth.oauth_proxy.models import UpstreamTokenSet
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration, OIDCProxy
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier

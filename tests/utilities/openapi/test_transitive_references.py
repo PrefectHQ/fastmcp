@@ -1,8 +1,6 @@
 """Comprehensive tests for transitive and nested reference handling (Issue #1372)."""
 
-import httpx
 
-from fastmcp import FastMCP
 from fastmcp.utilities.openapi.models import (
     HTTPRoute,
     ParameterInfo,
@@ -12,7 +10,6 @@ from fastmcp.utilities.openapi.models import (
 from fastmcp.utilities.openapi.parser import parse_openapi_to_http_routes
 from fastmcp.utilities.openapi.schemas import (
     _combine_schemas_and_map_params,
-    _replace_ref_with_defs,
     extract_output_schema_from_responses,
 )
 

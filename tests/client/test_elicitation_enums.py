@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
+
 import pytest
 from pydantic import BaseModel, Field
 
