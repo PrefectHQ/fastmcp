@@ -695,3 +695,118 @@ class TestReloadFunctionality:
         }
         for ext in expected:
             assert ext in WATCHED_EXTENSIONS, f"Expected {ext} in WATCHED_EXTENSIONS"
+
+
+class TestRunModuleCommand:
+    """Test run_module_command functionality."""
+
+    def test_runs_python_m_module(self):
+        """Test that run_module_command invokes python -m <module>."""
+        from unittest.mock import MagicMock, patch
+
+        from fastmcp.cli.run import run_module_command
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch(
+                "fastmcp.cli.run.subprocess.run", return_value=mock_result
+            ) as mock_run,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            run_module_command("my_package")
+
+        assert exc_info.value.code == 0
+        call_args = mock_run.call_args
+        cmd = call_args[0][0]
+        assert "-m" in cmd
+        assert "my_package" in cmd
+
+    def test_forwards_extra_args(self):
+        """Test that extra arguments are forwarded after the module name."""
+        from unittest.mock import MagicMock, patch
+
+        from fastmcp.cli.run import run_module_command
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch(
+                "fastmcp.cli.run.subprocess.run", return_value=mock_result
+            ) as mock_run,
+            pytest.raises(SystemExit),
+        ):
+            run_module_command("my_package", extra_args=["--host", "0.0.0.0"])
+
+        cmd = mock_run.call_args[0][0]
+        assert "--host" in cmd
+        assert "0.0.0.0" in cmd
+
+    def test_uses_env_command_builder(self):
+        """Test that env_command_builder wraps the command."""
+        from unittest.mock import MagicMock, patch
+
+        from fastmcp.cli.run import run_module_command
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        def fake_builder(cmd: list[str]) -> list[str]:
+            return ["uv", "run", *cmd]
+
+        with (
+            patch(
+                "fastmcp.cli.run.subprocess.run", return_value=mock_result
+            ) as mock_run,
+            pytest.raises(SystemExit),
+        ):
+            run_module_command("my_package", env_command_builder=fake_builder)
+
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "uv"
+        assert cmd[1] == "run"
+        assert "-m" in cmd
+        assert "my_package" in cmd
+
+    def test_exits_with_subprocess_error_code(self):
+        """Test that non-zero exit codes from the module are propagated."""
+        import subprocess
+        from unittest.mock import patch
+
+        from fastmcp.cli.run import run_module_command
+
+        with (
+            patch(
+                "fastmcp.cli.run.subprocess.run",
+                side_effect=subprocess.CalledProcessError(42, ["python", "-m", "bad"]),
+            ),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            run_module_command("bad")
+
+        assert exc_info.value.code == 42
+
+    def test_no_env_builder_runs_plain_python(self):
+        """Test that without env_command_builder, plain python is used."""
+        import sys
+        from unittest.mock import MagicMock, patch
+
+        from fastmcp.cli.run import run_module_command
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch(
+                "fastmcp.cli.run.subprocess.run", return_value=mock_result
+            ) as mock_run,
+            pytest.raises(SystemExit),
+        ):
+            run_module_command("my_module", env_command_builder=None)
+
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == sys.executable
+        assert cmd[1] == "-m"
+        assert cmd[2] == "my_module"

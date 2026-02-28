@@ -6,6 +6,7 @@ import json
 import os
 import re
 import signal
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Literal
@@ -253,6 +254,41 @@ async def run_command(
     except Exception as e:
         logger.error(f"Failed to run server: {e}")
         sys.exit(1)
+
+
+def run_module_command(
+    module_name: str,
+    *,
+    env_command_builder: Any | None = None,
+    extra_args: list[str] | None = None,
+) -> None:
+    """Run a Python module directly using ``python -m <module>``.
+
+    When ``-m`` is used, the module manages its own server startup.
+    No server-object discovery or transport overrides are applied.
+
+    Args:
+        module_name: Dotted module name (e.g. ``my_package``).
+        env_command_builder: An optional callable that wraps a command list
+            with environment setup (e.g. ``UVEnvironment.build_command``).
+        extra_args: Extra arguments forwarded after the module name.
+    """
+    cmd: list[str] = [sys.executable, "-m", module_name]
+    if extra_args:
+        cmd.extend(extra_args)
+
+    # Wrap with environment (e.g. uv run) if configured
+    if env_command_builder is not None:
+        cmd = env_command_builder(cmd)
+
+    logger.debug(f"Running module: {' '.join(cmd)}")
+
+    try:
+        process = subprocess.run(cmd, check=True)
+        sys.exit(process.returncode)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Module {module_name} exited with code {e.returncode}")
+        sys.exit(e.returncode)
 
 
 async def run_v1_server_async(
