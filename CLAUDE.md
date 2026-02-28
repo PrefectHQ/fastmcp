@@ -2,7 +2,7 @@
 
 > **Audience**: LLM-driven engineering agents and human developers
 
-> **Note**: `CLAUDE.md` is a symlink to this file. Edit `AGENTS.md` directly.
+> **Note**: `AGENTS.md` is a symlink to this file. Edit `CLAUDE.md` directly.
 
 FastMCP is a comprehensive Python framework (Python ≥3.10) for building Model Context Protocol (MCP) servers and clients. This is the actively maintained v2.0 providing a complete toolkit for the MCP ecosystem.
 
@@ -106,6 +106,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 ### Documentation Guidelines
 
 - **Code Examples:** Explain before showing code, make blocks fully runnable (include imports)
+- **Code Formatting:** Keep code blocks visually clean — avoid deeply nested function calls. Extract intermediate values into named variables rather than inlining everything into one expression. Code in docs is read more than it's run; optimize for scannability.
 - **Structure:** Headers form navigation guide, logical H2/H3 hierarchy
 - **Content:** User-focused sections, motivate features (why) before mechanics (how)
 - **Style:** Prose over code comments for important information
