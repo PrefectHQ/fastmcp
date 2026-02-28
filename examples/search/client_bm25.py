@@ -9,30 +9,55 @@ Run with:
 
 import asyncio
 import json
+from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 
 from fastmcp.client import Client
 
 console = Console()
 
 
-def _get_text(result) -> str:
-    """Extract text content from a CallToolResult."""
+def _get_result(result) -> Any:
+    """Extract the value from a CallToolResult (structured or text)."""
+    if result.structured_content is not None:
+        data = result.structured_content
+        if isinstance(data, dict) and set(data) == {"result"}:
+            return data["result"]
+        return data
     return result.content[0].text
 
 
-def _tool_table(tools: list[dict], *, ranked: bool = False) -> Table:
+def _format_params(tool: dict) -> str:
+    """Format inputSchema properties as a compact signature."""
+    schema = tool.get("inputSchema", {})
+    props = schema.get("properties", {})
+    if not props:
+        return "()"
+    parts = []
+    for name, info in props.items():
+        typ = info.get("type", "")
+        parts.append(f"{name}: {typ}" if typ else name)
+    return f"({', '.join(parts)})"
+
+
+def _tool_table(
+    tools: list[dict], *, ranked: bool = False, show_params: bool = False
+) -> Table:
     table = Table(show_header=True, show_edge=False, pad_edge=False, expand=True)
     if ranked:
         table.add_column("#", style="dim", width=3, justify="right")
     table.add_column("Tool", style="cyan", no_wrap=True)
+    if show_params:
+        table.add_column("Parameters", style="dim", no_wrap=True)
     table.add_column("Description", style="dim")
     for i, tool in enumerate(tools, 1):
-        row = [tool["name"], tool.get("description", "")]
+        row = [tool["name"]]
+        if show_params:
+            row.append(_format_params(tool))
+        row.append(tool.get("description", ""))
         if ranked:
             row.insert(0, str(i))
         table.add_row(*row)
@@ -45,35 +70,66 @@ async def main():
         console.rule("[bold]BM25 Search Transform[/bold]")
         console.print()
 
-        # list_files is pinned via always_visible
+        # Step 1: list_tools shows only synthetic tools + pinned tools
+        console.print(
+            "The server has 8 tools. BM25SearchTransform replaces them with "
+            "just [bold]search_tools[/bold] and [bold]call_tool[/bold]. "
+            "[bold]list_files[/bold] stays visible via [dim]always_visible[/dim]:"
+        )
+        console.print()
         tools = await client.list_tools()
         visible = [{"name": t.name, "description": t.description} for t in tools]
         console.print(
             Panel(
                 _tool_table(visible),
                 title="[bold]list_tools()[/bold]",
-                subtitle="[dim]list_files pinned via always_visible[/dim]",
+                title_align="left",
                 border_style="blue",
             )
         )
         console.print()
 
-        # Natural language searches — BM25 ranks by relevance
-        queries = ["work with numbers", "manipulate text strings", "file operations"]
-        for query in queries:
-            result = await client.call_tool("search_tools", {"query": query})
-            found = json.loads(_get_text(result))
-            console.print(
-                Panel(
-                    _tool_table(found, ranked=True),
-                    title=f'[bold]search_tools[/bold][dim](query="{query}")[/dim]',
-                    subtitle=f"[dim]{len(found)} result{'s' if len(found) != 1 else ''}[/dim]",
-                    border_style="green",
-                )
+        # Step 2: natural language search discovers tools by relevance
+        console.print(
+            "The LLM uses [bold]search_tools[/bold] with natural language "
+            "to discover tools ranked by relevance:"
+        )
+        console.print()
+        result = await client.call_tool("search_tools", {"query": "work with numbers"})
+        found = _get_result(result)
+        if isinstance(found, str):
+            found = json.loads(found)
+        console.print(
+            Panel(
+                _tool_table(found, ranked=True, show_params=True),
+                title='[bold]search_tools[/bold]  [dim]query="work with numbers"[/dim]',
+                title_align="left",
+                border_style="green",
             )
-            console.print()
+        )
+        console.print()
 
-        # Call a discovered tool
+        result = await client.call_tool(
+            "search_tools", {"query": "manipulate text strings"}
+        )
+        found = _get_result(result)
+        if isinstance(found, str):
+            found = json.loads(found)
+        console.print(
+            Panel(
+                _tool_table(found, ranked=True, show_params=True),
+                title='[bold]search_tools[/bold]  [dim]query="manipulate text strings"[/dim]',
+                title_align="left",
+                border_style="green",
+            )
+        )
+        console.print()
+
+        # Step 3: call a discovered tool
+        console.print(
+            "Then the LLM calls a discovered tool through [bold]call_tool[/bold]:"
+        )
+        console.print()
         result = await client.call_tool(
             "call_tool",
             {
@@ -81,11 +137,14 @@ async def main():
                 "arguments": {"text": "BM25 search makes tool discovery easy"},
             },
         )
-        call_label = Text.assemble(
-            ("call_tool", "bold"),
-            ('(word_count, text="BM25 search makes tool discovery easy")', "dim"),
+        console.print(
+            Panel(
+                f'call_tool(name="word_count", arguments={{"text": "BM25 search makes tool discovery easy"}})\n→ [bold green]{_get_result(result)}[/bold green]',
+                title="[bold]call_tool()[/bold]",
+                title_align="left",
+                border_style="magenta",
+            )
         )
-        console.print(call_label, "→", f"[bold green]{_get_text(result)}[/bold green]")
         console.print()
 
 

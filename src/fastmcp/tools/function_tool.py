@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
     Literal,
     Protocol,
@@ -20,6 +21,7 @@ import anyio
 import mcp.types
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, Icon, ToolAnnotations, ToolExecution
+from pydantic import Field
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
@@ -84,6 +86,7 @@ class ToolMeta:
 
 class FunctionTool(Tool):
     fn: SkipJsonSchema[Callable[..., Any]]
+    return_type: Annotated[SkipJsonSchema[Any], Field(exclude=True)] = None
 
     def to_mcp_tool(
         self,
@@ -230,6 +233,7 @@ class FunctionTool(Tool):
 
         return cls(
             fn=parsed_fn.fn,
+            return_type=parsed_fn.return_type,
             name=metadata.name or parsed_fn.name,
             version=str(metadata.version) if metadata.version is not None else None,
             title=metadata.title,

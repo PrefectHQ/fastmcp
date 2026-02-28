@@ -335,7 +335,7 @@ async def test_code_mode_execute_non_text_content_stringified() -> None:
 async def test_monty_provider_raises_informative_error_when_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    provider = MontySandboxProvider(install_hint="fastmcp[code-mode]")
+    provider = MontySandboxProvider()
     real_import_module = importlib.import_module
 
     def _fake_import_module(name: str, package: str | None = None):
@@ -444,6 +444,21 @@ async def test_code_mode_sandbox_error_surfaces_as_tool_error() -> None:
 
     with pytest.raises(ToolError):
         await _run_tool(mcp, "execute", {"code": "raise ValueError('boom')"})
+
+
+async def test_monty_provider_forwards_limits() -> None:
+    """MontySandboxProvider passes limits through to pydantic-monty."""
+    provider = MontySandboxProvider(limits={"max_duration_secs": 0.1})
+
+    with pytest.raises(Exception, match="time limit exceeded"):
+        await provider.run("x = 0\nfor _ in range(10**9):\n    x += 1")
+
+
+async def test_monty_provider_no_limits_by_default() -> None:
+    """Without limits, a simple script completes normally."""
+    provider = MontySandboxProvider()
+    result = await provider.run("return 1 + 2")
+    assert result == 3
 
 
 def test_code_mode_rejects_identical_tool_names() -> None:

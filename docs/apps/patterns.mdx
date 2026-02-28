@@ -1,0 +1,479 @@
+---
+title: Patterns
+sidebarTitle: Patterns
+description: Charts, tables, forms, and other common tool UIs.
+icon: grid-2-plus
+tag: SOON
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.1.0" />
+
+The most common use of Prefab is giving your tools a visual representation — a chart instead of raw numbers, a sortable table instead of a text dump, a status dashboard instead of a list of booleans. Each pattern below is a complete, copy-pasteable tool.
+
+## Charts
+
+Prefab includes [bar, line, area, pie, radar, and radial charts](https://prefab.prefect.io/docs/components/charts). They all render client-side with tooltips, legends, and responsive sizing.
+
+### Bar Chart
+
+```python
+from prefab_ui.components import Column, Heading, BarChart, ChartSeries
+from prefab_ui.app import PrefabApp
+from fastmcp import FastMCP
+
+mcp = FastMCP("Charts")
+
+
+@mcp.tool(app=True)
+def quarterly_revenue(year: int) -> PrefabApp:
+    """Show quarterly revenue as a bar chart."""
+    data = [
+        {"quarter": "Q1", "revenue": 42000, "costs": 28000},
+        {"quarter": "Q2", "revenue": 51000, "costs": 31000},
+        {"quarter": "Q3", "revenue": 47000, "costs": 29000},
+        {"quarter": "Q4", "revenue": 63000, "costs": 35000},
+    ]
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading(f"{year} Revenue vs Costs")
+        BarChart(
+            data=data,
+            series=[
+                ChartSeries(data_key="revenue", label="Revenue"),
+                ChartSeries(data_key="costs", label="Costs"),
+            ],
+            x_axis="quarter",
+            show_legend=True,
+        )
+
+    return PrefabApp(view=view)
+```
+
+Multiple `ChartSeries` entries plot different data keys. Add `stacked=True` to stack bars, or `horizontal=True` to flip the axes.
+
+### Area Chart
+
+`LineChart` and `AreaChart` share the same API as `BarChart`, with `curve` for interpolation (`"linear"`, `"smooth"`, `"step"`) and `show_dots` for data points:
+
+```python
+from prefab_ui.components import Column, Heading, AreaChart, ChartSeries
+from prefab_ui.app import PrefabApp
+from fastmcp import FastMCP
+
+mcp = FastMCP("Charts")
+
+
+@mcp.tool(app=True)
+def usage_trend() -> PrefabApp:
+    """Show API usage over time."""
+    data = [
+        {"date": "Feb 1", "requests": 1200},
+        {"date": "Feb 2", "requests": 1350},
+        {"date": "Feb 3", "requests": 980},
+        {"date": "Feb 4", "requests": 1500},
+        {"date": "Feb 5", "requests": 1420},
+    ]
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("API Usage")
+        AreaChart(
+            data=data,
+            series=[ChartSeries(data_key="requests", label="Requests")],
+            x_axis="date",
+            curve="smooth",
+            height=250,
+        )
+
+    return PrefabApp(view=view)
+```
+
+### Pie and Donut Charts
+
+`PieChart` uses `data_key` (the numeric value) and `name_key` (the label) instead of series. Set `inner_radius` for a donut:
+
+```python
+from prefab_ui.components import Column, Heading, PieChart
+from prefab_ui.app import PrefabApp
+from fastmcp import FastMCP
+
+mcp = FastMCP("Charts")
+
+
+@mcp.tool(app=True)
+def ticket_breakdown() -> PrefabApp:
+    """Show open tickets by category."""
+    data = [
+        {"category": "Bug", "count": 23},
+        {"category": "Feature", "count": 15},
+        {"category": "Docs", "count": 8},
+        {"category": "Infra", "count": 12},
+    ]
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Open Tickets")
+        PieChart(
+            data=data,
+            data_key="count",
+            name_key="category",
+            show_legend=True,
+            inner_radius=60,
+        )
+
+    return PrefabApp(view=view)
+```
+
+## Data Tables
+
+[DataTable](https://prefab.prefect.io/docs/components/data-display/data-table) provides sortable columns, full-text search, and pagination — all running client-side in the browser.
+
+```python
+from prefab_ui.components import Column, Heading, DataTable, DataTableColumn
+from prefab_ui.app import PrefabApp
+from fastmcp import FastMCP
+
+mcp = FastMCP("Directory")
+
+
+@mcp.tool(app=True)
+def employee_directory() -> PrefabApp:
+    """Show a searchable, sortable employee directory."""
+    employees = [
+        {"name": "Alice Chen", "department": "Engineering", "role": "Staff Engineer", "location": "SF"},
+        {"name": "Bob Martinez", "department": "Design", "role": "Lead Designer", "location": "NYC"},
+        {"name": "Carol Johnson", "department": "Engineering", "role": "Senior Engineer", "location": "London"},
+        {"name": "David Kim", "department": "Product", "role": "Product Manager", "location": "SF"},
+        {"name": "Eva Müller", "department": "Engineering", "role": "Engineer", "location": "Berlin"},
+    ]
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Employee Directory")
+        DataTable(
+            columns=[
+                DataTableColumn(key="name", header="Name", sortable=True),
+                DataTableColumn(key="department", header="Department", sortable=True),
+                DataTableColumn(key="role", header="Role"),
+                DataTableColumn(key="location", header="Office", sortable=True),
+            ],
+            rows=employees,
+            searchable=True,
+            paginated=True,
+            page_size=15,
+        )
+
+    return PrefabApp(view=view)
+```
+
+## Forms
+
+A form collects input, but it needs somewhere to send that input. The [`CallTool`](https://prefab.prefect.io/docs/concepts/actions) action connects a form to a tool on your MCP server — so you need two tools: one that renders the form, and one that handles the submission.
+
+```python
+from prefab_ui.components import (
+    Column, Heading, Row, Muted, Badge, Input, Select,
+    Textarea, Button, Form, ForEach, Separator,
+)
+from prefab_ui.actions import ShowToast
+from prefab_ui.actions.mcp import CallTool
+from prefab_ui.app import PrefabApp
+from fastmcp import FastMCP
+
+mcp = FastMCP("Contacts")
+
+contacts_db: list[dict] = [
+    {"name": "Zaphod Beeblebrox", "email": "zaphod@galaxy.gov", "category": "Partner"},
+]
+
+
+@mcp.tool(app=True)
+def contact_form() -> PrefabApp:
+    """Show a contact list with a form to add new contacts."""
+    with Column(gap=6, css_class="p-6") as view:
+        Heading("Contacts")
+
+        with ForEach("contacts"):
+            with Row(gap=2, align="center"):
+                Muted("{{ name }}")
+                Muted("{{ email }}")
+                Badge("{{ category }}")
+
+        Separator()
+
+        with Form(
+            on_submit=CallTool(
+                "save_contact",
+                result_key="contacts",
+                on_success=ShowToast("Contact saved!", variant="success"),
+                on_error=ShowToast("{{ $error }}", variant="error"),
+            )
+        ):
+            Input(name="name", label="Full Name", required=True)
+            Input(name="email", label="Email", input_type="email", required=True)
+            Select(
+                name="category",
+                label="Category",
+                options=["Customer", "Vendor", "Partner", "Other"],
+            )
+            Textarea(name="notes", label="Notes", placeholder="Optional notes...")
+            Button("Save Contact")
+
+    return PrefabApp(view=view, state={"contacts": list(contacts_db)})
+
+
+@mcp.tool
+def save_contact(
+    name: str,
+    email: str,
+    category: str = "Other",
+    notes: str = "",
+) -> list[dict]:
+    """Save a new contact and return the updated list."""
+    contacts_db.append({"name": name, "email": email, "category": category, "notes": notes})
+    return list(contacts_db)
+```
+
+When the user submits the form, the renderer calls `save_contact` on the server with all named input values as arguments. Because `result_key="contacts"` is set, the returned list replaces the `contacts` state — and the `ForEach` re-renders with the new data automatically.
+
+The `save_contact` tool is a regular MCP tool. The LLM can also call it directly in conversation. Your UI actions and your conversational tools are the same thing.
+
+### Pydantic Model Forms
+
+For complex forms, `Form.from_model()` generates the entire form from a Pydantic model — inputs, labels, validation, and submit wiring:
+
+```python
+from typing import Literal
+
+from pydantic import BaseModel, Field
+from prefab_ui.components import Column, Heading, Form
+from prefab_ui.actions.mcp import CallTool
+from prefab_ui.app import PrefabApp
+from fastmcp import FastMCP
+
+mcp = FastMCP("Bug Tracker")
+
+
+class BugReport(BaseModel):
+    title: str = Field(title="Bug Title")
+    severity: Literal["low", "medium", "high", "critical"] = Field(
+        title="Severity", default="medium"
+    )
+    description: str = Field(title="Description")
+    steps_to_reproduce: str = Field(title="Steps to Reproduce")
+
+
+@mcp.tool(app=True)
+def report_bug() -> PrefabApp:
+    """Show a bug report form."""
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Report a Bug")
+        Form.from_model(BugReport, on_submit=CallTool("create_bug_report"))
+
+    return PrefabApp(view=view)
+
+
+@mcp.tool
+def create_bug_report(data: dict) -> str:
+    """Create a bug report from the form submission."""
+    report = BugReport(**data)
+    # save to database...
+    return f"Created bug report: {report.title}"
+```
+
+`str` fields become text inputs, `Literal` becomes a select, `bool` becomes a checkbox. The `on_submit` CallTool receives all field values under a `data` key.
+
+## Status Displays
+
+Cards, badges, progress bars, and grids combine naturally for dashboards. See the [Prefab layout](https://prefab.prefect.io/docs/concepts/composition) and [container](https://prefab.prefect.io/docs/components/containers) docs for the full set of layout and display components.
+
+```python
+from prefab_ui.components import (
+    Column, Row, Grid, Heading, Text, Muted, Badge,
+    Card, CardContent, Progress, Separator,
+)
+from prefab_ui.app import PrefabApp
+from fastmcp import FastMCP
+
+mcp = FastMCP("Monitoring")
+
+
+@mcp.tool(app=True)
+def system_status() -> PrefabApp:
+    """Show current system health."""
+    services = [
+        {"name": "API Gateway", "status": "healthy", "ok": True, "latency_ms": 12, "uptime_pct": 99.9},
+        {"name": "Database", "status": "healthy", "ok": True, "latency_ms": 3, "uptime_pct": 99.99},
+        {"name": "Cache", "status": "degraded", "ok": False, "latency_ms": 45, "uptime_pct": 98.2},
+        {"name": "Queue", "status": "healthy", "ok": True, "latency_ms": 8, "uptime_pct": 99.8},
+    ]
+    all_ok = all(s["ok"] for s in services)
+
+    with Column(gap=4, css_class="p-6") as view:
+        with Row(gap=2, align="center"):
+            Heading("System Status")
+            Badge(
+                "All Healthy" if all_ok else "Degraded",
+                variant="success" if all_ok else "destructive",
+            )
+
+        Separator()
+
+        with Grid(columns=2, gap=4):
+            for svc in services:
+                with Card():
+                    with CardContent():
+                        with Row(gap=2, align="center"):
+                            Text(svc["name"], css_class="font-medium")
+                            Badge(
+                                svc["status"],
+                                variant="success" if svc["ok"] else "destructive",
+                            )
+                        Muted(f"Response: {svc['latency_ms']}ms")
+                        Progress(value=svc["uptime_pct"])
+
+    return PrefabApp(view=view)
+```
+
+## Conditional Content
+
+[`If`, `Elif`, and `Else`](https://prefab.prefect.io/docs/concepts/composition#conditional-rendering) show or hide content based on state. Changes are instant — no server round-trip.
+
+```python
+from prefab_ui.components import Column, Heading, Switch, Separator, Alert, If
+from prefab_ui.app import PrefabApp
+from fastmcp import FastMCP
+
+mcp = FastMCP("Flags")
+
+
+@mcp.tool(app=True)
+def feature_flags() -> PrefabApp:
+    """Toggle feature flags with live preview."""
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Feature Flags")
+
+        Switch(name="dark_mode", label="Dark Mode")
+        Switch(name="beta_features", label="Beta Features")
+
+        Separator()
+
+        with If("{{ dark_mode }}"):
+            Alert(title="Dark mode enabled", description="UI will use dark theme.")
+        with If("{{ beta_features }}"):
+            Alert(
+                title="Beta features active",
+                description="Experimental features are now visible.",
+                variant="warning",
+            )
+
+    return PrefabApp(view=view, state={"dark_mode": False, "beta_features": False})
+```
+
+## Tabs
+
+[Tabs](https://prefab.prefect.io/docs/components/containers/tabs) organize content into switchable views. Switching is client-side — no server round-trip.
+
+```python
+from prefab_ui.components import (
+    Column, Heading, Text, Muted, Badge, Row,
+    DataTable, DataTableColumn, Tabs, Tab, ForEach,
+)
+from prefab_ui.app import PrefabApp
+from fastmcp import FastMCP
+
+mcp = FastMCP("Projects")
+
+
+@mcp.tool(app=True)
+def project_overview(project_id: str) -> PrefabApp:
+    """Show project details organized in tabs."""
+    project = {
+        "name": "FastMCP v3",
+        "description": "Next generation MCP framework with Apps support.",
+        "status": "Active",
+        "created_at": "2025-01-15",
+        "members": [
+            {"name": "Alice Chen", "role": "Lead"},
+            {"name": "Bob Martinez", "role": "Design"},
+        ],
+        "activity": [
+            {"timestamp": "2 hours ago", "message": "Merged PR #342"},
+            {"timestamp": "1 day ago", "message": "Released v3.0.1"},
+        ],
+    }
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading(project["name"])
+
+        with Tabs():
+            with Tab("Overview"):
+                Text(project["description"])
+                with Row(gap=4):
+                    Badge(project["status"])
+                    Muted(f"Created: {project['created_at']}")
+
+            with Tab("Members"):
+                DataTable(
+                    columns=[
+                        DataTableColumn(key="name", header="Name", sortable=True),
+                        DataTableColumn(key="role", header="Role"),
+                    ],
+                    rows=project["members"],
+                )
+
+            with Tab("Activity"):
+                with ForEach("activity"):
+                    with Row(gap=2):
+                        Muted("{{ timestamp }}")
+                        Text("{{ message }}")
+
+    return PrefabApp(view=view, state={"activity": project["activity"]})
+```
+
+## Accordion
+
+[Accordion](https://prefab.prefect.io/docs/components/containers/accordion) collapses sections to save space. `multiple=True` lets users expand several items at once:
+
+```python
+from prefab_ui.components import (
+    Column, Heading, Row, Text, Badge, Progress,
+    Accordion, AccordionItem,
+)
+from prefab_ui.app import PrefabApp
+from fastmcp import FastMCP
+
+mcp = FastMCP("API Monitor")
+
+
+@mcp.tool(app=True)
+def api_health() -> PrefabApp:
+    """Show health details for each API endpoint."""
+    endpoints = [
+        {"path": "/api/users", "status": 200, "healthy": True, "avg_ms": 45, "p99_ms": 120, "uptime_pct": 99.9},
+        {"path": "/api/orders", "status": 200, "healthy": True, "avg_ms": 82, "p99_ms": 250, "uptime_pct": 99.7},
+        {"path": "/api/search", "status": 200, "healthy": True, "avg_ms": 150, "p99_ms": 500, "uptime_pct": 99.5},
+        {"path": "/api/webhooks", "status": 503, "healthy": False, "avg_ms": 2000, "p99_ms": 5000, "uptime_pct": 95.1},
+    ]
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("API Health")
+
+        with Accordion(multiple=True):
+            for ep in endpoints:
+                with AccordionItem(ep["path"]):
+                    with Row(gap=4):
+                        Badge(
+                            f"{ep['status']}",
+                            variant="success" if ep["healthy"] else "destructive",
+                        )
+                        Text(f"Avg: {ep['avg_ms']}ms")
+                        Text(f"P99: {ep['p99_ms']}ms")
+                    Progress(value=ep["uptime_pct"])
+
+    return PrefabApp(view=view)
+```
+
+## Next Steps
+
+- **[Custom HTML Apps](/apps/low-level)** — When you need your own HTML, CSS, and JavaScript
+- **[Prefab UI Docs](https://prefab.prefect.io)** — Components, state, expressions, and actions

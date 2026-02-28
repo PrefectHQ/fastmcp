@@ -1,7 +1,7 @@
 """Example: Client using regex search to discover and call tools.
 
-Demonstrates the workflow: list tools (sees only search_tools + call_tool),
-search for tools matching a regex pattern, then call a discovered tool.
+Regex search lets clients find tools by matching patterns against tool names
+and descriptions. Precise when you know what you're looking for.
 
 Run with:
     uv run python examples/search/client_regex.py
@@ -9,28 +9,58 @@ Run with:
 
 import asyncio
 import json
+from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 
 from fastmcp.client import Client
 
 console = Console()
 
 
-def _get_text(result) -> str:
-    """Extract text content from a CallToolResult."""
+def _get_result(result) -> Any:
+    """Extract the value from a CallToolResult (structured or text)."""
+    if result.structured_content is not None:
+        data = result.structured_content
+        if isinstance(data, dict) and set(data) == {"result"}:
+            return data["result"]
+        return data
     return result.content[0].text
 
 
-def _tool_table(tools: list[dict]) -> Table:
+def _format_params(tool: dict) -> str:
+    """Format inputSchema properties as a compact signature."""
+    schema = tool.get("inputSchema", {})
+    props = schema.get("properties", {})
+    if not props:
+        return "()"
+    parts = []
+    for name, info in props.items():
+        typ = info.get("type", "")
+        parts.append(f"{name}: {typ}" if typ else name)
+    return f"({', '.join(parts)})"
+
+
+def _tool_table(
+    tools: list[dict], *, ranked: bool = False, show_params: bool = False
+) -> Table:
     table = Table(show_header=True, show_edge=False, pad_edge=False, expand=True)
+    if ranked:
+        table.add_column("#", style="dim", width=3, justify="right")
     table.add_column("Tool", style="cyan", no_wrap=True)
+    if show_params:
+        table.add_column("Parameters", style="dim", no_wrap=True)
     table.add_column("Description", style="dim")
-    for tool in tools:
-        table.add_row(tool["name"], tool.get("description", ""))
+    for i, tool in enumerate(tools, 1):
+        row = [tool["name"]]
+        if show_params:
+            row.append(_format_params(tool))
+        row.append(tool.get("description", ""))
+        if ranked:
+            row.insert(0, str(i))
+        table.add_row(*row)
     return table
 
 
@@ -40,64 +70,90 @@ async def main():
         console.rule("[bold]Regex Search Transform[/bold]")
         console.print()
 
-        # Show what the client actually sees
+        # Step 1: list_tools shows only synthetic tools
+        console.print(
+            "The server has 6 tools. RegexSearchTransform replaces them with "
+            "just [bold]search_tools[/bold] and [bold]call_tool[/bold]:"
+        )
+        console.print()
         tools = await client.list_tools()
         visible = [{"name": t.name, "description": t.description} for t in tools]
         console.print(
             Panel(
                 _tool_table(visible),
                 title="[bold]list_tools()[/bold]",
-                subtitle="[dim]real tools are discoverable via search[/dim]",
+                title_align="left",
                 border_style="blue",
             )
         )
         console.print()
 
-        # Search for math tools
+        # Step 2: regex patterns discover tools
+        console.print(
+            "The LLM uses [bold]search_tools[/bold] with regex patterns "
+            "to find tools by name:"
+        )
+        console.print()
         result = await client.call_tool(
             "search_tools", {"pattern": "add|multiply|fibonacci"}
         )
-        found = json.loads(_get_text(result))
+        found = _get_result(result)
+        if isinstance(found, str):
+            found = json.loads(found)
         console.print(
             Panel(
-                _tool_table(found),
-                title='[bold]search_tools[/bold][dim](pattern="add|multiply|fibonacci")[/dim]',
+                _tool_table(found, show_params=True),
+                title='[bold]search_tools[/bold]  [dim]pattern="add|multiply|fibonacci"[/dim]',
+                title_align="left",
                 border_style="green",
             )
         )
         console.print()
 
-        # Search for text tools
         result = await client.call_tool("search_tools", {"pattern": "text|string|word"})
-        found = json.loads(_get_text(result))
+        found = _get_result(result)
+        if isinstance(found, str):
+            found = json.loads(found)
         console.print(
             Panel(
-                _tool_table(found),
-                title='[bold]search_tools[/bold][dim](pattern="text|string|word")[/dim]',
+                _tool_table(found, show_params=True),
+                title='[bold]search_tools[/bold]  [dim]pattern="text|string|word"[/dim]',
+                title_align="left",
                 border_style="green",
             )
         )
         console.print()
 
-        # Call discovered tools via the proxy
+        # Step 3: call discovered tools
+        console.print(
+            "Then the LLM calls discovered tools through [bold]call_tool[/bold]:"
+        )
+        console.print()
         result = await client.call_tool(
             "call_tool", {"name": "add", "arguments": {"a": 17, "b": 25}}
         )
-        call_label = Text.assemble(
-            ("call_tool", "bold"),
-            ("(add, a=17, b=25)", "dim"),
+        console.print(
+            Panel(
+                f'call_tool(name="add", arguments={{"a": 17, "b": 25}})\n→ [bold green]{_get_result(result)}[/bold green]',
+                title="[bold]call_tool()[/bold]",
+                title_align="left",
+                border_style="magenta",
+            )
         )
-        console.print(call_label, "→", f"[bold green]{_get_text(result)}[/bold green]")
+        console.print()
 
         result = await client.call_tool(
             "call_tool",
             {"name": "reverse_string", "arguments": {"text": "hello world"}},
         )
-        call_label = Text.assemble(
-            ("call_tool", "bold"),
-            ('(reverse_string, text="hello world")', "dim"),
+        console.print(
+            Panel(
+                f'call_tool(name="reverse_string", arguments={{"text": "hello world"}})\n→ [bold green]{_get_result(result)}[/bold green]',
+                title="[bold]call_tool()[/bold]",
+                title_align="left",
+                border_style="magenta",
+            )
         )
-        console.print(call_label, "→", f"[bold green]{_get_text(result)}[/bold green]")
         console.print()
 
 
