@@ -175,6 +175,39 @@ class TestProxyClient:
             result = await client.call_tool("sampling", {})
             assert result.data == "I love FastMCP"
 
+    async def test_proxy_client_default_sampling_capabilities_excludes_tools(
+        self, fastmcp_server: FastMCP
+    ):
+        """
+        Test that ProxyClient defaults to SamplingCapability() without the
+        `tools` field, ensuring compatibility with servers that don't support it.
+        See: https://github.com/PrefectHQ/fastmcp/issues/3329
+        """
+        import mcp.types
+
+        client = ProxyClient(fastmcp_server)
+        caps = client._session_kwargs.get("sampling_capabilities")
+        assert caps is not None
+        assert isinstance(caps, mcp.types.SamplingCapability)
+        # Must not include tools — some servers reject unknown fields
+        assert caps.tools is None
+
+    async def test_proxy_client_allows_custom_sampling_capabilities(
+        self, fastmcp_server: FastMCP
+    ):
+        """
+        Test that ProxyClient respects explicit sampling_capabilities.
+        """
+        import mcp.types
+
+        custom_caps = mcp.types.SamplingCapability(
+            tools=mcp.types.SamplingToolsCapability()
+        )
+        client = ProxyClient(fastmcp_server, sampling_capabilities=custom_caps)
+        caps = client._session_kwargs.get("sampling_capabilities")
+        assert caps is not None
+        assert caps.tools is not None
+
     async def test_elicit_request(self, proxy_server: FastMCP):
         """
         Test that the proxy client correctly forwards the `elicit` request.

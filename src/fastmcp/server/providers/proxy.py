@@ -850,6 +850,11 @@ class ProxyClient(Client[ClientTransportT]):
             kwargs["roots"] = default_proxy_roots_handler
         if "sampling_handler" not in kwargs:
             kwargs["sampling_handler"] = default_proxy_sampling_handler
+        if "sampling_capabilities" not in kwargs:
+            # Use plain SamplingCapability without the `tools` field to avoid
+            # schema validation errors on servers that don't support it (e.g.,
+            # Java-based MCP servers). See: https://github.com/PrefectHQ/fastmcp/issues/3329
+            kwargs["sampling_capabilities"] = mcp.types.SamplingCapability()
         if "elicitation_handler" not in kwargs:
             kwargs["elicitation_handler"] = default_proxy_elicitation_handler
         if "log_handler" not in kwargs:
