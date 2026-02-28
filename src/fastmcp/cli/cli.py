@@ -456,7 +456,7 @@ async def run(
     4. MCPConfig file: "mcp.json" - runs as a proxy server for the MCP Servers in the MCPConfig file
     5. FastMCP config: "fastmcp.json" - runs server using FastMCP configuration
     6. No argument: looks for fastmcp.json in current directory
-    7. Module mode: "my_module -m" - runs the module directly via python -m
+    7. Module mode: "-m my_module" - runs the module directly via python -m
 
     Server arguments can be passed after -- :
     fastmcp run server.py -- --config config.json --debug
