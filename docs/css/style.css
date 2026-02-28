@@ -1,3 +1,7 @@
+html:not([data-page-mode="wide"]) #content-area {
+  max-width: 44rem !important;
+}
+
 img.nav-logo {
   max-width: 200px;
 }

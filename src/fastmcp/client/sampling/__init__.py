@@ -1,6 +1,6 @@
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import TypeAlias, TypeVar
+from typing import TypeAlias, TypeVar, cast
 
 import mcp.types
 from mcp import ClientSession, CreateMessageResult
@@ -51,7 +51,7 @@ def create_sampling_callback(
         try:
             result = sampling_handler(params.messages, params, context)
             if inspect.isawaitable(result):
-                result = await result
+                result = cast(SamplingHandlerResult, await result)
 
             if isinstance(result, str):
                 result = CreateMessageResult(

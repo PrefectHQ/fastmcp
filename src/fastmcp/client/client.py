@@ -299,13 +299,10 @@ class Client(
             self._session_kwargs["sampling_callback"] = create_sampling_callback(
                 sampling_handler
             )
-            # Default to tools-enabled capabilities unless explicitly overridden
             self._session_kwargs["sampling_capabilities"] = (
                 sampling_capabilities
                 if sampling_capabilities is not None
-                else mcp.types.SamplingCapability(
-                    tools=mcp.types.SamplingToolsCapability()
-                )
+                else mcp.types.SamplingCapability()
             )
 
         if elicitation_handler is not None:
@@ -367,11 +364,10 @@ class Client(
         self._session_kwargs["sampling_callback"] = create_sampling_callback(
             sampling_callback
         )
-        # Default to tools-enabled capabilities unless explicitly overridden
         self._session_kwargs["sampling_capabilities"] = (
             sampling_capabilities
             if sampling_capabilities is not None
-            else mcp.types.SamplingCapability(tools=mcp.types.SamplingToolsCapability())
+            else mcp.types.SamplingCapability()
         )
 
     def set_elicitation_callback(

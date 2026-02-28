@@ -163,8 +163,10 @@
                       "servers/transforms/namespace",
                       "servers/transforms/tool-transformation",
                       "servers/visibility",
+                      "servers/transforms/tool-search",
                       "servers/transforms/resources-as-tools",
-                      "servers/transforms/prompts-as-tools"
+                      "servers/transforms/prompts-as-tools",
+                      "servers/transforms/code-mode"
                     ]
                   },
                   {
@@ -200,6 +202,8 @@
                 "group": "Apps",
                 "pages": [
                   "apps/overview",
+                  "apps/prefab",
+                  "apps/patterns",
                   "apps/low-level"
                 ]
               },
