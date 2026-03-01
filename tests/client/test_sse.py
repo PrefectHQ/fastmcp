@@ -197,4 +197,4 @@ class TestTimeout:
             transport=SSETransport(sse_server),
             timeout=0.5,
         ) as client:
-            await client.call_tool("sleep", {"seconds": 0.03}, timeout=2)
+            await client.call_tool("sleep", {"seconds": 0.8}, timeout=2)
