@@ -481,8 +481,6 @@ async def run(
             ignored_options.append("--port")
         if path:
             ignored_options.append("--path")
-        if reload:
-            ignored_options.append("--reload")
         if ignored_options:
             logger.warning(
                 f"Options {', '.join(ignored_options)} are ignored in module mode "
@@ -505,6 +503,25 @@ async def run(
             test_cmd = ["test"]
             if env.build_command(test_cmd) != test_cmd:
                 env_builder = env.build_command
+
+        if reload:
+            # Build a fastmcp run command for the reload watcher to restart
+            reload_cmd = ["fastmcp", "run", server_spec, "--module", "--no-reload"]
+            if log_level:
+                reload_cmd.extend(["--log-level", log_level])
+            if no_banner:
+                reload_cmd.append("--no-banner")
+            if env_builder is not None:
+                reload_cmd.append("--skip-env")
+            if server_args:
+                reload_cmd.append("--")
+                reload_cmd.extend(server_args)
+            if env_builder is not None:
+                reload_cmd = env_builder(reload_cmd)
+            await run_module.run_with_reload(
+                reload_cmd, reload_dirs=reload_dir, is_stdio=True
+            )
+            return
 
         run_module.run_module_command(
             server_spec,

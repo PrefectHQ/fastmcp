@@ -8,6 +8,7 @@ import re
 import signal
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -259,7 +260,7 @@ async def run_command(
 def run_module_command(
     module_name: str,
     *,
-    env_command_builder: Any | None = None,
+    env_command_builder: Callable[[list[str]], list[str]] | None = None,
     extra_args: list[str] | None = None,
 ) -> None:
     """Run a Python module directly using ``python -m <module>``.
