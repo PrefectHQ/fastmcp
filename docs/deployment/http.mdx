@@ -823,7 +823,7 @@ Your FastMCP server is now accessible at `https://mcp.example.com/mcp`.
 When deploying FastMCP behind a reverse proxy, keep these points in mind:
 
 - **Disable buffering**: SSE requires `proxy_buffering off` so events reach clients immediately. This is the single most important setting.
-- **Increase timeouts**: The default nginx `proxy_read_timeout` is 60 seconds. Long-running MCP tools will cause the connection to drop. Set timeouts to at least 300 seconds, or higher if your tools run longer.
+- **Increase timeouts**: The default nginx `proxy_read_timeout` is 60 seconds. Long-running MCP tools will cause the connection to drop. Set timeouts to at least 300 seconds, or higher if your tools run longer. For tools that may exceed any timeout, use [SSE Polling](#sse-polling-for-long-running-operations) to gracefully handle proxy disconnections.
 - **Use HTTP/1.1**: Set `proxy_http_version 1.1` to enable keep-alive connections between nginx and your server. This is required for proper SSE support.
 - **Forward headers**: Pass `X-Forwarded-For` and `X-Forwarded-Proto` so your FastMCP server can determine the real client IP and protocol. This is important for logging and for OAuth redirect URLs.
 - **TLS termination**: Let nginx handle TLS certificates (e.g., via Let's Encrypt with Certbot). Your FastMCP server can then run on plain HTTP internally.
