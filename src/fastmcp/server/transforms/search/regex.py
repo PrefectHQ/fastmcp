@@ -8,7 +8,6 @@ from fastmcp.server.context import Context
 from fastmcp.server.transforms.search.base import (
     BaseSearchTransform,
     _extract_searchable_text,
-    _serialize_tools_for_output,
 )
 from fastmcp.tools.tool import Tool
 
@@ -29,14 +28,14 @@ class RegexSearchTransform(BaseSearchTransform):
                 "Regex pattern to match against tool names, descriptions, and parameters",
             ],
             ctx: Context = None,  # type: ignore[assignment]
-        ) -> list[dict[str, Any]]:
+        ) -> str | list[dict[str, Any]]:
             """Search for tools matching a regex pattern.
 
             Returns matching tool definitions in the same format as list_tools.
             """
             hidden = await transform._get_visible_tools(ctx)
             results = await transform._search(hidden, pattern)
-            return _serialize_tools_for_output(results)
+            return await transform._render_results(results)
 
         return Tool.from_function(fn=search_tools, name=self._search_tool_name)
 

@@ -72,6 +72,55 @@ mcp = FastMCP(
 )
 ```
 
+### Search Result Format
+
+By default, `search` returns tool definitions in the same JSON format as `list_tools` — full `inputSchema`, `outputSchema`, and metadata. This is complete, but verbose: each tool definition carries significant structural overhead that the LLM doesn't need just to decide which tool to call next.
+
+`serialize_tools_for_output_markdown` is a built-in alternative that renders the same information as compact markdown. In benchmarks across typical tool catalogs it reduces search result tokens by ~65-70%.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.experimental.transforms import CodeMode
+from fastmcp.server.transforms.search import serialize_tools_for_output_markdown
+
+mcp = FastMCP(
+    "Server",
+    transforms=[CodeMode(search_result_serializer=serialize_tools_for_output_markdown)],
+)
+```
+
+For a tool like `create_document`, the output looks like:
+
+```
+### create_document
+
+Create a new document in the workspace with the given metadata.
+
+**Parameters**
+- `title` (string, required)
+- `content` (string, required)
+- `tags` (string[], required)
+- `author` (string, required)
+- `published` (boolean)
+- `parent_id` (string?)
+```
+
+You can also supply any callable that takes a sequence of tools and returns a string or a list of dicts. Async callables are supported too:
+
+```python
+from fastmcp.server.transforms.search import SearchResultSerializer
+
+def my_serializer(tools) -> str:
+    return "\n".join(f"{t.name}: {t.description}" for t in tools)
+
+mcp = FastMCP(
+    "Server",
+    transforms=[CodeMode(search_result_serializer=my_serializer)],
+)
+```
+
+The default JSON format is unchanged when `search_result_serializer` is not set — this is purely opt-in.
+
 ## Execute
 
 The `execute` meta-tool takes a `code` string containing async Python. Inside the sandbox, one function is available:

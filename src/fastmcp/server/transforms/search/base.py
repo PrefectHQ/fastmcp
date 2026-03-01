@@ -28,7 +28,7 @@ Example::
 """
 
 from abc import abstractmethod
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any
 
 from fastmcp.server.context import Context
@@ -57,11 +57,98 @@ def _extract_searchable_text(tool: Tool) -> str:
     return " ".join(parts)
 
 
-def _serialize_tools_for_output(tools: Sequence[Tool]) -> list[dict[str, Any]]:
+def serialize_tools_for_output_json(tools: Sequence[Tool]) -> list[dict[str, Any]]:
     """Serialize tools to the same dict format as ``list_tools`` output."""
     return [
         tool.to_mcp_tool().model_dump(mode="json", exclude_none=True) for tool in tools
     ]
+
+
+SearchResultSerializer = Callable[[Sequence[Tool]], Any | Awaitable[Any]]
+
+
+async def _invoke_serializer(
+    serializer: SearchResultSerializer, tools: Sequence[Tool]
+) -> Any:
+    """Call a serializer and await the result if it returns a coroutine."""
+    result = serializer(tools)
+    if isinstance(result, Awaitable):
+        return await result
+    return result
+
+
+def _union_type(branches: list[Any]) -> str:
+    branch_types = list(dict.fromkeys(_schema_type(b) for b in branches))
+    if "null" not in branch_types:
+        return " | ".join(branch_types) if branch_types else "any"
+    non_null = [b for b in branch_types if b != "null"]
+    if not non_null:
+        return "null"
+    return f"{' | '.join(non_null)}?"
+
+
+def _schema_type(schema: Any) -> str:
+    # Intentionally heuristic: the goal is a concise readable label, not a
+    # complete type system. Malformed schemas (e.g. {"type": ""}) → "any".
+    if not isinstance(schema, dict):
+        return "any"
+    t = schema.get("type")
+    if isinstance(t, str) and t:
+        if t == "array":
+            return f"{_schema_type(schema.get('items'))}[]"
+        if t == "null":
+            return "null"
+        return t
+    if "$ref" in schema:
+        return "object"
+    if "anyOf" in schema:
+        return _union_type(schema["anyOf"])
+    if "oneOf" in schema:
+        return _union_type(schema["oneOf"])
+    if "allOf" in schema:
+        # allOf = intersection / Pydantic composed model → always an object
+        return "object"
+    return "object" if "properties" in schema else "any"
+
+
+def _schema_section(schema: dict[str, Any] | None, title: str) -> list[str]:
+    lines = [f"**{title}**"]
+    if not isinstance(schema, dict):
+        lines.append("- `value` (any)")
+        return lines
+
+    props = schema.get("properties")
+    raw_required = schema.get("required")
+    req = set(raw_required) if isinstance(raw_required, list) else set()
+    if props is None:
+        # Not a properties-based schema — treat as a single unnamed value.
+        lines.append(f"- `value` ({_schema_type(schema)})")
+        return lines
+    if not props:
+        # Object schema with no properties — zero-argument tool.
+        lines.append("*(no parameters)*")
+        return lines
+
+    for name, field in props.items():
+        required = ", required" if name in req else ""
+        lines.append(f"- `{name}` ({_schema_type(field)}{required})")
+    return lines
+
+
+def serialize_tools_for_output_markdown(tools: Sequence[Tool]) -> str:
+    """Serialize tools to compact markdown, using ~65-70% fewer tokens than JSON."""
+    if not tools:
+        return "No tools matched the query."
+    blocks: list[str] = []
+    for tool in tools:
+        lines = [f"### {tool.name}"]
+        if tool.description:
+            lines.extend(["", tool.description.strip()])
+        lines.extend(["", *_schema_section(tool.parameters, "Parameters")])
+        if tool.output_schema is not None:
+            lines.extend(["", *_schema_section(tool.output_schema, "Returns")])
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
 
 
 class BaseSearchTransform(CatalogTransform):
@@ -94,12 +181,16 @@ class BaseSearchTransform(CatalogTransform):
         always_visible: list[str] | None = None,
         search_tool_name: str = "search_tools",
         call_tool_name: str = "call_tool",
+        search_result_serializer: SearchResultSerializer | None = None,
     ) -> None:
         super().__init__()
         self._max_results = max_results
         self._always_visible = set(always_visible or [])
         self._search_tool_name = search_tool_name
         self._call_tool_name = call_tool_name
+        self._search_result_serializer: SearchResultSerializer = (
+            search_result_serializer or serialize_tools_for_output_json
+        )
 
     # ------------------------------------------------------------------
     # Transform interface
@@ -151,6 +242,13 @@ class BaseSearchTransform(CatalogTransform):
             return await ctx.fastmcp.call_tool(name, arguments)
 
         return Tool.from_function(fn=call_tool, name=self._call_tool_name)
+
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
+
+    async def _render_results(self, tools: Sequence[Tool]) -> Any:
+        return await _invoke_serializer(self._search_result_serializer, tools)
 
     # ------------------------------------------------------------------
     # Catalog access

@@ -13,7 +13,10 @@ from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
 from fastmcp.server.transforms.search.base import (
     BaseSearchTransform,
-    _serialize_tools_for_output,
+    SearchResultSerializer,
+    _invoke_serializer,
+    serialize_tools_for_output_json,
+    serialize_tools_for_output_markdown,
 )
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec
@@ -131,6 +134,7 @@ class CodeMode(CatalogTransform):
         search_tool_name: str = "search",
         execute_tool_name: str = "execute",
         execute_description: str | None = None,
+        search_result_serializer: SearchResultSerializer | None = None,
     ) -> None:
         if search_tool_name == execute_tool_name:
             raise ValueError(
@@ -145,6 +149,9 @@ class CodeMode(CatalogTransform):
         self.sandbox_provider = sandbox_provider or MontySandboxProvider()
         self._cached_search_tool: Tool | None = None
         self._cached_execute_tool: Tool | None = None
+        self._search_result_serializer: SearchResultSerializer | None = (
+            search_result_serializer
+        )
 
         if search_transform is None:
             from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
@@ -205,7 +212,7 @@ class CodeMode(CatalogTransform):
                 "Search query to find available tools",
             ],
             ctx: Context = None,  # type: ignore[assignment]
-        ) -> list[dict[str, Any]]:
+        ) -> str | list[dict[str, Any]]:
             """Search for available tools by query.
 
             Returns matching tool definitions ranked by relevance,
@@ -213,7 +220,11 @@ class CodeMode(CatalogTransform):
             """
             tools = await transform.get_tool_catalog(ctx)
             results = await transform._search_transform._search(tools, query)
-            return _serialize_tools_for_output(results)
+            if transform._search_result_serializer is not None:
+                return await _invoke_serializer(
+                    transform._search_result_serializer, results
+                )
+            return await transform._search_transform._render_results(results)
 
         return Tool.from_function(fn=search, name=self.search_tool_name)
 
@@ -287,4 +298,7 @@ __all__ = [
     "CodeMode",
     "MontySandboxProvider",
     "SandboxProvider",
+    "SearchResultSerializer",
+    "serialize_tools_for_output_json",
+    "serialize_tools_for_output_markdown",
 ]

@@ -9,6 +9,11 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.experimental.transforms import CodeMode, MontySandboxProvider
 from fastmcp.experimental.transforms.code_mode import _ensure_async
+from fastmcp.server.transforms.search.base import (
+    _schema_section,
+    _schema_type,
+    serialize_tools_for_output_markdown,
+)
 from fastmcp.tools.tool import ToolResult
 
 
@@ -469,3 +474,307 @@ def test_code_mode_rejects_identical_tool_names() -> None:
             execute_tool_name="tools",
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
+
+
+# ---------------------------------------------------------------------------
+# _schema_type unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "schema,expected",
+    [
+        ({"type": "string"}, "string"),
+        ({"type": "integer"}, "integer"),
+        ({"type": "boolean"}, "boolean"),
+        ({"type": "null"}, "null"),
+        ({"type": "array", "items": {"type": "string"}}, "string[]"),
+        ({"type": "array", "items": {"type": "integer"}}, "integer[]"),
+        ({"type": "array"}, "any[]"),
+        ({"$ref": "#/$defs/Foo"}, "object"),
+        ({"properties": {"x": {"type": "int"}}}, "object"),
+        ({}, "any"),
+        (None, "any"),
+        ("not a dict", "any"),
+    ],
+)
+def test_schema_type_basic(schema: Any, expected: str) -> None:
+    assert _schema_type(schema) == expected
+
+
+@pytest.mark.parametrize(
+    "schema,expected",
+    [
+        # anyOf: optional field — null stripped, "?" appended
+        ({"anyOf": [{"type": "string"}, {"type": "null"}]}, "string?"),
+        # anyOf: non-nullable union — all branches kept
+        ({"anyOf": [{"type": "string"}, {"type": "integer"}]}, "string | integer"),
+        # anyOf: multiple branches including null
+        (
+            {"anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]},
+            "string | integer?",
+        ),
+        # anyOf: all-null (edge case)
+        ({"anyOf": [{"type": "null"}]}, "null"),
+        # anyOf: empty
+        ({"anyOf": []}, "any"),
+        # oneOf: treated identically to anyOf
+        ({"oneOf": [{"type": "string"}, {"type": "null"}]}, "string?"),
+        ({"oneOf": [{"type": "string"}, {"type": "integer"}]}, "string | integer"),
+        # allOf: always "object" (Pydantic composite / intersection type)
+        ({"allOf": [{"type": "object"}]}, "object"),
+        ({"allOf": [{"$ref": "#/$defs/Foo"}, {"$ref": "#/$defs/Bar"}]}, "object"),
+    ],
+)
+def test_schema_type_unions(schema: Any, expected: str) -> None:
+    assert _schema_type(schema) == expected
+
+
+# ---------------------------------------------------------------------------
+# _schema_section unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "schema,expected_lines",
+    [
+        # None → generic fallback
+        (None, ["**Parameters**", "- `value` (any)"]),
+        # Non-dict → generic fallback
+        ("string", ["**Parameters**", "- `value` (any)"]),
+        # Scalar schema without properties → type label used
+        ({"type": "string"}, ["**Parameters**", "- `value` (string)"]),
+        # Empty properties dict → zero-argument tool
+        (
+            {"type": "object", "properties": {}},
+            ["**Parameters**", "*(no parameters)*"],
+        ),
+    ],
+)
+def test_schema_section_fallbacks(schema: Any, expected_lines: list[str]) -> None:
+    assert _schema_section(schema, "Parameters") == expected_lines
+
+
+def test_schema_section_lists_fields_with_required_marker() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"},
+        },
+        "required": ["name"],
+    }
+    lines = _schema_section(schema, "Parameters")
+    assert lines[0] == "**Parameters**"
+    assert "- `name` (string, required)" in lines
+    assert "- `age` (integer)" in lines
+
+
+# ---------------------------------------------------------------------------
+# serialize_tools_for_output_markdown unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_serialize_tools_for_output_markdown_empty_list() -> None:
+    assert serialize_tools_for_output_markdown([]) == "No tools matched the query."
+
+
+async def test_serialize_tools_for_output_markdown_basic_tool() -> None:
+    mcp = FastMCP("MD Basic")
+
+    @mcp.tool
+    def square(x: int) -> int:
+        """Compute the square of a number."""
+        return x * x
+
+    tools = await mcp.list_tools()
+    result = serialize_tools_for_output_markdown(tools)
+
+    assert "### square" in result
+    assert "Compute the square of a number." in result
+    assert "**Parameters**" in result
+    assert "`x` (integer, required)" in result
+
+
+async def test_serialize_tools_for_output_markdown_omits_output_section_when_no_schema() -> (
+    None
+):
+    """Tools without output_schema should not render a Returns section."""
+    mcp = FastMCP("MD No Output")
+
+    @mcp.tool
+    def ping() -> None:
+        pass
+
+    tools = await mcp.list_tools()
+    result = serialize_tools_for_output_markdown(tools)
+
+    assert "**Returns**" not in result
+
+
+async def test_serialize_tools_for_output_markdown_includes_output_section_when_schema_present() -> (
+    None
+):
+    mcp = FastMCP("MD With Output")
+
+    @mcp.tool
+    def double(x: int) -> int:
+        return x * 2
+
+    tools = await mcp.list_tools()
+    result = serialize_tools_for_output_markdown(tools)
+
+    assert "**Returns**" in result
+
+
+async def test_serialize_tools_for_output_markdown_omits_description_when_absent() -> (
+    None
+):
+    mcp = FastMCP("MD No Desc")
+
+    @mcp.tool
+    def ping() -> None:
+        pass
+
+    tools = await mcp.list_tools()
+    result = serialize_tools_for_output_markdown(tools)
+
+    # Header present, no extra blank description line injected
+    assert "### ping" in result
+
+
+async def test_serialize_tools_for_output_markdown_optional_field_uses_question_mark() -> (
+    None
+):
+    mcp = FastMCP("MD Optional")
+
+    @mcp.tool
+    def greet(name: str, greeting: str | None = None) -> str:
+        return f"{greeting or 'Hello'}, {name}!"
+
+    tools = await mcp.list_tools()
+    result = serialize_tools_for_output_markdown(tools)
+
+    assert "`greeting` (string?)" in result
+
+
+async def test_serialize_tools_for_output_markdown_multiple_tools_separated() -> None:
+    mcp = FastMCP("MD Multi")
+
+    @mcp.tool
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    @mcp.tool
+    def subtract(a: int, b: int) -> int:
+        return a - b
+
+    tools = await mcp.list_tools()
+    result = serialize_tools_for_output_markdown(tools)
+
+    assert "### add" in result
+    assert "### subtract" in result
+    # Tools separated by double newline
+    assert "\n\n" in result
+
+
+# ---------------------------------------------------------------------------
+# CodeMode search_result_serializer integration tests
+# ---------------------------------------------------------------------------
+
+
+def _unwrap_serializer_result(result: ToolResult) -> str:
+    """Extract a string result returned by a custom search serializer.
+
+    Custom serializers returning str are wrapped in {"result": "..."} by the
+    output schema, so we need one extra level of unwrapping compared to
+    _unwrap_result.
+    """
+    data = _unwrap_result(result)
+    if isinstance(data, dict) and "result" in data:
+        return data["result"]
+    assert isinstance(data, str)
+    return data
+
+
+async def test_code_mode_search_supports_custom_serializer() -> None:
+    mcp = FastMCP("CodeMode Custom Serializer")
+
+    @mcp.tool
+    def square(x: int) -> int:
+        return x * x
+
+    mcp.add_transform(
+        CodeMode(
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+            search_result_serializer=lambda tools: "\n".join(t.name for t in tools),
+        )
+    )
+
+    result = await _run_tool(mcp, "search", {"query": "square"})
+    text = _unwrap_serializer_result(result)
+    assert isinstance(text, str)
+    assert "square" in text
+
+
+async def test_code_mode_search_supports_async_custom_serializer() -> None:
+    mcp = FastMCP("CodeMode Async Serializer")
+
+    @mcp.tool
+    def square(x: int) -> int:
+        return x * x
+
+    async def async_serializer(tools: Any) -> str:
+        return ", ".join(t.name for t in tools)
+
+    mcp.add_transform(
+        CodeMode(
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+            search_result_serializer=async_serializer,
+        )
+    )
+
+    result = await _run_tool(mcp, "search", {"query": "square"})
+    text = _unwrap_serializer_result(result)
+    assert isinstance(text, str)
+    assert "square" in text
+
+
+async def test_code_mode_search_markdown_serializer() -> None:
+    mcp = FastMCP("CodeMode Markdown Serializer")
+
+    @mcp.tool
+    def square(x: int) -> int:
+        """Compute the square of a number."""
+        return x * x
+
+    mcp.add_transform(
+        CodeMode(
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+            search_result_serializer=serialize_tools_for_output_markdown,
+        )
+    )
+
+    result = await _run_tool(mcp, "search", {"query": "square"})
+    text = _unwrap_serializer_result(result)
+    assert isinstance(text, str)
+    assert "### square" in text
+    assert "Compute the square of a number." in text
+    assert "**Parameters**" in text
+
+
+async def test_code_mode_search_default_serializer_returns_list() -> None:
+    """Default (no custom serializer) still returns the JSON list format."""
+    mcp = FastMCP("CodeMode Default Serializer")
+
+    @mcp.tool
+    def square(x: int) -> int:
+        """Compute the square of a number."""
+        return x * x
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(mcp, "search", {"query": "square"})
+    tools = _unwrap_search_results(result)
+    assert isinstance(tools, list)
+    assert tools[0]["name"] == "square"

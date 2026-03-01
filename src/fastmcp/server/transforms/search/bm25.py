@@ -9,8 +9,8 @@ from typing import Annotated, Any
 from fastmcp.server.context import Context
 from fastmcp.server.transforms.search.base import (
     BaseSearchTransform,
+    SearchResultSerializer,
     _extract_searchable_text,
-    _serialize_tools_for_output,
 )
 from fastmcp.tools.tool import Tool
 
@@ -97,12 +97,14 @@ class BM25SearchTransform(BaseSearchTransform):
         always_visible: list[str] | None = None,
         search_tool_name: str = "search_tools",
         call_tool_name: str = "call_tool",
+        search_result_serializer: SearchResultSerializer | None = None,
     ) -> None:
         super().__init__(
             max_results=max_results,
             always_visible=always_visible,
             search_tool_name=search_tool_name,
             call_tool_name=call_tool_name,
+            search_result_serializer=search_result_serializer,
         )
         self._index = _BM25Index()
         self._indexed_tools: Sequence[Tool] = ()
@@ -114,7 +116,7 @@ class BM25SearchTransform(BaseSearchTransform):
         async def search_tools(
             query: Annotated[str, "Natural language query to search for tools"],
             ctx: Context = None,  # type: ignore[assignment]
-        ) -> list[dict[str, Any]]:
+        ) -> str | list[dict[str, Any]]:
             """Search for tools using natural language.
 
             Returns matching tool definitions ranked by relevance,
@@ -122,7 +124,7 @@ class BM25SearchTransform(BaseSearchTransform):
             """
             hidden = await transform._get_visible_tools(ctx)
             results = await transform._search(hidden, query)
-            return _serialize_tools_for_output(results)
+            return await transform._render_results(results)
 
         return Tool.from_function(fn=search_tools, name=self._search_tool_name)
 

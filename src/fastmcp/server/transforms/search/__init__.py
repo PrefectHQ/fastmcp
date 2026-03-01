@@ -14,10 +14,18 @@ Example:
     ```
 """
 
+from fastmcp.server.transforms.search.base import (
+    SearchResultSerializer,
+    serialize_tools_for_output_json,
+    serialize_tools_for_output_markdown,
+)
 from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
 from fastmcp.server.transforms.search.regex import RegexSearchTransform
 
 __all__ = [
     "BM25SearchTransform",
     "RegexSearchTransform",
+    "SearchResultSerializer",
+    "serialize_tools_for_output_json",
+    "serialize_tools_for_output_markdown",
 ]
