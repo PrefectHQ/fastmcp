@@ -725,6 +725,132 @@ Both parameters are required for production. Without an explicit signing key, ke
 
 For more details on the token architecture and key management, see [OAuth Proxy Key and Storage Management](/servers/auth/oauth-proxy#key-and-storage-management).
 
+## Reverse Proxy (nginx)
+
+In production, you'll typically run your FastMCP server behind a reverse proxy like nginx. A reverse proxy provides TLS termination, domain-based routing, static file serving, and an additional layer of security between the internet and your application.
+
+### Running FastMCP as a Linux Service
+
+Before configuring nginx, you need your FastMCP server running as a background service. A systemd unit file ensures your server starts automatically and restarts on failure.
+
+Create a file at `/etc/systemd/system/fastmcp.service`:
+
+```ini
+[Unit]
+Description=FastMCP Server
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/fastmcp
+ExecStart=/opt/fastmcp/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+Environment="PATH=/opt/fastmcp/.venv/bin"
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable fastmcp
+sudo systemctl start fastmcp
+```
+
+This assumes your ASGI application is in `/opt/fastmcp/app.py` with a virtual environment at `/opt/fastmcp/.venv`. Adjust paths to match your deployment layout.
+
+### nginx Configuration
+
+FastMCP's Streamable HTTP transport uses Server-Sent Events (SSE) for streaming responses. This requires specific nginx settings to prevent buffering from breaking the event stream.
+
+Create a site configuration at `/etc/nginx/sites-available/fastmcp`:
+
+```nginx
+server {
+    listen 80;
+    server_name mcp.example.com;
+
+    # Redirect HTTP to HTTPS
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name mcp.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/mcp.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mcp.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Required for SSE (Server-Sent Events) streaming
+        proxy_buffering off;
+        proxy_cache off;
+
+        # Allow long-lived connections for streaming responses
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}
+```
+
+Enable the site and reload nginx:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/fastmcp /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Your FastMCP server is now accessible at `https://mcp.example.com/mcp`.
+
+<Warning>
+**SSE buffering is the most common issue.** If clients connect but never receive streaming responses (progress updates, tool results), verify that `proxy_buffering off` is set. Without it, nginx buffers the entire SSE stream and delivers it only when the connection closes, which breaks real-time communication.
+</Warning>
+
+### Key Considerations
+
+When deploying FastMCP behind a reverse proxy, keep these points in mind:
+
+- **Disable buffering**: SSE requires `proxy_buffering off` so events reach clients immediately. This is the single most important setting.
+- **Increase timeouts**: The default nginx `proxy_read_timeout` is 60 seconds. Long-running MCP tools will cause the connection to drop. Set timeouts to at least 300 seconds, or higher if your tools run longer.
+- **Use HTTP/1.1**: Set `proxy_http_version 1.1` to enable keep-alive connections between nginx and your server. This is required for proper SSE support.
+- **Forward headers**: Pass `X-Forwarded-For` and `X-Forwarded-Proto` so your FastMCP server can determine the real client IP and protocol. This is important for logging and for OAuth redirect URLs.
+- **TLS termination**: Let nginx handle TLS certificates (e.g., via Let's Encrypt with Certbot). Your FastMCP server can then run on plain HTTP internally.
+
+### Mounting Under a Path Prefix
+
+If you want your MCP server available at a subpath like `https://example.com/api/mcp` instead of at the root domain, adjust the nginx `location` block:
+
+```nginx
+location /api/ {
+    proxy_pass http://127.0.0.1:8000/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Required for SSE streaming
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+}
+```
+
+Note the trailing `/` on both `location /api/` and `proxy_pass http://127.0.0.1:8000/` — this ensures nginx strips the `/api` prefix before forwarding to your server. If you're using OAuth authentication with a mount prefix, see [Mounting Authenticated Servers](#mounting-authenticated-servers) for additional configuration.
+
 ## Testing Your Deployment
 
 Once your server is deployed, you'll need to verify it's accessible and functioning correctly. For comprehensive testing strategies including connectivity tests, client testing, and authentication testing, see the [Testing Your Server](/development/tests) guide.
