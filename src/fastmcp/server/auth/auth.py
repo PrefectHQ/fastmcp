@@ -529,6 +529,11 @@ class MultiAuth(AuthProvider):
         self.server = server
         self.verifiers = list(verifiers)
 
+        self._sources: list[AuthProvider] = []
+        if self.server is not None:
+            self._sources.append(self.server)
+        self._sources.extend(self.verifiers)
+
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a token by trying the server, then each verifier in order.
 
@@ -536,12 +541,7 @@ class MultiAuth(AuthProvider):
         it is logged and treated as a non-match so that remaining sources
         still get a chance to verify the token.
         """
-        sources: list[TokenVerifier | AuthProvider] = []
-        if self.server is not None:
-            sources.append(self.server)
-        sources.extend(self.verifiers)
-
-        for source in sources:
+        for source in self._sources:
             try:
                 result = await source.verify_token(token)
                 if result is not None:
@@ -552,7 +552,6 @@ class MultiAuth(AuthProvider):
                     type(source).__name__,
                     exc_info=True,
                 )
-                continue
 
         return None
 
