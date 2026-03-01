@@ -3,7 +3,8 @@ import pytest
 from pydantic import AnyHttpUrl
 
 from fastmcp import FastMCP
-from fastmcp.server.auth import MultiAuth, RemoteAuthProvider
+from fastmcp.server.auth import MultiAuth, RemoteAuthProvider, TokenVerifier
+from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
 
@@ -151,6 +152,49 @@ class TestMultiAuthVerifyToken:
         assert result_b is not None
         assert result_b.client_id == "b"
 
+    async def test_raising_verifier_does_not_break_chain(self):
+        """If a verifier raises, the chain continues to the next source."""
+
+        class BrokenVerifier(TokenVerifier):
+            async def verify_token(self, token: str) -> AccessToken | None:
+                raise RuntimeError("JWKS fetch failed")
+
+        good = StaticTokenVerifier(
+            tokens={"valid": {"client_id": "good-client", "scopes": []}}
+        )
+        auth = MultiAuth(verifiers=[BrokenVerifier(), good])
+
+        result = await auth.verify_token("valid")
+        assert result is not None
+        assert result.client_id == "good-client"
+
+    async def test_raising_server_does_not_break_chain(self):
+        """If the server raises, verifiers are still tried."""
+
+        class BrokenServer(TokenVerifier):
+            async def verify_token(self, token: str) -> AccessToken | None:
+                raise RuntimeError("server down")
+
+        good = StaticTokenVerifier(
+            tokens={"valid": {"client_id": "fallback", "scopes": []}}
+        )
+        auth = MultiAuth(server=BrokenServer(), verifiers=[good])
+
+        result = await auth.verify_token("valid")
+        assert result is not None
+        assert result.client_id == "fallback"
+
+    async def test_all_raising_returns_none(self):
+        """If every source raises, verify_token returns None."""
+
+        class BrokenVerifier(TokenVerifier):
+            async def verify_token(self, token: str) -> AccessToken | None:
+                raise RuntimeError("boom")
+
+        auth = MultiAuth(verifiers=[BrokenVerifier(), BrokenVerifier()])
+        result = await auth.verify_token("anything")
+        assert result is None
+
     async def test_server_match_short_circuits(self):
         """When the server matches, verifiers are not consulted."""
         # Both server and verifier know the same token with different client_ids
@@ -291,3 +335,81 @@ class TestMultiAuthIntegration:
             assert response.status_code == 200
             data = response.json()
             assert data["resource"] == "https://api.example.com/mcp"
+
+    async def test_multi_auth_accepts_valid_verifier_token(self):
+        """MultiAuth accepts tokens from verifiers (not just the server).
+
+        Verifies that both server and verifier tokens pass the HTTP auth
+        middleware. We use GET /mcp to check: 401 means auth rejected,
+        any other status means auth accepted and the request reached the
+        MCP session layer.
+        """
+        server_tokens = StaticTokenVerifier(
+            tokens={
+                "server_token": {
+                    "client_id": "interactive-client",
+                    "scopes": [],
+                }
+            }
+        )
+        m2m_tokens = StaticTokenVerifier(
+            tokens={
+                "m2m_token": {
+                    "client_id": "backend-service",
+                    "scopes": [],
+                }
+            }
+        )
+
+        auth = MultiAuth(verifiers=[server_tokens, m2m_tokens])
+        mcp = FastMCP("test", auth=auth)
+        app = mcp.http_app(path="/mcp")
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://localhost",
+        ) as client:
+            # No token → 401
+            response = await client.get("/mcp")
+            assert response.status_code == 401
+
+            # Server token passes auth (non-401 means auth accepted)
+            response = await client.get(
+                "/mcp", headers={"Authorization": "Bearer server_token"}
+            )
+            assert response.status_code != 401
+
+            # Verifier token also passes auth
+            response = await client.get(
+                "/mcp", headers={"Authorization": "Bearer m2m_token"}
+            )
+            assert response.status_code != 401
+
+            # Bad token → 401
+            response = await client.get(
+                "/mcp", headers={"Authorization": "Bearer bad_token"}
+            )
+            assert response.status_code == 401
+
+
+class TestMultiAuthSetMcpPath:
+    """Test that set_mcp_path propagates to server and verifiers."""
+
+    def test_propagates_to_server(self):
+        verifier = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
+        server = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+        )
+        auth = MultiAuth(server=server)
+        auth.set_mcp_path("/mcp")
+        assert server._mcp_path == "/mcp"
+
+    def test_propagates_to_verifiers(self):
+        v1 = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
+        v2 = StaticTokenVerifier(tokens={"t2": {"client_id": "c2", "scopes": []}})
+        auth = MultiAuth(verifiers=[v1, v2])
+        auth.set_mcp_path("/mcp")
+        assert v1._mcp_path == "/mcp"
+        assert v2._mcp_path == "/mcp"

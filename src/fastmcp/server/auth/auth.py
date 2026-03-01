@@ -486,7 +486,7 @@ class MultiAuth(AuthProvider):
 
         auth = MultiAuth(
             server=OAuthProxy(issuer_url="https://login.example.com/..."),
-            verifiers=[JWTVerifier(jwks_url="https://example.com/.well-known/jwks.json")],
+            verifiers=[JWTVerifier(jwks_uri="https://example.com/.well-known/jwks.json")],
         )
         mcp = FastMCP("my-server", auth=auth)
         ```
@@ -530,24 +530,39 @@ class MultiAuth(AuthProvider):
         self.verifiers = list(verifiers)
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        """Verify a token by trying the server, then each verifier in order."""
-        if self.server is not None:
-            result = await self.server.verify_token(token)
-            if result is not None:
-                return result
+        """Verify a token by trying the server, then each verifier in order.
 
-        for verifier in self.verifiers:
-            result = await verifier.verify_token(token)
-            if result is not None:
-                return result
+        Each source is tried independently. If a source raises an exception,
+        it is logged and treated as a non-match so that remaining sources
+        still get a chance to verify the token.
+        """
+        sources: list[TokenVerifier | AuthProvider] = []
+        if self.server is not None:
+            sources.append(self.server)
+        sources.extend(self.verifiers)
+
+        for source in sources:
+            try:
+                result = await source.verify_token(token)
+                if result is not None:
+                    return result
+            except Exception:
+                logger.debug(
+                    "Token verification failed for %s, trying next source",
+                    type(source).__name__,
+                    exc_info=True,
+                )
+                continue
 
         return None
 
     def set_mcp_path(self, mcp_path: str | None) -> None:
-        """Propagate MCP path to the server."""
+        """Propagate MCP path to the server and all verifiers."""
         super().set_mcp_path(mcp_path)
         if self.server is not None:
             self.server.set_mcp_path(mcp_path)
+        for verifier in self.verifiers:
+            verifier.set_mcp_path(mcp_path)
 
     def get_routes(self, mcp_path: str | None = None) -> list[Route]:
         """Delegate route creation to the server."""
