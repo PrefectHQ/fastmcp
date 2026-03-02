@@ -1,10 +1,9 @@
 """Provides a base mixin class and decorators for easy registration of class methods with FastMCP."""
 
+import inspect
 import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
-
-from mcp.types import Annotations, ToolAnnotations
 
 import fastmcp
 from fastmcp.prompts.prompt import Prompt
@@ -23,19 +22,57 @@ _DEFAULT_SEPARATOR_TOOL = "_"
 _DEFAULT_SEPARATOR_RESOURCE = "+"
 _DEFAULT_SEPARATOR_PROMPT = "_"
 
+# Sentinel key stored in registration dicts for the mixin-only `enabled` flag.
+# Prefixed with an underscore to avoid collisions with any from_function parameter.
+_MIXIN_ENABLED_KEY = "_mixin_enabled"
+
+# Valid keyword arguments for each from_function, derived once at import time
+# directly from the live signatures.  They stay in sync automatically whenever
+# the underlying signatures gain or lose parameters — no manual updates needed.
+_TOOL_VALID_KWARGS: frozenset[str] = frozenset(
+    p for p in inspect.signature(Tool.from_function).parameters if p != "fn"
+)
+_RESOURCE_VALID_KWARGS: frozenset[str] = frozenset(
+    p
+    for p in inspect.signature(Resource.from_function).parameters
+    if p not in ("fn", "uri")
+)
+_PROMPT_VALID_KWARGS: frozenset[str] = frozenset(
+    p for p in inspect.signature(Prompt.from_function).parameters if p != "fn"
+)
+
 
 def mcp_tool(
     name: str | None = None,
-    description: str | None = None,
-    tags: set[str] | None = None,
-    annotations: ToolAnnotations | dict[str, Any] | None = None,
-    exclude_args: list[str] | None = None,
-    serializer: Callable[[Any], str] | None = None,  # Deprecated
-    meta: dict[str, Any] | None = None,
+    *,
     enabled: bool | None = None,
+    **kwargs: Any,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Decorator to mark a method as an MCP tool for later registration."""
-    if serializer is not None and fastmcp.settings.deprecation_warnings:
+    """Decorator to mark a method as an MCP tool for later registration.
+
+    Accepts all parameters supported by ``Tool.from_function``.  Any new
+    parameters added to ``Tool.from_function`` are automatically forwarded
+    without requiring changes here.
+
+    Args:
+        name: Tool name.  Defaults to the decorated method name.
+        enabled: If ``False``, the tool is skipped during registration.
+        **kwargs: Additional keyword arguments forwarded verbatim to
+            ``Tool.from_function`` (e.g. ``description``, ``tags``,
+            ``annotations``, ``auth``, ``timeout``, ``version``, …).
+
+    Raises:
+        TypeError: If an unrecognised keyword argument is supplied.  The error
+            is raised immediately at decoration time rather than later.
+    """
+    unknown = set(kwargs) - _TOOL_VALID_KWARGS
+    if unknown:
+        raise TypeError(
+            f"mcp_tool() got unexpected keyword argument(s): {sorted(unknown)!r}. "
+            f"Valid keyword arguments are: {sorted(_TOOL_VALID_KWARGS)}"
+        )
+
+    if "serializer" in kwargs and fastmcp.settings.deprecation_warnings:
         warnings.warn(
             "The `serializer` parameter is deprecated. "
             "Return ToolResult from your tools for full control over serialization. "
@@ -45,17 +82,9 @@ def mcp_tool(
         )
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        call_args = {
-            "name": name or get_fn_name(func),
-            "description": description,
-            "tags": tags,
-            "annotations": annotations,
-            "exclude_args": exclude_args,
-            "serializer": serializer,
-            "meta": meta,
-            "enabled": enabled,
-        }
-        call_args = {k: v for k, v in call_args.items() if v is not None}
+        call_args: dict[str, Any] = {"name": name or get_fn_name(func), **kwargs}
+        if enabled is not None:
+            call_args[_MIXIN_ENABLED_KEY] = enabled
         setattr(func, _MCP_REGISTRATION_TOOL_ATTR, call_args)
         return func
 
@@ -66,32 +95,43 @@ def mcp_resource(
     uri: str,
     *,
     name: str | None = None,
-    title: str | None = None,
-    description: str | None = None,
-    mime_type: str | None = None,
-    tags: set[str] | None = None,
-    annotations: Annotations | None = None,
-    meta: dict[str, Any] | None = None,
     enabled: bool | None = None,
+    **kwargs: Any,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Decorator to mark a method as an MCP resource for later registration."""
+    """Decorator to mark a method as an MCP resource for later registration.
+
+    Accepts all parameters supported by ``Resource.from_function``.  Any new
+    parameters added to ``Resource.from_function`` are automatically forwarded
+    without requiring changes here.
+
+    Args:
+        uri: Resource URI (required).
+        name: Resource name.  Defaults to the decorated method name.
+        enabled: If ``False``, the resource is skipped during registration.
+        **kwargs: Additional keyword arguments forwarded verbatim to
+            ``Resource.from_function`` (e.g. ``description``, ``tags``,
+            ``mime_type``, ``auth``, ``version``, …).
+
+    Raises:
+        TypeError: If an unrecognised keyword argument is supplied.  The error
+            is raised immediately at decoration time rather than later.
+    """
+    unknown = set(kwargs) - _RESOURCE_VALID_KWARGS
+    if unknown:
+        raise TypeError(
+            f"mcp_resource() got unexpected keyword argument(s): {sorted(unknown)!r}. "
+            f"Valid keyword arguments are: {sorted(_RESOURCE_VALID_KWARGS)}"
+        )
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        call_args = {
+        call_args: dict[str, Any] = {
             "uri": uri,
             "name": name or get_fn_name(func),
-            "title": title,
-            "description": description,
-            "mime_type": mime_type,
-            "tags": tags,
-            "annotations": annotations,
-            "meta": meta,
-            "enabled": enabled,
+            **kwargs,
         }
-        call_args = {k: v for k, v in call_args.items() if v is not None}
-
+        if enabled is not None:
+            call_args[_MIXIN_ENABLED_KEY] = enabled
         setattr(func, _MCP_REGISTRATION_RESOURCE_ATTR, call_args)
-
         return func
 
     return decorator
@@ -99,26 +139,38 @@ def mcp_resource(
 
 def mcp_prompt(
     name: str | None = None,
-    title: str | None = None,
-    description: str | None = None,
-    tags: set[str] | None = None,
-    meta: dict[str, Any] | None = None,
+    *,
     enabled: bool | None = None,
+    **kwargs: Any,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Decorator to mark a method as an MCP prompt for later registration."""
+    """Decorator to mark a method as an MCP prompt for later registration.
+
+    Accepts all parameters supported by ``Prompt.from_function``.  Any new
+    parameters added to ``Prompt.from_function`` are automatically forwarded
+    without requiring changes here.
+
+    Args:
+        name: Prompt name.  Defaults to the decorated method name.
+        enabled: If ``False``, the prompt is skipped during registration.
+        **kwargs: Additional keyword arguments forwarded verbatim to
+            ``Prompt.from_function`` (e.g. ``description``, ``tags``,
+            ``auth``, ``version``, …).
+
+    Raises:
+        TypeError: If an unrecognised keyword argument is supplied.  The error
+            is raised immediately at decoration time rather than later.
+    """
+    unknown = set(kwargs) - _PROMPT_VALID_KWARGS
+    if unknown:
+        raise TypeError(
+            f"mcp_prompt() got unexpected keyword argument(s): {sorted(unknown)!r}. "
+            f"Valid keyword arguments are: {sorted(_PROMPT_VALID_KWARGS)}"
+        )
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        call_args = {
-            "name": name or get_fn_name(func),
-            "title": title,
-            "description": description,
-            "tags": tags,
-            "meta": meta,
-            "enabled": enabled,
-        }
-
-        call_args = {k: v for k, v in call_args.items() if v is not None}
-
+        call_args: dict[str, Any] = {"name": name or get_fn_name(func), **kwargs}
+        if enabled is not None:
+            call_args[_MIXIN_ENABLED_KEY] = enabled
         setattr(func, _MCP_REGISTRATION_PROMPT_ATTR, call_args)
         return func
 
@@ -129,9 +181,9 @@ class MCPMixin:
     """Base mixin class for objects that can register tools, resources, and prompts
     with a FastMCP server instance using decorators.
 
-    This mixin provides methods like `register_all`, `register_tools`, etc.,
+    This mixin provides methods like ``register_all``, ``register_tools``, etc.,
     which iterate over the methods of the inheriting class, find methods
-    decorated with `@mcp_tool`, `@mcp_resource`, or `@mcp_prompt`, and
+    decorated with ``@mcp_tool``, ``@mcp_resource``, or ``@mcp_prompt``, and
     register them with the provided FastMCP server instance.
     """
 
@@ -157,10 +209,10 @@ class MCPMixin:
 
         Args:
             mcp_server: The FastMCP server instance to register tools with.
-            prefix: Optional prefix to prepend to tool names. If provided, the
-                final name will be f"{prefix}{separator}{original_name}".
+            prefix: Optional prefix to prepend to tool names.  If provided, the
+                final name will be ``f"{prefix}{separator}{original_name}"``.
             separator: The separator string used between prefix and original name.
-                Defaults to '_'.
+                Defaults to ``'_'``.
         """
         for method, registration_info in self._get_methods_to_register(
             _MCP_REGISTRATION_TOOL_ATTR
@@ -170,18 +222,11 @@ class MCPMixin:
                     f"{prefix}{separator}{registration_info['name']}"
                 )
 
-            tool = Tool.from_function(
-                fn=method,
-                name=registration_info.get("name"),
-                description=registration_info.get("description"),
-                tags=registration_info.get("tags"),
-                annotations=registration_info.get("annotations"),
-                exclude_args=registration_info.get("exclude_args"),
-                serializer=registration_info.get("serializer"),
-                output_schema=registration_info.get("output_schema"),
-                meta=registration_info.get("meta"),
-            )
+            enabled = registration_info.pop(_MIXIN_ENABLED_KEY, True)
+            if enabled is False:
+                continue
 
+            tool = Tool.from_function(fn=method, **registration_info)
             mcp_server.add_tool(tool)
 
     def register_resources(
@@ -194,11 +239,12 @@ class MCPMixin:
 
         Args:
             mcp_server: The FastMCP server instance to register resources with.
-            prefix: Optional prefix to prepend to resource names and URIs. If provided,
-                the final name will be f"{prefix}{separator}{original_name}" and the
-                final URI will be f"{prefix}{separator}{original_uri}".
-            separator: The separator string used between prefix and original name/URI.
-                Defaults to '+'.
+            prefix: Optional prefix to prepend to resource names and URIs.  If
+                provided, the final name will be
+                ``f"{prefix}{separator}{original_name}"`` and the final URI will
+                be ``f"{prefix}{separator}{original_uri}"``.
+            separator: The separator string used between prefix and original
+                name/URI.  Defaults to ``'+'``.
         """
         for method, registration_info in self._get_methods_to_register(
             _MCP_REGISTRATION_RESOURCE_ATTR
@@ -211,18 +257,11 @@ class MCPMixin:
                     f"{prefix}{separator}{registration_info['uri']}"
                 )
 
-            resource = Resource.from_function(
-                fn=method,
-                uri=registration_info["uri"],
-                name=registration_info.get("name"),
-                title=registration_info.get("title"),
-                description=registration_info.get("description"),
-                mime_type=registration_info.get("mime_type"),
-                tags=registration_info.get("tags"),
-                annotations=registration_info.get("annotations"),
-                meta=registration_info.get("meta"),
-            )
+            enabled = registration_info.pop(_MIXIN_ENABLED_KEY, True)
+            if enabled is False:
+                continue
 
+            resource = Resource.from_function(fn=method, **registration_info)
             mcp_server.add_resource(resource)
 
     def register_prompts(
@@ -235,10 +274,10 @@ class MCPMixin:
 
         Args:
             mcp_server: The FastMCP server instance to register prompts with.
-            prefix: Optional prefix to prepend to prompt names. If provided, the
-                final name will be f"{prefix}{separator}{original_name}".
+            prefix: Optional prefix to prepend to prompt names.  If provided,
+                the final name will be ``f"{prefix}{separator}{original_name}"``.
             separator: The separator string used between prefix and original name.
-                Defaults to '_'.
+                Defaults to ``'_'``.
         """
         for method, registration_info in self._get_methods_to_register(
             _MCP_REGISTRATION_PROMPT_ATTR
@@ -247,14 +286,12 @@ class MCPMixin:
                 registration_info["name"] = (
                     f"{prefix}{separator}{registration_info['name']}"
                 )
-            prompt = Prompt.from_function(
-                fn=method,
-                name=registration_info.get("name"),
-                title=registration_info.get("title"),
-                description=registration_info.get("description"),
-                tags=registration_info.get("tags"),
-                meta=registration_info.get("meta"),
-            )
+
+            enabled = registration_info.pop(_MIXIN_ENABLED_KEY, True)
+            if enabled is False:
+                continue
+
+            prompt = Prompt.from_function(fn=method, **registration_info)
             mcp_server.add_prompt(prompt)
 
     def register_all(
@@ -267,16 +304,16 @@ class MCPMixin:
     ) -> None:
         """Registers all marked tools, resources, and prompts with the server.
 
-        This method calls `register_tools`, `register_resources`, and `register_prompts`
-        internally, passing the provided prefix and separators.
+        This method calls ``register_tools``, ``register_resources``, and
+        ``register_prompts`` internally, passing the provided prefix and
+        separators.
 
         Args:
             mcp_server: The FastMCP server instance to register with.
-            prefix: Optional prefix applied to all registered items unless overridden
-                by a specific separator argument.
-            tool_separator: Separator for tool names (defaults to '_').
-            resource_separator: Separator for resource names/URIs (defaults to '+').
-            prompt_separator: Separator for prompt names (defaults to '_').
+            prefix: Optional prefix applied to all registered items.
+            tool_separator: Separator for tool names (defaults to ``'_'``).
+            resource_separator: Separator for resource names/URIs (defaults to ``'+'``).
+            prompt_separator: Separator for prompt names (defaults to ``'_'``).
         """
         self.register_tools(mcp_server, prefix=prefix, separator=tool_separator)
         self.register_resources(mcp_server, prefix=prefix, separator=resource_separator)

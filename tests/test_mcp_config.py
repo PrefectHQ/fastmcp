@@ -902,37 +902,83 @@ async def test_multi_server_timeout_propagation():
     transport = MCPConfigTransport(config)
     timeout = timedelta(seconds=42)
 
-    # Patch _create_proxy to verify timeout is passed correctly
+    # Mock _create_proxy to avoid real stdio connections and verify timeout
+    mock_create_proxy = AsyncMock(
+        return_value=(AsyncMock(), AsyncMock(), FastMCP(name="MockProxy"))
+    )
+
     with (
-        patch("fastmcp.client.transports.FastMCP.as_proxy") as mock_as_proxy,
-        patch.object(
-            transport, "_create_proxy", wraps=transport._create_proxy
-        ) as mock_create_proxy,
-    ):
-        # Make as_proxy return a mock FastMCP
-        mock_proxy = FastMCP(name="MockProxy")
-        mock_as_proxy.return_value = mock_proxy
-
-        # Mock connect_session on FastMCPTransport to avoid actual connection
-        with patch(
+        patch.object(transport, "_create_proxy", mock_create_proxy),
+        patch(
             "fastmcp.client.transports.FastMCPTransport.connect_session"
-        ) as mock_connect:
-            mock_session = AsyncMock()
-            mock_connect.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_connect.return_value.__aexit__ = AsyncMock(return_value=None)
+        ) as mock_connect,
+    ):
+        mock_session = AsyncMock()
+        mock_connect.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_connect.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            async with transport.connect_session(read_timeout_seconds=timeout):
-                pass
+        async with transport.connect_session(read_timeout_seconds=timeout):
+            pass
 
-        # Verify _create_proxy was called with the timeout for each server
-        assert mock_create_proxy.call_count == 2
-        for call in mock_create_proxy.call_args_list:
-            _, kwargs = call.args, call.kwargs if call.kwargs else {}
-            # Third positional arg is timeout
-            call_timeout = call[0][2] if len(call[0]) > 2 else kwargs.get("timeout")
-            assert call_timeout == timeout, (
-                f"Expected timeout {timeout}, got {call_timeout}"
-            )
+    # Verify _create_proxy was called with the timeout for each server
+    assert mock_create_proxy.call_count == 2
+    for call in mock_create_proxy.call_args_list:
+        # Third positional arg is timeout
+        call_timeout = call[0][2] if len(call[0]) > 2 else call.kwargs.get("timeout")
+        assert call_timeout == timeout, (
+            f"Expected timeout {timeout}, got {call_timeout}"
+        )
+
+
+async def test_multi_server_session_persistence(tmp_path: Path):
+    """Test that session IDs persist across tool calls in multi-server mode.
+
+    Regression test for https://github.com/PrefectHQ/fastmcp/issues/2790 —
+    MCPConfigTransport was not connecting ProxyClients before mounting, so
+    each tool call opened a new session with the backend server.
+    """
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP, Context
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def get_session(ctx: Context) -> str:
+            return ctx.session_id
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "session_server.py"
+    script_path.write_text(server_script)
+
+    config = {
+        "mcpServers": {
+            "server1": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+            "server2": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+        }
+    }
+
+    client = Client(config)
+    async with client:
+        result1 = await client.call_tool("server1_get_session", {})
+        assert isinstance(result1.content[0], TextContent)
+        session_id_1 = result1.content[0].text
+
+        result2 = await client.call_tool("server1_get_session", {})
+        assert isinstance(result2.content[0], TextContent)
+        session_id_2 = result2.content[0].text
+
+        assert session_id_1 == session_id_2, (
+            f"Session ID changed between calls: {session_id_1} != {session_id_2}"
+        )
 
 
 async def test_single_server_config_transport():

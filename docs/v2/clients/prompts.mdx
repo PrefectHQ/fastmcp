@@ -190,9 +190,9 @@ async with client:
         "expertise": "python programming"
     })
     
-    # Typically returns messages with role="system"
-    system_message = result.messages[0]
-    print(f"System prompt: {system_message.content}")
+    # Access the returned messages
+    message = result.messages[0]
+    print(f"Prompt: {message.content}")
 ```
 
 ### Conversation Templates

@@ -93,12 +93,12 @@
                     "collapsed": true,
                     "group": "Upgrade",
                     "icon": "up",
-                    "tag": "NEW",
                     "pages": [
                       "getting-started/upgrading/from-fastmcp-2",
                       "getting-started/upgrading/from-mcp-sdk",
                       "getting-started/upgrading/from-low-level-sdk"
-                    ]
+                    ],
+                    "tag": "NEW"
                   }
                 ]
               },
@@ -120,7 +120,6 @@
                   {
                     "collapsed": true,
                     "group": "Features",
-                    "tag": "NEW",
                     "icon": "stars",
                     "pages": [
                       "servers/tasks",
@@ -136,12 +135,12 @@
                       "servers/storage-backends",
                       "servers/telemetry",
                       "servers/versioning"
-                    ]
+                    ],
+                    "tag": "NEW"
                   },
                   {
                     "collapsed": true,
                     "group": "Providers",
-                    "tag": "NEW",
                     "icon": "layer-group",
                     "pages": [
                       "servers/providers/overview",
@@ -151,21 +150,24 @@
                       "servers/providers/skills",
                       "servers/providers/custom",
                       "servers/providers/mounting"
-                    ]
+                    ],
+                    "tag": "NEW"
                   },
                   {
                     "collapsed": true,
                     "group": "Transforms",
-                    "tag": "NEW",
                     "icon": "wand-magic-sparkles",
                     "pages": [
                       "servers/transforms/transforms",
                       "servers/transforms/namespace",
                       "servers/transforms/tool-transformation",
                       "servers/visibility",
+                      "servers/transforms/code-mode",
+                      "servers/transforms/tool-search",
                       "servers/transforms/resources-as-tools",
                       "servers/transforms/prompts-as-tools"
-                    ]
+                    ],
+                    "tag": "NEW"
                   },
                   {
                     "collapsed": true,
@@ -177,7 +179,8 @@
                       "servers/auth/remote-oauth",
                       "servers/auth/oauth-proxy",
                       "servers/auth/oidc-proxy",
-                      "servers/auth/full-oauth-server"
+                      "servers/auth/full-oauth-server",
+                      "servers/auth/multi-auth"
                     ]
                   },
                   "servers/authorization",
@@ -200,6 +203,8 @@
                 "group": "Apps",
                 "pages": [
                   "apps/overview",
+                  "apps/prefab",
+                  "apps/patterns",
                   "apps/low-level"
                 ]
               },
@@ -211,12 +216,12 @@
                   {
                     "collapsed": true,
                     "group": "CLI",
-                    "tag": "NEW",
                     "icon": "terminal",
                     "pages": [
                       "clients/cli",
                       "clients/generate-cli"
-                    ]
+                    ],
+                    "tag": "NEW"
                   },
                   {
                     "collapsed": true,
@@ -245,13 +250,13 @@
                   {
                     "collapsed": true,
                     "group": "Authentication",
-                    "tag": "NEW",
                     "icon": "key",
                     "pages": [
                       "clients/auth/oauth",
                       "clients/auth/cimd",
                       "clients/auth/bearer"
-                    ]
+                    ],
+                    "tag": "NEW"
                   }
                 ]
               },
@@ -273,6 +278,7 @@
                       "integrations/google",
                       "integrations/keycloak",
                       "integrations/oci",
+                      "integrations/propelauth",
                       "integrations/scalekit",
                       "integrations/supabase",
                       "integrations/workos",
@@ -430,6 +436,26 @@
                     ]
                   },
                   {
+                    "group": "fastmcp.experimental",
+                    "pages": [
+                      "python-sdk/fastmcp-experimental-__init__",
+                      {
+                        "group": "sampling",
+                        "pages": [
+                          "python-sdk/fastmcp-experimental-sampling-__init__",
+                          "python-sdk/fastmcp-experimental-sampling-handlers"
+                        ]
+                      },
+                      {
+                        "group": "transforms",
+                        "pages": [
+                          "python-sdk/fastmcp-experimental-transforms-__init__",
+                          "python-sdk/fastmcp-experimental-transforms-code_mode"
+                        ]
+                      }
+                    ]
+                  },
+                  {
                     "group": "fastmcp.prompts",
                     "pages": [
                       "python-sdk/fastmcp-prompts-__init__",
@@ -488,6 +514,7 @@
                               "python-sdk/fastmcp-server-auth-providers-introspection",
                               "python-sdk/fastmcp-server-auth-providers-jwt",
                               "python-sdk/fastmcp-server-auth-providers-oci",
+                              "python-sdk/fastmcp-server-auth-providers-propelauth",
                               "python-sdk/fastmcp-server-auth-providers-scalekit",
                               "python-sdk/fastmcp-server-auth-providers-supabase",
                               "python-sdk/fastmcp-server-auth-providers-workos"
@@ -617,9 +644,19 @@
                         "group": "transforms",
                         "pages": [
                           "python-sdk/fastmcp-server-transforms-__init__",
+                          "python-sdk/fastmcp-server-transforms-catalog",
                           "python-sdk/fastmcp-server-transforms-namespace",
                           "python-sdk/fastmcp-server-transforms-prompts_as_tools",
                           "python-sdk/fastmcp-server-transforms-resources_as_tools",
+                          {
+                            "group": "search",
+                            "pages": [
+                              "python-sdk/fastmcp-server-transforms-search-__init__",
+                              "python-sdk/fastmcp-server-transforms-search-base",
+                              "python-sdk/fastmcp-server-transforms-search-bm25",
+                              "python-sdk/fastmcp-server-transforms-search-regex"
+                            ]
+                          },
                           "python-sdk/fastmcp-server-transforms-tool_transform",
                           "python-sdk/fastmcp-server-transforms-version_filter",
                           "python-sdk/fastmcp-server-transforms-visibility"

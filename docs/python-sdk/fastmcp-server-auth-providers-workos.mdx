@@ -18,7 +18,7 @@ Choose based on your WorkOS setup and authentication requirements.
 
 ## Classes
 
-### `WorkOSTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `WorkOSTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L30" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Token verifier for WorkOS OAuth tokens.
@@ -29,7 +29,7 @@ the /oauth2/userinfo endpoint to check validity and get user info.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L53" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -38,7 +38,7 @@ verify_token(self, token: str) -> AccessToken | None
 Verify WorkOS OAuth token by calling userinfo endpoint.
 
 
-### `WorkOSProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `WorkOSProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Complete WorkOS OAuth provider for FastMCP.
@@ -59,7 +59,7 @@ Setup Requirements:
 4. Note your Client ID and Client Secret
 
 
-### `AuthKitProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L214" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AuthKitProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L230" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 AuthKit metadata provider for DCR (Dynamic Client Registration).
@@ -85,7 +85,7 @@ https://workos.com/docs/authkit/mcp/integrating/token-verification
 
 **Methods:**
 
-#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L301" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L317" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_routes(self, mcp_path: str | None = None) -> list[Route]

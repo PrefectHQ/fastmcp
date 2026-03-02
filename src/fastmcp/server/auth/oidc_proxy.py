@@ -18,6 +18,7 @@ from typing_extensions import Self
 
 from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.oauth_proxy.models import UpstreamTokenSet
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.logging import get_logger
 
@@ -209,6 +210,7 @@ class OIDCProxy(OAuthProxy):
         token_verifier: TokenVerifier | None = None,
         algorithm: str | None = None,
         required_scopes: list[str] | None = None,
+        verify_id_token: bool = False,
         # FastMCP server configuration
         base_url: AnyHttpUrl | str,
         issuer_url: AnyHttpUrl | str | None = None,
@@ -245,6 +247,9 @@ class OIDCProxy(OAuthProxy):
                 Cannot be used with algorithm or required_scopes parameters (configure these on your verifier instead).
             algorithm: Token verifier algorithm (only used if token_verifier is not provided)
             required_scopes: Required scopes for token validation (only used if token_verifier is not provided)
+            verify_id_token: If True, verify the OIDC id_token instead of the access_token.
+                Useful for providers that issue opaque (non-JWT) access tokens, since the
+                id_token is always a standard JWT verifiable via the provider's JWKS.
             base_url: Public URL where OAuth endpoints will be accessible (includes any mount path)
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.
@@ -330,14 +335,22 @@ class OIDCProxy(OAuthProxy):
 
         # Use custom verifier if provided, otherwise create default JWTVerifier
         if token_verifier is None:
+            # When verifying id_tokens:
+            # - aud is always the OAuth client_id (per OIDC Core §2), not
+            #   the API audience, so use client_id for audience validation.
+            # - id_tokens don't carry scope/scp claims, so don't pass
+            #   required_scopes to the verifier (scope enforcement happens
+            #   at the FastMCP token level instead).
+            verifier_audience = client_id if verify_id_token else audience
+            verifier_scopes = None if verify_id_token else required_scopes
             token_verifier = self.get_token_verifier(
                 algorithm=algorithm,
-                audience=audience,
-                required_scopes=required_scopes,
+                audience=verifier_audience,
+                required_scopes=verifier_scopes,
                 timeout_seconds=timeout_seconds,
             )
 
-        init_kwargs = {
+        init_kwargs: dict[str, object] = {
             "upstream_authorization_endpoint": str(
                 self.oidc_config.authorization_endpoint
             ),
@@ -382,6 +395,39 @@ class OIDCProxy(OAuthProxy):
             init_kwargs["extra_token_params"] = final_token_params
 
         super().__init__(**init_kwargs)  # ty: ignore[invalid-argument-type]
+
+        self._verify_id_token = verify_id_token
+
+        # When verify_id_token strips scopes from the verifier, restore
+        # them on the provider so they're still advertised to clients
+        # and enforced at the FastMCP token level.  We also need to
+        # recompute derived state that OAuthProxy.__init__ already built
+        # from the (empty) verifier scopes.
+        if verify_id_token and required_scopes:
+            self.required_scopes = required_scopes
+            self._default_scope_str = " ".join(required_scopes)
+            if self.client_registration_options:
+                self.client_registration_options.valid_scopes = required_scopes
+            if self._cimd_manager is not None:
+                self._cimd_manager.default_scope = self._default_scope_str
+
+    def _get_verification_token(
+        self, upstream_token_set: UpstreamTokenSet
+    ) -> str | None:
+        """Get the token to verify from the upstream token set.
+
+        When verify_id_token is enabled, returns the id_token from the
+        upstream token response instead of the access_token.
+        """
+        if self._verify_id_token:
+            id_token = upstream_token_set.raw_token_data.get("id_token")
+            if id_token is None:
+                logger.warning(
+                    "verify_id_token is enabled but no id_token found in"
+                    " upstream token response"
+                )
+            return id_token
+        return upstream_token_set.access_token
 
     def get_oidc_configuration(
         self,

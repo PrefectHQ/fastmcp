@@ -228,10 +228,6 @@ from fastmcp.server.transforms.tool_transform import ToolTransform  # noqa: E402
 from fastmcp.server.transforms.version_filter import VersionFilter  # noqa: E402
 
 __all__ = [
-    "GetPromptNext",
-    "GetResourceNext",
-    "GetResourceTemplateNext",
-    "GetToolNext",
     "Namespace",
     "PromptsAsTools",
     "ResourcesAsTools",
