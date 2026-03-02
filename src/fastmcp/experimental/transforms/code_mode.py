@@ -1,7 +1,6 @@
 import asyncio
 import importlib
 import json
-import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any, Literal, Protocol
 
@@ -18,8 +17,6 @@ from fastmcp.server.transforms.search.base import (
 )
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Type aliases
@@ -148,20 +145,34 @@ class MontySandboxProvider:
 # ---------------------------------------------------------------------------
 
 
-def _render_brief(tools: Sequence[Tool]) -> str:
-    """Render tools as a lightweight name + description list."""
+ToolDetailLevel = Literal["brief", "detailed", "full"]
+"""Detail level for discovery tool output.
+
+- ``"brief"``: tool names and one-line descriptions
+- ``"detailed"``: compact markdown with parameter names, types, and required markers
+- ``"full"``: complete JSON schema
+"""
+
+
+def _render_tools(tools: Sequence[Tool], detail: ToolDetailLevel) -> str:
+    """Render tools at the requested detail level.
+
+    The same detail value produces the same output format regardless of
+    which discovery tool calls this, so ``detail="detailed"`` on Search
+    gives identical formatting to ``detail="detailed"`` on GetSchemas.
+    """
+    if not tools:
+        return "No tools matched the query."
+    if detail == "full":
+        return json.dumps(serialize_tools_for_output_json(tools), indent=2)
+    if detail == "detailed":
+        return serialize_tools_for_output_markdown(tools)
+    # brief
     lines: list[str] = []
     for tool in tools:
         desc = f": {tool.description}" if tool.description else ""
         lines.append(f"- {tool.name}{desc}")
-    return "\n".join(lines) if lines else "No tools matched the query."
-
-
-def _render_detail(tools: Sequence[Tool], detail: str) -> str:
-    """Render tools at the requested detail level."""
-    if detail == "full":
-        return json.dumps(serialize_tools_for_output_json(tools), indent=2)
-    return serialize_tools_for_output_markdown(tools)
+    return "\n".join(lines)
 
 
 class Search:
@@ -173,6 +184,7 @@ class Search:
         name: Name of the synthetic tool exposed to the LLM.
         default_detail: Default detail level for search results.
             ``"brief"`` returns tool names and descriptions only.
+            ``"detailed"`` returns compact markdown with parameter schemas.
             ``"full"`` returns complete JSON tool definitions.
     """
 
@@ -181,7 +193,7 @@ class Search:
         *,
         search_fn: SearchFn | None = None,
         name: str = "search",
-        default_detail: Literal["brief", "full"] = "brief",
+        default_detail: ToolDetailLevel | None = None,
     ) -> None:
         if search_fn is None:
             from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
@@ -190,7 +202,7 @@ class Search:
             search_fn = _bm25._search
         self._search_fn = search_fn
         self._name = name
-        self._default_detail = default_detail
+        self._default_detail: ToolDetailLevel = default_detail or "brief"
 
     def __call__(self, get_catalog: GetToolCatalog) -> Tool:
         search_fn = self._search_fn
@@ -203,8 +215,8 @@ class Search:
                 "Filter to tools with any of these tags before searching",
             ] = None,
             detail: Annotated[
-                Literal["brief", "full"],
-                "Level of detail in results: 'brief' for names and descriptions, 'full' for complete schemas",
+                ToolDetailLevel,
+                "'brief' for names and descriptions, 'detailed' for parameter schemas as markdown, 'full' for complete JSON schemas",
             ] = default_detail,
             ctx: Context = None,  # type: ignore[assignment]
         ) -> str:
@@ -223,9 +235,7 @@ class Search:
                     if (t.tags & real_tags) or (has_untagged and not t.tags)
                 ]
             results = await search_fn(tools, query)
-            if detail == "brief":
-                return _render_brief(results)
-            return _render_detail(results, detail)
+            return _render_tools(results, detail)
 
         return Tool.from_function(fn=search, name=self._name)
 
@@ -236,7 +246,8 @@ class GetSchemas:
     Args:
         name: Name of the synthetic tool exposed to the LLM.
         default_detail: Default detail level for schema results.
-            ``"brief"`` renders compact markdown with parameter names,
+            ``"brief"`` returns tool names and descriptions only.
+            ``"detailed"`` renders compact markdown with parameter names,
             types, and required markers.
             ``"full"`` returns the complete JSON schema.
     """
@@ -245,10 +256,10 @@ class GetSchemas:
         self,
         *,
         name: str = "get_schema",
-        default_detail: Literal["brief", "full"] = "brief",
+        default_detail: ToolDetailLevel | None = None,
     ) -> None:
         self._name = name
-        self._default_detail = default_detail
+        self._default_detail: ToolDetailLevel = default_detail or "detailed"
 
     def __call__(self, get_catalog: GetToolCatalog) -> Tool:
         default_detail = self._default_detail
@@ -259,8 +270,8 @@ class GetSchemas:
                 "List of tool names to get schemas for",
             ],
             detail: Annotated[
-                Literal["brief", "full"],
-                "Level of detail: 'brief' for compact markdown, 'full' for complete JSON schema",
+                ToolDetailLevel,
+                "'brief' for names and descriptions, 'detailed' for parameter schemas as markdown, 'full' for complete JSON schemas",
             ] = default_detail,
             ctx: Context = None,  # type: ignore[assignment]
         ) -> str:
@@ -282,7 +293,7 @@ class GetSchemas:
                     data.append({"not_found": not_found})
                 return json.dumps(data, indent=2)
 
-            result = serialize_tools_for_output_markdown(matched)
+            result = _render_tools(matched, detail)
             if not_found:
                 result += f"\n\nTools not found: {', '.join(not_found)}"
             return result
@@ -290,7 +301,7 @@ class GetSchemas:
         return Tool.from_function(fn=get_schema, name=self._name)
 
 
-class Tags:
+class GetTags:
     """Discovery tool factory that lists tool tags from the catalog.
 
     Reads ``tool.tags`` from the catalog and groups tools by tag. Tools
@@ -307,10 +318,10 @@ class Tags:
         self,
         *,
         name: str = "tags",
-        default_detail: Literal["brief", "full"] = "brief",
+        default_detail: Literal["brief", "full"] | None = None,
     ) -> None:
         self._name = name
-        self._default_detail = default_detail
+        self._default_detail: Literal["brief", "full"] = default_detail or "brief"
 
     def __call__(self, get_catalog: GetToolCatalog) -> Tool:
         default_detail = self._default_detail
@@ -382,14 +393,12 @@ class CodeMode(CatalogTransform):
     def __init__(
         self,
         *,
-        default_arguments: dict[str, Any] | None = None,
         sandbox_provider: SandboxProvider | None = None,
         discovery_tools: list[DiscoveryToolFactory] | None = None,
         execute_tool_name: str = "execute",
         execute_description: str | None = None,
     ) -> None:
         super().__init__()
-        self._default_arguments = default_arguments or {}
         self.execute_tool_name = execute_tool_name
         self.execute_description = execute_description
         self.sandbox_provider = sandbox_provider or MontySandboxProvider()
@@ -473,7 +482,6 @@ class CodeMode(CatalogTransform):
             ctx: Context = None,  # type: ignore[assignment]
         ) -> Any:
             """Execute tool calls using Python code."""
-            defaults = transform._default_arguments
             cached_tools: Sequence[Tool] | None = None
 
             async def _get_cached_tools() -> Sequence[Tool]:
@@ -488,26 +496,7 @@ class CodeMode(CatalogTransform):
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {tool_name}")
 
-                accepted_args = set(tool.parameters.get("properties", {}).keys())
-                skipped = {
-                    key
-                    for key in defaults
-                    if key not in params and key not in accepted_args
-                }
-                if skipped:
-                    logger.debug(
-                        "default_arguments keys %s not accepted by tool %r, skipping",
-                        skipped,
-                        tool.name,
-                    )
-                merged = {
-                    key: value
-                    for key, value in defaults.items()
-                    if key not in params and key in accepted_args
-                }
-                merged.update(params)
-
-                result = await ctx.fastmcp.call_tool(tool.name, merged)
+                result = await ctx.fastmcp.call_tool(tool.name, params)
                 return _unwrap_tool_result(result)
 
             return await transform.sandbox_provider.run(
@@ -526,12 +515,13 @@ __all__ = [
     "CodeMode",
     "DiscoveryToolFactory",
     "GetSchemas",
+    "GetTags",
     "GetToolCatalog",
     "MontySandboxProvider",
     "SandboxProvider",
     "Search",
     "SearchFn",
-    "Tags",
+    "ToolDetailLevel",
     "serialize_tools_for_output_json",
     "serialize_tools_for_output_markdown",
 ]

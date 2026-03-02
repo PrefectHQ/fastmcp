@@ -10,9 +10,9 @@ from fastmcp.exceptions import ToolError
 from fastmcp.experimental.transforms import CodeMode, MontySandboxProvider
 from fastmcp.experimental.transforms.code_mode import (
     GetSchemas,
+    GetTags,
     GetToolCatalog,
     Search,
-    Tags,
     _ensure_async,
 )
 from fastmcp.server.context import Context
@@ -136,7 +136,7 @@ async def test_code_mode_search_returns_lightweight_results() -> None:
 
 
 async def test_code_mode_get_schema_brief() -> None:
-    """get_schema with detail=brief returns markdown format."""
+    """get_schema with detail=brief returns names and descriptions only."""
     mcp = FastMCP("CodeMode Schema Brief")
 
     @mcp.tool
@@ -148,6 +148,27 @@ async def test_code_mode_get_schema_brief() -> None:
 
     result = await _run_tool(
         mcp, "get_schema", {"tools": ["square"], "detail": "brief"}
+    )
+    text = _unwrap_string_result(result)
+    assert "square" in text
+    assert "Compute the square" in text
+    # brief should NOT include parameter details
+    assert "**Parameters**" not in text
+
+
+async def test_code_mode_get_schema_detailed() -> None:
+    """get_schema with detail=detailed returns markdown with parameter info."""
+    mcp = FastMCP("CodeMode Schema Detailed")
+
+    @mcp.tool
+    def square(x: int) -> int:
+        """Compute the square of a number."""
+        return x * x
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(
+        mcp, "get_schema", {"tools": ["square"], "detail": "detailed"}
     )
     text = _unwrap_string_result(result)
     assert "### square" in text
@@ -175,8 +196,8 @@ async def test_code_mode_get_schema_full() -> None:
     assert "inputSchema" in parsed[0]
 
 
-async def test_code_mode_get_schema_default_is_brief() -> None:
-    """get_schema defaults to brief detail."""
+async def test_code_mode_get_schema_default_is_detailed() -> None:
+    """get_schema defaults to detailed (markdown with parameters)."""
     mcp = FastMCP("CodeMode Schema Default")
 
     @mcp.tool
@@ -189,6 +210,7 @@ async def test_code_mode_get_schema_default_is_brief() -> None:
     result = await _run_tool(mcp, "get_schema", {"tools": ["square"]})
     text = _unwrap_string_result(result)
     assert "### square" in text
+    assert "**Parameters**" in text
 
 
 async def test_code_mode_get_schema_not_found() -> None:
@@ -238,68 +260,6 @@ async def test_code_mode_execute_works() -> None:
         mcp, "execute", {"code": "return await call_tool('add', {'x': 2, 'y': 3})"}
     )
     assert _unwrap_result(result) == {"result": 5}
-
-
-async def test_code_mode_execute_with_defaults() -> None:
-    """Execute merges default_arguments into tool calls."""
-    mcp = FastMCP("CodeMode Defaults")
-
-    @mcp.tool
-    def add(x: int, y: int, workspace_id: str) -> str:
-        """Add two numbers with workspace context."""
-        return f"{workspace_id}:{x + y}"
-
-    @mcp.tool
-    def status() -> str:
-        """Get current status."""
-        return "ok"
-
-    mcp.add_transform(
-        CodeMode(
-            default_arguments={"workspace_id": "ws-default"},
-            sandbox_provider=_UnsafeTestSandboxProvider(),
-        )
-    )
-
-    result = await _run_tool(
-        mcp, "execute", {"code": "return await call_tool('add', {'x': 2, 'y': 3})"}
-    )
-    assert _unwrap_result(result) == {"result": "ws-default:5"}
-
-    result = await _run_tool(
-        mcp, "execute", {"code": "return await call_tool('status', {})"}
-    )
-    assert _unwrap_result(result) == {"result": "ok"}
-
-
-async def test_code_mode_execute_defaults_overridden_by_explicit() -> None:
-    """Explicit params in call_tool() override default_arguments."""
-    mcp = FastMCP("CodeMode Override")
-
-    @mcp.tool
-    def greet(name: str, greeting: str) -> str:
-        return f"{greeting}, {name}!"
-
-    mcp.add_transform(
-        CodeMode(
-            default_arguments={"greeting": "Hello"},
-            sandbox_provider=_UnsafeTestSandboxProvider(),
-        )
-    )
-
-    result = await _run_tool(
-        mcp, "execute", {"code": "return await call_tool('greet', {'name': 'World'})"}
-    )
-    assert _unwrap_result(result) == {"result": "Hello, World!"}
-
-    result = await _run_tool(
-        mcp,
-        "execute",
-        {
-            "code": "return await call_tool('greet', {'name': 'World', 'greeting': 'Hi'})"
-        },
-    )
-    assert _unwrap_result(result) == {"result": "Hi, World!"}
 
 
 # ---------------------------------------------------------------------------
@@ -425,6 +385,25 @@ async def test_code_mode_custom_discovery_tool_function() -> None:
     assert "square" in text
 
 
+async def test_code_mode_search_detailed() -> None:
+    """Search with detail='detailed' returns markdown with parameter info."""
+    mcp = FastMCP("CodeMode Search Detailed")
+
+    @mcp.tool
+    def square(x: int) -> int:
+        """Compute the square."""
+        return x * x
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(mcp, "search", {"query": "square", "detail": "detailed"})
+    text = _unwrap_string_result(result)
+    assert "### square" in text
+    assert "Compute the square" in text
+    assert "**Parameters**" in text
+    assert "`x` (integer, required)" in text
+
+
 async def test_code_mode_search_tool_full_detail() -> None:
     """Search with detail='full' includes JSON schemas."""
     mcp = FastMCP("CodeMode Search Full")
@@ -513,7 +492,7 @@ async def test_categories_brief_shows_tag_counts() -> None:
 
     mcp.add_transform(
         CodeMode(
-            discovery_tools=[Tags()],
+            discovery_tools=[GetTags()],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
     )
@@ -539,7 +518,7 @@ async def test_categories_full_lists_tools_per_tag() -> None:
 
     mcp.add_transform(
         CodeMode(
-            discovery_tools=[Tags(default_detail="full")],
+            discovery_tools=[GetTags(default_detail="full")],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
     )
@@ -565,7 +544,7 @@ async def test_categories_includes_untagged() -> None:
 
     mcp.add_transform(
         CodeMode(
-            discovery_tools=[Tags()],
+            discovery_tools=[GetTags()],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
     )
@@ -585,7 +564,7 @@ async def test_categories_tool_in_multiple_tags() -> None:
 
     mcp.add_transform(
         CodeMode(
-            discovery_tools=[Tags(default_detail="full")],
+            discovery_tools=[GetTags(default_detail="full")],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
     )
@@ -609,7 +588,7 @@ async def test_categories_detail_override_per_call() -> None:
 
     mcp.add_transform(
         CodeMode(
-            discovery_tools=[Tags()],  # default_detail="brief"
+            discovery_tools=[GetTags()],  # default_detail="brief"
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
     )
