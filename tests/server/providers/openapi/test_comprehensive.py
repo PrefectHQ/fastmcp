@@ -731,9 +731,11 @@ class TestOpenAPIComprehensive:
 
         end_time = time.time()
 
-        # Should be very fast (no code generation)
+        # Should be fast (no code generation). Use generous threshold for slow
+        # CI runners (Windows); the intent is to catch obvious regressions
+        # (e.g., accidentally re-introducing code generation), not to benchmark.
         initialization_time = end_time - start_time
-        assert initialization_time < 0.1  # Should be under 100ms
+        assert initialization_time < 1.0
 
         # Verify provider was created correctly
         assert provider is not None

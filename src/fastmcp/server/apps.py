@@ -7,7 +7,7 @@ UI metadata for clients that support interactive app rendering.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -92,7 +92,7 @@ class AppConfig(BaseModel):
         alias="resourceUri",
         description="URI of the UI resource (typically ui:// scheme). Tools only.",
     )
-    visibility: list[str] | None = Field(
+    visibility: list[Literal["app", "model"]] | None = Field(
         default=None,
         description="Where this tool is visible: 'app', 'model', or both. Tools only.",
     )

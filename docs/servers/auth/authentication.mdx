@@ -178,6 +178,40 @@ This example shows the basic structure of a custom OAuth provider. The actual im
 
 → **Complete guide**: [Full OAuth Server](/servers/auth/full-oauth-server)
 
+### MultiAuth
+
+<VersionBadge version="3.1.0" />
+
+`MultiAuth` composes multiple authentication sources into a single `auth` provider. When a server needs to accept tokens from different issuers — for example, an OAuth proxy for interactive clients alongside JWT verification for machine-to-machine tokens — `MultiAuth` tries each source in order and accepts the first successful verification.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth import MultiAuth, OAuthProxy
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+auth = MultiAuth(
+    server=OAuthProxy(
+        issuer_url="https://login.example.com/...",
+        client_id="my-app",
+        client_secret="secret",
+        base_url="https://my-server.com",
+    ),
+    verifiers=[
+        JWTVerifier(
+            jwks_uri="https://internal-issuer.example.com/.well-known/jwks.json",
+            issuer="https://internal-issuer.example.com",
+            audience="my-mcp-server",
+        ),
+    ],
+)
+
+mcp = FastMCP("My Server", auth=auth)
+```
+
+The server (if provided) owns all OAuth routes and metadata. Verifiers contribute only token verification logic. This keeps the MCP discovery surface clean while supporting multiple token sources.
+
+→ **Complete guide**: [Multiple Auth Sources](/servers/auth/multi-auth)
+
 ## Configuration
 
 Authentication providers are configured programmatically by instantiating them directly in your code with their required parameters. This makes dependencies explicit and allows your IDE to provide helpful autocompletion and type checking.
@@ -210,6 +244,8 @@ The authentication approach you choose depends on your existing infrastructure, 
 **For identity providers with DCR support (Descope, WorkOS AuthKit, modern auth platforms), use RemoteAuthProvider.** These providers allow clients to dynamically register and obtain credentials without manual configuration. This enables the fully automated authentication flow that MCP is designed for, providing the best user experience and simplest implementation.
 
 **Token validation works well when you already have authentication infrastructure that issues structured tokens.** If your organization already uses JWT-based systems, API gateways, or enterprise SSO that can generate tokens, this approach integrates seamlessly while keeping your MCP server focused on its core functionality. The simplicity comes from leveraging existing investment in authentication infrastructure.
+
+**When you need tokens from multiple sources, use MultiAuth.** This is common in hybrid architectures where interactive clients authenticate through an OAuth proxy while backend services send JWT tokens directly. `MultiAuth` composes an optional auth server with additional token verifiers, trying each source in order until one succeeds.
 
 **Full OAuth implementation should be avoided unless you have compelling reasons that external providers cannot address.** Air-gapped environments, specialized compliance requirements, or unique organizational constraints might justify this approach, but it requires significant security expertise and ongoing maintenance commitment. The complexity extends far beyond initial implementation to include threat monitoring, security updates, and keeping pace with evolving attack vectors.
 

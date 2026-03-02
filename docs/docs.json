@@ -163,6 +163,8 @@
                       "servers/transforms/namespace",
                       "servers/transforms/tool-transformation",
                       "servers/visibility",
+                      "servers/transforms/code-mode",
+                      "servers/transforms/tool-search",
                       "servers/transforms/resources-as-tools",
                       "servers/transforms/prompts-as-tools"
                     ]
@@ -177,7 +179,8 @@
                       "servers/auth/remote-oauth",
                       "servers/auth/oauth-proxy",
                       "servers/auth/oidc-proxy",
-                      "servers/auth/full-oauth-server"
+                      "servers/auth/full-oauth-server",
+                      "servers/auth/multi-auth"
                     ]
                   },
                   "servers/authorization",
@@ -200,6 +203,8 @@
                 "group": "Apps",
                 "pages": [
                   "apps/overview",
+                  "apps/prefab",
+                  "apps/patterns",
                   "apps/low-level"
                 ]
               },
@@ -272,6 +277,7 @@
                       "integrations/github",
                       "integrations/google",
                       "integrations/oci",
+                      "integrations/propelauth",
                       "integrations/scalekit",
                       "integrations/supabase",
                       "integrations/workos",

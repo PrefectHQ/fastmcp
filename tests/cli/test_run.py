@@ -1,13 +1,18 @@
 import inspect
 import json
+import subprocess
+import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 
+from fastmcp.cli.cli import inspector, run
 from fastmcp.cli.run import (
     create_mcp_config_server,
     is_url,
+    run_module_command,
 )
 from fastmcp.client.client import Client
 from fastmcp.client.transports import FastMCPTransport
@@ -695,3 +700,194 @@ class TestReloadFunctionality:
         }
         for ext in expected:
             assert ext in WATCHED_EXTENSIONS, f"Expected {ext} in WATCHED_EXTENSIONS"
+
+
+class TestRunModuleCommand:
+    """Test run_module_command functionality."""
+
+    def test_runs_python_m_module(self):
+        """Test that run_module_command invokes python -m <module>."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch(
+                "fastmcp.cli.run.subprocess.run", return_value=mock_result
+            ) as mock_run,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            run_module_command("my_package")
+
+        assert exc_info.value.code == 0
+        call_args = mock_run.call_args
+        cmd = call_args[0][0]
+        assert "-m" in cmd
+        assert "my_package" in cmd
+
+    def test_forwards_extra_args(self):
+        """Test that extra arguments are forwarded after the module name."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch(
+                "fastmcp.cli.run.subprocess.run", return_value=mock_result
+            ) as mock_run,
+            pytest.raises(SystemExit),
+        ):
+            run_module_command("my_package", extra_args=["--host", "0.0.0.0"])
+
+        cmd = mock_run.call_args[0][0]
+        assert "--host" in cmd
+        assert "0.0.0.0" in cmd
+
+    def test_uses_env_command_builder(self):
+        """Test that env_command_builder wraps the command."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        def fake_builder(cmd: list[str]) -> list[str]:
+            return ["uv", "run", *cmd]
+
+        with (
+            patch(
+                "fastmcp.cli.run.subprocess.run", return_value=mock_result
+            ) as mock_run,
+            pytest.raises(SystemExit),
+        ):
+            run_module_command("my_package", env_command_builder=fake_builder)
+
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "uv"
+        assert cmd[1] == "run"
+        # Should use bare "python" (not sys.executable) so uv resolves the interpreter
+        assert cmd[2] == "python"
+        assert "-m" in cmd
+        assert "my_package" in cmd
+
+    def test_exits_with_subprocess_error_code(self):
+        """Test that non-zero exit codes from the module are propagated."""
+        with (
+            patch(
+                "fastmcp.cli.run.subprocess.run",
+                side_effect=subprocess.CalledProcessError(42, ["python", "-m", "bad"]),
+            ),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            run_module_command("bad")
+
+        assert exc_info.value.code == 42
+
+    def test_no_env_builder_runs_plain_python(self):
+        """Test that without env_command_builder, plain python is used."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch(
+                "fastmcp.cli.run.subprocess.run", return_value=mock_result
+            ) as mock_run,
+            pytest.raises(SystemExit),
+        ):
+            run_module_command("my_module", env_command_builder=None)
+
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == sys.executable
+        assert cmd[1] == "-m"
+        assert cmd[2] == "my_module"
+
+
+class TestRunModuleMode:
+    """Test the run command's module-mode branch."""
+
+    async def test_run_module_mode_requires_server_spec(self):
+        """Test that module mode exits with error when server_spec is None."""
+        with pytest.raises(SystemExit) as exc_info:
+            await run(None, module=True)
+
+        assert exc_info.value.code == 1
+
+    async def test_run_module_mode_warns_ignored_options(self, caplog):
+        """Test that ignored options produce a warning in module mode."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch("fastmcp.cli.run.subprocess.run", return_value=mock_result),
+            pytest.raises(SystemExit),
+            caplog.at_level("WARNING"),
+        ):
+            await run(
+                "my_module",
+                module=True,
+                transport="sse",
+                host="0.0.0.0",
+                port=8080,
+            )
+
+        assert any("ignored in module mode" in r.message for r in caplog.records)
+
+    async def test_run_module_mode_delegates_to_run_module_command(self):
+        """Test that module mode calls run_module_command with correct args."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch(
+                "fastmcp.cli.run.subprocess.run", return_value=mock_result
+            ) as mock_subprocess,
+            pytest.raises(SystemExit),
+        ):
+            await run("my_module", module=True)
+
+        cmd = mock_subprocess.call_args[0][0]
+        assert "-m" in cmd
+        assert "my_module" in cmd
+
+    async def test_run_module_mode_with_reload(self):
+        """Test that --reload in module mode delegates to run_with_reload."""
+        with patch(
+            "fastmcp.cli.run.run_with_reload", new_callable=AsyncMock
+        ) as mock_reload:
+            await run("my_module", module=True, reload=True, skip_env=True)
+
+        mock_reload.assert_called_once()
+        cmd = mock_reload.call_args[0][0]
+        assert "fastmcp" in cmd
+        assert "--module" in cmd
+        assert "--no-reload" in cmd
+        assert "my_module" in cmd
+
+
+class TestInspectorModuleMode:
+    """Test the inspector command's module-mode handling."""
+
+    async def test_inspector_module_mode_skips_load_server(self):
+        """Test that inspector with module=True skips load_server() and forwards --module."""
+        mock_config = MagicMock()
+        mock_config.deployment.port = 8080
+        mock_config.environment.build_command = lambda cmd: cmd
+        mock_config.source.load_server = AsyncMock()
+
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+
+        with (
+            patch(
+                "fastmcp.cli.cli.load_and_merge_config",
+                return_value=(mock_config, "my_module"),
+            ),
+            patch("fastmcp.cli.cli._get_npx_command", return_value="npx"),
+            patch(
+                "fastmcp.cli.cli.subprocess.run", return_value=mock_process
+            ) as mock_subprocess,
+            pytest.raises(SystemExit),
+        ):
+            await inspector("my_module", module=True)
+
+        # load_server should NOT have been called in module mode
+        mock_config.source.load_server.assert_not_called()
+
+        # --module should be in the subprocess command
+        cmd = mock_subprocess.call_args[0][0]
+        assert "--module" in cmd

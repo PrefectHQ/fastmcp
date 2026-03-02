@@ -10,22 +10,63 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.0.0" />
 
-MCP Apps let your tools return interactive UIs — rendered in a sandboxed iframe right inside the host client's conversation. Instead of returning plain text or JSON, a tool can show a chart, a form, an image viewer, or anything you can build with HTML and JavaScript.
+MCP Apps let your tools return interactive UIs — rendered in a sandboxed iframe right inside the host client's conversation. Instead of returning plain text, a tool can show a chart, a sortable table, a form, or anything you can build with HTML.
 
-FastMCP implements the [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps), so you can start building apps today. FastMCP 3.1 will introduce a full Python-native app framework that makes building rich UIs dramatically simpler — no HTML or JavaScript required.
+FastMCP implements the [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) and provides two approaches:
 
-## What's Available Today
+## Prefab Apps (Recommended)
 
-FastMCP provides typed models and helpers for working with the MCP Apps extension directly:
+<VersionBadge version="3.1.0" />
 
-- **`AppConfig`** to link tools to UI resources and control visibility
-- **`ui://` resources** that automatically serve HTML with the correct MIME type
-- **`ResourceCSP`** and **`ResourcePermissions`** for security and sandboxing
+[Prefab UI](https://prefab.prefect.io) is a declarative UI framework for Python. You describe layouts, charts, tables, forms, and interactive behaviors using a Python DSL — and the framework compiles them to a JSON protocol that a shared renderer interprets. It started as a component library inside FastMCP and grew into its own framework with [comprehensive documentation](https://prefab.prefect.io).
 
-This is the [low-level API](/apps/low-level) — you write the HTML yourself and wire up communication with the host via the `@modelcontextprotocol/ext-apps` JavaScript SDK. It gives you full control over the UI.
+```python
+from prefab_ui.components import Column, Heading, BarChart, ChartSeries
+from prefab_ui.app import PrefabApp
+from fastmcp import FastMCP
 
-## What's Coming in 3.1
+mcp = FastMCP("Dashboard")
 
-FastMCP 3.1 will ship a Python-native app framework that lets you build interactive UIs entirely in Python. Define layouts, handle events, and manage state without writing any HTML or JavaScript — FastMCP generates the app for you.
+@mcp.tool(app=True)
+def sales_chart(year: int) -> PrefabApp:
+    """Show sales data as an interactive chart."""
+    data = get_sales_data(year)
 
-Stay tuned. In the meantime, the [low-level API](/apps/low-level) is ready to use.
+    with Column(gap=4, css_class="p-6") as view:
+        Heading(f"{year} Sales")
+        BarChart(
+            data=data,
+            series=[ChartSeries(data_key="revenue", label="Revenue")],
+            x_axis="month",
+        )
+
+    return PrefabApp(view=view)
+```
+
+Install with `pip install "fastmcp[apps]"` and see [Prefab Apps](/apps/prefab) for the integration guide.
+
+## Custom HTML Apps
+
+The [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) is an open protocol, and you can use it directly when you need full control. You write your own HTML/CSS/JavaScript and communicate with the host via the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) SDK.
+
+This is the right choice for custom rendering (maps, 3D, video), specific JavaScript frameworks, or capabilities beyond what the component library offers.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.apps import AppConfig, ResourceCSP
+
+mcp = FastMCP("Custom App")
+
+@mcp.tool(app=AppConfig(resource_uri="ui://my-app/view.html"))
+def my_tool() -> str:
+    return '{"values": [1, 2, 3]}'
+
+@mcp.resource(
+    "ui://my-app/view.html",
+    app=AppConfig(csp=ResourceCSP(resource_domains=["https://unpkg.com"])),
+)
+def view() -> str:
+    return "<html>...</html>"
+```
+
+See [Custom HTML Apps](/apps/low-level) for the full reference.

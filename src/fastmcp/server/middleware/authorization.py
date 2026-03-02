@@ -102,8 +102,11 @@ class AuthMiddleware(Middleware):
         authorized_tools: list[Tool] = []
         for tool in tools:
             ctx = AuthContext(token=token, component=tool)
-            if await run_auth_checks(self.auth, ctx):
-                authorized_tools.append(tool)
+            try:
+                if await run_auth_checks(self.auth, ctx):
+                    authorized_tools.append(tool)
+            except AuthorizationError:
+                continue
 
         return authorized_tools
 
@@ -169,8 +172,11 @@ class AuthMiddleware(Middleware):
         authorized_resources: list[Resource] = []
         for resource in resources:
             ctx = AuthContext(token=token, component=resource)
-            if await run_auth_checks(self.auth, ctx):
-                authorized_resources.append(resource)
+            try:
+                if await run_auth_checks(self.auth, ctx):
+                    authorized_resources.append(resource)
+            except AuthorizationError:
+                continue
 
         return authorized_resources
 
@@ -238,8 +244,11 @@ class AuthMiddleware(Middleware):
         authorized_templates: list[ResourceTemplate] = []
         for template in templates:
             ctx = AuthContext(token=token, component=template)
-            if await run_auth_checks(self.auth, ctx):
-                authorized_templates.append(template)
+            try:
+                if await run_auth_checks(self.auth, ctx):
+                    authorized_templates.append(template)
+            except AuthorizationError:
+                continue
 
         return authorized_templates
 
@@ -262,8 +271,11 @@ class AuthMiddleware(Middleware):
         authorized_prompts: list[Prompt] = []
         for prompt in prompts:
             ctx = AuthContext(token=token, component=prompt)
-            if await run_auth_checks(self.auth, ctx):
-                authorized_prompts.append(prompt)
+            try:
+                if await run_auth_checks(self.auth, ctx):
+                    authorized_prompts.append(prompt)
+            except AuthorizationError:
+                continue
 
         return authorized_prompts
 
