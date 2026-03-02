@@ -287,6 +287,32 @@ class OAuth(OAuthClientProvider):
         if self.context.current_tokens and self.context.current_tokens.expires_in:
             self.context.update_token_expiry(self.context.current_tokens)
 
+        # Log OAuth client metadata for debugging registration issues
+        if self.context.client_metadata:
+            metadata = self.context.client_metadata
+            logger.debug(
+                f"OAuth client metadata: client_name={metadata.client_name!r}, "
+                f"redirect_uris={metadata.redirect_uris}, scope={metadata.scope!r}"
+            )
+
+    async def clear_cached_credentials(self) -> None:
+        """Clear cached OAuth credentials.
+
+        Use this method when encountering authentication errors that may be
+        caused by stale cached credentials. After clearing, the next OAuth
+        flow will perform fresh client registration.
+
+        Example:
+            oauth = OAuth(mcp_url="https://server.example/mcp")
+            await oauth.clear_cached_credentials()
+        """
+        if hasattr(self, "token_storage_adapter"):
+            await self.token_storage_adapter.clear()
+            self._initialized = False
+            logger.info("OAuth cached credentials cleared")
+        else:
+            logger.warning("Cannot clear credentials: OAuth provider not yet bound to a server")
+
     async def redirect_handler(self, authorization_url: str) -> None:
         """Open browser for authorization, with pre-flight check for invalid client."""
         # Pre-flight check to detect invalid client_id before opening browser
