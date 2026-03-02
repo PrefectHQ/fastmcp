@@ -84,7 +84,7 @@ def test_get_model():
         default_model="fallback-model", client=mock_client
     )
 
-    # Test with model hint
+    # Test with Gemini model hint
     prefs = ModelPreferences(hints=[ModelHint(name="gemini-2.0-flash-exp")])
     assert handler._get_model(prefs) == "gemini-2.0-flash-exp"
 
@@ -94,6 +94,16 @@ def test_get_model():
     # Test with empty hints
     prefs_empty = ModelPreferences(hints=[])
     assert handler._get_model(prefs_empty) == "fallback-model"
+
+    # Test with non-Gemini hint falls back to default
+    prefs_other = ModelPreferences(hints=[ModelHint(name="gpt-4o")])
+    assert handler._get_model(prefs_other) == "fallback-model"
+
+    # Test with mixed hints selects first Gemini model
+    prefs_mixed = ModelPreferences(
+        hints=[ModelHint(name="claude-3.5-sonnet"), ModelHint(name="gemini-2.0-flash")]
+    )
+    assert handler._get_model(prefs_mixed) == "gemini-2.0-flash"
 
 
 async def test_response_to_create_message_result():

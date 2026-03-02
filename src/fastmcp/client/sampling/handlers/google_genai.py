@@ -134,7 +134,7 @@ class GoogleGenaiSamplingHandler:
     def _get_model(self, model_preferences: ModelPreferences | None) -> str:
         if model_preferences and model_preferences.hints:
             for hint in model_preferences.hints:
-                if hint.name:
+                if hint.name and hint.name.startswith("gemini"):
                     return hint.name
         return self.default_model
 
