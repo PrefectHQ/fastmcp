@@ -38,7 +38,6 @@ from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
 from starlette.routing import BaseRoute
 from typing_extensions import Self
-from uncalled_for import SharedContext
 
 import fastmcp
 import fastmcp.server
@@ -256,9 +255,6 @@ class FastMCP(
         self._docket = None
         self._worker = None
 
-        # SharedContext for Shared() dependencies (server-lifetime scope)
-        self._shared_context: SharedContext | None = None
-
         self._additional_http_routes: list[BaseRoute] = []
 
         # Session-scoped state store (shared across all requests)
@@ -349,24 +345,6 @@ class FastMCP(
         self.sampling_handler_behavior: Literal["always", "fallback"] = (
             sampling_handler_behavior or "fallback"
         )
-
-    async def _ensure_shared_context(self) -> None:
-        """Ensure a SharedContext is active for Shared() dependencies.
-
-        When running through the lifespan (production), SharedContext is set up
-        by _docket_lifespan or the Docket Worker. When calling call_tool or
-        read_resource directly without a lifespan, this lazily starts one
-        scoped to the server instance.
-        """
-        try:
-            SharedContext.resolved.get()
-            return  # already active
-        except LookupError:
-            pass
-
-        if self._shared_context is None:
-            self._shared_context = SharedContext()
-            await self._shared_context.__aenter__()
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.name!r})"

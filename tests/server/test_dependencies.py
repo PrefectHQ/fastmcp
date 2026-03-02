@@ -935,13 +935,12 @@ class TestSharedDependencies:
         async def tool_b(config: dict[str, str] = Shared(get_config)) -> str:
             return config["key"]
 
-        result_a = await mcp.call_tool("tool_a", {})
-        result_b = await mcp.call_tool("tool_b", {})
+        async with Client(mcp) as client:
+            result_a = await client.call_tool("tool_a", {})
+            result_b = await client.call_tool("tool_b", {})
 
-        assert result_a.structured_content is not None
-        assert result_a.structured_content["result"] == "value"
-        assert result_b.structured_content is not None
-        assert result_b.structured_content["result"] == "value"
+        assert result_a.content[0].text == "value"
+        assert result_b.content[0].text == "value"
         assert call_count == 1
 
     async def test_shared_async_function(self, mcp: FastMCP):
@@ -962,13 +961,12 @@ class TestSharedDependencies:
         async def tool_b(session: str = Shared(get_session)) -> str:
             return session
 
-        result_a = await mcp.call_tool("tool_a", {})
-        result_b = await mcp.call_tool("tool_b", {})
+        async with Client(mcp) as client:
+            result_a = await client.call_tool("tool_a", {})
+            result_b = await client.call_tool("tool_b", {})
 
-        assert result_a.structured_content is not None
-        assert result_a.structured_content["result"] == "session-abc"
-        assert result_b.structured_content is not None
-        assert result_b.structured_content["result"] == "session-abc"
+        assert result_a.content[0].text == "session-abc"
+        assert result_b.content[0].text == "session-abc"
         assert call_count == 1
 
     async def test_shared_async_context_manager(self, mcp: FastMCP):
@@ -992,13 +990,12 @@ class TestSharedDependencies:
         async def tool_b(conn: Connection = Shared(get_connection)) -> bool:
             return conn.is_open
 
-        result_a = await mcp.call_tool("tool_a", {})
-        result_b = await mcp.call_tool("tool_b", {})
+        async with Client(mcp) as client:
+            result_a = await client.call_tool("tool_a", {})
+            result_b = await client.call_tool("tool_b", {})
 
-        assert result_a.structured_content is not None
-        assert result_a.structured_content["result"] is True
-        assert result_b.structured_content is not None
-        assert result_b.structured_content["result"] is True
+        assert result_a.content[0].text == "true"
+        assert result_b.content[0].text == "true"
         assert enter_count == 1
 
     async def test_shared_with_depends(self, mcp: FastMCP):
@@ -1024,13 +1021,12 @@ class TestSharedDependencies:
         ) -> str:
             return f"{config}/{request_id}"
 
-        result1 = await mcp.call_tool("my_tool", {})
-        result2 = await mcp.call_tool("my_tool", {})
+        async with Client(mcp) as client:
+            result1 = await client.call_tool("my_tool", {})
+            result2 = await client.call_tool("my_tool", {})
 
-        assert result1.structured_content is not None
-        assert result1.structured_content["result"] == "shared-config/request-123"
-        assert result2.structured_content is not None
-        assert result2.structured_content["result"] == "shared-config/request-123"
+        assert result1.content[0].text == "shared-config/request-123"
+        assert result2.content[0].text == "shared-config/request-123"
         assert shared_calls == 1
         assert depends_calls == 2
 
@@ -1064,12 +1060,13 @@ class TestSharedDependencies:
         async def config_resource(config: str = Shared(get_config)) -> str:
             return config
 
-        result = await mcp.read_resource("test://config")
-        assert result.contents[0].content == "resource-config"
+        async with Client(mcp) as client:
+            result = await client.read_resource("test://config")
+            assert result[0].text == "resource-config"
 
-        result = await mcp.read_resource("test://config")
-        assert result.contents[0].content == "resource-config"
-        assert call_count == 1
+            result = await client.read_resource("test://config")
+            assert result[0].text == "resource-config"
+            assert call_count == 1
 
     async def test_shared_in_prompt(self, mcp: FastMCP):
         """Shared dependencies work in prompt functions."""
@@ -1085,13 +1082,16 @@ class TestSharedDependencies:
         async def my_prompt(topic: str, system: str = Shared(get_system_prompt)) -> str:
             return f"{system} Talk about {topic}."
 
-        result = await mcp.render_prompt("my_prompt", {"topic": "dogs"})
-        content = result.messages[0].content
-        assert isinstance(content, TextContent)
-        assert "You are a helpful assistant. Talk about dogs." in content.text
+        async with Client(mcp) as client:
+            result = await client.get_prompt("my_prompt", {"topic": "dogs"})
+            assert (
+                "You are a helpful assistant. Talk about dogs."
+                in result.messages[0].content.text
+            )
 
-        result = await mcp.render_prompt("my_prompt", {"topic": "cats"})
-        content = result.messages[0].content
-        assert isinstance(content, TextContent)
-        assert "You are a helpful assistant. Talk about cats." in content.text
-        assert call_count == 1
+            result = await client.get_prompt("my_prompt", {"topic": "cats"})
+            assert (
+                "You are a helpful assistant. Talk about cats."
+                in result.messages[0].content.text
+            )
+            assert call_count == 1
