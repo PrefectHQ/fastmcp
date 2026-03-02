@@ -162,6 +162,8 @@ def _render_tools(tools: Sequence[Tool], detail: ToolDetailLevel) -> str:
     gives identical formatting to ``detail="detailed"`` on GetSchemas.
     """
     if not tools:
+        if detail == "full":
+            return json.dumps([], indent=2)
         return "No tools matched the query."
     if detail == "full":
         return json.dumps(serialize_tools_for_output_json(tools), indent=2)
@@ -513,15 +515,10 @@ class CodeMode(CatalogTransform):
 
 __all__ = [
     "CodeMode",
-    "DiscoveryToolFactory",
     "GetSchemas",
     "GetTags",
     "GetToolCatalog",
     "MontySandboxProvider",
     "SandboxProvider",
     "Search",
-    "SearchFn",
-    "ToolDetailLevel",
-    "serialize_tools_for_output_json",
-    "serialize_tools_for_output_markdown",
 ]
