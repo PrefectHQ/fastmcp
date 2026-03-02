@@ -469,6 +469,117 @@ class RemoteAuthProvider(AuthProvider):
         return routes
 
 
+class MultiAuth(AuthProvider):
+    """Composes an optional auth server with additional token verifiers.
+
+    Use this when a single server needs to accept tokens from multiple sources.
+    For example, an OAuth proxy for interactive clients combined with a JWT
+    verifier for machine-to-machine tokens.
+
+    Token verification tries the server first (if present), then each verifier
+    in order, returning the first successful result. Routes and OAuth metadata
+    come from the server; verifiers contribute only token verification.
+
+    Example:
+        ```python
+        from fastmcp.server.auth import MultiAuth, JWTVerifier, OAuthProxy
+
+        auth = MultiAuth(
+            server=OAuthProxy(issuer_url="https://login.example.com/..."),
+            verifiers=[JWTVerifier(jwks_uri="https://example.com/.well-known/jwks.json")],
+        )
+        mcp = FastMCP("my-server", auth=auth)
+        ```
+    """
+
+    def __init__(
+        self,
+        *,
+        server: AuthProvider | None = None,
+        verifiers: list[TokenVerifier] | TokenVerifier | None = None,
+        base_url: AnyHttpUrl | str | None = None,
+        required_scopes: list[str] | None = None,
+    ):
+        """Initialize the multi-auth provider.
+
+        Args:
+            server: Optional auth provider (e.g., OAuthProxy) that owns routes
+                and OAuth metadata. Also participates in token verification as
+                the first verifier tried.
+            verifiers: One or more token verifiers to try after the server.
+            base_url: Override the base URL. Defaults to the server's base_url.
+            required_scopes: Override required scopes. Defaults to the server's.
+        """
+        if verifiers is None:
+            verifiers = []
+        elif isinstance(verifiers, TokenVerifier):
+            verifiers = [verifiers]
+
+        if server is None and not verifiers:
+            raise ValueError("MultiAuth requires at least a server or one verifier")
+
+        effective_base_url = base_url or (server.base_url if server else None)
+        effective_scopes = (
+            required_scopes
+            if required_scopes is not None
+            else (server.required_scopes if server else None)
+        )
+
+        super().__init__(base_url=effective_base_url, required_scopes=effective_scopes)
+        self.server = server
+        self.verifiers = list(verifiers)
+
+        self._sources: list[AuthProvider] = []
+        if self.server is not None:
+            self._sources.append(self.server)
+        self._sources.extend(self.verifiers)
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        """Verify a token by trying the server, then each verifier in order.
+
+        Each source is tried independently. If a source raises an exception,
+        it is logged and treated as a non-match so that remaining sources
+        still get a chance to verify the token.
+        """
+        for source in self._sources:
+            try:
+                result = await source.verify_token(token)
+                if result is not None:
+                    return result
+            except Exception:
+                logger.debug(
+                    "Token verification failed for %s, trying next source",
+                    type(source).__name__,
+                    exc_info=True,
+                )
+
+        return None
+
+    def set_mcp_path(self, mcp_path: str | None) -> None:
+        """Propagate MCP path to the server and all verifiers."""
+        super().set_mcp_path(mcp_path)
+        if self.server is not None:
+            self.server.set_mcp_path(mcp_path)
+        for verifier in self.verifiers:
+            verifier.set_mcp_path(mcp_path)
+
+    def get_routes(self, mcp_path: str | None = None) -> list[Route]:
+        """Delegate route creation to the server."""
+        if self.server is not None:
+            return self.server.get_routes(mcp_path)
+        return []
+
+    def get_well_known_routes(self, mcp_path: str | None = None) -> list[Route]:
+        """Delegate well-known route creation to the server.
+
+        This ensures that server-specific well-known route logic (e.g.,
+        OAuthProvider's RFC 8414 path-aware discovery) is preserved.
+        """
+        if self.server is not None:
+            return self.server.get_well_known_routes(mcp_path)
+        return []
+
+
 class OAuthProvider(
     AuthProvider,
     OAuthAuthorizationServerProvider[AuthorizationCode, RefreshToken, AccessToken],

@@ -4,6 +4,7 @@ from .auth import (
     OAuthProvider,
     TokenVerifier,
     RemoteAuthProvider,
+    MultiAuth,
     AccessToken,
     AuthProvider,
 )
@@ -61,6 +62,7 @@ __all__ = [
     "AuthProvider",
     "DebugTokenVerifier",
     "JWTVerifier",
+    "MultiAuth",
     "OAuthProvider",
     "OAuthProxy",
     "OIDCProxy",
