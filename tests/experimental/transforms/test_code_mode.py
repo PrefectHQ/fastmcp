@@ -685,6 +685,81 @@ async def test_search_with_untagged_filter() -> None:
     assert "add" not in text
 
 
+async def test_search_default_detail_detailed_skips_get_schema() -> None:
+    """Two-stage pattern: Search(default_detail='detailed') returns schemas inline."""
+    mcp = FastMCP("CodeMode Two-Stage")
+
+    @mcp.tool
+    def square(x: int) -> int:
+        """Compute the square."""
+        return x * x
+
+    mcp.add_transform(
+        CodeMode(
+            discovery_tools=[Search(default_detail="detailed")],
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+        )
+    )
+
+    result = await _run_tool(mcp, "search", {"query": "square"})
+    text = _unwrap_string_result(result)
+    assert "### square" in text
+    assert "**Parameters**" in text
+    assert "`x` (integer, required)" in text
+
+
+async def test_search_full_detail_empty_results_returns_json() -> None:
+    """Search with detail=full and no matches returns valid JSON, not plain text."""
+    mcp = FastMCP("CodeMode Empty Full")
+
+    @mcp.tool(tags={"math"})
+    def add(x: int, y: int) -> int:
+        return x + y
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(
+        mcp,
+        "search",
+        {"query": "nonexistent", "tags": ["nonexistent"], "detail": "full"},
+    )
+    text = _unwrap_string_result(result)
+    parsed = json.loads(text)
+    assert parsed == []
+
+
+async def test_get_schema_empty_tools_list() -> None:
+    """get_schema with an empty tools list returns no-match message."""
+    mcp = FastMCP("CodeMode Empty Schema")
+
+    @mcp.tool
+    def ping() -> str:
+        return "pong"
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(mcp, "get_schema", {"tools": []})
+    text = _unwrap_string_result(result)
+    assert "No tools matched" in text
+
+
+async def test_get_tags_empty_catalog() -> None:
+    """GetTags with no tools returns 'No tools available.'."""
+    mcp = FastMCP("CodeMode Empty Tags")
+
+    mcp.disable(names={"ping"}, components={"tool"})
+    mcp.add_transform(
+        CodeMode(
+            discovery_tools=[GetTags()],
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+        )
+    )
+
+    result = await _run_tool(mcp, "tags", {})
+    text = _unwrap_string_result(result)
+    assert "No tools available" in text
+
+
 async def test_get_schema_full_partial_match_returns_valid_json() -> None:
     """get_schema with detail=full and missing tools returns valid JSON."""
     mcp = FastMCP("Schema Full Partial")
