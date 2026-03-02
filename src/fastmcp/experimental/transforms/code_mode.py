@@ -203,7 +203,7 @@ class Search:
         if search_fn is None:
             from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
 
-            _bm25 = BM25SearchTransform(max_results=10_000)
+            _bm25 = BM25SearchTransform(max_results=default_limit or 50)
             search_fn = _bm25._search
         self._search_fn = search_fn
         self._name = name
