@@ -2095,8 +2095,8 @@ wheels = [
 
 [[package]]
 name = "pydocket"
-version = "0.17.10.dev4+g7180b799d"
-source = { git = "https://github.com/chrisguidry/docket.git?rev=main#7180b799d187bc6ec12a3b1a0fde1efda7bde7eb" }
+version = "0.17.10.dev6+gd2fa25067"
+source = { git = "https://github.com/chrisguidry/docket.git?rev=main#d2fa25067e7a211d6f70dd843dfedba96e170f0b" }
 dependencies = [
     { name = "cloudpickle" },
     { name = "croniter" },
