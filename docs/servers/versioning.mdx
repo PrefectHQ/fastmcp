@@ -60,7 +60,7 @@ VersionFilter(version_gte="2.0", version_lt="3.0")
 ```
 
 <Note>
-**Unversioned components are exempt from version filtering.** A `VersionFilter` only affects versioned components - unversioned components always pass through regardless of the filter's constraints. This ensures that adding version filtering to a server with mixed versioned and unversioned tools doesn't accidentally hide the unversioned ones. To prevent confusion, FastMCP forbids mixing versioned and unversioned components with the same name.
+**Unversioned components are exempt from version filtering by default.** Set `include_unversioned=False` to exclude them. Including them by default ensures that adding version filtering to a server with mixed versioned and unversioned components doesn't accidentally hide the unversioned ones. To prevent confusion, FastMCP forbids mixing versioned and unversioned components with the same name.
 </Note>
 
 ### Filtering Mounted Servers
@@ -138,7 +138,7 @@ def calculate(x: int, y: int, z: int = 0) -> int:
 
 The error message explains the conflict: "Cannot add versioned tool 'calculate' (version='2.0'): an unversioned tool with this name already exists. Either version all components or none."
 
-This restriction exists because unversioned components always pass through version filters. If you could mix versioned and unversioned components, you'd have no way to filter out the unversioned one using `VersionFilter`. By enforcing consistency at registration, FastMCP ensures version filtering behaves predictably.
+This restriction helps keep version filtering behavior predictable.
 
 Resources and prompts follow the same pattern.
 
