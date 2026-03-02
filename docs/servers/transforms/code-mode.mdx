@@ -12,7 +12,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 Standard MCP tool usage has two scaling problems. First, every tool in the catalog is loaded into the LLM's context upfront — with hundreds of tools, that's tens of thousands of tokens spent before the LLM even reads the user's request. Second, every tool call is a round-trip: the LLM calls a tool, the result passes back through the context window, the LLM reasons about it, calls another tool, and so on. Intermediate results that only exist to feed the next step still burn tokens flowing through the model.
 
-`CodeMode` solves both problems by replacing the tool catalog with two meta-tools — `search` for discovering tools by keyword, and `execute` for running Python scripts that chain tool calls in a sandbox. The LLM discovers what it needs, writes a script, and gets back only the final answer. One round-trip instead of ten; tool definitions loaded only when needed instead of all at once.
+`CodeMode` solves both problems by replacing the tool catalog with a set of discovery tools and an `execute` tool. The LLM discovers what it needs through progressive disclosure, writes a script that chains tool calls in a sandbox, and gets back only the final answer.
 
 The approach was introduced by Cloudflare in [Code Mode](https://blog.cloudflare.com/code-mode/) and explored further by Anthropic in [Code Execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp).
 
@@ -39,14 +39,24 @@ def multiply(x: int, y: int) -> int:
     return x * y
 ```
 
-Clients now see only two tools. The LLM discovers the real tools through `search`, then orchestrates them through `execute`:
+By default, clients see three tools: `search`, `get_schema`, and `execute`. The LLM uses progressive disclosure to find tools, inspect their parameters, and call them:
 
 ```python
-# Discover tools with a keyword search
-result = await client.call_tool("search", {"query": "add multiply numbers"})
-# [{"name": "add", "inputSchema": {...}, ...}, {"name": "multiply", ...}]
+# 1. Search for tools by keyword — returns names and descriptions
+result = await client.call_tool("search", {"query": "math numbers"})
+# - add: Add two numbers.
+# - multiply: Multiply two numbers.
 
-# Chain tool calls in a single round-trip
+# 2. Get parameter details for the tools it wants to use
+result = await client.call_tool("get_schema", {"tools": ["add", "multiply"]})
+# ### add
+# Add two numbers.
+# **Parameters**
+# - `x` (integer, required)
+# - `y` (integer, required)
+# ...
+
+# 3. Chain tool calls in a single round-trip
 result = await client.call_tool("execute", {
     "code": """
 a = await call_tool("add", {"x": 3, "y": 4})
@@ -57,39 +67,50 @@ return b
 # {"result": 14}
 ```
 
-## Search
+## Discovery Tools
 
-The `search` meta-tool takes a `query` string and returns matching tools ranked by relevance, including their full `inputSchema` and `outputSchema`. The LLM uses these schemas to understand how to call each tool and what to expect back.
+CodeMode uses composable **discovery tools** that let the LLM explore the tool catalog. Each discovery tool is a factory that receives catalog access and returns a `Tool`. By default, CodeMode includes `SearchTool` and `SchemaTool`.
 
-Search uses BM25 ranking by default, matching against tool names and descriptions. You can swap in any [search transform](/servers/transforms/tool-search):
+### SearchTool
+
+`SearchTool` finds tools matching a natural-language query. By default it returns just names and descriptions, keeping results lightweight so the LLM can scan many candidates cheaply.
+
+```python
+from fastmcp.experimental.transforms import CodeMode, SearchTool
+
+mcp = FastMCP("Server", transforms=[CodeMode(
+    discovery_tools=[SearchTool(detail="brief")],  # default
+)])
+```
+
+Set `detail="full"` to include complete JSON schemas in search results. This is useful for small catalogs where two-step discovery adds unnecessary latency:
+
+```python
+mcp = FastMCP("Server", transforms=[CodeMode(
+    discovery_tools=[SearchTool(detail="full")],
+)])
+```
+
+The search algorithm uses BM25 ranking by default. You can swap in any [search transform](/servers/transforms/tool-search):
 
 ```python
 from fastmcp.server.transforms.search import RegexSearchTransform
 
-mcp = FastMCP(
-    "Server",
-    transforms=[CodeMode(search_transform=RegexSearchTransform())],
-)
+mcp = FastMCP("Server", transforms=[CodeMode(
+    discovery_tools=[SearchTool(transform=RegexSearchTransform())],
+)])
 ```
 
-### Search Result Format
+### SchemaTool
 
-By default, `search` returns tool definitions in the same JSON format as `list_tools` — full `inputSchema`, `outputSchema`, and metadata. This is complete, but verbose: each tool definition carries significant structural overhead that the LLM doesn't need just to decide which tool to call next.
+`SchemaTool` returns parameter schemas for specific tools by name. It supports two detail levels:
 
-`serialize_tools_for_output_markdown` is a built-in alternative that renders the same information as compact markdown. In benchmarks across typical tool catalogs it reduces search result tokens by ~65-70%.
+- `"brief"` (default) — compact markdown with parameter names, types, and required markers
+- `"full"` — complete JSON schema
 
-```python
-from fastmcp import FastMCP
-from fastmcp.experimental.transforms import CodeMode
-from fastmcp.server.transforms.search import serialize_tools_for_output_markdown
+The LLM chooses the detail level per request, so it can get a quick overview of several tools or a deep dive into one complex tool.
 
-mcp = FastMCP(
-    "Server",
-    transforms=[CodeMode(search_result_serializer=serialize_tools_for_output_markdown)],
-)
-```
-
-For a tool like `create_document`, the output looks like:
+For a tool like `create_document`, the brief format looks like:
 
 ```
 ### create_document
@@ -105,21 +126,50 @@ Create a new document in the workspace with the given metadata.
 - `parent_id` (string?)
 ```
 
-You can also supply any callable that takes a sequence of tools and returns a string or a list of dicts. Async callables are supported too:
+### Custom Discovery Tools
+
+Discovery tools are callables with the signature `Callable[[GetToolCatalog], Tool]`. You can write your own as a plain function:
 
 ```python
-from fastmcp.server.transforms.search import SearchResultSerializer
+from fastmcp.experimental.transforms import CodeMode, GetToolCatalog, SchemaTool
+from fastmcp.server.context import Context
+from fastmcp.tools.tool import Tool
 
-def my_serializer(tools) -> str:
-    return "\n".join(f"{t.name}: {t.description}" for t in tools)
+def list_all_tools(get_catalog: GetToolCatalog) -> Tool:
+    async def list_tools(ctx: Context) -> str:
+        """List all available tool names."""
+        tools = await get_catalog(ctx)
+        return ", ".join(t.name for t in tools)
 
-mcp = FastMCP(
-    "Server",
-    transforms=[CodeMode(search_result_serializer=my_serializer)],
-)
+    return Tool.from_function(fn=list_tools, name="list_tools")
+
+mcp = FastMCP("Server", transforms=[CodeMode(
+    discovery_tools=[list_all_tools, SchemaTool()],
+)])
 ```
 
-The default JSON format is unchanged when `search_result_serializer` is not set — this is purely opt-in.
+Or as a configurable class:
+
+```python
+class CategoryTool:
+    def __init__(self, categories: dict[str, list[str]], name: str = "categories"):
+        self._categories = categories
+        self._name = name
+
+    def __call__(self, get_catalog: GetToolCatalog) -> Tool:
+        categories = self._categories
+        async def list_categories() -> str:
+            """List available tool categories."""
+            return "\n".join(f"- {cat}" for cat in categories)
+
+        return Tool.from_function(fn=list_categories, name=self._name)
+```
+
+Pass `discovery_tools=[]` to expose only the `execute` tool with no discovery:
+
+```python
+mcp = FastMCP("Server", transforms=[CodeMode(discovery_tools=[])])
+```
 
 ## Execute
 
@@ -129,7 +179,7 @@ The `execute` meta-tool takes a `code` string containing async Python. Inside th
 await call_tool(tool_name, params)  # -> dict | str
 ```
 
-The return type depends on whether the tool declares an output schema. When it does, `call_tool` returns the structured content dict exactly as the schema describes — for example, `{"result": 42}` for a tool returning `int`. When there's no output schema, `call_tool` returns the text content as a string. The LLM can tell which to expect from the `outputSchema` field in search results.
+The return type depends on whether the tool declares an output schema. When it does, `call_tool` returns the structured content dict exactly as the schema describes — for example, `{"result": 42}` for a tool returning `int`. When there's no output schema, `call_tool` returns the text content as a string. The LLM can tell which to expect from the schema information returned by `get_schema`.
 
 Use `return` to produce the final output from the script.
 
@@ -172,14 +222,19 @@ mcp = FastMCP("API Code Mode", providers=[provider], transforms=[CodeMode()])
 
 ### Custom Tool Names
 
-The default `search` and `execute` names can be changed:
+Discovery tools and the execute tool can have custom names:
 
 ```python
+from fastmcp.experimental.transforms import CodeMode, SearchTool, SchemaTool
+
 mcp = FastMCP(
     "Server",
     transforms=[
         CodeMode(
-            search_tool_name="find_tools",
+            discovery_tools=[
+                SearchTool(name="find_tools"),
+                SchemaTool(name="describe"),
+            ],
             execute_tool_name="run_workflow",
             execute_description="Run multi-step API workflows",
         )
