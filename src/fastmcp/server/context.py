@@ -24,6 +24,7 @@ from mcp.types import Resource as SDKResource
 from pydantic.networks import AnyUrl
 from starlette.requests import Request
 from typing_extensions import TypeVar
+from uncalled_for import SharedContext
 
 from fastmcp.resources.resource import ResourceResult
 from fastmcp.server.elicitation import (
@@ -283,8 +284,6 @@ class Context:
         else:
             # Without docket, the lifespan won't provide a SharedContext,
             # so create one scoped to this Context for Shared() dependencies.
-            from uncalled_for import SharedContext
-
             self._shared_context = SharedContext()
             await self._shared_context.__aenter__()
 
