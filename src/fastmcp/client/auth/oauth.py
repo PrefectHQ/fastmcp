@@ -311,7 +311,9 @@ class OAuth(OAuthClientProvider):
             self._initialized = False
             logger.info("OAuth cached credentials cleared")
         else:
-            logger.warning("Cannot clear credentials: OAuth provider not yet bound to a server")
+            logger.warning(
+                "Cannot clear credentials: OAuth provider not yet bound to a server"
+            )
 
     async def redirect_handler(self, authorization_url: str) -> None:
         """Open browser for authorization, with pre-flight check for invalid client."""
