@@ -38,6 +38,14 @@ from fastmcp.utilities.types import (
     NotSetT,
 )
 
+try:
+    from prefab_ui.app import PrefabApp as _PrefabApp
+    from prefab_ui.components.base import Component as _PrefabComponent
+
+    _HAS_PREFAB = True
+except ImportError:
+    _HAS_PREFAB = False
+
 if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution
@@ -82,6 +90,14 @@ class ToolResult(BaseModel):
         converted_content: list[ContentBlock] = _convert_to_content(result=content)
 
         if structured_content is not None:
+            # Convert Prefab types to their wire-format envelope before
+            # generic serialization, so the renderer gets the right shape.
+            if _HAS_PREFAB:
+                if isinstance(structured_content, _PrefabApp):
+                    structured_content = structured_content.to_json()
+                elif isinstance(structured_content, _PrefabComponent):
+                    structured_content = _PrefabApp(view=structured_content).to_json()
+
             try:
                 structured_content = pydantic_core.to_jsonable_python(
                     value=structured_content
@@ -248,6 +264,12 @@ class Tool(FastMCPComponent):
         if isinstance(raw_value, ToolResult):
             return raw_value
 
+        if _HAS_PREFAB:
+            if isinstance(raw_value, _PrefabApp):
+                return _prefab_to_tool_result(raw_value)
+            if isinstance(raw_value, _PrefabComponent):
+                return _prefab_to_tool_result(_PrefabApp(view=raw_value))
+
         content = _convert_to_content(raw_value, serializer=self.serializer)
 
         # Skip structured content for ContentBlock types only if no output_schema
@@ -363,7 +385,7 @@ class Tool(FastMCPComponent):
     @classmethod
     def from_tool(
         cls,
-        tool: Tool,
+        tool: Tool | Callable[..., Any],
         *,
         name: str | None = None,
         title: str | NotSetT | None = NotSet,
@@ -378,6 +400,8 @@ class Tool(FastMCPComponent):
     ) -> TransformedTool:
         from fastmcp.tools.tool_transform import TransformedTool
 
+        tool = cls._ensure_tool(tool)
+
         return TransformedTool.from_tool(
             tool=tool,
             transform_fn=transform_fn,
@@ -391,6 +415,21 @@ class Tool(FastMCPComponent):
             serializer=serializer,
             meta=meta,
         )
+
+    @classmethod
+    def _ensure_tool(cls, tool: Tool | Callable[..., Any]) -> Tool:
+        """Coerce a callable into a Tool, respecting @tool decorator metadata."""
+        if isinstance(tool, Tool):
+            return tool
+
+        from fastmcp.decorators import get_fastmcp_meta
+        from fastmcp.tools.function_tool import FunctionTool, ToolMeta
+
+        fmeta = get_fastmcp_meta(tool)
+        if isinstance(fmeta, ToolMeta):
+            return FunctionTool.from_function(tool, metadata=fmeta)
+
+        return cls.from_function(tool)
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -435,6 +474,17 @@ def _convert_to_single_content_block(
         return TextContent(type="text", text=item)
 
     return TextContent(type="text", text=_serialize_with_fallback(item, serializer))
+
+
+_PREFAB_TEXT_FALLBACK = "[Rendered Prefab UI]"
+
+
+def _prefab_to_tool_result(app: Any) -> ToolResult:
+    """Convert a PrefabApp to a FastMCP ToolResult."""
+    return ToolResult(
+        content=[TextContent(type="text", text=_PREFAB_TEXT_FALLBACK)],
+        structured_content=app.to_json(),
+    )
 
 
 def _convert_to_content(

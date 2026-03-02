@@ -14,7 +14,7 @@ protecting against userinfo-based bypass attacks like http://localhost@evil.com.
 
 ## Functions
 
-### `matches_allowed_pattern` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/redirect_validation.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `matches_allowed_pattern` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/redirect_validation.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 matches_allowed_pattern(uri: str, pattern: str) -> bool
@@ -43,7 +43,7 @@ naive string matching (e.g., http://localhost@evil.com).
 - True if the URI matches the pattern
 
 
-### `validate_redirect_uri` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/redirect_validation.py#L175" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `validate_redirect_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/redirect_validation.py#L175" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_redirect_uri(redirect_uri: str | AnyUrl | None, allowed_patterns: list[str] | None) -> bool

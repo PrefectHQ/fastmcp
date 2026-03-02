@@ -19,7 +19,7 @@ from contextlib import (
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
 import httpx
 import mcp.types
@@ -62,7 +62,6 @@ from fastmcp.server.apps import (
     resolve_ui_mime_type,
 )
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
-from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
@@ -99,6 +98,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+F = TypeVar("F", bound=Callable[..., Any])
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
@@ -161,6 +161,8 @@ def _get_auth_context() -> tuple[bool, Any]:
     is_stdio = _current_transport.get() == "stdio"
     if is_stdio:
         return (True, None)
+    from fastmcp.server.dependencies import get_access_token
+
     return (False, get_access_token())
 
 
@@ -193,7 +195,7 @@ def _lifespan_proxy(
         if not fastmcp_server._lifespan_result_set:
             raise RuntimeError(
                 "FastMCP server has a lifespan defined but no lifespan result is set, which means the server's context manager was not entered. "
-                + " Are you running the server in a way that supports lifespans? If so, please file an issue at https://github.com/jlowin/fastmcp/issues."
+                + " Are you running the server in a way that supports lifespans? If so, please file an issue at https://github.com/PrefectHQ/fastmcp/issues."
             )
 
         yield fastmcp_server._lifespan_result
@@ -225,6 +227,7 @@ class FastMCP(
         auth: AuthProvider | None = None,
         middleware: Sequence[Middleware] | None = None,
         providers: Sequence[Provider] | None = None,
+        transforms: Sequence[Transform] | None = None,
         lifespan: LifespanCallable | Lifespan | None = None,
         tools: Sequence[Tool | Callable[..., Any]] | None = None,
         on_duplicate: DuplicateBehavior | None = None,
@@ -273,6 +276,9 @@ class FastMCP(
         for p in providers or []:
             self.add_provider(p)
 
+        for t in transforms or []:
+            self.add_transform(t)
+
         # Store mask_error_details for execution error handling
         self._mask_error_details: bool = (
             mask_error_details
@@ -287,7 +293,9 @@ class FastMCP(
 
         # Handle Lifespan instances (they're callable) or regular lifespan functions
         if lifespan is not None:
-            self._lifespan: LifespanCallable[LifespanResultT] = lifespan
+            self._lifespan: LifespanCallable[LifespanResultT] = cast(
+                LifespanCallable[LifespanResultT], lifespan
+            )
         else:
             self._lifespan = cast(LifespanCallable[LifespanResultT], default_lifespan)
         self._lifespan_result: LifespanResultT | None = None
@@ -1298,7 +1306,7 @@ class FastMCP(
     @overload
     def tool(
         self,
-        name_or_fn: AnyFunction,
+        name_or_fn: F,
         *,
         name: str | None = None,
         version: str | int | None = None,
@@ -1314,7 +1322,7 @@ class FastMCP(
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> FunctionTool: ...
+    ) -> F: ...
 
     @overload
     def tool(
@@ -1335,7 +1343,7 @@ class FastMCP(
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> Callable[[AnyFunction], FunctionTool]: ...
+    ) -> Callable[[F], F]: ...
 
     def tool(
         self,
@@ -1476,7 +1484,7 @@ class FastMCP(
         app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> Callable[[AnyFunction], Resource | ResourceTemplate | AnyFunction]:
+    ) -> Callable[[F], F]:
         """Decorator to register a function as a resource.
 
         The function will be called when the resource is read to generate its content.
@@ -1577,10 +1585,7 @@ class FastMCP(
             auth=auth,
         )
 
-        def decorator(fn: AnyFunction) -> Resource | ResourceTemplate | AnyFunction:
-            return inner_decorator(fn)
-
-        return decorator
+        return inner_decorator
 
     def add_prompt(self, prompt: Prompt | Callable[..., Any]) -> Prompt:
         """Add a prompt to the server.
@@ -1596,7 +1601,7 @@ class FastMCP(
     @overload
     def prompt(
         self,
-        name_or_fn: AnyFunction,
+        name_or_fn: F,
         *,
         name: str | None = None,
         version: str | int | None = None,
@@ -1607,7 +1612,7 @@ class FastMCP(
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> FunctionPrompt: ...
+    ) -> F: ...
 
     @overload
     def prompt(
@@ -1623,7 +1628,7 @@ class FastMCP(
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
-    ) -> Callable[[AnyFunction], FunctionPrompt]: ...
+    ) -> Callable[[F], F]: ...
 
     def prompt(
         self,

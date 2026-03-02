@@ -21,6 +21,7 @@ Example:
 
 from __future__ import annotations
 
+import contextlib
 import time
 
 import httpx
@@ -48,20 +49,29 @@ class GoogleTokenVerifier(TokenVerifier):
         *,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
+        http_client: httpx.AsyncClient | None = None,
     ):
         """Initialize the Google token verifier.
 
         Args:
             required_scopes: Required OAuth scopes (e.g., ['openid', 'https://www.googleapis.com/auth/userinfo.email'])
             timeout_seconds: HTTP request timeout
+            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+                the client is reused across calls and the caller is responsible for its
+                lifecycle. When None (default), a fresh client is created per call.
         """
         super().__init__(required_scopes=required_scopes)
         self.timeout_seconds = timeout_seconds
+        self._http_client = http_client
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify Google OAuth token by calling Google's tokeninfo API."""
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async with (
+                contextlib.nullcontext(self._http_client)
+                if self._http_client is not None
+                else httpx.AsyncClient(timeout=self.timeout_seconds)
+            ) as client:
                 # Use Google's tokeninfo endpoint to validate the token
                 response = await client.get(
                     "https://www.googleapis.com/oauth2/v1/tokeninfo",
@@ -198,6 +208,7 @@ class GoogleProvider(OAuthProxy):
         jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
         extra_authorize_params: dict[str, str] | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ):
         """Initialize Google OAuth provider.
 
@@ -216,8 +227,8 @@ class GoogleProvider(OAuthProxy):
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
-                If None, a DiskStore will be created in the data directory (derived from `platformdirs`). The
-                disk store will be encrypted using a key derived from the JWT Signing Key.
+                If None, an encrypted file store will be created in the data directory
+                (derived from `platformdirs`).
             jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes). If bytes are provided,
                 they will be used as is. If a string is provided, it will be derived into a 32-byte key. If not
                 provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
@@ -229,6 +240,9 @@ class GoogleProvider(OAuthProxy):
                 By default, GoogleProvider sets {"access_type": "offline", "prompt": "consent"} to ensure
                 refresh tokens are returned. You can override these defaults or add additional parameters.
                 Example: {"prompt": "select_account"} to let users choose their Google account.
+            http_client: Optional httpx.AsyncClient for connection pooling in token verification.
+                When provided, the client is reused across verify_token calls and the caller
+                is responsible for its lifecycle. When None (default), a fresh client is created per call.
         """
         # Parse scopes if provided as string
         # Google requires at least one scope - openid is the minimal OIDC scope
@@ -240,6 +254,7 @@ class GoogleProvider(OAuthProxy):
         token_verifier = GoogleTokenVerifier(
             required_scopes=required_scopes_final,
             timeout_seconds=timeout_seconds,
+            http_client=http_client,
         )
 
         # Set Google-specific defaults for extra authorize params

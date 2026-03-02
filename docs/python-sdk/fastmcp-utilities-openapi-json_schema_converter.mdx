@@ -16,7 +16,7 @@ for our specific use case.
 
 ## Functions
 
-### `convert_openapi_schema_to_json_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi/json_schema_converter.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `convert_openapi_schema_to_json_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/openapi/json_schema_converter.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 convert_openapi_schema_to_json_schema(schema: dict[str, Any], openapi_version: str | None = None, remove_read_only: bool = False, remove_write_only: bool = False, convert_one_of_to_any_of: bool = True) -> dict[str, Any]
@@ -43,7 +43,7 @@ This is a clean, systematic approach that:
 - JSON Schema-compatible dictionary
 
 
-### `convert_schema_definitions` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi/json_schema_converter.py#L322" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `convert_schema_definitions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/openapi/json_schema_converter.py#L322" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 convert_schema_definitions(schema_definitions: dict[str, Any] | None, openapi_version: str | None = None, **kwargs) -> dict[str, Any]

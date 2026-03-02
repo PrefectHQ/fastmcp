@@ -134,8 +134,12 @@ def version(
             console.print("[dim]Run: pip install --upgrade fastmcp[/dim]")
 
 
-@app.command
-async def dev(
+# Create dev subcommand group
+dev_app = cyclopts.App(name="dev", help="Development tools for MCP servers")
+
+
+@dev_app.command
+async def inspector(
     server_spec: str | None = None,
     *,
     with_editable: Annotated[
@@ -208,6 +212,13 @@ async def dev(
             help="Directories to watch for changes (default: current directory)",
         ),
     ] = None,
+    module: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name=["--module", "-m"],
+            help="Run a Python module (python -m <module>) instead of importing a server object",
+        ),
+    ] = False,
 ) -> None:
     """Run an MCP server with the MCP Inspector for development.
 
@@ -250,7 +261,11 @@ async def dev(
             logger.error("No configuration available")
             sys.exit(1)
         assert config is not None  # For type checker
-        await config.source.load_server()
+
+        # Skip server-object validation in module mode — the module
+        # manages its own startup and may not expose an importable server.
+        if not module:
+            await config.source.load_server()
 
         env_vars = {}
         if ui_port:
@@ -273,6 +288,10 @@ async def dev(
 
         # Build the fastmcp run command
         fastmcp_cmd = ["fastmcp", "run", server_spec, "--no-banner"]
+
+        # Forward module mode flag
+        if module:
+            fastmcp_cmd.append("--module")
 
         # Add reload flags if enabled - the server will handle reloading
         if reload:
@@ -420,6 +439,13 @@ async def run(
             help="Run in stateless mode (no session, used internally for reload)",
         ),
     ] = False,
+    module: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name=["--module", "-m"],
+            help="Run a Python module (python -m <module>) instead of importing a server object",
+        ),
+    ] = False,
 ) -> None:
     """Run an MCP server or connect to a remote one.
 
@@ -430,6 +456,7 @@ async def run(
     4. MCPConfig file: "mcp.json" - runs as a proxy server for the MCP Servers in the MCPConfig file
     5. FastMCP config: "fastmcp.json" - runs server using FastMCP configuration
     6. No argument: looks for fastmcp.json in current directory
+    7. Module mode: "-m my_module" - runs the module directly via python -m
 
     Server arguments can be passed after -- :
     fastmcp run server.py -- --config config.json --debug
@@ -437,6 +464,71 @@ async def run(
     Args:
         server_spec: Python file, object specification (file:obj), config file, URL, or None to auto-detect
     """
+
+    # --- Module mode: delegate to python -m and exit early ---
+    if module:
+        if server_spec is None:
+            logger.error("A module name is required when using --module / -m")
+            sys.exit(1)
+
+        # Warn about options that are ignored in module mode
+        ignored_options: list[str] = []
+        if transport:
+            ignored_options.append("--transport")
+        if host:
+            ignored_options.append("--host")
+        if port:
+            ignored_options.append("--port")
+        if path:
+            ignored_options.append("--path")
+        if ignored_options:
+            logger.warning(
+                f"Options {', '.join(ignored_options)} are ignored in module mode "
+                f"(-m). The module manages its own server startup."
+            )
+
+        # Build environment wrapper if needed
+        env_builder = None
+        if not skip_env and not is_already_in_uv_subprocess():
+            from fastmcp.utilities.mcp_server_config.v1.environments.uv import (
+                UVEnvironment,
+            )
+
+            env = UVEnvironment(
+                python=python,
+                dependencies=with_packages or None,
+                requirements=with_requirements,
+                project=project,
+            )
+            test_cmd = ["test"]
+            if env.build_command(test_cmd) != test_cmd:
+                env_builder = env.build_command
+
+        if reload:
+            # Build a fastmcp run command for the reload watcher to restart
+            reload_cmd = ["fastmcp", "run", server_spec, "--module", "--no-reload"]
+            if log_level:
+                reload_cmd.extend(["--log-level", log_level])
+            if no_banner:
+                reload_cmd.append("--no-banner")
+            if env_builder is not None:
+                reload_cmd.append("--skip-env")
+            if server_args:
+                reload_cmd.append("--")
+                reload_cmd.extend(server_args)
+            if env_builder is not None:
+                reload_cmd = env_builder(reload_cmd)
+            await run_module.run_with_reload(
+                reload_cmd, reload_dirs=reload_dir, is_stdio=True
+            )
+            return
+
+        run_module.run_module_command(
+            server_spec,
+            env_command_builder=env_builder,
+            extra_args=list(server_args) if server_args else None,
+        )
+        return
 
     # Check if we were spawned by uv (or user explicitly set --skip-env)
     if skip_env or is_already_in_uv_subprocess():
@@ -945,6 +1037,9 @@ async def prepare(
         console.print(f"[bold red]✗[/bold red] Failed to prepare project: {e}")
         sys.exit(1)
 
+
+# Add dev subcommand group
+app.command(dev_app)
 
 # Add project subcommand group
 app.command(project_app)

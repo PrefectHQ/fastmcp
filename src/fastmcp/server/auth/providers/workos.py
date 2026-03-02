@@ -10,6 +10,8 @@ Choose based on your WorkOS setup and authentication requirements.
 
 from __future__ import annotations
 
+import contextlib
+
 import httpx
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
@@ -38,6 +40,7 @@ class WorkOSTokenVerifier(TokenVerifier):
         authkit_domain: str,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
+        http_client: httpx.AsyncClient | None = None,
     ):
         """Initialize the WorkOS token verifier.
 
@@ -45,15 +48,23 @@ class WorkOSTokenVerifier(TokenVerifier):
             authkit_domain: WorkOS AuthKit domain (e.g., "https://your-app.authkit.app")
             required_scopes: Required OAuth scopes
             timeout_seconds: HTTP request timeout
+            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+                the client is reused across calls and the caller is responsible for its
+                lifecycle. When None (default), a fresh client is created per call.
         """
         super().__init__(required_scopes=required_scopes)
         self.authkit_domain = authkit_domain.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self._http_client = http_client
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify WorkOS OAuth token by calling userinfo endpoint."""
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async with (
+                contextlib.nullcontext(self._http_client)
+                if self._http_client is not None
+                else httpx.AsyncClient(timeout=self.timeout_seconds)
+            ) as client:
                 # Use WorkOS AuthKit userinfo endpoint to validate token
                 response = await client.get(
                     f"{self.authkit_domain}/oauth2/userinfo",
@@ -146,6 +157,7 @@ class WorkOSProvider(OAuthProxy):
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
+        http_client: httpx.AsyncClient | None = None,
     ):
         """Initialize WorkOS OAuth provider.
 
@@ -162,8 +174,8 @@ class WorkOSProvider(OAuthProxy):
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
-                If None, a DiskStore will be created in the data directory (derived from `platformdirs`). The
-                disk store will be encrypted using a key derived from the JWT Signing Key.
+                If None, an encrypted file store will be created in the data directory
+                (derived from `platformdirs`).
             jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes). If bytes are provided,
                 they will be used as is. If a string is provided, it will be derived into a 32-byte key. If not
                 provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
@@ -171,6 +183,9 @@ class WorkOSProvider(OAuthProxy):
                 When True, users see a consent screen before being redirected to WorkOS.
                 When False, authorization proceeds directly without user confirmation.
                 SECURITY WARNING: Only disable for local development or testing environments.
+            http_client: Optional httpx.AsyncClient for connection pooling in token verification.
+                When provided, the client is reused across verify_token calls and the caller
+                is responsible for its lifecycle. When None (default), a fresh client is created per call.
         """
         # Apply defaults and ensure authkit_domain is a full URL
         authkit_domain_str = authkit_domain
@@ -186,6 +201,7 @@ class WorkOSProvider(OAuthProxy):
             authkit_domain=authkit_domain_final,
             required_scopes=scopes_final,
             timeout_seconds=timeout_seconds,
+            http_client=http_client,
         )
 
         # Initialize OAuth proxy with WorkOS AuthKit endpoints
@@ -252,6 +268,7 @@ class AuthKitProvider(RemoteAuthProvider):
         *,
         authkit_domain: AnyHttpUrl | str,
         base_url: AnyHttpUrl | str,
+        client_id: str | None = None,
         required_scopes: list[str] | None = None,
         token_verifier: TokenVerifier | None = None,
     ):
@@ -260,6 +277,9 @@ class AuthKitProvider(RemoteAuthProvider):
         Args:
             authkit_domain: Your AuthKit domain (e.g., "https://your-app.authkit.app")
             base_url: Public URL of this FastMCP server
+            client_id: Your WorkOS project client ID (e.g., "client_01ABC..."). Used to
+                validate the JWT audience claim. Found in your WorkOS Dashboard under
+                API Keys. This is the project-level client ID, not individual MCP client IDs.
             required_scopes: Optional list of scopes to require for all requests
             token_verifier: Optional token verifier. If None, creates JWT verifier for AuthKit
         """
@@ -273,10 +293,17 @@ class AuthKitProvider(RemoteAuthProvider):
 
         # Create default JWT verifier if none provided
         if token_verifier is None:
+            logger.warning(
+                "AuthKitProvider cannot validate token audience for the specific resource "
+                "because AuthKit does not support RFC 8707 resource indicators. "
+                "This may leave the server vulnerable to cross-server token replay. "
+                "Consider using WorkOSProvider (OAuth proxy) for audience-bound tokens."
+            )
             token_verifier = JWTVerifier(
                 jwks_uri=f"{self.authkit_domain}/oauth2/jwks",
                 issuer=self.authkit_domain,
                 algorithm="RS256",
+                audience=client_id,
                 required_scopes=parsed_scopes,
             )
 

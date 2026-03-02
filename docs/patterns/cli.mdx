@@ -345,10 +345,14 @@ This will run all the servers defined in the file.
 
 ## `fastmcp dev`
 
+The `dev` command group contains development tools for MCP servers.
+
+### `fastmcp dev inspector`
+
 Run a MCP server with the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) for testing. Auto-reload is enabled by default, so your server automatically restarts when you save changes to source files.
 
 ```bash
-fastmcp dev server.py
+fastmcp dev inspector server.py
 ```
 
 <Tip>
@@ -361,7 +365,7 @@ When using `fastmcp.json`, the dev command automatically uses the configured dep
 </Tip>
 
 <Warning>
-The `dev` command is a shortcut for testing a server over STDIO only. When the Inspector launches, you may need to:
+The `dev inspector` command is a shortcut for testing a server over STDIO only. When the Inspector launches, you may need to:
 1. Select "STDIO" from the transport dropdown
 2. Connect manually
 
@@ -377,7 +381,7 @@ This command does not support HTTP testing. To test a server over Streamable HTT
 2. Open the MCP Inspector separately and connect to your running server
 </Warning>
 
-### Options
+#### Options
 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
@@ -392,39 +396,39 @@ This command does not support HTTP testing. To test a server over Streamable HTT
 | Project Directory | `--project` | Run the command within the given project directory |
 | Requirements File | `--with-requirements` | Requirements file to install dependencies from |
 
-### Entrypoints
+#### Entrypoints
 
-The `dev` command supports local FastMCP server files and configuration:
+The `dev inspector` command supports local FastMCP server files and configuration:
 
 1. **Inferred server instance**: `server.py` - imports the module and looks for a FastMCP server instance named `mcp`, `server`, or `app`. Errors if no such object is found.
-2. **Explicit server entrypoint**: `server.py:custom_name` - imports and uses the specified server entrypoint  
+2. **Explicit server entrypoint**: `server.py:custom_name` - imports and uses the specified server entrypoint
 3. **Factory function**: `server.py:create_server` - calls the specified function (sync or async) to create a server instance
 4. **FastMCP configuration**: `fastmcp.json` - uses FastMCP's declarative configuration (auto-detects in current directory)
 
 <Warning>
-The `dev` command **only supports local files and fastmcp.json** - no URLs, remote servers, or standard MCP configuration files.
+The `dev inspector` command **only supports local files and fastmcp.json** - no URLs, remote servers, or standard MCP configuration files.
 </Warning>
 
 **Examples**
 
 ```bash
 # Run dev server with editable mode and additional packages
-fastmcp dev server.py -e . --with pandas --with matplotlib
+fastmcp dev inspector server.py -e . --with pandas --with matplotlib
 
 # Run dev server with fastmcp.json configuration (auto-detects)
-fastmcp dev
+fastmcp dev inspector
 
 # Run dev server with explicit fastmcp.json file
-fastmcp dev dev.fastmcp.json
+fastmcp dev inspector dev.fastmcp.json
 
 # Run dev server with specific Python version
-fastmcp dev server.py --python 3.11
+fastmcp dev inspector server.py --python 3.11
 
 # Run dev server with requirements file
-fastmcp dev server.py --with-requirements requirements.txt
+fastmcp dev inspector server.py --with-requirements requirements.txt
 
 # Run dev server within a specific project directory
-fastmcp dev server.py --project /path/to/project
+fastmcp dev inspector server.py --project /path/to/project
 ```
 
 ## `fastmcp install`

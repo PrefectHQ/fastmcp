@@ -31,7 +31,7 @@ def create_test_server() -> FastMCP:
         result = await ctx.elicit("What is your name?", response_type=str)
 
         if result.action == "accept":
-            return f"You said your name was: {result.data}!"  # ty: ignore[possibly-missing-attribute]
+            return f"You said your name was: {result.data}!"  # ty: ignore[unresolved-attribute]
         else:
             return "No name provided"
 
@@ -229,6 +229,26 @@ async def test_elicitation_tool(streamable_http_server: str, request):
     ) as client:
         result = await client.call_tool("elicit")
         assert result.data == "You said your name was: Alice!"
+
+
+@pytest.mark.parametrize("streamable_http_server", [True], indirect=True)
+async def test_stateless_http_rejects_get_sse(streamable_http_server: str):
+    """Stateless servers should reject GET SSE requests with 405."""
+    import httpx
+
+    async with httpx.AsyncClient() as http_client:
+        response = await http_client.get(streamable_http_server)
+        assert response.status_code == 405
+
+
+@pytest.mark.parametrize("streamable_http_server", [True], indirect=True)
+async def test_stateless_http_still_accepts_post(streamable_http_server: str):
+    """Stateless servers should still handle POST requests normally."""
+    async with Client(
+        transport=StreamableHttpTransport(streamable_http_server)
+    ) as client:
+        result = await client.call_tool("greet", {"name": "World"})
+        assert result.data == "Hello, World!"
 
 
 async def test_nested_streamable_http_server_resolves_correctly(nested_server: str):

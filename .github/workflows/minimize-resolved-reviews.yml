@@ -1,0 +1,43 @@
+# Minimize resolved PR review comments to reduce noise.
+#
+# Runs automatically on review activity for same-repo PRs. Fork PRs are
+# skipped because GITHUB_TOKEN is read-only in that context. Collaborators
+# can comment "/tidy" on any PR (including forks) to trigger manually.
+
+name: Minimize Resolved Reviews
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created, edited]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: minimize-reviews-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+
+jobs:
+  minimize:
+    # /tidy comment: collaborators can trigger on any PR (token has write access)
+    # Review events: skip fork PRs where GITHUB_TOKEN lacks write permissions
+    if: >-
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        contains(github.event.comment.body, '/tidy') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+      ) || (
+        github.event_name != 'issue_comment' &&
+        github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Minimize resolved review comments
+        uses: strawgate/minimize-resolved-pr-reviews@v0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}

@@ -6,7 +6,9 @@ import json
 import os
 import re
 import signal
+import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -255,6 +257,45 @@ async def run_command(
         sys.exit(1)
 
 
+def run_module_command(
+    module_name: str,
+    *,
+    env_command_builder: Callable[[list[str]], list[str]] | None = None,
+    extra_args: list[str] | None = None,
+) -> None:
+    """Run a Python module directly using ``python -m <module>``.
+
+    When ``-m`` is used, the module manages its own server startup.
+    No server-object discovery or transport overrides are applied.
+
+    Args:
+        module_name: Dotted module name (e.g. ``my_package``).
+        env_command_builder: An optional callable that wraps a command list
+            with environment setup (e.g. ``UVEnvironment.build_command``).
+        extra_args: Extra arguments forwarded after the module name.
+    """
+    # Use bare "python" when an env wrapper (e.g. uv run) is active so that
+    # the wrapper can resolve the interpreter via --python / environment config.
+    # Fall back to sys.executable for direct execution without a wrapper.
+    python = "python" if env_command_builder is not None else sys.executable
+    cmd: list[str] = [python, "-m", module_name]
+    if extra_args:
+        cmd.extend(extra_args)
+
+    # Wrap with environment (e.g. uv run) if configured
+    if env_command_builder is not None:
+        cmd = env_command_builder(cmd)
+
+    logger.debug(f"Running module: {' '.join(cmd)}")
+
+    try:
+        process = subprocess.run(cmd, check=True)
+        sys.exit(process.returncode)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Module {module_name} exited with code {e.returncode}")
+        sys.exit(e.returncode)
+
+
 async def run_v1_server_async(
     server: FastMCP1x,
     host: str | None = None,
@@ -378,7 +419,7 @@ async def run_with_reload(
 
             # Watch for either: file changes OR process death
             watch_task = asyncio.create_task(
-                anext(aiter(awatch(*watch_paths, watch_filter=_watch_filter)))
+                anext(aiter(awatch(*watch_paths, watch_filter=_watch_filter)))  # ty: ignore[invalid-argument-type]
             )
             wait_task = asyncio.create_task(process.wait())
             shutdown_task = asyncio.create_task(shutdown_event.wait())
@@ -409,7 +450,7 @@ async def run_with_reload(
 
                 # Wait for file change or shutdown (avoid hot loop on crash)
                 watch_task = asyncio.create_task(
-                    anext(aiter(awatch(*watch_paths, watch_filter=_watch_filter)))
+                    anext(aiter(awatch(*watch_paths, watch_filter=_watch_filter)))  # ty: ignore[invalid-argument-type]
                 )
                 shutdown_task = asyncio.create_task(shutdown_event.wait())
                 done, pending = await asyncio.wait(

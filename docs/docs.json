@@ -40,7 +40,7 @@
   "footer": {
     "socials": {
       "discord": "https://discord.gg/uu8dJCgttd",
-      "github": "https://github.com/jlowin/fastmcp",
+      "github": "https://github.com/PrefectHQ/fastmcp",
       "website": "https://www.prefect.io",
       "x": "https://x.com/fastmcp"
     }
@@ -72,7 +72,7 @@
       }
     ],
     "primary": {
-      "href": "https://github.com/jlowin/fastmcp",
+      "href": "https://github.com/PrefectHQ/fastmcp",
       "type": "github"
     }
   },
@@ -88,9 +88,18 @@
                 "pages": [
                   "getting-started/welcome",
                   "getting-started/installation",
-                  "development/upgrade-guide",
                   "getting-started/quickstart",
-                  "updates"
+                  {
+                    "collapsed": true,
+                    "group": "Upgrade",
+                    "icon": "up",
+                    "pages": [
+                      "getting-started/upgrading/from-fastmcp-2",
+                      "getting-started/upgrading/from-mcp-sdk",
+                      "getting-started/upgrading/from-low-level-sdk"
+                    ],
+                    "tag": "NEW"
+                  }
                 ]
               },
               {
@@ -98,6 +107,7 @@
                 "pages": [
                   "servers/server",
                   {
+                    "collapsed": true,
                     "group": "Core Components",
                     "icon": "toolbox",
                     "pages": [
@@ -108,6 +118,7 @@
                     ]
                   },
                   {
+                    "collapsed": true,
                     "group": "Features",
                     "icon": "stars",
                     "pages": [
@@ -124,9 +135,42 @@
                       "servers/storage-backends",
                       "servers/telemetry",
                       "servers/versioning"
-                    ]
+                    ],
+                    "tag": "NEW"
                   },
                   {
+                    "collapsed": true,
+                    "group": "Providers",
+                    "icon": "layer-group",
+                    "pages": [
+                      "servers/providers/overview",
+                      "servers/providers/local",
+                      "servers/providers/filesystem",
+                      "servers/providers/proxy",
+                      "servers/providers/skills",
+                      "servers/providers/custom",
+                      "servers/providers/mounting"
+                    ],
+                    "tag": "NEW"
+                  },
+                  {
+                    "collapsed": true,
+                    "group": "Transforms",
+                    "icon": "wand-magic-sparkles",
+                    "pages": [
+                      "servers/transforms/transforms",
+                      "servers/transforms/namespace",
+                      "servers/transforms/tool-transformation",
+                      "servers/visibility",
+                      "servers/transforms/code-mode",
+                      "servers/transforms/tool-search",
+                      "servers/transforms/resources-as-tools",
+                      "servers/transforms/prompts-as-tools"
+                    ],
+                    "tag": "NEW"
+                  },
+                  {
+                    "collapsed": true,
                     "group": "Authentication",
                     "icon": "key",
                     "pages": [
@@ -135,43 +179,52 @@
                       "servers/auth/remote-oauth",
                       "servers/auth/oauth-proxy",
                       "servers/auth/oidc-proxy",
-                      "servers/auth/full-oauth-server"
+                      "servers/auth/full-oauth-server",
+                      "servers/auth/multi-auth"
                     ]
                   },
-                  "servers/authorization"
+                  "servers/authorization",
+                  {
+                    "collapsed": true,
+                    "group": "Deployment",
+                    "icon": "rocket",
+                    "pages": [
+                      "deployment/running-server",
+                      "deployment/http",
+                      "deployment/prefect-horizon",
+                      "deployment/server-configuration",
+                      "patterns/cli",
+                      "patterns/testing"
+                    ]
+                  }
                 ]
               },
               {
-                "group": "MCP Providers",
+                "group": "Apps",
                 "pages": [
-                  "servers/providers/overview",
-                  "servers/providers/local",
-                  "servers/providers/filesystem",
-                  "servers/providers/proxy",
-                  "servers/providers/skills",
-                  "servers/providers/custom",
-                  "servers/providers/mounting"
-                ]
-              },
-              {
-                "group": "MCP Transforms",
-                "pages": [
-                  "servers/transforms/transforms",
-                  "servers/transforms/namespace",
-                  "servers/transforms/tool-transformation",
-                  "servers/visibility",
-                  "servers/transforms/resources-as-tools",
-                  "servers/transforms/prompts-as-tools"
+                  "apps/overview",
+                  "apps/prefab",
+                  "apps/patterns",
+                  "apps/low-level"
                 ]
               },
               {
                 "group": "Clients",
                 "pages": [
                   "clients/client",
-                  "clients/cli",
-                  "clients/generate-cli",
                   "clients/transports",
                   {
+                    "collapsed": true,
+                    "group": "CLI",
+                    "icon": "terminal",
+                    "pages": [
+                      "clients/cli",
+                      "clients/generate-cli"
+                    ],
+                    "tag": "NEW"
+                  },
+                  {
+                    "collapsed": true,
                     "group": "Core Operations",
                     "icon": "toolbox",
                     "pages": [
@@ -181,6 +234,7 @@
                     ]
                   },
                   {
+                    "collapsed": true,
                     "group": "Handlers",
                     "icon": "hand",
                     "pages": [
@@ -194,25 +248,16 @@
                     ]
                   },
                   {
+                    "collapsed": true,
                     "group": "Authentication",
                     "icon": "key",
                     "pages": [
                       "clients/auth/oauth",
                       "clients/auth/cimd",
                       "clients/auth/bearer"
-                    ]
+                    ],
+                    "tag": "NEW"
                   }
-                ]
-              },
-              {
-                "group": "Deployment",
-                "pages": [
-                  "deployment/running-server",
-                  "deployment/http",
-                  "deployment/prefect-horizon",
-                  "deployment/server-configuration",
-                  "patterns/cli",
-                  "patterns/testing"
                 ]
               },
               {
@@ -232,6 +277,7 @@
                       "integrations/github",
                       "integrations/google",
                       "integrations/oci",
+                      "integrations/propelauth",
                       "integrations/scalekit",
                       "integrations/supabase",
                       "integrations/workos",
@@ -240,6 +286,7 @@
                     ]
                   },
                   {
+                    "collapsed": true,
                     "group": "Web Frameworks",
                     "icon": "code",
                     "pages": [
@@ -279,6 +326,7 @@
                   "development/contributing",
                   "development/tests",
                   "development/releases",
+                  "updates",
                   "changelog",
                   "patterns/contrib"
                 ]
@@ -387,6 +435,26 @@
                     ]
                   },
                   {
+                    "group": "fastmcp.experimental",
+                    "pages": [
+                      "python-sdk/fastmcp-experimental-__init__",
+                      {
+                        "group": "sampling",
+                        "pages": [
+                          "python-sdk/fastmcp-experimental-sampling-__init__",
+                          "python-sdk/fastmcp-experimental-sampling-handlers"
+                        ]
+                      },
+                      {
+                        "group": "transforms",
+                        "pages": [
+                          "python-sdk/fastmcp-experimental-transforms-__init__",
+                          "python-sdk/fastmcp-experimental-transforms-code_mode"
+                        ]
+                      }
+                    ]
+                  },
+                  {
                     "group": "fastmcp.prompts",
                     "pages": [
                       "python-sdk/fastmcp-prompts-__init__",
@@ -445,6 +513,7 @@
                               "python-sdk/fastmcp-server-auth-providers-introspection",
                               "python-sdk/fastmcp-server-auth-providers-jwt",
                               "python-sdk/fastmcp-server-auth-providers-oci",
+                              "python-sdk/fastmcp-server-auth-providers-propelauth",
                               "python-sdk/fastmcp-server-auth-providers-scalekit",
                               "python-sdk/fastmcp-server-auth-providers-supabase",
                               "python-sdk/fastmcp-server-auth-providers-workos"
@@ -574,9 +643,19 @@
                         "group": "transforms",
                         "pages": [
                           "python-sdk/fastmcp-server-transforms-__init__",
+                          "python-sdk/fastmcp-server-transforms-catalog",
                           "python-sdk/fastmcp-server-transforms-namespace",
                           "python-sdk/fastmcp-server-transforms-prompts_as_tools",
                           "python-sdk/fastmcp-server-transforms-resources_as_tools",
+                          {
+                            "group": "search",
+                            "pages": [
+                              "python-sdk/fastmcp-server-transforms-search-__init__",
+                              "python-sdk/fastmcp-server-transforms-search-base",
+                              "python-sdk/fastmcp-server-transforms-search-bm25",
+                              "python-sdk/fastmcp-server-transforms-search-regex"
+                            ]
+                          },
                           "python-sdk/fastmcp-server-transforms-tool_transform",
                           "python-sdk/fastmcp-server-transforms-version_filter",
                           "python-sdk/fastmcp-server-transforms-visibility"
@@ -667,7 +746,7 @@
             "icon": "code"
           }
         ],
-        "version": "v3.0.0 (rc 1)"
+        "version": "v3"
       },
       {
         "dropdowns": [
@@ -908,6 +987,18 @@
     {
       "destination": "/servers/transforms/transforms",
       "source": "/patterns/tool-transformation"
+    },
+    {
+      "destination": "/getting-started/upgrading/from-fastmcp-2",
+      "source": "/development/upgrade-guide"
+    },
+    {
+      "destination": "/getting-started/upgrading/from-mcp-sdk",
+      "source": "/getting-started/upgrading-from-sdk"
+    },
+    {
+      "destination": "/getting-started/upgrading/from-low-level-sdk",
+      "source": "/getting-started/low-level-sdk"
     }
   ],
   "search": {
@@ -924,6 +1015,6 @@
   "theme": "almond",
   "thumbnails": {
     "appearance": "light",
-    "background": "/assets/brand/thumbnail-background-2.png"
+    "background": "/assets/brand/thumbnail-background-4.jpeg"
   }
 }

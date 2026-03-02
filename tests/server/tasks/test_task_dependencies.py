@@ -229,7 +229,7 @@ async def test_dependency_context_managers_cleaned_up_in_background():
             cleanup_called.append("exit")
 
     @mcp.tool(task=True)
-    async def use_connection(name: str, conn: str = Depends(tracked_connection)) -> str:  # type: ignore[assignment]
+    async def use_connection(name: str, conn: str = Depends(tracked_connection)) -> str:
         assert conn == "connection"
         assert "enter" in cleanup_called
         assert "exit" not in cleanup_called  # Still open during execution

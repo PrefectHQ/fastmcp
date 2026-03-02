@@ -1,6 +1,6 @@
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import TypeAlias, TypeVar
+from typing import TypeAlias, TypeVar, cast
 
 import mcp.types
 from mcp import ClientSession, CreateMessageResult

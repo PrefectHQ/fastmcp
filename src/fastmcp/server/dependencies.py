@@ -1,7 +1,7 @@
 """Dependency injection for FastMCP.
 
 DI features (Depends, CurrentContext, CurrentFastMCP) work without pydocket
-using a vendored DI engine. Only task-related dependencies (CurrentDocket,
+using the uncalled-for DI engine. Only task-related dependencies (CurrentDocket,
 CurrentWorker) and background task execution require fastmcp[tasks].
 """
 
@@ -28,6 +28,8 @@ from mcp.server.auth.provider import (
 )
 from mcp.server.lowlevel.server import request_ctx
 from starlette.requests import Request
+from uncalled_for import Dependency, get_dependency_parameters
+from uncalled_for.resolution import _Depends
 
 from fastmcp.exceptions import FastMCPError
 from fastmcp.server.auth import AccessToken
@@ -104,10 +106,10 @@ def get_task_context() -> TaskContextInfo | None:
     if not is_docket_available():
         return None
 
-    from docket.dependencies import Dependency as DocketDependency
+    from docket.dependencies import current_execution
 
     try:
-        execution = DocketDependency.execution.get()
+        execution = current_execution.get()
         # Parse the task key: {session_id}:{task_id}:{task_type}:{component}
         from fastmcp.server.tasks.keys import parse_task_key
 
@@ -208,24 +210,7 @@ def require_docket(feature: str) -> None:
         )
 
 
-# --- Dependency injection imports ---
-# Try docket first for isinstance compatibility in worker context,
-# fall back to vendored DI engine when docket is not installed.
-
-try:
-    from docket.dependencies import (
-        Dependency,
-        _Depends,
-        get_dependency_parameters,
-    )
-except ImportError:
-    from fastmcp._vendor.docket_di import (
-        Dependency,
-        _Depends,
-        get_dependency_parameters,
-    )
-
-# Import Progress separately to avoid breaking DI fallback if Progress is missing
+# Import Progress separately — it's docket-specific, not part of uncalled-for
 try:
     from docket.dependencies import Progress as DocketProgress
 except ImportError:
@@ -270,11 +255,14 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
 
     # First pass: identify which params need transformation
     params_to_transform: set[str] = set()
+    optional_context_params: set[str] = set()
     for name, param in sig.parameters.items():
         annotation = type_hints.get(name, param.annotation)
         if is_class_member_of_type(annotation, Context):
             if not isinstance(param.default, Dependency):
                 params_to_transform.add(name)
+                if param.default is None:
+                    optional_context_params.add(name)
 
     if not params_to_transform:
         return fn
@@ -300,7 +288,10 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
             # We use CurrentContext() instead of Depends(get_context) because
             # get_context() returns the Context which is an AsyncContextManager,
             # and the DI system would try to enter it again (it's already entered)
-            param = param.replace(default=CurrentContext())
+            if name in optional_context_params:
+                param = param.replace(default=OptionalCurrentContext())
+            else:
+                param = param.replace(default=CurrentContext())
 
         # Sort into buckets based on parameter kind
         if param.kind == P.POSITIONAL_ONLY:
@@ -360,30 +351,14 @@ def _clear_signature_caches(fn: Callable[..., Any]) -> None:
     Called after modifying a function's signature to ensure downstream
     code sees the updated signature.
     """
-    # Clear vendored DI caches
-    from fastmcp._vendor.docket_di import _parameter_cache, _signature_cache
+    from uncalled_for.introspection import _parameter_cache, _signature_cache
 
     _signature_cache.pop(fn, None)
     _parameter_cache.pop(fn, None)
 
-    # Also clear for __func__ if it's a method
     if inspect.ismethod(fn):
         _signature_cache.pop(fn.__func__, None)
         _parameter_cache.pop(fn.__func__, None)
-
-    # Try to clear docket caches if docket is installed
-    if is_docket_available():
-        try:
-            from docket.dependencies import _parameter_cache as docket_param_cache
-            from docket.execution import _signature_cache as docket_sig_cache
-
-            docket_sig_cache.pop(fn, None)
-            docket_param_cache.pop(fn, None)
-            if inspect.ismethod(fn):
-                docket_sig_cache.pop(fn.__func__, None)
-                docket_param_cache.pop(fn.__func__, None)
-        except (ImportError, AttributeError):
-            pass  # Cache access not available in this docket version
 
 
 def get_context() -> Context:
@@ -434,14 +409,22 @@ def get_http_request() -> Request:
     return request
 
 
-def get_http_headers(include_all: bool = False) -> dict[str, str]:
+def get_http_headers(
+    include_all: bool = False,
+    include: set[str] | None = None,
+) -> dict[str, str]:
     """Extract headers from the current HTTP request if available.
 
     Never raises an exception, even if there is no active HTTP request (in which case
     an empty dict is returned).
 
-    By default, strips problematic headers like `content-length` that cause issues
-    if forwarded to downstream clients. If `include_all` is True, all headers are returned.
+    By default, strips problematic headers like `content-length` and `authorization`
+    that cause issues if forwarded to downstream services. If `include_all` is True,
+    all headers are returned.
+
+    The `include` parameter allows specific headers to be included even if they would
+    normally be excluded. This is useful for proxy transports that need to forward
+    authorization headers to upstream MCP servers.
     """
     if include_all:
         exclude_headers: set[str] = set()
@@ -457,6 +440,7 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             "keep-alive",
             "expect",
             "accept",
+            "authorization",
             # Proxy-related headers
             "proxy-authenticate",
             "proxy-authorization",
@@ -464,6 +448,8 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             # MCP-related headers
             "mcp-session-id",
         }
+        if include:
+            exclude_headers -= {h.lower() for h in include}
         # (just in case)
         if not all(h.lower() == h for h in exclude_headers):
             raise ValueError("Excluded headers must be lowercase")
@@ -607,15 +593,23 @@ def without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]:
                     result = await result
                 return result
 
-    # Set wrapper metadata (only parameter annotations, not return type)
+    # Resolve string annotations (from `from __future__ import annotations`) using
+    # the original function's module context. The wrapper's __globals__ points to
+    # this module (dependencies.py) and is read-only, so some Pydantic versions
+    # can't resolve names like Annotated or Literal from string annotations.
+    try:
+        resolved_hints = get_type_hints(fn, include_extras=True)
+    except Exception:
+        resolved_hints = getattr(fn, "__annotations__", {})
+
     wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
     wrapper.__annotations__ = {
-        k: v
-        for k, v in getattr(fn, "__annotations__", {}).items()
-        if k not in exclude and k != "return"
+        k: v for k, v in resolved_hints.items() if k not in exclude and k != "return"
     }
     wrapper.__name__ = getattr(fn, "__name__", "wrapper")
     wrapper.__doc__ = getattr(fn, "__doc__", None)
+    wrapper.__module__ = fn.__module__
+    wrapper.__qualname__ = getattr(fn, "__qualname__", wrapper.__qualname__)
 
     return wrapper
 
@@ -773,7 +767,37 @@ async def _restore_task_access_token(
     return None
 
 
-class _CurrentContext(Dependency):  # type: ignore[misc]
+async def _restore_task_origin_request_id(session_id: str, task_id: str) -> str | None:
+    """Restore the origin request ID snapshot for a background task.
+
+    Returns None if no request ID was captured at submission time.
+    """
+    docket = _current_docket.get()
+    if docket is None:
+        return None
+
+    request_id_key = docket.key(
+        f"fastmcp:task:{session_id}:{task_id}:origin_request_id"
+    )
+    try:
+        async with docket.redis() as redis:
+            request_id_data = await redis.get(request_id_key)
+        if request_id_data is None:
+            return None
+        if isinstance(request_id_data, bytes):
+            return request_id_data.decode()
+        return str(request_id_data)
+    except Exception:
+        _logger.warning(
+            "Failed to restore origin request ID for task %s:%s",
+            session_id,
+            task_id,
+            exc_info=True,
+        )
+        return None
+
+
+class _CurrentContext(Dependency["Context"]):
     """Async context manager for Context dependency.
 
     In foreground (request) mode: returns the active context from _current_context.
@@ -799,11 +823,15 @@ class _CurrentContext(Dependency):  # type: ignore[misc]
             session = get_task_session(task_info.session_id)
             # Get server from ContextVar
             server = get_server()
+            origin_request_id = await _restore_task_origin_request_id(
+                task_info.session_id, task_info.task_id
+            )
             # Create task-aware Context
             self._context = Context(
                 fastmcp=server,
                 session=session,
                 task_id=task_info.task_id,
+                origin_request_id=origin_request_id,
             )
             # Enter the context to set up ContextVars
             await self._context.__aenter__()
@@ -834,6 +862,34 @@ class _CurrentContext(Dependency):  # type: ignore[misc]
             self._context = None
 
 
+class _OptionalCurrentContext(Dependency["Context | None"]):
+    """Context dependency that degrades to None when no context is active.
+
+    This is implemented as a wrapper (composition), not a subclass of
+    `_CurrentContext`, to avoid overriding `__aenter__` with an incompatible
+    return type.
+    """
+
+    _inner: _CurrentContext | None = None
+
+    async def __aenter__(self) -> Context | None:
+        inner = _CurrentContext()
+        try:
+            context = await inner.__aenter__()
+        except RuntimeError as exc:
+            if "No active context found" in str(exc):
+                return None
+            raise
+        self._inner = inner
+        return context
+
+    async def __aexit__(self, *args: object) -> None:
+        if self._inner is None:
+            return
+        await self._inner.__aexit__(*args)
+        self._inner = None
+
+
 def CurrentContext() -> Context:
     """Get the current FastMCP Context instance.
 
@@ -859,7 +915,12 @@ def CurrentContext() -> Context:
     return cast("Context", _CurrentContext())
 
 
-class _CurrentDocket(Dependency):  # type: ignore[misc]
+def OptionalCurrentContext() -> Context | None:
+    """Get the current FastMCP Context, or None when no context is active."""
+    return cast("Context | None", _OptionalCurrentContext())
+
+
+class _CurrentDocket(Dependency["Docket"]):
     """Async context manager for Docket dependency."""
 
     async def __aenter__(self) -> Docket:
@@ -904,7 +965,7 @@ def CurrentDocket() -> Docket:
     return cast("Docket", _CurrentDocket())
 
 
-class _CurrentWorker(Dependency):  # type: ignore[misc]
+class _CurrentWorker(Dependency["Worker"]):
     """Async context manager for Worker dependency."""
 
     async def __aenter__(self) -> Worker:
@@ -948,7 +1009,7 @@ def CurrentWorker() -> Worker:
     return cast("Worker", _CurrentWorker())
 
 
-class _CurrentFastMCP(Dependency):  # type: ignore[misc]
+class _CurrentFastMCP(Dependency["FastMCP"]):
     """Async context manager for FastMCP server dependency."""
 
     async def __aenter__(self) -> FastMCP:
@@ -989,7 +1050,7 @@ def CurrentFastMCP() -> FastMCP:
     return cast(FastMCP, _CurrentFastMCP())
 
 
-class _CurrentRequest(Dependency):  # type: ignore[misc]
+class _CurrentRequest(Dependency[Request]):
     """Async context manager for HTTP Request dependency."""
 
     async def __aenter__(self) -> Request:
@@ -1025,11 +1086,11 @@ def CurrentRequest() -> Request:
     return cast(Request, _CurrentRequest())
 
 
-class _CurrentHeaders(Dependency):  # type: ignore[misc]
+class _CurrentHeaders(Dependency[dict[str, str]]):
     """Async context manager for HTTP Headers dependency."""
 
     async def __aenter__(self) -> dict[str, str]:
-        return get_http_headers()
+        return get_http_headers(include={"authorization"})
 
     async def __aexit__(self, *args: object) -> None:
         pass
@@ -1038,9 +1099,10 @@ class _CurrentHeaders(Dependency):  # type: ignore[misc]
 def CurrentHeaders() -> dict[str, str]:
     """Get the current HTTP request headers.
 
-    This dependency provides access to the HTTP headers for the current request.
-    Returns an empty dictionary when no HTTP request is available, making it
-    safe to use in code that might run over any transport.
+    This dependency provides access to the HTTP headers for the current request,
+    including the authorization header. Returns an empty dictionary when no HTTP
+    request is available, making it safe to use in code that might run over any
+    transport.
 
     Returns:
         A dependency that resolves to a dictionary of header name -> value
@@ -1148,7 +1210,7 @@ class InMemoryProgress:
         self._message = message
 
 
-class Progress(Dependency):  # type: ignore[misc]
+class Progress(Dependency["Progress"]):
     """FastMCP Progress dependency that works in both server and worker contexts.
 
     Handles three execution modes:
@@ -1161,39 +1223,67 @@ class Progress(Dependency):  # type: ignore[misc]
     is installed.
     """
 
-    async def __aenter__(self) -> ProgressLike:
-        # Check if we're in a FastMCP server context
+    _impl: ProgressLike | None = None
+
+    async def __aenter__(self) -> Progress:
         server_ref = _current_server.get()
         if server_ref is None or server_ref() is None:
             raise RuntimeError("Progress dependency requires a FastMCP server context.")
 
-        # If pydocket is installed, try to use Docket's progress
         if is_docket_available():
             from docket.dependencies import Progress as DocketProgress
 
-            # Try to get execution from Docket worker context
             try:
                 docket_progress = DocketProgress()
-                return await docket_progress.__aenter__()
+                self._impl = await docket_progress.__aenter__()
+                return self
             except LookupError:
-                # Not in worker context - fall through to in-memory progress
                 pass
 
-        # Return in-memory progress for immediate execution
-        # This is used when:
-        # 1. pydocket is not installed
-        # 2. Docket is not running (no task-enabled components)
-        # 3. In server context (not worker context)
-        return InMemoryProgress()
+        self._impl = InMemoryProgress()
+        return self
 
     async def __aexit__(self, *args: object) -> None:
-        pass
+        self._impl = None
+
+    @property
+    def current(self) -> int | None:
+        """Current progress value."""
+        assert self._impl is not None, "Progress must be used as a dependency"
+        return self._impl.current
+
+    @property
+    def total(self) -> int:
+        """Total/target progress value."""
+        assert self._impl is not None, "Progress must be used as a dependency"
+        return self._impl.total
+
+    @property
+    def message(self) -> str | None:
+        """Current progress message."""
+        assert self._impl is not None, "Progress must be used as a dependency"
+        return self._impl.message
+
+    async def set_total(self, total: int) -> None:
+        """Set the total/target value for progress tracking."""
+        assert self._impl is not None, "Progress must be used as a dependency"
+        await self._impl.set_total(total)
+
+    async def increment(self, amount: int = 1) -> None:
+        """Atomically increment the current progress value."""
+        assert self._impl is not None, "Progress must be used as a dependency"
+        await self._impl.increment(amount)
+
+    async def set_message(self, message: str | None) -> None:
+        """Update the progress status message."""
+        assert self._impl is not None, "Progress must be used as a dependency"
+        await self._impl.set_message(message)
 
 
 # --- Access Token dependency ---
 
 
-class _CurrentAccessToken(Dependency):  # type: ignore[misc]
+class _CurrentAccessToken(Dependency[AccessToken]):
     """Async context manager for AccessToken dependency."""
 
     _access_token_cv_token: Token[AccessToken | None] | None = None
@@ -1253,7 +1343,7 @@ def CurrentAccessToken() -> AccessToken:
 # --- Token Claim dependency ---
 
 
-class _TokenClaim(Dependency):  # type: ignore[misc]
+class _TokenClaim(Dependency[str]):
     """Dependency that extracts a specific claim from the access token."""
 
     def __init__(self, claim_name: str):

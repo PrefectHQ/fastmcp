@@ -2,7 +2,6 @@
 
 import difflib
 import json
-import os
 import shlex
 import sys
 from pathlib import Path
@@ -100,7 +99,6 @@ def resolve_server_spec(
             return StdioTransport(
                 command="fastmcp",
                 args=["run", str(resolved_path), "--no-banner"],
-                log_file=Path(os.devnull),
             )
         # .js — pass through for Client's infer_transport
         return spec
@@ -125,7 +123,7 @@ def _build_stdio_from_command(command_str: str) -> StdioTransport:
         console.print("[bold red]Error:[/bold red] Empty --command")
         sys.exit(1)
 
-    return StdioTransport(command=parts[0], args=parts[1:], log_file=Path(os.devnull))
+    return StdioTransport(command=parts[0], args=parts[1:])
 
 
 def _resolve_json_spec(path: Path) -> str | dict[str, Any]:
@@ -838,10 +836,12 @@ async def call_command(
     or nested arguments.
 
     Examples:
+        ```
         fastmcp call server.py greet name=World
         fastmcp call server.py resource://docs/readme
         fastmcp call server.py analyze --prompt data='[1,2,3]'
         fastmcp call http://server/mcp create --input-json '{"tags": ["a","b"]}'
+        ```
     """
 
     if not target:
