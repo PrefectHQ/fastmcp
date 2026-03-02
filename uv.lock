@@ -853,7 +853,7 @@ requires-dist = [
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], specifier = ">=0.4.4,<0.5.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pydantic-monty", marker = "extra == 'code-mode'", specifier = ">=0.0.7" },
-    { name = "pydocket", marker = "extra == 'tasks'", git = "https://github.com/chrisguidry/docket.git?rev=main" },
+    { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.18.0" },
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "pyyaml", specifier = ">=6.0,<7.0" },
@@ -2095,8 +2095,8 @@ wheels = [
 
 [[package]]
 name = "pydocket"
-version = "0.17.10.dev6+gd2fa25067"
-source = { git = "https://github.com/chrisguidry/docket.git?rev=main#d2fa25067e7a211d6f70dd843dfedba96e170f0b" }
+version = "0.18.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cloudpickle" },
     { name = "croniter" },
@@ -2113,6 +2113,10 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "uncalled-for" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d2/da/5f76e42214c76402e1a2b4b59610211635c1068cab85509c78f1ca49a385/pydocket-0.18.0.tar.gz", hash = "sha256:cd5b6e7386331ca05a0163401f392b08b07e61342b5333c3ece6a7ca5435f984", size = 354637, upload-time = "2026-03-02T16:22:17.356Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/57/ac0d47cd3550d859138647c2c4fbd53a2db05db8729433eaa6128e9964ba/pydocket-0.18.0-py3-none-any.whl", hash = "sha256:d995d9a3c88af0402fda640c18e1b51561041b9e3af1a92dce2fdc6c8f6c7090", size = 98848, upload-time = "2026-03-02T16:22:15.792Z" },
 ]
 
 [[package]]
