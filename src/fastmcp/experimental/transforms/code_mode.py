@@ -1,8 +1,8 @@
 import asyncio
 import importlib
-import logging
-from collections.abc import Callable, Sequence
-from typing import Annotated, Any, Protocol
+import json
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Annotated, Any, Literal, Protocol
 
 from mcp.types import TextContent
 from pydantic import Field
@@ -12,16 +12,29 @@ from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
 from fastmcp.server.transforms.search.base import (
-    BaseSearchTransform,
-    SearchResultSerializer,
-    _invoke_serializer,
     serialize_tools_for_output_json,
     serialize_tools_for_output_markdown,
 )
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec
 
-logger = logging.getLogger(__name__)
+# ---------------------------------------------------------------------------
+# Type aliases
+# ---------------------------------------------------------------------------
+
+GetToolCatalog = Callable[[Context], Awaitable[Sequence[Tool]]]
+"""Async callable that returns the auth-filtered tool catalog."""
+
+SearchFn = Callable[[Sequence[Tool], str], Awaitable[Sequence[Tool]]]
+"""Async callable that searches a tool sequence by query string."""
+
+DiscoveryToolFactory = Callable[[GetToolCatalog], Tool]
+"""Factory that receives catalog access and returns a synthetic Tool."""
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _ensure_async(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -50,6 +63,11 @@ def _unwrap_tool_result(result: ToolResult) -> dict[str, Any] | str:
         else:
             parts.append(str(content))
     return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Sandbox providers
+# ---------------------------------------------------------------------------
 
 
 class SandboxProvider(Protocol):
@@ -122,45 +140,297 @@ class MontySandboxProvider:
         return await pydantic_monty.run_monty_async(monty, **run_kwargs)
 
 
-class CodeMode(CatalogTransform):
-    """Transform that collapses all tools into `search` + `execute` meta-tools."""
+# ---------------------------------------------------------------------------
+# Built-in discovery tools
+# ---------------------------------------------------------------------------
+
+
+ToolDetailLevel = Literal["brief", "detailed", "full"]
+"""Detail level for discovery tool output.
+
+- ``"brief"``: tool names and one-line descriptions
+- ``"detailed"``: compact markdown with parameter names, types, and required markers
+- ``"full"``: complete JSON schema
+"""
+
+
+def _render_tools(tools: Sequence[Tool], detail: ToolDetailLevel) -> str:
+    """Render tools at the requested detail level.
+
+    The same detail value produces the same output format regardless of
+    which discovery tool calls this, so ``detail="detailed"`` on Search
+    gives identical formatting to ``detail="detailed"`` on GetSchemas.
+    """
+    if not tools:
+        if detail == "full":
+            return json.dumps([], indent=2)
+        return "No tools matched the query."
+    if detail == "full":
+        return json.dumps(serialize_tools_for_output_json(tools), indent=2)
+    if detail == "detailed":
+        return serialize_tools_for_output_markdown(tools)
+    # brief
+    lines: list[str] = []
+    for tool in tools:
+        desc = f": {tool.description}" if tool.description else ""
+        lines.append(f"- {tool.name}{desc}")
+    return "\n".join(lines)
+
+
+class Search:
+    """Discovery tool factory that searches the catalog by query.
+
+    Args:
+        search_fn: Async callable ``(tools, query) -> matching_tools``.
+            Defaults to BM25 ranking.
+        name: Name of the synthetic tool exposed to the LLM.
+        default_detail: Default detail level for search results.
+            ``"brief"`` returns tool names and descriptions only.
+            ``"detailed"`` returns compact markdown with parameter schemas.
+            ``"full"`` returns complete JSON tool definitions.
+    """
 
     def __init__(
         self,
         *,
-        default_arguments: dict[str, Any] | None = None,
+        search_fn: SearchFn | None = None,
+        name: str = "search",
+        default_detail: ToolDetailLevel | None = None,
+    ) -> None:
+        if search_fn is None:
+            from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
+
+            _bm25 = BM25SearchTransform()
+            search_fn = _bm25._search
+        self._search_fn = search_fn
+        self._name = name
+        self._default_detail: ToolDetailLevel = default_detail or "brief"
+
+    def __call__(self, get_catalog: GetToolCatalog) -> Tool:
+        search_fn = self._search_fn
+        default_detail = self._default_detail
+
+        async def search(
+            query: Annotated[str, "Search query to find available tools"],
+            tags: Annotated[
+                list[str] | None,
+                "Filter to tools with any of these tags before searching",
+            ] = None,
+            detail: Annotated[
+                ToolDetailLevel,
+                "'brief' for names and descriptions, 'detailed' for parameter schemas as markdown, 'full' for complete JSON schemas",
+            ] = default_detail,
+            ctx: Context = None,  # type: ignore[assignment]
+        ) -> str:
+            """Search for available tools by query.
+
+            Returns matching tools ranked by relevance.
+            """
+            tools = await get_catalog(ctx)
+            if tags:
+                tag_set = set(tags)
+                has_untagged = "untagged" in tag_set
+                real_tags = tag_set - {"untagged"}
+                tools = [
+                    t
+                    for t in tools
+                    if (t.tags & real_tags) or (has_untagged and not t.tags)
+                ]
+            results = await search_fn(tools, query)
+            return _render_tools(results, detail)
+
+        return Tool.from_function(fn=search, name=self._name)
+
+
+class GetSchemas:
+    """Discovery tool factory that returns schemas for tools by name.
+
+    Args:
+        name: Name of the synthetic tool exposed to the LLM.
+        default_detail: Default detail level for schema results.
+            ``"brief"`` returns tool names and descriptions only.
+            ``"detailed"`` renders compact markdown with parameter names,
+            types, and required markers.
+            ``"full"`` returns the complete JSON schema.
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str = "get_schema",
+        default_detail: ToolDetailLevel | None = None,
+    ) -> None:
+        self._name = name
+        self._default_detail: ToolDetailLevel = default_detail or "detailed"
+
+    def __call__(self, get_catalog: GetToolCatalog) -> Tool:
+        default_detail = self._default_detail
+
+        async def get_schema(
+            tools: Annotated[
+                list[str],
+                "List of tool names to get schemas for",
+            ],
+            detail: Annotated[
+                ToolDetailLevel,
+                "'brief' for names and descriptions, 'detailed' for parameter schemas as markdown, 'full' for complete JSON schemas",
+            ] = default_detail,
+            ctx: Context = None,  # type: ignore[assignment]
+        ) -> str:
+            """Get parameter schemas for specific tools.
+
+            Use after searching to get the detail needed to call a tool.
+            """
+            catalog = await get_catalog(ctx)
+            catalog_by_name = {t.name: t for t in catalog}
+            matched = [catalog_by_name[n] for n in tools if n in catalog_by_name]
+            not_found = [n for n in tools if n not in catalog_by_name]
+
+            if not matched and not_found:
+                return f"Tools not found: {', '.join(not_found)}"
+
+            if detail == "full":
+                data = serialize_tools_for_output_json(matched)
+                if not_found:
+                    data.append({"not_found": not_found})
+                return json.dumps(data, indent=2)
+
+            result = _render_tools(matched, detail)
+            if not_found:
+                result += f"\n\nTools not found: {', '.join(not_found)}"
+            return result
+
+        return Tool.from_function(fn=get_schema, name=self._name)
+
+
+class GetTags:
+    """Discovery tool factory that lists tool tags from the catalog.
+
+    Reads ``tool.tags`` from the catalog and groups tools by tag. Tools
+    without tags appear under ``"untagged"``.
+
+    Args:
+        name: Name of the synthetic tool exposed to the LLM.
+        default_detail: Default detail level.
+            ``"brief"`` returns tag names with tool counts.
+            ``"full"`` lists all tools under each tag.
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str = "tags",
+        default_detail: Literal["brief", "full"] | None = None,
+    ) -> None:
+        self._name = name
+        self._default_detail: Literal["brief", "full"] = default_detail or "brief"
+
+    def __call__(self, get_catalog: GetToolCatalog) -> Tool:
+        default_detail = self._default_detail
+
+        async def tags(
+            detail: Annotated[
+                Literal["brief", "full"],
+                "Level of detail: 'brief' for tag names and counts, 'full' for tools listed under each tag",
+            ] = default_detail,
+            ctx: Context = None,  # type: ignore[assignment]
+        ) -> str:
+            """List available tool tags.
+
+            Use to browse available tools by tag before searching.
+            """
+            catalog = await get_catalog(ctx)
+            by_tag: dict[str, list[Tool]] = {}
+            for tool in catalog:
+                if tool.tags:
+                    for tag in tool.tags:
+                        by_tag.setdefault(tag, []).append(tool)
+                else:
+                    by_tag.setdefault("untagged", []).append(tool)
+
+            if not by_tag:
+                return "No tools available."
+
+            if detail == "brief":
+                lines = [
+                    f"- {tag} ({len(tools)} tool{'s' if len(tools) != 1 else ''})"
+                    for tag, tools in sorted(by_tag.items())
+                ]
+                return "\n".join(lines)
+
+            blocks: list[str] = []
+            for tag, tools in sorted(by_tag.items()):
+                lines = [f"### {tag}"]
+                for tool in tools:
+                    desc = f": {tool.description}" if tool.description else ""
+                    lines.append(f"- {tool.name}{desc}")
+                blocks.append("\n".join(lines))
+            return "\n\n".join(blocks)
+
+        return Tool.from_function(fn=tags, name=self._name)
+
+
+# ---------------------------------------------------------------------------
+# CodeMode
+# ---------------------------------------------------------------------------
+
+
+def _default_discovery_tools() -> list[DiscoveryToolFactory]:
+    return [Search(), GetSchemas()]
+
+
+class CodeMode(CatalogTransform):
+    """Transform that collapses all tools into discovery + execute meta-tools.
+
+    Discovery tools are composable via the ``discovery_tools`` parameter.
+    Each is a callable that receives catalog access and returns a ``Tool``.
+    By default, ``Search`` and ``GetSchemas`` are included for
+    progressive disclosure: search finds candidates, get_schema retrieves
+    parameter details, and execute runs code.
+
+    The ``execute`` tool is always present and provides a sandboxed Python
+    environment with ``call_tool(name, params)`` in scope.
+    """
+
+    def __init__(
+        self,
+        *,
         sandbox_provider: SandboxProvider | None = None,
-        search_transform: BaseSearchTransform | None = None,
-        search_tool_name: str = "search",
+        discovery_tools: list[DiscoveryToolFactory] | None = None,
         execute_tool_name: str = "execute",
         execute_description: str | None = None,
-        search_result_serializer: SearchResultSerializer | None = None,
     ) -> None:
-        if search_tool_name == execute_tool_name:
-            raise ValueError(
-                "search_tool_name and execute_tool_name must be different."
-            )
-
         super().__init__()
-        self._default_arguments = default_arguments or {}
-        self.search_tool_name = search_tool_name
         self.execute_tool_name = execute_tool_name
         self.execute_description = execute_description
         self.sandbox_provider = sandbox_provider or MontySandboxProvider()
-        self._cached_search_tool: Tool | None = None
-        self._cached_execute_tool: Tool | None = None
-        self._search_result_serializer: SearchResultSerializer | None = (
-            search_result_serializer
+
+        self._discovery_factories = (
+            discovery_tools
+            if discovery_tools is not None
+            else _default_discovery_tools()
         )
+        self._built_discovery_tools: list[Tool] | None = None
+        self._cached_execute_tool: Tool | None = None
 
-        if search_transform is None:
-            from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
-
-            search_transform = BM25SearchTransform()
-        self._search_transform = search_transform
+    def _build_discovery_tools(self) -> list[Tool]:
+        if self._built_discovery_tools is None:
+            tools = [
+                factory(self.get_tool_catalog) for factory in self._discovery_factories
+            ]
+            names = {t.name for t in tools}
+            if self.execute_tool_name in names:
+                raise ValueError(
+                    f"Discovery tool name '{self.execute_tool_name}' "
+                    f"collides with execute_tool_name."
+                )
+            if len(names) != len(tools):
+                raise ValueError("Discovery tools must have unique names.")
+            self._built_discovery_tools = tools
+        return self._built_discovery_tools
 
     async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
-        return [self._get_search_tool(), self._get_execute_tool()]
+        return [*self._build_discovery_tools(), self._get_execute_tool()]
 
     async def get_tool(
         self,
@@ -169,8 +439,9 @@ class CodeMode(CatalogTransform):
         *,
         version: VersionSpec | None = None,
     ) -> Tool | None:
-        if name == self.search_tool_name:
-            return self._get_search_tool()
+        for tool in self._build_discovery_tools():
+            if tool.name == name:
+                return tool
         if name == self.execute_tool_name:
             return self._get_execute_tool()
         return await call_next(name, version=version)
@@ -193,40 +464,10 @@ class CodeMode(CatalogTransform):
                 return tool
         return None
 
-    def _get_search_tool(self) -> Tool:
-        if self._cached_search_tool is None:
-            self._cached_search_tool = self._make_search_tool()
-        return self._cached_search_tool
-
     def _get_execute_tool(self) -> Tool:
         if self._cached_execute_tool is None:
             self._cached_execute_tool = self._make_execute_tool()
         return self._cached_execute_tool
-
-    def _make_search_tool(self) -> Tool:
-        transform = self
-
-        async def search(
-            query: Annotated[
-                str,
-                "Search query to find available tools",
-            ],
-            ctx: Context = None,  # type: ignore[assignment]
-        ) -> str | list[dict[str, Any]]:
-            """Search for available tools by query.
-
-            Returns matching tool definitions ranked by relevance,
-            in the same format as list_tools.
-            """
-            tools = await transform.get_tool_catalog(ctx)
-            results = await transform._search_transform._search(tools, query)
-            if transform._search_result_serializer is not None:
-                return await _invoke_serializer(
-                    transform._search_result_serializer, results
-                )
-            return await transform._search_transform._render_results(results)
-
-        return Tool.from_function(fn=search, name=self.search_tool_name)
 
     def _make_execute_tool(self) -> Tool:
         transform = self
@@ -243,9 +484,6 @@ class CodeMode(CatalogTransform):
             ctx: Context = None,  # type: ignore[assignment]
         ) -> Any:
             """Execute tool calls using Python code."""
-            defaults = transform._default_arguments
-            # Cache the tool catalog for the duration of this execute block
-            # so multiple call_tool() invocations don't each trigger list_tools().
             cached_tools: Sequence[Tool] | None = None
 
             async def _get_cached_tools() -> Sequence[Tool]:
@@ -260,26 +498,7 @@ class CodeMode(CatalogTransform):
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {tool_name}")
 
-                accepted_args = set(tool.parameters.get("properties", {}).keys())
-                skipped = {
-                    key
-                    for key in defaults
-                    if key not in params and key not in accepted_args
-                }
-                if skipped:
-                    logger.debug(
-                        "default_arguments keys %s not accepted by tool %r, skipping",
-                        skipped,
-                        tool.name,
-                    )
-                merged = {
-                    key: value
-                    for key, value in defaults.items()
-                    if key not in params and key in accepted_args
-                }
-                merged.update(params)
-
-                result = await ctx.fastmcp.call_tool(tool.name, merged)
+                result = await ctx.fastmcp.call_tool(tool.name, params)
                 return _unwrap_tool_result(result)
 
             return await transform.sandbox_provider.run(
@@ -296,9 +515,10 @@ class CodeMode(CatalogTransform):
 
 __all__ = [
     "CodeMode",
+    "GetSchemas",
+    "GetTags",
+    "GetToolCatalog",
     "MontySandboxProvider",
     "SandboxProvider",
-    "SearchResultSerializer",
-    "serialize_tools_for_output_json",
-    "serialize_tools_for_output_markdown",
+    "Search",
 ]
