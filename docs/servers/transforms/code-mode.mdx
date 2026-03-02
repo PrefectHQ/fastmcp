@@ -69,48 +69,53 @@ return b
 
 ## Discovery Tools
 
-CodeMode uses composable **discovery tools** that let the LLM explore the tool catalog. Each discovery tool is a factory that receives catalog access and returns a `Tool`. By default, CodeMode includes `SearchTool` and `SchemaTool`.
+CodeMode replaces the tool catalog with a small set of **discovery tools** that the LLM uses to find and understand tools on demand. By default, the LLM gets `search` and `get_schema` — enough for a two-step workflow where it searches for candidates, then pulls detailed schemas for the ones it wants to call.
 
-### SearchTool
+You control which discovery tools are available through the `discovery_tools` parameter. Each entry produces a tool the LLM can call. Three are built in: `Search`, `GetSchemas`, and `Tags`.
 
-`SearchTool` finds tools matching a natural-language query. By default it returns just names and descriptions, keeping results lightweight so the LLM can scan many candidates cheaply.
+### Search
 
-```python
-from fastmcp.experimental.transforms import CodeMode, SearchTool
+`Search` lets the LLM find tools by natural-language query using BM25 ranking. By default it returns lightweight results — just tool names and descriptions — so the LLM can scan many candidates cheaply. The LLM can request `detail="full"` on any individual call to get complete schemas instead.
 
-mcp = FastMCP("Server", transforms=[CodeMode(
-    discovery_tools=[SearchTool(detail="brief")],  # default
-)])
-```
-
-Set `detail="full"` to include complete JSON schemas in search results. This is useful for small catalogs where two-step discovery adds unnecessary latency:
+You can change the default detail level so the LLM gets full schemas without asking. This makes sense for small catalogs where two-step discovery adds unnecessary latency:
 
 ```python
-mcp = FastMCP("Server", transforms=[CodeMode(
-    discovery_tools=[SearchTool(detail="full")],
-)])
+from fastmcp.experimental.transforms import CodeMode
+from fastmcp.experimental.transforms.code_mode import Search
+
+code_mode = CodeMode(
+    discovery_tools=[Search(default_detail="full")],
+)
 ```
 
-The search algorithm uses BM25 ranking by default. You can swap in any [search transform](/servers/transforms/tool-search):
+To swap in a different search algorithm, pass any async function with the signature `(tools, query) -> matching_tools`:
 
 ```python
 from fastmcp.server.transforms.search import RegexSearchTransform
 
-mcp = FastMCP("Server", transforms=[CodeMode(
-    discovery_tools=[SearchTool(transform=RegexSearchTransform())],
-)])
+regex = RegexSearchTransform()
+code_mode = CodeMode(
+    discovery_tools=[Search(search_fn=regex._search)],
+)
 ```
 
-### SchemaTool
+When tools have [tags](/servers/tools#tags), the LLM can pass `tags` to narrow the search before ranking. This is useful when combined with `Tags` — the LLM browses tags first, then searches within a specific tag:
 
-`SchemaTool` returns parameter schemas for specific tools by name. It supports two detail levels:
+```python
+# LLM calls search with a tag filter
+result = await client.call_tool(
+    "search",
+    {"query": "add numbers", "tags": ["math"]},
+)
+```
 
-- `"brief"` (default) — compact markdown with parameter names, types, and required markers
-- `"full"` — complete JSON schema
+### GetSchemas
 
-The LLM chooses the detail level per request, so it can get a quick overview of several tools or a deep dive into one complex tool.
+`GetSchemas` returns parameter schemas for specific tools by name. The LLM typically calls this after searching — it knows which tools it wants, now it needs the parameter details to construct a `call_tool()` invocation.
 
-For a tool like `create_document`, the brief format looks like:
+It supports two detail levels: `"brief"` (default) renders compact markdown, `"full"` returns the complete JSON schema. As with `Search`, the LLM can override per call, and you can change the default with `default_detail`.
+
+For a tool like `create_document`, brief format looks like:
 
 ```
 ### create_document
@@ -126,12 +131,51 @@ Create a new document in the workspace with the given metadata.
 - `parent_id` (string?)
 ```
 
-### Custom Discovery Tools
+### Tags
 
-Discovery tools are callables with the signature `Callable[[GetToolCatalog], Tool]`. You can write your own as a plain function:
+`Tags` reads [tags](/servers/tools#tags) from the tool catalog and groups tools by tag. Tools without tags appear under `"untagged"`. It gives the LLM a way to browse the catalog by category before searching — especially useful for large or heterogeneous tool sets where a keyword search needs narrowing.
+
+`Tags` is not included in the defaults. Add it when your tools are tagged:
 
 ```python
-from fastmcp.experimental.transforms import CodeMode, GetToolCatalog, SchemaTool
+from fastmcp.experimental.transforms import CodeMode
+from fastmcp.experimental.transforms.code_mode import Tags, Search, GetSchemas
+
+code_mode = CodeMode(
+    discovery_tools=[Tags(), Search(), GetSchemas()],
+)
+```
+
+At brief detail (the default), the LLM sees tag names with counts:
+
+```
+- math (3 tools)
+- text (2 tools)
+- untagged (1 tool)
+```
+
+At full detail, it sees all tools listed under each tag:
+
+```
+### math
+- add: Add two numbers.
+- multiply: Multiply two numbers.
+- square: Compute the square of a number.
+
+### text
+- greet: Say hello to someone.
+- summarize: Summarize a block of text.
+```
+
+### Custom Discovery Tools
+
+Discovery tools are composable — you can mix the built-ins with your own. Each discovery tool is a callable that receives catalog access and returns a `Tool`. The catalog accessor is a function (not the catalog itself) because the catalog is request-scoped — different users may see different tools based on auth.
+
+Here's a minimal example that lists all tool names:
+
+```python
+from fastmcp.experimental.transforms import CodeMode
+from fastmcp.experimental.transforms.code_mode import GetToolCatalog, GetSchemas
 from fastmcp.server.context import Context
 from fastmcp.tools.tool import Tool
 
@@ -143,32 +187,26 @@ def list_all_tools(get_catalog: GetToolCatalog) -> Tool:
 
     return Tool.from_function(fn=list_tools, name="list_tools")
 
-mcp = FastMCP("Server", transforms=[CodeMode(
-    discovery_tools=[list_all_tools, SchemaTool()],
-)])
+code_mode = CodeMode(discovery_tools=[list_all_tools, GetSchemas()])
 ```
 
-Or as a configurable class:
-
-```python
-class CategoryTool:
-    def __init__(self, categories: dict[str, list[str]], name: str = "categories"):
-        self._categories = categories
-        self._name = name
-
-    def __call__(self, get_catalog: GetToolCatalog) -> Tool:
-        categories = self._categories
-        async def list_categories() -> str:
-            """List available tool categories."""
-            return "\n".join(f"- {cat}" for cat in categories)
-
-        return Tool.from_function(fn=list_categories, name=self._name)
-```
+The LLM sees the docstring of each discovery tool's inner function as its description — that's how it learns what each tool does and when to use it. The built-ins have sensible defaults, but custom discovery tools should include clear docstrings that guide the LLM through the intended workflow.
 
 Pass `discovery_tools=[]` to expose only the `execute` tool with no discovery:
 
 ```python
 mcp = FastMCP("Server", transforms=[CodeMode(discovery_tools=[])])
+```
+
+You can also customize how the execute tool describes itself, which is useful for guiding the LLM on how to use the discovery tools together:
+
+```python
+code_mode = CodeMode(
+    execute_description=(
+        "Use search to find tools, get_schema to inspect parameters, "
+        "then write Python code that chains call_tool() calls."
+    ),
+)
 ```
 
 ## Execute
@@ -225,21 +263,19 @@ mcp = FastMCP("API Code Mode", providers=[provider], transforms=[CodeMode()])
 Discovery tools and the execute tool can have custom names:
 
 ```python
-from fastmcp.experimental.transforms import CodeMode, SearchTool, SchemaTool
+from fastmcp.experimental.transforms import CodeMode
+from fastmcp.experimental.transforms.code_mode import Search, GetSchemas
 
-mcp = FastMCP(
-    "Server",
-    transforms=[
-        CodeMode(
-            discovery_tools=[
-                SearchTool(name="find_tools"),
-                SchemaTool(name="describe"),
-            ],
-            execute_tool_name="run_workflow",
-            execute_description="Run multi-step API workflows",
-        )
+code_mode = CodeMode(
+    discovery_tools=[
+        Search(name="find_tools"),
+        GetSchemas(name="describe"),
     ],
+    execute_tool_name="run_workflow",
+    execute_description="Run multi-step API workflows",
 )
+
+mcp = FastMCP("Server", transforms=[code_mode])
 ```
 
 ### Resource Limits

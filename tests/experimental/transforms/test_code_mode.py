@@ -7,22 +7,15 @@ from mcp.types import ImageContent, TextContent
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp.experimental.transforms import (
-    CodeMode,
-    MontySandboxProvider,
-    SchemaTool,
-    SearchTool,
-)
+from fastmcp.experimental.transforms import CodeMode, MontySandboxProvider
 from fastmcp.experimental.transforms.code_mode import (
+    GetSchemas,
     GetToolCatalog,
+    Search,
+    Tags,
     _ensure_async,
 )
 from fastmcp.server.context import Context
-from fastmcp.server.transforms.search.base import (
-    _schema_section,
-    _schema_type,
-    serialize_tools_for_output_markdown,
-)
 from fastmcp.tools.tool import Tool, ToolResult
 
 
@@ -433,7 +426,7 @@ async def test_code_mode_custom_discovery_tool_function() -> None:
 
 
 async def test_code_mode_search_tool_full_detail() -> None:
-    """SearchTool with detail='full' includes JSON schemas."""
+    """Search with detail='full' includes JSON schemas."""
     mcp = FastMCP("CodeMode Search Full")
 
     @mcp.tool
@@ -443,7 +436,7 @@ async def test_code_mode_search_tool_full_detail() -> None:
 
     mcp.add_transform(
         CodeMode(
-            discovery_tools=[SearchTool(detail="full")],
+            discovery_tools=[Search(default_detail="full")],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
     )
@@ -457,7 +450,7 @@ async def test_code_mode_search_tool_full_detail() -> None:
 
 
 async def test_code_mode_custom_search_tool_name() -> None:
-    """SearchTool and SchemaTool support custom names."""
+    """Search and GetSchemas support custom names."""
     mcp = FastMCP("CodeMode Custom Names")
 
     @mcp.tool
@@ -467,8 +460,8 @@ async def test_code_mode_custom_search_tool_name() -> None:
     mcp.add_transform(
         CodeMode(
             discovery_tools=[
-                SearchTool(name="find"),
-                SchemaTool(name="describe"),
+                Search(name="find"),
+                GetSchemas(name="describe"),
             ],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -481,7 +474,7 @@ async def test_code_mode_custom_search_tool_name() -> None:
 def test_code_mode_rejects_discovery_execute_name_collision() -> None:
     """CodeMode raises ValueError when a discovery tool collides with execute."""
     cm = CodeMode(
-        discovery_tools=[SearchTool(name="execute")],
+        discovery_tools=[Search(name="execute")],
         sandbox_provider=_UnsafeTestSandboxProvider(),
     )
     with pytest.raises(ValueError, match="collides"):
@@ -491,11 +484,247 @@ def test_code_mode_rejects_discovery_execute_name_collision() -> None:
 def test_code_mode_rejects_duplicate_discovery_names() -> None:
     """CodeMode raises ValueError when discovery tools have duplicate names."""
     cm = CodeMode(
-        discovery_tools=[SearchTool(name="search"), SearchTool(name="search")],
+        discovery_tools=[Search(name="search"), Search(name="search")],
         sandbox_provider=_UnsafeTestSandboxProvider(),
     )
     with pytest.raises(ValueError, match="unique"):
         cm._build_discovery_tools()
+
+
+# ---------------------------------------------------------------------------
+# Tags discovery tool
+# ---------------------------------------------------------------------------
+
+
+async def test_categories_brief_shows_tag_counts() -> None:
+    mcp = FastMCP("Tags Brief")
+
+    @mcp.tool(tags={"math"})
+    def add(x: int, y: int) -> int:
+        return x + y
+
+    @mcp.tool(tags={"math"})
+    def multiply(x: int, y: int) -> int:
+        return x * y
+
+    @mcp.tool(tags={"text"})
+    def greet(name: str) -> str:
+        return f"Hello, {name}!"
+
+    mcp.add_transform(
+        CodeMode(
+            discovery_tools=[Tags()],
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+        )
+    )
+
+    result = await _run_tool(mcp, "tags", {})
+    text = _unwrap_string_result(result)
+    assert "math (2 tools)" in text
+    assert "text (1 tool)" in text
+
+
+async def test_categories_full_lists_tools_per_tag() -> None:
+    mcp = FastMCP("Tags Full")
+
+    @mcp.tool(tags={"math"})
+    def add(x: int, y: int) -> int:
+        """Add two numbers."""
+        return x + y
+
+    @mcp.tool(tags={"text"})
+    def greet(name: str) -> str:
+        """Say hello."""
+        return f"Hello, {name}!"
+
+    mcp.add_transform(
+        CodeMode(
+            discovery_tools=[Tags(default_detail="full")],
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+        )
+    )
+
+    result = await _run_tool(mcp, "tags", {})
+    text = _unwrap_string_result(result)
+    assert "### math" in text
+    assert "- add: Add two numbers." in text
+    assert "### text" in text
+    assert "- greet: Say hello." in text
+
+
+async def test_categories_includes_untagged() -> None:
+    mcp = FastMCP("Tags Untagged")
+
+    @mcp.tool(tags={"math"})
+    def add(x: int, y: int) -> int:
+        return x + y
+
+    @mcp.tool
+    def ping() -> str:
+        return "pong"
+
+    mcp.add_transform(
+        CodeMode(
+            discovery_tools=[Tags()],
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+        )
+    )
+
+    result = await _run_tool(mcp, "tags", {})
+    text = _unwrap_string_result(result)
+    assert "math" in text
+    assert "untagged (1 tool)" in text
+
+
+async def test_categories_tool_in_multiple_tags() -> None:
+    mcp = FastMCP("Tags Multi-tag")
+
+    @mcp.tool(tags={"math", "core"})
+    def add(x: int, y: int) -> int:
+        return x + y
+
+    mcp.add_transform(
+        CodeMode(
+            discovery_tools=[Tags(default_detail="full")],
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+        )
+    )
+
+    result = await _run_tool(mcp, "tags", {})
+    text = _unwrap_string_result(result)
+    assert "### core" in text
+    assert "### math" in text
+    # Tool appears under both tags
+    assert text.count("- add") == 2
+
+
+async def test_categories_detail_override_per_call() -> None:
+    """LLM can override default_detail on a per-call basis."""
+    mcp = FastMCP("Tags Override")
+
+    @mcp.tool(tags={"math"})
+    def add(x: int, y: int) -> int:
+        """Add numbers."""
+        return x + y
+
+    mcp.add_transform(
+        CodeMode(
+            discovery_tools=[Tags()],  # default_detail="brief"
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+        )
+    )
+
+    # Override to full
+    result = await _run_tool(mcp, "tags", {"detail": "full"})
+    text = _unwrap_string_result(result)
+    assert "### math" in text
+    assert "- add: Add numbers." in text
+
+
+# ---------------------------------------------------------------------------
+# Search with tags filtering
+# ---------------------------------------------------------------------------
+
+
+async def test_search_with_tags_filter() -> None:
+    mcp = FastMCP("Search Tags")
+
+    @mcp.tool(tags={"math"})
+    def add(x: int, y: int) -> int:
+        """Add two numbers."""
+        return x + y
+
+    @mcp.tool(tags={"text"})
+    def greet(name: str) -> str:
+        """Say hello."""
+        return f"Hello, {name}!"
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(mcp, "search", {"query": "add hello", "tags": ["math"]})
+    text = _unwrap_string_result(result)
+    assert "add" in text
+    assert "greet" not in text
+
+
+async def test_search_with_tags_filter_no_matches() -> None:
+    mcp = FastMCP("Search Tags Empty")
+
+    @mcp.tool(tags={"math"})
+    def add(x: int, y: int) -> int:
+        """Add two numbers."""
+        return x + y
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(mcp, "search", {"query": "add", "tags": ["nonexistent"]})
+    text = _unwrap_string_result(result)
+    assert "add" not in text or "No tools" in text
+
+
+async def test_search_without_tags_returns_all() -> None:
+    """Search without tags parameter searches the full catalog."""
+    mcp = FastMCP("Search No Tags")
+
+    @mcp.tool(tags={"math"})
+    def add(x: int, y: int) -> int:
+        """Add two numbers."""
+        return x + y
+
+    @mcp.tool(tags={"text"})
+    def greet(name: str) -> str:
+        """Say hello."""
+        return f"Hello, {name}!"
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(mcp, "search", {"query": "add hello"})
+    text = _unwrap_string_result(result)
+    assert "add" in text
+    assert "greet" in text
+
+
+async def test_search_with_untagged_filter() -> None:
+    """Search with tags=["untagged"] matches tools that have no tags."""
+    mcp = FastMCP("Search Untagged")
+
+    @mcp.tool(tags={"math"})
+    def add(x: int, y: int) -> int:
+        """Add two numbers."""
+        return x + y
+
+    @mcp.tool
+    def ping() -> str:
+        """Ping."""
+        return "pong"
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(mcp, "search", {"query": "ping add", "tags": ["untagged"]})
+    text = _unwrap_string_result(result)
+    assert "ping" in text
+    assert "add" not in text
+
+
+async def test_get_schema_full_partial_match_returns_valid_json() -> None:
+    """get_schema with detail=full and missing tools returns valid JSON."""
+    mcp = FastMCP("Schema Full Partial")
+
+    @mcp.tool
+    def square(x: int) -> int:
+        """Compute the square."""
+        return x * x
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(
+        mcp, "get_schema", {"tools": ["square", "nonexistent"], "detail": "full"}
+    )
+    text = _unwrap_string_result(result)
+    parsed = json.loads(text)
+    assert isinstance(parsed, list)
+    assert parsed[0]["name"] == "square"
+    assert parsed[-1] == {"not_found": ["nonexistent"]}
 
 
 # ---------------------------------------------------------------------------
@@ -717,191 +946,3 @@ async def test_monty_provider_no_limits_by_default() -> None:
     provider = MontySandboxProvider()
     result = await provider.run("return 1 + 2")
     assert result == 3
-
-
-# ---------------------------------------------------------------------------
-# _schema_type unit tests
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "schema,expected",
-    [
-        ({"type": "string"}, "string"),
-        ({"type": "integer"}, "integer"),
-        ({"type": "boolean"}, "boolean"),
-        ({"type": "null"}, "null"),
-        ({"type": "array", "items": {"type": "string"}}, "string[]"),
-        ({"type": "array", "items": {"type": "integer"}}, "integer[]"),
-        ({"type": "array"}, "any[]"),
-        ({"$ref": "#/$defs/Foo"}, "object"),
-        ({"properties": {"x": {"type": "int"}}}, "object"),
-        ({}, "any"),
-        (None, "any"),
-        ("not a dict", "any"),
-    ],
-)
-def test_schema_type_basic(schema: Any, expected: str) -> None:
-    assert _schema_type(schema) == expected
-
-
-@pytest.mark.parametrize(
-    "schema,expected",
-    [
-        ({"anyOf": [{"type": "string"}, {"type": "null"}]}, "string?"),
-        ({"anyOf": [{"type": "string"}, {"type": "integer"}]}, "string | integer"),
-        (
-            {"anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]},
-            "string | integer?",
-        ),
-        ({"anyOf": [{"type": "null"}]}, "null"),
-        ({"anyOf": []}, "any"),
-        ({"oneOf": [{"type": "string"}, {"type": "null"}]}, "string?"),
-        ({"oneOf": [{"type": "string"}, {"type": "integer"}]}, "string | integer"),
-        ({"allOf": [{"type": "object"}]}, "object"),
-        ({"allOf": [{"$ref": "#/$defs/Foo"}, {"$ref": "#/$defs/Bar"}]}, "object"),
-    ],
-)
-def test_schema_type_unions(schema: Any, expected: str) -> None:
-    assert _schema_type(schema) == expected
-
-
-# ---------------------------------------------------------------------------
-# _schema_section unit tests
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "schema,expected_lines",
-    [
-        (None, ["**Parameters**", "- `value` (any)"]),
-        ("string", ["**Parameters**", "- `value` (any)"]),
-        ({"type": "string"}, ["**Parameters**", "- `value` (string)"]),
-        (
-            {"type": "object", "properties": {}},
-            ["**Parameters**", "*(no parameters)*"],
-        ),
-    ],
-)
-def test_schema_section_fallbacks(schema: Any, expected_lines: list[str]) -> None:
-    assert _schema_section(schema, "Parameters") == expected_lines
-
-
-def test_schema_section_lists_fields_with_required_marker() -> None:
-    schema = {
-        "type": "object",
-        "properties": {
-            "name": {"type": "string"},
-            "age": {"type": "integer"},
-        },
-        "required": ["name"],
-    }
-    lines = _schema_section(schema, "Parameters")
-    assert lines[0] == "**Parameters**"
-    assert "- `name` (string, required)" in lines
-    assert "- `age` (integer)" in lines
-
-
-# ---------------------------------------------------------------------------
-# serialize_tools_for_output_markdown unit tests
-# ---------------------------------------------------------------------------
-
-
-def test_serialize_tools_for_output_markdown_empty_list() -> None:
-    assert serialize_tools_for_output_markdown([]) == "No tools matched the query."
-
-
-async def test_serialize_tools_for_output_markdown_basic_tool() -> None:
-    mcp = FastMCP("MD Basic")
-
-    @mcp.tool
-    def square(x: int) -> int:
-        """Compute the square of a number."""
-        return x * x
-
-    tools = await mcp.list_tools()
-    result = serialize_tools_for_output_markdown(tools)
-
-    assert "### square" in result
-    assert "Compute the square of a number." in result
-    assert "**Parameters**" in result
-    assert "`x` (integer, required)" in result
-
-
-async def test_serialize_tools_for_output_markdown_omits_output_section_when_no_schema() -> (
-    None
-):
-    mcp = FastMCP("MD No Output")
-
-    @mcp.tool
-    def ping() -> None:
-        pass
-
-    tools = await mcp.list_tools()
-    result = serialize_tools_for_output_markdown(tools)
-
-    assert "**Returns**" not in result
-
-
-async def test_serialize_tools_for_output_markdown_includes_output_section_when_schema_present() -> (
-    None
-):
-    mcp = FastMCP("MD With Output")
-
-    @mcp.tool
-    def double(x: int) -> int:
-        return x * 2
-
-    tools = await mcp.list_tools()
-    result = serialize_tools_for_output_markdown(tools)
-
-    assert "**Returns**" in result
-
-
-async def test_serialize_tools_for_output_markdown_omits_description_when_absent() -> (
-    None
-):
-    mcp = FastMCP("MD No Desc")
-
-    @mcp.tool
-    def ping() -> None:
-        pass
-
-    tools = await mcp.list_tools()
-    result = serialize_tools_for_output_markdown(tools)
-
-    assert "### ping" in result
-
-
-async def test_serialize_tools_for_output_markdown_optional_field_uses_question_mark() -> (
-    None
-):
-    mcp = FastMCP("MD Optional")
-
-    @mcp.tool
-    def greet(name: str, greeting: str | None = None) -> str:
-        return f"{greeting or 'Hello'}, {name}!"
-
-    tools = await mcp.list_tools()
-    result = serialize_tools_for_output_markdown(tools)
-
-    assert "`greeting` (string?)" in result
-
-
-async def test_serialize_tools_for_output_markdown_multiple_tools_separated() -> None:
-    mcp = FastMCP("MD Multi")
-
-    @mcp.tool
-    def add(a: int, b: int) -> int:
-        return a + b
-
-    @mcp.tool
-    def subtract(a: int, b: int) -> int:
-        return a - b
-
-    tools = await mcp.list_tools()
-    result = serialize_tools_for_output_markdown(tools)
-
-    assert "### add" in result
-    assert "### subtract" in result
-    assert "\n\n" in result
