@@ -254,7 +254,66 @@ Get routes for this provider.
 Creates protected resource metadata routes (RFC 9728).
 
 
-### `OAuthProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L472" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `MultiAuth` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L472" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Composes an optional auth server with additional token verifiers.
+
+Use this when a single server needs to accept tokens from multiple sources.
+For example, an OAuth proxy for interactive clients combined with a JWT
+verifier for machine-to-machine tokens.
+
+Token verification tries the server first (if present), then each verifier
+in order, returning the first successful result. Routes and OAuth metadata
+come from the server; verifiers contribute only token verification.
+
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L537" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify a token by trying the server, then each verifier in order.
+
+Each source is tried independently. If a source raises an exception,
+it is logged and treated as a non-match so that remaining sources
+still get a chance to verify the token.
+
+
+#### `set_mcp_path` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L558" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_mcp_path(self, mcp_path: str | None) -> None
+```
+
+Propagate MCP path to the server and all verifiers.
+
+
+#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L566" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_routes(self, mcp_path: str | None = None) -> list[Route]
+```
+
+Delegate route creation to the server.
+
+
+#### `get_well_known_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L572" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_well_known_routes(self, mcp_path: str | None = None) -> list[Route]
+```
+
+Delegate well-known route creation to the server.
+
+This ensures that server-specific well-known route logic (e.g.,
+OAuthProvider's RFC 8414 path-aware discovery) is preserved.
+
+
+### `OAuthProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L583" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth Authorization Server provider.
@@ -265,7 +324,7 @@ authorization flows, token issuance, and token verification.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L535" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L646" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -283,7 +342,7 @@ to our existing load_access_token method.
 - AccessToken object if valid, None if invalid or expired
 
 
-#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L550" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L661" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_routes(self, mcp_path: str | None = None) -> list[Route]
@@ -299,7 +358,7 @@ This method creates the full set of OAuth routes including:
 - List of OAuth routes
 
 
-#### `get_well_known_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L629" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_well_known_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L740" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_well_known_routes(self, mcp_path: str | None = None) -> list[Route]
