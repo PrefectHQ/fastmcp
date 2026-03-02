@@ -23,6 +23,38 @@ result = await ctx.sample(
 )
 ```
 
+### Google GenAI Sampling Handler
+
+FastMCP now includes a sampling handler for Google's Gemini models ([#2977](https://github.com/jlowin/fastmcp/pull/2977)). This enables MCP clients to use Google's GenAI models with the sampling protocol, including full tool calling support.
+
+```python
+from fastmcp import Client
+from fastmcp.client.sampling.handlers import GoogleGenaiSamplingHandler
+from google.genai import Client as GoogleGenaiClient
+
+# Initialize the handler
+handler = GoogleGenaiSamplingHandler(
+    default_model="gemini-2.0-flash-exp",
+    client=GoogleGenaiClient(),  # Optional - creates one if not provided
+)
+
+# Use with MCP sampling (handler is configured at Client construction)
+async with Client("http://server/mcp", sampling_handler=handler) as client:
+    result = await client.sample(
+        messages=[...],
+        tools=[...],
+    )
+```
+
+Key features:
+- Converts MCP tool schemas to Google's function calling format
+- Supports all Google GenAI models that implement function calling
+- Handles nullable types, nested objects, and arrays in tool schemas
+- Properly maps tool choices (`auto`, `required`, `none`) to Google's configuration
+- Preserves model preferences from MCP sampling parameters
+
+The handler joins the existing Anthropic and OpenAI handlers, providing a consistent interface for model-agnostic sampling across providers.
+
 ### Concurrent Tool Execution in Sampling
 
 When an LLM returns multiple tool calls in a single sampling response, they can now be executed concurrently ([#3022](https://github.com/PrefectHQ/fastmcp/pull/3022)). Default behavior remains sequential; opt in with `tool_concurrency`. Tools can declare `sequential=True` to force sequential execution even when concurrency is enabled.
