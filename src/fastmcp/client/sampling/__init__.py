@@ -51,7 +51,7 @@ def create_sampling_callback(
         try:
             result = sampling_handler(params.messages, params, context)
             if inspect.isawaitable(result):
-                result = cast(SamplingHandlerResult, await result)
+                result = await result
 
             if isinstance(result, str):
                 result = CreateMessageResult(

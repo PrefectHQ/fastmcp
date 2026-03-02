@@ -23,6 +23,7 @@ dependencies = [
     "websockets>=15.0.1",
     "jsonschema-path>=0.3.4",
     "jsonref>=1.1.0",
+    "uncalled-for>=0.2.0",
     "watchfiles>=1.0.0",
 ]
 
@@ -56,7 +57,7 @@ apps = ["prefab-ui>=0.6.0"]
 azure = ["azure-identity>=1.16.0"]
 code-mode = ["pydantic-monty>=0.0.7"]
 openai = ["openai>=1.102.0"]
-tasks = ["pydocket>=0.17.2"]
+tasks = ["pydocket>=0.18.0"]
 
 [dependency-groups]
 dev = [
