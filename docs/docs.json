@@ -163,6 +163,7 @@
                     "collapsed": true,
                     "group": "Authentication",
                     "icon": "key",
+                    "tag": "UPDATED",
                     "pages": [
                       "servers/auth/authentication",
                       "servers/auth/token-verification",
@@ -215,6 +216,7 @@
                     "collapsed": true,
                     "group": "Handlers",
                     "icon": "hand",
+                    "tag": "UPDATED",
                     "pages": [
                       "clients/notifications",
                       "clients/sampling",
@@ -252,15 +254,15 @@
                       "integrations/azure",
                       "integrations/descope",
                       "integrations/discord",
+                      "integrations/eunomia-authorization",
                       "integrations/github",
                       "integrations/google",
                       "integrations/oci",
+                      "integrations/permit",
                       "integrations/propelauth",
                       "integrations/scalekit",
                       "integrations/supabase",
-                      "integrations/workos",
-                      "integrations/eunomia-authorization",
-                      "integrations/permit"
+                      "integrations/workos"
                     ]
                   },
                   {
@@ -282,8 +284,7 @@
                       "integrations/claude-desktop",
                       "integrations/cursor",
                       "integrations/gemini-cli",
-                      "integrations/goose",
-                      "integrations/mcp-json-configuration"
+                      "integrations/goose"
                     ]
                   },
                   {
@@ -295,7 +296,8 @@
                       "integrations/gemini",
                       "integrations/openai"
                     ]
-                  }
+                  },
+                  "integrations/mcp-json-configuration"
                 ]
               },
               {
