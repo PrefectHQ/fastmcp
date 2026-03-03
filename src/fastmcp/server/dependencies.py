@@ -17,6 +17,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, Protocol, cast, get_type_hints, runtime_checkable
 
 from mcp.server.auth.middleware.auth_context import (
@@ -851,14 +852,19 @@ class _CurrentContext(Dependency["Context"]):
             "Check `context.request_context` for None before accessing."
         )
 
-    async def __aexit__(self, *args: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         # Clean up access token ContextVar
         if self._access_token_cv_token is not None:
             _task_access_token.reset(self._access_token_cv_token)
             self._access_token_cv_token = None
         # Clean up if we created a context for background task
         if self._context is not None:
-            await self._context.__aexit__(*args)
+            await self._context.__aexit__(exc_type, exc_value, traceback)
             self._context = None
 
 
@@ -883,10 +889,15 @@ class _OptionalCurrentContext(Dependency["Context | None"]):
         self._inner = inner
         return context
 
-    async def __aexit__(self, *args: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         if self._inner is None:
             return
-        await self._inner.__aexit__(*args)
+        await self._inner.__aexit__(exc_type, exc_value, traceback)
         self._inner = None
 
 
@@ -934,7 +945,12 @@ class _CurrentDocket(Dependency["Docket"]):
             )
         return docket
 
-    async def __aexit__(self, *args: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         pass
 
 
@@ -979,7 +995,12 @@ class _CurrentWorker(Dependency["Worker"]):
             )
         return worker
 
-    async def __aexit__(self, *args: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         pass
 
 
@@ -1021,7 +1042,12 @@ class _CurrentFastMCP(Dependency["FastMCP"]):
             raise RuntimeError("FastMCP server instance is no longer available")
         return server
 
-    async def __aexit__(self, *args: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         pass
 
 
@@ -1056,7 +1082,12 @@ class _CurrentRequest(Dependency[Request]):
     async def __aenter__(self) -> Request:
         return get_http_request()
 
-    async def __aexit__(self, *args: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         pass
 
 
@@ -1092,7 +1123,12 @@ class _CurrentHeaders(Dependency[dict[str, str]]):
     async def __aenter__(self) -> dict[str, str]:
         return get_http_headers(include={"authorization"})
 
-    async def __aexit__(self, *args: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         pass
 
 
@@ -1175,7 +1211,12 @@ class InMemoryProgress:
     async def __aenter__(self) -> InMemoryProgress:
         return self
 
-    async def __aexit__(self, *args: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         pass
 
     @property
@@ -1243,7 +1284,12 @@ class Progress(Dependency["Progress"]):
         self._impl = InMemoryProgress()
         return self
 
-    async def __aexit__(self, *args: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self._impl = None
 
     @property
@@ -1309,7 +1355,12 @@ class _CurrentAccessToken(Dependency[AccessToken]):
             )
         return token
 
-    async def __aexit__(self, *args: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         if self._access_token_cv_token is not None:
             _task_access_token.reset(self._access_token_cv_token)
             self._access_token_cv_token = None
@@ -1363,7 +1414,12 @@ class _TokenClaim(Dependency[str]):
             )
         return str(value)
 
-    async def __aexit__(self, *args: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         pass
 
 
