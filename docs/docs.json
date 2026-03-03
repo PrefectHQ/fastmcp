@@ -97,8 +97,7 @@
                       "getting-started/upgrading/from-fastmcp-2",
                       "getting-started/upgrading/from-mcp-sdk",
                       "getting-started/upgrading/from-low-level-sdk"
-                    ],
-                    "tag": "NEW"
+                    ]
                   }
                 ]
               },
@@ -123,6 +122,7 @@
                     "icon": "stars",
                     "pages": [
                       "servers/tasks",
+                      "servers/composition",
                       "servers/dependency-injection",
                       "servers/elicitation",
                       "servers/icons",
@@ -136,7 +136,7 @@
                       "servers/telemetry",
                       "servers/versioning"
                     ],
-                    "tag": "NEW"
+                    "tag": "UPDATED"
                   },
                   {
                     "collapsed": true,
@@ -148,8 +148,7 @@
                       "servers/providers/filesystem",
                       "servers/providers/proxy",
                       "servers/providers/skills",
-                      "servers/providers/custom",
-                      "servers/providers/mounting"
+                      "servers/providers/custom"
                     ],
                     "tag": "NEW"
                   },
@@ -221,7 +220,7 @@
                       "clients/cli",
                       "clients/generate-cli"
                     ],
-                    "tag": "NEW"
+                    "tag": "UPDATED"
                   },
                   {
                     "collapsed": true,
@@ -256,7 +255,7 @@
                       "clients/auth/cimd",
                       "clients/auth/bearer"
                     ],
-                    "tag": "NEW"
+                    "tag": "UPDATED"
                   }
                 ]
               },
@@ -969,7 +968,7 @@
       "source": "/patterns/proxy"
     },
     {
-      "destination": "/servers/providers/mounting",
+      "destination": "/servers/composition",
       "source": "/patterns/composition"
     },
     {
@@ -977,8 +976,8 @@
       "source": "/servers/proxy"
     },
     {
-      "destination": "/servers/providers/mounting",
-      "source": "/servers/composition"
+      "destination": "/servers/composition",
+      "source": "/servers/providers/mounting"
     },
     {
       "destination": "/servers/transforms/transforms",

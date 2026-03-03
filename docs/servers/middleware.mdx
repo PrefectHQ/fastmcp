@@ -64,7 +64,7 @@ This ordering matters. Place error handling early so it catches exceptions from 
 
 ### Server Composition
 
-When using [mounted servers](/servers/providers/mounting), middleware behavior follows a clear hierarchy:
+When using [mounted servers](/servers/composition), middleware behavior follows a clear hierarchy:
 
 - **Parent middleware** runs for all requests, including those routed to mounted servers
 - **Mounted server middleware** only runs for requests handled by that specific server
