@@ -303,7 +303,7 @@
                 "pages": [
                   "cli/overview",
                   "cli/running",
-                  "cli/installing",
+                  "cli/install-mcp",
                   "cli/inspecting",
                   "cli/client",
                   "cli/generate-cli",
