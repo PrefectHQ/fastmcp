@@ -1,0 +1,85 @@
+---
+title: Auth Utilities
+sidebarTitle: Auth
+description: Create and validate CIMD documents for OAuth
+icon: key
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.0.0" />
+
+The `fastmcp auth` commands help with CIMD (Client ID Metadata Document) management — part of MCP's OAuth authentication flow. A CIMD is a JSON document you host at an HTTPS URL to identify your client application to MCP servers.
+
+## Creating a CIMD
+
+`fastmcp auth cimd create` generates a CIMD document:
+
+```bash
+fastmcp auth cimd create \
+  --name "My App" \
+  --redirect-uri "http://localhost:*/callback"
+```
+
+```json
+{
+  "client_id": "https://your-domain.com/oauth/client.json",
+  "client_name": "My App",
+  "redirect_uris": ["http://localhost:*/callback"],
+  "token_endpoint_auth_method": "none"
+}
+```
+
+The generated document includes a placeholder `client_id` — update it to match the URL where you'll host the document before deploying.
+
+### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Name | `--name` | **Required.** Human-readable client name |
+| Redirect URI | `--redirect-uri` | **Required.** Allowed redirect URIs (repeatable) |
+| Client URI | `--client-uri` | Client's home page URL |
+| Logo URI | `--logo-uri` | Client's logo URL |
+| Scope | `--scope` | Space-separated list of scopes |
+| Output | `--output`, `-o` | Save to file (default: stdout) |
+| Pretty | `--pretty` | Pretty-print JSON (default: true) |
+
+### Example
+
+```bash
+fastmcp auth cimd create \
+  --name "My Production App" \
+  --redirect-uri "http://localhost:*/callback" \
+  --redirect-uri "https://myapp.example.com/callback" \
+  --client-uri "https://myapp.example.com" \
+  --scope "read write" \
+  --output client.json
+```
+
+## Validating a CIMD
+
+`fastmcp auth cimd validate` fetches a hosted CIMD and verifies it conforms to the spec:
+
+```bash
+fastmcp auth cimd validate https://myapp.example.com/oauth/client.json
+```
+
+The validator checks that the URL is valid (HTTPS, non-root path), the document is valid JSON, the `client_id` matches the URL, and no shared-secret auth methods are used.
+
+On success:
+
+```
+→ Fetching https://myapp.example.com/oauth/client.json...
+✓ Valid CIMD document
+
+Document details:
+  client_id: https://myapp.example.com/oauth/client.json
+  client_name: My App
+  token_endpoint_auth_method: none
+  redirect_uris:
+    • http://localhost:*/callback
+```
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Timeout | `--timeout`, `-t` | HTTP request timeout in seconds (default: 10) |
