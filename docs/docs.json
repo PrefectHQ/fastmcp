@@ -88,17 +88,7 @@
                 "pages": [
                   "getting-started/welcome",
                   "getting-started/installation",
-                  "getting-started/quickstart",
-                  {
-                    "collapsed": true,
-                    "group": "Upgrade",
-                    "icon": "up",
-                    "pages": [
-                      "getting-started/upgrading/from-fastmcp-2",
-                      "getting-started/upgrading/from-mcp-sdk",
-                      "getting-started/upgrading/from-low-level-sdk"
-                    ]
-                  }
+                  "getting-started/quickstart"
                 ]
               },
               {
@@ -134,6 +124,7 @@
                       "servers/sampling",
                       "servers/storage-backends",
                       "servers/telemetry",
+                      "servers/testing",
                       "servers/versioning"
                     ],
                     "tag": "UPDATED"
@@ -191,9 +182,7 @@
                       "deployment/running-server",
                       "deployment/http",
                       "deployment/prefect-horizon",
-                      "deployment/server-configuration",
-                      "patterns/cli",
-                      "patterns/testing"
+                      "deployment/server-configuration"
                     ]
                   }
                 ]
@@ -212,16 +201,6 @@
                 "pages": [
                   "clients/client",
                   "clients/transports",
-                  {
-                    "collapsed": true,
-                    "group": "CLI",
-                    "icon": "terminal",
-                    "pages": [
-                      "clients/cli",
-                      "clients/generate-cli"
-                    ],
-                    "tag": "UPDATED"
-                  },
                   {
                     "collapsed": true,
                     "group": "Core Operations",
@@ -320,14 +299,52 @@
                 ]
               },
               {
-                "group": "Development",
+                "group": "More",
                 "pages": [
-                  "development/contributing",
-                  "development/tests",
-                  "development/releases",
-                  "updates",
-                  "changelog",
-                  "patterns/contrib"
+                  {
+                    "collapsed": true,
+                    "group": "CLI",
+                    "icon": "terminal",
+                    "pages": [
+                      "cli/overview",
+                      "cli/running",
+                      "cli/installing",
+                      "cli/inspecting",
+                      "cli/querying",
+                      "cli/generate-cli",
+                      "cli/auth"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
+                    "group": "Upgrading",
+                    "icon": "up",
+                    "pages": [
+                      "getting-started/upgrading/from-fastmcp-2",
+                      "getting-started/upgrading/from-mcp-sdk",
+                      "getting-started/upgrading/from-low-level-sdk"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
+                    "group": "Development",
+                    "icon": "code",
+                    "pages": [
+                      "development/contributing",
+                      "development/tests",
+                      "development/releases",
+                      "patterns/contrib"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
+                    "group": "What's New",
+                    "icon": "sparkles",
+                    "pages": [
+                      "updates",
+                      "changelog"
+                    ]
+                  }
                 ]
               }
             ],
@@ -947,6 +964,22 @@
     ]
   },
   "redirects": [
+    {
+      "destination": "/cli/overview",
+      "source": "/patterns/cli"
+    },
+    {
+      "destination": "/servers/testing",
+      "source": "/patterns/testing"
+    },
+    {
+      "destination": "/cli/querying",
+      "source": "/clients/cli"
+    },
+    {
+      "destination": "/cli/generate-cli",
+      "source": "/clients/generate-cli"
+    },
     {
       "destination": "/deployment/prefect-horizon",
       "source": "/deployment/fastmcp-cloud"
