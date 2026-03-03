@@ -117,14 +117,17 @@ jobs:
             **Branch**: {{ref}}
             **Event**: {{eventName}}
 
+            ### Common causes
+
+            - **ty (type checker)**: New ty releases frequently add stricter checks that flag previously-accepted code. Run `uv run ty check` locally with the latest ty to reproduce. Fix the type errors or bump the ty version floor in `pyproject.toml`.
+            - **ruff**: New lint rules or stricter defaults in a ruff upgrade.
+            - **mcp SDK**: Breaking changes in the `mcp` package (new method signatures, renamed types).
+
             ### What to do
 
-            This likely means that upgraded dependencies have introduced new errors. Please review the failed jobs and determine if the code needs to be updated or if dependency constraints need to be adjusted.
-
-            - [ ] Review the failure in the workflow run
-            - [ ] Identify root cause (dependency changes, new linter/type rules, etc.)
-            - [ ] Implement fix or adjust dependency constraints
-            - [ ] Verify fix resolves the issue
+            1. Check the workflow logs to identify which job failed (static analysis vs tests)
+            2. Reproduce locally with `uv sync --resolution=upgrade && uv run prek run --all-files && uv run pytest -n auto`
+            3. Fix the code or adjust dependency constraints as needed
 
             ---
             *This issue was automatically created by a GitHub Action.*
