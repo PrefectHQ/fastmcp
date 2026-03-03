@@ -53,6 +53,8 @@ def create_sampling_callback(
             if inspect.isawaitable(result):
                 result = await result
 
+            result = cast(SamplingHandlerResult, result)
+
             if isinstance(result, str):
                 result = CreateMessageResult(
                     role="assistant",
