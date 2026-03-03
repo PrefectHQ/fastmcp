@@ -88,7 +88,17 @@
                 "pages": [
                   "getting-started/welcome",
                   "getting-started/installation",
-                  "getting-started/quickstart"
+                  "getting-started/quickstart",
+                  {
+                    "collapsed": true,
+                    "group": "Upgrading",
+                    "icon": "up",
+                    "pages": [
+                      "getting-started/upgrading/from-fastmcp-2",
+                      "getting-started/upgrading/from-mcp-sdk",
+                      "getting-started/upgrading/from-low-level-sdk"
+                    ]
+                  }
                 ]
               },
               {
@@ -310,19 +320,9 @@
                       "cli/running",
                       "cli/installing",
                       "cli/inspecting",
-                      "cli/querying",
+                      "cli/client",
                       "cli/generate-cli",
                       "cli/auth"
-                    ]
-                  },
-                  {
-                    "collapsed": true,
-                    "group": "Upgrading",
-                    "icon": "up",
-                    "pages": [
-                      "getting-started/upgrading/from-fastmcp-2",
-                      "getting-started/upgrading/from-mcp-sdk",
-                      "getting-started/upgrading/from-low-level-sdk"
                     ]
                   },
                   {
@@ -973,7 +973,7 @@
       "source": "/patterns/testing"
     },
     {
-      "destination": "/cli/querying",
+      "destination": "/cli/client",
       "source": "/clients/cli"
     },
     {

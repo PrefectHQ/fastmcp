@@ -21,9 +21,9 @@ fastmcp --help
 | [`dev inspector`](/cli/running#development-with-the-inspector) | Launch a server inside the MCP Inspector for interactive testing |
 | [`install`](/cli/installing) | Install a server into Claude Code, Claude Desktop, Cursor, Gemini CLI, or Goose |
 | [`inspect`](/cli/inspecting) | Print a server's tools, resources, and prompts as a summary or JSON report |
-| [`list`](/cli/querying) | List a server's tools (and optionally resources and prompts) |
-| [`call`](/cli/querying#calling-tools) | Call a single tool with arguments |
-| [`discover`](/cli/querying#discovering-configured-servers) | Find MCP servers configured in your editors and tools |
+| [`list`](/cli/client) | List a server's tools (and optionally resources and prompts) |
+| [`call`](/cli/client#calling-tools) | Call a single tool with arguments |
+| [`discover`](/cli/client#discovering-configured-servers) | Find MCP servers configured in your editors and tools |
 | [`generate-cli`](/cli/generate-cli) | Scaffold a standalone typed CLI from a server's tool schemas |
 | [`project prepare`](/cli/running#pre-building-environments) | Pre-install dependencies into a reusable uv project |
 | [`auth cimd`](/cli/auth) | Create and validate CIMD documents for OAuth |
@@ -76,33 +76,7 @@ fastmcp list claude-code:my-server
 fastmcp call cursor:weather get_forecast city=London
 ```
 
-Run [`fastmcp discover`](/cli/querying#discovering-configured-servers) to see what's available on your machine.
-
-### Factory Functions
-
-<VersionBadge version="2.11.2" />
-
-Several commands support factory functions — functions that create and return a server instance. This is useful when your server needs setup that would normally live in `if __name__ == "__main__"` (which `fastmcp run` ignores). Both sync and async factories work:
-
-```python
-# server.py
-from fastmcp import FastMCP
-
-async def create_server() -> FastMCP:
-    mcp = FastMCP("MyServer")
-
-    @mcp.tool
-    def add(x: int, y: int) -> int:
-        return x + y
-
-    return mcp
-```
-
-```bash
-fastmcp run server.py:create_server
-```
-
-FastMCP detects that you've pointed at a callable rather than an instance and invokes it automatically.
+Run [`fastmcp discover`](/cli/client#discovering-configured-servers) to see what's available on your machine.
 
 ## Authentication
 
