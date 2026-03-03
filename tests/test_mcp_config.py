@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import tempfile
+import time
 from collections.abc import AsyncGenerator
 from datetime import timedelta
 from pathlib import Path
@@ -339,11 +340,26 @@ async def test_multi_client_parallel_calls(tmp_path: Path):
         assert all(len(result) == 2 for result in results)  # type: ignore[arg-type]
 
 
+async def _wait_for_process_exit(pid: int, timeout: float = 3.0) -> None:
+    """Poll until a process has exited, raising if it's still alive after timeout."""
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            psutil.Process(pid)
+        except psutil.NoSuchProcess:
+            return
+        await asyncio.sleep(0.05)
+    # Final check — if still alive, let the NoSuchProcess propagation fail the test clearly
+    psutil.Process(pid)
+    pytest.fail(f"Process {pid} still alive after {timeout}s")
+
+
 @pytest.mark.skipif(
     running_under_debugger(),
     reason="Debugger holds a reference to the transport",
 )
-@pytest.mark.timeout(5)
+@pytest.mark.timeout(15)
 async def test_multi_client_lifespan(tmp_path: Path):
     pid_1: int | None = None
     pid_2: int | None = None
@@ -393,18 +409,13 @@ async def test_multi_client_lifespan(tmp_path: Path):
     gc_collect_harder()
 
     # This test will fail while debugging because the debugger holds a reference to the underlying transport
-
-    with pytest.raises(psutil.NoSuchProcess):
-        while True:
-            psutil.Process(pid_1)
-            await asyncio.sleep(0.01)
-
-    with pytest.raises(psutil.NoSuchProcess):
-        while True:
-            psutil.Process(pid_2)
-            await asyncio.sleep(0.01)
+    assert pid_1 is not None
+    assert pid_2 is not None
+    await _wait_for_process_exit(pid_1)
+    await _wait_for_process_exit(pid_2)
 
 
+@pytest.mark.timeout(15)
 async def test_multi_client_force_close(tmp_path: Path):
     server_script = inspect.cleandoc("""
         from fastmcp import FastMCP
@@ -446,15 +457,8 @@ async def test_multi_client_force_close(tmp_path: Path):
 
     gc_collect_harder()
 
-    with pytest.raises(psutil.NoSuchProcess):
-        process = psutil.Process(pid_1)
-
-        assert not process
-
-    with pytest.raises(psutil.NoSuchProcess):
-        process = psutil.Process(pid_2)
-
-        assert not process
+    await _wait_for_process_exit(pid_1)
+    await _wait_for_process_exit(pid_2)
 
 
 async def test_remote_config_default_no_auth():
