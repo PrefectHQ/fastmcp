@@ -5,8 +5,6 @@ This module contains HTML generation functions for consent and error pages.
 
 from __future__ import annotations
 
-from urllib.parse import urlparse
-
 from fastmcp.utilities.ui import (
     BUTTON_STYLES,
     DETAIL_BOX_STYLES,
@@ -198,20 +196,13 @@ def create_consent_html(
     # If csp_policy is empty string, CSP will be disabled entirely in create_page
     # If csp_policy is a non-empty string, use it as-is
     if csp_policy is None:
-        # Need to allow form-action for form submission
-        # Chrome requires explicit scheme declarations in CSP form-action when redirect chains
-        # end in custom protocol schemes (e.g., cursor://). Parse redirect_uri to include its scheme.
-        parsed_redirect = urlparse(redirect_uri)
-        redirect_scheme = parsed_redirect.scheme.lower()
-
-        # Build form-action directive with standard schemes plus custom protocol if present
-        form_action_schemes = ["https:", "http:"]
-        if redirect_scheme and redirect_scheme not in ("http", "https"):
-            # Custom protocol scheme (e.g., cursor:, vscode:, etc.)
-            form_action_schemes.append(f"{redirect_scheme}:")
-
-        form_action_directive = " ".join(form_action_schemes)
-        csp_policy = f"default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action {form_action_directive}"
+        # The consent form posts to itself (action="") and all subsequent redirects
+        # are server-controlled. Chrome enforces form-action across the entire redirect
+        # chain (Chromium issue #40923007), which breaks flows where an HTTPS callback
+        # internally redirects to a custom scheme (e.g., claude:// or cursor://).
+        # Since the form target is same-origin and we control the redirect chain,
+        # omitting form-action is safe and avoids these browser-specific CSP issues.
+        csp_policy = "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'"
 
     return create_page(
         content=content,
