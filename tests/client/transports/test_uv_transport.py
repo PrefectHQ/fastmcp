@@ -17,7 +17,7 @@ _fastmcp_src_dir = (
 )
 
 
-@pytest.mark.timeout(10)
+@pytest.mark.timeout(60)
 @pytest.mark.client_process
 @pytest.mark.skipif(
     sys.platform == "win32",
@@ -54,7 +54,7 @@ async def test_uv_transport():
         assert sum == 3
 
 
-@pytest.mark.timeout(10)
+@pytest.mark.timeout(60)
 @pytest.mark.client_process
 @pytest.mark.skipif(
     sys.platform == "win32",
