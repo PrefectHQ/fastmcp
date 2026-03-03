@@ -11,6 +11,7 @@ from fastmcp import FastMCP
 from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
+from fastmcp.server.transforms.version_filter import VersionFilter
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.versions import VersionSpec
 
@@ -178,6 +179,25 @@ class TestCatalogDeduplication:
         result = await mcp.call_tool("read_catalog", {})
         names = sorted(_extract_result(result))
         assert names == ["greet", "standalone"]
+
+    async def test_version_filter_applied_before_catalog(self):
+        """A VersionFilter added before the CatalogTransform restricts what the catalog sees."""
+        mcp = FastMCP("test")
+        mcp.add_tool(_make_versioned_tool("greet", "1"))
+        mcp.add_tool(_make_versioned_tool("greet", "2"))
+        mcp.add_tool(_make_versioned_tool("greet", "3"))
+
+        # Filter keeps only versions < 3 — so v1 and v2 survive, v3 is excluded.
+        mcp.add_transform(VersionFilter(version_lt="3"))
+
+        reader = CatalogReader()
+        mcp.add_transform(reader)
+
+        await mcp.call_tool("read_catalog", {})
+        assert len(reader.last_catalog) == 1
+        tool = reader.last_catalog[0]
+        assert tool.name == "greet"
+        assert tool.version == "2"
 
 
 class TestCatalogVisibility:
