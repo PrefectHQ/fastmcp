@@ -12,7 +12,7 @@
     "decoration": "gradient"
   },
   "banner": {
-    "content": "Join us at the inaugural PyAI Conf in San Francisco on March 10th! [Learn More](https://pyai.events?utm_source=gofastmcp)"
+    "content": "Deploy FastMCP servers for free on [Prefect Horizon](https://www.prefect.io/horizon)"
   },
   "colors": {
     "dark": "#f72585",
