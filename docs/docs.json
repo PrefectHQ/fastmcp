@@ -163,7 +163,6 @@
                     "collapsed": true,
                     "group": "Authentication",
                     "icon": "key",
-                    "tag": "UPDATED",
                     "pages": [
                       "servers/auth/authentication",
                       "servers/auth/token-verification",
@@ -172,7 +171,8 @@
                       "servers/auth/oidc-proxy",
                       "servers/auth/full-oauth-server",
                       "servers/auth/multi-auth"
-                    ]
+                    ],
+                    "tag": "UPDATED"
                   },
                   "servers/authorization",
                   {
@@ -216,7 +216,6 @@
                     "collapsed": true,
                     "group": "Handlers",
                     "icon": "hand",
-                    "tag": "UPDATED",
                     "pages": [
                       "clients/notifications",
                       "clients/sampling",
@@ -225,7 +224,8 @@
                       "clients/progress",
                       "clients/logging",
                       "clients/roots"
-                    ]
+                    ],
+                    "tag": "UPDATED"
                   },
                   {
                     "collapsed": true,
@@ -428,6 +428,7 @@
                             "pages": [
                               "python-sdk/fastmcp-client-sampling-handlers-__init__",
                               "python-sdk/fastmcp-client-sampling-handlers-anthropic",
+                              "python-sdk/fastmcp-client-sampling-handlers-google_genai",
                               "python-sdk/fastmcp-client-sampling-handlers-openai"
                             ]
                           }
