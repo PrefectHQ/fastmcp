@@ -541,16 +541,9 @@ class CodeMode(CatalogTransform):
             ctx: Context = None,  # type: ignore[assignment]
         ) -> Any:
             """Execute tool calls using Python code."""
-            cached_tools: Sequence[Tool] | None = None
-
-            async def _get_cached_tools() -> Sequence[Tool]:
-                nonlocal cached_tools
-                if cached_tools is None:
-                    cached_tools = await transform.get_tool_catalog(ctx)
-                return cached_tools
 
             async def call_tool(tool_name: str, params: dict[str, Any]) -> Any:
-                backend_tools = await _get_cached_tools()
+                backend_tools = await transform.get_tool_catalog(ctx)
                 tool = transform._find_tool(tool_name, backend_tools)
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {tool_name}")
