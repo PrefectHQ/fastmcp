@@ -195,8 +195,8 @@ async def claude_desktop_command(
         cyclopts.Parameter(
             "--config-path",
             help="Custom path to Claude Desktop config directory",
-        )
-    ] = None
+        ),
+    ] = None,
 ) -> None:
     """Install an MCP server in Claude Desktop.
 
@@ -221,7 +221,7 @@ async def claude_desktop_command(
         python_version=python,
         with_requirements=with_requirements,
         project=project,
-        config_path=config_path
+        config_path=config_path,
     )
 
     if not success:

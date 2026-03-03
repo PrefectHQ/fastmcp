@@ -152,9 +152,7 @@ class TestClaudeDesktopInstall:
 
     def test_claude_desktop_without_config_path(self):
         """Test claude-desktop install without config path defaults to None."""
-        command, bound, _ = install_app.parse_args(
-            ["claude-desktop", "server.py"]
-        )
+        command, bound, _ = install_app.parse_args(["claude-desktop", "server.py"])
 
         assert bound.arguments.get("config_path") is None
 
