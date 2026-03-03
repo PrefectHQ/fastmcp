@@ -50,6 +50,7 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from fastmcp.server.transforms import Transform
+from fastmcp.utilities.versions import dedupe_with_versions
 
 if TYPE_CHECKING:
     from fastmcp.prompts.prompt import Prompt
@@ -172,6 +173,10 @@ class CatalogTransform(Transform):
     ) -> Sequence[Tool]:
         """Fetch the real tool catalog, bypassing this transform.
 
+        The result is deduplicated by name so that only the highest version
+        of each tool is returned — matching what protocol handlers expose
+        on the wire.
+
         Args:
             ctx: The current request context.
             run_middleware: Whether to run middleware on the inner call.
@@ -180,9 +185,10 @@ class CatalogTransform(Transform):
         """
         token = self._bypass.set(True)
         try:
-            return await ctx.fastmcp.list_tools(run_middleware=run_middleware)
+            tools = await ctx.fastmcp.list_tools(run_middleware=run_middleware)
         finally:
             self._bypass.reset(token)
+        return dedupe_with_versions(tools, lambda t: t.name)
 
     async def get_resource_catalog(
         self, ctx: Context, *, run_middleware: bool = True
