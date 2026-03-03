@@ -70,6 +70,7 @@ class Auth0Provider(OIDCProxy):
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
+        consent_csp_policy: str | None = None,
     ) -> None:
         """Initialize Auth0 OAuth provider.
 
@@ -114,6 +115,7 @@ class Auth0Provider(OIDCProxy):
             client_storage=client_storage,
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
+            consent_csp_policy=consent_csp_policy,
         )
 
         logger.debug(
