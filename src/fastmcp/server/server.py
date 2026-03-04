@@ -977,7 +977,23 @@ class FastMCP(
             with server_span(
                 f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
+                # Try normal provider resolution first (applies transforms,
+                # visibility, auth).  Fall back to the global key registry
+                # so that FastMCPApp CallTool references survive namespace
+                # transforms.  Global keys contain a UUID suffix, so they
+                # won't collide with human-written tool names.
                 tool = await self.get_tool(name, version=version)
+                if tool is None:
+                    from fastmcp.server.app import _APP_TOOL_REGISTRY
+
+                    tool = _APP_TOOL_REGISTRY.get(name)
+                    if tool is not None:
+                        # Auth still applies to global-key tools
+                        skip_auth, token = _get_auth_context()
+                        if not skip_auth and tool.auth is not None:
+                            ctx = AuthContext(token=token, component=tool)
+                            if not await run_auth_checks(tool.auth, ctx):
+                                raise NotFoundError(f"Unknown tool: {name!r}")
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")
                 span.set_attributes(tool.get_span_attributes())

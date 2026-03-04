@@ -10,6 +10,7 @@ from fastmcp.utilities.logging import configure_logging as _configure_logging
 
 if TYPE_CHECKING:
     from fastmcp.client import Client as Client
+    from fastmcp.server.app import FastMCPApp as FastMCPApp
 
 settings = Settings()
 if settings.log_enabled:
@@ -40,6 +41,10 @@ def __getattr__(name: str) -> object:
         from fastmcp.client import Client
 
         return Client
+    if name == "FastMCPApp":
+        from fastmcp.server.app import FastMCPApp
+
+        return FastMCPApp
     if name == "client":
         return importlib.import_module("fastmcp.client")
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -49,5 +54,6 @@ __all__ = [
     "Client",
     "Context",
     "FastMCP",
+    "FastMCPApp",
     "settings",
 ]
