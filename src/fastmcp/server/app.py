@@ -34,6 +34,7 @@ from typing import Any, Literal, TypeVar, overload
 
 from mcp.types import AnyFunction, Icon, ToolAnnotations
 
+from fastmcp.decorators import get_fastmcp_meta
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.local_provider import LocalProvider
@@ -55,6 +56,11 @@ _APP_TOOL_REGISTRY: dict[str, Tool] = {}
 # id(original_fn) → global key.  Used by the CallTool callable resolver to
 # translate ``CallTool(save_contact)`` → ``"save_contact-a1b2c3d4"``.
 _FN_TO_GLOBAL_KEY: dict[int, str] = {}
+
+
+def get_global_tool(name: str) -> Tool | None:
+    """Look up a tool by its global key, or return None."""
+    return _APP_TOOL_REGISTRY.get(name)
 
 
 # ---------------------------------------------------------------------------
@@ -99,20 +105,47 @@ def _resolve_tool_ref(fn: Any) -> str:
     if global_key is not None:
         return global_key
 
-    meta = getattr(fn, "__fastmcp__", None)
-    if meta is not None:
-        name: str | None = getattr(meta, "name", None)
+    fmeta = get_fastmcp_meta(fn)
+    if fmeta is not None:
+        name: str | None = getattr(fmeta, "name", None)
         if name is not None:
             return name
-        fn_name: str | None = getattr(fn, "__name__", None)
-        if fn_name is not None:
-            return fn_name
 
     fn_name = getattr(fn, "__name__", None)
     if fn_name is not None:
         return fn_name
 
     raise ValueError(f"Cannot resolve tool reference: {fn!r}")
+
+
+def _dispatch_decorator(
+    name_or_fn: str | AnyFunction | None,
+    name: str | None,
+    register: Callable[[Any, str | None], Any],
+    decorator_name: str,
+) -> Any:
+    """Shared dispatch logic for @app.tool() and @app.ui() calling patterns."""
+    if inspect.isroutine(name_or_fn):
+        return register(name_or_fn, name)
+
+    if isinstance(name_or_fn, str):
+        if name is not None:
+            raise TypeError(
+                "Cannot specify both a name as first argument and as keyword argument."
+            )
+        tool_name: str | None = name_or_fn
+    elif name_or_fn is None:
+        tool_name = name
+    else:
+        raise TypeError(
+            f"First argument to @{decorator_name} must be a function, string, or None, "
+            f"got {type(name_or_fn)}"
+        )
+
+    def decorator(fn: F) -> F:
+        return register(fn, tool_name)
+
+    return decorator
 
 
 # ---------------------------------------------------------------------------
@@ -220,28 +253,7 @@ class FastMCPApp(Provider):
             _register_global_key(tool_obj, fn, global_key)
             return fn
 
-        # Handle the three calling patterns
-        if inspect.isroutine(name_or_fn):
-            return _register(name_or_fn, name)
-
-        if isinstance(name_or_fn, str):
-            if name is not None:
-                raise TypeError(
-                    "Cannot specify both a name as first argument and as keyword argument."
-                )
-            tool_name = name_or_fn
-        elif name_or_fn is None:
-            tool_name = name
-        else:
-            raise TypeError(
-                f"First argument to @tool must be a function, string, or None, "
-                f"got {type(name_or_fn)}"
-            )
-
-        def decorator(fn: F) -> F:
-            return _register(fn, tool_name)
-
-        return decorator
+        return _dispatch_decorator(name_or_fn, name, _register, "tool")
 
     # ------------------------------------------------------------------
     # @app.ui() — entry-point tools the model calls to open the app
@@ -357,28 +369,7 @@ class FastMCPApp(Provider):
 
             return fn
 
-        # Handle the three calling patterns
-        if inspect.isroutine(name_or_fn):
-            return _register(name_or_fn, name)
-
-        if isinstance(name_or_fn, str):
-            if name is not None:
-                raise TypeError(
-                    "Cannot specify both a name as first argument and as keyword argument."
-                )
-            tool_name = name_or_fn
-        elif name_or_fn is None:
-            tool_name = name
-        else:
-            raise TypeError(
-                f"First argument to @ui must be a function, string, or None, "
-                f"got {type(name_or_fn)}"
-            )
-
-        def decorator(fn: F) -> F:
-            return _register(fn, tool_name)
-
-        return decorator
+        return _dispatch_decorator(name_or_fn, name, _register, "ui")
 
     # ------------------------------------------------------------------
     # Programmatic tool addition

@@ -984,9 +984,9 @@ class FastMCP(
                 # won't collide with human-written tool names.
                 tool = await self.get_tool(name, version=version)
                 if tool is None:
-                    from fastmcp.server.app import _APP_TOOL_REGISTRY
+                    from fastmcp.server.app import get_global_tool
 
-                    tool = _APP_TOOL_REGISTRY.get(name)
+                    tool = get_global_tool(name)
                     if tool is not None:
                         # Auth still applies to global-key tools
                         skip_auth, token = _get_auth_context()
