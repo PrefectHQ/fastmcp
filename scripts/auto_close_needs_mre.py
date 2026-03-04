@@ -216,8 +216,26 @@ class GitHubClient:
         return timeline
 
     def close_issue(self, issue_number: int, comment: str) -> bool:
-        """Close an issue with a comment."""
-        # First add the comment
+        """Close an issue with a comment.
+
+        Closes first, then comments — so a failed comment never leaves
+        a misleading "closing" notice on a still-open issue.
+        """
+        # Close the issue first
+        issue_url = f"{self.base_url}/issues/{issue_number}"
+        with httpx.Client() as client:
+            response = client.patch(
+                issue_url, headers=self.headers, json={"state": "closed"}
+            )
+
+            if response.status_code != 200:
+                print(
+                    f"Failed to close issue #{issue_number}: "
+                    f"{response.status_code} {response.text}"
+                )
+                return False
+
+        # Then add the comment
         comment_url = f"{self.base_url}/issues/{issue_number}/comments"
         with httpx.Client() as client:
             response = client.post(
@@ -225,17 +243,12 @@ class GitHubClient:
             )
 
             if response.status_code != 201:
-                print(f"Failed to add comment to issue #{issue_number}")
-                return False
+                print(
+                    f"Issue #{issue_number} was closed but comment failed: "
+                    f"{response.status_code} {response.text}"
+                )
 
-        # Then close the issue
-        issue_url = f"{self.base_url}/issues/{issue_number}"
-        with httpx.Client() as client:
-            response = client.patch(
-                issue_url, headers=self.headers, json={"state": "closed"}
-            )
-
-            return response.status_code == 200
+        return True
 
 
 def find_label_application_date(
