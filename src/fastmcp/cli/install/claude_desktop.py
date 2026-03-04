@@ -17,8 +17,19 @@ from .shared import process_common_args
 logger = get_logger(__name__)
 
 
-def get_claude_config_path() -> Path | None:
-    """Get the Claude config directory based on platform."""
+def get_claude_config_path(config_path: Path | None = None) -> Path | None:
+    """Get the Claude config directory based on platform.
+
+    Args:
+        config_path: Optional custom path to the Claude Desktop config directory
+    """
+
+    if config_path:
+        if not config_path.exists():
+            print(f"[red]The specified config path does not exist: {config_path}[/red]")
+            return None
+        return config_path
+
     if sys.platform == "win32":
         path = Path(Path.home(), "AppData", "Roaming", "Claude")
     elif sys.platform == "darwin":
@@ -46,6 +57,7 @@ def install_claude_desktop(
     python_version: str | None = None,
     with_requirements: Path | None = None,
     project: Path | None = None,
+    config_path: Path | None = None,
 ) -> bool:
     """Install FastMCP server in Claude Desktop.
 
@@ -59,16 +71,18 @@ def install_claude_desktop(
         python_version: Optional Python version to use
         with_requirements: Optional requirements file to install from
         project: Optional project directory to run within
+        config_path: Optional custom path to Claude Desktop config directory
 
     Returns:
         True if installation was successful, False otherwise
     """
-    config_dir = get_claude_config_path()
+    config_dir = get_claude_config_path(config_path=config_path)
     if not config_dir:
-        print(
-            "[red]Claude Desktop config directory not found.[/red]\n"
-            "[blue]Please ensure Claude Desktop is installed and has been run at least once to initialize its config.[/blue]"
-        )
+        if not config_path:
+            print(
+                "[red]Claude Desktop config directory not found.[/red]\n"
+                "[blue]Please ensure Claude Desktop is installed and has been run at least once to initialize its config.[/blue]"
+            )
         return False
 
     config_file = config_dir / "claude_desktop_config.json"
@@ -180,6 +194,13 @@ async def claude_desktop_command(
             help="Run the command within the given project directory",
         ),
     ] = None,
+    config_path: Annotated[
+        Path | None,
+        cyclopts.Parameter(
+            "--config-path",
+            help="Custom path to Claude Desktop config directory",
+        ),
+    ] = None,
 ) -> None:
     """Install an MCP server in Claude Desktop.
 
@@ -204,6 +225,7 @@ async def claude_desktop_command(
         python_version=python,
         with_requirements=with_requirements,
         project=project,
+        config_path=config_path,
     )
 
     if not success:

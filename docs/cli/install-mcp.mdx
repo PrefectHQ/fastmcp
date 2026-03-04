@@ -65,6 +65,7 @@ See [Server Configuration](/deployment/server-configuration) for the full config
 | Python | `--python` | Python version (e.g., `3.11`) |
 | Project | `--project` | Run within a uv project directory |
 | Requirements | `--with-requirements` | Install from a requirements file |
+| Config Path | `--config-path` | Custom path to Claude Desktop config directory (`claude-desktop` only) |
 
 ## Examples
 
@@ -92,6 +93,10 @@ fastmcp install cursor server.py --env-file .env
 fastmcp install claude-desktop server.py \
   --python 3.11 \
   --with-requirements requirements.txt
+
+# With custom config path (claude-desktop only)
+fastmcp install claude-desktop server.py \
+  --config-path "C:\Users\username\AppData\Local\Packages\Claude_xyz\LocalCache\Roaming\Claude"
 ```
 
 ## Generating MCP JSON
