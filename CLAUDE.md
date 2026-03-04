@@ -102,6 +102,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 - Do not manually modify `docs/python-sdk/**` — these files are auto-generated from source code by a bot and maintained via a long-lived PR. Do not include changes to these files in contributor PRs.
 - Do not manually modify `docs/public/schemas/**` or `src/fastmcp/utilities/mcp_server_config/v1/schema.json` — these are auto-generated and maintained via a long-lived PR.
 - **Core Principle:** A feature doesn't exist unless it is documented!
+- When adding or modifying settings in `src/fastmcp/settings.py`, update `docs/more/settings.mdx` to match.
 
 ### Documentation Guidelines
 
