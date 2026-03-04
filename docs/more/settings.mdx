@@ -1,0 +1,89 @@
+---
+title: Settings
+description: Configure FastMCP behavior through environment variables or a .env file.
+icon: gear
+---
+
+FastMCP uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for configuration. Every setting is available as an environment variable with a `FASTMCP_` prefix, loaded automatically from the environment or a `.env` file.
+
+```bash
+# Set via environment
+export FASTMCP_LOG_LEVEL=DEBUG
+export FASTMCP_PORT=3000
+
+# Or use a .env file (loaded automatically)
+echo "FASTMCP_LOG_LEVEL=DEBUG" >> .env
+```
+
+You can change which `.env` file is loaded by setting the `FASTMCP_ENV_FILE` environment variable (defaults to `.env`). Because this controls which file is loaded, it must be set as an environment variable — it cannot be set inside a `.env` file itself.
+
+## Logging
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_LOG_LEVEL` | `Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]` | `INFO` | Log level. Case-insensitive. |
+| `FASTMCP_LOG_ENABLED` | `bool` | `true` | Enable or disable FastMCP logging entirely. |
+| `FASTMCP_ENABLE_RICH_LOGGING` | `bool` | `true` | Use rich formatting for log output. Set to `false` for plain Python logging. |
+| `FASTMCP_ENABLE_RICH_TRACEBACKS` | `bool` | `true` | Use rich tracebacks for errors. |
+| `FASTMCP_DEPRECATION_WARNINGS` | `bool` | `true` | Show deprecation warnings. |
+
+## Transport & HTTP
+
+These control how the server listens when running with an HTTP transport.
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_TRANSPORT` | `Literal["stdio", "http", "sse", "streamable-http"]` | `stdio` | Default transport. |
+| `FASTMCP_HOST` | `str` | `127.0.0.1` | Host to bind to. |
+| `FASTMCP_PORT` | `int` | `8000` | Port to bind to. |
+| `FASTMCP_SSE_PATH` | `str` | `/sse` | Path for SSE endpoint. |
+| `FASTMCP_MESSAGE_PATH` | `str` | `/messages/` | Path for SSE message endpoint. |
+| `FASTMCP_STREAMABLE_HTTP_PATH` | `str` | `/mcp` | Path for Streamable HTTP endpoint. |
+| `FASTMCP_STATELESS_HTTP` | `bool` | `false` | Enable stateless HTTP mode (new transport per request). Useful for multi-worker deployments. |
+| `FASTMCP_JSON_RESPONSE` | `bool` | `false` | Use JSON responses instead of SSE for Streamable HTTP. |
+| `FASTMCP_DEBUG` | `bool` | `false` | Enable debug mode. |
+
+## Error Handling
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_MASK_ERROR_DETAILS` | `bool` | `false` | Mask error details before sending to clients. When enabled, only messages from explicitly raised `ToolError`, `ResourceError`, or `PromptError` are included in responses. |
+| `FASTMCP_STRICT_INPUT_VALIDATION` | `bool` | `false` | Strictly validate tool inputs against the JSON schema. When disabled, compatible inputs are coerced (e.g., the string `"10"` becomes the integer `10`). |
+| `FASTMCP_MOUNTED_COMPONENTS_RAISE_ON_LOAD_ERROR` | `bool` | `false` | Raise errors when loading mounted components instead of logging warnings. |
+
+## Client
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_CLIENT_INIT_TIMEOUT` | `float \| None` | None | Timeout in seconds for the client initialization handshake. Set to `0` or leave unset to disable. |
+| `FASTMCP_CLIENT_RAISE_FIRST_EXCEPTIONGROUP_ERROR` | `bool` | `true` | When an `ExceptionGroup` is raised, re-raise the first error directly instead of the group. Simplifies debugging but may mask secondary errors. |
+
+## CLI & Display
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_SHOW_SERVER_BANNER` | `bool` | `true` | Show the server banner on startup. Also controllable via `--no-banner` or `server.run(show_banner=False)`. |
+| `FASTMCP_CHECK_FOR_UPDATES` | `Literal["stable", "prerelease", "off"]` | `stable` | Update checking on CLI startup. `stable` checks stable releases only, `prerelease` includes pre-releases, `off` disables checking. |
+
+## Tasks (Docket)
+
+These configure the [Docket](https://github.com/prefecthq/docket) task queue used by [server tasks](/servers/tasks). All use the `FASTMCP_DOCKET_` prefix.
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_DOCKET_NAME` | `str` | `fastmcp` | Queue name. Servers and workers sharing the same name and backend URL share a task queue. |
+| `FASTMCP_DOCKET_URL` | `str` | `memory://` | Backend URL. Use `memory://` for single-process or `redis://host:port/db` for distributed workers. |
+| `FASTMCP_DOCKET_WORKER_NAME` | `str \| None` | None | Worker name. Auto-generated if unset. |
+| `FASTMCP_DOCKET_CONCURRENCY` | `int` | `10` | Maximum concurrent tasks per worker. |
+| `FASTMCP_DOCKET_REDELIVERY_TIMEOUT` | `timedelta` | `300s` | If a worker doesn't complete a task within this time, it's redelivered to another worker. |
+| `FASTMCP_DOCKET_RECONNECTION_DELAY` | `timedelta` | `5s` | Delay between reconnection attempts when the worker loses its backend connection. |
+
+## Advanced
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_HOME` | `Path` | Platform default | Data directory for FastMCP. Defaults to the platform-specific user data directory. |
+| `FASTMCP_ENV_FILE` | `str` | `.env` | Path to the `.env` file to load settings from. Must be set as an environment variable (see above). |
+| `FASTMCP_SERVER_DEPENDENCIES` | `list[str]` | `[]` | Additional dependencies to install in the server environment. |
+| `FASTMCP_DECORATOR_MODE` | `Literal["function", "object"]` | `function` | Controls what `@tool`, `@resource`, and `@prompt` decorators return. `function` returns the original function (default); `object` returns component objects (deprecated, will be removed). |
+| `FASTMCP_TEST_MODE` | `bool` | `false` | Enable test mode. |

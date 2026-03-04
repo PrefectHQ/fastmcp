@@ -315,6 +315,7 @@
               {
                 "group": "More",
                 "pages": [
+                  "more/settings",
                   {
                     "collapsed": true,
                     "group": "Upgrading",
