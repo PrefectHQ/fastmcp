@@ -4,7 +4,7 @@ description: Configure FastMCP behavior through environment variables or a .env 
 icon: gear
 ---
 
-FastMCP uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for configuration. Every setting is available as an environment variable with a `FASTMCP_` prefix, loaded automatically from the environment or a `.env` file.
+FastMCP uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for configuration. Every setting is available as an environment variable with a `FASTMCP_` prefix. Settings are loaded from environment variables and from a `.env` file (see the [Tasks (Docket)](#tasks-docket) section for a caveat about nested settings in `.env` files).
 
 ```bash
 # Set via environment
@@ -68,6 +68,10 @@ These control how the server listens when running with an HTTP transport.
 ## Tasks (Docket)
 
 These configure the [Docket](https://github.com/prefecthq/docket) task queue used by [server tasks](/servers/tasks). All use the `FASTMCP_DOCKET_` prefix.
+
+<Warning>
+When setting Docket values in a `.env` file, use a **double** underscore: `FASTMCP_DOCKET__URL` (not `FASTMCP_DOCKET_URL`). This is because `.env` values are resolved through the parent `Settings` class, which uses `__` as its nested delimiter. As regular environment variables (e.g., `export`), the single-underscore form `FASTMCP_DOCKET_URL` works fine.
+</Warning>
 
 | Environment Variable | Type | Default | Description |
 |---|---|---|---|
