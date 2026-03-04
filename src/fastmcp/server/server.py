@@ -991,9 +991,12 @@ class FastMCP(
                         # Auth still applies to global-key tools
                         skip_auth, token = _get_auth_context()
                         if not skip_auth and tool.auth is not None:
-                            ctx = AuthContext(token=token, component=tool)
-                            if not await run_auth_checks(tool.auth, ctx):
-                                raise NotFoundError(f"Unknown tool: {name!r}")
+                            try:
+                                ctx = AuthContext(token=token, component=tool)
+                                if not await run_auth_checks(tool.auth, ctx):
+                                    raise NotFoundError(f"Unknown tool: {name!r}")
+                            except AuthorizationError:
+                                raise NotFoundError(f"Unknown tool: {name!r}") from None
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")
                 span.set_attributes(tool.get_span_attributes())

@@ -492,14 +492,8 @@ def _get_tool_resolver() -> Callable[..., str] | None:
 
 
 def _prefab_to_json(app: Any) -> dict[str, Any]:
-    """Call PrefabApp.to_json() with the FastMCPApp callable resolver.
-
-    Requires prefab-ui >= 0.10.0 for tool_resolver support.
-    """
-    try:
-        return app.to_json(tool_resolver=_get_tool_resolver())
-    except TypeError:
-        return app.to_json()
+    """Call PrefabApp.to_json() with the FastMCPApp callable resolver."""
+    return app.to_json(tool_resolver=_get_tool_resolver())
 
 
 def _prefab_to_tool_result(app: Any) -> ToolResult:

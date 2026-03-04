@@ -384,23 +384,37 @@ class FastMCPApp(Provider):
     # Programmatic tool addition
     # ------------------------------------------------------------------
 
-    def add_tool(self, tool: Tool | Callable[..., Any]) -> Tool:
+    def add_tool(
+        self,
+        tool: Tool | Callable[..., Any],
+        *,
+        fn: Any | None = None,
+    ) -> Tool:
         """Add a tool to this app programmatically.
 
         If the tool has ``meta["ui"]["globalKey"]``, it is assumed to already
-        be configured. Otherwise it is treated as a backend tool and gets a
-        global key assigned automatically.
+        be configured (but still registered for lookup). Otherwise it is
+        treated as a backend tool and gets a global key assigned automatically.
+
+        Pass ``fn`` to register the original callable in the resolver so that
+        ``CallTool(fn)`` can resolve to the global key.
         """
         if not isinstance(tool, Tool):
+            fn = fn or tool
             tool = Tool._ensure_tool(tool)
 
         meta = tool.meta or {}
         ui = meta.get("ui", {})
-        if not isinstance(ui, dict) or "globalKey" not in ui:
-            # Assign global key for backend tools
+        if isinstance(ui, dict) and "globalKey" in ui:
+            global_key = ui["globalKey"]
+            _APP_TOOL_REGISTRY[global_key] = tool
+        else:
             global_key = _make_global_key(tool.name)
             _stamp_global_key(tool, global_key)
             _APP_TOOL_REGISTRY[global_key] = tool
+
+        if fn is not None:
+            _FN_TO_GLOBAL_KEY[id(fn)] = global_key
 
         self._local._add_component(tool)
         return tool
