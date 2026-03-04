@@ -25,7 +25,10 @@ def get_claude_config_path(config_path: Path | None = None) -> Path | None:
     """
 
     if config_path:
-        return config_path if config_path.exists() else None
+        if not config_path.exists():
+            print(f"[red]The specified config path does not exist: {config_path}[/red]")
+            return None
+        return config_path
 
     if sys.platform == "win32":
         path = Path(Path.home(), "AppData", "Roaming", "Claude")
@@ -75,10 +78,11 @@ def install_claude_desktop(
     """
     config_dir = get_claude_config_path(config_path=config_path)
     if not config_dir:
-        print(
-            "[red]Claude Desktop config directory not found.[/red]\n"
-            "[blue]Please ensure Claude Desktop is installed and has been run at least once to initialize its config.[/blue]"
-        )
+        if not config_path:
+            print(
+                "[red]Claude Desktop config directory not found.[/red]\n"
+                "[blue]Please ensure Claude Desktop is installed and has been run at least once to initialize its config.[/blue]"
+            )
         return False
 
     config_file = config_dir / "claude_desktop_config.json"
