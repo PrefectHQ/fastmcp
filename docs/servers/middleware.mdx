@@ -538,14 +538,10 @@ The ping task starts on the first message and stops automatically when the sessi
 ### Tool Injection
 
 ```python
-from fastmcp.server.middleware.tool_injection import (
-    ToolInjectionMiddleware,
-    PromptToolMiddleware,
-    ResourceToolMiddleware
-)
+from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
 ```
 
-`ToolInjectionMiddleware` dynamically injects tools during request processing. `PromptToolMiddleware` and `ResourceToolMiddleware` provide compatibility layers for clients that cannot list or access prompts and resources directly—they expose those capabilities as tools.
+`ToolInjectionMiddleware` dynamically injects tools during request processing.
 
 ```python
 from fastmcp import FastMCP
@@ -558,6 +554,10 @@ def my_tool_fn(a: int, b: int) -> int:
 my_tool = Tool.from_function(fn=my_tool_fn, name="my_tool")
 mcp.add_middleware(ToolInjectionMiddleware(tools=[my_tool]))
 ```
+
+<Note>
+`PromptToolMiddleware` and `ResourceToolMiddleware` are deprecated. Use the [ResourcesAsTools and PromptsAsTools transforms](/servers/transforms) instead, which provide better support for resource templates and other features.
+</Note>
 
 ### Response Limiting
 
