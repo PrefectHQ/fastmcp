@@ -80,6 +80,9 @@ class PropelAuthProvider(RemoteAuthProvider):
         introspection_client_secret: str | SecretStr,
         base_url: AnyHttpUrl | str,
         required_scopes: list[str] | None = None,
+        scopes_supported: list[str] | None = None,
+        resource_name: str | None = None,
+        resource_documentation: AnyHttpUrl | None = None,
         resource: AnyHttpUrl | str | None = None,
         token_introspection_overrides: (
             PropelAuthTokenIntrospectionOverrides | None
@@ -93,6 +96,11 @@ class PropelAuthProvider(RemoteAuthProvider):
             introspection_client_secret: Introspection Client Secret from the PropelAuth Dashboard
             base_url: Public URL of this FastMCP server
             required_scopes: Optional list of scopes that must be present in tokens
+            scopes_supported: Optional list of scopes to advertise in OAuth metadata.
+                If None, uses required_scopes. Use this when the scopes clients should
+                request differ from the scopes enforced on tokens.
+            resource_name: Optional name for the protected resource metadata.
+            resource_documentation: Optional documentation URL for the protected resource.
             resource: Optional resource URI (RFC 8707) identifying this MCP server.
                 Use this when multiple MCP servers share the same PropelAuth
                 authorization server (e.g. ``resource="https://api.example.com/mcp"``),
@@ -125,6 +133,9 @@ class PropelAuthProvider(RemoteAuthProvider):
             token_verifier=token_verifier,
             authorization_servers=[authorization_server_url],
             base_url=base_url,
+            scopes_supported=scopes_supported,
+            resource_name=resource_name,
+            resource_documentation=resource_documentation,
         )
 
     def get_routes(
