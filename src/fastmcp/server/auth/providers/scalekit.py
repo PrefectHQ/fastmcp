@@ -69,6 +69,9 @@ class ScalekitProvider(RemoteAuthProvider):
         mcp_url: AnyHttpUrl | str | None = None,
         client_id: str | None = None,
         required_scopes: list[str] | None = None,
+        scopes_supported: list[str] | None = None,
+        resource_name: str | None = None,
+        resource_documentation: AnyHttpUrl | None = None,
         token_verifier: TokenVerifier | None = None,
     ):
         """Initialize Scalekit resource server provider.
@@ -80,6 +83,11 @@ class ScalekitProvider(RemoteAuthProvider):
             mcp_url: Deprecated alias for base_url. Will be removed in a future release.
             client_id: Deprecated parameter, no longer required. Will be removed in a future release.
             required_scopes: Optional list of scopes that must be present in tokens
+            scopes_supported: Optional list of scopes to advertise in OAuth metadata.
+                If None, uses required_scopes. Use this when the scopes clients should
+                request differ from the scopes enforced on tokens.
+            resource_name: Optional name for the protected resource metadata.
+            resource_documentation: Optional documentation URL for the protected resource.
             token_verifier: Optional token verifier. If None, creates JWT verifier for Scalekit
         """
         # Resolve base_url from mcp_url if needed (backwards compatibility)
@@ -140,6 +148,9 @@ class ScalekitProvider(RemoteAuthProvider):
                 AnyHttpUrl(f"{self.environment_url}/resources/{self.resource_id}")
             ],
             base_url=base_url_value,
+            scopes_supported=scopes_supported,
+            resource_name=resource_name,
+            resource_documentation=resource_documentation,
         )
 
     def get_routes(

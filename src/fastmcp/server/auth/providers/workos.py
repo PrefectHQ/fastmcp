@@ -272,6 +272,9 @@ class AuthKitProvider(RemoteAuthProvider):
         base_url: AnyHttpUrl | str,
         client_id: str | None = None,
         required_scopes: list[str] | None = None,
+        scopes_supported: list[str] | None = None,
+        resource_name: str | None = None,
+        resource_documentation: AnyHttpUrl | None = None,
         token_verifier: TokenVerifier | None = None,
     ):
         """Initialize AuthKit metadata provider.
@@ -283,6 +286,11 @@ class AuthKitProvider(RemoteAuthProvider):
                 validate the JWT audience claim. Found in your WorkOS Dashboard under
                 API Keys. This is the project-level client ID, not individual MCP client IDs.
             required_scopes: Optional list of scopes to require for all requests
+            scopes_supported: Optional list of scopes to advertise in OAuth metadata.
+                If None, uses required_scopes. Use this when the scopes clients should
+                request differ from the scopes enforced on tokens.
+            resource_name: Optional name for the protected resource metadata.
+            resource_documentation: Optional documentation URL for the protected resource.
             token_verifier: Optional token verifier. If None, creates JWT verifier for AuthKit
         """
         self.authkit_domain = str(authkit_domain).rstrip("/")
@@ -314,6 +322,9 @@ class AuthKitProvider(RemoteAuthProvider):
             token_verifier=token_verifier,
             authorization_servers=[AnyHttpUrl(self.authkit_domain)],
             base_url=self.base_url,
+            scopes_supported=scopes_supported,
+            resource_name=resource_name,
+            resource_documentation=resource_documentation,
         )
 
     def get_routes(
