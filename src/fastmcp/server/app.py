@@ -407,16 +407,16 @@ class FastMCPApp(Provider):
         ui = meta.get("ui", {})
         if isinstance(ui, dict) and "globalKey" in ui:
             global_key = ui["globalKey"]
-            _APP_TOOL_REGISTRY[global_key] = tool
         else:
             global_key = _make_global_key(tool.name)
             _stamp_global_key(tool, global_key)
-            _APP_TOOL_REGISTRY[global_key] = tool
 
+        self._local._add_component(tool)
+
+        _APP_TOOL_REGISTRY[global_key] = tool
         if fn is not None:
             _FN_TO_GLOBAL_KEY[id(fn)] = global_key
 
-        self._local._add_component(tool)
         return tool
 
     # ------------------------------------------------------------------
