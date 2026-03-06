@@ -225,6 +225,12 @@ class JWTVerifier(TokenVerifier):
         }:
             raise ValueError(f"Unsupported algorithm: {algorithm}.")
 
+        if jwks_uri and algorithm.startswith("HS"):
+            raise ValueError(
+                "HMAC algorithms (HS256/HS384/HS512) require a shared secret via "
+                "public_key and cannot be used with jwks_uri"
+            )
+
         # Parse scopes if provided as string
         parsed_required_scopes = (
             parse_scopes(required_scopes) if required_scopes is not None else None
