@@ -54,6 +54,44 @@ class TestServerLifespan:
         # when the client session closes
         assert lifespan_events == ["enter", "exit"]
 
+    async def test_server_lifespan_overlapping_sessions(self):
+        """Test that overlapping sessions keep lifespan active until all sessions close."""
+        lifespan_events: list[str] = []
+
+        resource_state = "missing"
+
+        @asynccontextmanager
+        async def server_lifespan(mcp: FastMCP) -> AsyncIterator[dict[str, Any]]:
+            nonlocal resource_state
+            lifespan_events.append("enter")
+            resource_state = "open"
+            try:
+                yield {"initialized": True}
+            finally:
+                resource_state = "closed"
+                lifespan_events.append("exit")
+
+        mcp = FastMCP("TestServer", lifespan=server_lifespan)
+
+        @mcp.tool
+        def get_resource_state() -> str:
+            return resource_state
+
+        async with Client(mcp) as client1:
+            result1 = await client1.call_tool("get_resource_state", {})
+            assert result1.data == "open"
+
+            async with Client(mcp) as client2:
+                result2 = await client2.call_tool("get_resource_state", {})
+                assert result2.data == "open"
+
+            # client2 exited while client1 is still active; lifespan should remain open
+            result3 = await client1.call_tool("get_resource_state", {})
+            assert result3.data == "open"
+            assert lifespan_events == ["enter"]
+
+        assert lifespan_events == ["enter", "exit"]
+
     async def test_server_lifespan_context_available(self):
         """Test that server_lifespan context is available to tools."""
 
