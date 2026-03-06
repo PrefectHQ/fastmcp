@@ -493,6 +493,38 @@ class TestMessage:
         assert isinstance(mcp_msg.content, TextContent)
         assert mcp_msg.content.text == "Hello"
 
+    def test_message_passes_through_image_content(self):
+        """Test Message passes through ImageContent without JSON-serializing it."""
+        from mcp.types import ImageContent
+
+        image = ImageContent(type="image", data="iVBOR...", mimeType="image/png")
+        msg = Message(image)
+        assert isinstance(msg.content, ImageContent)
+        assert msg.content.data == "iVBOR..."
+        assert msg.content.mimeType == "image/png"
+
+        # Round-trip through MCP PromptMessage
+        mcp_msg = msg.to_mcp_prompt_message()
+        assert isinstance(mcp_msg.content, ImageContent)
+
+    def test_message_passes_through_audio_content(self):
+        """Test Message passes through AudioContent without JSON-serializing it."""
+        from mcp.types import AudioContent
+
+        audio = AudioContent(type="audio", data="AAAA...", mimeType="audio/wav")
+        msg = Message(audio)
+        assert isinstance(msg.content, AudioContent)
+        assert msg.content.data == "AAAA..."
+
+    def test_message_passes_through_resource_link(self):
+        """Test Message passes through ResourceLink without JSON-serializing it."""
+        from mcp.types import ResourceLink
+
+        link = ResourceLink(type="resource_link", uri="file:///test.txt")
+        msg = Message(link)
+        assert isinstance(msg.content, ResourceLink)
+        assert str(msg.content.uri) == "file:///test.txt"
+
 
 class TestPromptResult:
     def test_promptresult_from_string(self):
