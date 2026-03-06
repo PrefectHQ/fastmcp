@@ -19,7 +19,7 @@ from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
-AUTO_PAGINATION_MAX_PAGES = 1_000
+AUTO_PAGINATION_MAX_PAGES = 250
 
 # Type alias for task response union (SEP-1686 graceful degradation)
 ResourceTaskResponseUnion = RootModel[
@@ -55,25 +55,31 @@ class ClientResourcesMixin:
         )
         return result
 
-    async def list_resources(self: Client) -> list[mcp.types.Resource]:
+    async def list_resources(
+        self: Client,
+        max_pages: int = AUTO_PAGINATION_MAX_PAGES,
+    ) -> list[mcp.types.Resource]:
         """Retrieve all resources available on the server.
 
         This method automatically fetches all pages if the server paginates results,
         returning the complete list. For manual pagination control (e.g., to handle
         large result sets incrementally), use list_resources_mcp() with the cursor parameter.
 
+        Args:
+            max_pages: Maximum number of pages to fetch before raising. Defaults to 250.
+
         Returns:
             list[mcp.types.Resource]: A list of all Resource objects.
 
         Raises:
-            RuntimeError: If called while the client is not connected.
+            RuntimeError: If the page limit is reached before pagination completes.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
         all_resources: list[mcp.types.Resource] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
-        for _ in range(AUTO_PAGINATION_MAX_PAGES):
+        for _ in range(max_pages):
             result = await self.list_resources_mcp(cursor=cursor)
             all_resources.extend(result.resources)
             if not result.nextCursor:
@@ -87,10 +93,11 @@ class ClientResourcesMixin:
             seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
         else:
-            logger.warning(
+            raise RuntimeError(
                 f"[{self.name}] Reached auto-pagination limit"
-                f" ({AUTO_PAGINATION_MAX_PAGES} pages) for list_resources;"
-                " stopping pagination"
+                f" ({max_pages} pages) for list_resources."
+                " Use list_resources_mcp() with cursor for manual pagination,"
+                " or increase max_pages."
             )
 
         return all_resources
@@ -118,7 +125,10 @@ class ClientResourcesMixin:
         )
         return result
 
-    async def list_resource_templates(self: Client) -> list[mcp.types.ResourceTemplate]:
+    async def list_resource_templates(
+        self: Client,
+        max_pages: int = AUTO_PAGINATION_MAX_PAGES,
+    ) -> list[mcp.types.ResourceTemplate]:
         """Retrieve all resource templates available on the server.
 
         This method automatically fetches all pages if the server paginates results,
@@ -126,18 +136,21 @@ class ClientResourcesMixin:
         large result sets incrementally), use list_resource_templates_mcp() with the
         cursor parameter.
 
+        Args:
+            max_pages: Maximum number of pages to fetch before raising. Defaults to 250.
+
         Returns:
             list[mcp.types.ResourceTemplate]: A list of all ResourceTemplate objects.
 
         Raises:
-            RuntimeError: If called while the client is not connected.
+            RuntimeError: If the page limit is reached before pagination completes.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
         all_templates: list[mcp.types.ResourceTemplate] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
-        for _ in range(AUTO_PAGINATION_MAX_PAGES):
+        for _ in range(max_pages):
             result = await self.list_resource_templates_mcp(cursor=cursor)
             all_templates.extend(result.resourceTemplates)
             if not result.nextCursor:
@@ -152,10 +165,11 @@ class ClientResourcesMixin:
             seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
         else:
-            logger.warning(
+            raise RuntimeError(
                 f"[{self.name}] Reached auto-pagination limit"
-                f" ({AUTO_PAGINATION_MAX_PAGES} pages) for list_resource_templates;"
-                " stopping pagination"
+                f" ({max_pages} pages) for list_resource_templates."
+                " Use list_resource_templates_mcp() with cursor for manual pagination,"
+                " or increase max_pages."
             )
 
         return all_templates

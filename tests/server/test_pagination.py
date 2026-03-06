@@ -420,8 +420,8 @@ class TestPaginationCycleDetection:
             assert len(tools) == 1
             assert tools[0].name == "my_tool"
 
-    async def test_tools_respects_auto_pagination_page_limit(self) -> None:
-        """list_tools should stop after the configured auto-pagination page limit."""
+    async def test_tools_raises_on_auto_pagination_limit(self) -> None:
+        """list_tools should raise RuntimeError after exceeding max_pages."""
         server = FastMCP()
 
         @server.tool
@@ -429,8 +429,8 @@ class TestPaginationCycleDetection:
             return "ok"
 
         async with Client(server) as client:
-            call_count = 0
             original = client.list_tools_mcp
+            call_count = 0
 
             async def returning_unique_cursor(
                 *,
@@ -443,18 +443,15 @@ class TestPaginationCycleDetection:
                 return result
 
             with (
-                patch("fastmcp.client.mixins.tools.AUTO_PAGINATION_MAX_PAGES", 5),
                 patch.object(
                     client, "list_tools_mcp", side_effect=returning_unique_cursor
                 ),
+                pytest.raises(RuntimeError, match="auto-pagination limit"),
             ):
-                tools = await client.list_tools()
+                await client.list_tools(max_pages=5)
 
-            assert call_count == 5
-            assert len(tools) == 5
-
-    async def test_resources_respects_auto_pagination_page_limit(self) -> None:
-        """list_resources should stop after the configured auto-pagination page limit."""
+    async def test_resources_raises_on_auto_pagination_limit(self) -> None:
+        """list_resources should raise RuntimeError after exceeding max_pages."""
         server = FastMCP()
 
         @server.resource("test://r")
@@ -462,8 +459,8 @@ class TestPaginationCycleDetection:
             return "data"
 
         async with Client(server) as client:
-            call_count = 0
             original = client.list_resources_mcp
+            call_count = 0
 
             async def returning_unique_cursor(
                 *,
@@ -476,18 +473,15 @@ class TestPaginationCycleDetection:
                 return result
 
             with (
-                patch("fastmcp.client.mixins.resources.AUTO_PAGINATION_MAX_PAGES", 5),
                 patch.object(
                     client, "list_resources_mcp", side_effect=returning_unique_cursor
                 ),
+                pytest.raises(RuntimeError, match="auto-pagination limit"),
             ):
-                resources = await client.list_resources()
+                await client.list_resources(max_pages=5)
 
-            assert call_count == 5
-            assert len(resources) == 5
-
-    async def test_prompts_respects_auto_pagination_page_limit(self) -> None:
-        """list_prompts should stop after the configured auto-pagination page limit."""
+    async def test_prompts_raises_on_auto_pagination_limit(self) -> None:
+        """list_prompts should raise RuntimeError after exceeding max_pages."""
         server = FastMCP()
 
         @server.prompt
@@ -495,8 +489,8 @@ class TestPaginationCycleDetection:
             return "text"
 
         async with Client(server) as client:
-            call_count = 0
             original = client.list_prompts_mcp
+            call_count = 0
 
             async def returning_unique_cursor(
                 *,
@@ -509,15 +503,12 @@ class TestPaginationCycleDetection:
                 return result
 
             with (
-                patch("fastmcp.client.mixins.prompts.AUTO_PAGINATION_MAX_PAGES", 5),
                 patch.object(
                     client, "list_prompts_mcp", side_effect=returning_unique_cursor
                 ),
+                pytest.raises(RuntimeError, match="auto-pagination limit"),
             ):
-                prompts = await client.list_prompts()
-
-            assert call_count == 5
-            assert len(prompts) == 5
+                await client.list_prompts(max_pages=5)
 
     async def test_normal_pagination_unaffected(self) -> None:
         """Cycle detection should not interfere with normal pagination."""

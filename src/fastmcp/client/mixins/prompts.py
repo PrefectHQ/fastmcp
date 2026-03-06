@@ -20,7 +20,7 @@ from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
-AUTO_PAGINATION_MAX_PAGES = 1_000
+AUTO_PAGINATION_MAX_PAGES = 250
 
 # Type alias for task response union (SEP-1686 graceful degradation)
 PromptTaskResponseUnion = RootModel[
@@ -56,25 +56,31 @@ class ClientPromptsMixin:
         )
         return result
 
-    async def list_prompts(self: Client) -> list[mcp.types.Prompt]:
+    async def list_prompts(
+        self: Client,
+        max_pages: int = AUTO_PAGINATION_MAX_PAGES,
+    ) -> list[mcp.types.Prompt]:
         """Retrieve all prompts available on the server.
 
         This method automatically fetches all pages if the server paginates results,
         returning the complete list. For manual pagination control (e.g., to handle
         large result sets incrementally), use list_prompts_mcp() with the cursor parameter.
 
+        Args:
+            max_pages: Maximum number of pages to fetch before raising. Defaults to 250.
+
         Returns:
             list[mcp.types.Prompt]: A list of all Prompt objects.
 
         Raises:
-            RuntimeError: If called while the client is not connected.
+            RuntimeError: If the page limit is reached before pagination completes.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
         all_prompts: list[mcp.types.Prompt] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
-        for _ in range(AUTO_PAGINATION_MAX_PAGES):
+        for _ in range(max_pages):
             result = await self.list_prompts_mcp(cursor=cursor)
             all_prompts.extend(result.prompts)
             if not result.nextCursor:
@@ -88,10 +94,11 @@ class ClientPromptsMixin:
             seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
         else:
-            logger.warning(
+            raise RuntimeError(
                 f"[{self.name}] Reached auto-pagination limit"
-                f" ({AUTO_PAGINATION_MAX_PAGES} pages) for list_prompts;"
-                " stopping pagination"
+                f" ({max_pages} pages) for list_prompts."
+                " Use list_prompts_mcp() with cursor for manual pagination,"
+                " or increase max_pages."
             )
 
         return all_prompts
