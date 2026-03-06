@@ -20,6 +20,8 @@ from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
+AUTO_PAGINATION_MAX_PAGES = 1_000
+
 # Type alias for task response union (SEP-1686 graceful degradation)
 PromptTaskResponseUnion = RootModel[
     mcp.types.CreateTaskResult | mcp.types.GetPromptResult
@@ -72,7 +74,7 @@ class ClientPromptsMixin:
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
-        while True:
+        for _ in range(AUTO_PAGINATION_MAX_PAGES):
             result = await self.list_prompts_mcp(cursor=cursor)
             all_prompts.extend(result.prompts)
             if not result.nextCursor:
@@ -85,6 +87,12 @@ class ClientPromptsMixin:
                 break
             seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
+        else:
+            logger.warning(
+                f"[{self.name}] Reached auto-pagination limit"
+                f" ({AUTO_PAGINATION_MAX_PAGES} pages) for list_prompts;"
+                " stopping pagination"
+            )
 
         return all_prompts
 

@@ -19,6 +19,8 @@ from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
+AUTO_PAGINATION_MAX_PAGES = 1_000
+
 # Type alias for task response union (SEP-1686 graceful degradation)
 ResourceTaskResponseUnion = RootModel[
     mcp.types.CreateTaskResult | mcp.types.ReadResourceResult
@@ -71,7 +73,7 @@ class ClientResourcesMixin:
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
-        while True:
+        for _ in range(AUTO_PAGINATION_MAX_PAGES):
             result = await self.list_resources_mcp(cursor=cursor)
             all_resources.extend(result.resources)
             if not result.nextCursor:
@@ -84,6 +86,12 @@ class ClientResourcesMixin:
                 break
             seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
+        else:
+            logger.warning(
+                f"[{self.name}] Reached auto-pagination limit"
+                f" ({AUTO_PAGINATION_MAX_PAGES} pages) for list_resources;"
+                " stopping pagination"
+            )
 
         return all_resources
 
@@ -129,7 +137,7 @@ class ClientResourcesMixin:
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
-        while True:
+        for _ in range(AUTO_PAGINATION_MAX_PAGES):
             result = await self.list_resource_templates_mcp(cursor=cursor)
             all_templates.extend(result.resourceTemplates)
             if not result.nextCursor:
@@ -143,6 +151,12 @@ class ClientResourcesMixin:
                 break
             seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
+        else:
+            logger.warning(
+                f"[{self.name}] Reached auto-pagination limit"
+                f" ({AUTO_PAGINATION_MAX_PAGES} pages) for list_resource_templates;"
+                " stopping pagination"
+            )
 
         return all_templates
 

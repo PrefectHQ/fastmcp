@@ -420,6 +420,105 @@ class TestPaginationCycleDetection:
             assert len(tools) == 1
             assert tools[0].name == "my_tool"
 
+    async def test_tools_respects_auto_pagination_page_limit(self) -> None:
+        """list_tools should stop after the configured auto-pagination page limit."""
+        server = FastMCP()
+
+        @server.tool
+        def my_tool() -> str:
+            return "ok"
+
+        async with Client(server) as client:
+            call_count = 0
+            original = client.list_tools_mcp
+
+            async def returning_unique_cursor(
+                *,
+                cursor: str | None = None,
+            ) -> mcp.types.ListToolsResult:
+                nonlocal call_count
+                result = await original(cursor=cursor)
+                call_count += 1
+                result.nextCursor = f"cursor-{call_count}"
+                return result
+
+            with (
+                patch("fastmcp.client.mixins.tools.AUTO_PAGINATION_MAX_PAGES", 5),
+                patch.object(
+                    client, "list_tools_mcp", side_effect=returning_unique_cursor
+                ),
+            ):
+                tools = await client.list_tools()
+
+            assert call_count == 5
+            assert len(tools) == 5
+
+    async def test_resources_respects_auto_pagination_page_limit(self) -> None:
+        """list_resources should stop after the configured auto-pagination page limit."""
+        server = FastMCP()
+
+        @server.resource("test://r")
+        def my_resource() -> str:
+            return "data"
+
+        async with Client(server) as client:
+            call_count = 0
+            original = client.list_resources_mcp
+
+            async def returning_unique_cursor(
+                *,
+                cursor: str | None = None,
+            ) -> mcp.types.ListResourcesResult:
+                nonlocal call_count
+                result = await original(cursor=cursor)
+                call_count += 1
+                result.nextCursor = f"cursor-{call_count}"
+                return result
+
+            with (
+                patch("fastmcp.client.mixins.resources.AUTO_PAGINATION_MAX_PAGES", 5),
+                patch.object(
+                    client, "list_resources_mcp", side_effect=returning_unique_cursor
+                ),
+            ):
+                resources = await client.list_resources()
+
+            assert call_count == 5
+            assert len(resources) == 5
+
+    async def test_prompts_respects_auto_pagination_page_limit(self) -> None:
+        """list_prompts should stop after the configured auto-pagination page limit."""
+        server = FastMCP()
+
+        @server.prompt
+        def my_prompt() -> str:
+            return "text"
+
+        async with Client(server) as client:
+            call_count = 0
+            original = client.list_prompts_mcp
+
+            async def returning_unique_cursor(
+                *,
+                cursor: str | None = None,
+            ) -> mcp.types.ListPromptsResult:
+                nonlocal call_count
+                result = await original(cursor=cursor)
+                call_count += 1
+                result.nextCursor = f"cursor-{call_count}"
+                return result
+
+            with (
+                patch("fastmcp.client.mixins.prompts.AUTO_PAGINATION_MAX_PAGES", 5),
+                patch.object(
+                    client, "list_prompts_mcp", side_effect=returning_unique_cursor
+                ),
+            ):
+                prompts = await client.list_prompts()
+
+            assert call_count == 5
+            assert len(prompts) == 5
+
     async def test_normal_pagination_unaffected(self) -> None:
         """Cycle detection should not interfere with normal pagination."""
         server = FastMCP(list_page_size=10)
