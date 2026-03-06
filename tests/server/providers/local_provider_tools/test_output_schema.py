@@ -1,14 +1,14 @@
 """Tests for tool output schemas."""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from mcp.types import (
     TextContent,
 )
 from pydantic import AnyUrl, BaseModel, TypeAdapter
-from typing_extensions import TypedDict
+from typing_extensions import TypeAliasType, TypedDict
 
 from fastmcp import FastMCP
 from fastmcp.tools.tool import ToolResult
@@ -282,3 +282,29 @@ class TestToolOutputSchema:
 
         result = await mcp.call_tool("edge_case_tool", {})
         assert result.structured_content == {"result": [42, "hello"]}
+
+    async def test_output_schema_wraps_non_object_ref_schema(self):
+        """Root $ref schemas should only skip wrapping when they resolve to objects."""
+        mcp = FastMCP()
+        alias_type = TypeAliasType("AliasType", Literal["foo", "bar"])
+
+        @mcp.tool
+        def alias_tool() -> alias_type:
+            return "foo"
+
+        tools = await mcp.list_tools()
+        tool = next(t for t in tools if t.name == "alias_tool")
+
+        expected_inner_schema = compress_schema(
+            TypeAdapter(alias_type).json_schema(mode="serialization"),
+            prune_titles=True,
+        )
+        assert tool.output_schema == {
+            "type": "object",
+            "properties": {"result": expected_inner_schema},
+            "required": ["result"],
+            "x-fastmcp-wrap-result": True,
+        }
+
+        result = await mcp.call_tool("alias_tool", {})
+        assert result.structured_content == {"result": "foo"}

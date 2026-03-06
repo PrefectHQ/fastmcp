@@ -63,8 +63,16 @@ class _UnserializableType:
     pass
 
 
-def _is_object_schema(schema: dict[str, Any]) -> bool:
+def _is_object_schema(
+    schema: dict[str, Any],
+    *,
+    _root_schema: dict[str, Any] | None = None,
+    _seen_refs: set[str] | None = None,
+) -> bool:
     """Check if a JSON schema represents an object type."""
+    root_schema = _root_schema or schema
+    seen_refs = _seen_refs or set()
+
     # Direct object type
     if schema.get("type") == "object":
         return True
@@ -73,9 +81,28 @@ def _is_object_schema(schema: dict[str, Any]) -> bool:
     if "properties" in schema:
         return True
 
-    # Self-referencing types use $ref pointing to $defs
-    # The referenced type is always an object in our use case
-    return "$ref" in schema and "$defs" in schema
+    # Resolve local $ref definitions and recurse into the target schema.
+    ref = schema.get("$ref")
+    if not isinstance(ref, str) or not ref.startswith("#/$defs/"):
+        return False
+
+    if ref in seen_refs:
+        return False
+
+    definition_name = ref.removeprefix("#/$defs/")
+    definitions = root_schema.get("$defs")
+    if not isinstance(definitions, dict):
+        return False
+
+    target_schema = definitions.get(definition_name)
+    if not isinstance(target_schema, dict):
+        return False
+
+    return _is_object_schema(
+        target_schema,
+        _root_schema=root_schema,
+        _seen_refs=seen_refs | {ref},
+    )
 
 
 @dataclass
