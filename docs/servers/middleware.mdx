@@ -555,10 +555,6 @@ my_tool = Tool.from_function(fn=my_tool_fn, name="my_tool")
 mcp.add_middleware(ToolInjectionMiddleware(tools=[my_tool]))
 ```
 
-<Note>
-`PromptToolMiddleware` and `ResourceToolMiddleware` are deprecated. Use the [ResourcesAsTools and PromptsAsTools transforms](/servers/transforms) instead, which provide better support for resource templates and other features.
-</Note>
-
 ### Response Limiting
 
 <VersionBadge version="3.0.0" />
