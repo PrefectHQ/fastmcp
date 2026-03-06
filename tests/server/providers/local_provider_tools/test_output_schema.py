@@ -286,17 +286,17 @@ class TestToolOutputSchema:
     async def test_output_schema_wraps_non_object_ref_schema(self):
         """Root $ref schemas should only skip wrapping when they resolve to objects."""
         mcp = FastMCP()
-        alias_type = TypeAliasType("AliasType", Literal["foo", "bar"])
+        AliasType = TypeAliasType("AliasType", Literal["foo", "bar"])
 
         @mcp.tool
-        def alias_tool() -> alias_type:
+        def alias_tool() -> AliasType:
             return "foo"
 
         tools = await mcp.list_tools()
         tool = next(t for t in tools if t.name == "alias_tool")
 
         expected_inner_schema = compress_schema(
-            TypeAdapter(alias_type).json_schema(mode="serialization"),
+            TypeAdapter(AliasType).json_schema(mode="serialization"),
             prune_titles=True,
         )
         assert tool.output_schema == {
