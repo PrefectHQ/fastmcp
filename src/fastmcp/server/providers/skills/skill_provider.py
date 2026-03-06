@@ -290,6 +290,7 @@ class SkillProvider(Provider):
                 name=f"{skill.name}/{self._main_file_name}",
                 description=skill.description,
                 mime_type="text/markdown",
+                tags=set(skill.frontmatter.get("tags", [])),
                 skill_info=skill,
                 is_manifest=False,
             )
@@ -362,6 +363,7 @@ class SkillProvider(Provider):
                 name=f"{skill_name}/{self._main_file_name}",
                 description=skill.description,
                 mime_type="text/markdown",
+                tags=set(skill.frontmatter.get("tags", [])),
                 skill_info=skill,
                 is_manifest=False,
             )
