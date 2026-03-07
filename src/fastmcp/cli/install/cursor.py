@@ -91,6 +91,9 @@ def install_cursor_workspace(
     if not workspace_path.exists():
         print(f"[red]Workspace directory does not exist: {workspace_path}[/red]")
         return False
+    if not workspace_path.is_dir():
+        print(f"[red]Workspace path is not a directory: {workspace_path}[/red]")
+        return False
 
     # Create .cursor directory in workspace
     cursor_dir = workspace_path / ".cursor"
