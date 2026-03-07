@@ -38,11 +38,6 @@ jobs:
       - name: Install dependencies
         run: uv sync --python 3.12
 
-      - name: Run prek
-        uses: j178/prek-action@v1
-        env:
-          SKIP: no-commit-to-branch
-
       - name: Generate Marvin App token
         id: marvin-token
         uses: actions/create-github-app-token@v2
