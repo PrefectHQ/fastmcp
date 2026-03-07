@@ -35,7 +35,10 @@ from uncalled_for.resolution import _Depends
 from fastmcp.exceptions import FastMCPError
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.http import _current_http_request
-from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.types import find_kwarg_by_type, is_class_member_of_type
 
 _logger = logging.getLogger(__name__)
@@ -580,7 +583,7 @@ def without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]:
     new_sig = inspect.Signature(user_params)
 
     # Create async wrapper that handles dependency resolution
-    fn_is_async = inspect.iscoroutinefunction(fn)
+    fn_is_async = is_coroutine_function(fn)
 
     async def wrapper(**user_kwargs: Any) -> Any:
         async with resolve_dependencies(fn, user_kwargs) as resolved_kwargs:

@@ -245,7 +245,10 @@ class TestDiscordHttpClient:
         from fastmcp.server.auth.providers.discord import DiscordTokenVerifier
 
         client = httpx.AsyncClient()
-        verifier = DiscordTokenVerifier(http_client=client)
+        verifier = DiscordTokenVerifier(
+            expected_client_id="test-client-id",
+            http_client=client,
+        )
         assert verifier._http_client is client
 
 

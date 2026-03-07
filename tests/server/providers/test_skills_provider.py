@@ -169,6 +169,28 @@ This is my skill content.
             assert "reference.md" in paths
             assert "scripts/helper.py" in paths
 
+    async def test_manifest_ignores_symlink_target_outside_skill(self, tmp_path: Path):
+        skill_dir = tmp_path / "symlinked-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Skill\n")
+
+        outside_file = tmp_path / "outside.txt"
+        outside_file.write_text("secret")
+        (skill_dir / "leak.txt").symlink_to(outside_file)
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(SkillProvider(skill_path=skill_dir))
+
+        async with Client(mcp) as client:
+            result = await client.read_resource(
+                AnyUrl("skill://symlinked-skill/_manifest")
+            )
+            manifest = json.loads(result[0].text)
+
+        paths = {f["path"] for f in manifest["files"]}
+        assert "SKILL.md" in paths
+        assert "leak.txt" not in paths
+
     async def test_read_supporting_file_via_template(self, single_skill_dir: Path):
         mcp = FastMCP("Test")
         mcp.add_provider(SkillProvider(skill_path=single_skill_dir))

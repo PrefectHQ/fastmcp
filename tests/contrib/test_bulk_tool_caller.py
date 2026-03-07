@@ -286,3 +286,64 @@ async def test_call_tools_bulk_error_continues(bulk_caller_live: BulkToolCaller)
             ),
         ]
     )
+
+
+async def test_call_tools_bulk_blocks_self_invocation(bulk_caller_live: BulkToolCaller):
+    """Test call_tools_bulk blocks recursive calls to bulk tools."""
+    tool_calls = [
+        CallToolRequest(tool="call_tools_bulk", arguments={"tool_calls": []}),
+        CallToolRequest(tool=ECHO_TOOL_NAME, arguments={"arg1": "success_value"}),
+    ]
+
+    results = await bulk_caller_live.call_tools_bulk(tool_calls, continue_on_error=True)
+
+    assert results == snapshot(
+        [
+            CallToolRequestResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=(
+                            "BulkToolCaller cannot call itself. "
+                            "The tools 'call_tools_bulk' and 'call_tool_bulk' are disallowed."
+                        ),
+                    )
+                ],
+                isError=True,
+                tool="call_tools_bulk",
+                arguments={"tool_calls": []},
+            ),
+            CallToolRequestResult(
+                content=[TextContent(type="text", text="success_value")],
+                tool="echo_tool",
+                arguments={"arg1": "success_value"},
+            ),
+        ]
+    )
+
+
+async def test_call_tool_bulk_blocks_self_invocation(bulk_caller_live: BulkToolCaller):
+    """Test call_tool_bulk blocks recursive calls to bulk tools."""
+
+    results = await bulk_caller_live.call_tool_bulk(
+        "call_tool_bulk", [{"arg1": "value1"}], continue_on_error=False
+    )
+
+    assert results == snapshot(
+        [
+            CallToolRequestResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=(
+                            "BulkToolCaller cannot call itself. "
+                            "The tools 'call_tools_bulk' and 'call_tool_bulk' are disallowed."
+                        ),
+                    )
+                ],
+                isError=True,
+                tool="call_tool_bulk",
+                arguments={"arg1": "value1"},
+            )
+        ]
+    )

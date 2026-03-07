@@ -441,6 +441,23 @@ class TestWindowsSpecific:
             assert mock_run.call_count == 2
 
     @patch("subprocess.run")
+    def test_get_npx_command_windows_cmd_missing(self, mock_run):
+        """Test npx command detection continues when npx.cmd is missing."""
+        from fastmcp.cli.cli import _get_npx_command
+
+        with patch("sys.platform", "win32"):
+            # Missing npx.cmd should not abort detection
+            mock_run.side_effect = [
+                FileNotFoundError("npx.cmd not found"),
+                Mock(returncode=0),
+            ]
+
+            result = _get_npx_command()
+
+            assert result == "npx.exe"
+            assert mock_run.call_count == 2
+
+    @patch("subprocess.run")
     def test_get_npx_command_windows_fallback(self, mock_run):
         """Test npx command detection on Windows with plain npx."""
         from fastmcp.cli.cli import _get_npx_command

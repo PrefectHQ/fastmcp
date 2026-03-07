@@ -1,16 +1,17 @@
 """Tests for tool output schemas."""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from mcp.types import (
     TextContent,
 )
 from pydantic import AnyUrl, BaseModel, TypeAdapter
-from typing_extensions import TypedDict
+from typing_extensions import TypeAliasType, TypedDict
 
 from fastmcp import FastMCP
+from fastmcp.tools.function_parsing import _is_object_schema
 from fastmcp.tools.tool import ToolResult
 from fastmcp.utilities.json_schema import compress_schema
 
@@ -282,3 +283,99 @@ class TestToolOutputSchema:
 
         result = await mcp.call_tool("edge_case_tool", {})
         assert result.structured_content == {"result": [42, "hello"]}
+
+    async def test_output_schema_wraps_non_object_ref_schema(self):
+        """Root $ref schemas should only skip wrapping when they resolve to objects."""
+        mcp = FastMCP()
+        AliasType = TypeAliasType("AliasType", Literal["foo", "bar"])
+
+        @mcp.tool
+        def alias_tool() -> AliasType:
+            return "foo"
+
+        tools = await mcp.list_tools()
+        tool = next(t for t in tools if t.name == "alias_tool")
+
+        expected_inner_schema = compress_schema(
+            TypeAdapter(AliasType).json_schema(mode="serialization"),
+            prune_titles=True,
+        )
+        assert tool.output_schema == {
+            "type": "object",
+            "properties": {"result": expected_inner_schema},
+            "required": ["result"],
+            "x-fastmcp-wrap-result": True,
+        }
+
+        result = await mcp.call_tool("alias_tool", {})
+        assert result.structured_content == {"result": "foo"}
+
+
+class TestIsObjectSchemaRefResolution:
+    """Tests for $ref resolution in _is_object_schema, including JSON Pointer
+    escaping and nested $defs paths."""
+
+    def test_simple_ref_to_object(self):
+        schema = {
+            "$ref": "#/$defs/MyModel",
+            "$defs": {
+                "MyModel": {"type": "object", "properties": {"x": {"type": "int"}}}
+            },
+        }
+        assert _is_object_schema(schema) is True
+
+    def test_simple_ref_to_non_object(self):
+        schema = {
+            "$ref": "#/$defs/MyEnum",
+            "$defs": {"MyEnum": {"enum": ["a", "b"]}},
+        }
+        assert _is_object_schema(schema) is False
+
+    def test_nested_defs_path(self):
+        """Refs like #/$defs/Outer/$defs/Inner should walk into nested dicts."""
+        schema = {
+            "$ref": "#/$defs/Outer/$defs/Inner",
+            "$defs": {
+                "Outer": {
+                    "$defs": {
+                        "Inner": {
+                            "type": "object",
+                            "properties": {"y": {"type": "string"}},
+                        },
+                    },
+                },
+            },
+        }
+        assert _is_object_schema(schema) is True
+
+    def test_nested_defs_non_object(self):
+        schema = {
+            "$ref": "#/$defs/Outer/$defs/Inner",
+            "$defs": {
+                "Outer": {
+                    "$defs": {
+                        "Inner": {"type": "string"},
+                    },
+                },
+            },
+        }
+        assert _is_object_schema(schema) is False
+
+    def test_json_pointer_tilde_escape(self):
+        """~0 should unescape to ~ and ~1 should unescape to /."""
+        schema = {
+            "$ref": "#/$defs/has~1slash~0tilde",
+            "$defs": {"has/slash~tilde": {"type": "object", "properties": {}}},
+        }
+        assert _is_object_schema(schema) is True
+
+    def test_missing_nested_segment_returns_false(self):
+        schema = {
+            "$ref": "#/$defs/Outer/$defs/Missing",
+            "$defs": {
+                "Outer": {
+                    "$defs": {},
+                },
+            },
+        }
+        assert _is_object_schema(schema) is False

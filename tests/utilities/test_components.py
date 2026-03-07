@@ -13,6 +13,7 @@ from fastmcp.utilities.components import (
     FastMCPComponent,
     FastMCPMeta,
     _convert_set_default_none,
+    get_fastmcp_metadata,
 )
 
 
@@ -249,6 +250,25 @@ class TestKeyPrefix:
 
             assert len(w) == 0
             assert WithPrefix.make_key("test") == "custom:test"
+
+
+class TestGetFastMCPMetadata:
+    """Tests for get_fastmcp_metadata helper."""
+
+    def test_returns_fastmcp_namespace_when_dict(self):
+        meta = {"fastmcp": {"tags": ["a"]}, "_fastmcp": {"tags": ["b"]}}
+
+        assert get_fastmcp_metadata(meta) == {"tags": ["a"]}
+
+    def test_falls_back_to_legacy_namespace_when_dict(self):
+        meta = {"fastmcp": "invalid", "_fastmcp": {"tags": ["legacy"]}}
+
+        assert get_fastmcp_metadata(meta) == {"tags": ["legacy"]}
+
+    def test_ignores_non_dict_metadata(self):
+        assert get_fastmcp_metadata({"fastmcp": "invalid"}) == {}
+        assert get_fastmcp_metadata({"fastmcp": ["invalid"]}) == {}
+        assert get_fastmcp_metadata({"_fastmcp": "invalid"}) == {}
 
 
 class TestComponentEnableDisable:

@@ -263,6 +263,73 @@ class TestQueryParameterWithWildcards:
         assert result["lines"] == 50  # provided
 
 
+class TestBooleanQueryParameterValidation:
+    """Test that invalid boolean query parameter values raise errors."""
+
+    async def _make_template(self):
+        def get_config(name: str, enabled: bool = False) -> dict:
+            return {"name": name, "enabled": enabled}
+
+        return ResourceTemplate.from_function(
+            fn=get_config,
+            uri_template="config://{name}{?enabled}",
+            name="test",
+        )
+
+    async def test_invalid_boolean_value_raises_error(self):
+        """Test that nonsense boolean values like 'banana' raise ValueError."""
+        template = await self._make_template()
+
+        with pytest.raises(ValueError, match="Invalid boolean value for enabled"):
+            resource = await template.create_resource(
+                "config://feature?enabled=banana",
+                {"name": "feature", "enabled": "banana"},
+            )
+            await resource.read()
+
+    @pytest.mark.parametrize(
+        "value", ["true", "True", "TRUE", "1", "yes", "Yes", "YES"]
+    )
+    async def test_valid_true_values(self, value: str):
+        """Test that all accepted truthy string values coerce to True."""
+        template = await self._make_template()
+
+        resource = await template.create_resource(
+            f"config://feature?enabled={value}",
+            {"name": "feature", "enabled": value},
+        )
+        result = await resource.read()
+        assert isinstance(result, dict)
+        assert result["enabled"] is True
+
+    @pytest.mark.parametrize(
+        "value", ["false", "False", "FALSE", "0", "no", "No", "NO"]
+    )
+    async def test_valid_false_values(self, value: str):
+        """Test that all accepted falsy string values coerce to False."""
+        template = await self._make_template()
+
+        resource = await template.create_resource(
+            f"config://feature?enabled={value}",
+            {"name": "feature", "enabled": value},
+        )
+        result = await resource.read()
+        assert isinstance(result, dict)
+        assert result["enabled"] is False
+
+    @pytest.mark.parametrize("value", ["banana", "nope", "2", "truee", ""])
+    async def test_various_invalid_boolean_values(self, value: str):
+        """Test that various invalid boolean strings raise ValueError."""
+        template = await self._make_template()
+
+        with pytest.raises(ValueError, match="Invalid boolean value for enabled"):
+            resource = await template.create_resource(
+                f"config://feature?enabled={value}",
+                {"name": "feature", "enabled": value},
+            )
+            await resource.read()
+
+
 class TestResourceTemplateFieldDefaults:
     """Test resource templates with Field() defaults."""
 
