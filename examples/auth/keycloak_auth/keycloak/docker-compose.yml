@@ -1,0 +1,28 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    container_name: keycloak-fastmcp
+    environment:
+      # Admin credentials
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin123
+
+      # Overwrite existing realm in database by re-importing realm from
+      # `./data/import/realm-export.json` upon every startup
+      KC_IMPORT_REALM_STRATEGY: OVERWRITE_EXISTING
+    ports:
+      - "8080:8080"
+
+    command:
+      - start-dev
+      - --import-realm
+
+    volumes:
+      - ./realm-fastmcp.json:/opt/keycloak/data/import/realm-export.json
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
