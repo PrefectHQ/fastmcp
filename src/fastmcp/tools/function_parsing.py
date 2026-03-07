@@ -83,18 +83,24 @@ def _is_object_schema(
 
     # Resolve local $ref definitions and recurse into the target schema.
     ref = schema.get("$ref")
-    if not isinstance(ref, str) or not ref.startswith("#/$defs/"):
+    if not isinstance(ref, str) or not ref.startswith("#/"):
         return False
 
     if ref in seen_refs:
         return False
 
-    definition_name = ref.removeprefix("#/$defs/")
-    definitions = root_schema.get("$defs")
-    if not isinstance(definitions, dict):
-        return False
+    # Walk the JSON Pointer path from the root schema, unescaping each
+    # token per RFC 6901 (~1 → /, ~0 → ~).
+    pointer = ref.removeprefix("#/")
+    segments = pointer.split("/")
+    target: Any = root_schema
+    for segment in segments:
+        unescaped = segment.replace("~1", "/").replace("~0", "~")
+        if not isinstance(target, dict) or unescaped not in target:
+            return False
+        target = target[unescaped]
 
-    target_schema = definitions.get(definition_name)
+    target_schema = target
     if not isinstance(target_schema, dict):
         return False
 
