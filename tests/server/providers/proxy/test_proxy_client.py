@@ -419,7 +419,9 @@ class TestProxyClient:
         assert hasattr(proxy_via_as_proxy, "_local_provider")
         assert hasattr(proxy_via_factory, "_local_provider")
 
-    async def test_connected_proxy_client_uses_fresh_sessions(self, fastmcp_server: FastMCP):
+    async def test_connected_proxy_client_uses_fresh_sessions(
+        self, fastmcp_server: FastMCP
+    ):
         """Connected ProxyClient targets should create fresh sessions to avoid stale context."""
         async with ProxyClient(fastmcp_server) as connected_client:
             factory = _create_client_factory(connected_client)
@@ -427,6 +429,8 @@ class TestProxyClient:
             client_a = factory()
             client_b = factory()
 
+            assert isinstance(client_a, Client)
+            assert isinstance(client_b, Client)
             assert client_a is not connected_client
             assert client_b is not connected_client
             assert client_a is not client_b
