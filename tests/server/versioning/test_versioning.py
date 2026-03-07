@@ -3,9 +3,13 @@
 
 from __future__ import annotations
 
+from typing import cast
+
+import pytest
 from mcp.types import TextContent
 
 from fastmcp import FastMCP
+from fastmcp.tools import Tool
 from fastmcp.utilities.versions import (
     VersionKey,
     compare_versions,
@@ -256,3 +260,45 @@ class TestComponentVersioning:
         prompt = await mcp.get_prompt("greet")
         assert prompt is not None
         assert prompt.version == "2.0"
+
+
+class TestVersionValidation:
+    """Tests for version type validation in components and server."""
+
+    async def test_fastmcp_version_int_coerced(self):
+        """FastMCP(version=42) should coerce to string '42'."""
+        mcp = FastMCP(version=42)
+        assert mcp._mcp_server.version == "42"
+
+    async def test_fastmcp_version_float_coerced(self):
+        """FastMCP(version=1.5) should coerce to string."""
+        mcp = FastMCP(version=1.5)
+        assert mcp._mcp_server.version == "1.5"
+
+    async def test_tool_version_list_rejected(self):
+        """Tool with version=[1, 2] should raise TypeError."""
+        with pytest.raises(TypeError, match="Version must be a string"):
+            Tool(
+                name="t",
+                version=cast(str, [1, 2]),
+                parameters={"type": "object"},
+            )
+
+    async def test_tool_version_dict_rejected(self):
+        """Tool with version={'major': 1} should raise TypeError."""
+        with pytest.raises(TypeError, match="Version must be a string"):
+            Tool(
+                name="t",
+                version=cast(str, {"major": 1}),
+                parameters={"type": "object"},
+            )
+
+    async def test_fastmcp_version_list_rejected(self):
+        """FastMCP(version=[1, 2]) should raise TypeError."""
+        with pytest.raises(TypeError, match="Version must be a string"):
+            FastMCP(version=cast(str, [1, 2]))
+
+    async def test_fastmcp_version_dict_rejected(self):
+        """FastMCP(version={'v': 1}) should raise TypeError."""
+        with pytest.raises(TypeError, match="Version must be a string"):
+            FastMCP(version=cast(str, {"v": 1}))
