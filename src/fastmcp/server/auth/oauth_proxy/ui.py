@@ -84,7 +84,7 @@ def create_consent_html(
     detail_rows = [
         ("Application Name", html_module.escape(client_name or client_id)),
         ("Application Website", html_module.escape(client_website_url or "N/A")),
-        ("Application ID", client_id),
+        ("Application ID", html_module.escape(client_id)),
         ("Redirect URI", redirect_uri_escaped),
         (
             "Requested Scopes",
