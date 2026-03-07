@@ -88,12 +88,14 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
                     globals_dict = actual_func.__globals__  # ty: ignore[unresolved-attribute]
                     name = actual_func.__name__  # ty: ignore[unresolved-attribute]
                     defaults = actual_func.__defaults__  # ty: ignore[unresolved-attribute]
+                    kwdefaults = actual_func.__kwdefaults__  # ty: ignore[unresolved-attribute]
                     closure = actual_func.__closure__  # ty: ignore[unresolved-attribute]
                 else:
                     code = cls.__code__
                     globals_dict = cls.__globals__
                     name = cls.__name__
                     defaults = cls.__defaults__
+                    kwdefaults = cls.__kwdefaults__
                     closure = cls.__closure__
 
                 new_func = types.FunctionType(
@@ -107,6 +109,7 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
                 new_func.__module__ = cls.__module__
                 new_func.__qualname__ = getattr(cls, "__qualname__", cls.__name__)
                 new_func.__annotations__ = processed_hints
+                new_func.__kwdefaults__ = kwdefaults
 
                 if inspect.ismethod(cls):
                     new_method = types.MethodType(new_func, cls.__self__)
