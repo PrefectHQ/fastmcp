@@ -642,6 +642,17 @@ def _create_client_factory(
     """
     if isinstance(target, Client):
         client = target
+        if client.is_connected() and type(client) is ProxyClient:
+            logger.info(
+                "Proxy detected connected ProxyClient - creating fresh sessions for each "
+                "request to avoid request context leakage."
+            )
+
+            def fresh_client_factory() -> Client:
+                return client.new()
+
+            return fresh_client_factory
+
         if client.is_connected():
             logger.info(
                 "Proxy detected connected client - reusing existing session for all requests. "
@@ -652,12 +663,11 @@ def _create_client_factory(
                 return client
 
             return reuse_client_factory
-        else:
 
-            def fresh_client_factory() -> Client:
-                return client.new()
+        def fresh_client_factory() -> Client:
+            return client.new()
 
-            return fresh_client_factory
+        return fresh_client_factory
     else:
         # target is not a Client, so it's compatible with ProxyClient.__init__
         base_client = ProxyClient(cast(Any, target))
