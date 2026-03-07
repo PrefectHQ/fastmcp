@@ -1,5 +1,6 @@
 """Gemini CLI integration for FastMCP install using Cyclopts."""
 
+import shlex
 import shutil
 import subprocess
 import sys
@@ -129,8 +130,8 @@ def install_gemini_cli(
         for key, value in env_vars.items():
             cmd_parts.extend(["-e", f"{key}={value}"])
 
-    # Add server name and command
-    cmd_parts.extend([name, full_command[0], "--"])
+    # Add server name and command (escape name to prevent shell injection)
+    cmd_parts.extend([shlex.quote(name), full_command[0], "--"])
     cmd_parts.extend(full_command[1:])
 
     try:
