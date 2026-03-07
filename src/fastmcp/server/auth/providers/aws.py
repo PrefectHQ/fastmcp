@@ -26,7 +26,6 @@ from __future__ import annotations
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 
-from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
@@ -179,7 +178,7 @@ class AWSCognitoProvider(OIDCProxy):
         audience: str | None = None,
         required_scopes: list[str] | None = None,
         timeout_seconds: int | None = None,
-    ) -> TokenVerifier:
+    ) -> AWSCognitoTokenVerifier:
         """Creates a Cognito-specific token verifier with claim filtering.
 
         Args:
