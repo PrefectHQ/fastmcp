@@ -29,6 +29,17 @@ from fastmcp.utilities.openapi.director import RequestDirector
 if TYPE_CHECKING:
     from fastmcp.server import Context
 
+_SENSITIVE_HEADERS = frozenset(
+    {"authorization", "x-api-key", "cookie", "proxy-authorization"}
+)
+
+
+def _redact_headers(headers: httpx.Headers) -> dict[str, str]:
+    return {
+        k: "***" if k.lower() in _SENSITIVE_HEADERS else v for k, v in headers.items()
+    }
+
+
 __all__ = [
     "OpenAPIResource",
     "OpenAPIResourceTemplate",
@@ -183,7 +194,9 @@ class OpenAPITool(Tool):
 
         # Send the request and process the response.
         try:
-            logger.debug(f"run - sending request; headers: {request.headers}")
+            logger.debug(
+                f"run - sending request; headers: {_redact_headers(request.headers)}"
+            )
 
             response = await self._client.send(request)
             response.raise_for_status()

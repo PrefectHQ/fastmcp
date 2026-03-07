@@ -9,7 +9,10 @@ from httpx import Response
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.providers.openapi import OpenAPIProvider
-from fastmcp.server.providers.openapi.components import _extract_mime_type_from_route
+from fastmcp.server.providers.openapi.components import (
+    _extract_mime_type_from_route,
+    _redact_headers,
+)
 from fastmcp.server.providers.openapi.routing import MCPType, RouteMap
 from fastmcp.utilities.openapi.models import HTTPRoute, ResponseInfo
 
@@ -982,3 +985,31 @@ class TestValidateOutput:
             assert get_user.outputSchema.get("additionalProperties") is True
             # Should NOT have specific properties from the original schema
             assert "properties" not in get_user.outputSchema
+
+
+class TestRedactHeaders:
+    """Test that sensitive headers are redacted in debug logging."""
+
+    def test_sensitive_headers_are_redacted(self):
+        headers = httpx.Headers(
+            {
+                "Authorization": "Bearer secret-token",
+                "X-API-Key": "my-api-key",
+                "Cookie": "session=abc123",
+                "Proxy-Authorization": "Basic creds",
+                "Content-Type": "application/json",
+                "Accept": "text/html",
+            }
+        )
+        redacted = _redact_headers(headers)
+        assert redacted["authorization"] == "***"
+        assert redacted["x-api-key"] == "***"
+        assert redacted["cookie"] == "***"
+        assert redacted["proxy-authorization"] == "***"
+        assert redacted["content-type"] == "application/json"
+        assert redacted["accept"] == "text/html"
+
+    def test_no_sensitive_headers(self):
+        headers = httpx.Headers({"Content-Type": "application/json"})
+        redacted = _redact_headers(headers)
+        assert redacted == {"content-type": "application/json"}
