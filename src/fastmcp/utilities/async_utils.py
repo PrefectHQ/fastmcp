@@ -1,6 +1,8 @@
 """Async utilities for FastMCP."""
 
+import asyncio
 import functools
+import inspect
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal, TypeVar, overload
 
@@ -8,6 +10,18 @@ import anyio
 from anyio.to_thread import run_sync as run_sync_in_threadpool
 
 T = TypeVar("T")
+
+
+def is_coroutine_function(fn: Any) -> bool:
+    """Check if a callable is a coroutine function, unwrapping functools.partial.
+
+    ``inspect.iscoroutinefunction`` returns ``False`` for
+    ``functools.partial`` objects wrapping an async function on Python < 3.12.
+    This helper unwraps any layers of ``partial`` before checking.
+    """
+    while isinstance(fn, functools.partial):
+        fn = fn.func
+    return inspect.iscoroutinefunction(fn) or asyncio.iscoroutinefunction(fn)
 
 
 async def call_sync_fn_in_threadpool(
