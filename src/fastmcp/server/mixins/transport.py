@@ -210,6 +210,7 @@ class TransportMixin:
         json_response: bool | None = None,
         stateless_http: bool | None = None,
         stateless: bool | None = None,
+        session_idle_timeout: float | None = None,
     ) -> None:
         """Run the server using HTTP transport.
 
@@ -224,6 +225,9 @@ class TransportMixin:
             json_response: Whether to use JSON response format (defaults to settings.json_response)
             stateless_http: Whether to use stateless HTTP (defaults to settings.stateless_http)
             stateless: Alias for stateless_http for CLI consistency
+            session_idle_timeout: Optional timeout in seconds for idle sessions.
+                When set, sessions that receive no requests within this duration
+                are automatically cleaned up. Only used when stateless_http is False.
         """
         # Allow stateless as alias for stateless_http
         if stateless is not None and stateless_http is None:
@@ -247,6 +251,7 @@ class TransportMixin:
             middleware=middleware,
             json_response=json_response,
             stateless_http=stateless_http,
+            session_idle_timeout=session_idle_timeout,
         )
 
         # Display server banner
@@ -282,6 +287,7 @@ class TransportMixin:
         middleware: list[ASGIMiddleware] | None = None,
         json_response: bool | None = None,
         stateless_http: bool | None = None,
+        session_idle_timeout: float | None = None,
         transport: Literal["http", "streamable-http", "sse"] = "http",
         event_store: EventStore | None = None,
         retry_interval: int | None = None,
@@ -293,6 +299,10 @@ class TransportMixin:
             middleware: A list of middleware to apply to the app
             json_response: Whether to use JSON response format
             stateless_http: Whether to use stateless mode (new transport per request)
+            session_idle_timeout: Optional timeout in seconds for idle sessions.
+                When set, sessions that receive no requests within this duration
+                are automatically cleaned up. Only used with streamable-http
+                transport when stateless_http is False.
             transport: Transport protocol to use - "http", "streamable-http", or "sse"
             event_store: Optional event store for SSE polling/resumability. When set,
                 enables clients to reconnect and resume receiving events after
@@ -322,6 +332,11 @@ class TransportMixin:
                     stateless_http
                     if stateless_http is not None
                     else fastmcp.settings.stateless_http
+                ),
+                session_idle_timeout=(
+                    session_idle_timeout
+                    if session_idle_timeout is not None
+                    else fastmcp.settings.session_idle_timeout
                 ),
                 debug=fastmcp.settings.debug,
                 middleware=middleware,
