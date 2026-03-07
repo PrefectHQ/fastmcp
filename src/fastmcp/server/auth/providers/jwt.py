@@ -139,6 +139,19 @@ class RSAKeyPair:
         return token_bytes.decode("utf-8")
 
 
+def _looks_like_pem_public_key(key: str) -> bool:
+    """Return True when key text appears to be PEM-encoded asymmetric key material."""
+    key_text = key.strip()
+    pem_markers = (
+        "-----BEGIN PUBLIC KEY-----",
+        "-----BEGIN RSA PUBLIC KEY-----",
+        "-----BEGIN EC PUBLIC KEY-----",
+        "-----BEGIN CERTIFICATE-----",
+    )
+    return any(marker in key_text for marker in pem_markers)
+
+
+
 class JWTVerifier(TokenVerifier):
     """
     JWT token verifier supporting both asymmetric (RSA/ECDSA) and symmetric (HMAC) algorithms.
@@ -224,6 +237,17 @@ class JWTVerifier(TokenVerifier):
             "PS512",
         }:
             raise ValueError(f"Unsupported algorithm: {algorithm}.")
+
+        if algorithm.startswith("HS"):
+            if jwks_uri:
+                raise ValueError(
+                    "Symmetric HS* algorithms cannot be used with jwks_uri; "
+                    "configure a shared secret via public_key instead."
+                )
+            if public_key and _looks_like_pem_public_key(public_key):
+                raise ValueError(
+                    "Symmetric HS* algorithms require a shared secret, not a public key."
+                )
 
         # Parse scopes if provided as string
         parsed_required_scopes = (
