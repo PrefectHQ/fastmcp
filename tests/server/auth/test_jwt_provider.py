@@ -233,6 +233,14 @@ class TestSymmetricKeyJWT:
                 algorithm="HS256",
             )
 
+    def test_symmetric_algorithm_accepts_bytes_secret(self):
+        """HS* algorithms accept bytes secrets without TypeError."""
+        verifier = JWTVerifier(
+            public_key=b"secret",
+            algorithm="HS256",
+        )
+        assert verifier.algorithm == "HS256"
+
     async def test_valid_symmetric_token_validation(
         self, symmetric_key_helper: SymmetricKeyHelper, symmetric_provider: JWTVerifier
     ):
