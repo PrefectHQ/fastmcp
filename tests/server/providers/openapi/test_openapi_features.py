@@ -988,9 +988,9 @@ class TestValidateOutput:
 
 
 class TestRedactHeaders:
-    """Test that sensitive headers are redacted in debug logging."""
+    """Test that non-safe headers are redacted in debug logging."""
 
-    def test_sensitive_headers_are_redacted(self):
+    def test_known_sensitive_headers_are_redacted(self):
         headers = httpx.Headers(
             {
                 "Authorization": "Bearer secret-token",
@@ -1009,7 +1009,21 @@ class TestRedactHeaders:
         assert redacted["content-type"] == "application/json"
         assert redacted["accept"] == "text/html"
 
-    def test_no_sensitive_headers(self):
+    def test_arbitrary_auth_headers_are_redacted(self):
+        """Arbitrary header names (e.g. OpenAPI apiKey-in-header) are redacted."""
+        headers = httpx.Headers(
+            {
+                "X-Custom-Token": "secret",
+                "X-My-Service-Key": "also-secret",
+                "Content-Type": "application/json",
+            }
+        )
+        redacted = _redact_headers(headers)
+        assert redacted["x-custom-token"] == "***"
+        assert redacted["x-my-service-key"] == "***"
+        assert redacted["content-type"] == "application/json"
+
+    def test_safe_only_headers(self):
         headers = httpx.Headers({"Content-Type": "application/json"})
         redacted = _redact_headers(headers)
         assert redacted == {"content-type": "application/json"}

@@ -29,15 +29,23 @@ from fastmcp.utilities.openapi.director import RequestDirector
 if TYPE_CHECKING:
     from fastmcp.server import Context
 
-_SENSITIVE_HEADERS = frozenset(
-    {"authorization", "x-api-key", "cookie", "proxy-authorization"}
+_SAFE_HEADERS = frozenset(
+    {
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "cache-control",
+        "connection",
+        "content-length",
+        "content-type",
+        "host",
+        "user-agent",
+    }
 )
 
 
 def _redact_headers(headers: httpx.Headers) -> dict[str, str]:
-    return {
-        k: "***" if k.lower() in _SENSITIVE_HEADERS else v for k, v in headers.items()
-    }
+    return {k: v if k.lower() in _SAFE_HEADERS else "***" for k, v in headers.items()}
 
 
 __all__ = [
