@@ -683,7 +683,9 @@ class TestAnnotationStringDescriptions:
 
         assert "required" not in schema
         assert schema["properties"]["limit"]["default"] == 5
-        assert schema["properties"]["limit"]["description"] == "Maximum number of results"
+        assert (
+            schema["properties"]["limit"]["description"] == "Maximum number of results"
+        )
 
         validated = adapter.validate_python({})
         assert validated == 5
