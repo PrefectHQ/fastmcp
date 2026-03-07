@@ -83,12 +83,26 @@ class WorkOSTokenVerifier(TokenVerifier):
                     return None
 
                 user_data = response.json()
+                token_scopes = (
+                    parse_scopes(user_data.get("scope") or user_data.get("scopes"))
+                    or []
+                )
+
+                if self.required_scopes and not all(
+                    scope in token_scopes for scope in self.required_scopes
+                ):
+                    logger.debug(
+                        "WorkOS token missing required scopes. required=%s actual=%s",
+                        self.required_scopes,
+                        token_scopes,
+                    )
+                    return None
 
                 # Create AccessToken with WorkOS user info
                 return AccessToken(
                     token=token,
                     client_id=str(user_data.get("sub", "unknown")),
-                    scopes=self.required_scopes or [],
+                    scopes=token_scopes,
                     expires_at=None,  # Will be set from token introspection if needed
                     claims={
                         "sub": user_data.get("sub"),
