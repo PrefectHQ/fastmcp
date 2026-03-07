@@ -612,9 +612,22 @@ class FastMCP(
         all_tools = [t for t in await super().list_tools() if t.name == name]
         all_tools = list(await apply_session_transforms(all_tools))
         enabled = [t for t in all_tools if is_enabled(t)]
-        if not enabled:
+
+        skip_auth, token = _get_auth_context()
+        authorized: list[Tool] = []
+        for t in enabled:
+            if not skip_auth and t.auth is not None:
+                ctx = AuthContext(token=token, component=t)
+                try:
+                    if not await run_auth_checks(t.auth, ctx):
+                        continue
+                except AuthorizationError:
+                    continue
+            authorized.append(t)
+
+        if not authorized:
             return None
-        return cast(Tool, max(enabled, key=version_sort_key))
+        return cast(Tool, max(authorized, key=version_sort_key))
 
     async def list_resources(
         self, *, run_middleware: bool = True
@@ -721,9 +734,22 @@ class FastMCP(
         all_resources = [r for r in await super().list_resources() if str(r.uri) == uri]
         all_resources = list(await apply_session_transforms(all_resources))
         enabled = [r for r in all_resources if is_enabled(r)]
-        if not enabled:
+
+        skip_auth, token = _get_auth_context()
+        authorized: list[Resource] = []
+        for r in enabled:
+            if not skip_auth and r.auth is not None:
+                ctx = AuthContext(token=token, component=r)
+                try:
+                    if not await run_auth_checks(r.auth, ctx):
+                        continue
+                except AuthorizationError:
+                    continue
+            authorized.append(r)
+
+        if not authorized:
             return None
-        return cast(Resource, max(enabled, key=version_sort_key))
+        return cast(Resource, max(authorized, key=version_sort_key))
 
     async def list_resource_templates(
         self, *, run_middleware: bool = True
@@ -836,9 +862,22 @@ class FastMCP(
         ]
         all_templates = list(await apply_session_transforms(all_templates))
         enabled = [t for t in all_templates if is_enabled(t)]
-        if not enabled:
+
+        skip_auth, token = _get_auth_context()
+        authorized: list[ResourceTemplate] = []
+        for t in enabled:
+            if not skip_auth and t.auth is not None:
+                ctx = AuthContext(token=token, component=t)
+                try:
+                    if not await run_auth_checks(t.auth, ctx):
+                        continue
+                except AuthorizationError:
+                    continue
+            authorized.append(t)
+
+        if not authorized:
             return None
-        return cast(ResourceTemplate, max(enabled, key=version_sort_key))
+        return cast(ResourceTemplate, max(authorized, key=version_sort_key))
 
     async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
         """List all enabled prompts from providers.
@@ -943,9 +982,22 @@ class FastMCP(
         all_prompts = [p for p in await super().list_prompts() if p.name == name]
         all_prompts = list(await apply_session_transforms(all_prompts))
         enabled = [p for p in all_prompts if is_enabled(p)]
-        if not enabled:
+
+        skip_auth, token = _get_auth_context()
+        authorized: list[Prompt] = []
+        for p in enabled:
+            if not skip_auth and p.auth is not None:
+                ctx = AuthContext(token=token, component=p)
+                try:
+                    if not await run_auth_checks(p.auth, ctx):
+                        continue
+                except AuthorizationError:
+                    continue
+            authorized.append(p)
+
+        if not authorized:
             return None
-        return cast(Prompt, max(enabled, key=version_sort_key))
+        return cast(Prompt, max(authorized, key=version_sort_key))
 
     @overload
     async def call_tool(
