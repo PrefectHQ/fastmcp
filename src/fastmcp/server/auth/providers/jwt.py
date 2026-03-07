@@ -151,7 +151,6 @@ def _looks_like_pem_public_key(key: str) -> bool:
     return any(marker in key_text for marker in pem_markers)
 
 
-
 class JWTVerifier(TokenVerifier):
     """
     JWT token verifier supporting both asymmetric (RSA/ECDSA) and symmetric (HMAC) algorithms.

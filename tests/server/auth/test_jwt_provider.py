@@ -215,7 +215,6 @@ class TestSymmetricKeyJWT:
             )
             assert provider.algorithm == algorithm
 
-
     def test_symmetric_algorithm_rejects_jwks_uri(self):
         """HS* algorithms must not be configured with JWKS/public key endpoints."""
         with pytest.raises(ValueError, match="cannot be used with jwks_uri"):
