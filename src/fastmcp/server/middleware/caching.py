@@ -101,7 +101,12 @@ class CachableMessage(FastMCPBaseModel):
     """A wrapper for Message that can be cached."""
 
     role: str
-    content: mcp.types.TextContent | mcp.types.EmbeddedResource
+    content: (
+        mcp.types.TextContent
+        | mcp.types.ImageContent
+        | mcp.types.AudioContent
+        | mcp.types.EmbeddedResource
+    )
 
 
 class CachablePromptResult(FastMCPBaseModel):

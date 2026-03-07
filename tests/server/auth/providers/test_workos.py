@@ -5,10 +5,15 @@ from urllib.parse import urlparse
 import httpx
 import pytest
 from key_value.aio.stores.memory import MemoryStore
+from pytest_httpx import HTTPXMock
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
-from fastmcp.server.auth.providers.workos import AuthKitProvider, WorkOSProvider
+from fastmcp.server.auth.providers.workos import (
+    AuthKitProvider,
+    WorkOSProvider,
+    WorkOSTokenVerifier,
+)
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
 
 
@@ -165,3 +170,50 @@ class TestAuthKitProvider:
     #     assert tools is not None
     #     assert len(tools) > 0
     #     assert "add" in tools
+
+
+class TestWorkOSTokenVerifierScopes:
+    async def test_verify_token_rejects_missing_required_scopes(
+        self, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(
+            url="https://test.authkit.app/oauth2/userinfo",
+            status_code=200,
+            json={
+                "sub": "user_123",
+                "email": "user@example.com",
+                "scope": "openid profile",
+            },
+        )
+
+        verifier = WorkOSTokenVerifier(
+            authkit_domain="https://test.authkit.app",
+            required_scopes=["read:secrets"],
+        )
+
+        result = await verifier.verify_token("token")
+
+        assert result is None
+
+    async def test_verify_token_returns_actual_token_scopes(
+        self, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(
+            url="https://test.authkit.app/oauth2/userinfo",
+            status_code=200,
+            json={
+                "sub": "user_123",
+                "email": "user@example.com",
+                "scope": "openid profile read:secrets",
+            },
+        )
+
+        verifier = WorkOSTokenVerifier(
+            authkit_domain="https://test.authkit.app",
+            required_scopes=["read:secrets"],
+        )
+
+        result = await verifier.verify_token("token")
+
+        assert result is not None
+        assert result.scopes == ["openid", "profile", "read:secrets"]

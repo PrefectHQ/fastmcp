@@ -7,7 +7,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse
 
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
-from fastmcp.server.auth.oauth_proxy.ui import create_error_html
+from fastmcp.server.auth.oauth_proxy.ui import create_consent_html, create_error_html
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 
@@ -99,3 +99,21 @@ class TestErrorPageRendering:
         assert b"invalid_scope" in response.body
         assert b"doesn&#x27;t exist" in response.body  # HTML-escaped apostrophe
         assert b"OAuth Error" in response.body
+
+
+class TestConsentPageRendering:
+    """Test consent page rendering and escaping."""
+
+    def test_create_consent_html_escapes_client_id_in_details(self):
+        """Test that Application ID is escaped in advanced details."""
+
+        html = create_consent_html(
+            client_id='evil<img src=x onerror=alert("xss")>',
+            redirect_uri="https://example.com/callback",
+            scopes=["read"],
+            txn_id="txn",
+            csrf_token="csrf",
+        )
+
+        assert 'evil<img src=x onerror=alert("xss")>' not in html
+        assert "evil&lt;img src=x onerror=alert(&quot;xss&quot;)&gt;" in html

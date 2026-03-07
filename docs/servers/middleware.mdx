@@ -535,30 +535,6 @@ mcp.add_middleware(PingMiddleware(interval_ms=5000))
 
 The ping task starts on the first message and stops automatically when the session ends. Most useful for stateful HTTP connections; has no effect on stateless connections.
 
-### Tool Injection
-
-```python
-from fastmcp.server.middleware.tool_injection import (
-    ToolInjectionMiddleware,
-    PromptToolMiddleware,
-    ResourceToolMiddleware
-)
-```
-
-`ToolInjectionMiddleware` dynamically injects tools during request processing. `PromptToolMiddleware` and `ResourceToolMiddleware` provide compatibility layers for clients that cannot list or access prompts and resources directly—they expose those capabilities as tools.
-
-```python
-from fastmcp import FastMCP
-from fastmcp.tools import Tool
-from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
-
-def my_tool_fn(a: int, b: int) -> int:
-    return a + b
-
-my_tool = Tool.from_function(fn=my_tool_fn, name="my_tool")
-mcp.add_middleware(ToolInjectionMiddleware(tools=[my_tool]))
-```
-
 ### Response Limiting
 
 <VersionBadge version="3.0.0" />
