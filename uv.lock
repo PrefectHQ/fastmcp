@@ -853,7 +853,7 @@ requires-dist = [
     { name = "opentelemetry-api", specifier = ">=1.20.0" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "platformdirs", specifier = ">=4.0.0" },
-    { name = "prefab-ui", marker = "extra == 'apps'", specifier = ">=0.6.0" },
+    { name = "prefab-ui", marker = "extra == 'apps'", specifier = ">=0.10.0" },
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], specifier = ">=0.4.4,<0.5.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pydantic-monty", marker = "extra == 'code-mode'", specifier = ">=0.0.7" },
@@ -1762,16 +1762,16 @@ wheels = [
 
 [[package]]
 name = "prefab-ui"
-version = "0.8.3"
+version = "0.10.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cyclopts" },
     { name = "pydantic" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/04/32/e7bc3db47cd93e2683241bd2a328b3136c44c4332a4277a2ac2f3f6beca4/prefab_ui-0.8.3.tar.gz", hash = "sha256:bfe1304f0fc457da764763232f533bff732160e8cc8ce12977ba48f8e7574152", size = 2819196, upload-time = "2026-02-27T14:44:10.52Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/d6/5ee4ae4ac373df647b39439f290736075e5b0c9dc4afd7f1cba9049157ae/prefab_ui-0.10.0.tar.gz", hash = "sha256:9db66a497b82373cd53f44ee0fd34052ff8069d904acf3bed270f87fe81fa411", size = 2836032, upload-time = "2026-03-04T21:42:49.22Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ed/23/cbc8decc176428a1f03b676fee4242f8a8d0ae7e76d5fc76ff96f13f13c1/prefab_ui-0.8.3-py3-none-any.whl", hash = "sha256:b1bac064958f08b20694e67b916ad8ab82de8db883578c31ba4437b521b425e1", size = 803888, upload-time = "2026-02-27T14:44:09.31Z" },
+    { url = "https://files.pythonhosted.org/packages/57/98/a452b8dee643b7deb70315b5319ed155cf473bf5b279861ca74f00add8bc/prefab_ui-0.10.0-py3-none-any.whl", hash = "sha256:fc2e79605316ff560419132f8071e0c855dcfe7851f9f9351ca619983676271c", size = 809122, upload-time = "2026-03-04T21:42:46.669Z" },
 ]
 
 [[package]]
