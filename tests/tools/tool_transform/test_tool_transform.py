@@ -482,6 +482,20 @@ def test_transform_args_creates_duplicate_names(add_tool):
         )
 
 
+def test_transform_args_collision_with_passthrough_name(add_tool):
+    """Test that renaming to a passthrough parameter name raises ValueError."""
+    with pytest.raises(
+        ValueError,
+        match="Multiple arguments would be mapped to the same names: old_y",
+    ):
+        Tool.from_tool(
+            add_tool,
+            transform_args={
+                "old_x": ArgTransform(name="old_y"),
+            },
+        )
+
+
 def test_function_without_kwargs_missing_params(add_tool):
     """Test that function missing required transformed parameters raises ValueError."""
 
