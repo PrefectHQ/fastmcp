@@ -121,6 +121,21 @@ def create_oauth_callback_server(
         Configured uvicorn Server instance (not yet running)
     """
 
+    def store_result_once(
+        *,
+        code: str | None = None,
+        state: str | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        """Store the first callback result and ignore subsequent requests."""
+        if result_container is None or result_ready is None or result_ready.is_set():
+            return
+
+        result_container.code = code
+        result_container.state = state
+        result_container.error = error
+        result_ready.set()
+
     async def callback_handler(request: Request):
         """Handle OAuth callback requests with proper HTML responses."""
         query_params = dict(request.query_params)
@@ -136,9 +151,7 @@ def create_oauth_callback_server(
                 user_message = f"Authorization failed: {error_desc}"
 
             # Store error and signal completion if result tracking provided
-            if result_container is not None and result_ready is not None:
-                result_container.error = RuntimeError(user_message)
-                result_ready.set()
+            store_result_once(error=RuntimeError(user_message))
 
             return create_secure_html_response(
                 create_callback_html(
@@ -152,9 +165,7 @@ def create_oauth_callback_server(
             user_message = "No authorization code was received from the server."
 
             # Store error and signal completion if result tracking provided
-            if result_container is not None and result_ready is not None:
-                result_container.error = RuntimeError(user_message)
-                result_ready.set()
+            store_result_once(error=RuntimeError(user_message))
 
             return create_secure_html_response(
                 create_callback_html(
@@ -171,9 +182,7 @@ def create_oauth_callback_server(
             )
 
             # Store error and signal completion if result tracking provided
-            if result_container is not None and result_ready is not None:
-                result_container.error = RuntimeError(user_message)
-                result_ready.set()
+            store_result_once(error=RuntimeError(user_message))
 
             return create_secure_html_response(
                 create_callback_html(
@@ -184,10 +193,10 @@ def create_oauth_callback_server(
             )
 
         # Success case - store result and signal completion if result tracking provided
-        if result_container is not None and result_ready is not None:
-            result_container.code = callback_response.code
-            result_container.state = callback_response.state
-            result_ready.set()
+        store_result_once(
+            code=callback_response.code,
+            state=callback_response.state,
+        )
 
         return create_secure_html_response(
             create_callback_html("", is_success=True, server_url=server_url)
