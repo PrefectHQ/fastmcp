@@ -150,6 +150,9 @@ class LifespanMixin:
             finally:
                 async with self._lifespan_lock:
                     self._lifespan_ref_count -= 1
+                    if self._lifespan_ref_count == 0:
+                        self._lifespan_result_set = False
+                        self._lifespan_result = None
             return
 
         try:
