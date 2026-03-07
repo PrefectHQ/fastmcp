@@ -409,7 +409,15 @@ class FunctionResourceTemplate(ResourceTemplate):
                     elif annotation is float:
                         kwargs[param_name] = float(param_value)
                     elif annotation is bool:
-                        kwargs[param_name] = param_value.lower() in ("true", "1", "yes")
+                        lower = param_value.lower()
+                        if lower in ("true", "1", "yes"):
+                            kwargs[param_name] = True
+                        elif lower in ("false", "0", "no"):
+                            kwargs[param_name] = False
+                        else:
+                            raise ValueError(
+                                f"Invalid boolean value for {param_name}: {param_value!r}"
+                            )
                 except (ValueError, AttributeError):
                     pass
 
