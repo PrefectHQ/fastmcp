@@ -287,6 +287,7 @@ async def test_call_tools_bulk_error_continues(bulk_caller_live: BulkToolCaller)
         ]
     )
 
+
 async def test_call_tools_bulk_blocks_self_invocation(bulk_caller_live: BulkToolCaller):
     """Test call_tools_bulk blocks recursive calls to bulk tools."""
     tool_calls = [
