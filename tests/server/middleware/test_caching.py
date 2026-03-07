@@ -35,6 +35,9 @@ from fastmcp.server.middleware.caching import (
     CallToolSettings,
     ResponseCachingMiddleware,
     ResponseCachingStatistics,
+    _make_call_tool_cache_key,
+    _make_get_prompt_cache_key,
+    _make_read_resource_cache_key,
 )
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
 from fastmcp.tools.tool import Tool, ToolResult
@@ -631,3 +634,40 @@ class TestCachingWithImportedServerPrefixes:
             result = await client.call_tool("child_add", {"a": 5, "b": 3})
             assert not result.is_error
             assert tracking_calculator.add_calls == 1
+
+
+class TestCacheKeyGeneration:
+    def test_call_tool_key_is_hashed_and_does_not_include_raw_input(self):
+        msg = mcp.types.CallToolRequestParams(
+            name="toolX",
+            arguments={"password": "secret", "path": "../../etc/passwd"},
+        )
+
+        key = _make_call_tool_cache_key(msg)
+
+        assert len(key) == 64
+        assert "secret" not in key
+        assert "../../etc/passwd" not in key
+
+    def test_read_resource_key_is_hashed_and_does_not_include_raw_uri(self):
+        msg = mcp.types.ReadResourceRequestParams(
+            uri=AnyUrl("file:///tmp/../../etc/shadow?token=abcd")
+        )
+
+        key = _make_read_resource_cache_key(msg)
+
+        assert len(key) == 64
+        assert "shadow" not in key
+        assert "token=abcd" not in key
+
+    def test_get_prompt_key_is_hashed_and_stable(self):
+        msg = mcp.types.GetPromptRequestParams(
+            name="promptY",
+            arguments={"api_key": "ABC123", "scope": "admin"},
+        )
+
+        key = _make_get_prompt_cache_key(msg)
+
+        assert len(key) == 64
+        assert "ABC123" not in key
+        assert key == _make_get_prompt_cache_key(msg)
