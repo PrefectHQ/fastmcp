@@ -1,4 +1,3 @@
-import asyncio
 import importlib
 import json
 from collections.abc import Awaitable, Callable, Sequence
@@ -16,6 +15,7 @@ from fastmcp.server.transforms.search.base import (
     serialize_tools_for_output_markdown,
 )
 from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.utilities.async_utils import is_coroutine_function
 from fastmcp.utilities.versions import VersionSpec
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ DiscoveryToolFactory = Callable[[GetToolCatalog], Tool]
 
 
 def _ensure_async(fn: Callable[..., Any]) -> Callable[..., Any]:
-    if asyncio.iscoroutinefunction(fn):
+    if is_coroutine_function(fn):
         return fn
 
     async def wrapper(*args: Any, **kwargs: Any) -> Any:

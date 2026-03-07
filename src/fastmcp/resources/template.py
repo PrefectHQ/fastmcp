@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import re
 from collections.abc import Callable
@@ -552,7 +553,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         task_config.validate_function(fn, func_name)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn):
+        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
