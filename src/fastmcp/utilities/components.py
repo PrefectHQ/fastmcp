@@ -43,13 +43,20 @@ def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
     return set(maybe_set)
 
 
-def _coerce_version(v: str | int | None) -> str | None:
-    """Coerce version to string, accepting int or str.
+def _coerce_version(v: str | int | float | None) -> str | None:
+    """Coerce version to string, accepting int, float, or str.
 
+    Raises TypeError for non-scalar types (list, dict, set, etc.).
     Raises ValueError if version contains '@' (used as key delimiter).
     """
     if v is None:
         return None
+    if isinstance(v, bool):
+        raise TypeError(f"Version must be a string, int, or float, got bool: {v!r}")
+    if not isinstance(v, (str, int, float)):
+        raise TypeError(
+            f"Version must be a string, int, or float, got {type(v).__name__}: {v!r}"
+        )
     version = str(v)
     if "@" in version:
         raise ValueError(

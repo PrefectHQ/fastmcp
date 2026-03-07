@@ -79,7 +79,7 @@ from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_transform import ToolTransformConfig
-from fastmcp.utilities.components import FastMCPComponent
+from fastmcp.utilities.components import FastMCPComponent, _coerce_version
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel, NotSet, NotSetT
 from fastmcp.utilities.versions import (
@@ -221,7 +221,7 @@ class FastMCP(
         name: str | None = None,
         instructions: str | None = None,
         *,
-        version: str | None = None,
+        version: str | int | float | None = None,
         website_url: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
         auth: AuthProvider | None = None,
@@ -308,7 +308,7 @@ class FastMCP(
         ](
             fastmcp=self,
             name=name or self.generate_name(),
-            version=version or fastmcp.__version__,
+            version=_coerce_version(version) or fastmcp.__version__,
             instructions=instructions,
             website_url=website_url,
             icons=icons,
