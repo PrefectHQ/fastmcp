@@ -139,6 +139,20 @@ class RSAKeyPair:
         return token_bytes.decode("utf-8")
 
 
+def _looks_like_pem_public_key(key: str | bytes) -> bool:
+    """Return True when key text appears to be PEM-encoded asymmetric key material."""
+    if isinstance(key, bytes):
+        key = key.decode("utf-8", errors="replace")
+    key_text = key.strip()
+    pem_markers = (
+        "-----BEGIN PUBLIC KEY-----",
+        "-----BEGIN RSA PUBLIC KEY-----",
+        "-----BEGIN EC PUBLIC KEY-----",
+        "-----BEGIN CERTIFICATE-----",
+    )
+    return any(marker in key_text for marker in pem_markers)
+
+
 class JWTVerifier(TokenVerifier):
     """
     JWT token verifier supporting both asymmetric (RSA/ECDSA) and symmetric (HMAC) algorithms.
@@ -161,7 +175,7 @@ class JWTVerifier(TokenVerifier):
     def __init__(
         self,
         *,
-        public_key: str | None = None,
+        public_key: str | bytes | None = None,
         jwks_uri: str | None = None,
         issuer: str | list[str] | None = None,
         audience: str | list[str] | None = None,
@@ -225,11 +239,16 @@ class JWTVerifier(TokenVerifier):
         }:
             raise ValueError(f"Unsupported algorithm: {algorithm}.")
 
-        if jwks_uri and algorithm.startswith("HS"):
-            raise ValueError(
-                "HMAC algorithms (HS256/HS384/HS512) require a shared secret via "
-                "public_key and cannot be used with jwks_uri"
-            )
+        if algorithm.startswith("HS"):
+            if jwks_uri:
+                raise ValueError(
+                    "Symmetric HS* algorithms cannot be used with jwks_uri; "
+                    "configure a shared secret via public_key instead."
+                )
+            if public_key and _looks_like_pem_public_key(public_key):
+                raise ValueError(
+                    "Symmetric HS* algorithms require a shared secret, not a public key."
+                )
 
         # Parse scopes if provided as string
         parsed_required_scopes = (
@@ -257,7 +276,7 @@ class JWTVerifier(TokenVerifier):
         self._jwks_cache_time: float = 0
         self._cache_ttl = 3600  # 1 hour
 
-    async def _get_verification_key(self, token: str) -> str:
+    async def _get_verification_key(self, token: str) -> str | bytes:
         """Get the verification key for the token."""
         if self.public_key:
             return self.public_key

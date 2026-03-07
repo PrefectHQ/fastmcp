@@ -224,6 +224,32 @@ class TestSymmetricKeyJWT:
             )
             assert provider.algorithm == algorithm
 
+    def test_symmetric_algorithm_rejects_jwks_uri(self):
+        """HS* algorithms must not be configured with JWKS/public key endpoints."""
+        with pytest.raises(ValueError, match="cannot be used with jwks_uri"):
+            JWTVerifier(
+                jwks_uri="https://test.example.com/.well-known/jwks.json",
+                issuer="https://test.example.com",
+                algorithm="HS256",
+            )
+
+    def test_symmetric_algorithm_rejects_pem_public_key(self, rsa_key_pair: RSAKeyPair):
+        """HS* algorithms must use a shared secret, not PEM public key material."""
+        with pytest.raises(ValueError, match="require a shared secret"):
+            JWTVerifier(
+                public_key=rsa_key_pair.public_key,
+                issuer="https://test.example.com",
+                algorithm="HS256",
+            )
+
+    def test_symmetric_algorithm_accepts_bytes_secret(self):
+        """HS* algorithms accept bytes secrets without TypeError."""
+        verifier = JWTVerifier(
+            public_key=b"secret",
+            algorithm="HS256",
+        )
+        assert verifier.algorithm == "HS256"
+
     async def test_valid_symmetric_token_validation(
         self, symmetric_key_helper: SymmetricKeyHelper, symmetric_provider: JWTVerifier
     ):

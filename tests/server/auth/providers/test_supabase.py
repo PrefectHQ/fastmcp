@@ -106,13 +106,13 @@ class TestSupabaseProvider:
         assert isinstance(provider.token_verifier, JWTVerifier)
         assert provider.token_verifier.algorithm == algorithm
 
-    def test_algorithm_hs256_rejected(self):
-        """Test that HS256 is rejected with Supabase JWKS verification."""
+    def test_algorithm_rejects_hs256(self):
+        """Test that HS256 is rejected for Supabase's JWKS-based verifier."""
         with pytest.raises(ValueError, match="cannot be used with jwks_uri"):
             SupabaseProvider(
                 project_url="https://abc123.supabase.co",
                 base_url="https://myserver.com",
-                algorithm="HS256",
+                algorithm="HS256",  # type: ignore[arg-type]
             )
 
     def test_algorithm_default_es256(self):
