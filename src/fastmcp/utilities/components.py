@@ -31,7 +31,13 @@ def get_fastmcp_metadata(meta: dict[str, Any] | None) -> FastMCPMeta:
     """
     if not meta:
         return {}
-    return cast(FastMCPMeta, meta.get("fastmcp") or meta.get("_fastmcp") or {})
+
+    for key in ("fastmcp", "_fastmcp"):
+        metadata = meta.get(key)
+        if isinstance(metadata, dict):
+            return cast(FastMCPMeta, metadata)
+
+    return {}
 
 
 def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
