@@ -745,7 +745,9 @@ async def list_command(
                     sig = format_tool_signature(tool)
                     console.print(f"  [cyan]{_sanitize_untrusted_text(sig)}[/cyan]")
                     if tool.description:
-                        console.print(f"    {_sanitize_untrusted_text(tool.description)}")
+                        console.print(
+                            f"    {_sanitize_untrusted_text(tool.description)}"
+                        )
                     if input_schema:
                         _print_schema("Input", tool.inputSchema)
                     if output_schema and tool.outputSchema:
@@ -759,7 +761,9 @@ async def list_command(
                 if not res:
                     console.print("  [dim]No resources found.[/dim]")
                 for r in res:
-                    console.print(f"  [cyan]{_sanitize_untrusted_text(str(r.uri))}[/cyan]")
+                    console.print(
+                        f"  [cyan]{_sanitize_untrusted_text(str(r.uri))}[/cyan]"
+                    )
                     desc_parts = [r.name or "", r.description or ""]
                     desc = " — ".join(p for p in desc_parts if p)
                     if desc:
