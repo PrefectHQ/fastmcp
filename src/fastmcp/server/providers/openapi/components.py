@@ -38,6 +38,18 @@ __all__ = [
 
 logger = get_logger(__name__)
 
+_SENSITIVE_HEADERS = frozenset(
+    {"authorization", "x-api-key", "cookie", "proxy-authorization"}
+)
+
+
+def _redact_headers(headers: httpx.Headers) -> dict[str, str]:
+    """Return a copy of headers with sensitive values replaced by '***'."""
+    return {
+        k: "***" if k.lower() in _SENSITIVE_HEADERS else v
+        for k, v in headers.items()
+    }
+
 # Default MIME type when no response content type can be inferred
 _DEFAULT_MIME_TYPE = "application/json"
 
@@ -183,7 +195,7 @@ class OpenAPITool(Tool):
 
         # Send the request and process the response.
         try:
-            logger.debug(f"run - sending request; headers: {request.headers}")
+            logger.debug(f"run - sending request; headers: {_redact_headers(request.headers)}")
 
             response = await self._client.send(request)
             response.raise_for_status()
