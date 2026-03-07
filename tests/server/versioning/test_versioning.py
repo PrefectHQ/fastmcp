@@ -302,3 +302,13 @@ class TestVersionValidation:
         """FastMCP(version={'v': 1}) should raise TypeError."""
         with pytest.raises(TypeError, match="Version must be a string"):
             FastMCP(version=cast(str, {"v": 1}))
+
+    async def test_fastmcp_version_true_rejected(self):
+        """FastMCP(version=True) should raise TypeError, not coerce to 'True'."""
+        with pytest.raises(TypeError, match="got bool"):
+            FastMCP(version=cast(str, True))
+
+    async def test_fastmcp_version_false_rejected(self):
+        """FastMCP(version=False) should raise TypeError, not coerce to 'False'."""
+        with pytest.raises(TypeError, match="got bool"):
+            FastMCP(version=cast(str, False))

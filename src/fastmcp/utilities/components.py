@@ -51,6 +51,8 @@ def _coerce_version(v: str | int | float | None) -> str | None:
     """
     if v is None:
         return None
+    if isinstance(v, bool):
+        raise TypeError(f"Version must be a string, int, or float, got bool: {v!r}")
     if not isinstance(v, (str, int, float)):
         raise TypeError(
             f"Version must be a string, int, or float, got {type(v).__name__}: {v!r}"
