@@ -201,6 +201,15 @@ class TestSymmetricKeyJWT:
         assert provider.algorithm == "HS256"
         assert provider.jwks_uri is None
 
+    def test_initialization_rejects_hs_algorithm_with_jwks_uri(self):
+        """Test that HMAC algorithms cannot be used with JWKS URI."""
+        with pytest.raises(ValueError, match="cannot be used with jwks_uri"):
+            JWTVerifier(
+                jwks_uri="https://test.example.com/.well-known/jwks.json",
+                issuer="https://test.example.com",
+                algorithm="HS256",
+            )
+
     def test_initialization_with_different_symmetric_algorithms(
         self, symmetric_key_helper: SymmetricKeyHelper
     ):
