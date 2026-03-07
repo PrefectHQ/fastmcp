@@ -29,7 +29,7 @@ IMPORTANT SETUP REQUIREMENTS:
 1. Supabase Project Setup:
    - Create a Supabase project at https://supabase.com
    - Note your project URL (e.g., "https://abc123.supabase.co")
-   - Configure your JWT algorithm in Supabase Auth settings (HS256, RS256, or ES256)
+   - Configure your JWT algorithm in Supabase Auth settings (RS256 or ES256)
    - Asymmetric keys (RS256/ES256) are recommended for production
 
 2. JWT Verification:
@@ -50,7 +50,7 @@ https://supabase.com/docs/guides/auth/jwts
 
 **Methods:**
 
-#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/supabase.py#L126" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/supabase.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_routes(self, mcp_path: str | None = None) -> list[Route]
