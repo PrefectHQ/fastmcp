@@ -93,27 +93,38 @@ def _stamp_global_key(tool: Tool, global_key: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_tool_ref(fn: Any) -> str:
-    """Resolve a callable to a tool name string for CallTool serialization.
+def _resolve_tool_ref(fn: Any) -> Any:
+    """Resolve a callable to a ``ResolvedTool`` for CallTool serialization.
+
+    Always returns a ``ResolvedTool`` with the resolved name and any
+    metadata the renderer needs (e.g. ``unwrap_result``).
 
     Resolution order:
-    1. Global key registry (FastMCPApp tools)
+    1. Global key registry (FastMCPApp tools) — includes metadata
     2. ``__fastmcp__`` metadata (decorated but not on a FastMCPApp)
     3. ``fn.__name__`` (bare function — works for standalone servers)
     """
+    from prefab_ui.app import ResolvedTool  # ty: ignore[unresolved-import]
+
     global_key = _FN_TO_GLOBAL_KEY.get(id(fn))
     if global_key is not None:
-        return global_key
+        tool = _APP_TOOL_REGISTRY.get(global_key)
+        unwrap = bool(
+            tool is not None
+            and tool.output_schema
+            and tool.output_schema.get("x-fastmcp-wrap-result")
+        )
+        return ResolvedTool(name=global_key, unwrap_result=unwrap)
 
     fmeta = get_fastmcp_meta(fn)
     if fmeta is not None:
         name: str | None = getattr(fmeta, "name", None)
         if name is not None:
-            return name
+            return ResolvedTool(name=name)
 
     fn_name = getattr(fn, "__name__", None)
     if fn_name is not None:
-        return fn_name
+        return ResolvedTool(name=fn_name)
 
     raise ValueError(f"Cannot resolve tool reference: {fn!r}")
 

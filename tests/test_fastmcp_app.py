@@ -15,6 +15,7 @@ import re
 from unittest.mock import AsyncMock
 
 import pytest
+from prefab_ui.app import ResolvedTool  # ty: ignore[unresolved-import]
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.app import (
@@ -340,11 +341,30 @@ class TestResolveToolRef:
             return name
 
         result = _resolve_tool_ref(save)
-        assert GLOBAL_KEY_PATTERN.match(result)
-        assert result.startswith("save-")
+        # str return → wrapped tool → ResolvedTool with unwrap_result
+        assert isinstance(result, ResolvedTool)
+        assert GLOBAL_KEY_PATTERN.match(result.name)
+        assert result.name.startswith("save-")
+        assert result.unwrap_result is True
+
+    def test_resolve_global_key_object_return(self):
+        """Tools returning dicts don't need unwrapping."""
+
+        app = FastMCPApp("test")
+
+        @app.tool()
+        def save(name: str) -> dict:
+            return {"name": name}
+
+        result = _resolve_tool_ref(save)
+        assert isinstance(result, ResolvedTool)
+        assert GLOBAL_KEY_PATTERN.match(result.name)
+        assert result.name.startswith("save-")
+        assert result.unwrap_result is False
 
     def test_resolve_fastmcp_metadata(self):
         """Functions with __fastmcp__ metadata but no global key."""
+
         from fastmcp.tools.function_tool import ToolMeta
 
         def my_tool():
@@ -353,14 +373,16 @@ class TestResolveToolRef:
         my_tool.__fastmcp__ = ToolMeta(name="custom_name")  # type: ignore[attr-defined]
 
         result = _resolve_tool_ref(my_tool)
-        assert result == "custom_name"
+        assert isinstance(result, ResolvedTool)
+        assert result.name == "custom_name"
 
     def test_resolve_bare_function(self):
         def my_tool():
             pass
 
         result = _resolve_tool_ref(my_tool)
-        assert result == "my_tool"
+        assert isinstance(result, ResolvedTool)
+        assert result.name == "my_tool"
 
     def test_resolve_unresolvable_raises(self):
         with pytest.raises(ValueError):
