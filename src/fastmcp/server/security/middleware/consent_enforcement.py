@@ -123,7 +123,7 @@ class ConsentEnforcementMiddleware(Middleware):
             return await call_next(context)
 
         actor_id = self._get_actor_id(context)
-        tool_name = context.params.name if context.params else "unknown"
+        tool_name = context.message.name if context.message else "unknown"
         self._check_consent(actor_id, tool_name, ConsentScope.EXECUTE.value)
 
         return await call_next(context)
@@ -149,7 +149,7 @@ class ConsentEnforcementMiddleware(Middleware):
             return await call_next(context)
 
         actor_id = self._get_actor_id(context)
-        resource_uri = str(context.params.uri) if context.params else "unknown"
+        resource_uri = str(context.message.uri) if context.message else "unknown"
         self._check_consent(actor_id, resource_uri, ConsentScope.READ.value)
 
         return await call_next(context)
@@ -184,7 +184,7 @@ class ConsentEnforcementMiddleware(Middleware):
             return await call_next(context)
 
         actor_id = self._get_actor_id(context)
-        prompt_name = context.params.name if context.params else "unknown"
+        prompt_name = context.message.name if context.message else "unknown"
         self._check_consent(actor_id, prompt_name, ConsentScope.READ.value)
 
         return await call_next(context)
