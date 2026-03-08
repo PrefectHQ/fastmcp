@@ -26,6 +26,64 @@ DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 TEN_MB_IN_BYTES = 1024 * 1024 * 10
 
 
+class SecuritySettings(BaseSettings):
+    """SecureMCP security layer settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="FASTMCP_SECURITY_",
+        extra="ignore",
+    )
+
+    enabled: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Master switch to enable/disable all security layers.
+                When False, security middleware is not registered even
+                if a SecurityConfig is provided.
+                """
+            ),
+        ),
+    ] = True
+
+    policy_fail_closed: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                If True (default), deny access when policy evaluation fails
+                or raises an exception. If False, allow access on error.
+                """
+            ),
+        ),
+    ] = True
+
+    policy_bypass_stdio: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                If True (default), skip policy enforcement for STDIO transport
+                (which has no authentication concept).
+                """
+            ),
+        ),
+    ] = True
+
+    policy_hot_swap: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                If True (default), allow runtime policy replacement
+                without service downtime.
+                """
+            ),
+        ),
+    ] = True
+
+
 class DocketSettings(BaseSettings):
     """Docket worker configuration."""
 
@@ -165,6 +223,8 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v.upper()
         return v
+
+    security: SecuritySettings = SecuritySettings()
 
     docket: DocketSettings = DocketSettings()
 

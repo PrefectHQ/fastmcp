@@ -62,6 +62,7 @@ from fastmcp.server.apps import (
     resolve_ui_mime_type,
 )
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
+from fastmcp.server.security.config import SecurityConfig
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
@@ -240,6 +241,7 @@ class FastMCP(
         session_state_store: AsyncKeyValue | None = None,
         sampling_handler: SamplingHandler | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
+        security_config: SecurityConfig | None = None,
         **kwargs: Any,
     ):
         _check_removed_kwargs(kwargs)
@@ -333,6 +335,39 @@ class FastMCP(
         )
 
         self.middleware: list[Middleware] = list(middleware or [])
+
+        # SecureMCP: Register policy enforcement middleware if configured
+        self.security_config: SecurityConfig | None = security_config
+        if security_config is not None and security_config.is_policy_enabled():
+            if fastmcp.settings.security.enabled:
+                from fastmcp.server.security.middleware.policy_enforcement import (
+                    PolicyEnforcementMiddleware,
+                )
+
+                policy_engine = security_config.policy.get_engine()  # type: ignore[union-attr]
+                self.middleware.append(
+                    PolicyEnforcementMiddleware(
+                        policy_engine=policy_engine,
+                        bypass_stdio=fastmcp.settings.security.policy_bypass_stdio,
+                    )
+                )
+
+        # SecureMCP: Register contract validation middleware if configured
+        if security_config is not None and security_config.is_contracts_enabled():
+            if fastmcp.settings.security.enabled:
+                from fastmcp.server.security.middleware.contract_validation import (
+                    ContractValidationMiddleware,
+                )
+
+                contracts_config = security_config.contracts  # type: ignore[union-attr]
+                broker = contracts_config.get_broker(server_id=self.name)
+                self.middleware.append(
+                    ContractValidationMiddleware(
+                        broker=broker,
+                        bypass_stdio=fastmcp.settings.security.policy_bypass_stdio,
+                        require_for_list=contracts_config.require_for_list,
+                    )
+                )
 
         if dereference_schemas:
             from fastmcp.server.middleware.dereference import (
