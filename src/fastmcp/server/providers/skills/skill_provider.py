@@ -283,6 +283,9 @@ class SkillProvider(Provider):
         skill = self.skill_info
         resources: list[Resource] = []
 
+        # Extract tags from frontmatter (convert list to set)
+        tags = set(skill.frontmatter.get("tags", []))
+
         # Main skill file
         resources.append(
             SkillResource(
@@ -292,6 +295,7 @@ class SkillProvider(Provider):
                 mime_type="text/markdown",
                 skill_info=skill,
                 is_manifest=False,
+                tags=tags,
             )
         )
 
@@ -304,6 +308,7 @@ class SkillProvider(Provider):
                 mime_type="application/json",
                 skill_info=skill,
                 is_manifest=True,
+                tags=tags,
             )
         )
 
@@ -347,6 +352,9 @@ class SkillProvider(Provider):
         if skill_name != skill.name:
             return None
 
+        # Extract tags from frontmatter (convert list to set)
+        tags = set(skill.frontmatter.get("tags", []))
+
         if file_path == "_manifest":
             return SkillResource(
                 uri=AnyUrl(uri),
@@ -355,6 +363,7 @@ class SkillProvider(Provider):
                 mime_type="application/json",
                 skill_info=skill,
                 is_manifest=True,
+                tags=tags,
             )
         elif file_path == self._main_file_name:
             return SkillResource(
@@ -364,6 +373,7 @@ class SkillProvider(Provider):
                 mime_type="text/markdown",
                 skill_info=skill,
                 is_manifest=False,
+                tags=tags,
             )
         elif self._supporting_files == "resources":
             # Check if it's a known supporting file
