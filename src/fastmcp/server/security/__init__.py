@@ -101,6 +101,14 @@ from fastmcp.server.security.certification import (
     ValidationReport,
     ValidationSeverity,
 )
+from fastmcp.server.security.registry import (
+    ReputationEvent,
+    ReputationEventType,
+    ReputationTracker,
+    TrustRecord,
+    TrustRegistry,
+    TrustScore,
+)
 from fastmcp.server.security.orchestrator import SecurityContext, SecurityOrchestrator
 from fastmcp.server.security.storage import (
     MemoryBackend,
@@ -170,6 +178,9 @@ __all__ = [
     "ProvenanceLedger",
     "ProvenanceRecord",
     "ReflexiveConfig",
+    "ReputationEvent",
+    "ReputationEventType",
+    "ReputationTracker",
     "ResourceAccessDeclaration",
     "SQLiteBackend",
     "SecurityConfig",
@@ -187,6 +198,9 @@ __all__ = [
     "StorageBackend",
     "ToolAttestation",
     "TrustLevel",
+    "TrustRecord",
+    "TrustRegistry",
+    "TrustScore",
     "ValidationFinding",
     "ValidationReport",
     "ValidationSeverity",
