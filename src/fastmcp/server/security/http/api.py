@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from fastmcp.server.security.gateway.tool_marketplace import ToolMarketplace
     from fastmcp.server.security.policy.audit import PolicyAuditLog
     from fastmcp.server.security.policy.engine import PolicyEngine
+    from fastmcp.server.security.policy.versioning.manager import PolicyVersionManager
     from fastmcp.server.security.provenance.ledger import ProvenanceLedger
     from fastmcp.server.security.registry.registry import TrustRegistry
 
@@ -81,6 +82,7 @@ class SecurityAPI:
     event_bus: SecurityEventBus | None = None
     policy_engine: PolicyEngine | None = None
     policy_audit_log: PolicyAuditLog | None = None
+    policy_version_manager: PolicyVersionManager | None = None
 
     @classmethod
     def from_context(cls, ctx: Any) -> SecurityAPI:
@@ -110,6 +112,7 @@ class SecurityAPI:
             event_bus=getattr(ctx, "event_bus", None),
             policy_engine=getattr(ctx, "policy_engine", None),
             policy_audit_log=getattr(ctx, "policy_audit_log", None),
+            policy_version_manager=getattr(ctx, "policy_version_manager", None),
         )
 
     # ── Dashboard ─────────────────────────────────────────────
@@ -375,6 +378,80 @@ class SecurityAPI:
 
         return dump_policy_schema()
 
+    # ── Policy Versioning ────────────────────────────────────
+
+    def get_policy_versions(self) -> dict[str, Any]:
+        """List all policy versions."""
+        if self.policy_version_manager is None:
+            return {"error": "Policy versioning not configured", "status": 503}
+
+        from fastmcp.server.security.policy.versioning.models import (
+            policy_version_to_dict,
+        )
+
+        versions = self.policy_version_manager.list_versions()
+        current = self.policy_version_manager.current_version
+
+        return {
+            "policy_set_id": self.policy_version_manager.policy_set_id,
+            "version_count": len(versions),
+            "current_version": current.version_number if current else None,
+            "versions": [policy_version_to_dict(v) for v in versions],
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def rollback_policy_version(
+        self, version_number: int, reason: str = ""
+    ) -> dict[str, Any]:
+        """Rollback to a specific policy version.
+
+        Args:
+            version_number: The 1-based version number to rollback to.
+            reason: Reason for the rollback.
+        """
+        if self.policy_version_manager is None:
+            return {"error": "Policy versioning not configured", "status": 503}
+
+        from fastmcp.server.security.policy.versioning.models import (
+            policy_version_to_dict,
+        )
+
+        try:
+            version = self.policy_version_manager.rollback_to(
+                version_number=version_number,
+                reason=reason,
+            )
+        except ValueError as e:
+            return {"error": str(e), "status": 400}
+
+        return {
+            "status": "rolled_back",
+            "version": policy_version_to_dict(version),
+        }
+
+    def diff_policy_versions(
+        self, v1: int, v2: int
+    ) -> dict[str, Any]:
+        """Get differences between two policy versions.
+
+        Args:
+            v1: First version number (1-based).
+            v2: Second version number (1-based).
+        """
+        if self.policy_version_manager is None:
+            return {"error": "Policy versioning not configured", "status": 503}
+
+        try:
+            diff = self.policy_version_manager.diff(v1, v2)
+        except ValueError as e:
+            return {"error": str(e), "status": 400}
+
+        return {
+            "v1": v1,
+            "v2": v2,
+            "diff": diff,
+        }
+
     # ── Health ────────────────────────────────────────────────
 
     def get_health(self) -> dict[str, Any]:
@@ -401,6 +478,8 @@ class SecurityAPI:
             components["policy_engine"] = "ok"
         if self.policy_audit_log:
             components["policy_audit_log"] = "ok"
+        if self.policy_version_manager:
+            components["policy_versioning"] = "ok"
 
         return {
             "status": "healthy" if components else "unconfigured",
@@ -534,6 +613,24 @@ def mount_security_routes(
     async def policy_schema_endpoint(request: Request) -> JSONResponse:
         return JSONResponse(api.get_policy_schema())
 
+    # Policy Versioning
+    @server.custom_route(f"{prefix}/policy/versions", methods=["GET"])
+    async def policy_versions_endpoint(request: Request) -> JSONResponse:
+        return JSONResponse(api.get_policy_versions())
+
+    @server.custom_route(f"{prefix}/policy/versions/rollback", methods=["POST"])
+    async def policy_rollback_endpoint(request: Request) -> JSONResponse:
+        body = await request.json()
+        version_number = body.get("version_number", 0)
+        reason = body.get("reason", "")
+        return JSONResponse(api.rollback_policy_version(version_number, reason))
+
+    @server.custom_route(f"{prefix}/policy/versions/diff", methods=["GET"])
+    async def policy_diff_endpoint(request: Request) -> JSONResponse:
+        v1 = int(request.query_params.get("v1", "0"))
+        v2 = int(request.query_params.get("v2", "0"))
+        return JSONResponse(api.diff_policy_versions(v1, v2))
+
     # Health
     @server.custom_route(f"{prefix}/health", methods=["GET"])
     async def health_endpoint(request: Request) -> JSONResponse:
@@ -565,4 +662,5 @@ def _build_api_from_server(server: FastMCP) -> SecurityAPI:
         event_bus=getattr(ctx, "event_bus", None),
         policy_engine=getattr(ctx, "policy_engine", None),
         policy_audit_log=getattr(ctx, "policy_audit_log", None),
+        policy_version_manager=getattr(ctx, "policy_version_manager", None),
     )

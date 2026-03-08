@@ -24,6 +24,7 @@ from fastmcp.server.security.policy.provider import (
 if TYPE_CHECKING:
     from fastmcp.server.security.alerts.bus import SecurityEventBus
     from fastmcp.server.security.policy.audit import PolicyAuditLog
+    from fastmcp.server.security.policy.versioning.manager import PolicyVersionManager
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ class PolicyEngine:
         allow_hot_swap: bool = True,
         event_bus: SecurityEventBus | None = None,
         audit_log: PolicyAuditLog | None = None,
+        version_manager: PolicyVersionManager | None = None,
     ) -> None:
         if providers is None:
             self._providers: list[PolicyProvider] = [AllowAllPolicy()]
@@ -99,6 +101,7 @@ class PolicyEngine:
         self.allow_hot_swap = allow_hot_swap
         self._event_bus = event_bus
         self._audit_log = audit_log
+        self._version_manager = version_manager
         self._swap_lock = asyncio.Lock()
         self._swap_history: list[PolicySwapRecord] = []
         self._evaluation_count: int = 0
@@ -128,6 +131,11 @@ class PolicyEngine:
     def swap_history(self) -> list[PolicySwapRecord]:
         """History of policy hot-swaps (read-only copy)."""
         return list(self._swap_history)
+
+    @property
+    def version_manager(self) -> PolicyVersionManager | None:
+        """The attached version manager, if any."""
+        return self._version_manager
 
     async def evaluate(
         self, context: PolicyEvaluationContext
@@ -310,6 +318,27 @@ class PolicyEngine:
             old_version = await self._resolve_async(old_provider.get_policy_version())
             new_id = await self._resolve_async(new_provider.get_policy_id())
             new_version = await self._resolve_async(new_provider.get_policy_version())
+
+            # Snapshot the pre-swap state if versioning is enabled
+            if self._version_manager is not None:
+                try:
+                    self._version_manager.create_version(
+                        policy_data={
+                            "swapped_index": index,
+                            "old_policy_id": old_id,
+                            "old_version": old_version,
+                            "new_policy_id": new_id,
+                            "new_version": new_version,
+                            "provider_count": len(self._providers),
+                        },
+                        author="policy-engine",
+                        description=f"Hot-swap: {old_id}@{old_version} → {new_id}@{new_version} ({reason})",
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to create version snapshot for hot-swap",
+                        exc_info=True,
+                    )
 
             self._providers[index] = new_provider
 

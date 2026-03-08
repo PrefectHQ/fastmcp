@@ -17,6 +17,7 @@ from fastmcp.server.security.contracts.exchange_log import ExchangeLog
 from fastmcp.server.security.contracts.schema import ContractTerm
 from fastmcp.server.security.policy.audit import PolicyAuditLog
 from fastmcp.server.security.policy.engine import PolicyEngine
+from fastmcp.server.security.policy.versioning.manager import PolicyVersionManager
 from fastmcp.server.security.policy.invariants import InvariantRegistry
 from fastmcp.server.security.policy.provider import PolicyProvider
 from fastmcp.server.security.consent.graph import ConsentGraph
@@ -77,15 +78,49 @@ class PolicyConfig:
             return self.audit_log
         return PolicyAuditLog(max_entries=self.audit_max_entries)
 
-    def get_engine(self, *, audit_log: PolicyAuditLog | None = None) -> PolicyEngine:
+    def get_version_manager(
+        self,
+        policy_set_id: str = "default",
+    ) -> PolicyVersionManager | None:
+        """Create a PolicyVersionManager if versioning is enabled.
+
+        Args:
+            policy_set_id: Identifier for the policy set being managed.
+
+        Returns:
+            A PolicyVersionManager if ``enable_versioning`` is True and
+            a storage backend is available, else None.
+        """
+        if not self.enable_versioning:
+            return None
+        if self.backend is None:
+            from fastmcp.server.security.storage.memory import MemoryBackend
+
+            backend = MemoryBackend()
+        else:
+            backend = self.backend
+        return PolicyVersionManager(
+            policy_set_id=policy_set_id,
+            backend=backend,
+        )
+
+    def get_engine(
+        self,
+        *,
+        audit_log: PolicyAuditLog | None = None,
+        version_manager: PolicyVersionManager | None = None,
+    ) -> PolicyEngine:
         """Get or create the policy engine.
 
         Args:
             audit_log: Optional audit log to attach to the engine.
+            version_manager: Optional version manager for hot-swap tracking.
         """
         if self.engine is not None:
             if audit_log is not None and self.engine._audit_log is None:
                 self.engine._audit_log = audit_log
+            if version_manager is not None and self.engine._version_manager is None:
+                self.engine._version_manager = version_manager
             return self.engine
 
         providers = list(self.providers) if self.providers else []
@@ -102,6 +137,7 @@ class PolicyConfig:
             fail_closed=self.fail_closed,
             allow_hot_swap=self.allow_hot_swap,
             audit_log=audit_log,
+            version_manager=version_manager,
         )
 
 
@@ -501,13 +537,14 @@ class SecurityConfig:
         """Propagate shared backend to layer configs that don't have one."""
         if self.backend is not None:
             for layer in [
+                self.policy,
                 self.contracts,
                 self.provenance,
                 self.reflexive,
                 self.consent,
                 self.gateway,
             ]:
-                if layer is not None and layer.backend is None:
+                if layer is not None and getattr(layer, "backend", None) is None:
                     layer.backend = self.backend
 
     def is_policy_enabled(self) -> bool:

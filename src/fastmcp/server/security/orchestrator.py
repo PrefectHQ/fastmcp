@@ -32,6 +32,7 @@ from fastmcp.server.security.gateway.marketplace import Marketplace
 from fastmcp.server.security.gateway.tool_marketplace import ToolMarketplace
 from fastmcp.server.security.policy.audit import PolicyAuditLog
 from fastmcp.server.security.policy.engine import PolicyEngine
+from fastmcp.server.security.policy.versioning.manager import PolicyVersionManager
 from fastmcp.server.security.provenance.ledger import ProvenanceLedger
 from fastmcp.server.security.reflexive.analyzer import BehavioralAnalyzer, EscalationEngine
 from fastmcp.server.security.registry.registry import TrustRegistry
@@ -81,6 +82,7 @@ class SecurityContext:
     event_bus: SecurityEventBus | None = None
     policy_engine: PolicyEngine | None = None
     policy_audit_log: PolicyAuditLog | None = None
+    policy_version_manager: PolicyVersionManager | None = None
     broker: ContextBroker | None = None
     provenance_ledger: ProvenanceLedger | None = None
     behavioral_analyzer: BehavioralAnalyzer | None = None
@@ -167,7 +169,15 @@ class SecurityOrchestrator:
             audit_log = config.policy.get_audit_log()
             ctx.policy_audit_log = audit_log
 
-            engine = config.policy.get_engine(audit_log=audit_log)
+            version_manager = config.policy.get_version_manager(
+                policy_set_id=server_name,
+            )
+            ctx.policy_version_manager = version_manager
+
+            engine = config.policy.get_engine(
+                audit_log=audit_log,
+                version_manager=version_manager,
+            )
             if bus_for_components is not None:
                 engine._event_bus = bus_for_components
             ctx.policy_engine = engine
@@ -182,7 +192,11 @@ class SecurityOrchestrator:
                     bypass_stdio=bypass_stdio,
                 )
             )
-            logger.debug("Policy kernel enabled (audit_log=%s)", audit_log is not None)
+            logger.debug(
+                "Policy kernel enabled (audit_log=%s, versioning=%s)",
+                audit_log is not None,
+                version_manager is not None,
+            )
 
         # --- Context Broker (Contracts) ---
         if config.is_contracts_enabled():
