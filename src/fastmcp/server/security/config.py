@@ -24,6 +24,9 @@ from fastmcp.server.security.gateway.marketplace import Marketplace
 from fastmcp.server.security.provenance.ledger import ProvenanceLedger
 from fastmcp.server.security.reflexive.analyzer import BehavioralAnalyzer, EscalationEngine
 from fastmcp.server.security.reflexive.models import DriftSeverity, EscalationRule
+from fastmcp.server.security.certification.attestation import CertificationLevel
+from fastmcp.server.security.certification.pipeline import CertificationPipeline
+from fastmcp.server.security.certification.validator import ManifestValidator
 from fastmcp.server.security.storage.backend import StorageBackend
 
 if TYPE_CHECKING:
@@ -242,6 +245,45 @@ class AlertConfig:
 
 
 @dataclass
+class CertificationConfig:
+    """Configuration for the Tool Certification layer (Phase 12).
+
+    Attributes:
+        pipeline: Pre-built CertificationPipeline instance. If None, one is created.
+        issuer_id: Identity of the certification authority.
+        crypto_handler: Handler for signing attestations. Reuses contracts crypto if None.
+        validator: Pre-built ManifestValidator. If None, defaults are used.
+        min_level_for_signing: Minimum certification level to produce signed attestations.
+    """
+
+    pipeline: CertificationPipeline | None = None
+    issuer_id: str = "securemcp-ca"
+    crypto_handler: ContractCryptoHandler | None = None
+    validator: ManifestValidator | None = None
+    min_level_for_signing: CertificationLevel = CertificationLevel.BASIC
+
+    def get_pipeline(
+        self,
+        *,
+        marketplace: Any = None,
+        event_bus: Any = None,
+        fallback_crypto: ContractCryptoHandler | None = None,
+    ) -> CertificationPipeline:
+        """Get or create the certification pipeline."""
+        if self.pipeline is not None:
+            return self.pipeline
+        crypto = self.crypto_handler or fallback_crypto
+        return CertificationPipeline(
+            issuer_id=self.issuer_id,
+            crypto_handler=crypto,
+            validator=self.validator,
+            marketplace=marketplace,
+            event_bus=event_bus,
+            min_level_for_signing=self.min_level_for_signing,
+        )
+
+
+@dataclass
 class SecurityConfig:
     """Master security configuration for SecureMCP.
 
@@ -277,6 +319,7 @@ class SecurityConfig:
     consent: ConsentConfig | None = None
     gateway: GatewayConfig | None = None
     alerts: AlertConfig | None = None
+    certification: CertificationConfig | None = None
     enabled: bool = True
     backend: StorageBackend | None = None
 
@@ -320,3 +363,7 @@ class SecurityConfig:
     def is_alerts_enabled(self) -> bool:
         """Check if the alerts layer is configured and active."""
         return self.enabled and self.alerts is not None
+
+    def is_certification_enabled(self) -> bool:
+        """Check if the certification layer is configured and active."""
+        return self.enabled and self.certification is not None
