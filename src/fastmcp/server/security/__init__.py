@@ -63,6 +63,11 @@ from fastmcp.server.security.reflexive.models import (
     EscalationAction,
     EscalationRule,
 )
+from fastmcp.server.security.storage import (
+    MemoryBackend,
+    SQLiteBackend,
+    StorageBackend,
+)
 
 __all__ = [
     "AuditAPI",
@@ -96,6 +101,7 @@ __all__ = [
     "Invariant",
     "InvariantVerificationResult",
     "Marketplace",
+    "MemoryBackend",
     "NodeType",
     "PolicyDecision",
     "PolicyEngine",
@@ -107,9 +113,11 @@ __all__ = [
     "ProvenanceLedger",
     "ProvenanceRecord",
     "ReflexiveConfig",
+    "SQLiteBackend",
     "SecurityConfig",
     "SecurityStatus",
     "ServerCapability",
     "ServerRegistration",
+    "StorageBackend",
     "TrustLevel",
 ]

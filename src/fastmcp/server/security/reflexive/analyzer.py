@@ -19,6 +19,7 @@ from fastmcp.server.security.reflexive.models import (
     EscalationAction,
     EscalationRule,
 )
+from fastmcp.server.security.storage.backend import StorageBackend
 
 logger = logging.getLogger(__name__)
 
@@ -63,11 +64,34 @@ class BehavioralAnalyzer:
         *,
         sigma_thresholds: dict[DriftSeverity, float] | None = None,
         min_samples: int = 10,
+        analyzer_id: str = "default",
+        backend: StorageBackend | None = None,
     ) -> None:
+        self.analyzer_id = analyzer_id
+        self._backend = backend
         self._baselines: dict[str, dict[str, BehavioralBaseline]] = defaultdict(dict)
         self._sigma_thresholds = sigma_thresholds or dict(_DEFAULT_SIGMA_THRESHOLDS)
         self._min_samples = min_samples
         self._drift_history: list[DriftEvent] = []
+
+        # Load persisted state
+        if self._backend is not None:
+            self._load_from_backend()
+
+    def _load_from_backend(self) -> None:
+        """Load baselines and drift history from backend."""
+        if self._backend is None:
+            return
+        from fastmcp.server.security.storage.serialization import baseline_from_dict, drift_event_from_dict
+        # Load baselines: {actor_id: {metric_name: data}}
+        raw_baselines = self._backend.load_baselines(self.analyzer_id)
+        for actor_id, metrics in raw_baselines.items():
+            for metric_name, data in metrics.items():
+                self._baselines[actor_id][metric_name] = baseline_from_dict(data)
+        # Load drift history
+        raw_drift = self._backend.load_drift_history(self.analyzer_id)
+        for data in raw_drift:
+            self._drift_history.append(drift_event_from_dict(data))
 
     def observe(
         self,
@@ -124,6 +148,13 @@ class BehavioralAnalyzer:
                 events.append(event)
                 self._drift_history.append(event)
 
+                # Persist drift event
+                if self._backend is not None:
+                    from fastmcp.server.security.storage.serialization import drift_event_to_dict
+                    self._backend.append_drift_event(
+                        self.analyzer_id, drift_event_to_dict(event)
+                    )
+
                 logger.warning(
                     "Drift detected for %s/%s: %s sigma (%s)",
                     actor_id,
@@ -134,6 +165,14 @@ class BehavioralAnalyzer:
 
         # Update baseline with new observation
         baseline.update(value)
+
+        # Persist updated baseline
+        if self._backend is not None:
+            from fastmcp.server.security.storage.serialization import baseline_to_dict
+            self._backend.save_baseline(
+                self.analyzer_id, actor_id, metric_name,
+                baseline_to_dict(baseline),
+            )
 
         return events
 
@@ -198,7 +237,13 @@ class BehavioralAnalyzer:
         """
         if metric_name is not None:
             self._baselines[actor_id].pop(metric_name, None)
+            if self._backend is not None:
+                self._backend.remove_baseline(self.analyzer_id, actor_id, metric_name)
         else:
+            # Remove all baselines for actor from backend
+            if self._backend is not None:
+                for m_name in list(self._baselines.get(actor_id, {}).keys()):
+                    self._backend.remove_baseline(self.analyzer_id, actor_id, m_name)
             self._baselines.pop(actor_id, None)
 
 
@@ -235,12 +280,35 @@ class EscalationEngine:
         rules: list[EscalationRule] | None = None,
         *,
         on_escalation: Any = None,
+        engine_id: str = "default",
+        backend: StorageBackend | None = None,
     ) -> None:
+        self.engine_id = engine_id
+        self._backend = backend
         self.rules = list(rules or [])
         self._on_escalation = on_escalation
         self._escalation_history: list[tuple[DriftEvent, EscalationRule, EscalationAction]] = []
         self._last_trigger: dict[str, datetime] = {}
         self._trigger_counts: dict[str, int] = defaultdict(int)
+
+        # Load persisted escalation history
+        if self._backend is not None:
+            self._load_from_backend()
+
+    def _load_from_backend(self) -> None:
+        """Load escalation history from backend."""
+        if self._backend is None:
+            return
+        from fastmcp.server.security.storage.serialization import drift_event_from_dict
+        raw = self._backend.load_escalations(self.engine_id)
+        for data in raw:
+            event = drift_event_from_dict(data["event"])
+            rule = EscalationRule(
+                rule_id=data["rule"]["rule_id"],
+                action=EscalationAction(data["rule"]["action"]),
+            )
+            action = EscalationAction(data["action"])
+            self._escalation_history.append((event, rule, action))
 
     def evaluate(self, event: DriftEvent) -> list[tuple[EscalationAction, EscalationRule]]:
         """Evaluate a drift event against all rules.
@@ -274,6 +342,18 @@ class EscalationEngine:
             self._last_trigger[rule.rule_id] = datetime.now(timezone.utc)
             self._escalation_history.append((event, rule, rule.action))
             triggered.append((rule.action, rule))
+
+            # Persist escalation
+            if self._backend is not None:
+                from fastmcp.server.security.storage.serialization import drift_event_to_dict, escalation_rule_to_dict
+                self._backend.append_escalation(
+                    self.engine_id,
+                    {
+                        "event": drift_event_to_dict(event),
+                        "rule": escalation_rule_to_dict(rule),
+                        "action": rule.action.value,
+                    },
+                )
 
             logger.warning(
                 "Escalation triggered: %s (rule %s) for actor %s",

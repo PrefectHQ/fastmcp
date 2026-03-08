@@ -17,6 +17,7 @@ from fastmcp.server.security.provenance.records import (
     ProvenanceRecord,
     hash_data,
 )
+from fastmcp.server.security.storage.backend import StorageBackend
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +54,33 @@ class ProvenanceLedger:
         ledger_id: Unique identifier for this ledger instance.
     """
 
-    def __init__(self, ledger_id: str = "default") -> None:
+    def __init__(
+        self,
+        ledger_id: str = "default",
+        *,
+        backend: StorageBackend | None = None,
+    ) -> None:
         self.ledger_id = ledger_id
+        self._backend = backend
         self._records: list[ProvenanceRecord] = []
         self._record_index: dict[str, int] = {}
         self._merkle_tree = MerkleTree()
+
+        # Load persisted records and rebuild indices
+        if self._backend is not None:
+            self._load_from_backend()
+
+    def _load_from_backend(self) -> None:
+        """Load records from backend and rebuild index + Merkle tree."""
+        if self._backend is None:
+            return
+        from fastmcp.server.security.storage.serialization import provenance_record_from_dict
+        raw_records = self._backend.load_provenance_records(self.ledger_id)
+        for i, data in enumerate(raw_records):
+            rec = provenance_record_from_dict(data)
+            self._records.append(rec)
+            self._record_index[rec.record_id] = i
+            self._merkle_tree.add_leaf(rec.compute_hash())
 
     def record(
         self,
@@ -114,6 +137,13 @@ class ProvenanceLedger:
 
         # Add to Merkle tree
         self._merkle_tree.add_leaf(entry.compute_hash())
+
+        # Persist to backend
+        if self._backend is not None:
+            from fastmcp.server.security.storage.serialization import provenance_record_to_dict
+            self._backend.append_provenance_record(
+                self.ledger_id, provenance_record_to_dict(entry)
+            )
 
         logger.debug(
             "Provenance: recorded %s by %s on %s (record %s)",

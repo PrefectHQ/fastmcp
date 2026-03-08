@@ -20,8 +20,26 @@ from fastmcp.server.security.consent.models import (
     ConsentStatus,
     NodeType,
 )
+from fastmcp.server.security.storage.backend import StorageBackend
 
 logger = logging.getLogger(__name__)
+
+
+def _consent_node_to_dict(node: Any) -> dict[str, Any]:
+    from fastmcp.server.security.storage.serialization import consent_node_to_dict
+    return consent_node_to_dict(node)
+
+def _consent_node_from_dict(data: dict[str, Any]) -> Any:
+    from fastmcp.server.security.storage.serialization import consent_node_from_dict
+    return consent_node_from_dict(data)
+
+def _consent_edge_to_dict(edge: Any) -> dict[str, Any]:
+    from fastmcp.server.security.storage.serialization import consent_edge_to_dict
+    return consent_edge_to_dict(edge)
+
+def _consent_edge_from_dict(data: dict[str, Any]) -> Any:
+    from fastmcp.server.security.storage.serialization import consent_edge_from_dict
+    return consent_edge_from_dict(data)
 
 
 class ConsentGraph:
@@ -65,8 +83,14 @@ class ConsentGraph:
         graph_id: Identifier for this consent graph instance.
     """
 
-    def __init__(self, graph_id: str = "default") -> None:
+    def __init__(
+        self,
+        graph_id: str = "default",
+        *,
+        backend: StorageBackend | None = None,
+    ) -> None:
         self.graph_id = graph_id
+        self._backend = backend
         self._nodes: dict[str, ConsentNode] = {}
         # Edges indexed: source_id → list[ConsentEdge]
         self._outgoing: dict[str, list[ConsentEdge]] = defaultdict(list)
@@ -79,6 +103,31 @@ class ConsentGraph:
         # Audit log
         self._audit_log: list[dict[str, Any]] = []
 
+        # Load persisted state
+        if self._backend is not None:
+            self._load_from_backend()
+
+    def _load_from_backend(self) -> None:
+        """Load graph state from backend and rebuild indices."""
+        if self._backend is None:
+            return
+        data = self._backend.load_consent_graph(self.graph_id)
+        # Load nodes
+        for node_id, node_data in data.get("nodes", {}).items():
+            node = _consent_node_from_dict(node_data)
+            self._nodes[node_id] = node
+        # Load edges and rebuild outgoing/incoming indices
+        for edge_id, edge_data in data.get("edges", {}).items():
+            edge = _consent_edge_from_dict(edge_data)
+            self._edges[edge_id] = edge
+            self._outgoing[edge.source_id].append(edge)
+            self._incoming[edge.target_id].append(edge)
+        # Load groups
+        for group_id, members in data.get("groups", {}).items():
+            self._groups[group_id] = set(members)
+        # Load audit log
+        self._audit_log = list(data.get("audit_log", []))
+
     # ── Node management ──────────────────────────────────────────────
 
     def add_node(self, node: ConsentNode) -> None:
@@ -87,6 +136,10 @@ class ConsentGraph:
         if node.node_type == NodeType.GROUP:
             if node.node_id not in self._groups:
                 self._groups[node.node_id] = set()
+        if self._backend is not None:
+            self._backend.save_consent_node(
+                self.graph_id, node.node_id, _consent_node_to_dict(node)
+            )
 
     def get_node(self, node_id: str) -> ConsentNode | None:
         """Get a node by ID."""
@@ -105,11 +158,21 @@ class ConsentGraph:
             self._remove_edge(edge)
 
         # Remove from groups
-        for members in self._groups.values():
-            members.discard(node_id)
-        self._groups.pop(node_id, None)
+        for gid, members in self._groups.items():
+            if node_id in members:
+                members.discard(node_id)
+                if self._backend is not None:
+                    self._backend.save_consent_group(
+                        self.graph_id, gid, sorted(members)
+                    )
+        if node_id in self._groups:
+            self._groups.pop(node_id, None)
+            if self._backend is not None:
+                self._backend.remove_consent_group(self.graph_id, node_id)
 
         del self._nodes[node_id]
+        if self._backend is not None:
+            self._backend.remove_consent_node(self.graph_id, node_id)
         return True
 
     @property
@@ -122,11 +185,19 @@ class ConsentGraph:
     def add_to_group(self, group_id: str, member_id: str) -> None:
         """Add a node to a group."""
         self._groups[group_id].add(member_id)
+        if self._backend is not None:
+            self._backend.save_consent_group(
+                self.graph_id, group_id, sorted(self._groups[group_id])
+            )
 
     def remove_from_group(self, group_id: str, member_id: str) -> bool:
         """Remove a node from a group."""
         if group_id in self._groups:
             self._groups[group_id].discard(member_id)
+            if self._backend is not None:
+                self._backend.save_consent_group(
+                    self.graph_id, group_id, sorted(self._groups[group_id])
+                )
             return True
         return False
 
@@ -182,14 +253,23 @@ class ConsentGraph:
         )
         self._add_edge(edge)
 
-        self._audit_log.append({
+        # Persist edge
+        if self._backend is not None:
+            self._backend.save_consent_edge(
+                self.graph_id, edge.edge_id, _consent_edge_to_dict(edge)
+            )
+
+        audit_entry = {
             "action": "grant",
             "edge_id": edge.edge_id,
             "source_id": source_id,
             "target_id": target_id,
             "scopes": list(scopes),
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        self._audit_log.append(audit_entry)
+        if self._backend is not None:
+            self._backend.append_consent_audit(self.graph_id, audit_entry)
 
         logger.info(
             "Consent granted: %s → %s (scopes: %s)",
@@ -253,14 +333,23 @@ class ConsentGraph:
 
         self._add_edge(edge)
 
-        self._audit_log.append({
+        # Persist delegated edge
+        if self._backend is not None:
+            self._backend.save_consent_edge(
+                self.graph_id, edge.edge_id, _consent_edge_to_dict(edge)
+            )
+
+        audit_entry = {
             "action": "delegate",
             "edge_id": edge.edge_id,
             "parent_edge_id": parent_edge_id,
             "new_target_id": new_target_id,
             "scopes": list(effective_scopes),
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        self._audit_log.append(audit_entry)
+        if self._backend is not None:
+            self._backend.append_consent_audit(self.graph_id, audit_entry)
 
         return edge
 
@@ -272,16 +361,25 @@ class ConsentGraph:
 
         edge.status = ConsentStatus.REVOKED
 
+        # Persist updated edge status
+        if self._backend is not None:
+            self._backend.save_consent_edge(
+                self.graph_id, edge_id, _consent_edge_to_dict(edge)
+            )
+
         # Cascade revocation to delegated edges
         for child_edge in list(self._edges.values()):
             if child_edge.parent_edge_id == edge_id:
                 self.revoke(child_edge.edge_id)
 
-        self._audit_log.append({
+        audit_entry = {
             "action": "revoke",
             "edge_id": edge_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        self._audit_log.append(audit_entry)
+        if self._backend is not None:
+            self._backend.append_consent_audit(self.graph_id, audit_entry)
 
         logger.info("Consent revoked: edge %s", edge_id)
         return True

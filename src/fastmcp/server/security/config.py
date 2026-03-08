@@ -23,6 +23,7 @@ from fastmcp.server.security.gateway.marketplace import Marketplace
 from fastmcp.server.security.provenance.ledger import ProvenanceLedger
 from fastmcp.server.security.reflexive.analyzer import BehavioralAnalyzer, EscalationEngine
 from fastmcp.server.security.reflexive.models import DriftSeverity, EscalationRule
+from fastmcp.server.security.storage.backend import StorageBackend
 
 if TYPE_CHECKING:
     pass
@@ -84,6 +85,7 @@ class ContractConfig:
     session_timeout: timedelta = field(default_factory=lambda: timedelta(minutes=30))
     contract_duration: timedelta = field(default_factory=lambda: timedelta(hours=1))
     require_for_list: bool = False
+    backend: StorageBackend | None = None
 
     def get_broker(self, server_id: str = "securemcp-server") -> ContextBroker:
         """Get or create the context broker."""
@@ -98,6 +100,7 @@ class ContractConfig:
             max_rounds=self.max_rounds,
             session_timeout=self.session_timeout,
             contract_duration=self.contract_duration,
+            backend=self.backend,
         )
 
 
@@ -115,12 +118,13 @@ class ProvenanceConfig:
     ledger: ProvenanceLedger | None = None
     ledger_id: str = "default"
     record_list_operations: bool = False
+    backend: StorageBackend | None = None
 
     def get_ledger(self) -> ProvenanceLedger:
         """Get or create the provenance ledger."""
         if self.ledger is not None:
             return self.ledger
-        return ProvenanceLedger(ledger_id=self.ledger_id)
+        return ProvenanceLedger(ledger_id=self.ledger_id, backend=self.backend)
 
 
 @dataclass
@@ -144,6 +148,7 @@ class ReflexiveConfig:
     sigma_thresholds: dict[DriftSeverity, float] | None = None
     min_samples: int = 10
     on_escalation: Any = None
+    backend: StorageBackend | None = None
 
     def get_analyzer(self) -> BehavioralAnalyzer:
         """Get or create the behavioral analyzer."""
@@ -152,6 +157,7 @@ class ReflexiveConfig:
         return BehavioralAnalyzer(
             sigma_thresholds=self.sigma_thresholds,
             min_samples=self.min_samples,
+            backend=self.backend,
         )
 
     def get_escalation_engine(self) -> EscalationEngine:
@@ -161,6 +167,7 @@ class ReflexiveConfig:
         return EscalationEngine(
             rules=self.escalation_rules,
             on_escalation=self.on_escalation,
+            backend=self.backend,
         )
 
 
@@ -179,12 +186,13 @@ class ConsentConfig:
     graph_id: str = "default"
     resource_owner: str = "server"
     require_for_list: bool = False
+    backend: StorageBackend | None = None
 
     def get_graph(self) -> ConsentGraph:
         """Get or create the consent graph."""
         if self.graph is not None:
             return self.graph
-        return ConsentGraph(graph_id=self.graph_id)
+        return ConsentGraph(graph_id=self.graph_id, backend=self.backend)
 
 
 @dataclass
@@ -203,12 +211,13 @@ class GatewayConfig:
     marketplace: Marketplace | None = None
     marketplace_id: str = "default"
     register_tools: bool = True
+    backend: StorageBackend | None = None
 
     def get_marketplace(self) -> Marketplace:
         """Get or create the marketplace."""
         if self.marketplace is not None:
             return self.marketplace
-        return Marketplace(marketplace_id=self.marketplace_id)
+        return Marketplace(marketplace_id=self.marketplace_id, backend=self.backend)
 
 
 @dataclass
@@ -247,6 +256,20 @@ class SecurityConfig:
     consent: ConsentConfig | None = None
     gateway: GatewayConfig | None = None
     enabled: bool = True
+    backend: StorageBackend | None = None
+
+    def __post_init__(self) -> None:
+        """Propagate shared backend to layer configs that don't have one."""
+        if self.backend is not None:
+            for layer in [
+                self.contracts,
+                self.provenance,
+                self.reflexive,
+                self.consent,
+                self.gateway,
+            ]:
+                if layer is not None and layer.backend is None:
+                    layer.backend = self.backend
 
     def is_policy_enabled(self) -> bool:
         """Check if the policy layer is configured and active."""

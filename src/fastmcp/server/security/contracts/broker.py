@@ -30,6 +30,7 @@ from fastmcp.server.security.contracts.schema import (
     ContractTerm,
     NegotiationStatus,
 )
+from fastmcp.server.security.storage.backend import StorageBackend
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +113,12 @@ class ContextBroker:
         max_rounds: int = 5,
         session_timeout: timedelta = timedelta(minutes=30),
         contract_duration: timedelta = timedelta(hours=1),
+        broker_id: str = "default",
+        backend: StorageBackend | None = None,
     ) -> None:
         self.server_id = server_id
+        self.broker_id = broker_id
+        self._backend = backend
         self.crypto_handler = crypto_handler
         self.exchange_log = exchange_log or ExchangeLog()
         self._term_evaluator = term_evaluator
@@ -125,6 +130,20 @@ class ContextBroker:
         self._sessions: dict[str, NegotiationSession] = {}
         self._active_contracts: dict[str, Contract] = {}
         self._lock = asyncio.Lock()
+
+        # Load persisted contracts
+        if self._backend is not None:
+            self._load_from_backend()
+
+    def _load_from_backend(self) -> None:
+        """Load active contracts from backend."""
+        if self._backend is None:
+            return
+        from fastmcp.server.security.storage.serialization import contract_from_dict
+        raw_contracts = self._backend.load_contracts(self.broker_id)
+        for contract_id, data in raw_contracts.items():
+            contract = contract_from_dict(data)
+            self._active_contracts[contract_id] = contract
 
     async def negotiate(
         self, request: ContractNegotiationRequest
@@ -368,6 +387,13 @@ class ContextBroker:
         # Store as active contract
         self._active_contracts[contract.contract_id] = contract
 
+        # Persist to backend
+        if self._backend is not None:
+            from fastmcp.server.security.storage.serialization import contract_to_dict
+            self._backend.save_contract(
+                self.broker_id, contract.contract_id, contract_to_dict(contract)
+            )
+
         return contract
 
     def get_contract(self, contract_id: str) -> Contract | None:
@@ -405,6 +431,13 @@ class ContextBroker:
             actor_id=self.server_id,
             data={"contract_id": contract_id, "reason": reason},
         )
+
+        # Update persisted state
+        if self._backend is not None:
+            from fastmcp.server.security.storage.serialization import contract_to_dict
+            self._backend.save_contract(
+                self.broker_id, contract_id, contract_to_dict(contract)
+            )
 
         return True
 

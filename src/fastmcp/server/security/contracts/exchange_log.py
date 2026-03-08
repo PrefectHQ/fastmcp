@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from fastmcp.server.security.storage.backend import StorageBackend
+
 logger = logging.getLogger(__name__)
 
 
@@ -94,10 +96,36 @@ class ExchangeLog:
         assert log.verify_chain("sess-1")
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        log_id: str = "default",
+        *,
+        backend: StorageBackend | None = None,
+    ) -> None:
+        self.log_id = log_id
+        self._backend = backend
         self._entries: list[ExchangeLogEntry] = []
         self._session_chains: dict[str, list[ExchangeLogEntry]] = {}
         self._entry_counter = 0
+
+        # Load persisted entries and rebuild session chains
+        if self._backend is not None:
+            self._load_from_backend()
+
+    def _load_from_backend(self) -> None:
+        """Load entries from backend and rebuild session chains."""
+        if self._backend is None:
+            return
+        from fastmcp.server.security.storage.serialization import exchange_entry_from_dict
+        raw_entries = self._backend.load_exchange_entries(self.log_id)
+        for data in raw_entries:
+            entry = exchange_entry_from_dict(data)
+            self._entries.append(entry)
+            self._entry_counter += 1
+            sid = entry.session_id
+            if sid not in self._session_chains:
+                self._session_chains[sid] = []
+            self._session_chains[sid].append(entry)
 
     def record(
         self,
@@ -145,6 +173,13 @@ class ExchangeLog:
         if session_id not in self._session_chains:
             self._session_chains[session_id] = []
         self._session_chains[session_id].append(entry)
+
+        # Persist to backend
+        if self._backend is not None:
+            from fastmcp.server.security.storage.serialization import exchange_entry_to_dict
+            self._backend.append_exchange_entry(
+                self.log_id, exchange_entry_to_dict(entry)
+            )
 
         logger.debug(
             "ExchangeLog: recorded %s for session %s by %s",

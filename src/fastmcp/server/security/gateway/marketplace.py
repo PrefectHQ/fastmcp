@@ -16,6 +16,7 @@ from fastmcp.server.security.gateway.models import (
     ServerRegistration,
     TrustLevel,
 )
+from fastmcp.server.security.storage.backend import StorageBackend
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +50,30 @@ class Marketplace:
         marketplace_id: Identifier for this marketplace instance.
     """
 
-    def __init__(self, marketplace_id: str = "default") -> None:
+    def __init__(
+        self,
+        marketplace_id: str = "default",
+        *,
+        backend: StorageBackend | None = None,
+    ) -> None:
         self.marketplace_id = marketplace_id
+        self._backend = backend
         self._servers: dict[str, ServerRegistration] = {}
         self._audit_log: list[dict[str, Any]] = []
+
+        # Load persisted state
+        if self._backend is not None:
+            self._load_from_backend()
+
+    def _load_from_backend(self) -> None:
+        """Load marketplace state from backend."""
+        if self._backend is None:
+            return
+        from fastmcp.server.security.storage.serialization import server_registration_from_dict
+        data = self._backend.load_marketplace(self.marketplace_id)
+        for server_id, server_data in data.get("servers", {}).items():
+            self._servers[server_id] = server_registration_from_dict(server_data)
+        self._audit_log = list(data.get("audit_log", []))
 
     def register(
         self,
@@ -98,13 +119,23 @@ class Marketplace:
 
         self._servers[reg.server_id] = reg
 
-        self._audit_log.append({
+        # Persist registration
+        if self._backend is not None:
+            from fastmcp.server.security.storage.serialization import server_registration_to_dict
+            self._backend.save_server_registration(
+                self.marketplace_id, reg.server_id, server_registration_to_dict(reg)
+            )
+
+        audit_entry = {
             "action": "register",
             "server_id": reg.server_id,
             "name": name,
             "endpoint": endpoint,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        self._audit_log.append(audit_entry)
+        if self._backend is not None:
+            self._backend.append_marketplace_audit(self.marketplace_id, audit_entry)
 
         logger.info("Server registered: %s (%s)", name, reg.server_id)
         return reg
@@ -123,11 +154,18 @@ class Marketplace:
 
         del self._servers[server_id]
 
-        self._audit_log.append({
+        # Remove from backend
+        if self._backend is not None:
+            self._backend.remove_server_registration(self.marketplace_id, server_id)
+
+        audit_entry = {
             "action": "unregister",
             "server_id": server_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        self._audit_log.append(audit_entry)
+        if self._backend is not None:
+            self._backend.append_marketplace_audit(self.marketplace_id, audit_entry)
 
         return True
 
@@ -144,6 +182,12 @@ class Marketplace:
         if reg is None:
             return False
         reg.last_heartbeat = datetime.now(timezone.utc)
+        # Persist updated heartbeat
+        if self._backend is not None:
+            from fastmcp.server.security.storage.serialization import server_registration_to_dict
+            self._backend.save_server_registration(
+                self.marketplace_id, server_id, server_registration_to_dict(reg)
+            )
         return True
 
     def update_trust_level(
@@ -165,13 +209,23 @@ class Marketplace:
         old_level = reg.trust_level
         reg.trust_level = trust_level
 
-        self._audit_log.append({
+        # Persist updated trust level
+        if self._backend is not None:
+            from fastmcp.server.security.storage.serialization import server_registration_to_dict
+            self._backend.save_server_registration(
+                self.marketplace_id, server_id, server_registration_to_dict(reg)
+            )
+
+        audit_entry = {
             "action": "trust_update",
             "server_id": server_id,
             "old_level": old_level.value,
             "new_level": trust_level.value,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        self._audit_log.append(audit_entry)
+        if self._backend is not None:
+            self._backend.append_marketplace_audit(self.marketplace_id, audit_entry)
 
         return True
 
