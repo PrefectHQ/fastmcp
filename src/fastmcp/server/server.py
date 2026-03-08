@@ -407,6 +407,59 @@ class FastMCP(
                     )
                 )
 
+        # SecureMCP: Register consent enforcement middleware if configured
+        if security_config is not None and security_config.is_consent_enabled():
+            if fastmcp.settings.security.enabled:
+                from fastmcp.server.security.middleware.consent_enforcement import (
+                    ConsentEnforcementMiddleware,
+                )
+
+                consent_config = security_config.consent  # type: ignore[union-attr]
+                graph = consent_config.get_graph()
+                self._consent_graph = graph
+                self.middleware.append(
+                    ConsentEnforcementMiddleware(
+                        graph=graph,
+                        resource_owner=consent_config.resource_owner,
+                        bypass_stdio=fastmcp.settings.security.policy_bypass_stdio,
+                        require_for_list=consent_config.require_for_list,
+                    )
+                )
+
+        # SecureMCP: Set up API Gateway if configured
+        if security_config is not None and security_config.is_gateway_enabled():
+            if fastmcp.settings.security.enabled:
+                from fastmcp.server.security.gateway.audit import AuditAPI
+                from fastmcp.server.security.gateway.tools import (
+                    create_audit_tools,
+                    create_marketplace_tools,
+                )
+
+                gateway_config = security_config.gateway  # type: ignore[union-attr]
+
+                # Build audit API from available layers
+                audit_api = gateway_config.audit_api or AuditAPI(
+                    provenance_ledger=getattr(self, "_provenance_ledger", None),
+                    behavioral_analyzer=getattr(self, "_behavioral_analyzer", None),
+                    consent_graph=getattr(self, "_consent_graph", None),
+                    policy_engine=(
+                        security_config.policy.get_engine()
+                        if security_config.policy is not None
+                        else None
+                    ),
+                )
+                self._audit_api = audit_api
+
+                marketplace = gateway_config.get_marketplace()
+                self._marketplace = marketplace
+
+                # Register gateway tools if requested
+                if gateway_config.register_tools:
+                    self._gateway_tools = {
+                        **create_audit_tools(audit_api),
+                        **create_marketplace_tools(marketplace),
+                    }
+
         if dereference_schemas:
             from fastmcp.server.middleware.dereference import (
                 DereferenceRefsMiddleware,

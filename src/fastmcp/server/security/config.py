@@ -17,6 +17,9 @@ from fastmcp.server.security.contracts.schema import ContractTerm
 from fastmcp.server.security.policy.engine import PolicyEngine
 from fastmcp.server.security.policy.invariants import InvariantRegistry
 from fastmcp.server.security.policy.provider import PolicyProvider
+from fastmcp.server.security.consent.graph import ConsentGraph
+from fastmcp.server.security.gateway.audit import AuditAPI
+from fastmcp.server.security.gateway.marketplace import Marketplace
 from fastmcp.server.security.provenance.ledger import ProvenanceLedger
 from fastmcp.server.security.reflexive.analyzer import BehavioralAnalyzer, EscalationEngine
 from fastmcp.server.security.reflexive.models import DriftSeverity, EscalationRule
@@ -162,6 +165,53 @@ class ReflexiveConfig:
 
 
 @dataclass
+class ConsentConfig:
+    """Configuration for the Consent Graph layer (Phase 5).
+
+    Attributes:
+        graph: Pre-built ConsentGraph instance. If None, one is created.
+        graph_id: Identifier for the graph instance.
+        resource_owner: Default owner ID for resource consent checks.
+        require_for_list: If True, check consent for list operations.
+    """
+
+    graph: ConsentGraph | None = None
+    graph_id: str = "default"
+    resource_owner: str = "server"
+    require_for_list: bool = False
+
+    def get_graph(self) -> ConsentGraph:
+        """Get or create the consent graph."""
+        if self.graph is not None:
+            return self.graph
+        return ConsentGraph(graph_id=self.graph_id)
+
+
+@dataclass
+class GatewayConfig:
+    """Configuration for the API Gateway layer (Phase 6).
+
+    Attributes:
+        audit_api: Pre-built AuditAPI instance. If None, one is created
+            automatically from other configured layers.
+        marketplace: Pre-built Marketplace instance. If None, one is created.
+        marketplace_id: Identifier for the marketplace instance.
+        register_tools: If True, register audit/marketplace as MCP tools.
+    """
+
+    audit_api: AuditAPI | None = None
+    marketplace: Marketplace | None = None
+    marketplace_id: str = "default"
+    register_tools: bool = True
+
+    def get_marketplace(self) -> Marketplace:
+        """Get or create the marketplace."""
+        if self.marketplace is not None:
+            return self.marketplace
+        return Marketplace(marketplace_id=self.marketplace_id)
+
+
+@dataclass
 class SecurityConfig:
     """Master security configuration for SecureMCP.
 
@@ -185,6 +235,8 @@ class SecurityConfig:
         contracts: Context Broker configuration (Phase 2).
         provenance: Provenance Ledger configuration (Phase 3).
         reflexive: Reflexive Core configuration (Phase 4).
+        consent: Consent Graph configuration (Phase 5).
+        gateway: API Gateway configuration (Phase 6).
         enabled: Master switch to enable/disable all security layers.
     """
 
@@ -192,6 +244,8 @@ class SecurityConfig:
     contracts: ContractConfig | None = None
     provenance: ProvenanceConfig | None = None
     reflexive: ReflexiveConfig | None = None
+    consent: ConsentConfig | None = None
+    gateway: GatewayConfig | None = None
     enabled: bool = True
 
     def is_policy_enabled(self) -> bool:
@@ -209,3 +263,11 @@ class SecurityConfig:
     def is_reflexive_enabled(self) -> bool:
         """Check if the reflexive layer is configured and active."""
         return self.enabled and self.reflexive is not None
+
+    def is_consent_enabled(self) -> bool:
+        """Check if the consent layer is configured and active."""
+        return self.enabled and self.consent is not None
+
+    def is_gateway_enabled(self) -> bool:
+        """Check if the gateway layer is configured and active."""
+        return self.enabled and self.gateway is not None

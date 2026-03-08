@@ -5,10 +5,22 @@ reflexive analysis, consent graphs, and audit APIs for trust-native AI infrastru
 """
 
 from fastmcp.server.security.config import (
+    ConsentConfig,
     ContractConfig,
+    GatewayConfig,
     ProvenanceConfig,
     ReflexiveConfig,
     SecurityConfig,
+)
+from fastmcp.server.security.consent.graph import ConsentGraph
+from fastmcp.server.security.consent.models import (
+    ConsentDecision,
+    ConsentEdge,
+    ConsentNode,
+    ConsentQuery,
+    ConsentScope,
+    ConsentStatus,
+    NodeType,
 )
 from fastmcp.server.security.contracts.broker import ContextBroker
 from fastmcp.server.security.contracts.schema import (
@@ -17,6 +29,17 @@ from fastmcp.server.security.contracts.schema import (
     ContractNegotiationResponse,
     ContractStatus,
     ContractTerm,
+)
+from fastmcp.server.security.gateway.audit import AuditAPI
+from fastmcp.server.security.gateway.marketplace import Marketplace
+from fastmcp.server.security.gateway.models import (
+    AuditQuery,
+    AuditQueryType,
+    HealthStatus,
+    SecurityStatus,
+    ServerCapability,
+    ServerRegistration,
+    TrustLevel,
 )
 from fastmcp.server.security.policy.engine import (
     PolicyDecision,
@@ -42,8 +65,19 @@ from fastmcp.server.security.reflexive.models import (
 )
 
 __all__ = [
+    "AuditAPI",
+    "AuditQuery",
+    "AuditQueryType",
     "BehavioralAnalyzer",
     "BehavioralBaseline",
+    "ConsentConfig",
+    "ConsentDecision",
+    "ConsentEdge",
+    "ConsentGraph",
+    "ConsentNode",
+    "ConsentQuery",
+    "ConsentScope",
+    "ConsentStatus",
     "Contract",
     "ContractConfig",
     "ContractNegotiationRequest",
@@ -57,8 +91,12 @@ __all__ = [
     "EscalationAction",
     "EscalationEngine",
     "EscalationRule",
+    "GatewayConfig",
+    "HealthStatus",
     "Invariant",
     "InvariantVerificationResult",
+    "Marketplace",
+    "NodeType",
     "PolicyDecision",
     "PolicyEngine",
     "PolicyEvaluationContext",
@@ -70,4 +108,8 @@ __all__ = [
     "ProvenanceRecord",
     "ReflexiveConfig",
     "SecurityConfig",
+    "SecurityStatus",
+    "ServerCapability",
+    "ServerRegistration",
+    "TrustLevel",
 ]
