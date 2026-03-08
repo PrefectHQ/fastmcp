@@ -4,7 +4,11 @@ Provides pluggable policy engines, contract negotiation, provenance ledgers,
 reflexive analysis, consent graphs, and audit APIs for trust-native AI infrastructure.
 """
 
-from fastmcp.server.security.config import ContractConfig, SecurityConfig
+from fastmcp.server.security.config import (
+    ContractConfig,
+    ProvenanceConfig,
+    SecurityConfig,
+)
 from fastmcp.server.security.contracts.broker import ContextBroker
 from fastmcp.server.security.contracts.schema import (
     Contract,
@@ -24,6 +28,8 @@ from fastmcp.server.security.policy.invariants import (
     InvariantVerificationResult,
 )
 from fastmcp.server.security.policy.provider import PolicyProvider
+from fastmcp.server.security.provenance.ledger import ProvenanceLedger
+from fastmcp.server.security.provenance.records import ProvenanceAction, ProvenanceRecord
 
 __all__ = [
     "Contract",
@@ -40,5 +46,9 @@ __all__ = [
     "PolicyEvaluationContext",
     "PolicyProvider",
     "PolicyResult",
+    "ProvenanceAction",
+    "ProvenanceConfig",
+    "ProvenanceLedger",
+    "ProvenanceRecord",
     "SecurityConfig",
 ]

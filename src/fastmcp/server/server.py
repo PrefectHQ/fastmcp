@@ -369,6 +369,24 @@ class FastMCP(
                     )
                 )
 
+        # SecureMCP: Register provenance recording middleware if configured
+        if security_config is not None and security_config.is_provenance_enabled():
+            if fastmcp.settings.security.enabled:
+                from fastmcp.server.security.middleware.provenance_recording import (
+                    ProvenanceRecordingMiddleware,
+                )
+
+                provenance_config = security_config.provenance  # type: ignore[union-attr]
+                ledger = provenance_config.get_ledger()
+                self._provenance_ledger = ledger
+                self.middleware.append(
+                    ProvenanceRecordingMiddleware(
+                        ledger=ledger,
+                        bypass_stdio=fastmcp.settings.security.policy_bypass_stdio,
+                        record_list_operations=provenance_config.record_list_operations,
+                    )
+                )
+
         if dereference_schemas:
             from fastmcp.server.middleware.dereference import (
                 DereferenceRefsMiddleware,

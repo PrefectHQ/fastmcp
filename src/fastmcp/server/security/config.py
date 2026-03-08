@@ -17,6 +17,7 @@ from fastmcp.server.security.contracts.schema import ContractTerm
 from fastmcp.server.security.policy.engine import PolicyEngine
 from fastmcp.server.security.policy.invariants import InvariantRegistry
 from fastmcp.server.security.policy.provider import PolicyProvider
+from fastmcp.server.security.provenance.ledger import ProvenanceLedger
 
 if TYPE_CHECKING:
     pass
@@ -96,6 +97,28 @@ class ContractConfig:
 
 
 @dataclass
+class ProvenanceConfig:
+    """Configuration for the Provenance Ledger layer (Phase 3).
+
+    Attributes:
+        ledger: Pre-built ProvenanceLedger instance. If None, one is created.
+        ledger_id: Identifier for the ledger instance.
+        record_list_operations: If True, record list operations in addition
+            to execution operations.
+    """
+
+    ledger: ProvenanceLedger | None = None
+    ledger_id: str = "default"
+    record_list_operations: bool = False
+
+    def get_ledger(self) -> ProvenanceLedger:
+        """Get or create the provenance ledger."""
+        if self.ledger is not None:
+            return self.ledger
+        return ProvenanceLedger(ledger_id=self.ledger_id)
+
+
+@dataclass
 class SecurityConfig:
     """Master security configuration for SecureMCP.
 
@@ -117,11 +140,13 @@ class SecurityConfig:
     Attributes:
         policy: Policy Kernel configuration (Phase 1).
         contracts: Context Broker configuration (Phase 2).
+        provenance: Provenance Ledger configuration (Phase 3).
         enabled: Master switch to enable/disable all security layers.
     """
 
     policy: PolicyConfig | None = None
     contracts: ContractConfig | None = None
+    provenance: ProvenanceConfig | None = None
     enabled: bool = True
 
     def is_policy_enabled(self) -> bool:
@@ -131,3 +156,7 @@ class SecurityConfig:
     def is_contracts_enabled(self) -> bool:
         """Check if the contracts layer is configured and active."""
         return self.enabled and self.contracts is not None
+
+    def is_provenance_enabled(self) -> bool:
+        """Check if the provenance layer is configured and active."""
+        return self.enabled and self.provenance is not None
