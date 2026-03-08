@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { Shield, Plus, Trash2, Play, Eye, ChevronDown, ChevronRight, AlertTriangle, CheckCircle, XCircle, Clock, Search, Filter, Download, RefreshCw, Settings, FileText, Layers, Lock, Unlock } from "lucide-react";
+import { Shield, Plus, Trash2, Play, Eye, ChevronDown, ChevronRight, AlertTriangle, CheckCircle, XCircle, Clock, Search, Filter, Download, RefreshCw, Settings, FileText, Layers, Lock, Unlock, History, RotateCcw, GitCompare, Tag, User } from "lucide-react";
 
 // ── Demo Data ─────────────────────────────────────────────────────
 
@@ -63,6 +63,59 @@ const DEMO_SCHEMA = {
     { type: "resource_scoped", description: "Per-resource policy mapping", fields: ["policies"] },
   ],
   compositions: ["all_of", "any_of", "first_match", "not"],
+};
+
+const DEMO_VERSIONS = {
+  policy_set_id: "production",
+  version_count: 3,
+  current_version: 3,
+  versions: [
+    {
+      version_id: "v-001",
+      policy_set_id: "production",
+      version_number: 1,
+      policy_data: { old_policy_id: "allow-all", new_policy_id: "rbac-main", old_version: "1.0.0", new_version: "1.0.0", provider_count: 1, swapped_index: 0 },
+      created_at: "2026-03-06T09:15:00Z",
+      author: "security-team",
+      description: "Hot-swap: allow-all@1.0.0 → rbac-main@1.0.0 (Initial RBAC deployment)",
+      tags: ["deployment", "rbac"],
+    },
+    {
+      version_id: "v-002",
+      policy_set_id: "production",
+      version_number: 2,
+      policy_data: { old_policy_id: "rbac-main", new_policy_id: "rbac-main", old_version: "1.0.0", new_version: "2.0.0", provider_count: 2, swapped_index: 0 },
+      created_at: "2026-03-07T14:30:00Z",
+      author: "policy-engine",
+      description: "Hot-swap: rbac-main@1.0.0 → rbac-main@2.0.0 (Add denylist layer)",
+      tags: ["upgrade"],
+    },
+    {
+      version_id: "v-003",
+      policy_set_id: "production",
+      version_number: 3,
+      policy_data: { old_policy_id: "rbac-main", new_policy_id: "rbac-strict", old_version: "2.0.0", new_version: "1.0.0", provider_count: 3, swapped_index: 0 },
+      created_at: "2026-03-08T08:00:00Z",
+      author: "security-team",
+      description: "Hot-swap: rbac-main@2.0.0 → rbac-strict@1.0.0 (Tighten permissions)",
+      tags: ["security", "hardening"],
+    },
+  ],
+};
+
+const DEMO_DIFF = {
+  v1: 1,
+  v2: 2,
+  diff: {
+    added: {},
+    removed: {},
+    changed: {
+      old_version: { from: "1.0.0", to: "1.0.0" },
+      new_version: { from: "1.0.0", to: "2.0.0" },
+      new_policy_id: { from: "rbac-main", to: "rbac-main" },
+      provider_count: { from: 1, to: 2 },
+    },
+  },
 };
 
 // ── Color palette ──────────────────────────────────────────────────
@@ -617,6 +670,304 @@ const JSONPolicyEditor = ({ schema, onLoad }) => {
   );
 };
 
+// ── Version History ─────────────────────────────────────────────────
+
+const VersionHistory = ({ versions, onRollback, onDiff }) => {
+  const [selectedForDiff, setSelectedForDiff] = useState([]);
+  const [diffResult, setDiffResult] = useState(null);
+  const [rollbackTarget, setRollbackTarget] = useState(null);
+  const [rollbackReason, setRollbackReason] = useState("");
+
+  const vData = versions || DEMO_VERSIONS;
+  const vList = vData.versions || [];
+
+  const toggleDiffSelect = (vn) => {
+    setSelectedForDiff(prev => {
+      if (prev.includes(vn)) return prev.filter(v => v !== vn);
+      if (prev.length >= 2) return [prev[1], vn];
+      return [...prev, vn];
+    });
+    setDiffResult(null);
+  };
+
+  const handleDiff = async () => {
+    if (selectedForDiff.length !== 2) return;
+    const [v1, v2] = selectedForDiff.sort((a, b) => a - b);
+    if (onDiff) {
+      const result = await onDiff(v1, v2);
+      setDiffResult(result);
+    } else {
+      setDiffResult(DEMO_DIFF);
+    }
+  };
+
+  const handleRollback = () => {
+    if (rollbackTarget && onRollback) {
+      onRollback(rollbackTarget, rollbackReason);
+    }
+    setRollbackTarget(null);
+    setRollbackReason("");
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Summary strip */}
+      <div style={{ display: "flex", gap: 16, padding: "12px 16px", borderRadius: 8, background: COLORS.bg, border: `1px solid ${COLORS.border}` }}>
+        <div style={{ fontSize: 12, color: COLORS.textMuted }}>
+          Policy Set: <span style={{ color: COLORS.text, fontWeight: 700, fontFamily: "monospace" }}>{vData.policy_set_id || "—"}</span>
+        </div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted }}>
+          Versions: <span style={{ color: COLORS.text, fontWeight: 700 }}>{vData.version_count || 0}</span>
+        </div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted }}>
+          Current: <span style={{ color: COLORS.allow, fontWeight: 700 }}>v{vData.current_version || "—"}</span>
+        </div>
+      </div>
+
+      {/* Diff toolbar */}
+      {selectedForDiff.length > 0 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 12px", borderRadius: 8, background: `${COLORS.primary}11`, border: `1px solid ${COLORS.primary}33` }}>
+          <GitCompare size={14} style={{ color: COLORS.primary }} />
+          <span style={{ fontSize: 12, color: COLORS.text }}>
+            {selectedForDiff.length === 1
+              ? `Selected v${selectedForDiff[0]} — pick one more to compare`
+              : `Comparing v${Math.min(...selectedForDiff)} ↔ v${Math.max(...selectedForDiff)}`
+            }
+          </span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <Button onClick={handleDiff} small icon={GitCompare} disabled={selectedForDiff.length !== 2}>
+              Show Diff
+            </Button>
+            <Button onClick={() => { setSelectedForDiff([]); setDiffResult(null); }} small variant="ghost">
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Timeline */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {vList.slice().reverse().map((v, i) => {
+          const isCurrent = v.version_number === vData.current_version;
+          const isSelectedForDiff = selectedForDiff.includes(v.version_number);
+
+          return (
+            <div key={v.version_id || i} style={{
+              display: "flex", gap: 12, padding: "14px 16px", borderRadius: 8,
+              background: isCurrent ? `${COLORS.allow}09` : isSelectedForDiff ? `${COLORS.primary}09` : COLORS.bg,
+              border: `1px solid ${isCurrent ? `${COLORS.allow}33` : isSelectedForDiff ? `${COLORS.primary}33` : COLORS.border}`,
+              transition: "all 0.15s ease",
+            }}>
+              {/* Version marker */}
+              <div style={{
+                display: "flex", flexDirection: "column", alignItems: "center", minWidth: 40, paddingTop: 2,
+              }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                  background: isCurrent ? COLORS.allow : COLORS.primary, color: "#fff", fontSize: 11, fontWeight: 800,
+                }}>
+                  v{v.version_number}
+                </div>
+                {i < vList.length - 1 && (
+                  <div style={{ width: 2, flex: 1, background: COLORS.border, marginTop: 4, minHeight: 12 }} />
+                )}
+              </div>
+
+              {/* Content */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.text }}>
+                    {v.description || `Version ${v.version_number}`}
+                  </span>
+                  {isCurrent && <Badge color={COLORS.allow} small>CURRENT</Badge>}
+                </div>
+
+                <div style={{ display: "flex", gap: 12, marginBottom: 6, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: COLORS.textMuted }}>
+                    <User size={10} /> {v.author || "unknown"}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: COLORS.textDim }}>
+                    <Clock size={10} /> {v.created_at ? new Date(v.created_at).toLocaleString() : "—"}
+                  </div>
+                  {v.tags && v.tags.length > 0 && (
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {v.tags.map(tag => (
+                        <span key={tag} style={{
+                          display: "inline-flex", alignItems: "center", gap: 2,
+                          padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 500,
+                          background: `${COLORS.secondary}22`, color: COLORS.secondary,
+                        }}>
+                          <Tag size={8} /> {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Policy data summary */}
+                {v.policy_data && (
+                  <div style={{
+                    display: "flex", gap: 8, fontSize: 11, fontFamily: "monospace",
+                    padding: "6px 10px", borderRadius: 6, background: `${COLORS.bg}`,
+                    border: `1px solid ${COLORS.border}`, flexWrap: "wrap",
+                  }}>
+                    {v.policy_data.old_policy_id && (
+                      <span style={{ color: COLORS.deny }}>{v.policy_data.old_policy_id}@{v.policy_data.old_version}</span>
+                    )}
+                    {v.policy_data.old_policy_id && v.policy_data.new_policy_id && (
+                      <span style={{ color: COLORS.textDim }}>→</span>
+                    )}
+                    {v.policy_data.new_policy_id && (
+                      <span style={{ color: COLORS.allow }}>{v.policy_data.new_policy_id}@{v.policy_data.new_version}</span>
+                    )}
+                    {v.policy_data.provider_count != null && (
+                      <span style={{ color: COLORS.textDim, marginLeft: "auto" }}>{v.policy_data.provider_count} provider(s)</span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end", minWidth: 80 }}>
+                <button
+                  onClick={() => toggleDiffSelect(v.version_number)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderRadius: 6,
+                    fontSize: 11, fontWeight: 500, cursor: "pointer", border: "none",
+                    background: isSelectedForDiff ? `${COLORS.primary}33` : "transparent",
+                    color: isSelectedForDiff ? COLORS.primary : COLORS.textDim,
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <GitCompare size={11} />
+                  {isSelectedForDiff ? "Selected" : "Compare"}
+                </button>
+                {!isCurrent && (
+                  <button
+                    onClick={() => setRollbackTarget(v.version_number)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderRadius: 6,
+                      fontSize: 11, fontWeight: 500, cursor: "pointer", border: "none",
+                      background: "transparent", color: COLORS.defer,
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <RotateCcw size={11} /> Rollback
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {vList.length === 0 && (
+        <div style={{ padding: 32, textAlign: "center", color: COLORS.textDim, fontSize: 13 }}>
+          No version history yet. Versions are created automatically when policies are hot-swapped.
+        </div>
+      )}
+
+      {/* Diff result */}
+      {diffResult && diffResult.diff && (
+        <Card style={{ background: COLORS.bg, border: `1px solid ${COLORS.primary}33` }}>
+          <SectionHeader
+            icon={GitCompare}
+            title={`Diff: v${diffResult.v1} ↔ v${diffResult.v2}`}
+            subtitle="Showing changes between selected versions"
+          />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {Object.keys(diffResult.diff.added || {}).length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.allow, marginBottom: 4 }}>Added</div>
+                {Object.entries(diffResult.diff.added).map(([k, v]) => (
+                  <div key={k} style={{
+                    display: "flex", gap: 8, padding: "4px 10px", borderRadius: 4,
+                    background: `${COLORS.allow}11`, fontFamily: "monospace", fontSize: 11,
+                  }}>
+                    <span style={{ color: COLORS.allow }}>+</span>
+                    <span style={{ color: COLORS.text }}>{k}:</span>
+                    <span style={{ color: COLORS.allow }}>{JSON.stringify(v)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {Object.keys(diffResult.diff.removed || {}).length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.deny, marginBottom: 4 }}>Removed</div>
+                {Object.entries(diffResult.diff.removed).map(([k, v]) => (
+                  <div key={k} style={{
+                    display: "flex", gap: 8, padding: "4px 10px", borderRadius: 4,
+                    background: `${COLORS.deny}11`, fontFamily: "monospace", fontSize: 11,
+                  }}>
+                    <span style={{ color: COLORS.deny }}>-</span>
+                    <span style={{ color: COLORS.text }}>{k}:</span>
+                    <span style={{ color: COLORS.deny }}>{JSON.stringify(v)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {Object.keys(diffResult.diff.changed || {}).length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.defer, marginBottom: 4 }}>Changed</div>
+                {Object.entries(diffResult.diff.changed).map(([k, change]) => (
+                  <div key={k} style={{
+                    display: "flex", gap: 8, padding: "4px 10px", borderRadius: 4,
+                    background: `${COLORS.defer}11`, fontFamily: "monospace", fontSize: 11,
+                  }}>
+                    <span style={{ color: COLORS.defer }}>~</span>
+                    <span style={{ color: COLORS.text }}>{k}:</span>
+                    <span style={{ color: COLORS.deny, textDecoration: "line-through" }}>{JSON.stringify(change.from)}</span>
+                    <span style={{ color: COLORS.textDim }}>→</span>
+                    <span style={{ color: COLORS.allow }}>{JSON.stringify(change.to)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {Object.keys(diffResult.diff.added || {}).length === 0 &&
+             Object.keys(diffResult.diff.removed || {}).length === 0 &&
+             Object.keys(diffResult.diff.changed || {}).length === 0 && (
+              <div style={{ padding: 16, textAlign: "center", color: COLORS.textDim, fontSize: 12 }}>
+                No differences found between these versions.
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* Rollback confirmation modal */}
+      {rollbackTarget && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+        }}>
+          <Card style={{ maxWidth: 420, width: "100%", background: COLORS.card }}>
+            <SectionHeader
+              icon={RotateCcw}
+              title={`Rollback to v${rollbackTarget}?`}
+              subtitle="This changes the active version pointer. No data is lost."
+            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <input
+                type="text"
+                placeholder="Reason for rollback (optional)"
+                value={rollbackReason}
+                onChange={e => setRollbackReason(e.target.value)}
+                style={{
+                  padding: "8px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                  background: COLORS.bg, color: COLORS.text, fontSize: 13,
+                }}
+              />
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <Button onClick={() => { setRollbackTarget(null); setRollbackReason(""); }} variant="ghost">Cancel</Button>
+                <Button onClick={handleRollback} variant="danger" icon={RotateCcw}>Rollback</Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Main Component ─────────────────────────────────────────────────
 
 export default function SecureMCPPolicyEditor({ liveData = null, apiBase = "/security" }) {
@@ -625,6 +976,7 @@ export default function SecureMCPPolicyEditor({ liveData = null, apiBase = "/sec
   const [auditEntries, setAuditEntries] = useState(liveData?.audit?.entries || DEMO_AUDIT_ENTRIES);
   const [stats, setStats] = useState(liveData?.stats || DEMO_STATS);
   const [schema, setSchema] = useState(liveData?.schema || DEMO_SCHEMA);
+  const [versions, setVersions] = useState(liveData?.versions || null);
   const [simResult, setSimResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -632,16 +984,18 @@ export default function SecureMCPPolicyEditor({ liveData = null, apiBase = "/sec
     if (!apiBase) return;
     setLoading(true);
     try {
-      const [statusRes, auditRes, statsRes, schemaRes] = await Promise.allSettled([
+      const [statusRes, auditRes, statsRes, schemaRes, versionsRes] = await Promise.allSettled([
         fetch(`${apiBase}/policy`).then(r => r.json()),
         fetch(`${apiBase}/policy/audit?limit=50`).then(r => r.json()),
         fetch(`${apiBase}/policy/audit/stats`).then(r => r.json()),
         fetch(`${apiBase}/policy/schema`).then(r => r.json()),
+        fetch(`${apiBase}/policy/versions`).then(r => r.json()),
       ]);
       if (statusRes.status === "fulfilled" && !statusRes.value.error) setProviders(statusRes.value.providers || []);
       if (auditRes.status === "fulfilled" && !auditRes.value.error) setAuditEntries(auditRes.value.entries || []);
       if (statsRes.status === "fulfilled" && !statsRes.value.error) setStats(statsRes.value);
       if (schemaRes.status === "fulfilled" && !schemaRes.value.error) setSchema(schemaRes.value);
+      if (versionsRes.status === "fulfilled" && !versionsRes.value.error) setVersions(versionsRes.value);
     } catch (e) {
       console.warn("Failed to fetch policy data:", e);
     }
@@ -680,11 +1034,41 @@ export default function SecureMCPPolicyEditor({ liveData = null, apiBase = "/sec
     // In a real implementation, POST to /security/policy/load
   };
 
+  const handleRollback = async (versionNumber, reason) => {
+    try {
+      const res = await fetch(`${apiBase}/policy/versions/rollback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version_number: versionNumber, reason }),
+      });
+      const data = await res.json();
+      if (!data.error) {
+        // Refresh versions
+        const vRes = await fetch(`${apiBase}/policy/versions`);
+        const vData = await vRes.json();
+        if (!vData.error) setVersions(vData);
+      }
+    } catch (e) {
+      console.warn("Rollback failed:", e);
+    }
+  };
+
+  const handleDiff = async (v1, v2) => {
+    try {
+      const res = await fetch(`${apiBase}/policy/versions/diff?v1=${v1}&v2=${v2}`);
+      return await res.json();
+    } catch (e) {
+      console.warn("Diff failed:", e);
+      return DEMO_DIFF;
+    }
+  };
+
   const tabs = [
     { id: "overview", label: "Overview", icon: Eye },
     { id: "providers", label: "Providers", icon: Layers },
     { id: "audit", label: "Audit Log", icon: FileText },
     { id: "simulate", label: "Simulate", icon: Play },
+    { id: "versions", label: "Versions", icon: History },
     { id: "editor", label: "Editor", icon: Settings },
   ];
 
@@ -767,6 +1151,22 @@ export default function SecureMCPPolicyEditor({ liveData = null, apiBase = "/sec
             subtitle="Test scenarios against the current policy engine without side effects"
           />
           <SimulationPanel onSimulate={handleSimulate} result={simResult} />
+        </Card>
+      )}
+
+      {/* Versions Tab */}
+      {activeTab === "versions" && (
+        <Card>
+          <SectionHeader
+            icon={History}
+            title="Version History"
+            subtitle="Track policy changes with rollback and diff support"
+          />
+          <VersionHistory
+            versions={versions}
+            onRollback={handleRollback}
+            onDiff={handleDiff}
+          />
         </Card>
       )}
 
