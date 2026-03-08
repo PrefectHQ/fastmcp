@@ -1,0 +1,28 @@
+---
+description: SecureMCP incremental development; push each change to xsecuremcp2.0 only
+globs: 
+alwaysApply: true
+---
+
+# SecureMCP development (separate agent workflow)
+
+When adding or changing **SecureMCP** functionality in this repo:
+
+1. **One change at a time**  
+   Implement a single, logical change (one feature, fix, or doc update). Do not batch unrelated edits into one commit.
+
+2. **Validate**  
+   Run `uv sync` and `uv run pytest -n auto` before committing. Fix failures.
+
+3. **Commit**  
+   Use a clear message, e.g. `SecureMCP: <what you did>`.
+
+4. **Push to xsecuremcp2.0 only**  
+   Push only to **origin** (this repo: PureCipher/xsecuremcp2.0).  
+   Command: `git push origin <current-branch>`.  
+   Do **not** push to `upstream` (fastmcp).
+
+5. **Then continue**  
+   Proceed to the next SecureMCP change and repeat: one change → test → commit → push to origin.
+
+See **SECUREMCP_DEV.md** in the repo root for the full workflow and remotes.
