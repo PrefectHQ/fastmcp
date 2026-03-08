@@ -72,6 +72,9 @@ dmypy.json
 /STATUS.md
 plans/
 
+# Node / admin-ui
+node_modules/
+
 # Common FastMCP test files
 /test.py
 /server.py
