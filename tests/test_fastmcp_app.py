@@ -15,7 +15,7 @@ import re
 from unittest.mock import AsyncMock
 
 import pytest
-from prefab_ui.app import ResolvedTool  # ty: ignore[unresolved-import]
+from prefab_ui.app import ResolvedTool
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.app import (

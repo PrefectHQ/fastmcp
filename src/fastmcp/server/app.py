@@ -104,7 +104,7 @@ def _resolve_tool_ref(fn: Any) -> Any:
     2. ``__fastmcp__`` metadata (decorated but not on a FastMCPApp)
     3. ``fn.__name__`` (bare function — works for standalone servers)
     """
-    from prefab_ui.app import ResolvedTool  # ty: ignore[unresolved-import]
+    from prefab_ui.app import ResolvedTool
 
     global_key = _FN_TO_GLOBAL_KEY.get(id(fn))
     if global_key is not None:
