@@ -68,7 +68,8 @@ def infer_transport(
 
 @overload
 def infer_transport(
-    transport: Path, verify: bool | None = None,
+    transport: Path,
+    verify: bool | None = None,
 ) -> PythonStdioTransport | NodeStdioTransport: ...
  
 
