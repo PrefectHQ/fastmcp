@@ -21,41 +21,43 @@ logger = get_logger(__name__)
 
 
 @overload
-def infer_transport(transport: ClientTransportT) -> ClientTransportT: ...
+def infer_transport(transport: ClientTransportT, verify: bool | None = None) -> ClientTransportT: ...
 
 
 @overload
-def infer_transport(transport: FastMCP) -> FastMCPTransport: ...
+def infer_transport(transport: FastMCP, verify: bool | None = None) -> FastMCPTransport: ...
 
 
 @overload
-def infer_transport(transport: FastMCP1Server) -> FastMCPTransport: ...
+def infer_transport(transport: FastMCP1Server, verify: bool | None = None) -> FastMCPTransport: ...
 
 
 @overload
-def infer_transport(transport: MCPConfig) -> MCPConfigTransport: ...
+def infer_transport(transport: MCPConfig, verify: bool | None = None) -> MCPConfigTransport: ...
 
 
 @overload
-def infer_transport(transport: dict[str, Any]) -> MCPConfigTransport: ...
+def infer_transport(transport: dict[str, Any], verify: bool | None = None) -> MCPConfigTransport: ...
 
 
 @overload
 def infer_transport(
     transport: AnyUrl,
+    verify: bool | None = None,
 ) -> SSETransport | StreamableHttpTransport: ...
 
 
 @overload
 def infer_transport(
     transport: str,
+    verify: bool | None = None,
 ) -> (
     PythonStdioTransport | NodeStdioTransport | SSETransport | StreamableHttpTransport
 ): ...
 
 
 @overload
-def infer_transport(transport: Path) -> PythonStdioTransport | NodeStdioTransport: ...
+def infer_transport(transport: Path, verify: bool | None = None) -> PythonStdioTransport | NodeStdioTransport: ...
 
 
 def infer_transport(
