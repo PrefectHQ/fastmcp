@@ -97,7 +97,6 @@ def create_mcp_http_client(
 
     return httpx.AsyncClient(**kwargs)
 
-
 class StreamableHttpTransport(ClientTransport):
     """Transport implementation that connects to an MCP server via Streamable HTTP Requests."""
 
