@@ -67,6 +67,7 @@ def infer_transport(
     | MCPConfig
     | dict[str, Any]
     | str,
+    verify: bool | None = None,
 ) -> ClientTransport:
     """
     Infer the appropriate transport type from the given transport argument.
@@ -137,7 +138,7 @@ def infer_transport(
             inferred_transport = SSETransport(url=cast(AnyUrl | str, transport))
         else:
             inferred_transport = StreamableHttpTransport(
-                url=cast(AnyUrl | str, transport)
+                url=cast(AnyUrl | str, transport),verify=verify
             )
 
     # if the transport is a config dict or MCPConfig
