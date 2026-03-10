@@ -263,9 +263,9 @@ class Client(
         self.name = name or self.generate_name()
 
         self.transport = cast(
-           ClientTransportT, infer_transport(transport, verify=verify)
+            ClientTransportT, infer_transport(transport, verify=verify)
         )
-        
+
         if auth is not None:
             self.transport._set_auth(auth)
 
