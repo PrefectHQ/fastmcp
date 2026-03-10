@@ -21,23 +21,33 @@ logger = get_logger(__name__)
 
 
 @overload
-def infer_transport(transport: ClientTransportT, verify: bool | None = None) -> ClientTransportT: ...
+def infer_transport(
+    transport: ClientTransportT, verify: bool | None = None
+) -> ClientTransportT: ...
 
 
 @overload
-def infer_transport(transport: FastMCP, verify: bool | None = None) -> FastMCPTransport: ...
+def infer_transport(
+    transport: FastMCP, verify: bool | None = None
+) -> FastMCPTransport: ...
 
 
 @overload
-def infer_transport(transport: FastMCP1Server, verify: bool | None = None) -> FastMCPTransport: ...
+def infer_transport(
+    transport: FastMCP1Server, verify: bool | None = None
+) -> FastMCPTransport: ...
 
 
 @overload
-def infer_transport(transport: MCPConfig, verify: bool | None = None) -> MCPConfigTransport: ...
+def infer_transport(
+    transport: MCPConfig, verify: bool | None = None
+) -> MCPConfigTransport: ...
 
 
 @overload
-def infer_transport(transport: dict[str, Any], verify: bool | None = None) -> MCPConfigTransport: ...
+def infer_transport(
+    transport: dict[str, Any], verify: bool | None = None
+) -> MCPConfigTransport: ...
 
 
 @overload
@@ -57,8 +67,10 @@ def infer_transport(
 
 
 @overload
-def infer_transport(transport: Path, verify: bool | None = None) -> PythonStdioTransport | NodeStdioTransport: ...
-
+def infer_transport(
+    transport: Path, verify: bool | None = None,
+) -> PythonStdioTransport | NodeStdioTransport: ...
+ 
 
 def infer_transport(
     transport: ClientTransport
@@ -140,7 +152,7 @@ def infer_transport(
             inferred_transport = SSETransport(url=cast(AnyUrl | str, transport))
         else:
             inferred_transport = StreamableHttpTransport(
-                url=cast(AnyUrl | str, transport),verify=verify
+                url=cast(AnyUrl | str, transport), verify=verify
             )
 
     # if the transport is a config dict or MCPConfig

@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 from collections.abc import AsyncIterator, Callable
-from typing import Literal, cast, Any
+from typing import Any, Literal, cast
 
 import httpx
 from mcp import ClientSession
@@ -79,7 +79,9 @@ def create_mcp_http_client(
 
     # Handle timeout
     if timeout is None:
-        kwargs["timeout"] = httpx.Timeout(MCP_DEFAULT_TIMEOUT, read=MCP_DEFAULT_SSE_READ_TIMEOUT)
+        kwargs["timeout"] = httpx.Timeout(
+            MCP_DEFAULT_TIMEOUT, read=MCP_DEFAULT_SSE_READ_TIMEOUT
+        )
     else:
         kwargs["timeout"] = timeout
 
@@ -92,10 +94,11 @@ def create_mcp_http_client(
         kwargs["auth"] = auth
 
     # Handle verify
-    if verify is not None: 
+    if verify is not None:
         kwargs["verify"] = verify
 
     return httpx.AsyncClient(**kwargs)
+
 
 class StreamableHttpTransport(ClientTransport):
     """Transport implementation that connects to an MCP server via Streamable HTTP Requests."""
