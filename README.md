@@ -108,3 +108,38 @@ Documentation is also available in [llms.txt format](https://llmstxt.org/), whic
 ## Contributing
 
 We welcome contributions! See the [Contributing Guide](https://gofastmcp.com/development/contributing) for setup instructions, testing requirements, and PR guidelines.
+
+## 🇨🇳 中文说明
+
+FastMCP 是一个快速构建 MCP 服务器和客户端的 Python 框架。Model Context Protocol (MCP) 将 LLMs 连接到工具和数据，FastMCP 提供了从原型到生产环境所需的一切。
+
+### 为什么选择 FastMCP？
+
+构建有效的 MCP 应用比看起来更难。FastMCP 为您处理这一切。通过 Python 函数声明工具，模式、验证和文档会自动生成。通过 URL 连接到服务器，传输协商、身份验证和协议生命周期都会为您管理。您只需专注于您的逻辑，MCP 部分就能正常工作。
+
+**这就是为什么 FastMCP 是使用 MCP 的标准框架。**
+
+### 快速开始
+
+```bash
+# 安装
+uv pip install fastmcp
+```
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("Demo 🚀")
+
+@mcp.tool
+def add(a: int, b: int) -> int:
+    """Add two numbers"""
+    return a + b
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+### 文档
+
+了解更多，请访问 [官方文档](https://gofastmcp.com)。
