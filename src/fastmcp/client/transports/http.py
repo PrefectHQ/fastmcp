@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 from collections.abc import AsyncIterator, Callable
-from typing import Literal, cast
+from typing import Literal, cast, Any
 
 import httpx
 from mcp import ClientSession
@@ -134,7 +134,7 @@ class StreamableHttpTransport(ClientTransport):
         self.headers = headers or {}
         self.httpx_client_factory = httpx_client_factory
         self._set_auth(auth)
-        self.verify: bool = verify
+        self.verify: bool | None = verify
 
         if sse_read_timeout is not None:
             if fastmcp.settings.deprecation_warnings:
