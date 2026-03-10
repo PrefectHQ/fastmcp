@@ -255,6 +255,7 @@ class Client(
         progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
         auto_initialize: bool = True,
+        verify: bool | None = None,
         init_timeout: datetime.timedelta | float | int | None = None,
         client_info: mcp.types.Implementation | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
@@ -282,6 +283,9 @@ class Client(
         self._init_timeout = normalize_timeout_to_seconds(init_timeout)
 
         self.auto_initialize = auto_initialize
+
+        self.verify = verify
+        self.transport.verify = self.verify
 
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
