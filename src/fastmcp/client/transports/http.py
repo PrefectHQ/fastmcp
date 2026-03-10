@@ -25,6 +25,7 @@ from fastmcp.utilities.timeout import normalize_timeout_to_timedelta
 MCP_DEFAULT_TIMEOUT = 30.0  # General operations (seconds)
 MCP_DEFAULT_SSE_READ_TIMEOUT = 300.0  # SSE streams - 5 minutes (seconds)
 
+
 def create_mcp_http_client(
     headers: dict[str, str] | None = None,
     timeout: httpx.Timeout | None = None,
@@ -129,7 +130,7 @@ class StreamableHttpTransport(ClientTransport):
             url = str(url)
         if not isinstance(url, str) or not url.startswith("http"):
             raise ValueError("Invalid HTTP/S URL provided for Streamable HTTP.")
-        
+
         # Don't modify the URL path - respect the exact URL provided by the user
         # Some servers are strict about trailing slashes (e.g., PayPal MCP)
 

@@ -71,7 +71,7 @@ def infer_transport(
     transport: Path,
     verify: bool | None = None,
 ) -> PythonStdioTransport | NodeStdioTransport: ...
- 
+
 
 def infer_transport(
     transport: ClientTransport
