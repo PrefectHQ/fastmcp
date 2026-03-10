@@ -262,7 +262,7 @@ class Client(
     ) -> None:
         self.name = name or self.generate_name()
 
-        self.transport = cast(ClientTransportT, infer_transport(transport))
+        self.transport = cast(ClientTransportT, infer_transport(transport,verify=verify))
         if auth is not None:
             self.transport._set_auth(auth)
 
@@ -285,7 +285,6 @@ class Client(
         self.auto_initialize = auto_initialize
 
         self.verify = verify
-        self.transport.verify = self.verify
 
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
