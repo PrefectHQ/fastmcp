@@ -10,7 +10,7 @@ from typing import Literal, cast
 import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared._httpx_utils import McpHttpClientFactory, create_mcp_http_client
+from mcp.shared._httpx_utils import McpHttpClientFactory
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
@@ -21,6 +21,82 @@ from fastmcp.client.transports.base import ClientTransport, SessionKwargs
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.utilities.timeout import normalize_timeout_to_timedelta
 
+# Default MCP timeout configuration
+MCP_DEFAULT_TIMEOUT = 30.0  # General operations (seconds)
+MCP_DEFAULT_SSE_READ_TIMEOUT = 300.0  # SSE streams - 5 minutes (seconds)
+
+def create_mcp_http_client(
+    headers: dict[str, str] | None = None,
+    timeout: httpx.Timeout | None = None,
+    auth: httpx.Auth | None = None,
+    verify: bool | None = None,
+) -> httpx.AsyncClient:
+    """Create a standardized httpx AsyncClient with MCP defaults.
+
+    This function provides common defaults used throughout the MCP codebase:
+    - follow_redirects=True (always enabled)
+    - Default timeout of 30 seconds if not specified
+
+    Args:
+        headers: Optional headers to include with all requests.
+        timeout: Request timeout as httpx.Timeout object.
+            Defaults to 30 seconds if not specified.
+        auth: Optional authentication handler.
+
+    Returns:
+        Configured httpx.AsyncClient instance with MCP defaults.
+
+    Note:
+        The returned AsyncClient must be used as a context manager to ensure
+        proper cleanup of connections.
+
+    Examples:
+        # Basic usage with MCP defaults
+        async with create_mcp_http_client() as client:
+            response = await client.get("https://api.example.com")
+
+        # With custom headers
+        headers = {"Authorization": "Bearer token"}
+        async with create_mcp_http_client(headers) as client:
+            response = await client.get("/endpoint")
+
+        # With both custom headers and timeout
+        timeout = httpx.Timeout(60.0, read=300.0)
+        async with create_mcp_http_client(headers, timeout) as client:
+            response = await client.get("/long-request")
+
+        # With authentication
+        from httpx import BasicAuth
+        auth = BasicAuth(username="user", password="pass")
+        async with create_mcp_http_client(headers, timeout, auth) as client:
+            response = await client.get("/protected-endpoint")
+    """
+
+    # Set MCP defaults
+    kwargs: dict[str, Any] = {
+        "follow_redirects": True,
+    }
+
+    # Handle timeout
+    if timeout is None:
+        kwargs["timeout"] = httpx.Timeout(MCP_DEFAULT_TIMEOUT, read=MCP_DEFAULT_SSE_READ_TIMEOUT)
+    else:
+        kwargs["timeout"] = timeout
+
+    # Handle headers
+    if headers is not None:
+        kwargs["headers"] = headers
+
+    # Handle authentication
+    if auth is not None:  # pragma: no cover
+        kwargs["auth"] = auth
+
+    # Handle verify
+    if verify is not None: 
+        kwargs["verify"] = verify
+
+    return httpx.AsyncClient(**kwargs)
+
 
 class StreamableHttpTransport(ClientTransport):
     """Transport implementation that connects to an MCP server via Streamable HTTP Requests."""
@@ -28,6 +104,7 @@ class StreamableHttpTransport(ClientTransport):
     def __init__(
         self,
         url: str | AnyUrl,
+        verify: bool | None = True,
         headers: dict[str, str] | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
@@ -50,7 +127,7 @@ class StreamableHttpTransport(ClientTransport):
             url = str(url)
         if not isinstance(url, str) or not url.startswith("http"):
             raise ValueError("Invalid HTTP/S URL provided for Streamable HTTP.")
-
+        
         # Don't modify the URL path - respect the exact URL provided by the user
         # Some servers are strict about trailing slashes (e.g., PayPal MCP)
 
@@ -58,6 +135,7 @@ class StreamableHttpTransport(ClientTransport):
         self.headers = headers or {}
         self.httpx_client_factory = httpx_client_factory
         self._set_auth(auth)
+        self.verify: bool = verify
 
         if sse_read_timeout is not None:
             if fastmcp.settings.deprecation_warnings:
@@ -121,6 +199,7 @@ class StreamableHttpTransport(ClientTransport):
                 headers=headers,
                 timeout=timeout,
                 auth=self.auth,
+                verify=self.verify,
             )
 
         # Ensure httpx client is closed after use
