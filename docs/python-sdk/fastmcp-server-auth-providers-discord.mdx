@@ -29,7 +29,7 @@ Example:
 
 ## Classes
 
-### `DiscordTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/discord.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `DiscordTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/discord.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Token verifier for Discord OAuth tokens.
@@ -40,7 +40,7 @@ by calling Discord's tokeninfo API to check if they're valid and get user info.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/discord.py#L62" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/discord.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -49,7 +49,7 @@ verify_token(self, token: str) -> AccessToken | None
 Verify Discord OAuth token by calling Discord's tokeninfo API.
 
 
-### `DiscordProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/discord.py#L144" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `DiscordProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/discord.py#L154" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Complete Discord OAuth provider for FastMCP.

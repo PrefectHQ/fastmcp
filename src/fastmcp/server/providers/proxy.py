@@ -78,8 +78,8 @@ class ProxyTool(Tool):
         """Gets a client instance by calling the sync or async factory."""
         client = self._client_factory()
         if inspect.isawaitable(client):
-            client = await client
-        return cast(Client, client)
+            client = cast(Client, await client)
+        return client
 
     def model_copy(self, **kwargs: Any) -> ProxyTool:
         """Override to preserve _backend_name when name changes."""
@@ -127,7 +127,14 @@ class ProxyTool(Tool):
                 # request. Stash the current RequestContext in the shared
                 # ref so handlers can restore it before forwarding.
                 if isinstance(client, StatefulProxyClient):
+<<<<<<< fix-type-annotations
                     client._proxy_rc_ref[0] = ctx.request_context
+=======
+                    cast(list[Any], client._proxy_rc_ref)[0] = (
+                        ctx.request_context,
+                        ctx._fastmcp,  # weakref to FastMCP, not the Context
+                    )
+>>>>>>> main
                 # Build meta dict from request context
                 meta: dict[str, Any] | None = None
                 if hasattr(ctx, "request_context"):
@@ -189,8 +196,13 @@ class ProxyResource(Resource):
         """Gets a client instance by calling the sync or async factory."""
         client = self._client_factory()
         if inspect.isawaitable(client):
+<<<<<<< fix-type-annotations
             client = await client
         return cast(Client, client)
+=======
+            client = cast(Client, await client)
+        return client
+>>>>>>> main
 
     def model_copy(self, **kwargs: Any) -> ProxyResource:
         """Override to preserve _backend_uri when uri changes."""
@@ -288,8 +300,13 @@ class ProxyTemplate(ResourceTemplate):
         """Gets a client instance by calling the sync or async factory."""
         client = self._client_factory()
         if inspect.isawaitable(client):
+<<<<<<< fix-type-annotations
             client = await client
         return cast(Client, client)
+=======
+            client = cast(Client, await client)
+        return client
+>>>>>>> main
 
     def model_copy(self, **kwargs: Any) -> ProxyTemplate:
         """Override to preserve _backend_uri_template when uri_template changes."""
@@ -403,8 +420,13 @@ class ProxyPrompt(Prompt):
         """Gets a client instance by calling the sync or async factory."""
         client = self._client_factory()
         if inspect.isawaitable(client):
+<<<<<<< fix-type-annotations
             client = await client
         return cast(Client, client)
+=======
+            client = cast(Client, await client)
+        return client
+>>>>>>> main
 
     def model_copy(self, **kwargs: Any) -> ProxyPrompt:
         """Override to preserve _backend_name when name changes."""
@@ -517,8 +539,13 @@ class ProxyProvider(Provider):
         """Gets a client instance by calling the sync or async factory."""
         client = self.client_factory()
         if inspect.isawaitable(client):
+<<<<<<< fix-type-annotations
             client = await client
         return cast(Client, client)
+=======
+            client = cast(Client, await client)
+        return client
+>>>>>>> main
 
     # -------------------------------------------------------------------------
     # Tool methods
@@ -639,6 +666,17 @@ def _create_client_factory(
     """
     if isinstance(target, Client):
         client = target
+        if client.is_connected() and type(client) is ProxyClient:
+            logger.info(
+                "Proxy detected connected ProxyClient - creating fresh sessions for each "
+                "request to avoid request context leakage."
+            )
+
+            def fresh_client_factory() -> Client:
+                return client.new()
+
+            return fresh_client_factory
+
         if client.is_connected():
             logger.info(
                 "Proxy detected connected client - reusing existing session for all requests. "
@@ -649,12 +687,11 @@ def _create_client_factory(
                 return client
 
             return reuse_client_factory
-        else:
 
-            def fresh_client_factory() -> Client:
-                return client.new()
+        def fresh_client_factory() -> Client:
+            return client.new()
 
-            return fresh_client_factory
+        return fresh_client_factory
     else:
         # target is not a Client, so it's compatible with ProxyClient.__init__
         base_client = ProxyClient(cast(Any, target))
@@ -791,24 +828,40 @@ async def default_proxy_progress_handler(
 def _restore_request_context(
     rc_ref: list[Any],
 ) -> None:
-    """Set the ``request_ctx`` ContextVar from a stashed RequestContext.
+    """Set the ``request_ctx`` and ``_current_context`` ContextVars from stashed values.
 
     Called at the start of proxy handler invocations in
     ``StatefulProxyClient`` to fix stale ContextVars in the receive-loop
     task.  Only overrides when the ContextVar is genuinely stale (same
     session, different request_id) to avoid corrupting the concurrent
     case where multiple sessions share the same ref via ``copy.copy``.
+
+    We stash a ``(RequestContext, weakref[FastMCP])`` tuple — never a
+    ``Context`` instance — because ``Context`` properties are themselves
+    ContextVar-dependent and would resolve stale values in the receive
+    loop.  Instead we construct a fresh ``Context`` here after restoring
+    ``request_ctx``, so its property accesses read the correct values.
     """
-    rc = rc_ref[0]
-    if rc is None:
+    from fastmcp.server.context import Context, _current_context
+
+    stashed = rc_ref[0]
+    if stashed is None:
         return
+
+    rc, fastmcp_ref = stashed
     try:
         current_rc = request_ctx.get()
     except LookupError:
         request_ctx.set(rc)
+        fastmcp = fastmcp_ref()
+        if fastmcp is not None:
+            _current_context.set(Context(fastmcp))
         return
     if current_rc.session is rc.session and current_rc.request_id != rc.request_id:
         request_ctx.set(rc)
+        fastmcp = fastmcp_ref()
+        if fastmcp is not None:
+            _current_context.set(Context(fastmcp))
 
 
 def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
@@ -881,9 +934,10 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
     # writes [0] before each backend call; handlers read it to detect
     # stale ContextVars and restore the correct request_ctx.
     #
-    # We store the concrete RequestContext (not fastmcp's Context) because
-    # Context properties are themselves ContextVar-dependent and resolve
-    # in the caller's async context — which is stale in the receive loop.
+    # Stores a (RequestContext, weakref[FastMCP]) tuple — never a Context
+    # instance — because Context properties are ContextVar-dependent and
+    # would resolve stale values in the receive loop.  The restore helper
+    # constructs a fresh Context from the weakref after setting request_ctx.
     _proxy_rc_ref: list[Any]
 
     def __init__(self, *args: Any, **kwargs: Any):

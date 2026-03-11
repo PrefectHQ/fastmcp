@@ -21,6 +21,7 @@ Example:
 
 from __future__ import annotations
 
+import contextlib
 import time
 
 import httpx
@@ -48,20 +49,29 @@ class GoogleTokenVerifier(TokenVerifier):
         *,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
+        http_client: httpx.AsyncClient | None = None,
     ):
         """Initialize the Google token verifier.
 
         Args:
             required_scopes: Required OAuth scopes (e.g., ['openid', 'https://www.googleapis.com/auth/userinfo.email'])
             timeout_seconds: HTTP request timeout
+            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+                the client is reused across calls and the caller is responsible for its
+                lifecycle. When None (default), a fresh client is created per call.
         """
         super().__init__(required_scopes=required_scopes)
         self.timeout_seconds = timeout_seconds
+        self._http_client = http_client
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify Google OAuth token by calling Google's tokeninfo API."""
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async with (
+                contextlib.nullcontext(self._http_client)
+                if self._http_client is not None
+                else httpx.AsyncClient(timeout=self.timeout_seconds)
+            ) as client:
                 # Use Google's tokeninfo endpoint to validate the token
                 response = await client.get(
                     "https://www.googleapis.com/oauth2/v1/tokeninfo",
@@ -197,7 +207,9 @@ class GoogleProvider(OAuthProxy):
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
+        consent_csp_policy: str | None = None,
         extra_authorize_params: dict[str, str] | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ):
         """Initialize Google OAuth provider.
 
@@ -229,6 +241,9 @@ class GoogleProvider(OAuthProxy):
                 By default, GoogleProvider sets {"access_type": "offline", "prompt": "consent"} to ensure
                 refresh tokens are returned. You can override these defaults or add additional parameters.
                 Example: {"prompt": "select_account"} to let users choose their Google account.
+            http_client: Optional httpx.AsyncClient for connection pooling in token verification.
+                When provided, the client is reused across verify_token calls and the caller
+                is responsible for its lifecycle. When None (default), a fresh client is created per call.
         """
         # Parse scopes if provided as string
         # Google requires at least one scope - openid is the minimal OIDC scope
@@ -240,6 +255,7 @@ class GoogleProvider(OAuthProxy):
         token_verifier = GoogleTokenVerifier(
             required_scopes=required_scopes_final,
             timeout_seconds=timeout_seconds,
+            http_client=http_client,
         )
 
         # Set Google-specific defaults for extra authorize params
@@ -268,6 +284,7 @@ class GoogleProvider(OAuthProxy):
             client_storage=client_storage,
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
+            consent_csp_policy=consent_csp_policy,
             extra_authorize_params=extra_authorize_params_final,
         )
 

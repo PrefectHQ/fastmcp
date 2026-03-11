@@ -63,11 +63,11 @@ def _create_roots_callback_from_fn(
         context: RequestContext[ClientSession, LifespanContextT],
     ) -> mcp.types.ListRootsResult | mcp.types.ErrorData:
         try:
-            roots_result = fn(context)
-            if inspect.isawaitable(roots_result):
-                roots_result = await roots_result
+            roots = fn(context)
+            if inspect.isawaitable(roots):
+                roots = await roots
             return mcp.types.ListRootsResult(
-                roots=convert_roots_list(cast(RootsList, roots_result))
+                roots=convert_roots_list(cast(RootsList, roots))
             )
         except Exception as e:
             return mcp.types.ErrorData(

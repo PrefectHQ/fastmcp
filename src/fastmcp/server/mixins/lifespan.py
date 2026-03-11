@@ -8,6 +8,8 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from typing import TYPE_CHECKING, Any
 
+from uncalled_for import SharedContext
+
 import fastmcp
 from fastmcp.utilities.logging import get_logger
 
@@ -48,9 +50,11 @@ class LifespanMixin:
         server_token = _current_server.set(weakref.ref(self))
 
         try:
-            # If docket is not available, skip task infrastructure
+            # If docket is not available, skip task infrastructure but still
+            # set up SharedContext so Shared() dependencies work.
             if not is_docket_available():
-                yield
+                async with SharedContext():
+                    yield
                 return
 
             # Collect task-enabled components at startup with all transforms applied.
@@ -64,9 +68,11 @@ class LifespanMixin:
                     raise
                 task_components = []
 
-            # If no task-enabled components, skip Docket infrastructure entirely
+            # If no task-enabled components, skip Docket infrastructure but still
+            # set up SharedContext so Shared() dependencies work.
             if not task_components:
-                yield
+                async with SharedContext():
+                    yield
                 return
 
             # Docket is available AND there are task-enabled components
@@ -130,30 +136,49 @@ class LifespanMixin:
 
     @asynccontextmanager
     async def _lifespan_manager(self: FastMCP) -> AsyncIterator[None]:
-        if self._lifespan_result_set:
-            yield
+        async with self._lifespan_lock:
+            if self._lifespan_result_set:
+                self._lifespan_ref_count += 1
+                should_enter_lifespan = False
+            else:
+                self._lifespan_ref_count = 1
+                should_enter_lifespan = True
+
+        if not should_enter_lifespan:
+            try:
+                yield
+            finally:
+                async with self._lifespan_lock:
+                    self._lifespan_ref_count -= 1
+                    if self._lifespan_ref_count == 0:
+                        self._lifespan_result_set = False
+                        self._lifespan_result = None
             return
 
-        async with (
-            self._lifespan(self) as user_lifespan_result,
-            self._docket_lifespan(),
-        ):
-            self._lifespan_result = user_lifespan_result
-            self._lifespan_result_set = True
+        try:
+            async with (
+                self._lifespan(self) as user_lifespan_result,
+                self._docket_lifespan(),
+            ):
+                self._lifespan_result = user_lifespan_result
+                self._lifespan_result_set = True
 
-            async with AsyncExitStack[bool | None]() as stack:
-                # Start lifespans for all providers
-                for provider in self.providers:
-                    await stack.enter_async_context(provider.lifespan())
+                async with AsyncExitStack[bool | None]() as stack:
+                    # Start lifespans for all providers
+                    for provider in self.providers:
+                        await stack.enter_async_context(provider.lifespan())
 
-                self._started.set()
-                try:
-                    yield
-                finally:
-                    self._started.clear()
-
-        self._lifespan_result_set = False
-        self._lifespan_result = None
+                    self._started.set()
+                    try:
+                        yield
+                    finally:
+                        self._started.clear()
+        finally:
+            async with self._lifespan_lock:
+                self._lifespan_ref_count -= 1
+                if self._lifespan_ref_count == 0:
+                    self._lifespan_result_set = False
+                    self._lifespan_result = None
 
     def _setup_task_protocol_handlers(self: FastMCP) -> None:
         """Register SEP-1686 task protocol handlers with SDK.

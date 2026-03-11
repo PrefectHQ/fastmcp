@@ -130,6 +130,25 @@ def fastmcp_server():
     def welcome(name: str) -> str:
         return f"Welcome to FastMCP, {name}!"
 
+    @server.prompt
+    def image_prompt():
+        """A prompt that returns an image."""
+        from fastmcp.prompts.prompt import Message, PromptResult
+
+        return PromptResult(
+            messages=[
+                Message("Here is an image:"),
+                Message(
+                    content=mcp_types.ImageContent(
+                        type="image",
+                        data="iVBORw0KGgoAAAANSUhEUg==",
+                        mimeType="image/png",
+                    ),
+                    role="user",
+                ),
+            ]
+        )
+
     return server
 
 
@@ -655,6 +674,22 @@ class TestPrompts:
             # Check that the overwritten prompt has the additional 'extra' parameter
             param_names = [arg.name for arg in welcome_prompt.arguments or []]
             assert "extra" in param_names
+
+    async def test_proxy_prompt_preserves_image_content(
+        self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
+    ):
+        """Test that ProxyPrompt preserves ImageContent without lossy conversion."""
+        async with Client(fastmcp_server) as client:
+            result = await client.get_prompt("image_prompt")
+        async with Client(proxy_server) as client:
+            proxy_result = await client.get_prompt("image_prompt")
+
+        # The proxy result should match the original exactly
+        assert proxy_result == result
+        # Verify the image content is preserved as ImageContent, not JSON text
+        assert isinstance(proxy_result.messages[1].content, mcp_types.ImageContent)
+        assert proxy_result.messages[1].content.data == "iVBORw0KGgoAAAANSUhEUg=="
+        assert proxy_result.messages[1].content.mimeType == "image/png"
 
 
 async def test_proxy_handles_multiple_concurrent_tasks_correctly(

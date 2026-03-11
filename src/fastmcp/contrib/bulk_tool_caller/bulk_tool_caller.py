@@ -1,6 +1,6 @@
 from typing import Any
 
-from mcp.types import CallToolResult
+from mcp.types import CallToolResult, TextContent
 from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
@@ -52,6 +52,8 @@ class BulkToolCaller(MCPMixin):
     """
     A class to provide a "bulk tool call" tool for a FastMCP server
     """
+
+    _BULK_TOOL_NAMES: frozenset[str] = frozenset({"call_tools_bulk", "call_tool_bulk"})
 
     def register_tools(
         self,
@@ -121,6 +123,22 @@ class BulkToolCaller(MCPMixin):
         """
         Helper method to call a tool with the provided arguments.
         """
+
+        if tool in self._BULK_TOOL_NAMES:
+            return CallToolRequestResult(
+                tool=tool,
+                arguments=arguments,
+                isError=True,
+                content=[
+                    TextContent(
+                        type="text",
+                        text=(
+                            "BulkToolCaller cannot call itself. "
+                            "The tools 'call_tools_bulk' and 'call_tool_bulk' are disallowed."
+                        ),
+                    )
+                ],
+            )
 
         async with Client(self.connection) as client:
             result = await client.call_tool_mcp(name=tool, arguments=arguments)

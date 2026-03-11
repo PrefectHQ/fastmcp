@@ -1,5 +1,7 @@
 """Tests for the MCPMixin class."""
 
+import inspect
+
 import pytest
 
 from fastmcp import FastMCP
@@ -13,6 +15,9 @@ from fastmcp.contrib.mcp_mixin.mcp_mixin import (
     _DEFAULT_SEPARATOR_PROMPT,
     _DEFAULT_SEPARATOR_RESOURCE,
     _DEFAULT_SEPARATOR_TOOL,
+    _PROMPT_VALID_KWARGS,
+    _RESOURCE_VALID_KWARGS,
+    _TOOL_VALID_KWARGS,
 )
 
 
@@ -337,3 +342,210 @@ class TestMCPMixin:
 
         assert prompt.title == "My Prompt Title"
         assert prompt.meta == {"priority": "high", "category": "analysis"}
+
+
+class TestMCPMixinKwargsSync:
+    """Verify that the valid-kwarg sets stay in sync with from_function signatures."""
+
+    def test_tool_valid_kwargs_match_from_function(self):
+        from fastmcp.tools.tool import Tool
+
+        expected = frozenset(
+            p for p in inspect.signature(Tool.from_function).parameters if p != "fn"
+        )
+        assert _TOOL_VALID_KWARGS == expected
+
+    def test_resource_valid_kwargs_match_from_function(self):
+        from fastmcp.resources.resource import Resource
+
+        expected = frozenset(
+            p
+            for p in inspect.signature(Resource.from_function).parameters
+            if p not in ("fn", "uri")
+        )
+        assert _RESOURCE_VALID_KWARGS == expected
+
+    def test_prompt_valid_kwargs_match_from_function(self):
+        from fastmcp.prompts.prompt import Prompt
+
+        expected = frozenset(
+            p for p in inspect.signature(Prompt.from_function).parameters if p != "fn"
+        )
+        assert _PROMPT_VALID_KWARGS == expected
+
+
+class TestMCPMixinValidation:
+    """Unknown kwargs raise TypeError at decoration time, not at registration."""
+
+    def test_mcp_tool_rejects_unknown_param(self):
+        with pytest.raises(TypeError, match="unexpected keyword argument"):
+
+            @mcp_tool(definitely_not_a_real_param="oops")
+            def my_tool(self):
+                pass
+
+    def test_mcp_resource_rejects_unknown_param(self):
+        with pytest.raises(TypeError, match="unexpected keyword argument"):
+
+            @mcp_resource(uri="test://x", definitely_not_a_real_param="oops")
+            def my_resource(self):
+                pass
+
+    def test_mcp_prompt_rejects_unknown_param(self):
+        with pytest.raises(TypeError, match="unexpected keyword argument"):
+
+            @mcp_prompt(definitely_not_a_real_param="oops")
+            def my_prompt(self):
+                pass
+
+    def test_error_raised_at_decoration_not_registration(self):
+        """The TypeError must surface when the decorator is applied, not later."""
+        with pytest.raises(TypeError):
+
+            class MyMixin(MCPMixin):
+                @mcp_tool(bad_kwarg=True)
+                def tool(self):
+                    pass
+
+
+class TestMCPMixinEnabled:
+    """enabled=False suppresses registration; enabled=True (default) registers normally."""
+
+    async def test_tool_enabled_false_skips_registration(self):
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_tool(enabled=False)
+            def hidden_tool(self):
+                pass
+
+            @mcp_tool()
+            def visible_tool(self):
+                pass
+
+        MyMixin().register_tools(mcp)
+        tools = await mcp.list_tools()
+        names = {t.name for t in tools}
+        assert "visible_tool" in names
+        assert "hidden_tool" not in names
+
+    async def test_resource_enabled_false_skips_registration(self):
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_resource(uri="test://hidden", enabled=False)
+            def hidden_resource(self):
+                pass
+
+            @mcp_resource(uri="test://visible")
+            def visible_resource(self):
+                pass
+
+        MyMixin().register_resources(mcp)
+        resources = await mcp.list_resources()
+        uris = {str(r.uri) for r in resources}
+        assert "test://visible" in uris
+        assert "test://hidden" not in uris
+
+    async def test_prompt_enabled_false_skips_registration(self):
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_prompt(enabled=False)
+            def hidden_prompt(self):
+                pass
+
+            @mcp_prompt()
+            def visible_prompt(self):
+                pass
+
+        MyMixin().register_prompts(mcp)
+        prompts = await mcp.list_prompts()
+        names = {p.name for p in prompts}
+        assert "visible_prompt" in names
+        assert "hidden_prompt" not in names
+
+    async def test_tool_enabled_true_registers_normally(self):
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_tool(enabled=True)
+            def my_tool(self):
+                pass
+
+        MyMixin().register_tools(mcp)
+        tools = await mcp.list_tools()
+        assert any(t.name == "my_tool" for t in tools)
+
+
+class TestMCPMixinNewParams:
+    """Parameters that were previously missing now work end-to-end."""
+
+    async def test_tool_auth_param_forwarded(self):
+        from fastmcp.server.auth import require_scopes
+
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_tool(auth=require_scopes("write"))
+            def secure_tool(self):
+                return "ok"
+
+        MyMixin().register_tools(mcp)
+        # list_tools() filters by auth context; check internal provider directly
+        tools = await mcp.local_provider.list_tools()
+        assert any(t.name == "secure_tool" for t in tools)
+
+    async def test_tool_timeout_param_forwarded(self):
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_tool(timeout=5.0)
+            def timed_tool(self):
+                return "ok"
+
+        MyMixin().register_tools(mcp)
+        tools = await mcp.list_tools()
+        assert any(t.name == "timed_tool" for t in tools)
+
+    async def test_tool_version_param_forwarded(self):
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_tool(version="2.0")
+            def versioned_tool(self):
+                return "ok"
+
+        MyMixin().register_tools(mcp)
+        tools = await mcp.list_tools()
+        assert any(t.name == "versioned_tool" for t in tools)
+
+    async def test_resource_auth_param_forwarded(self):
+        from fastmcp.server.auth import require_scopes
+
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_resource(uri="test://secure", auth=require_scopes("read"))
+            def secure_resource(self):
+                return "data"
+
+        MyMixin().register_resources(mcp)
+        # list_resources() filters by auth context; check internal provider directly
+        resources = await mcp.local_provider.list_resources()
+        assert any(str(r.uri) == "test://secure" for r in resources)
+
+    async def test_prompt_auth_param_forwarded(self):
+        from fastmcp.server.auth import require_scopes
+
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_prompt(auth=require_scopes("read"))
+            def secure_prompt(self):
+                return "prompt text"
+
+        MyMixin().register_prompts(mcp)
+        # list_prompts() filters by auth context; check internal provider directly
+        prompts = await mcp.local_provider.list_prompts()
+        assert any(p.name == "secure_prompt" for p in prompts)

@@ -29,8 +29,10 @@ FastMCP provides several transforms for common use cases:
 - **[Namespace](/servers/transforms/namespace)** - Prefix component names to prevent conflicts when composing servers
 - **[Tool Transformation](/servers/transforms/tool-transformation)** - Rename tools, modify descriptions, reshape arguments
 - **[Enabled](/servers/visibility)** - Control which components are visible at runtime
+- **[Tool Search](/servers/transforms/tool-search)** - Replace large tool catalogs with on-demand search
 - **[Resources as Tools](/servers/transforms/resources-as-tools)** - Expose resources to tool-only clients
 - **[Prompts as Tools](/servers/transforms/prompts-as-tools)** - Expose prompts to tool-only clients
+- **[Code Mode (Experimental)](/servers/transforms/code-mode)** - Replace many tools with programmable `search` + `execute`
 
 ## Server vs Provider Transforms
 
@@ -79,13 +81,11 @@ Server transforms apply to all components from all providers. They run after pro
 from fastmcp import FastMCP
 from fastmcp.server.transforms import Namespace
 
-mcp = FastMCP("Server")
+mcp = FastMCP("Server", transforms=[Namespace("v1")])
 
 @mcp.tool
 def greet(name: str) -> str:
     return f"Hello, {name}!"
-
-mcp.add_transform(Namespace("v1"))
 
 # All tools become v1_toolname
 ```

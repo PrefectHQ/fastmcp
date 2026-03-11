@@ -86,16 +86,22 @@ def compute_file_hash(path: Path) -> str:
 def scan_skill_files(skill_dir: Path) -> list[SkillFileInfo]:
     """Scan a skill directory for all files."""
     files = []
+    resolved_skill_dir = skill_dir.resolve()
+
     # Sort for deterministic ordering across platforms
     for file_path in sorted(skill_dir.rglob("*")):
         if file_path.is_file():
+            resolved_file_path = file_path.resolve()
+            if not resolved_file_path.is_relative_to(resolved_skill_dir):
+                continue
+
             rel_path = file_path.relative_to(skill_dir)
             files.append(
                 SkillFileInfo(
                     # Use POSIX paths for cross-platform URI consistency
                     path=rel_path.as_posix(),
-                    size=file_path.stat().st_size,
-                    hash=compute_file_hash(file_path),
+                    size=resolved_file_path.stat().st_size,
+                    hash=compute_file_hash(resolved_file_path),
                 )
             )
     return files

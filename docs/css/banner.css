@@ -64,3 +64,11 @@
   color: #f1f5f9 !important;
 }
 
+@media (max-width: 767px) {
+  #banner {
+    font-size: 0.8rem !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+}
+

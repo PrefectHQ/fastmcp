@@ -9,6 +9,7 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.exceptions import AuthorizationError
 from fastmcp.server.auth import (
     AccessToken,
     AuthContext,
@@ -156,7 +157,6 @@ class TestRunAuthChecks:
 
     async def test_authorization_error_propagates(self):
         """AuthorizationError from auth check should propagate with custom message."""
-        from fastmcp.exceptions import AuthorizationError
 
         def custom_auth_check(ctx: AuthContext) -> bool:
             raise AuthorizationError("Custom denial reason")
@@ -177,8 +177,6 @@ class TestRunAuthChecks:
 
     async def test_authorization_error_stops_chain(self):
         """AuthorizationError should stop the check chain and propagate."""
-        from fastmcp.exceptions import AuthorizationError
-
         call_order = []
 
         def check_1(ctx: AuthContext) -> bool:
@@ -242,7 +240,6 @@ class TestRunAuthChecks:
 
     async def test_async_check_authorization_error_propagates(self):
         """Async checks that raise AuthorizationError should propagate."""
-        from fastmcp.exceptions import AuthorizationError
 
         async def async_denial(ctx: AuthContext) -> bool:
             raise AuthorizationError("Async denial")
@@ -455,6 +452,88 @@ class TestAuthMiddleware:
             assert len(result.tools) == 2
         finally:
             auth_context_var.reset(tok)
+
+    async def test_middleware_skips_tool_on_authorization_error(self):
+        def deny_blocked_tool(ctx: AuthContext) -> bool:
+            if ctx.component.name == "blocked_tool":
+                raise AuthorizationError(f"deny {ctx.component.name}")
+            return True
+
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=deny_blocked_tool)])
+
+        @mcp.tool
+        def blocked_tool() -> str:
+            return "blocked"
+
+        @mcp.tool
+        def allowed_tool() -> str:
+            return "allowed"
+
+        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
+        assert [tool.name for tool in result.tools] == ["allowed_tool"]
+
+    async def test_middleware_skips_resource_on_authorization_error(self):
+        def deny_blocked_resource(ctx: AuthContext) -> bool:
+            if ctx.component.name == "blocked_resource":
+                raise AuthorizationError(f"deny {ctx.component.name}")
+            return True
+
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=deny_blocked_resource)])
+
+        @mcp.resource("resource://blocked")
+        def blocked_resource() -> str:
+            return "blocked"
+
+        @mcp.resource("resource://allowed")
+        def allowed_resource() -> str:
+            return "allowed"
+
+        result = await mcp._list_resources_mcp(mcp_types.ListResourcesRequest())
+        assert [str(resource.uri) for resource in result.resources] == [
+            "resource://allowed"
+        ]
+
+    async def test_middleware_skips_resource_template_on_authorization_error(self):
+        def deny_blocked_resource_template(ctx: AuthContext) -> bool:
+            if ctx.component.name == "blocked_resource_template":
+                raise AuthorizationError(f"deny {ctx.component.name}")
+            return True
+
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=deny_blocked_resource_template)])
+
+        @mcp.resource("resource://blocked/{item}")
+        def blocked_resource_template(item: str) -> str:
+            return item
+
+        @mcp.resource("resource://allowed/{item}")
+        def allowed_resource_template(item: str) -> str:
+            return item
+
+        result = await mcp._list_resource_templates_mcp(
+            mcp_types.ListResourceTemplatesRequest()
+        )
+        assert [template.uriTemplate for template in result.resourceTemplates] == [
+            "resource://allowed/{item}"
+        ]
+
+    async def test_middleware_skips_prompt_on_authorization_error(self):
+        def deny_blocked_prompt(ctx: AuthContext) -> bool:
+            if ctx.component.name == "blocked_prompt":
+                raise AuthorizationError(f"deny {ctx.component.name}")
+            return True
+
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=deny_blocked_prompt)])
+
+        @mcp.prompt
+        def blocked_prompt() -> str:
+            return "blocked"
+
+        @mcp.prompt
+        def allowed_prompt() -> str:
+            return "allowed"
+
+        result = await mcp._list_prompts_mcp(mcp_types.ListPromptsRequest())
+        assert [prompt.name for prompt in result.prompts] == ["allowed_prompt"]
 
 
 # =============================================================================

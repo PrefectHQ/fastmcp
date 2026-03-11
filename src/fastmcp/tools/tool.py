@@ -38,6 +38,14 @@ from fastmcp.utilities.types import (
     NotSetT,
 )
 
+try:
+    from prefab_ui.app import PrefabApp as _PrefabApp
+    from prefab_ui.components.base import Component as _PrefabComponent
+
+    _HAS_PREFAB = True
+except ImportError:
+    _HAS_PREFAB = False
+
 if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution
@@ -82,6 +90,16 @@ class ToolResult(BaseModel):
         converted_content: list[ContentBlock] = _convert_to_content(result=content)
 
         if structured_content is not None:
+            # Convert Prefab types to their wire-format envelope before
+            # generic serialization, so the renderer gets the right shape.
+            if _HAS_PREFAB:
+                if isinstance(structured_content, _PrefabApp):
+                    structured_content = _prefab_to_json(structured_content)
+                elif isinstance(structured_content, _PrefabComponent):
+                    structured_content = _prefab_to_json(
+                        _PrefabApp(view=structured_content)
+                    )
+
             try:
                 structured_content = pydantic_core.to_jsonable_python(
                     value=structured_content
@@ -247,6 +265,12 @@ class Tool(FastMCPComponent):
         """
         if isinstance(raw_value, ToolResult):
             return raw_value
+
+        if _HAS_PREFAB:
+            if isinstance(raw_value, _PrefabApp):
+                return _prefab_to_tool_result(raw_value)
+            if isinstance(raw_value, _PrefabComponent):
+                return _prefab_to_tool_result(_PrefabApp(view=raw_value))
 
         content = _convert_to_content(raw_value, serializer=self.serializer)
 
@@ -452,6 +476,32 @@ def _convert_to_single_content_block(
         return TextContent(type="text", text=item)
 
     return TextContent(type="text", text=_serialize_with_fallback(item, serializer))
+
+
+_PREFAB_TEXT_FALLBACK = "[Rendered Prefab UI]"
+
+
+def _get_tool_resolver() -> Callable[..., str] | None:
+    """Get the FastMCPApp callable resolver, if available."""
+    try:
+        from fastmcp.server.app import _resolve_tool_ref
+
+        return _resolve_tool_ref
+    except ImportError:
+        return None
+
+
+def _prefab_to_json(app: Any) -> dict[str, Any]:
+    """Call PrefabApp.to_json() with the FastMCPApp callable resolver."""
+    return app.to_json(tool_resolver=_get_tool_resolver())
+
+
+def _prefab_to_tool_result(app: Any) -> ToolResult:
+    """Convert a PrefabApp to a FastMCP ToolResult."""
+    return ToolResult(
+        content=[TextContent(type="text", text=_PREFAB_TEXT_FALLBACK)],
+        structured_content=_prefab_to_json(app),
+    )
 
 
 def _convert_to_content(

@@ -12,7 +12,7 @@
     "decoration": "gradient"
   },
   "banner": {
-    "content": "Join us at the inaugural PyAI Conf in San Francisco on March 10th! [Learn More](https://pyai.events?utm_source=gofastmcp)"
+    "content": "Deploy FastMCP servers for free on [Prefect Horizon](https://www.prefect.io/horizon)"
   },
   "colors": {
     "dark": "#f72585",
@@ -88,18 +88,7 @@
                 "pages": [
                   "getting-started/welcome",
                   "getting-started/installation",
-                  "getting-started/quickstart",
-                  {
-                    "collapsed": true,
-                    "group": "Upgrade",
-                    "icon": "up",
-                    "tag": "NEW",
-                    "pages": [
-                      "getting-started/upgrading/from-fastmcp-2",
-                      "getting-started/upgrading/from-mcp-sdk",
-                      "getting-started/upgrading/from-low-level-sdk"
-                    ]
-                  }
+                  "getting-started/quickstart"
                 ]
               },
               {
@@ -120,10 +109,10 @@
                   {
                     "collapsed": true,
                     "group": "Features",
-                    "tag": "NEW",
                     "icon": "stars",
                     "pages": [
                       "servers/tasks",
+                      "servers/composition",
                       "servers/dependency-injection",
                       "servers/elicitation",
                       "servers/icons",
@@ -135,13 +124,14 @@
                       "servers/sampling",
                       "servers/storage-backends",
                       "servers/telemetry",
+                      "servers/testing",
                       "servers/versioning"
-                    ]
+                    ],
+                    "tag": "UPDATED"
                   },
                   {
                     "collapsed": true,
                     "group": "Providers",
-                    "tag": "NEW",
                     "icon": "layer-group",
                     "pages": [
                       "servers/providers/overview",
@@ -149,23 +139,25 @@
                       "servers/providers/filesystem",
                       "servers/providers/proxy",
                       "servers/providers/skills",
-                      "servers/providers/custom",
-                      "servers/providers/mounting"
-                    ]
+                      "servers/providers/custom"
+                    ],
+                    "tag": "NEW"
                   },
                   {
                     "collapsed": true,
                     "group": "Transforms",
-                    "tag": "NEW",
                     "icon": "wand-magic-sparkles",
                     "pages": [
                       "servers/transforms/transforms",
                       "servers/transforms/namespace",
                       "servers/transforms/tool-transformation",
                       "servers/visibility",
+                      "servers/transforms/code-mode",
+                      "servers/transforms/tool-search",
                       "servers/transforms/resources-as-tools",
                       "servers/transforms/prompts-as-tools"
-                    ]
+                    ],
+                    "tag": "NEW"
                   },
                   {
                     "collapsed": true,
@@ -177,8 +169,10 @@
                       "servers/auth/remote-oauth",
                       "servers/auth/oauth-proxy",
                       "servers/auth/oidc-proxy",
-                      "servers/auth/full-oauth-server"
-                    ]
+                      "servers/auth/full-oauth-server",
+                      "servers/auth/multi-auth"
+                    ],
+                    "tag": "UPDATED"
                   },
                   "servers/authorization",
                   {
@@ -189,9 +183,7 @@
                       "deployment/running-server",
                       "deployment/http",
                       "deployment/prefect-horizon",
-                      "deployment/server-configuration",
-                      "patterns/cli",
-                      "patterns/testing"
+                      "deployment/server-configuration"
                     ]
                   }
                 ]
@@ -200,6 +192,8 @@
                 "group": "Apps",
                 "pages": [
                   "apps/overview",
+                  "apps/prefab",
+                  "apps/patterns",
                   "apps/low-level"
                 ]
               },
@@ -208,16 +202,6 @@
                 "pages": [
                   "clients/client",
                   "clients/transports",
-                  {
-                    "collapsed": true,
-                    "group": "CLI",
-                    "tag": "NEW",
-                    "icon": "terminal",
-                    "pages": [
-                      "clients/cli",
-                      "clients/generate-cli"
-                    ]
-                  },
                   {
                     "collapsed": true,
                     "group": "Core Operations",
@@ -240,18 +224,19 @@
                       "clients/progress",
                       "clients/logging",
                       "clients/roots"
-                    ]
+                    ],
+                    "tag": "UPDATED"
                   },
                   {
                     "collapsed": true,
                     "group": "Authentication",
-                    "tag": "NEW",
                     "icon": "key",
                     "pages": [
                       "clients/auth/oauth",
                       "clients/auth/cimd",
                       "clients/auth/bearer"
-                    ]
+                    ],
+                    "tag": "UPDATED"
                   }
                 ]
               },
@@ -269,14 +254,15 @@
                       "integrations/azure",
                       "integrations/descope",
                       "integrations/discord",
+                      "integrations/eunomia-authorization",
                       "integrations/github",
                       "integrations/google",
                       "integrations/oci",
+                      "integrations/permit",
+                      "integrations/propelauth",
                       "integrations/scalekit",
                       "integrations/supabase",
-                      "integrations/workos",
-                      "integrations/eunomia-authorization",
-                      "integrations/permit"
+                      "integrations/workos"
                     ]
                   },
                   {
@@ -298,8 +284,7 @@
                       "integrations/claude-desktop",
                       "integrations/cursor",
                       "integrations/gemini-cli",
-                      "integrations/goose",
-                      "integrations/mcp-json-configuration"
+                      "integrations/goose"
                     ]
                   },
                   {
@@ -311,18 +296,56 @@
                       "integrations/gemini",
                       "integrations/openai"
                     ]
-                  }
+                  },
+                  "integrations/mcp-json-configuration"
                 ]
               },
               {
-                "group": "Development",
+                "group": "CLI",
                 "pages": [
-                  "development/contributing",
-                  "development/tests",
-                  "development/releases",
-                  "updates",
-                  "changelog",
-                  "patterns/contrib"
+                  "cli/overview",
+                  "cli/running",
+                  "cli/install-mcp",
+                  "cli/inspecting",
+                  "cli/client",
+                  "cli/generate-cli",
+                  "cli/auth"
+                ]
+              },
+              {
+                "group": "More",
+                "pages": [
+                  "more/settings",
+                  {
+                    "collapsed": true,
+                    "group": "Upgrading",
+                    "icon": "up",
+                    "pages": [
+                      "getting-started/upgrading/from-fastmcp-2",
+                      "getting-started/upgrading/from-mcp-sdk",
+                      "getting-started/upgrading/from-low-level-sdk"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
+                    "group": "Development",
+                    "icon": "code",
+                    "pages": [
+                      "development/contributing",
+                      "development/tests",
+                      "development/releases",
+                      "patterns/contrib"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
+                    "group": "What's New",
+                    "icon": "sparkles",
+                    "pages": [
+                      "updates",
+                      "changelog"
+                    ]
+                  }
                 ]
               }
             ],
@@ -406,6 +429,7 @@
                             "pages": [
                               "python-sdk/fastmcp-client-sampling-handlers-__init__",
                               "python-sdk/fastmcp-client-sampling-handlers-anthropic",
+                              "python-sdk/fastmcp-client-sampling-handlers-google_genai",
                               "python-sdk/fastmcp-client-sampling-handlers-openai"
                             ]
                           }
@@ -424,6 +448,26 @@
                           "python-sdk/fastmcp-client-transports-memory",
                           "python-sdk/fastmcp-client-transports-sse",
                           "python-sdk/fastmcp-client-transports-stdio"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "fastmcp.experimental",
+                    "pages": [
+                      "python-sdk/fastmcp-experimental-__init__",
+                      {
+                        "group": "sampling",
+                        "pages": [
+                          "python-sdk/fastmcp-experimental-sampling-__init__",
+                          "python-sdk/fastmcp-experimental-sampling-handlers"
+                        ]
+                      },
+                      {
+                        "group": "transforms",
+                        "pages": [
+                          "python-sdk/fastmcp-experimental-transforms-__init__",
+                          "python-sdk/fastmcp-experimental-transforms-code_mode"
                         ]
                       }
                     ]
@@ -487,6 +531,7 @@
                               "python-sdk/fastmcp-server-auth-providers-introspection",
                               "python-sdk/fastmcp-server-auth-providers-jwt",
                               "python-sdk/fastmcp-server-auth-providers-oci",
+                              "python-sdk/fastmcp-server-auth-providers-propelauth",
                               "python-sdk/fastmcp-server-auth-providers-scalekit",
                               "python-sdk/fastmcp-server-auth-providers-supabase",
                               "python-sdk/fastmcp-server-auth-providers-workos"
@@ -616,9 +661,19 @@
                         "group": "transforms",
                         "pages": [
                           "python-sdk/fastmcp-server-transforms-__init__",
+                          "python-sdk/fastmcp-server-transforms-catalog",
                           "python-sdk/fastmcp-server-transforms-namespace",
                           "python-sdk/fastmcp-server-transforms-prompts_as_tools",
                           "python-sdk/fastmcp-server-transforms-resources_as_tools",
+                          {
+                            "group": "search",
+                            "pages": [
+                              "python-sdk/fastmcp-server-transforms-search-__init__",
+                              "python-sdk/fastmcp-server-transforms-search-base",
+                              "python-sdk/fastmcp-server-transforms-search-bm25",
+                              "python-sdk/fastmcp-server-transforms-search-regex"
+                            ]
+                          },
                           "python-sdk/fastmcp-server-transforms-tool_transform",
                           "python-sdk/fastmcp-server-transforms-version_filter",
                           "python-sdk/fastmcp-server-transforms-visibility"
@@ -912,6 +967,22 @@
   },
   "redirects": [
     {
+      "destination": "/cli/overview",
+      "source": "/patterns/cli"
+    },
+    {
+      "destination": "/servers/testing",
+      "source": "/patterns/testing"
+    },
+    {
+      "destination": "/cli/client",
+      "source": "/clients/cli"
+    },
+    {
+      "destination": "/cli/generate-cli",
+      "source": "/clients/generate-cli"
+    },
+    {
       "destination": "/deployment/prefect-horizon",
       "source": "/deployment/fastmcp-cloud"
     },
@@ -932,7 +1003,7 @@
       "source": "/patterns/proxy"
     },
     {
-      "destination": "/servers/providers/mounting",
+      "destination": "/servers/composition",
       "source": "/patterns/composition"
     },
     {
@@ -940,8 +1011,8 @@
       "source": "/servers/proxy"
     },
     {
-      "destination": "/servers/providers/mounting",
-      "source": "/servers/composition"
+      "destination": "/servers/composition",
+      "source": "/servers/providers/mounting"
     },
     {
       "destination": "/servers/transforms/transforms",

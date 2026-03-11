@@ -97,7 +97,7 @@ client = Client(
 
 ## Built-in Handlers
 
-FastMCP provides built-in handlers for OpenAI and Anthropic APIs that support the full sampling API including tool use.
+FastMCP provides built-in handlers for OpenAI, Anthropic, and Google Gemini APIs that support the full sampling API including tool use.
 
 ### OpenAI Handler
 
@@ -147,6 +147,24 @@ client = Client(
 
 <Note>
 Install the Anthropic handler with `pip install fastmcp[anthropic]`.
+</Note>
+
+### Google Gemini Handler
+
+<VersionBadge version="3.1.0" />
+
+```python
+from fastmcp import Client
+from fastmcp.client.sampling.handlers.google_genai import GoogleGenAISamplingHandler
+
+client = Client(
+    "my_mcp_server.py",
+    sampling_handler=GoogleGenAISamplingHandler(default_model="gemini-2.0-flash"),
+)
+```
+
+<Note>
+Install the Google Gemini handler with `pip install fastmcp[gemini]`.
 </Note>
 
 ## Sampling Capabilities

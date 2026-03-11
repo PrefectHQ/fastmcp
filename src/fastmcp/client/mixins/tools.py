@@ -25,6 +25,8 @@ from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
 
+AUTO_PAGINATION_MAX_PAGES = 250
+
 # Type alias for task response union (SEP-1686 graceful degradation)
 ToolTaskResponseUnion = RootModel[mcp.types.CreateTaskResult | mcp.types.CallToolResult]
 
@@ -57,25 +59,31 @@ class ClientToolsMixin:
         )
         return result
 
-    async def list_tools(self: Client) -> list[mcp.types.Tool]:
+    async def list_tools(
+        self: Client,
+        max_pages: int = AUTO_PAGINATION_MAX_PAGES,
+    ) -> list[mcp.types.Tool]:
         """Retrieve all tools available on the server.
 
         This method automatically fetches all pages if the server paginates results,
         returning the complete list. For manual pagination control (e.g., to handle
         large result sets incrementally), use list_tools_mcp() with the cursor parameter.
 
+        Args:
+            max_pages: Maximum number of pages to fetch before raising. Defaults to 250.
+
         Returns:
             list[mcp.types.Tool]: A list of all Tool objects.
 
         Raises:
-            RuntimeError: If called while the client is not connected.
+            RuntimeError: If the page limit is reached before pagination completes.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
         all_tools: list[mcp.types.Tool] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
-        while True:
+        for _ in range(max_pages):
             result = await self.list_tools_mcp(cursor=cursor)
             all_tools.extend(result.tools)
             if not result.nextCursor:
@@ -88,6 +96,13 @@ class ClientToolsMixin:
                 break
             seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
+        else:
+            raise RuntimeError(
+                f"[{self.name}] Reached auto-pagination limit"
+                f" ({max_pages} pages) for list_tools."
+                " Use list_tools_mcp() with cursor for manual pagination,"
+                " or increase max_pages."
+            )
 
         return all_tools
 

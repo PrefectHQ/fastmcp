@@ -144,6 +144,7 @@ class MiddlewareServerSession(ServerSession):
                             "Cannot send error response as response was already sent.",
                             exc_info=e,
                         )
+                    return None
 
         # Fall through to default handling (task methods now handled via registered handlers)
         return await super()._received_request(responder)

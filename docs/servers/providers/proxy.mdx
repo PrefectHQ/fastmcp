@@ -54,7 +54,7 @@ This gives you:
 - Session isolation to prevent context mixing
 
 <Tip>
-To mount a proxy inside another FastMCP server, see [Mounting External Servers](/servers/providers/mounting#mounting-external-servers).
+To mount a proxy inside another FastMCP server, see [Mounting External Servers](/servers/composition#mounting-external-servers).
 </Tip>
 
 ## Transport Bridging
@@ -258,7 +258,7 @@ Proxying introduces network latency:
 
 When mounting proxy servers, this latency affects all operations on the parent server.
 
-For low-latency requirements, consider using [`import_server()`](/servers/providers/mounting#static-importing) to copy tools at startup.
+For low-latency requirements, consider caching strategies or limiting mounting depth.
 
 ## Advanced Usage
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import warnings
 from collections.abc import Callable
@@ -22,7 +23,10 @@ from fastmcp.server.dependencies import (
     without_injected_parameters,
 )
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -170,7 +174,7 @@ class FunctionResource(Resource):
         task_config.validate_function(fn, func_name)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn):
+        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
@@ -207,7 +211,7 @@ class FunctionResource(Resource):
         """Read the resource by calling the wrapped function."""
         # self.fn is wrapped by without_injected_parameters which handles
         # dependency resolution internally
-        if inspect.iscoroutinefunction(self.fn):
+        if is_coroutine_function(self.fn):
             result = await self.fn()
         else:
             # Run sync functions in threadpool to avoid blocking the event loop

@@ -68,6 +68,9 @@ class DescopeProvider(RemoteAuthProvider):
         project_id: str | None = None,
         descope_base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
+        scopes_supported: list[str] | None = None,
+        resource_name: str | None = None,
+        resource_documentation: AnyHttpUrl | None = None,
         token_verifier: TokenVerifier | None = None,
     ):
         """Initialize Descope metadata provider.
@@ -80,6 +83,11 @@ class DescopeProvider(RemoteAuthProvider):
             descope_base_url: Your Descope base URL (e.g., "https://api.descope.com"). Used with project_id for backwards compatibility.
             required_scopes: Optional list of scopes that must be present in validated tokens.
                 These scopes will be included in the protected resource metadata.
+            scopes_supported: Optional list of scopes to advertise in OAuth metadata.
+                If None, uses required_scopes. Use this when the scopes clients should
+                request differ from the scopes enforced on tokens.
+            resource_name: Optional name for the protected resource metadata.
+            resource_documentation: Optional documentation URL for the protected resource.
             token_verifier: Optional token verifier. If None, creates JWT verifier for Descope
         """
         self.base_url = AnyHttpUrl(str(base_url).rstrip("/"))
@@ -149,6 +157,9 @@ class DescopeProvider(RemoteAuthProvider):
             token_verifier=token_verifier,
             authorization_servers=[AnyHttpUrl(issuer_url)],
             base_url=self.base_url,
+            scopes_supported=scopes_supported,
+            resource_name=resource_name,
+            resource_documentation=resource_documentation,
         )
 
     def get_routes(
