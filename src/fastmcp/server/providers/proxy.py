@@ -79,7 +79,7 @@ class ProxyTool(Tool):
         client = self._client_factory()
         if inspect.isawaitable(client):
             client = await client
-        return client
+        return cast(Client, client)
 
     def model_copy(self, **kwargs: Any) -> ProxyTool:
         """Override to preserve _backend_name when name changes."""
@@ -127,7 +127,7 @@ class ProxyTool(Tool):
                 # request. Stash the current RequestContext in the shared
                 # ref so handlers can restore it before forwarding.
                 if isinstance(client, StatefulProxyClient):
-                    cast(list[Any], client._proxy_rc_ref)[0] = ctx.request_context
+                    client._proxy_rc_ref[0] = ctx.request_context
                 # Build meta dict from request context
                 meta: dict[str, Any] | None = None
                 if hasattr(ctx, "request_context"):
@@ -190,7 +190,7 @@ class ProxyResource(Resource):
         client = self._client_factory()
         if inspect.isawaitable(client):
             client = await client
-        return client
+        return cast(Client, client)
 
     def model_copy(self, **kwargs: Any) -> ProxyResource:
         """Override to preserve _backend_uri when uri changes."""
@@ -289,7 +289,7 @@ class ProxyTemplate(ResourceTemplate):
         client = self._client_factory()
         if inspect.isawaitable(client):
             client = await client
-        return client
+        return cast(Client, client)
 
     def model_copy(self, **kwargs: Any) -> ProxyTemplate:
         """Override to preserve _backend_uri_template when uri_template changes."""
@@ -404,7 +404,7 @@ class ProxyPrompt(Prompt):
         client = self._client_factory()
         if inspect.isawaitable(client):
             client = await client
-        return client
+        return cast(Client, client)
 
     def model_copy(self, **kwargs: Any) -> ProxyPrompt:
         """Override to preserve _backend_name when name changes."""
@@ -518,7 +518,7 @@ class ProxyProvider(Provider):
         client = self.client_factory()
         if inspect.isawaitable(client):
             client = await client
-        return client
+        return cast(Client, client)
 
     # -------------------------------------------------------------------------
     # Tool methods

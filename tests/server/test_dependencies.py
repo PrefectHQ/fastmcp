@@ -67,7 +67,7 @@ async def test_depends_with_async_function(mcp: FastMCP):
         return 42
 
     @mcp.tool()
-    async def greet_user(name: str, user_id: int = Depends(get_user_id)) -> str:
+    async def greet_user(name: str, user_id: int = Depends(get_user_id)) -> str:  # ty: ignore[invalid-parameter-default]
         return f"Hello {name}, your ID is {user_id}"
 
     result = await mcp.call_tool("greet_user", {"name": "Alice"})
@@ -198,7 +198,7 @@ async def test_sync_tool_with_async_dependency(mcp: FastMCP):
         return "loaded_config"
 
     @mcp.tool()
-    def process_data(value: int, config: str = Depends(fetch_config)) -> str:
+    def process_data(value: int, config: str = Depends(fetch_config)) -> str:  # ty: ignore[invalid-parameter-default]
         return f"Processing {value} with {config}"
 
     result = await mcp.call_tool("process_data", {"value": 100})

@@ -120,7 +120,7 @@ class AggregateProvider(Provider):
 
     def _get_highest_version_result(
         self,
-        results: list[FastMCPComponent | None | BaseException],
+        results: Sequence[FastMCPComponent | None | BaseException],
         operation: str,
     ) -> FastMCPComponent | None:
         """Get the highest version from successful non-None results.

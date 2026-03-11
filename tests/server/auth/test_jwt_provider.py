@@ -52,7 +52,7 @@ class SymmetricKeyHelper:
         header = {"alg": algorithm}
 
         # Create payload
-        payload = {
+        payload: dict[str, str | int | list[str]] = {
             "sub": subject,
             "iss": issuer,
             "iat": int(time.time()),

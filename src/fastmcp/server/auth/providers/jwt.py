@@ -113,7 +113,7 @@ class RSAKeyPair:
             header["kid"] = kid
 
         # Create payload
-        payload = {
+        payload: dict[str, str | int | list[str]] = {
             "sub": subject,
             "iss": issuer,
             "iat": int(time.time()),

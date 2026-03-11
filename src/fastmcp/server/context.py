@@ -422,7 +422,7 @@ class Context:
             delta = current - last
             if delta > 0:
                 await execution.progress.increment(delta)
-            execution._fastmcp_last_progress = current  # type: ignore[attr-defined]
+            execution._fastmcp_last_progress = current  # ty: ignore[unresolved-attribute]
 
             if message is not None:
                 await execution.progress.set_message(message)

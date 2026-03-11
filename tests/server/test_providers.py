@@ -224,7 +224,7 @@ class TestProvider:
 
     async def test_default_get_tool_falls_back_to_list(self, base_server: FastMCP):
         """Test that BaseToolProvider's default get_tool calls list_tools."""
-        tools = [
+        tools: list[Tool] = [
             SimpleTool(
                 name="test_tool",
                 description="A test tool",
@@ -319,7 +319,7 @@ class TestDynamicToolUpdates:
         mcp = FastMCP("DynamicServer")
 
         # Start with one tool
-        initial_tools = [
+        initial_tools: list[Tool] = [
             SimpleTool(
                 name="tool_v1",
                 description="Version 1",

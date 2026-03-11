@@ -1,6 +1,6 @@
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import TypeAlias, TypeVar
+from typing import TypeAlias, TypeVar, cast
 
 import mcp.types
 from mcp import ClientSession, CreateMessageResult
@@ -54,12 +54,12 @@ def create_sampling_callback(
                 result = await result
 
             if isinstance(result, str):
-                result = CreateMessageResult(
+                return CreateMessageResult(
                     role="assistant",
                     model="fastmcp-client",
                     content=mcp.types.TextContent(type="text", text=result),
                 )
-            return result
+            return cast(CreateMessageResult | CreateMessageResultWithTools, result)
         except Exception as e:
             return mcp.types.ErrorData(
                 code=mcp.types.INTERNAL_ERROR,
