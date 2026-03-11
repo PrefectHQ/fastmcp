@@ -56,7 +56,7 @@ def create_sampling_callback(
             result = cast(SamplingHandlerResult, result)
 
             if isinstance(result, str):
-                return CreateMessageResult(
+                result = CreateMessageResult(
                     role="assistant",
                     model="fastmcp-client",
                     content=mcp.types.TextContent(type="text", text=result),
