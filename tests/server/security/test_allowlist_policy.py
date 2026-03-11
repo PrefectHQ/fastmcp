@@ -111,9 +111,15 @@ class TestDenylistPolicy:
     @pytest.mark.anyio
     async def test_glob_pattern(self):
         policy = DenylistPolicy(denied={"admin-*"})
-        assert (await policy.evaluate(_ctx("admin-delete"))).decision == PolicyDecision.DENY
-        assert (await policy.evaluate(_ctx("admin-reset"))).decision == PolicyDecision.DENY
-        assert (await policy.evaluate(_ctx("user-profile"))).decision == PolicyDecision.ALLOW
+        assert (
+            await policy.evaluate(_ctx("admin-delete"))
+        ).decision == PolicyDecision.DENY
+        assert (
+            await policy.evaluate(_ctx("admin-reset"))
+        ).decision == PolicyDecision.DENY
+        assert (
+            await policy.evaluate(_ctx("user-profile"))
+        ).decision == PolicyDecision.ALLOW
 
     @pytest.mark.anyio
     async def test_empty_denylist_allows_all(self):
@@ -211,6 +217,7 @@ class TestImports:
             AllowlistPolicy,
             DenylistPolicy,
         )
+
         assert AllowlistPolicy is not None
         assert DenylistPolicy is not None
 
@@ -219,5 +226,6 @@ class TestImports:
             AllowlistPolicy,
             DenylistPolicy,
         )
+
         assert AllowlistPolicy is not None
         assert DenylistPolicy is not None

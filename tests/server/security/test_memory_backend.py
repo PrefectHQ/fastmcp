@@ -205,3 +205,30 @@ class TestMemoryBackendMarketplace:
         mp = backend.load_marketplace("nonexistent")
         assert mp["servers"] == {}
         assert mp["audit_log"] == []
+
+
+class TestMemoryBackendToolMarketplace:
+    def test_listing_install_and_review_roundtrip(self):
+        backend = MemoryBackend()
+        backend.save_tool_listing("tools", "listing-1", {"tool_name": "weather"})
+        backend.append_tool_install("tools", "listing-1", {"install_id": "i1"})
+        backend.append_tool_review("tools", "listing-1", {"review_id": "r1"})
+
+        data = backend.load_tool_marketplace("tools")
+
+        assert data["listings"]["listing-1"]["tool_name"] == "weather"
+        assert data["installs"]["listing-1"][0]["install_id"] == "i1"
+        assert data["reviews"]["listing-1"][0]["review_id"] == "r1"
+
+    def test_remove_listing_clears_related_state(self):
+        backend = MemoryBackend()
+        backend.save_tool_listing("tools", "listing-1", {"tool_name": "weather"})
+        backend.append_tool_install("tools", "listing-1", {"install_id": "i1"})
+        backend.append_tool_review("tools", "listing-1", {"review_id": "r1"})
+
+        backend.remove_tool_listing("tools", "listing-1")
+        data = backend.load_tool_marketplace("tools")
+
+        assert "listing-1" not in data["listings"]
+        assert "listing-1" not in data["installs"]
+        assert "listing-1" not in data["reviews"]

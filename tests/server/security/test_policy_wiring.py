@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
-from fastmcp.server.security.alerts.bus import SecurityEventBus
 from fastmcp.server.security.config import (
     AlertConfig,
     PolicyConfig,
@@ -26,7 +23,6 @@ from fastmcp.server.security.policy.provider import (
     PolicyDecision,
     PolicyEvaluationContext,
 )
-
 
 # ── Engine + AuditLog wiring ────────────────────────────────────────
 
@@ -434,10 +430,12 @@ class TestEndToEnd:
         assert status["provider_count"] == 2
 
         # Simulate
-        sim_result = await api.simulate_policy([
-            {"resource_id": "safe-new", "label": "should allow"},
-            {"resource_id": "blocked-new", "label": "should deny"},
-        ])
+        sim_result = await api.simulate_policy(
+            [
+                {"resource_id": "safe-new", "label": "should allow"},
+                {"resource_id": "blocked-new", "label": "should deny"},
+            ]
+        )
         assert sim_result["allowed"] == 1
         assert sim_result["denied"] == 1
 
@@ -464,21 +462,27 @@ class TestEndToEnd:
         ctx = SecurityOrchestrator.bootstrap(config)
 
         # safe-tool → allowed
-        r1 = await ctx.policy_engine.evaluate(PolicyEvaluationContext(
-            actor_id="a", action="call_tool", resource_id="safe-tool"
-        ))
+        r1 = await ctx.policy_engine.evaluate(
+            PolicyEvaluationContext(
+                actor_id="a", action="call_tool", resource_id="safe-tool"
+            )
+        )
         assert r1.decision == PolicyDecision.ALLOW
 
         # safe-but-blocked → denied (denylist overrides)
-        r2 = await ctx.policy_engine.evaluate(PolicyEvaluationContext(
-            actor_id="a", action="call_tool", resource_id="safe-but-blocked"
-        ))
+        r2 = await ctx.policy_engine.evaluate(
+            PolicyEvaluationContext(
+                actor_id="a", action="call_tool", resource_id="safe-but-blocked"
+            )
+        )
         assert r2.decision == PolicyDecision.DENY
 
         # unknown → denied (not in allowlist)
-        r3 = await ctx.policy_engine.evaluate(PolicyEvaluationContext(
-            actor_id="a", action="call_tool", resource_id="unknown"
-        ))
+        r3 = await ctx.policy_engine.evaluate(
+            PolicyEvaluationContext(
+                actor_id="a", action="call_tool", resource_id="unknown"
+            )
+        )
         assert r3.decision == PolicyDecision.DENY
 
         # All recorded in audit

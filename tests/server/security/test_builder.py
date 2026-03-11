@@ -30,6 +30,10 @@ def _ctx(
     )
 
 
+def _run(awaitable):
+    return asyncio.run(awaitable)
+
+
 class TestPolicyBuilderBasic:
     def test_empty_builder_raises(self):
         with pytest.raises(ValueError, match="No policies"):
@@ -84,89 +88,57 @@ class TestPolicyBuilderBasic:
 
 class TestPolicyBuilderRBAC:
     def test_allow_roles(self):
-        policy = (
-            PolicyBuilder()
-            .allow_roles("admin")
-            .build()
-        )
+        policy = PolicyBuilder().allow_roles("admin").build()
         ctx = _ctx(metadata={"role": "admin"})
-        result = asyncio.get_event_loop().run_until_complete(policy.evaluate(ctx))
+        result = _run(policy.evaluate(ctx))
         assert result.decision == PolicyDecision.ALLOW
 
     def test_allow_roles_denied(self):
-        policy = (
-            PolicyBuilder()
-            .allow_roles("admin")
-            .build()
-        )
+        policy = PolicyBuilder().allow_roles("admin").build()
         ctx = _ctx(metadata={"role": "viewer"})
-        result = asyncio.get_event_loop().run_until_complete(policy.evaluate(ctx))
+        result = _run(policy.evaluate(ctx))
         assert result.decision == PolicyDecision.DENY
 
     def test_deny_roles(self):
         # deny_roles wraps RBAC in Not, so matching role → DENY
-        policy = (
-            PolicyBuilder()
-            .deny_roles("blocked")
-            .build()
-        )
+        policy = PolicyBuilder().deny_roles("blocked").build()
         ctx = _ctx(metadata={"role": "blocked"})
-        result = asyncio.get_event_loop().run_until_complete(policy.evaluate(ctx))
+        result = _run(policy.evaluate(ctx))
         assert result.decision == PolicyDecision.DENY
 
 
 class TestPolicyBuilderActions:
     def test_allow_actions(self):
-        policy = (
-            PolicyBuilder()
-            .allow_actions("read_resource", "call_tool")
-            .build()
-        )
+        policy = PolicyBuilder().allow_actions("read_resource", "call_tool").build()
         ctx = _ctx(action="call_tool")
-        result = asyncio.get_event_loop().run_until_complete(policy.evaluate(ctx))
+        result = _run(policy.evaluate(ctx))
         assert result.decision == PolicyDecision.ALLOW
 
     def test_deny_actions(self):
-        policy = (
-            PolicyBuilder()
-            .deny_actions("delete_system")
-            .build()
-        )
+        policy = PolicyBuilder().deny_actions("delete_system").build()
         ctx = _ctx(action="delete_system")
-        result = asyncio.get_event_loop().run_until_complete(policy.evaluate(ctx))
+        result = _run(policy.evaluate(ctx))
         assert result.decision == PolicyDecision.DENY
 
     def test_deny_actions_other_allowed(self):
-        policy = (
-            PolicyBuilder()
-            .deny_actions("delete_system")
-            .build()
-        )
+        policy = PolicyBuilder().deny_actions("delete_system").build()
         ctx = _ctx(action="call_tool")
-        result = asyncio.get_event_loop().run_until_complete(policy.evaluate(ctx))
+        result = _run(policy.evaluate(ctx))
         # Action not in denied set → DEFER (not explicit allow)
         assert result.decision == PolicyDecision.DEFER
 
 
 class TestPolicyBuilderTags:
     def test_allow_tags(self):
-        policy = (
-            PolicyBuilder()
-            .allow_tags("safe")
-            .build()
-        )
+        policy = PolicyBuilder().allow_tags("safe").build()
         ctx = _ctx(tags=frozenset({"safe", "tested"}))
-        result = asyncio.get_event_loop().run_until_complete(policy.evaluate(ctx))
+        result = _run(policy.evaluate(ctx))
         assert result.decision == PolicyDecision.ALLOW
 
     def test_deny_tags(self):
-        policy = (
-            PolicyBuilder()
-            .deny_tags("dangerous")
-            .build()
-        )
+        policy = PolicyBuilder().deny_tags("dangerous").build()
         ctx = _ctx(tags=frozenset({"dangerous"}))
-        result = asyncio.get_event_loop().run_until_complete(policy.evaluate(ctx))
+        result = _run(policy.evaluate(ctx))
         assert result.decision == PolicyDecision.DENY
 
 
@@ -181,7 +153,7 @@ class TestPolicyBuilderComposite:
             .build()
         )
         ctx = _ctx(metadata={"role": "admin"})
-        result = asyncio.get_event_loop().run_until_complete(policy.evaluate(ctx))
+        result = _run(policy.evaluate(ctx))
         assert result.decision == PolicyDecision.ALLOW
 
     def test_with_id_and_version(self):
@@ -194,8 +166,8 @@ class TestPolicyBuilderComposite:
             .with_version("2.0.0")
             .build()
         )
-        pid = asyncio.get_event_loop().run_until_complete(policy.get_policy_id())
-        ver = asyncio.get_event_loop().run_until_complete(policy.get_policy_version())
+        pid = _run(policy.get_policy_id())
+        ver = _run(policy.get_policy_version())
         assert pid == "my-policy"
         assert ver == "2.0.0"
 
@@ -208,16 +180,12 @@ class TestPolicyBuilderComposite:
             .build()
         )
         ctx = _ctx(metadata={"role": "admin"})
-        result = asyncio.get_event_loop().run_until_complete(policy.evaluate(ctx))
+        result = _run(policy.evaluate(ctx))
         assert result.decision == PolicyDecision.ALLOW
 
     def test_restrict_hours(self):
         # Create policy restricting to business hours
-        policy = (
-            PolicyBuilder()
-            .restrict_hours(start_hour=9, end_hour=17)
-            .build()
-        )
+        policy = PolicyBuilder().restrict_hours(start_hour=9, end_hour=17).build()
         # 12:00 UTC on a Monday
         ts = datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc)
         ctx = PolicyEvaluationContext(
@@ -226,5 +194,5 @@ class TestPolicyBuilderComposite:
             resource_id="tool:test",
             timestamp=ts,
         )
-        result = asyncio.get_event_loop().run_until_complete(policy.evaluate(ctx))
+        result = _run(policy.evaluate(ctx))
         assert result.decision == PolicyDecision.ALLOW

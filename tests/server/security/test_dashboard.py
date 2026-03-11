@@ -11,13 +11,7 @@ import pytest
 from fastmcp.server.security.compliance.frameworks import ComplianceFramework
 from fastmcp.server.security.compliance.reports import (
     ComplianceReporter,
-    ComplianceStatus,
 )
-from fastmcp.server.security.federation.crl import CertificateRevocationList
-from fastmcp.server.security.federation.federation import TrustFederation
-from fastmcp.server.security.gateway.tool_marketplace import ToolMarketplace
-from fastmcp.server.security.registry.registry import TrustRegistry
-from fastmcp.server.security.sandbox.enforcer import SandboxedRunner
 from fastmcp.server.security.dashboard.snapshot import (
     ComponentHealth,
     DashboardSnapshot,
@@ -26,7 +20,11 @@ from fastmcp.server.security.dashboard.snapshot import (
     TimelineEntry,
     TimelineType,
 )
-
+from fastmcp.server.security.federation.crl import CertificateRevocationList
+from fastmcp.server.security.federation.federation import TrustFederation
+from fastmcp.server.security.gateway.tool_marketplace import ToolMarketplace
+from fastmcp.server.security.registry.registry import TrustRegistry
+from fastmcp.server.security.sandbox.enforcer import SandboxedRunner
 
 # ── ComponentHealth tests ────────────────────────────────────────
 
@@ -376,24 +374,16 @@ class TestOverallHealth:
 class TestImports:
     def test_dashboard_imports(self):
         from fastmcp.server.security.dashboard import (
-            ComponentHealth,
-            DashboardSnapshot,
-            HealthLevel,
             SecurityDashboard,
-            TimelineEntry,
-            TimelineType,
         )
+
         assert SecurityDashboard is not None
 
     def test_top_level_imports(self):
         from fastmcp.server.security import (
-            ComponentHealth,
-            DashboardSnapshot,
-            HealthLevel,
             SecurityDashboard,
-            TimelineEntry,
-            TimelineType,
         )
+
         assert SecurityDashboard is not None
 
 

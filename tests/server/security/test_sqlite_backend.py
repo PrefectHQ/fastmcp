@@ -1,8 +1,5 @@
 """Tests for the SQLiteBackend storage implementation."""
 
-import os
-import tempfile
-
 import pytest
 
 from fastmcp.server.security.storage.sqlite import SQLiteBackend
@@ -247,6 +244,34 @@ class TestSQLiteBackendMarketplace:
         mp = backend.load_marketplace("nonexistent")
         assert mp["servers"] == {}
         assert mp["audit_log"] == []
+
+
+class TestSQLiteBackendToolMarketplace:
+    def test_listing_install_and_review_roundtrip(self, backend):
+        backend.save_tool_listing("tools", "listing-1", {"tool_name": "weather"})
+        backend.append_tool_install("tools", "listing-1", {"install_id": "i1"})
+        backend.append_tool_review("tools", "listing-1", {"review_id": "r1"})
+
+        data = backend.load_tool_marketplace("tools")
+
+        assert data["listings"]["listing-1"]["tool_name"] == "weather"
+        assert data["installs"]["listing-1"][0]["install_id"] == "i1"
+        assert data["reviews"]["listing-1"][0]["review_id"] == "r1"
+
+    def test_persistence_across_instances(self, db_path):
+        b1 = SQLiteBackend(db_path)
+        b1.save_tool_listing("tools", "listing-1", {"tool_name": "weather"})
+        b1.append_tool_install("tools", "listing-1", {"install_id": "i1"})
+        b1.append_tool_review("tools", "listing-1", {"review_id": "r1"})
+        b1.close()
+
+        b2 = SQLiteBackend(db_path)
+        data = b2.load_tool_marketplace("tools")
+        b2.close()
+
+        assert data["listings"]["listing-1"]["tool_name"] == "weather"
+        assert data["installs"]["listing-1"][0]["install_id"] == "i1"
+        assert data["reviews"]["listing-1"][0]["review_id"] == "r1"
 
 
 class TestSQLiteBackendSchemaCreation:

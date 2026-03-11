@@ -21,7 +21,7 @@ from fastmcp.server.middleware.middleware import (
     MiddlewareContext,
 )
 from fastmcp.server.security.provenance.ledger import ProvenanceLedger
-from fastmcp.server.security.provenance.records import ProvenanceAction, hash_data
+from fastmcp.server.security.provenance.records import ProvenanceAction
 from fastmcp.tools.tool import Tool, ToolResult
 
 logger = logging.getLogger(__name__)

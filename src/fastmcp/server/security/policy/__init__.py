@@ -48,9 +48,9 @@ from fastmcp.server.security.policy.versioning import (
 __all__ = [
     "AllOf",
     "AllowlistPolicy",
-    "AuditEntry",
     "AnyOf",
     "AttributeBasedPolicy",
+    "AuditEntry",
     "DenylistPolicy",
     "FirstMatch",
     "Invariant",

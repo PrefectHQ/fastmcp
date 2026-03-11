@@ -6,8 +6,6 @@ with the same backend and have identical state restored.
 
 import asyncio
 
-import pytest
-
 from fastmcp.server.security.consent.graph import ConsentGraph
 from fastmcp.server.security.consent.models import ConsentNode, ConsentQuery, NodeType
 from fastmcp.server.security.contracts.broker import ContextBroker
@@ -36,7 +34,6 @@ from fastmcp.server.security.reflexive.models import (
 )
 from fastmcp.server.security.storage.memory import MemoryBackend
 from fastmcp.server.security.storage.sqlite import SQLiteBackend
-
 
 # ── ProvenanceLedger ──────────────────────────────────────────────
 
@@ -208,9 +205,7 @@ class TestContextBrokerPersistence:
 class TestBehavioralAnalyzerPersistence:
     def test_baselines_persist(self):
         backend = MemoryBackend()
-        analyzer1 = BehavioralAnalyzer(
-            analyzer_id="test-analyzer", backend=backend
-        )
+        analyzer1 = BehavioralAnalyzer(analyzer_id="test-analyzer", backend=backend)
         for v in [5.0, 6.0, 7.0, 4.0, 5.5, 6.5, 5.2, 4.8, 5.1, 5.3]:
             analyzer1.observe("agent-1", "calls_per_min", v)
 
@@ -220,9 +215,7 @@ class TestBehavioralAnalyzerPersistence:
         original_count = baseline.sample_count
 
         # Reload
-        analyzer2 = BehavioralAnalyzer(
-            analyzer_id="test-analyzer", backend=backend
-        )
+        analyzer2 = BehavioralAnalyzer(analyzer_id="test-analyzer", backend=backend)
         restored = analyzer2.get_baseline("agent-1", "calls_per_min")
         assert restored is not None
         assert restored.sample_count == original_count
@@ -238,7 +231,7 @@ class TestBehavioralAnalyzerPersistence:
             analyzer1.observe("a", "m", v)
         # Trigger drift with a massive spike (well beyond 5 sigma)
         events = analyzer1.observe("a", "m", 500.0)
-        assert len(events) > 0, f"Expected drift events but got none"
+        assert len(events) > 0, "Expected drift events but got none"
 
         # Reload
         analyzer2 = BehavioralAnalyzer(
@@ -300,8 +293,12 @@ class TestConsentGraphPersistence:
     def test_grant_persists(self):
         backend = MemoryBackend()
         graph1 = ConsentGraph(graph_id="test-graph", backend=backend)
-        graph1.add_node(ConsentNode(node_id="source-1", node_type=NodeType.AGENT, label="Source"))
-        graph1.add_node(ConsentNode(node_id="target-1", node_type=NodeType.RESOURCE, label="Target"))
+        graph1.add_node(
+            ConsentNode(node_id="source-1", node_type=NodeType.AGENT, label="Source")
+        )
+        graph1.add_node(
+            ConsentNode(node_id="target-1", node_type=NodeType.RESOURCE, label="Target")
+        )
         edge = graph1.grant(
             source_id="source-1",
             target_id="target-1",
@@ -313,7 +310,9 @@ class TestConsentGraphPersistence:
         graph2 = ConsentGraph(graph_id="test-graph", backend=backend)
         assert graph2.get_node("source-1") is not None
         assert graph2.get_node("target-1") is not None
-        result = graph2.evaluate(ConsentQuery(source_id="source-1", target_id="target-1", scope="read"))
+        result = graph2.evaluate(
+            ConsentQuery(source_id="source-1", target_id="target-1", scope="read")
+        )
         assert result.granted
 
     def test_revoke_persists(self):
@@ -331,7 +330,9 @@ class TestConsentGraphPersistence:
 
         # Reload
         graph2 = ConsentGraph(graph_id="g", backend=backend)
-        result = graph2.evaluate(ConsentQuery(source_id="u", target_id="a", scope="read"))
+        result = graph2.evaluate(
+            ConsentQuery(source_id="u", target_id="a", scope="read")
+        )
         assert not result.granted
 
     def test_groups_persist(self):
@@ -348,8 +349,12 @@ class TestConsentGraphPersistence:
         db = str(tmp_path / "test.db")
         b1 = SQLiteBackend(db)
         g1 = ConsentGraph(graph_id="g", backend=b1)
-        g1.add_node(ConsentNode(node_id="source", node_type=NodeType.AGENT, label="Source"))
-        g1.add_node(ConsentNode(node_id="target", node_type=NodeType.RESOURCE, label="Target"))
+        g1.add_node(
+            ConsentNode(node_id="source", node_type=NodeType.AGENT, label="Source")
+        )
+        g1.add_node(
+            ConsentNode(node_id="target", node_type=NodeType.RESOURCE, label="Target")
+        )
         g1.grant(
             source_id="source",
             target_id="target",
@@ -362,7 +367,9 @@ class TestConsentGraphPersistence:
         g2 = ConsentGraph(graph_id="g", backend=b2)
         assert g2.get_node("source") is not None
         assert g2.get_node("target") is not None
-        result = g2.evaluate(ConsentQuery(source_id="source", target_id="target", scope="read"))
+        result = g2.evaluate(
+            ConsentQuery(source_id="source", target_id="target", scope="read")
+        )
         assert result.granted
         b2.close()
 

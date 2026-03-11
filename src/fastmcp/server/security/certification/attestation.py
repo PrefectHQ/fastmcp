@@ -109,23 +109,17 @@ class ValidationReport:
     @property
     def has_critical(self) -> bool:
         """Whether the report contains CRITICAL findings."""
-        return any(
-            f.severity == ValidationSeverity.CRITICAL for f in self.findings
-        )
+        return any(f.severity == ValidationSeverity.CRITICAL for f in self.findings)
 
     @property
     def error_count(self) -> int:
         """Number of ERROR-level findings."""
-        return sum(
-            1 for f in self.findings if f.severity == ValidationSeverity.ERROR
-        )
+        return sum(1 for f in self.findings if f.severity == ValidationSeverity.ERROR)
 
     @property
     def warning_count(self) -> int:
         """Number of WARNING-level findings."""
-        return sum(
-            1 for f in self.findings if f.severity == ValidationSeverity.WARNING
-        )
+        return sum(1 for f in self.findings if f.severity == ValidationSeverity.WARNING)
 
     def findings_by_severity(
         self, severity: ValidationSeverity
@@ -207,9 +201,7 @@ class ToolAttestation:
             return datetime.now(timezone.utc) < self.expires_at
         return True
 
-    def set_default_expiry(
-        self, duration: timedelta = timedelta(days=90)
-    ) -> None:
+    def set_default_expiry(self, duration: timedelta = timedelta(days=90)) -> None:
         """Set expiry relative to issue time."""
         self.expires_at = self.issued_at + duration
 

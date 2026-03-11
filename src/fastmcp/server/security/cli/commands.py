@@ -36,7 +36,6 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.security.certification.attestation import (
@@ -746,7 +745,9 @@ class SecureMCPCLI:
                 DataFlowDeclaration(
                     source=df["source"],
                     destination=df["destination"],
-                    classification=DataClassification(df.get("classification", "internal")),
+                    classification=DataClassification(
+                        df.get("classification", "internal")
+                    ),
                     transforms=tuple(df.get("transforms", [])),
                     retention=df.get("retention"),
                 )

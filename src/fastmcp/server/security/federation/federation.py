@@ -15,8 +15,8 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.security.federation.crl import (
-    CRLEntry,
     CertificateRevocationList,
+    CRLEntry,
     RevocationReason,
 )
 from fastmcp.server.security.registry.models import TrustScore
@@ -305,7 +305,9 @@ class TrustFederation:
             return False
 
         if peer.status in (PeerStatus.SUSPENDED, PeerStatus.REVOKED):
-            logger.warning("Ignoring score from %s peer: %s", peer.status.value, peer_id)
+            logger.warning(
+                "Ignoring score from %s peer: %s", peer.status.value, peer_id
+            )
             return False
 
         self._peer_scores[peer_id][tool_name] = score
@@ -375,7 +377,9 @@ class TrustFederation:
 
     # ── Querying federated trust ──────────────────────────────────
 
-    def query(self, tool_name: str, *, query: FederatedQuery | None = None) -> FederatedTrustResult:
+    def query(
+        self, tool_name: str, *, query: FederatedQuery | None = None
+    ) -> FederatedTrustResult:
         """Query federated trust for a tool.
 
         Merges local and peer trust scores using weighted averaging.

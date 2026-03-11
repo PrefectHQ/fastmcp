@@ -2,16 +2,15 @@
 
 import pytest
 
+from fastmcp.server.security.policy.versioning.manager import PolicyVersionManager
 from fastmcp.server.security.policy.versioning.models import (
     PolicyVersion,
     PolicyVersionHistory,
     policy_version_from_dict,
     policy_version_to_dict,
 )
-from fastmcp.server.security.policy.versioning.manager import PolicyVersionManager
 from fastmcp.server.security.storage.memory import MemoryBackend
 from fastmcp.server.security.storage.sqlite import SQLiteBackend
-
 
 # ── PolicyVersion Tests ────────────────────────────────────────
 

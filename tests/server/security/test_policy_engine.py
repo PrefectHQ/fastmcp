@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 
 from fastmcp.server.security.policy.engine import (
     PolicyDecision,
     PolicyEngine,
-    PolicySwapRecord,
     PolicyViolationError,
 )
 from fastmcp.server.security.policy.provider import (

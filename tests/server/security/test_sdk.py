@@ -6,8 +6,6 @@ trust queries, tool profiles, compliance integration, decorators, and history.
 
 from __future__ import annotations
 
-import pytest
-
 from fastmcp.server.security.alerts.bus import SecurityEventBus
 from fastmcp.server.security.alerts.handlers import BufferedHandler
 from fastmcp.server.security.certification.manifest import (
@@ -17,7 +15,6 @@ from fastmcp.server.security.certification.manifest import (
 from fastmcp.server.security.compliance.frameworks import ComplianceFramework
 from fastmcp.server.security.compliance.reports import (
     ComplianceReporter,
-    ComplianceStatus,
 )
 from fastmcp.server.security.federation.crl import CertificateRevocationList
 from fastmcp.server.security.federation.federation import TrustFederation
@@ -35,7 +32,6 @@ from fastmcp.server.security.sdk.decorators import (
     SecurityDecorator,
     SecurityDecoratorConfig,
 )
-
 
 # ── Helpers ─────────────────────────────────────────────────────
 
@@ -304,7 +300,10 @@ class TestSecurityDecoratorConfig:
 
     def test_with_permissions(self):
         cfg = SecurityDecoratorConfig(
-            required_permissions={PermissionScope.NETWORK_ACCESS, PermissionScope.FILE_SYSTEM_READ}
+            required_permissions={
+                PermissionScope.NETWORK_ACCESS,
+                PermissionScope.FILE_SYSTEM_READ,
+            }
         )
         assert len(cfg.required_permissions) == 2
 
@@ -385,19 +384,13 @@ class TestImports:
     def test_sdk_imports(self):
         from fastmcp.server.security.sdk import (
             SecureMCPClient,
-            SecurityCheckResult,
-            SecurityDecorator,
-            SecurityDecoratorConfig,
-            ToolSecurityProfile,
         )
+
         assert SecureMCPClient is not None
 
     def test_top_level_imports(self):
         from fastmcp.server.security import (
             SecureMCPClient,
-            SecurityCheckResult,
-            SecurityDecorator,
-            SecurityDecoratorConfig,
-            ToolSecurityProfile,
         )
+
         assert SecureMCPClient is not None

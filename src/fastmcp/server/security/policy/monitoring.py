@@ -221,7 +221,9 @@ class PolicyMonitor:
         resource_denials: dict[str, int] = {}
         for r in window_records:
             if r.decision == "deny" and r.resource_id:
-                resource_denials[r.resource_id] = resource_denials.get(r.resource_id, 0) + 1
+                resource_denials[r.resource_id] = (
+                    resource_denials.get(r.resource_id, 0) + 1
+                )
 
         for resource_id, count in resource_denials.items():
             if count >= self._burst_threshold // 2:
@@ -263,10 +265,12 @@ class PolicyMonitor:
         resource_denials: dict[str, int] = {}
         for r in window_records:
             if r.decision == "deny" and r.resource_id:
-                resource_denials[r.resource_id] = resource_denials.get(r.resource_id, 0) + 1
-        top_denied = sorted(
-            resource_denials.items(), key=lambda x: x[1], reverse=True
-        )[:5]
+                resource_denials[r.resource_id] = (
+                    resource_denials.get(r.resource_id, 0) + 1
+                )
+        top_denied = sorted(resource_denials.items(), key=lambda x: x[1], reverse=True)[
+            :5
+        ]
 
         # Unique actors in window
         unique_actors = len(
@@ -355,4 +359,6 @@ class PolicyMonitor:
                     )
                 )
             except Exception:
-                logger.debug("Failed to emit monitoring alert to event bus", exc_info=True)
+                logger.debug(
+                    "Failed to emit monitoring alert to event bus", exc_info=True
+                )

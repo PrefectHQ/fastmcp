@@ -68,11 +68,7 @@ class TestContextBrokerBasics:
 
         def evaluator(terms, context):
             accepted = [t for t in terms if t.required]
-            rejected = [
-                f"Term '{t.term_id}' rejected"
-                for t in terms
-                if not t.required
-            ]
+            rejected = [f"Term '{t.term_id}' rejected" for t in terms if not t.required]
             return accepted, rejected
 
         broker = ContextBroker(

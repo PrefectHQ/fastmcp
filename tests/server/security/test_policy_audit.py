@@ -333,9 +333,18 @@ class TestExport:
 class TestStatistics:
     def test_basic_statistics(self):
         log = PolicyAuditLog(max_entries=100)
-        log.record(_ctx(actor_id="a", resource_id="tool-1"), _result(decision=PolicyDecision.ALLOW))
-        log.record(_ctx(actor_id="b", resource_id="tool-2"), _result(decision=PolicyDecision.DENY))
-        log.record(_ctx(actor_id="a", resource_id="tool-2"), _result(decision=PolicyDecision.DENY))
+        log.record(
+            _ctx(actor_id="a", resource_id="tool-1"),
+            _result(decision=PolicyDecision.ALLOW),
+        )
+        log.record(
+            _ctx(actor_id="b", resource_id="tool-2"),
+            _result(decision=PolicyDecision.DENY),
+        )
+        log.record(
+            _ctx(actor_id="a", resource_id="tool-2"),
+            _result(decision=PolicyDecision.DENY),
+        )
 
         stats = log.get_statistics()
         assert stats["entries_in_log"] == 3

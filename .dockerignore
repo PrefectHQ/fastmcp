@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.pytest_cache
+.ruff_cache
+.data
+__pycache__
+dist
+docs
+examples
+tests
+pytest-cache-files-*
+*.pyc
+*.pyo
+*.pyd
+.DS_Store

@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any
 
 from fastmcp.server.security.certification.manifest import PermissionScope
 
@@ -58,9 +58,7 @@ class SecurityDecorator:
     """
 
     decorator_id: str = ""
-    registered_tools: dict[str, SecurityDecoratorConfig] = field(
-        default_factory=dict
-    )
+    registered_tools: dict[str, SecurityDecoratorConfig] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
@@ -115,9 +113,7 @@ class SecurityDecorator:
     def get_tools_with_sandbox(self) -> list[str]:
         """Get tools with sandbox enabled."""
         return [
-            name
-            for name, cfg in self.registered_tools.items()
-            if cfg.sandbox_enabled
+            name for name, cfg in self.registered_tools.items() if cfg.sandbox_enabled
         ]
 
     def to_dict(self) -> dict:
@@ -125,7 +121,6 @@ class SecurityDecorator:
             "decorator_id": self.decorator_id,
             "tool_count": self.tool_count,
             "tools": {
-                name: cfg.to_dict()
-                for name, cfg in self.registered_tools.items()
+                name: cfg.to_dict() for name, cfg in self.registered_tools.items()
             },
         }

@@ -8,14 +8,13 @@ SecureMCP now owns its helper-path settings in `fastmcp.server.security.settings
 The canonical environment variable prefix is `SECUREMCP_`. Legacy `FASTMCP_SECURITY_` variables are still accepted during migration, but new examples should use `SECUREMCP_`.
 
 ```python
-from fastmcp import FastMCP
-from fastmcp.server.security import SecurityConfig, attach_security
+from securemcp import SecureMCP
+from securemcp.config import SecurityConfig
 
-server = FastMCP("secure-server")
-ctx = attach_security(server, SecurityConfig(...))
+server = SecureMCP("secure-server", security=SecurityConfig(...))
 ```
 
-`attach_security()` reads `SecuritySettings` automatically on each call unless you pass an explicit `bypass_stdio=` override.
+`attach_security()` reads `SecuritySettings` automatically on each call unless you pass an explicit `bypass_stdio=` override. `SecureMCP(..., security=...)` uses the same helper under the hood.
 
 ## Environment Variables
 
@@ -39,5 +38,6 @@ That keeps helper-based SecureMCP configuration compatible with existing FastMCP
 ## Migration Notes
 
 - Prefer `SECUREMCP_*` for all new configuration.
-- Use `attach_security(server, config)` for all server integration.
+- Use `SecureMCP(..., security=...)` for SecureMCP-first servers.
+- Use `attach_security(server, config)` when integrating with an existing `FastMCP` instance.
 - FastMCP core no longer exposes SecureMCP settings or a `security_config=` constructor path.

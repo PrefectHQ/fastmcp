@@ -21,8 +21,10 @@ Then visit:
 
 from __future__ import annotations
 
-from fastmcp import FastMCP
-from fastmcp.server.security.config import (
+from fastmcp.server.security.gateway.tool_marketplace import ToolCategory
+from fastmcp.server.security.provenance.records import ProvenanceAction
+from securemcp import SecureMCP
+from securemcp.config import (
     AlertConfig,
     ComplianceConfig,
     CRLConfig,
@@ -32,14 +34,8 @@ from fastmcp.server.security.config import (
     SecurityConfig,
     ToolMarketplaceConfig,
 )
-from fastmcp.server.security.gateway.tool_marketplace import ToolCategory
-from fastmcp.server.security.http import SecurityAPI, mount_security_routes
-from fastmcp.server.security.orchestrator import SecurityOrchestrator
-from fastmcp.server.security.provenance.records import ProvenanceAction
 
 # ── 1. Create an MCP server ─────────────────────────────────────
-
-server = FastMCP("securemcp-demo")
 
 # ── 2. Define the security config ───────────────────────────────
 #
@@ -56,11 +52,17 @@ config = SecurityConfig(
     compliance=ComplianceConfig(),
 )
 
-# ── 3. Bootstrap all components at once ──────────────────────────
+# ── 3. Bootstrap and attach all components at once ───────────────
 
-ctx = SecurityOrchestrator.bootstrap(config, server_name="securemcp-demo")
+server = SecureMCP(
+    "securemcp-demo",
+    security=config,
+    mount_security_api=True,
+)
+ctx = server.security_context
+assert ctx is not None
 
-# That single call created and wired:
+# The constructor created and wired:
 #   - event_bus (shared across all components)
 #   - provenance_ledger (with middleware)
 #   - registry (trust scores)
@@ -101,21 +103,8 @@ ctx.provenance_ledger.record(
     metadata={"city": "San Francisco"},
 )
 
-# ── 7. Mount the HTTP API (auto-wired from the SecurityContext) ──
+# ── 7. Add a regular MCP tool ───────────────────────────────────
 
-api = SecurityAPI.from_context(ctx)
-mount_security_routes(server, api=api)
-
-# ── 8. Install middleware from the orchestrator ──────────────────
-#
-# The orchestrator builds middleware in the correct order
-# (policy → contracts → provenance → reflexive → consent).
-
-for mw in ctx.middleware:
-    server.add_middleware(mw)
-
-
-# ── 9. Add a regular MCP tool ───────────────────────────────────
 
 @server.tool()
 def weather_lookup(city: str) -> str:
@@ -123,7 +112,7 @@ def weather_lookup(city: str) -> str:
     return f"Weather in {city}: Sunny, 72°F"
 
 
-# ── 10. Run ─────────────────────────────────────────────────────
+# ── 8. Run ──────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     server.run(transport="streamable-http")

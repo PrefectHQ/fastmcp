@@ -11,20 +11,18 @@ import pytest
 from fastmcp.server.security.alerts.bus import SecurityEventBus
 from fastmcp.server.security.alerts.handlers import BufferedHandler
 from fastmcp.server.security.federation.crl import (
-    CRLEntry,
     CertificateRevocationList,
+    CRLEntry,
     RevocationReason,
 )
 from fastmcp.server.security.federation.federation import (
     FederatedQuery,
-    FederatedTrustResult,
     FederationPeer,
     PeerStatus,
     TrustFederation,
 )
 from fastmcp.server.security.registry.models import TrustScore
 from fastmcp.server.security.registry.registry import TrustRegistry
-
 
 # ── CRL Entry tests ────────────────────────────────────────────────
 
@@ -241,9 +239,7 @@ class TestRevocationPropagation:
     def test_receive_emergency_revocation(self):
         fed = TrustFederation()
         peer = fed.add_peer("partner")
-        entry = fed.receive_revocation(
-            peer.peer_id, "dangerous-tool", emergency=True
-        )
+        entry = fed.receive_revocation(peer.peer_id, "dangerous-tool", emergency=True)
         assert entry is not None
         assert entry.emergency
 
@@ -286,9 +282,7 @@ class TestFederatedQuery:
         registry.register("tool-a", attestation=None)
         fed = TrustFederation(local_registry=registry)
         peer = fed.add_peer("partner", trust_weight=0.8)
-        fed.receive_trust_score(
-            peer.peer_id, "tool-a", TrustScore(overall=0.9)
-        )
+        fed.receive_trust_score(peer.peer_id, "tool-a", TrustScore(overall=0.9))
         result = fed.query("tool-a")
         assert result.contributing_peers == 1
         assert len(result.peer_scores) == 1
@@ -298,9 +292,7 @@ class TestFederatedQuery:
         fed = TrustFederation(local_registry=TrustRegistry())
         # No local score for this tool, only peer
         peer = fed.add_peer("partner", trust_weight=0.5)
-        fed.receive_trust_score(
-            peer.peer_id, "tool-x", TrustScore(overall=0.8)
-        )
+        fed.receive_trust_score(peer.peer_id, "tool-x", TrustScore(overall=0.8))
         result = fed.query("tool-x")
         assert result.merged_score == pytest.approx(0.8)
 
@@ -314,9 +306,7 @@ class TestFederatedQuery:
     def test_query_excludes_suspended_peers(self):
         fed = TrustFederation()
         peer = fed.add_peer("partner")
-        fed.receive_trust_score(
-            peer.peer_id, "tool", TrustScore(overall=0.9)
-        )
+        fed.receive_trust_score(peer.peer_id, "tool", TrustScore(overall=0.9))
         fed.update_peer_status(peer.peer_id, PeerStatus.SUSPENDED)
         result = fed.query("tool")
         assert result.contributing_peers == 0
@@ -368,13 +358,6 @@ class TestFederationStatus:
 class TestImports:
     def test_federation_imports(self):
         from fastmcp.server.security.federation import (
-            CRLEntry,
-            CertificateRevocationList,
-            FederatedQuery,
-            FederatedTrustResult,
-            FederationPeer,
-            PeerStatus,
-            RevocationReason,
             TrustFederation,
         )
 
@@ -382,13 +365,6 @@ class TestImports:
 
     def test_top_level_imports(self):
         from fastmcp.server.security import (
-            CRLEntry,
-            CertificateRevocationList,
-            FederatedQuery,
-            FederatedTrustResult,
-            FederationPeer,
-            PeerStatus,
-            RevocationReason,
             TrustFederation,
         )
 

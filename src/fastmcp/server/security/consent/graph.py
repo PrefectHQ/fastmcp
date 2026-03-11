@@ -30,18 +30,25 @@ logger = logging.getLogger(__name__)
 
 def _consent_node_to_dict(node: Any) -> dict[str, Any]:
     from fastmcp.server.security.storage.serialization import consent_node_to_dict
+
     return consent_node_to_dict(node)
+
 
 def _consent_node_from_dict(data: dict[str, Any]) -> Any:
     from fastmcp.server.security.storage.serialization import consent_node_from_dict
+
     return consent_node_from_dict(data)
+
 
 def _consent_edge_to_dict(edge: Any) -> dict[str, Any]:
     from fastmcp.server.security.storage.serialization import consent_edge_to_dict
+
     return consent_edge_to_dict(edge)
+
 
 def _consent_edge_from_dict(data: dict[str, Any]) -> Any:
     from fastmcp.server.security.storage.serialization import consent_edge_from_dict
+
     return consent_edge_from_dict(data)
 
 
@@ -555,19 +562,11 @@ class ConsentGraph:
 
     def get_consents_for(self, target_id: str) -> list[ConsentEdge]:
         """Get all active consent edges targeting a node."""
-        return [
-            e
-            for e in self._incoming.get(target_id, [])
-            if e.is_valid()
-        ]
+        return [e for e in self._incoming.get(target_id, []) if e.is_valid()]
 
     def get_consents_from(self, source_id: str) -> list[ConsentEdge]:
         """Get all active consent edges from a source node."""
-        return [
-            e
-            for e in self._outgoing.get(source_id, [])
-            if e.is_valid()
-        ]
+        return [e for e in self._outgoing.get(source_id, []) if e.is_valid()]
 
     def get_edge(self, edge_id: str) -> ConsentEdge | None:
         """Get a consent edge by ID."""

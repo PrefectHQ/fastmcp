@@ -31,7 +31,6 @@ from fastmcp.server.security.gateway.tool_marketplace import ToolMarketplace
 from fastmcp.server.security.registry.registry import TrustRegistry
 from fastmcp.server.security.sandbox.enforcer import SandboxedRunner
 
-
 # ── Fixtures ────────────────────────────────────────────────────
 
 
@@ -232,7 +231,12 @@ class TestPopulatedDashboard:
     def test_health_banner(self, populated_dashboard):
         bridge = DashboardDataBridge(dashboard=populated_dashboard)
         banner = bridge.build_health_banner()
-        assert banner["overall_health"] in ("healthy", "degraded", "critical", "unknown")
+        assert banner["overall_health"] in (
+            "healthy",
+            "degraded",
+            "critical",
+            "unknown",
+        )
         assert "health_label" in banner
         assert isinstance(banner["total_tools"], int)
         assert isinstance(banner["compliance_score"], (int, float))

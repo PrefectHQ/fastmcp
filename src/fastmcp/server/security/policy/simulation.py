@@ -132,9 +132,7 @@ class SimulationReport:
     denied: int = 0
     deferred: int = 0
     errors: int = 0
-    created_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def summary(self) -> str:
         """Return a human-readable summary of the simulation."""
@@ -181,9 +179,7 @@ class SimulationReport:
             ],
         }
 
-    def filter_by_decision(
-        self, decision: PolicyDecision
-    ) -> list[ScenarioResult]:
+    def filter_by_decision(self, decision: PolicyDecision) -> list[ScenarioResult]:
         """Return only results matching a specific decision."""
         return [r for r in self.results if r.decision == decision]
 
@@ -298,9 +294,7 @@ async def simulate(
                             reason="No providers",
                             policy_id="simulation-no-providers",
                         )
-                elif all(
-                    p.decision == PolicyDecision.DEFER for p in per_provider
-                ):
+                elif all(p.decision == PolicyDecision.DEFER for p in per_provider):
                     if fail_closed:
                         final_result = PolicyResult(
                             decision=PolicyDecision.DENY,
@@ -316,9 +310,7 @@ async def simulate(
                 else:
                     # At least one ALLOW, no DENY
                     allow_pr = next(
-                        p
-                        for p in per_provider
-                        if p.decision == PolicyDecision.ALLOW
+                        p for p in per_provider if p.decision == PolicyDecision.ALLOW
                     )
                     all_constraints: list[str] = []
                     final_result = PolicyResult(
@@ -336,9 +328,7 @@ async def simulate(
                 policy_id="simulation-error",
             )
 
-        elapsed = (
-            datetime.now(timezone.utc) - start
-        ).total_seconds() * 1000
+        elapsed = (datetime.now(timezone.utc) - start).total_seconds() * 1000
 
         sr = ScenarioResult(
             scenario=scenario,

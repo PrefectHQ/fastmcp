@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from fastmcp.server.security.alerts.filters import EventFilter

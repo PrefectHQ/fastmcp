@@ -166,7 +166,9 @@ class EscalationRule:
             return False
 
         severity_order = list(DriftSeverity)
-        if severity_order.index(event.severity) < severity_order.index(self.min_severity):
+        if severity_order.index(event.severity) < severity_order.index(
+            self.min_severity
+        ):
             return False
 
         if self.drift_types and event.drift_type not in self.drift_types:

@@ -153,15 +153,14 @@ class TrustRecord:
             ReputationEventType.NEGATIVE_REVIEW,
             ReputationEventType.ATTESTATION_REVOKED,
         }
-        return sum(
-            1 for e in self.reputation_events if e.event_type in negative_types
-        )
+        return sum(1 for e in self.reputation_events if e.event_type in negative_types)
 
     @property
     def success_count(self) -> int:
         """Number of successful execution events."""
         return sum(
-            1 for e in self.reputation_events
+            1
+            for e in self.reputation_events
             if e.event_type == ReputationEventType.SUCCESSFUL_EXECUTION
         )
 

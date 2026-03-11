@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta, timezone
+from datetime import time, timedelta, timezone
 
 from fastmcp.server.security.policy.provider import (
     PolicyDecision,
@@ -42,9 +42,7 @@ class TimeBasedPolicy:
         version: Version string.
     """
 
-    allowed_days: frozenset[int] = field(
-        default_factory=lambda: frozenset(range(7))
-    )
+    allowed_days: frozenset[int] = field(default_factory=lambda: frozenset(range(7)))
     allowed_start_time: time = field(default_factory=lambda: time(0, 0))
     allowed_end_time: time = field(default_factory=lambda: time(23, 59, 59))
     utc_offset_hours: int = 0
@@ -89,7 +87,9 @@ class TimeBasedPolicy:
             decision=PolicyDecision.ALLOW,
             reason="Within allowed time window",
             policy_id=self.policy_id,
-            constraints=[f"time_window:{self.allowed_start_time.strftime('%H:%M')}-{self.allowed_end_time.strftime('%H:%M')}"],
+            constraints=[
+                f"time_window:{self.allowed_start_time.strftime('%H:%M')}-{self.allowed_end_time.strftime('%H:%M')}"
+            ],
         )
 
     async def get_policy_id(self) -> str:

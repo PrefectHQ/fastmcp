@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from fastmcp.server.security.policy.engine import PolicyEngine, PolicyViolationError
+from fastmcp.server.security.policy.engine import PolicyEngine
 from fastmcp.server.security.policy.governance import (
     PolicyGovernor,
     ProposalAction,
@@ -30,16 +30,12 @@ from fastmcp.server.security.policy.policies.allowlist import (
 from fastmcp.server.security.policy.provider import (
     AllowAllPolicy,
     DenyAllPolicy,
-    PolicyDecision,
     PolicyEvaluationContext,
 )
 from fastmcp.server.security.policy.simulation import Scenario
 from fastmcp.server.security.policy.validator import (
     PolicyValidator,
-    ValidationResult,
-    ValidationSeverity,
 )
-
 
 # ── PolicyValidator Tests ─────────────────────────────────────
 
@@ -49,21 +45,25 @@ class TestValidatorSchemaValidation:
 
     def test_valid_allowlist(self) -> None:
         v = PolicyValidator()
-        result = v.validate_declarative({
-            "type": "allowlist",
-            "allowed": ["tool-a", "tool-b"],
-        })
+        result = v.validate_declarative(
+            {
+                "type": "allowlist",
+                "allowed": ["tool-a", "tool-b"],
+            }
+        )
         assert result.valid
 
     def test_valid_composite(self) -> None:
         v = PolicyValidator()
-        result = v.validate_declarative({
-            "composition": "all_of",
-            "policies": [
-                {"type": "allowlist", "allowed": ["tool-*"]},
-                {"type": "denylist", "denied": ["admin-*"]},
-            ],
-        })
+        result = v.validate_declarative(
+            {
+                "composition": "all_of",
+                "policies": [
+                    {"type": "allowlist", "allowed": ["tool-*"]},
+                    {"type": "denylist", "denied": ["admin-*"]},
+                ],
+            }
+        )
         assert result.valid
 
     def test_missing_type(self) -> None:
@@ -98,22 +98,26 @@ class TestValidatorSchemaValidation:
 
     def test_unknown_composition(self) -> None:
         v = PolicyValidator()
-        result = v.validate_declarative({
-            "composition": "banana_of",
-            "policies": [],
-        })
+        result = v.validate_declarative(
+            {
+                "composition": "banana_of",
+                "policies": [],
+            }
+        )
         assert not result.valid
         assert any(f.code == "E_UNKNOWN_COMPOSITION" for f in result.errors)
 
     def test_not_requires_single_child(self) -> None:
         v = PolicyValidator()
-        result = v.validate_declarative({
-            "composition": "not",
-            "policies": [
-                {"type": "allowlist", "allowed": ["a"]},
-                {"type": "allowlist", "allowed": ["b"]},
-            ],
-        })
+        result = v.validate_declarative(
+            {
+                "composition": "not",
+                "policies": [
+                    {"type": "allowlist", "allowed": ["a"]},
+                    {"type": "allowlist", "allowed": ["b"]},
+                ],
+            }
+        )
         assert not result.valid
         assert any(f.code == "E_NOT_SINGLE_CHILD" for f in result.errors)
 
@@ -121,13 +125,17 @@ class TestValidatorSchemaValidation:
         v = PolicyValidator(max_composition_depth=2)
         deep = {
             "composition": "all_of",
-            "policies": [{
-                "composition": "all_of",
-                "policies": [{
+            "policies": [
+                {
                     "composition": "all_of",
-                    "policies": [{"type": "allow_all"}],
-                }],
-            }],
+                    "policies": [
+                        {
+                            "composition": "all_of",
+                            "policies": [{"type": "allow_all"}],
+                        }
+                    ],
+                }
+            ],
         }
         result = v.validate_declarative(deep)
         assert not result.valid
@@ -135,43 +143,53 @@ class TestValidatorSchemaValidation:
 
     def test_rate_limit_validation(self) -> None:
         v = PolicyValidator()
-        result = v.validate_declarative({
-            "type": "rate_limit",
-            "max_requests": -1,
-        })
+        result = v.validate_declarative(
+            {
+                "type": "rate_limit",
+                "max_requests": -1,
+            }
+        )
         assert not result.valid
 
     def test_time_based_invalid_day(self) -> None:
         v = PolicyValidator()
-        result = v.validate_declarative({
-            "type": "time_based",
-            "allowed_days": [0, 7],  # 7 is invalid
-        })
+        result = v.validate_declarative(
+            {
+                "type": "time_based",
+                "allowed_days": [0, 7],  # 7 is invalid
+            }
+        )
         assert not result.valid
 
     def test_time_based_invalid_hour(self) -> None:
         v = PolicyValidator()
-        result = v.validate_declarative({
-            "type": "time_based",
-            "start_hour": 25,
-        })
+        result = v.validate_declarative(
+            {
+                "type": "time_based",
+                "start_hour": 25,
+            }
+        )
         assert not result.valid
 
     def test_rbac_invalid_mappings_type(self) -> None:
         v = PolicyValidator()
-        result = v.validate_declarative({
-            "type": "rbac",
-            "role_mappings": "not-a-dict",
-        })
+        result = v.validate_declarative(
+            {
+                "type": "rbac",
+                "role_mappings": "not-a-dict",
+            }
+        )
         assert not result.valid
 
     def test_rbac_invalid_decision(self) -> None:
         v = PolicyValidator()
-        result = v.validate_declarative({
-            "type": "rbac",
-            "role_mappings": {"admin": ["*"]},
-            "default_decision": "banana",
-        })
+        result = v.validate_declarative(
+            {
+                "type": "rbac",
+                "role_mappings": {"admin": ["*"]},
+                "default_decision": "banana",
+            }
+        )
         assert not result.valid
 
     def test_valid_allow_all(self) -> None:
@@ -193,10 +211,12 @@ class TestValidatorSemanticValidation:
 
     def test_contradicting_patterns(self) -> None:
         v = PolicyValidator()
-        result = v.validate_providers([
-            AllowlistPolicy(allowed={"tool-a", "tool-b"}),
-            DenylistPolicy(denied={"tool-a", "tool-c"}),
-        ])
+        result = v.validate_providers(
+            [
+                AllowlistPolicy(allowed={"tool-a", "tool-b"}),
+                DenylistPolicy(denied={"tool-a", "tool-c"}),
+            ]
+        )
         assert not result.valid
         assert any(f.code == "E_CONTRADICTING_RULES" for f in result.errors)
 
@@ -208,10 +228,12 @@ class TestValidatorSemanticValidation:
 
     def test_deny_all_shadows_others(self) -> None:
         v = PolicyValidator()
-        result = v.validate_providers([
-            AllowlistPolicy(allowed={"tool-a"}),
-            DenyAllPolicy(),
-        ])
+        result = v.validate_providers(
+            [
+                AllowlistPolicy(allowed={"tool-a"}),
+                DenyAllPolicy(),
+            ]
+        )
         assert any(f.code == "W_DENY_ALL_SHADOWS" for f in result.warnings)
 
     def test_too_many_providers(self) -> None:
@@ -222,10 +244,12 @@ class TestValidatorSemanticValidation:
 
     def test_no_issues(self) -> None:
         v = PolicyValidator()
-        result = v.validate_providers([
-            AllowlistPolicy(allowed={"tool-a"}),
-            DenylistPolicy(denied={"admin-*"}),
-        ])
+        result = v.validate_providers(
+            [
+                AllowlistPolicy(allowed={"tool-a"}),
+                DenylistPolicy(denied={"admin-*"}),
+            ]
+        )
         assert result.valid
 
     def test_validate_full(self) -> None:
@@ -390,7 +414,9 @@ class TestGovernorWorkflow:
     @pytest.mark.anyio
     async def test_deploy_requires_approval(self) -> None:
         engine = PolicyEngine(providers=[AllowAllPolicy()])
-        gov = PolicyGovernor(engine=engine, require_approval=True, require_simulation=False)
+        gov = PolicyGovernor(
+            engine=engine, require_approval=True, require_simulation=False
+        )
         proposal = gov.propose_add(AllowlistPolicy(allowed={"x"}))
         gov.validate_proposal(proposal.proposal_id)
         with pytest.raises(ValueError, match="Must be approved"):
@@ -556,12 +582,14 @@ class TestInvariantWiring:
     @pytest.mark.anyio
     async def test_invariant_checked_on_hot_swap(self) -> None:
         registry = InvariantRegistry()
-        registry.register(Invariant(
-            id="min-providers",
-            description="Must have at least 1 provider",
-            expression="provider_count >= 1",
-            severity=InvariantSeverity.CRITICAL,
-        ))
+        registry.register(
+            Invariant(
+                id="min-providers",
+                description="Must have at least 1 provider",
+                expression="provider_count >= 1",
+                severity=InvariantSeverity.CRITICAL,
+            )
+        )
 
         engine = PolicyEngine(providers=[AllowAllPolicy()])
         engine._invariant_registry = registry
@@ -579,11 +607,13 @@ class TestInvariantWiring:
     @pytest.mark.anyio
     async def test_invariant_failure_doesnt_block_swap(self) -> None:
         registry = InvariantRegistry()
-        registry.register(Invariant(
-            id="always-fail",
-            description="Always fails",
-            expression="False",
-        ))
+        registry.register(
+            Invariant(
+                id="always-fail",
+                description="Always fails",
+                expression="False",
+            )
+        )
 
         engine = PolicyEngine(providers=[AllowAllPolicy()])
         engine._invariant_registry = registry
@@ -644,6 +674,7 @@ class TestConstraintEnforcement:
         from fastmcp.server.security.middleware.policy_enforcement import (
             PolicyEnforcementMiddleware,
         )
+
         assert PolicyEnforcementMiddleware is not None
 
 

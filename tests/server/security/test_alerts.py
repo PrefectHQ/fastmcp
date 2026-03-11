@@ -6,7 +6,7 @@ Covers models, filters, event bus, handlers, and component integration.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytest
 
@@ -395,8 +395,7 @@ class TestAnalyzerIntegration:
         analyzer.observe("agent-1", "metric", 10000.0)
 
         drift_events = [
-            e for e in received
-            if e.event_type == SecurityEventType.DRIFT_DETECTED
+            e for e in received if e.event_type == SecurityEventType.DRIFT_DETECTED
         ]
         assert len(drift_events) >= 1
         assert drift_events[0].layer == "reflexive"
@@ -438,7 +437,8 @@ class TestAnalyzerIntegration:
         engine.evaluate(drift)
 
         escalation_events = [
-            e for e in received
+            e
+            for e in received
             if e.event_type == SecurityEventType.ESCALATION_TRIGGERED
         ]
         assert len(escalation_events) == 1
@@ -466,8 +466,7 @@ class TestPolicyEngineIntegration:
         asyncio.get_event_loop().run_until_complete(engine.evaluate(ctx))
 
         deny_events = [
-            e for e in received
-            if e.event_type == SecurityEventType.POLICY_DENIED
+            e for e in received if e.event_type == SecurityEventType.POLICY_DENIED
         ]
         assert len(deny_events) == 1
         assert deny_events[0].actor_id == "agent-1"
@@ -494,7 +493,10 @@ class TestPolicyEngineIntegration:
 
     def test_hot_swap_emits_event(self):
         from fastmcp.server.security.policy.engine import PolicyEngine
-        from fastmcp.server.security.policy.provider import AllowAllPolicy, DenyAllPolicy
+        from fastmcp.server.security.policy.provider import (
+            AllowAllPolicy,
+            DenyAllPolicy,
+        )
 
         bus = SecurityEventBus()
         received = []
@@ -506,8 +508,7 @@ class TestPolicyEngineIntegration:
         )
 
         swap_events = [
-            e for e in received
-            if e.event_type == SecurityEventType.POLICY_SWAPPED
+            e for e in received if e.event_type == SecurityEventType.POLICY_SWAPPED
         ]
         assert len(swap_events) == 1
 
@@ -527,8 +528,7 @@ class TestConsentGraphIntegration:
         graph.grant("owner", "agent", scopes={"read"})
 
         grant_events = [
-            e for e in received
-            if e.event_type == SecurityEventType.CONSENT_GRANTED
+            e for e in received if e.event_type == SecurityEventType.CONSENT_GRANTED
         ]
         assert len(grant_events) == 1
         assert grant_events[0].layer == "consent"
@@ -548,8 +548,7 @@ class TestConsentGraphIntegration:
         graph.revoke(edge.edge_id)
 
         revoke_events = [
-            e for e in received
-            if e.event_type == SecurityEventType.CONSENT_REVOKED
+            e for e in received if e.event_type == SecurityEventType.CONSENT_REVOKED
         ]
         assert len(revoke_events) == 1
 
@@ -566,14 +565,16 @@ class TestConsentGraphIntegration:
         graph.add_node(ConsentNode("a1", NodeType.AGENT, "Agent 1"))
         graph.add_node(ConsentNode("a2", NodeType.AGENT, "Agent 2"))
         edge = graph.grant(
-            "owner", "a1", scopes={"read"},
-            delegatable=True, max_delegation_depth=2,
+            "owner",
+            "a1",
+            scopes={"read"},
+            delegatable=True,
+            max_delegation_depth=2,
         )
         graph.delegate(edge.edge_id, "a2")
 
         delegate_events = [
-            e for e in received
-            if e.event_type == SecurityEventType.CONSENT_DELEGATED
+            e for e in received if e.event_type == SecurityEventType.CONSENT_DELEGATED
         ]
         assert len(delegate_events) == 1
 
@@ -590,8 +591,7 @@ class TestMarketplaceIntegration:
         mp.register(name="Test Server", endpoint="https://example.com")
 
         register_events = [
-            e for e in received
-            if e.event_type == SecurityEventType.SERVER_REGISTERED
+            e for e in received if e.event_type == SecurityEventType.SERVER_REGISTERED
         ]
         assert len(register_events) == 1
 
@@ -607,8 +607,7 @@ class TestMarketplaceIntegration:
         mp.unregister(reg.server_id)
 
         unreg_events = [
-            e for e in received
-            if e.event_type == SecurityEventType.SERVER_UNREGISTERED
+            e for e in received if e.event_type == SecurityEventType.SERVER_UNREGISTERED
         ]
         assert len(unreg_events) == 1
 
@@ -625,8 +624,7 @@ class TestMarketplaceIntegration:
         mp.update_trust_level(reg.server_id, TrustLevel.AUDITOR_VERIFIED)
 
         trust_events = [
-            e for e in received
-            if e.event_type == SecurityEventType.TRUST_CHANGED
+            e for e in received if e.event_type == SecurityEventType.TRUST_CHANGED
         ]
         assert len(trust_events) == 1
         assert trust_events[0].data["new_level"] == "auditor_verified"
@@ -649,8 +647,7 @@ class TestProvenanceLedgerIntegration:
         )
 
         prov_events = [
-            e for e in received
-            if e.event_type == SecurityEventType.PROVENANCE_RECORDED
+            e for e in received if e.event_type == SecurityEventType.PROVENANCE_RECORDED
         ]
         assert len(prov_events) == 1
         assert prov_events[0].actor_id == "agent-1"
@@ -723,13 +720,19 @@ class TestNoBusBackwardsCompat:
 
     def test_consent_graph_no_bus(self):
         from fastmcp.server.security.consent.graph import ConsentGraph
-        from fastmcp.server.security.consent.models import ConsentNode, ConsentQuery, NodeType
+        from fastmcp.server.security.consent.models import (
+            ConsentNode,
+            ConsentQuery,
+            NodeType,
+        )
 
         graph = ConsentGraph()
         graph.add_node(ConsentNode("o", NodeType.AGENT, "O"))
         graph.add_node(ConsentNode("a", NodeType.AGENT, "A"))
         graph.grant("o", "a", scopes={"read"})
-        decision = graph.evaluate(ConsentQuery(source_id="o", target_id="a", scope="read"))
+        decision = graph.evaluate(
+            ConsentQuery(source_id="o", target_id="a", scope="read")
+        )
         assert decision.granted
 
     def test_marketplace_no_bus(self):

@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.security.certification.manifest import (
     PermissionScope,
@@ -243,17 +243,14 @@ class ManifestEnforcer:
         allowed = True
 
         op_lower = operation.lower()
-        if "network" in op_lower and not policy.allow_network:
-            allowed = False
-        elif "file_read" in op_lower and not policy.allow_file_read:
-            allowed = False
-        elif "file_write" in op_lower and not policy.allow_file_write:
-            allowed = False
-        elif "subprocess" in op_lower and not policy.allow_subprocess:
-            allowed = False
-        elif "env" in op_lower and not policy.allow_env_read:
-            allowed = False
-        elif "cross_origin" in op_lower and not policy.allow_cross_origin:
+        if (
+            ("network" in op_lower and not policy.allow_network)
+            or ("file_read" in op_lower and not policy.allow_file_read)
+            or ("file_write" in op_lower and not policy.allow_file_write)
+            or ("subprocess" in op_lower and not policy.allow_subprocess)
+            or ("env" in op_lower and not policy.allow_env_read)
+            or ("cross_origin" in op_lower and not policy.allow_cross_origin)
+        ):
             allowed = False
 
         if allowed:
@@ -415,9 +412,7 @@ class SandboxedRunner:
         # Check CRL
         if self._crl is not None and self._crl.is_revoked(manifest.tool_name):
             context.blocked = True
-            context.block_reason = (
-                f"Tool '{manifest.tool_name}' has been revoked"
-            )
+            context.block_reason = f"Tool '{manifest.tool_name}' has been revoked"
             context.finish()
             self._completed_contexts.append(context)
             return context

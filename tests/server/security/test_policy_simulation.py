@@ -16,7 +16,6 @@ from fastmcp.server.security.policy.provider import (
     DenyAllPolicy,
     PolicyDecision,
     PolicyEvaluationContext,
-    PolicyResult,
 )
 from fastmcp.server.security.policy.simulation import (
     Scenario,
@@ -24,7 +23,6 @@ from fastmcp.server.security.policy.simulation import (
     SimulationReport,
     simulate,
 )
-
 
 # ── Scenario tests ─────────────────────────────────────────────────
 
@@ -118,10 +116,13 @@ class TestNoSideEffects:
         engine = PolicyEngine(providers=[AllowAllPolicy()])
         assert engine.evaluation_count == 0
 
-        await simulate(engine, [
-            Scenario(resource_id="tool-a"),
-            Scenario(resource_id="tool-b"),
-        ])
+        await simulate(
+            engine,
+            [
+                Scenario(resource_id="tool-a"),
+                Scenario(resource_id="tool-b"),
+            ],
+        )
 
         # Engine counters should not change
         assert engine.evaluation_count == 0
@@ -169,10 +170,13 @@ class TestNoSideEffects:
         assert engine.deny_count == 1
 
         # Simulation should not affect counters
-        await simulate(engine, [
-            Scenario(resource_id="a"),
-            Scenario(resource_id="b"),
-        ])
+        await simulate(
+            engine,
+            [
+                Scenario(resource_id="a"),
+                Scenario(resource_id="b"),
+            ],
+        )
         assert engine.evaluation_count == 1
         assert engine.deny_count == 1
 
@@ -184,10 +188,13 @@ class TestProviderListInput:
     @pytest.mark.anyio
     async def test_single_provider(self):
         policy = AllowlistPolicy(allowed={"tool-a"})
-        report = await simulate(policy, [
-            Scenario(resource_id="tool-a"),
-            Scenario(resource_id="tool-b"),
-        ])
+        report = await simulate(
+            policy,
+            [
+                Scenario(resource_id="tool-a"),
+                Scenario(resource_id="tool-b"),
+            ],
+        )
         assert report.allowed == 1
         assert report.denied == 1
 
@@ -197,11 +204,14 @@ class TestProviderListInput:
             DenylistPolicy(denied={"blocked"}),
             AllowlistPolicy(allowed={"tool-a", "blocked"}),
         ]
-        report = await simulate(providers, [
-            Scenario(resource_id="tool-a"),
-            Scenario(resource_id="blocked"),
-            Scenario(resource_id="tool-c"),
-        ])
+        report = await simulate(
+            providers,
+            [
+                Scenario(resource_id="tool-a"),
+                Scenario(resource_id="blocked"),
+                Scenario(resource_id="tool-c"),
+            ],
+        )
         # tool-a: not denied + in allowlist → ALLOW
         assert report.results[0].decision == PolicyDecision.ALLOW
         # blocked: denied by denylist → DENY
@@ -219,9 +229,12 @@ class TestPerProviderBreakdown:
         providers = [
             AllowlistPolicy(allowed={"tool-a"}, policy_id="allowlist-1"),
         ]
-        report = await simulate(providers, [
-            Scenario(resource_id="tool-a"),
-        ])
+        report = await simulate(
+            providers,
+            [
+                Scenario(resource_id="tool-a"),
+            ],
+        )
         r = report.results[0]
         assert len(r.per_provider) == 1
         assert r.per_provider[0].policy_id == "allowlist-1"
@@ -233,9 +246,12 @@ class TestPerProviderBreakdown:
             DenylistPolicy(denied={"tool-a"}, policy_id="deny-1"),
             AllowAllPolicy(),  # Should not be reached
         ]
-        report = await simulate(providers, [
-            Scenario(resource_id="tool-a"),
-        ])
+        report = await simulate(
+            providers,
+            [
+                Scenario(resource_id="tool-a"),
+            ],
+        )
         r = report.results[0]
         assert r.decision == PolicyDecision.DENY
         # Only 1 provider evaluated (short-circuit)
@@ -391,19 +407,24 @@ class TestDeclarativeIntegration:
     async def test_simulate_declarative_policy(self):
         from fastmcp.server.security.policy.declarative import load_policy
 
-        policy = load_policy({
-            "composition": "all_of",
-            "policies": [
-                {"type": "allowlist", "allowed": ["safe-*"]},
-                {"type": "denylist", "denied": ["safe-but-blocked"]},
-            ],
-        })
+        policy = load_policy(
+            {
+                "composition": "all_of",
+                "policies": [
+                    {"type": "allowlist", "allowed": ["safe-*"]},
+                    {"type": "denylist", "denied": ["safe-but-blocked"]},
+                ],
+            }
+        )
 
-        report = await simulate(policy, [
-            Scenario(resource_id="safe-tool", label="should allow"),
-            Scenario(resource_id="safe-but-blocked", label="should deny"),
-            Scenario(resource_id="unknown", label="should deny"),
-        ])
+        report = await simulate(
+            policy,
+            [
+                Scenario(resource_id="safe-tool", label="should allow"),
+                Scenario(resource_id="safe-but-blocked", label="should deny"),
+                Scenario(resource_id="unknown", label="should deny"),
+            ],
+        )
         assert report.allowed == 1
         assert report.denied == 2
         assert report.results[0].scenario.label == "should allow"
@@ -416,8 +437,6 @@ class TestImports:
     def test_import_from_simulation_module(self):
         from fastmcp.server.security.policy.simulation import (
             Scenario,
-            ScenarioResult,
-            SimulationReport,
             simulate,
         )
 

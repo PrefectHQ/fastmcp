@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 class ConsentRequiredError(Exception):
     """Raised when an operation lacks required consent."""
 
-    def __init__(self, message: str, source_id: str = "", target_id: str = "", scope: str = ""):
+    def __init__(
+        self, message: str, source_id: str = "", target_id: str = "", scope: str = ""
+    ):
         super().__init__(message)
         self.source_id = source_id
         self.target_id = target_id

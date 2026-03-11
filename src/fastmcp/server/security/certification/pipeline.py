@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from fastmcp.server.security.certification.attestation import (
     AttestationStatus,
@@ -177,7 +177,10 @@ class CertificationPipeline:
         self._attestations[attestation.attestation_id] = attestation
 
         # Step 6: Update marketplace
-        if self._marketplace is not None and attestation.status == AttestationStatus.VALID:
+        if (
+            self._marketplace is not None
+            and attestation.status == AttestationStatus.VALID
+        ):
             self._update_marketplace_trust(manifest, effective_level)
 
         # Step 7: Emit event
@@ -228,7 +231,9 @@ class CertificationPipeline:
         # Verify signature
         signature_valid = False
         if attestation.signature and self._crypto is not None:
-            from fastmcp.server.security.contracts.crypto import SignatureInfo, SigningAlgorithm
+            from fastmcp.server.security.contracts.crypto import (
+                SignatureInfo,
+            )
 
             sig_info = SignatureInfo(
                 algorithm=self._crypto.algorithm,
@@ -339,7 +344,9 @@ class CertificationPipeline:
             if author is not None and att.author != author:
                 continue
             if min_level is not None:
-                if level_order.index(att.certification_level) < level_order.index(min_level):
+                if level_order.index(att.certification_level) < level_order.index(
+                    min_level
+                ):
                     continue
             if valid_only and not att.is_valid():
                 continue

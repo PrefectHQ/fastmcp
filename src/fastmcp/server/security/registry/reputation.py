@@ -89,7 +89,9 @@ class ReputationTracker:
             tool_name=tool_name,
             event_type=ReputationEventType.SUCCESSFUL_EXECUTION,
             actor_id=actor_id,
-            description=f"Successful execution by {actor_id}" if actor_id else "Successful execution",
+            description=f"Successful execution by {actor_id}"
+            if actor_id
+            else "Successful execution",
             metadata=metadata,
         )
 
@@ -134,7 +136,8 @@ class ReputationTracker:
         return self._record(
             tool_name=tool_name,
             event_type=event_type,
-            description=description or ("Positive review" if positive else "Negative review"),
+            description=description
+            or ("Positive review" if positive else "Negative review"),
             metadata=metadata,
         )
 
@@ -162,7 +165,8 @@ class ReputationTracker:
         return self._record(
             tool_name=tool_name,
             event_type=event_type,
-            description=description or ("Attestation renewed" if renewed else "Attestation revoked"),
+            description=description
+            or ("Attestation renewed" if renewed else "Attestation revoked"),
         )
 
     def get_impacts(self) -> dict[ReputationEventType, float]:

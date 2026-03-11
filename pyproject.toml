@@ -25,6 +25,7 @@ dependencies = [
     "jsonref>=1.1.0",
     "uncalled-for>=0.2.0",
     "watchfiles>=1.0.0",
+    "PyJWT>=2.10.1",
 ]
 
 requires-python = ">=3.10"
@@ -92,6 +93,7 @@ dev = [
 
 [project.scripts]
 fastmcp = "fastmcp.cli:app"
+purecipher-registry = "purecipher.cli:main"
 
 [project.urls]
 Homepage = "https://gofastmcp.com"
@@ -108,6 +110,8 @@ source = "uv-dynamic-versioning"
 [tool.hatch.metadata]
 allow-direct-references = true
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/fastmcp", "src/securemcp", "src/purecipher"]
 
 [tool.uv-dynamic-versioning]
 vcs = "git"
@@ -181,7 +185,7 @@ extend-select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["fastmcp"]
+known-first-party = ["fastmcp", "purecipher", "securemcp"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "I001", "RUF013"]

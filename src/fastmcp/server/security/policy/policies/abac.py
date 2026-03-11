@@ -16,7 +16,6 @@ Example::
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -44,9 +43,9 @@ class AttributeBasedPolicy:
         version: Version string.
     """
 
-    rules: dict[
-        str, Callable[[PolicyEvaluationContext], bool | Awaitable[bool]]
-    ] = field(default_factory=dict)
+    rules: dict[str, Callable[[PolicyEvaluationContext], bool | Awaitable[bool]]] = (
+        field(default_factory=dict)
+    )
     require_all: bool = True
     policy_id: str = "abac-policy"
     version: str = "1.0.0"
@@ -73,7 +72,9 @@ class AttributeBasedPolicy:
                 else:
                     failed.append(name)
             except Exception as exc:
-                logger.warning("ABAC rule '%s' raised %s: %s", name, type(exc).__name__, exc)
+                logger.warning(
+                    "ABAC rule '%s' raised %s: %s", name, type(exc).__name__, exc
+                )
                 failed.append(name)
 
         if self.require_all:

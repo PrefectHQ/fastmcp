@@ -24,7 +24,6 @@ Example::
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -76,9 +75,7 @@ class PolicyVersionManager:
     def _save_to_backend(self) -> None:
         """Persist version history to storage."""
         data = {
-            "versions": [
-                policy_version_to_dict(v) for v in self._history.versions
-            ],
+            "versions": [policy_version_to_dict(v) for v in self._history.versions],
             "current_version_index": self._history.current_version_index,
         }
         self._backend.save_policy_version(self.policy_set_id, data)
@@ -121,9 +118,7 @@ class PolicyVersionManager:
         """Get the currently active version."""
         return self._history.current_version
 
-    def rollback_to(
-        self, version_number: int, reason: str = ""
-    ) -> PolicyVersion:
+    def rollback_to(self, version_number: int, reason: str = "") -> PolicyVersion:
         """Switch to a previous version.
 
         Args:

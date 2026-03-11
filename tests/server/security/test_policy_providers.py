@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from fastmcp.server.security.policy.built_in import (
     ActionBasedPolicy,
     GDPRPolicy,
@@ -87,9 +85,7 @@ class TestActionBasedPolicy:
         assert result.decision == PolicyDecision.ALLOW
 
     async def test_action_not_in_allowed_list(self):
-        policy = ActionBasedPolicy(
-            allowed_actions=frozenset({"read_resource"})
-        )
+        policy = ActionBasedPolicy(allowed_actions=frozenset({"read_resource"}))
         result = await policy.evaluate(_ctx(action="call_tool"))
         assert result.decision == PolicyDecision.DENY
 

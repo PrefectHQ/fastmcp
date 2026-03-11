@@ -14,7 +14,6 @@ from fastmcp.server.security.consent.models import (
     ConsentCondition,
     ConsentEdge,
     ConsentNode,
-    ConsentScope,
     ConsentStatus,
     NodeType,
 )
@@ -45,7 +44,6 @@ from fastmcp.server.security.reflexive.models import (
     EscalationAction,
     EscalationRule,
 )
-
 
 # ── Datetime helpers ──────────────────────────────────────────────
 
@@ -188,7 +186,9 @@ def baseline_to_dict(baseline: BehavioralBaseline) -> dict[str, Any]:
         "mean": baseline.mean,
         "variance": baseline.variance,
         "min_value": baseline.min_value if baseline.min_value != float("inf") else None,
-        "max_value": baseline.max_value if baseline.max_value != float("-inf") else None,
+        "max_value": baseline.max_value
+        if baseline.max_value != float("-inf")
+        else None,
         "last_updated": _dt_to_str(baseline.last_updated),
     }
 
@@ -201,9 +201,15 @@ def baseline_from_dict(data: dict[str, Any]) -> BehavioralBaseline:
         sample_count=data.get("sample_count", 0),
         mean=data.get("mean", 0.0),
         variance=data.get("variance", 0.0),
-        min_value=data["min_value"] if data.get("min_value") is not None else float("inf"),
-        max_value=data["max_value"] if data.get("max_value") is not None else float("-inf"),
-        last_updated=_str_to_dt(data["last_updated"]) if data.get("last_updated") else datetime.now(timezone.utc),
+        min_value=data["min_value"]
+        if data.get("min_value") is not None
+        else float("inf"),
+        max_value=data["max_value"]
+        if data.get("max_value") is not None
+        else float("-inf"),
+        last_updated=_str_to_dt(data["last_updated"])
+        if data.get("last_updated")
+        else datetime.now(timezone.utc),
     )
 
 

@@ -307,9 +307,7 @@ class TestConsentEdgeSerialization:
             target_id="target-1",
             scopes={"read", "execute"},
             status=ConsentStatus.ACTIVE,
-            conditions=[
-                ConsentCondition(expression="true", description="always")
-            ],
+            conditions=[ConsentCondition(expression="true", description="always")],
             granted_at=ts,
             granted_by="source-1",
             delegatable=True,

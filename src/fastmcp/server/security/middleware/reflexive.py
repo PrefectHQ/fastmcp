@@ -26,7 +26,9 @@ from fastmcp.server.security.reflexive.analyzer import (
     EscalationAction,
     EscalationEngine,
 )
-from fastmcp.server.security.reflexive.models import DriftEvent, DriftSeverity, DriftType
+from fastmcp.server.security.reflexive.models import (
+    DriftEvent,
+)
 from fastmcp.server.security.reflexive.profiles import ActorProfileManager
 from fastmcp.tools.tool import Tool, ToolResult
 
@@ -118,7 +120,10 @@ class ReflexiveMiddleware(Middleware):
                 continue
             actions = self.escalation_engine.evaluate(event)
             for action, rule in actions:
-                if action in (EscalationAction.SUSPEND_AGENT, EscalationAction.SHUTDOWN):
+                if action in (
+                    EscalationAction.SUSPEND_AGENT,
+                    EscalationAction.SHUTDOWN,
+                ):
                     self._suspended_actors.add(event.actor_id)
                     logger.warning(
                         "Actor %s suspended due to escalation rule %s",
@@ -148,9 +153,7 @@ class ReflexiveMiddleware(Middleware):
         call_rate = self._compute_call_rate(actor_id)
 
         # Observe call frequency
-        drift_events = self.analyzer.observe(
-            actor_id, "calls_per_minute", call_rate
-        )
+        drift_events = self.analyzer.observe(actor_id, "calls_per_minute", call_rate)
 
         # Observe scope expansion
         if is_new_tool:
@@ -171,26 +174,18 @@ class ReflexiveMiddleware(Middleware):
             latency = (time.monotonic() - start) * 1000  # ms
 
             # Observe latency
-            drift_events.extend(
-                self.analyzer.observe(actor_id, "latency_ms", latency)
-            )
+            drift_events.extend(self.analyzer.observe(actor_id, "latency_ms", latency))
 
             # Observe success (0 = success for error rate)
-            drift_events.extend(
-                self.analyzer.observe(actor_id, "error_rate", 0.0)
-            )
+            drift_events.extend(self.analyzer.observe(actor_id, "error_rate", 0.0))
 
             self._process_drift(drift_events)
             return result
 
         except Exception:
             latency = (time.monotonic() - start) * 1000
-            drift_events.extend(
-                self.analyzer.observe(actor_id, "latency_ms", latency)
-            )
-            drift_events.extend(
-                self.analyzer.observe(actor_id, "error_rate", 1.0)
-            )
+            drift_events.extend(self.analyzer.observe(actor_id, "latency_ms", latency))
+            drift_events.extend(self.analyzer.observe(actor_id, "error_rate", 1.0))
             self._process_drift(drift_events)
             raise
 
@@ -222,9 +217,7 @@ class ReflexiveMiddleware(Middleware):
 
         self._record_call(actor_id)
         call_rate = self._compute_call_rate(actor_id)
-        drift_events = self.analyzer.observe(
-            actor_id, "calls_per_minute", call_rate
-        )
+        drift_events = self.analyzer.observe(actor_id, "calls_per_minute", call_rate)
 
         # Observe scope expansion
         if is_new_resource:
@@ -243,9 +236,7 @@ class ReflexiveMiddleware(Middleware):
             self._process_drift(drift_events)
             return result
         except Exception:
-            drift_events.extend(
-                self.analyzer.observe(actor_id, "error_rate", 1.0)
-            )
+            drift_events.extend(self.analyzer.observe(actor_id, "error_rate", 1.0))
             self._process_drift(drift_events)
             raise
 

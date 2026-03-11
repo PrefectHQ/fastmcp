@@ -174,7 +174,9 @@ class MarketplaceDataBridge:
         cat_counts: dict[str, int] = stats.get("categories", {})
 
         result = []
-        for cat_val, count in sorted(cat_counts.items(), key=lambda x: x[1], reverse=True):
+        for cat_val, count in sorted(
+            cat_counts.items(), key=lambda x: x[1], reverse=True
+        ):
             result.append(
                 {
                     "name": _CATEGORY_LABELS.get(cat_val, cat_val),
@@ -231,7 +233,9 @@ class MarketplaceDataBridge:
                 "published_relative": _relative_time(v.published_at),
                 "yanked": v.yanked,
                 "yank_reason": v.yank_reason,
-                "manifest_digest": v.manifest_digest[:16] + "..." if v.manifest_digest else "",
+                "manifest_digest": v.manifest_digest[:16] + "..."
+                if v.manifest_digest
+                else "",
             }
             for v in reversed(versions)  # newest first
         ]

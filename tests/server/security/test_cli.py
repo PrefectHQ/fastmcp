@@ -7,45 +7,32 @@ validate, certify_and_publish, and manifest parsing.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from fastmcp.server.security.certification.attestation import (
-    AttestationStatus,
     CertificationLevel,
-    ToolAttestation,
 )
 from fastmcp.server.security.certification.manifest import (
     DataClassification,
-    DataFlowDeclaration,
     PermissionScope,
-    ResourceAccessDeclaration,
     SecurityManifest,
 )
 from fastmcp.server.security.certification.pipeline import CertificationPipeline
 from fastmcp.server.security.certification.validator import ManifestValidator
 from fastmcp.server.security.cli.commands import (
-    CertifyResult,
-    InspectResult,
-    PublishResult,
-    SearchResult,
     SecureMCPCLI,
-    StatusResult,
-    UnpublishResult,
     _parse_categories,
     _parse_level,
     _parse_sort,
 )
 from fastmcp.server.security.gateway.tool_marketplace import (
     PublishStatus,
-    ReviewRating,
     SortBy,
     ToolCategory,
     ToolMarketplace,
 )
 from fastmcp.server.security.registry.registry import TrustRegistry
-
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -240,9 +227,7 @@ class TestCertifyAndPublish:
         # still certifies at the lower level. Verify the cert level
         # is capped below the requested level.
         manifest = SecurityManifest(tool_name="bare-tool")
-        cert, pub = cli.certify_and_publish(
-            manifest, requested_level="strict"
-        )
+        cert, pub = cli.certify_and_publish(manifest, requested_level="strict")
         # The pipeline certifies at whatever level the score allows,
         # so cert.success is True but at a lower level
         assert cert.success
@@ -439,64 +424,72 @@ class TestManifestParsing:
         assert manifest.version == "1.0.0"
 
     def test_parse_with_permissions(self):
-        data = json.dumps({
-            "tool_name": "my-tool",
-            "version": "1.0.0",
-            "author": "acme",
-            "permissions": ["read_resource", "network_access"],
-        })
+        data = json.dumps(
+            {
+                "tool_name": "my-tool",
+                "version": "1.0.0",
+                "author": "acme",
+                "permissions": ["read_resource", "network_access"],
+            }
+        )
         manifest = SecureMCPCLI.parse_manifest_file(data)
         assert PermissionScope.READ_RESOURCE in manifest.permissions
         assert PermissionScope.NETWORK_ACCESS in manifest.permissions
 
     def test_parse_with_data_flows(self):
-        data = json.dumps({
-            "tool_name": "my-tool",
-            "version": "1.0.0",
-            "data_flows": [
-                {
-                    "source": "user_input",
-                    "destination": "api_service",
-                    "classification": "confidential",
-                    "transforms": ["encrypt"],
-                }
-            ],
-        })
+        data = json.dumps(
+            {
+                "tool_name": "my-tool",
+                "version": "1.0.0",
+                "data_flows": [
+                    {
+                        "source": "user_input",
+                        "destination": "api_service",
+                        "classification": "confidential",
+                        "transforms": ["encrypt"],
+                    }
+                ],
+            }
+        )
         manifest = SecureMCPCLI.parse_manifest_file(data)
         assert len(manifest.data_flows) == 1
         assert manifest.data_flows[0].classification == DataClassification.CONFIDENTIAL
 
     def test_parse_with_resource_access(self):
-        data = json.dumps({
-            "tool_name": "my-tool",
-            "version": "1.0.0",
-            "resource_access": [
-                {
-                    "resource_pattern": "file:///*.json",
-                    "access_type": "read",
-                    "required": True,
-                    "classification": "internal",
-                }
-            ],
-        })
+        data = json.dumps(
+            {
+                "tool_name": "my-tool",
+                "version": "1.0.0",
+                "resource_access": [
+                    {
+                        "resource_pattern": "file:///*.json",
+                        "access_type": "read",
+                        "required": True,
+                        "classification": "internal",
+                    }
+                ],
+            }
+        )
         manifest = SecureMCPCLI.parse_manifest_file(data)
         assert len(manifest.resource_access) == 1
 
     def test_parse_full_manifest(self):
-        data = json.dumps({
-            "tool_name": "complete-tool",
-            "version": "2.0.0",
-            "author": "acme",
-            "permissions": ["read_resource", "call_tool"],
-            "data_flows": [],
-            "resource_access": [],
-            "max_execution_time_seconds": 60,
-            "idempotent": True,
-            "deterministic": False,
-            "requires_consent": True,
-            "dependencies": ["other-tool"],
-            "tags": ["search", "ml"],
-        })
+        data = json.dumps(
+            {
+                "tool_name": "complete-tool",
+                "version": "2.0.0",
+                "author": "acme",
+                "permissions": ["read_resource", "call_tool"],
+                "data_flows": [],
+                "resource_access": [],
+                "max_execution_time_seconds": 60,
+                "idempotent": True,
+                "deterministic": False,
+                "requires_consent": True,
+                "dependencies": ["other-tool"],
+                "tags": ["search", "ml"],
+            }
+        )
         manifest = SecureMCPCLI.parse_manifest_file(data)
         assert manifest.author == "acme"
         assert manifest.max_execution_time_seconds == 60
@@ -507,13 +500,15 @@ class TestManifestParsing:
     def test_parse_and_certify_roundtrip(self):
         """Parse a manifest from JSON and certify it."""
         cli = _make_full_cli()
-        data = json.dumps({
-            "tool_name": "roundtrip-tool",
-            "version": "1.0.0",
-            "author": "acme",
-            "permissions": ["read_resource"],
-            "max_execution_time_seconds": 30,
-        })
+        data = json.dumps(
+            {
+                "tool_name": "roundtrip-tool",
+                "version": "1.0.0",
+                "author": "acme",
+                "permissions": ["read_resource"],
+                "max_execution_time_seconds": 30,
+            }
+        )
         manifest = SecureMCPCLI.parse_manifest_file(data)
         result = cli.certify(manifest, requested_level="self_attested")
         assert result.success
@@ -527,10 +522,6 @@ class TestImports:
 
     def test_cli_imports(self):
         from fastmcp.server.security.cli import (
-            CertifyResult,
-            InspectResult,
-            PublishResult,
-            SearchResult,
             SecureMCPCLI,
         )
 
@@ -538,10 +529,6 @@ class TestImports:
 
     def test_top_level_imports(self):
         from fastmcp.server.security import (
-            CertifyResult,
-            InspectResult,
-            PublishResult,
-            SearchResult,
             SecureMCPCLI,
         )
 

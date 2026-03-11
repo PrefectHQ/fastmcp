@@ -8,7 +8,6 @@ from fastmcp.server.security.reflexive.analyzer import EscalationEngine
 from fastmcp.server.security.reflexive.models import (
     DriftEvent,
     DriftSeverity,
-    DriftType,
     EscalationAction,
     EscalationRule,
 )

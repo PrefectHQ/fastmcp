@@ -3,8 +3,6 @@
 import asyncio
 from datetime import datetime, time, timedelta, timezone
 
-import pytest
-
 from fastmcp.server.security.policy.policies.abac import AttributeBasedPolicy
 from fastmcp.server.security.policy.policies.rate_limit import RateLimitPolicy
 from fastmcp.server.security.policy.policies.rbac import RoleBasedPolicy
@@ -17,7 +15,6 @@ from fastmcp.server.security.policy.provider import (
     DenyAllPolicy,
     PolicyDecision,
     PolicyEvaluationContext,
-    PolicyResult,
 )
 
 

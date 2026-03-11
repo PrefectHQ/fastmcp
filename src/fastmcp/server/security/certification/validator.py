@@ -7,10 +7,9 @@ supports pluggable validation rules via the ValidationRule protocol.
 
 from __future__ import annotations
 
-import fnmatch
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from fastmcp.server.security.certification.attestation import (
@@ -21,7 +20,6 @@ from fastmcp.server.security.certification.attestation import (
 )
 from fastmcp.server.security.certification.manifest import (
     DataClassification,
-    DataFlowDeclaration,
     PermissionScope,
     SecurityManifest,
 )
@@ -263,9 +261,9 @@ class DataFlowRule:
                 )
 
             # Sensitive data should have bounded retention
-            if (
-                flow.classification in sensitive_classifications
-                and flow.retention in ("none", "")
+            if flow.classification in sensitive_classifications and flow.retention in (
+                "none",
+                "",
             ):
                 findings.append(
                     ValidationFinding(
@@ -472,7 +470,9 @@ class ManifestValidator:
         certification_thresholds: dict[CertificationLevel, float] | None = None,
         permission_caps: dict[PermissionScope, CertificationLevel] | None = None,
     ) -> None:
-        self._rules: list[Any] = list(rules) if rules is not None else list(DEFAULT_RULES)
+        self._rules: list[Any] = (
+            list(rules) if rules is not None else list(DEFAULT_RULES)
+        )
         self._thresholds = certification_thresholds or dict(CERTIFICATION_THRESHOLDS)
         self._permission_caps = permission_caps or dict(PERMISSION_CAPS)
 
@@ -492,7 +492,9 @@ class ManifestValidator:
                 findings = rule.validate(manifest)
                 all_findings.extend(findings)
             except Exception:
-                logger.exception("Validation rule %s failed", getattr(rule, "rule_id", "unknown"))
+                logger.exception(
+                    "Validation rule %s failed", getattr(rule, "rule_id", "unknown")
+                )
                 all_findings.append(
                     ValidationFinding(
                         severity=ValidationSeverity.WARNING,

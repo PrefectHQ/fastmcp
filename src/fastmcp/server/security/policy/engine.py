@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -57,9 +57,7 @@ class PolicyViolationError(Exception):
 
     def __init__(self, result: PolicyResult) -> None:
         self.result = result
-        super().__init__(
-            f"Policy violation ({result.policy_id}): {result.reason}"
-        )
+        super().__init__(f"Policy violation ({result.policy_id}): {result.reason}")
 
 
 class PolicyEngine:
@@ -158,9 +156,7 @@ class PolicyEngine:
         """The attached policy validator, if any."""
         return self._validator
 
-    async def evaluate(
-        self, context: PolicyEvaluationContext
-    ) -> PolicyResult:
+    async def evaluate(self, context: PolicyEvaluationContext) -> PolicyResult:
         """Evaluate a request against all configured policy providers.
 
         All providers must return ALLOW for the overall result to be ALLOW.

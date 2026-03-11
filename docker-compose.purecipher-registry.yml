@@ -1,0 +1,28 @@
+services:
+  purecipher-registry:
+    image: purecipher-secured-mcp-registry:local
+    build:
+      context: .
+      dockerfile: Dockerfile.purecipher-registry
+    ports:
+      - "8000:8000"
+    environment:
+      PURECIPHER_SIGNING_SECRET: ${PURECIPHER_SIGNING_SECRET:-development-secret}
+      PURECIPHER_REGISTRY_DB: /data/purecipher-registry.db
+      PURECIPHER_REQUIRE_MODERATION: ${PURECIPHER_REQUIRE_MODERATION:-false}
+      PURECIPHER_ENABLE_AUTH: ${PURECIPHER_ENABLE_AUTH:-false}
+      PURECIPHER_JWT_SECRET: ${PURECIPHER_JWT_SECRET:-}
+      PURECIPHER_USERS_JSON: ${PURECIPHER_USERS_JSON:-}
+      PURECIPHER_AUTH_COOKIE_NAME: ${PURECIPHER_AUTH_COOKIE_NAME:-purecipher_registry_token}
+    volumes:
+      - ./.data/purecipher-registry:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/registry/health')
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s

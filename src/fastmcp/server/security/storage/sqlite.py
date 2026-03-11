@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from pathlib import Path
 from typing import Any
 
 
@@ -156,6 +155,34 @@ class SQLiteBackend:
             CREATE INDEX IF NOT EXISTS idx_mp_audit_ns
                 ON marketplace_audit_log(namespace);
 
+            CREATE TABLE IF NOT EXISTS tool_listings (
+                namespace TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                data TEXT NOT NULL,
+                updated_at REAL NOT NULL,
+                PRIMARY KEY (namespace, item_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS tool_installs (
+                namespace TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                data TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                seq INTEGER PRIMARY KEY AUTOINCREMENT
+            );
+            CREATE INDEX IF NOT EXISTS idx_tool_installs_ns
+                ON tool_installs(namespace);
+
+            CREATE TABLE IF NOT EXISTS tool_reviews (
+                namespace TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                data TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                seq INTEGER PRIMARY KEY AUTOINCREMENT
+            );
+            CREATE INDEX IF NOT EXISTS idx_tool_reviews_ns
+                ON tool_reviews(namespace);
+
             CREATE TABLE IF NOT EXISTS policy_versions (
                 policy_set_id TEXT NOT NULL PRIMARY KEY,
                 data TEXT NOT NULL,
@@ -180,7 +207,12 @@ class SQLiteBackend:
         conn.execute(
             "INSERT INTO provenance_records (namespace, item_id, data, created_at) "
             "VALUES (?, ?, ?, ?)",
-            (ledger_id, record_data.get("record_id", ""), json.dumps(record_data), time.time()),
+            (
+                ledger_id,
+                record_data.get("record_id", ""),
+                json.dumps(record_data),
+                time.time(),
+            ),
         )
         conn.commit()
 
@@ -194,14 +226,17 @@ class SQLiteBackend:
 
     # ── Exchange Log ──────────────────────────────────────────────
 
-    def append_exchange_entry(
-        self, log_id: str, entry_data: dict[str, Any]
-    ) -> None:
+    def append_exchange_entry(self, log_id: str, entry_data: dict[str, Any]) -> None:
         conn = self._get_conn()
         conn.execute(
             "INSERT INTO exchange_entries (namespace, item_id, data, created_at) "
             "VALUES (?, ?, ?, ?)",
-            (log_id, entry_data.get("entry_id", ""), json.dumps(entry_data), time.time()),
+            (
+                log_id,
+                entry_data.get("entry_id", ""),
+                json.dumps(entry_data),
+                time.time(),
+            ),
         )
         conn.commit()
 
@@ -277,9 +312,7 @@ class SQLiteBackend:
             )
         conn.commit()
 
-    def load_baselines(
-        self, analyzer_id: str
-    ) -> dict[str, dict[str, dict[str, Any]]]:
+    def load_baselines(self, analyzer_id: str) -> dict[str, dict[str, dict[str, Any]]]:
         conn = self._get_conn()
         cursor = conn.execute(
             "SELECT actor_id, metric_name, data FROM baselines WHERE namespace = ?",
@@ -292,14 +325,17 @@ class SQLiteBackend:
 
     # ── Drift History ─────────────────────────────────────────────
 
-    def append_drift_event(
-        self, analyzer_id: str, event_data: dict[str, Any]
-    ) -> None:
+    def append_drift_event(self, analyzer_id: str, event_data: dict[str, Any]) -> None:
         conn = self._get_conn()
         conn.execute(
             "INSERT INTO drift_events (namespace, item_id, data, created_at) "
             "VALUES (?, ?, ?, ?)",
-            (analyzer_id, event_data.get("event_id", ""), json.dumps(event_data), time.time()),
+            (
+                analyzer_id,
+                event_data.get("event_id", ""),
+                json.dumps(event_data),
+                time.time(),
+            ),
         )
         conn.commit()
 
@@ -313,13 +349,10 @@ class SQLiteBackend:
 
     # ── Escalation History ────────────────────────────────────────
 
-    def append_escalation(
-        self, engine_id: str, data: dict[str, Any]
-    ) -> None:
+    def append_escalation(self, engine_id: str, data: dict[str, Any]) -> None:
         conn = self._get_conn()
         conn.execute(
-            "INSERT INTO escalations (namespace, data, created_at) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO escalations (namespace, data, created_at) VALUES (?, ?, ?)",
             (engine_id, json.dumps(data), time.time()),
         )
         conn.commit()
@@ -391,9 +424,7 @@ class SQLiteBackend:
         )
         conn.commit()
 
-    def append_consent_audit(
-        self, graph_id: str, entry: dict[str, Any]
-    ) -> None:
+    def append_consent_audit(self, graph_id: str, entry: dict[str, Any]) -> None:
         conn = self._get_conn()
         conn.execute(
             "INSERT INTO consent_audit_log (namespace, data, created_at) "
@@ -453,9 +484,7 @@ class SQLiteBackend:
         )
         conn.commit()
 
-    def remove_server_registration(
-        self, mp_id: str, server_id: str
-    ) -> None:
+    def remove_server_registration(self, mp_id: str, server_id: str) -> None:
         conn = self._get_conn()
         conn.execute(
             "DELETE FROM server_registrations WHERE namespace = ? AND item_id = ?",
@@ -463,9 +492,7 @@ class SQLiteBackend:
         )
         conn.commit()
 
-    def append_marketplace_audit(
-        self, mp_id: str, entry: dict[str, Any]
-    ) -> None:
+    def append_marketplace_audit(self, mp_id: str, entry: dict[str, Any]) -> None:
         conn = self._get_conn()
         conn.execute(
             "INSERT INTO marketplace_audit_log (namespace, data, created_at) "
@@ -496,11 +523,90 @@ class SQLiteBackend:
             "audit_log": audit_log,
         }
 
+    # ── Tool Marketplace ──────────────────────────────────────────
+
+    def save_tool_listing(
+        self, mp_id: str, listing_id: str, data: dict[str, Any]
+    ) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO tool_listings "
+            "(namespace, item_id, data, updated_at) VALUES (?, ?, ?, ?)",
+            (mp_id, listing_id, json.dumps(data), time.time()),
+        )
+        conn.commit()
+
+    def remove_tool_listing(self, mp_id: str, listing_id: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "DELETE FROM tool_listings WHERE namespace = ? AND item_id = ?",
+            (mp_id, listing_id),
+        )
+        conn.execute(
+            "DELETE FROM tool_installs WHERE namespace = ? AND item_id = ?",
+            (mp_id, listing_id),
+        )
+        conn.execute(
+            "DELETE FROM tool_reviews WHERE namespace = ? AND item_id = ?",
+            (mp_id, listing_id),
+        )
+        conn.commit()
+
+    def append_tool_install(
+        self, mp_id: str, listing_id: str, data: dict[str, Any]
+    ) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT INTO tool_installs (namespace, item_id, data, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (mp_id, listing_id, json.dumps(data), time.time()),
+        )
+        conn.commit()
+
+    def append_tool_review(
+        self, mp_id: str, listing_id: str, data: dict[str, Any]
+    ) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT INTO tool_reviews (namespace, item_id, data, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (mp_id, listing_id, json.dumps(data), time.time()),
+        )
+        conn.commit()
+
+    def load_tool_marketplace(self, mp_id: str) -> dict[str, Any]:
+        conn = self._get_conn()
+
+        listings: dict[str, dict[str, Any]] = {}
+        for row in conn.execute(
+            "SELECT item_id, data FROM tool_listings WHERE namespace = ?",
+            (mp_id,),
+        ).fetchall():
+            listings[row[0]] = json.loads(row[1])
+
+        installs: dict[str, list[dict[str, Any]]] = {}
+        for row in conn.execute(
+            "SELECT item_id, data FROM tool_installs WHERE namespace = ? ORDER BY seq",
+            (mp_id,),
+        ).fetchall():
+            installs.setdefault(row[0], []).append(json.loads(row[1]))
+
+        reviews: dict[str, list[dict[str, Any]]] = {}
+        for row in conn.execute(
+            "SELECT item_id, data FROM tool_reviews WHERE namespace = ? ORDER BY seq",
+            (mp_id,),
+        ).fetchall():
+            reviews.setdefault(row[0], []).append(json.loads(row[1]))
+
+        return {
+            "listings": listings,
+            "installs": installs,
+            "reviews": reviews,
+        }
+
     # ── Policy Versioning ────────────────────────────────────────
 
-    def save_policy_version(
-        self, policy_set_id: str, data: dict[str, Any]
-    ) -> None:
+    def save_policy_version(self, policy_set_id: str, data: dict[str, Any]) -> None:
         conn = self._get_conn()
         conn.execute(
             "INSERT OR REPLACE INTO policy_versions (policy_set_id, data, updated_at) "
@@ -509,9 +615,7 @@ class SQLiteBackend:
         )
         conn.commit()
 
-    def load_policy_versions(
-        self, policy_set_id: str
-    ) -> dict[str, Any] | None:
+    def load_policy_versions(self, policy_set_id: str) -> dict[str, Any] | None:
         conn = self._get_conn()
         row = conn.execute(
             "SELECT data FROM policy_versions WHERE policy_set_id = ?",

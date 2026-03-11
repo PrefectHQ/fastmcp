@@ -135,7 +135,8 @@
                     "icon": "shield-check",
                     "pages": [
                       "servers/security/overview",
-                      "servers/security/settings"
+                      "servers/security/settings",
+                      "servers/security/purecipher-registry"
                     ],
                     "tag": "NEW"
                   },

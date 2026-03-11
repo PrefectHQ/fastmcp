@@ -13,7 +13,7 @@ Usage:
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -21,10 +21,7 @@ from fastmcp.server.security.dashboard.snapshot import (
     DashboardSnapshot,
     HealthLevel,
     SecurityDashboard,
-    TimelineEntry,
-    TimelineType,
 )
-
 
 # ── Mapping helpers ─────────────────────────────────────────────
 
@@ -294,7 +291,11 @@ class DashboardDataBridge:
                 if listing:
                     entry["installs"] = listing.install_count
                     entry["rating"] = round(listing.average_rating, 1)
-                    entry["status"] = listing.status.value if hasattr(listing, "status") else "published"
+                    entry["status"] = (
+                        listing.status.value
+                        if hasattr(listing, "status")
+                        else "published"
+                    )
 
             tools.append(entry)
 
@@ -324,16 +325,16 @@ class DashboardDataBridge:
 
         return {
             "overall_health": snap.overall_health.value,
-            "health_label": health_label.get(
-                snap.overall_health.value, "Unknown"
-            ),
+            "health_label": health_label.get(snap.overall_health.value, "Unknown"),
             "all_operational": snap.critical_count == 0 and snap.degraded_count == 0,
             "healthy_components": healthy,
             "total_components": total_components,
             "compliance_score": round(snap.compliance_score * 100),
             "total_tools": summary.get("total_tools", 0),
             "avg_trust": 0.0,  # computed below
-            "revocations": summary.get("active_revocations", summary.get("crl_entries", 0)),
+            "revocations": summary.get(
+                "active_revocations", summary.get("crl_entries", 0)
+            ),
             "federation_peers": summary.get("federation_peers", 0),
         }
 

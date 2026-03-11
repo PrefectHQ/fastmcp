@@ -121,9 +121,7 @@ def _build_rate_limit(config: dict[str, Any]) -> RateLimitPolicy:
 def _build_time_based(config: dict[str, Any]) -> TimeBasedPolicy:
     days = config.get("allowed_days")
     return TimeBasedPolicy(
-        allowed_days=(
-            frozenset(days) if days is not None else frozenset(range(7))
-        ),
+        allowed_days=(frozenset(days) if days is not None else frozenset(range(7))),
         allowed_start_time=time(config.get("start_hour", 0), 0),
         allowed_end_time=time(config.get("end_hour", 23), 59, 59),
         utc_offset_hours=config.get("utc_offset_hours", 0),
@@ -151,7 +149,7 @@ def _build_abac(config: dict[str, Any]) -> AttributeBasedPolicy:
     rules: dict[str, Any] = {}
     for key, expected in conditions.items():
 
-        def _make_check(k: str, v: Any):  # noqa: ANN001
+        def _make_check(k: str, v: Any):
             def check(ctx: Any) -> bool:
                 return ctx.metadata.get(k) == v
 
@@ -189,9 +187,7 @@ def _build_resource_scoped(config: dict[str, Any]) -> ResourceScopedPolicy:
         resource_rules[resource_id] = _build_single_policy(sub_config)
 
     default_config = config.get("default")
-    default_policy = (
-        _build_single_policy(default_config) if default_config else None
-    )
+    default_policy = _build_single_policy(default_config) if default_config else None
 
     return ResourceScopedPolicy(
         resource_rules=resource_rules,
@@ -360,8 +356,7 @@ def load_policy(source: str | Path | dict[str, Any]) -> PolicyProvider:
         config = json.loads(text)
     else:
         raise ValueError(
-            f"Unsupported file format: {path.suffix!r}. "
-            "Use .yaml, .yml, or .json"
+            f"Unsupported file format: {path.suffix!r}. Use .yaml, .yml, or .json"
         )
 
     if not isinstance(config, dict):

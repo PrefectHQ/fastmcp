@@ -106,9 +106,7 @@ def create_audit_tools(api: AuditAPI) -> dict[str, Any]:
 
     async def query_policy_status() -> dict[str, Any]:
         """Get policy engine status and evaluation summary."""
-        result = api.query(
-            AuditQuery(query_type=AuditQueryType.POLICY)
-        )
+        result = api.query(AuditQuery(query_type=AuditQueryType.POLICY))
         return {
             "records": result.records,
             "metadata": result.metadata,

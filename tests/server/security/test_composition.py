@@ -1,9 +1,6 @@
 """Tests for policy composition operators (AllOf, AnyOf, Not, FirstMatch)."""
 
 import asyncio
-from datetime import datetime, timezone
-
-import pytest
 
 from fastmcp.server.security.policy.composition import AllOf, AnyOf, FirstMatch, Not
 from fastmcp.server.security.policy.provider import (
@@ -15,7 +12,9 @@ from fastmcp.server.security.policy.provider import (
 )
 
 
-def _ctx(action: str = "call_tool", resource_id: str = "tool:test") -> PolicyEvaluationContext:
+def _ctx(
+    action: str = "call_tool", resource_id: str = "tool:test"
+) -> PolicyEvaluationContext:
     return PolicyEvaluationContext(
         actor_id="agent-1",
         action=action,
@@ -116,7 +115,9 @@ class TestAnyOf:
 
     def test_require_minimum(self):
         policy = AnyOf(
-            AllowAllPolicy(), DenyAllPolicy(), AllowAllPolicy(),
+            AllowAllPolicy(),
+            DenyAllPolicy(),
+            AllowAllPolicy(),
             require_minimum=2,
         )
         result = asyncio.get_event_loop().run_until_complete(policy.evaluate(_ctx()))
@@ -124,7 +125,9 @@ class TestAnyOf:
 
     def test_require_minimum_not_met(self):
         policy = AnyOf(
-            AllowAllPolicy(), DenyAllPolicy(), DenyAllPolicy(),
+            AllowAllPolicy(),
+            DenyAllPolicy(),
+            DenyAllPolicy(),
             require_minimum=2,
         )
         result = asyncio.get_event_loop().run_until_complete(policy.evaluate(_ctx()))
@@ -188,7 +191,8 @@ class TestFirstMatch:
 
     def test_all_defer_uses_default(self):
         policy = FirstMatch(
-            _DeferPolicy(), _DeferPolicy(),
+            _DeferPolicy(),
+            _DeferPolicy(),
             default_decision=PolicyDecision.DENY,
         )
         result = asyncio.get_event_loop().run_until_complete(policy.evaluate(_ctx()))

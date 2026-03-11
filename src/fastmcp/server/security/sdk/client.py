@@ -10,7 +10,6 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
 
 from fastmcp.server.security.alerts.bus import SecurityEventBus
 from fastmcp.server.security.alerts.models import (
@@ -19,11 +18,9 @@ from fastmcp.server.security.alerts.models import (
     SecurityEventType,
 )
 from fastmcp.server.security.certification.manifest import (
-    PermissionScope,
     SecurityManifest,
 )
 from fastmcp.server.security.certification.pipeline import CertificationPipeline
-from fastmcp.server.security.compliance.frameworks import ComplianceFramework
 from fastmcp.server.security.compliance.reports import (
     ComplianceReport,
     ComplianceReporter,
@@ -38,7 +35,6 @@ from fastmcp.server.security.provenance.records import ProvenanceAction
 from fastmcp.server.security.registry.registry import TrustRegistry
 from fastmcp.server.security.sandbox.enforcer import (
     ExecutionContext,
-    ManifestEnforcer,
     SandboxedRunner,
 )
 

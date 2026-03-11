@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import time
 from enum import Enum
 from typing import Any
 
@@ -76,9 +75,7 @@ class ValidationResult:
 
     @property
     def valid(self) -> bool:
-        return not any(
-            f.severity == ValidationSeverity.ERROR for f in self.findings
-        )
+        return not any(f.severity == ValidationSeverity.ERROR for f in self.findings)
 
     @property
     def errors(self) -> list[ValidationFinding]:
@@ -353,7 +350,9 @@ class PolicyValidator:
                             ValidationFinding(
                                 severity=ValidationSeverity.ERROR,
                                 message=f"Actions for role '{role}' must be a list",
-                                path=f"{path}.role_mappings.{role}" if path else f"role_mappings.{role}",
+                                path=f"{path}.role_mappings.{role}"
+                                if path
+                                else f"role_mappings.{role}",
                                 code="E_INVALID_FIELD_TYPE",
                             )
                         )
@@ -409,7 +408,9 @@ class PolicyValidator:
                                 ValidationFinding(
                                     severity=ValidationSeverity.ERROR,
                                     message=f"Invalid day value: {d}. Must be 0-6 (Mon-Sun)",
-                                    path=f"{path}.allowed_days" if path else "allowed_days",
+                                    path=f"{path}.allowed_days"
+                                    if path
+                                    else "allowed_days",
                                     code="E_INVALID_FIELD_VALUE",
                                 )
                             )

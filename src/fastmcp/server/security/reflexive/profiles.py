@@ -12,13 +12,12 @@ lookup/creation/scoring logic.
 from __future__ import annotations
 
 import time
-from collections import defaultdict, deque
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 from fastmcp.server.security.reflexive.models import DriftEvent, DriftSeverity
-
 
 # ---------------------------------------------------------------------------
 # Threat score weights (how much each drift severity adds to the score)
@@ -80,7 +79,9 @@ class ActorProfile:
     @property
     def scope_size(self) -> int:
         """Total number of distinct resources/tools/prompts accessed."""
-        return len(self.known_tools) + len(self.known_resources) + len(self.known_prompts)
+        return (
+            len(self.known_tools) + len(self.known_resources) + len(self.known_prompts)
+        )
 
     @property
     def operation_count(self) -> int:

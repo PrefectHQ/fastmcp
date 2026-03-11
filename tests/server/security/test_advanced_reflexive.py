@@ -10,6 +10,7 @@ import time
 
 import pytest
 
+from fastmcp.server.security.reflexive.analyzer import BehavioralAnalyzer
 from fastmcp.server.security.reflexive.detectors import (
     AnomalyDetector,
     OperationPattern,
@@ -26,8 +27,6 @@ from fastmcp.server.security.reflexive.profiles import (
     ActorProfile,
     ActorProfileManager,
 )
-from fastmcp.server.security.reflexive.analyzer import BehavioralAnalyzer
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # AnomalyDetector protocol
@@ -409,7 +408,9 @@ class TestActorProfileManager:
     def test_multiple_drift_events_accumulate(self):
         mgr = ActorProfileManager(decay_rate=0.0)  # No decay
         for _ in range(3):
-            mgr.record_drift("a", DriftEvent(actor_id="a", severity=DriftSeverity.MEDIUM))
+            mgr.record_drift(
+                "a", DriftEvent(actor_id="a", severity=DriftSeverity.MEDIUM)
+            )
         score = mgr.threat_score("a")
         assert score == pytest.approx(9.0)  # 3 * 3.0
 
@@ -522,9 +523,7 @@ class TestAnalyzerDetectorIntegration:
             patterns=[OperationPattern(steps=[("x", None)], window_seconds=60)],
             cooldown_seconds=0,
         )
-        analyzer = BehavioralAnalyzer(
-            detectors=[window, pattern], min_samples=9999
-        )
+        analyzer = BehavioralAnalyzer(detectors=[window, pattern], min_samples=9999)
         events = analyzer.observe("a", "x", 1.0)
         # Both detectors should fire
         assert len(events) == 2
@@ -543,9 +542,7 @@ class TestAnalyzerDetectorIntegration:
             def reset(self, actor_id=None):
                 pass
 
-        analyzer = BehavioralAnalyzer(
-            detectors=[BrokenDetector()], min_samples=9999
-        )
+        analyzer = BehavioralAnalyzer(detectors=[BrokenDetector()], min_samples=9999)
         # Should not raise
         events = analyzer.observe("a", "x", 1.0)
         assert events == []
@@ -554,9 +551,7 @@ class TestAnalyzerDetectorIntegration:
         """Sigma-based detection and pluggable detectors work together."""
         rule = WindowConfig(metric_name="calls", window_seconds=300, max_count=0)
         window = SlidingWindowDetector(rules=[rule], cooldown_seconds=0)
-        analyzer = BehavioralAnalyzer(
-            detectors=[window], min_samples=10
-        )
+        analyzer = BehavioralAnalyzer(detectors=[window], min_samples=10)
 
         # Build baseline with slight variation
         for i in range(15):
@@ -566,7 +561,9 @@ class TestAnalyzerDetectorIntegration:
         events = analyzer.observe("a", "calls", 1000.0)
         # At least one from sigma, at least one from window
         sigma_events = [e for e in events if "detector" not in e.metadata]
-        window_events = [e for e in events if e.metadata.get("detector") == "sliding-window"]
+        window_events = [
+            e for e in events if e.metadata.get("detector") == "sliding-window"
+        ]
         assert len(sigma_events) >= 1
         assert len(window_events) >= 1
 

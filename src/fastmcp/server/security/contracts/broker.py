@@ -15,7 +15,6 @@ from typing import Any
 
 from fastmcp.server.security.contracts.crypto import (
     ContractCryptoHandler,
-    SignatureInfo,
     compute_digest,
 )
 from fastmcp.server.security.contracts.exchange_log import (
@@ -140,6 +139,7 @@ class ContextBroker:
         if self._backend is None:
             return
         from fastmcp.server.security.storage.serialization import contract_from_dict
+
         raw_contracts = self._backend.load_contracts(self.broker_id)
         for contract_id, data in raw_contracts.items():
             contract = contract_from_dict(data)
@@ -390,6 +390,7 @@ class ContextBroker:
         # Persist to backend
         if self._backend is not None:
             from fastmcp.server.security.storage.serialization import contract_to_dict
+
             self._backend.save_contract(
                 self.broker_id, contract.contract_id, contract_to_dict(contract)
             )
@@ -412,9 +413,7 @@ class ContextBroker:
             if c.agent_id == agent_id and c.is_valid()
         ]
 
-    async def revoke_contract(
-        self, contract_id: str, reason: str = ""
-    ) -> bool:
+    async def revoke_contract(self, contract_id: str, reason: str = "") -> bool:
         """Revoke an active contract.
 
         Returns True if revoked, False if contract not found.
@@ -435,6 +434,7 @@ class ContextBroker:
         # Update persisted state
         if self._backend is not None:
             from fastmcp.server.security.storage.serialization import contract_to_dict
+
             self._backend.save_contract(
                 self.broker_id, contract_id, contract_to_dict(contract)
             )

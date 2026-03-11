@@ -116,7 +116,10 @@ class ExchangeLog:
         """Load entries from backend and rebuild session chains."""
         if self._backend is None:
             return
-        from fastmcp.server.security.storage.serialization import exchange_entry_from_dict
+        from fastmcp.server.security.storage.serialization import (
+            exchange_entry_from_dict,
+        )
+
         raw_entries = self._backend.load_exchange_entries(self.log_id)
         for data in raw_entries:
             entry = exchange_entry_from_dict(data)
@@ -154,9 +157,7 @@ class ExchangeLog:
 
         # Get previous hash in this session's chain
         session_chain = self._session_chains.get(session_id, [])
-        previous_hash = (
-            session_chain[-1].compute_hash() if session_chain else "genesis"
-        )
+        previous_hash = session_chain[-1].compute_hash() if session_chain else "genesis"
 
         entry = ExchangeLogEntry(
             entry_id=f"exlog-{self._entry_counter:06d}",
@@ -176,7 +177,10 @@ class ExchangeLog:
 
         # Persist to backend
         if self._backend is not None:
-            from fastmcp.server.security.storage.serialization import exchange_entry_to_dict
+            from fastmcp.server.security.storage.serialization import (
+                exchange_entry_to_dict,
+            )
+
             self._backend.append_exchange_entry(
                 self.log_id, exchange_entry_to_dict(entry)
             )

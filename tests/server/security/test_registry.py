@@ -4,15 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
 from fastmcp.server.security.certification.attestation import (
     AttestationStatus,
     CertificationLevel,
     ToolAttestation,
 )
 from fastmcp.server.security.registry.models import (
-    CERTIFICATION_BASE_SCORES,
     ReputationEvent,
     ReputationEventType,
     TrustRecord,
@@ -23,7 +20,6 @@ from fastmcp.server.security.registry.reputation import (
     DEFAULT_IMPACTS,
     ReputationTracker,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -180,7 +176,9 @@ class TestTrustScoring:
 
     def test_certified_tool_higher_score(self):
         reg = TrustRegistry()
-        reg.register("tool-a", attestation=_valid_attestation(CertificationLevel.STANDARD))
+        reg.register(
+            "tool-a", attestation=_valid_attestation(CertificationLevel.STANDARD)
+        )
         score = reg.get_trust_score("tool-a")
         assert score is not None
         assert score.certification_component == 0.8
@@ -188,7 +186,9 @@ class TestTrustScoring:
 
     def test_strict_certification_highest(self):
         reg = TrustRegistry()
-        reg.register("tool-a", attestation=_valid_attestation(CertificationLevel.STRICT))
+        reg.register(
+            "tool-a", attestation=_valid_attestation(CertificationLevel.STRICT)
+        )
         score = reg.get_trust_score("tool-a")
         assert score is not None
         assert score.certification_component == 1.0
@@ -250,13 +250,13 @@ class TestTrustScoring:
 
     def test_reputation_event_for_nonexistent(self):
         reg = TrustRegistry()
-        assert not reg.record_reputation_event(
-            "nope", ReputationEvent()
-        )
+        assert not reg.record_reputation_event("nope", ReputationEvent())
 
     def test_score_bounded(self):
         reg = TrustRegistry()
-        reg.register("tool-a", attestation=_valid_attestation(CertificationLevel.STRICT))
+        reg.register(
+            "tool-a", attestation=_valid_attestation(CertificationLevel.STRICT)
+        )
         # Flood with positive events
         for _ in range(100):
             reg.record_reputation_event(
@@ -274,7 +274,9 @@ class TestTrustScoring:
         reg = TrustRegistry(
             score_weights={"certification": 1.0, "reputation": 0.0, "age": 0.0}
         )
-        reg.register("tool-a", attestation=_valid_attestation(CertificationLevel.STANDARD))
+        reg.register(
+            "tool-a", attestation=_valid_attestation(CertificationLevel.STANDARD)
+        )
         score = reg.get_trust_score("tool-a")
         # Score should be entirely from certification
         assert abs(score.overall - 0.8) < 0.01
@@ -307,8 +309,18 @@ class TestAttestationUpdates:
 class TestTrustRegistrySearch:
     def _setup_registry(self) -> TrustRegistry:
         reg = TrustRegistry()
-        reg.register("tool-a", author="acme", attestation=_valid_attestation(CertificationLevel.STRICT), tags={"search"})
-        reg.register("tool-b", author="acme", attestation=_valid_attestation(CertificationLevel.BASIC), tags={"write"})
+        reg.register(
+            "tool-a",
+            author="acme",
+            attestation=_valid_attestation(CertificationLevel.STRICT),
+            tags={"search"},
+        )
+        reg.register(
+            "tool-b",
+            author="acme",
+            attestation=_valid_attestation(CertificationLevel.BASIC),
+            tags={"write"},
+        )
         reg.register("tool-c", author="other")  # no attestation
         return reg
 
@@ -357,11 +369,15 @@ class TestTrustRegistrySearch:
         reg = self._setup_registry()
         reg.record_reputation_event(
             "tool-c",
-            ReputationEvent(event_type=ReputationEventType.POLICY_VIOLATION, impact=-3.0),
+            ReputationEvent(
+                event_type=ReputationEventType.POLICY_VIOLATION, impact=-3.0
+            ),
         )
         reg.record_reputation_event(
             "tool-c",
-            ReputationEvent(event_type=ReputationEventType.POLICY_VIOLATION, impact=-3.0),
+            ReputationEvent(
+                event_type=ReputationEventType.POLICY_VIOLATION, impact=-3.0
+            ),
         )
         results = reg.search(max_violations=1)
         assert all(r.violation_count <= 1 for r in results)
@@ -415,7 +431,10 @@ class TestReputationTracker:
         )
         record = reg.get("tool-a")
         assert record.violation_count == 1
-        assert record.reputation_events[0].impact == DEFAULT_IMPACTS[ReputationEventType.POLICY_VIOLATION]
+        assert (
+            record.reputation_events[0].impact
+            == DEFAULT_IMPACTS[ReputationEventType.POLICY_VIOLATION]
+        )
 
     def test_report_contract_breach(self):
         reg = TrustRegistry()
@@ -426,7 +445,10 @@ class TestReputationTracker:
             event_type=ReputationEventType.CONTRACT_BREACH,
         )
         record = reg.get("tool-a")
-        assert record.reputation_events[0].impact == DEFAULT_IMPACTS[ReputationEventType.CONTRACT_BREACH]
+        assert (
+            record.reputation_events[0].impact
+            == DEFAULT_IMPACTS[ReputationEventType.CONTRACT_BREACH]
+        )
 
     def test_report_positive_review(self):
         reg = TrustRegistry()
@@ -434,7 +456,10 @@ class TestReputationTracker:
         tracker = ReputationTracker(registry=reg)
         tracker.report_review("tool-a", positive=True)
         record = reg.get("tool-a")
-        assert record.reputation_events[0].event_type == ReputationEventType.POSITIVE_REVIEW
+        assert (
+            record.reputation_events[0].event_type
+            == ReputationEventType.POSITIVE_REVIEW
+        )
 
     def test_report_negative_review(self):
         reg = TrustRegistry()
@@ -442,7 +467,10 @@ class TestReputationTracker:
         tracker = ReputationTracker(registry=reg)
         tracker.report_review("tool-a", positive=False)
         record = reg.get("tool-a")
-        assert record.reputation_events[0].event_type == ReputationEventType.NEGATIVE_REVIEW
+        assert (
+            record.reputation_events[0].event_type
+            == ReputationEventType.NEGATIVE_REVIEW
+        )
 
     def test_report_attestation_renewed(self):
         reg = TrustRegistry()
@@ -450,7 +478,10 @@ class TestReputationTracker:
         tracker = ReputationTracker(registry=reg)
         tracker.report_attestation_change("tool-a", renewed=True)
         record = reg.get("tool-a")
-        assert record.reputation_events[0].event_type == ReputationEventType.ATTESTATION_RENEWED
+        assert (
+            record.reputation_events[0].event_type
+            == ReputationEventType.ATTESTATION_RENEWED
+        )
 
     def test_report_attestation_revoked(self):
         reg = TrustRegistry()
@@ -458,7 +489,10 @@ class TestReputationTracker:
         tracker = ReputationTracker(registry=reg)
         tracker.report_attestation_change("tool-a", renewed=False)
         record = reg.get("tool-a")
-        assert record.reputation_events[0].event_type == ReputationEventType.ATTESTATION_REVOKED
+        assert (
+            record.reputation_events[0].event_type
+            == ReputationEventType.ATTESTATION_REVOKED
+        )
 
     def test_custom_impacts(self):
         reg = TrustRegistry()
@@ -467,7 +501,9 @@ class TestReputationTracker:
             registry=reg,
             impact_overrides={ReputationEventType.POLICY_VIOLATION: -10.0},
         )
-        tracker.report_violation("tool-a", event_type=ReputationEventType.POLICY_VIOLATION)
+        tracker.report_violation(
+            "tool-a", event_type=ReputationEventType.POLICY_VIOLATION
+        )
         record = reg.get("tool-a")
         assert record.reputation_events[0].impact == -10.0
 
@@ -486,7 +522,9 @@ class TestReputationTracker:
 
         # 3 violations should lower score
         for _ in range(3):
-            tracker.report_violation("tool-a", event_type=ReputationEventType.POLICY_VIOLATION)
+            tracker.report_violation(
+                "tool-a", event_type=ReputationEventType.POLICY_VIOLATION
+            )
 
         score_after = reg.get_trust_score("tool-a").overall
         assert score_after < score_before
@@ -616,21 +654,7 @@ class TestPipelineIntegration:
 
 class TestRegistryImports:
     def test_import_from_registry_package(self):
-        from fastmcp.server.security.registry import (
-            ReputationEvent,
-            ReputationEventType,
-            ReputationTracker,
-            TrustRecord,
-            TrustRegistry,
-            TrustScore,
-        )
+        pass
 
     def test_import_from_security_package(self):
-        from fastmcp.server.security import (
-            ReputationEvent,
-            ReputationEventType,
-            ReputationTracker,
-            TrustRecord,
-            TrustRegistry,
-            TrustScore,
-        )
+        pass

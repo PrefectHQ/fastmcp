@@ -15,16 +15,24 @@ import hashlib
 import json
 import logging
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.security.certification.attestation import (
+    AttestationStatus,
     CertificationLevel,
     ToolAttestation,
 )
-from fastmcp.server.security.certification.manifest import SecurityManifest
+from fastmcp.server.security.certification.manifest import (
+    DataClassification,
+    DataFlowDeclaration,
+    PermissionScope,
+    ResourceAccessDeclaration,
+    SecurityManifest,
+)
 
 if TYPE_CHECKING:
     from fastmcp.server.security.alerts.bus import SecurityEventBus
@@ -479,13 +487,32 @@ class ToolMarketplace:
             return
         try:
             data = self._backend.load_tool_marketplace(self._marketplace_id)
+            installs_by_listing = data.get("installs", {})
+            reviews_by_listing = data.get("reviews", {})
             for listing_id, listing_data in data.get("listings", {}).items():
-                listing = self._deserialize_listing(listing_data)
+                reviews = self._deserialize_reviews(
+                    reviews_by_listing.get(listing_id, [])
+                )
+                installs = self._deserialize_installs(
+                    installs_by_listing.get(listing_id, [])
+                )
+                listing = self._deserialize_listing(
+                    listing_data,
+                    reviews=reviews,
+                )
                 self._listings[listing_id] = listing
                 self._name_index[listing.tool_name] = listing_id
-            logger.debug(
-                "Loaded %d tool listings from backend", len(self._listings)
-            )
+                self._installs[listing_id] = installs
+                if self._trust_registry is not None:
+                    self._trust_registry.register(
+                        listing.tool_name,
+                        tool_version=listing.version,
+                        author=listing.author,
+                        attestation=listing.attestation,
+                        tags=listing.tags,
+                        metadata=dict(listing.metadata),
+                    )
+            logger.debug("Loaded %d tool listings from backend", len(self._listings))
         except Exception:
             logger.debug("Failed to load tool marketplace from backend", exc_info=True)
 
@@ -497,10 +524,12 @@ class ToolMarketplace:
             self._backend.save_tool_listing(
                 self._marketplace_id,
                 listing.listing_id,
-                listing.to_dict(),
+                self._serialize_listing_for_storage(listing),
             )
         except Exception:
-            logger.debug("Failed to persist listing %s", listing.listing_id, exc_info=True)
+            logger.debug(
+                "Failed to persist listing %s", listing.listing_id, exc_info=True
+            )
 
     def _remove_persisted_listing(self, listing_id: str) -> None:
         """Remove a listing from the backend."""
@@ -512,7 +541,191 @@ class ToolMarketplace:
             logger.debug("Failed to remove listing %s", listing_id, exc_info=True)
 
     @staticmethod
-    def _deserialize_listing(data: dict[str, Any]) -> ToolListing:
+    def _parse_datetime(value: Any, *, default: datetime | None = None) -> datetime:
+        if isinstance(value, str) and value:
+            return datetime.fromisoformat(value)
+        return default or datetime.now(timezone.utc)
+
+    @classmethod
+    def _deserialize_manifest(
+        cls, data: dict[str, Any] | None
+    ) -> SecurityManifest | None:
+        if not data:
+            return None
+        return SecurityManifest(
+            manifest_id=data.get("manifest_id", str(uuid.uuid4())),
+            tool_name=data.get("tool_name", ""),
+            version=data.get("version", "0.0.0"),
+            author=data.get("author", ""),
+            description=data.get("description", ""),
+            permissions={
+                PermissionScope(value) for value in data.get("permissions", [])
+            },
+            data_flows=[
+                DataFlowDeclaration(
+                    flow_id=flow.get("flow_id", str(uuid.uuid4())[:8]),
+                    source=flow.get("source", ""),
+                    destination=flow.get("destination", ""),
+                    classification=DataClassification(
+                        flow.get(
+                            "classification",
+                            DataClassification.PUBLIC.value,
+                        )
+                    ),
+                    description=flow.get("description", ""),
+                    transforms=list(flow.get("transforms", [])),
+                    retention=flow.get("retention", "none"),
+                )
+                for flow in data.get("data_flows", [])
+            ],
+            resource_access=[
+                ResourceAccessDeclaration(
+                    resource_pattern=access.get("resource_pattern", ""),
+                    access_type=access.get("access_type", "read"),
+                    required=access.get("required", True),
+                    description=access.get("description", ""),
+                    classification=DataClassification(
+                        access.get(
+                            "classification",
+                            DataClassification.INTERNAL.value,
+                        )
+                    ),
+                )
+                for access in data.get("resource_access", [])
+            ],
+            max_execution_time_seconds=data.get("max_execution_time_seconds", 60.0),
+            idempotent=data.get("idempotent", False),
+            deterministic=data.get("deterministic", False),
+            requires_consent=data.get("requires_consent", False),
+            dependencies=list(data.get("dependencies", [])),
+            tags=set(data.get("tags", [])),
+            metadata=dict(data.get("metadata", {})),
+            created_at=cls._parse_datetime(data.get("created_at")),
+        )
+
+    @classmethod
+    def _deserialize_attestation(
+        cls, data: dict[str, Any] | None
+    ) -> ToolAttestation | None:
+        if not data:
+            return None
+        expires_at = data.get("expires_at")
+        return ToolAttestation(
+            attestation_id=data.get("attestation_id", str(uuid.uuid4())),
+            manifest_id=data.get("manifest_id", ""),
+            manifest_digest=data.get("manifest_digest", ""),
+            tool_name=data.get("tool_name", ""),
+            tool_version=data.get("tool_version", ""),
+            author=data.get("author", ""),
+            certification_level=CertificationLevel(
+                data.get("certification_level", CertificationLevel.UNCERTIFIED.value)
+            ),
+            status=AttestationStatus(
+                data.get("status", AttestationStatus.PENDING.value)
+            ),
+            validation_report_id=data.get("validation_report_id", ""),
+            validation_score=data.get("validation_score", 0.0),
+            issued_at=cls._parse_datetime(data.get("issued_at")),
+            expires_at=cls._parse_datetime(expires_at) if expires_at else None,
+            issuer_id=data.get("issuer_id", ""),
+            signature=data.get("signature", ""),
+            metadata=dict(data.get("metadata", {})),
+        )
+
+    @staticmethod
+    def _deserialize_tool_version(data: dict[str, Any]) -> ToolVersion:
+        return ToolVersion(
+            version=data.get("version", ""),
+            manifest_digest=data.get("manifest_digest", ""),
+            attestation_id=data.get("attestation_id", ""),
+            changelog=data.get("changelog", ""),
+            published_at=datetime.fromisoformat(data["published_at"])
+            if data.get("published_at")
+            else datetime.now(timezone.utc),
+            yanked=data.get("yanked", False),
+            yank_reason=data.get("yank_reason", ""),
+        )
+
+    @staticmethod
+    def _deserialize_moderation_decision(data: dict[str, Any]) -> ModerationDecision:
+        return ModerationDecision(
+            decision_id=data.get("decision_id", str(uuid.uuid4())[:12]),
+            listing_id=data.get("listing_id", ""),
+            moderator_id=data.get("moderator_id", ""),
+            action=ModerationAction(data.get("action", ModerationAction.APPROVE.value)),
+            reason=data.get("reason", ""),
+            created_at=datetime.fromisoformat(data["created_at"])
+            if data.get("created_at")
+            else datetime.now(timezone.utc),
+            metadata=dict(data.get("metadata", {})),
+        )
+
+    @staticmethod
+    def _deserialize_review(data: dict[str, Any]) -> ToolReview:
+        return ToolReview(
+            review_id=data.get("review_id", str(uuid.uuid4())[:12]),
+            tool_listing_id=data.get("tool_listing_id", ""),
+            reviewer_id=data.get("reviewer_id", ""),
+            rating=ReviewRating(data.get("rating", ReviewRating.THREE.value)),
+            title=data.get("title", ""),
+            body=data.get("body", ""),
+            verified_user=data.get("verified_user", False),
+            created_at=datetime.fromisoformat(data["created_at"])
+            if data.get("created_at")
+            else datetime.now(timezone.utc),
+        )
+
+    @staticmethod
+    def _deserialize_install(data: dict[str, Any]) -> InstallRecord:
+        uninstalled_at = data.get("uninstalled_at")
+        return InstallRecord(
+            install_id=data.get("install_id", str(uuid.uuid4())[:12]),
+            tool_listing_id=data.get("tool_listing_id", ""),
+            installer_id=data.get("installer_id", ""),
+            version=data.get("version", ""),
+            installed_at=datetime.fromisoformat(data["installed_at"])
+            if data.get("installed_at")
+            else datetime.now(timezone.utc),
+            uninstalled_at=datetime.fromisoformat(uninstalled_at)
+            if uninstalled_at
+            else None,
+            active=data.get("active", True),
+            signature_verified=data.get("signature_verified", False),
+        )
+
+    @classmethod
+    def _deserialize_reviews(cls, data: list[dict[str, Any]]) -> list[ToolReview]:
+        return [cls._deserialize_review(review) for review in data]
+
+    @classmethod
+    def _deserialize_installs(cls, data: list[dict[str, Any]]) -> list[InstallRecord]:
+        return [cls._deserialize_install(install) for install in data]
+
+    @staticmethod
+    def _serialize_listing_for_storage(listing: ToolListing) -> dict[str, Any]:
+        payload = listing.to_dict()
+        payload["manifest"] = (
+            listing.manifest.to_dict() if listing.manifest is not None else None
+        )
+        payload["attestation"] = (
+            listing.attestation.to_dict() if listing.attestation is not None else None
+        )
+        payload["metadata"] = dict(listing.metadata)
+        payload["version_history"] = [
+            version.to_dict() for version in listing.version_history
+        ]
+        payload["moderation_log"] = [
+            decision.to_dict() for decision in listing.moderation_log
+        ]
+        return payload
+
+    @classmethod
+    def _deserialize_listing(
+        cls,
+        data: dict[str, Any],
+        *,
+        reviews: list[ToolReview] | None = None,
+    ) -> ToolListing:
         """Reconstruct a ToolListing from a persisted dict."""
         listing = ToolListing(
             listing_id=data.get("listing_id", str(uuid.uuid4())),
@@ -522,21 +735,33 @@ class ToolMarketplace:
             version=data.get("version", ""),
             author=data.get("author", ""),
             status=PublishStatus(data.get("status", "draft")),
+            reviews=reviews or [],
             install_count=data.get("install_count", 0),
             active_installs=data.get("active_installs", 0),
             homepage_url=data.get("homepage_url", ""),
             source_url=data.get("source_url", ""),
             license=data.get("license", ""),
+            manifest=cls._deserialize_manifest(data.get("manifest")),
+            attestation=cls._deserialize_attestation(data.get("attestation")),
+            created_at=cls._parse_datetime(data.get("created_at")),
+            updated_at=cls._parse_datetime(data.get("updated_at")),
+            metadata=dict(data.get("metadata", {})),
         )
         # Restore categories
         for cat_val in data.get("categories", []):
-            try:
+            with suppress(ValueError):
                 listing.categories.add(ToolCategory(cat_val))
-            except ValueError:
-                pass
         # Restore tags
         for tag in data.get("tags", []):
             listing.tags.add(tag)
+        listing.version_history = [
+            cls._deserialize_tool_version(version)
+            for version in data.get("version_history", [])
+        ]
+        listing.moderation_log = [
+            cls._deserialize_moderation_decision(decision)
+            for decision in data.get("moderation_log", [])
+        ]
         return listing
 
     # ── Publishing ────────────────────────────────────────────
@@ -859,9 +1084,7 @@ class ToolMarketplace:
 
         return review
 
-    def get_reviews(
-        self, listing_id: str, *, limit: int = 50
-    ) -> list[ToolReview]:
+    def get_reviews(self, listing_id: str, *, limit: int = 50) -> list[ToolReview]:
         """Get reviews for a listing."""
         listing = self._listings.get(listing_id)
         if listing is None:
@@ -913,9 +1136,7 @@ class ToolMarketplace:
                 listing.attestation, listing.manifest
             )
             if not passed:
-                logger.warning(
-                    "Install rejected for %s: %s", listing.tool_name, reason
-                )
+                logger.warning("Install rejected for %s: %s", listing.tool_name, reason)
                 self._emit_event("INSTALL_REJECTED", listing)
                 return None
             signature_verified = True
@@ -955,9 +1176,11 @@ class ToolMarketplace:
                     listing_id,
                     {
                         "install_id": record.install_id,
+                        "tool_listing_id": record.tool_listing_id,
                         "installer_id": record.installer_id,
                         "version": record.version,
                         "installed_at": record.installed_at.isoformat(),
+                        "active": record.active,
                         "signature_verified": record.signature_verified,
                     },
                 )
@@ -987,7 +1210,9 @@ class ToolMarketplace:
         installs = self._installs.get(listing_id, [])
 
         for record in reversed(installs):
-            if record.active and (not installer_id or record.installer_id == installer_id):
+            if record.active and (
+                not installer_id or record.installer_id == installer_id
+            ):
                 record.active = False
                 record.uninstalled_at = datetime.now(timezone.utc)
                 listing = self._listings.get(listing_id)
@@ -1158,9 +1383,7 @@ class ToolMarketplace:
 
     # ── Status management ─────────────────────────────────────
 
-    def update_status(
-        self, listing_id: str, status: PublishStatus
-    ) -> bool:
+    def update_status(self, listing_id: str, status: PublishStatus) -> bool:
         """Update a listing's publish status.
 
         Returns True if the listing was found.
@@ -1173,9 +1396,7 @@ class ToolMarketplace:
         self._persist_listing(listing)
         return True
 
-    def update_attestation(
-        self, listing_id: str, attestation: ToolAttestation
-    ) -> bool:
+    def update_attestation(self, listing_id: str, attestation: ToolAttestation) -> bool:
         """Update a listing's certification attestation.
 
         Also syncs to the trust registry.
@@ -1212,9 +1433,7 @@ class ToolMarketplace:
     def get_by_author(self, author: str) -> list[ToolListing]:
         """Get all listings by an author."""
         return [
-            listing
-            for listing in self._listings.values()
-            if listing.author == author
+            listing for listing in self._listings.values() if listing.author == author
         ]
 
     def get_by_category(
@@ -1232,8 +1451,7 @@ class ToolMarketplace:
     def published_count(self) -> int:
         """Number of published listings."""
         return sum(
-            1 for l in self._listings.values()
-            if l.status == PublishStatus.PUBLISHED
+            1 for l in self._listings.values() if l.status == PublishStatus.PUBLISHED
         )
 
     def get_all_listings(self) -> list[ToolListing]:
@@ -1243,9 +1461,15 @@ class ToolMarketplace:
     def get_statistics(self) -> dict[str, Any]:
         """Get marketplace statistics."""
         total = len(self._listings)
-        published = sum(1 for l in self._listings.values() if l.status == PublishStatus.PUBLISHED)
+        published = sum(
+            1 for l in self._listings.values() if l.status == PublishStatus.PUBLISHED
+        )
         certified = sum(1 for l in self._listings.values() if l.is_certified)
-        pending = sum(1 for l in self._listings.values() if l.status == PublishStatus.PENDING_REVIEW)
+        pending = sum(
+            1
+            for l in self._listings.values()
+            if l.status == PublishStatus.PENDING_REVIEW
+        )
         total_installs = sum(l.install_count for l in self._listings.values())
         total_reviews = sum(l.review_count for l in self._listings.values())
 

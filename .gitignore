@@ -62,6 +62,7 @@ dmypy.json
 *.sqlite
 *.db
 *.ddb
+.data/
 
 # Claude worktree management
 .claude-wt/worktrees

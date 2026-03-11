@@ -1,7 +1,8 @@
 """Security configuration for SecureMCP.
 
 SecurityConfig is the master configuration object that wires together
-all security layers. Pass it to FastMCP() to enable security features.
+all security layers. Use it with ``attach_security(server, config)`` or
+``SecureMCP(..., security=config)`` to enable security features.
 """
 
 from __future__ import annotations
@@ -541,13 +542,14 @@ class SandboxConfig:
 class SecurityConfig:
     """Master security configuration for SecureMCP.
 
-    Use with ``attach_security(server, config)`` to enable security layers.
+    Use with ``attach_security(server, config)`` or
+    ``SecureMCP(..., security=config)`` to enable security layers.
 
     Example::
 
-        from fastmcp import FastMCP
-        from fastmcp.server.security import SecurityConfig, attach_security
-        from fastmcp.server.security.policy import GDPRPolicy, HIPAAPolicy, PolicyConfig
+        from securemcp import SecureMCP
+        from securemcp.config import PolicyConfig, SecurityConfig
+        from fastmcp.server.security.policy import GDPRPolicy, HIPAAPolicy
 
         config = SecurityConfig(
             policy=PolicyConfig(
@@ -555,8 +557,7 @@ class SecurityConfig:
                 fail_closed=True,
             ),
         )
-        mcp = FastMCP("my-server")
-        attach_security(mcp, config)
+        mcp = SecureMCP("my-server", security=config)
 
     Attributes:
         policy: Policy Kernel configuration (Phase 1).

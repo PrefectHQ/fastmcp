@@ -37,9 +37,7 @@ class StorageBackend(Protocol):
 
     # ── Exchange Log ──────────────────────────────────────────────
 
-    def append_exchange_entry(
-        self, log_id: str, entry_data: dict[str, Any]
-    ) -> None:
+    def append_exchange_entry(self, log_id: str, entry_data: dict[str, Any]) -> None:
         """Persist a single exchange log entry (append-only)."""
         ...
 
@@ -81,17 +79,13 @@ class StorageBackend(Protocol):
         """Remove baselines for an actor. If metric_name is None, remove all."""
         ...
 
-    def load_baselines(
-        self, analyzer_id: str
-    ) -> dict[str, dict[str, dict[str, Any]]]:
+    def load_baselines(self, analyzer_id: str) -> dict[str, dict[str, dict[str, Any]]]:
         """Load all baselines. Returns {actor_id: {metric_name: data}}."""
         ...
 
     # ── Drift History ─────────────────────────────────────────────
 
-    def append_drift_event(
-        self, analyzer_id: str, event_data: dict[str, Any]
-    ) -> None:
+    def append_drift_event(self, analyzer_id: str, event_data: dict[str, Any]) -> None:
         """Persist a drift event (append-only)."""
         ...
 
@@ -101,9 +95,7 @@ class StorageBackend(Protocol):
 
     # ── Escalation History ────────────────────────────────────────
 
-    def append_escalation(
-        self, engine_id: str, data: dict[str, Any]
-    ) -> None:
+    def append_escalation(self, engine_id: str, data: dict[str, Any]) -> None:
         """Persist an escalation record (append-only)."""
         ...
 
@@ -143,9 +135,7 @@ class StorageBackend(Protocol):
         """Remove a consent group."""
         ...
 
-    def append_consent_audit(
-        self, graph_id: str, entry: dict[str, Any]
-    ) -> None:
+    def append_consent_audit(self, graph_id: str, entry: dict[str, Any]) -> None:
         """Persist a consent audit log entry (append-only)."""
         ...
 
@@ -171,15 +161,11 @@ class StorageBackend(Protocol):
         """Persist or update a server registration."""
         ...
 
-    def remove_server_registration(
-        self, mp_id: str, server_id: str
-    ) -> None:
+    def remove_server_registration(self, mp_id: str, server_id: str) -> None:
         """Remove a server registration."""
         ...
 
-    def append_marketplace_audit(
-        self, mp_id: str, entry: dict[str, Any]
-    ) -> None:
+    def append_marketplace_audit(self, mp_id: str, entry: dict[str, Any]) -> None:
         """Persist a marketplace audit log entry (append-only)."""
         ...
 
@@ -197,15 +183,11 @@ class StorageBackend(Protocol):
 
     # ── Policy Versioning ────────────────────────────────────────
 
-    def save_policy_version(
-        self, policy_set_id: str, data: dict[str, Any]
-    ) -> None:
+    def save_policy_version(self, policy_set_id: str, data: dict[str, Any]) -> None:
         """Persist the full version history for a policy set."""
         ...
 
-    def load_policy_versions(
-        self, policy_set_id: str
-    ) -> dict[str, Any] | None:
+    def load_policy_versions(self, policy_set_id: str) -> dict[str, Any] | None:
         """Load version history for a policy set. Returns None if not found."""
         ...
 

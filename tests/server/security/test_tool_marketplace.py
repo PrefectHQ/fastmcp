@@ -21,7 +21,6 @@ from fastmcp.server.security.certification.manifest import (
     SecurityManifest,
 )
 from fastmcp.server.security.gateway.tool_marketplace import (
-    InstallRecord,
     PublishStatus,
     ReviewRating,
     SortBy,
@@ -31,7 +30,6 @@ from fastmcp.server.security.gateway.tool_marketplace import (
     ToolReview,
 )
 from fastmcp.server.security.registry.registry import TrustRegistry
-
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -398,8 +396,12 @@ class TestToolSearch:
             attestation=att,
             tags={"ml"},
         )
-        _publish_tool(mp, "wrong-author", author="bob", categories={ToolCategory.SEARCH})
-        _publish_tool(mp, "wrong-category", author="alice", categories={ToolCategory.DATABASE})
+        _publish_tool(
+            mp, "wrong-author", author="bob", categories={ToolCategory.SEARCH}
+        )
+        _publish_tool(
+            mp, "wrong-category", author="alice", categories={ToolCategory.DATABASE}
+        )
         results = mp.search(
             author="alice",
             categories={ToolCategory.SEARCH},
@@ -693,7 +695,9 @@ class TestStatistics:
     def test_full_stats(self):
         mp = _make_marketplace()
         att = _make_attestation(CertificationLevel.STANDARD)
-        listing1 = _publish_tool(mp, "tool-a", categories={ToolCategory.SEARCH}, attestation=att)
+        listing1 = _publish_tool(
+            mp, "tool-a", categories={ToolCategory.SEARCH}, attestation=att
+        )
         listing2 = _publish_tool(mp, "tool-b", categories={ToolCategory.DATABASE})
         mp.install(listing1.listing_id, installer_id="u1")
         mp.install(listing2.listing_id, installer_id="u2")

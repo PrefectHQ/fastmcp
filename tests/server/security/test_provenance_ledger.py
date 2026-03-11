@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
 import pytest
 
 from fastmcp.server.security.provenance.ledger import ProvenanceLedger
@@ -64,33 +62,51 @@ class TestProvenanceLedgerBasics:
 
     def test_latest_record(self):
         ledger = ProvenanceLedger()
-        ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t1")
-        r2 = ledger.record(action=ProvenanceAction.RESOURCE_READ, actor_id="a1", resource_id="r1")
+        ledger.record(
+            action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t1"
+        )
+        r2 = ledger.record(
+            action=ProvenanceAction.RESOURCE_READ, actor_id="a1", resource_id="r1"
+        )
         assert ledger.latest_record.record_id == r2.record_id
 
 
 class TestProvenanceLedgerQueries:
     def test_query_by_action(self):
         ledger = ProvenanceLedger()
-        ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t1")
-        ledger.record(action=ProvenanceAction.RESOURCE_READ, actor_id="a1", resource_id="r1")
-        ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t2")
+        ledger.record(
+            action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t1"
+        )
+        ledger.record(
+            action=ProvenanceAction.RESOURCE_READ, actor_id="a1", resource_id="r1"
+        )
+        ledger.record(
+            action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t2"
+        )
 
         results = ledger.get_records(action=ProvenanceAction.TOOL_CALLED)
         assert len(results) == 2
 
     def test_query_by_actor(self):
         ledger = ProvenanceLedger()
-        ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t1")
-        ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a2", resource_id="t1")
+        ledger.record(
+            action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t1"
+        )
+        ledger.record(
+            action=ProvenanceAction.TOOL_CALLED, actor_id="a2", resource_id="t1"
+        )
 
         results = ledger.get_records(actor_id="a1")
         assert len(results) == 1
 
     def test_query_by_resource(self):
         ledger = ProvenanceLedger()
-        ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="calc")
-        ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="search")
+        ledger.record(
+            action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="calc"
+        )
+        ledger.record(
+            action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="search"
+        )
 
         results = ledger.get_records(resource_id="calc")
         assert len(results) == 1
@@ -98,15 +114,21 @@ class TestProvenanceLedgerQueries:
     def test_query_with_limit(self):
         ledger = ProvenanceLedger()
         for i in range(10):
-            ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id=f"t{i}")
+            ledger.record(
+                action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id=f"t{i}"
+            )
 
         results = ledger.get_records(limit=3)
         assert len(results) == 3
 
     def test_query_returns_most_recent_first(self):
         ledger = ProvenanceLedger()
-        r1 = ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="first")
-        r2 = ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="second")
+        r1 = ledger.record(
+            action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="first"
+        )
+        r2 = ledger.record(
+            action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="second"
+        )
 
         results = ledger.get_records()
         assert results[0].resource_id == "second"
@@ -163,17 +185,23 @@ class TestProvenanceLedgerMerkleIntegrity:
 
     def test_root_hash_changes(self):
         ledger = ProvenanceLedger()
-        ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t1")
+        ledger.record(
+            action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t1"
+        )
         root1 = ledger.root_hash
 
-        ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t2")
+        ledger.record(
+            action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t2"
+        )
         root2 = ledger.root_hash
 
         assert root1 != root2
 
     def test_chain_digest(self):
         ledger = ProvenanceLedger()
-        ledger.record(action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t1")
+        ledger.record(
+            action=ProvenanceAction.TOOL_CALLED, actor_id="a1", resource_id="t1"
+        )
         digest = ledger.get_chain_digest()
         assert digest != "empty"
         assert len(digest) == 64

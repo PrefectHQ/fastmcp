@@ -133,9 +133,7 @@ class TestMarketplaceSearch:
 
     def test_search_by_capability(self):
         mp = self._setup_marketplace()
-        results = mp.search(
-            capabilities={ServerCapability.POLICY_ENGINE}
-        )
+        results = mp.search(capabilities={ServerCapability.POLICY_ENGINE})
         assert len(results) == 2
 
     def test_search_by_multiple_capabilities(self):

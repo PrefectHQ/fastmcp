@@ -8,7 +8,7 @@ and tamper detection for the full operation history.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.security.provenance.merkle import MerkleTree
@@ -79,7 +79,10 @@ class ProvenanceLedger:
         """Load records from backend and rebuild index + Merkle tree."""
         if self._backend is None:
             return
-        from fastmcp.server.security.storage.serialization import provenance_record_from_dict
+        from fastmcp.server.security.storage.serialization import (
+            provenance_record_from_dict,
+        )
+
         raw_records = self._backend.load_provenance_records(self.ledger_id)
         for i, data in enumerate(raw_records):
             rec = provenance_record_from_dict(data)
@@ -119,9 +122,7 @@ class ProvenanceLedger:
         output_hash = hash_data(output_data) if output_data is not None else ""
 
         # Chain to previous record
-        previous_hash = (
-            self._records[-1].compute_hash() if self._records else "genesis"
-        )
+        previous_hash = self._records[-1].compute_hash() if self._records else "genesis"
 
         entry = ProvenanceRecord(
             action=action,
@@ -145,7 +146,10 @@ class ProvenanceLedger:
 
         # Persist to backend
         if self._backend is not None:
-            from fastmcp.server.security.storage.serialization import provenance_record_to_dict
+            from fastmcp.server.security.storage.serialization import (
+                provenance_record_to_dict,
+            )
+
             self._backend.append_provenance_record(
                 self.ledger_id, provenance_record_to_dict(entry)
             )

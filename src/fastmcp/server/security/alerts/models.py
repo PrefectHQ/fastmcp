@@ -63,19 +63,35 @@ class AlertSeverity(Enum):
     CRITICAL = "critical"
 
     def __ge__(self, other: AlertSeverity) -> bool:
-        order = {AlertSeverity.INFO: 0, AlertSeverity.WARNING: 1, AlertSeverity.CRITICAL: 2}
+        order = {
+            AlertSeverity.INFO: 0,
+            AlertSeverity.WARNING: 1,
+            AlertSeverity.CRITICAL: 2,
+        }
         return order[self] >= order[other]
 
     def __gt__(self, other: AlertSeverity) -> bool:
-        order = {AlertSeverity.INFO: 0, AlertSeverity.WARNING: 1, AlertSeverity.CRITICAL: 2}
+        order = {
+            AlertSeverity.INFO: 0,
+            AlertSeverity.WARNING: 1,
+            AlertSeverity.CRITICAL: 2,
+        }
         return order[self] > order[other]
 
     def __le__(self, other: AlertSeverity) -> bool:
-        order = {AlertSeverity.INFO: 0, AlertSeverity.WARNING: 1, AlertSeverity.CRITICAL: 2}
+        order = {
+            AlertSeverity.INFO: 0,
+            AlertSeverity.WARNING: 1,
+            AlertSeverity.CRITICAL: 2,
+        }
         return order[self] <= order[other]
 
     def __lt__(self, other: AlertSeverity) -> bool:
-        order = {AlertSeverity.INFO: 0, AlertSeverity.WARNING: 1, AlertSeverity.CRITICAL: 2}
+        order = {
+            AlertSeverity.INFO: 0,
+            AlertSeverity.WARNING: 1,
+            AlertSeverity.CRITICAL: 2,
+        }
         return order[self] < order[other]
 
 

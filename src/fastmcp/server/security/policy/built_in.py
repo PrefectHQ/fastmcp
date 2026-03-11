@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
 
 from fastmcp.server.security.policy.provider import (
     PolicyDecision,
@@ -227,7 +226,12 @@ class HIPAAPolicy:
     )
     authorized_roles: frozenset[str] = field(
         default_factory=lambda: frozenset(
-            {"healthcare_provider", "health_plan", "healthcare_clearinghouse", "business_associate"}
+            {
+                "healthcare_provider",
+                "health_plan",
+                "healthcare_clearinghouse",
+                "business_associate",
+            }
         )
     )
 

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import enum
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable
 
 from fastmcp.server.security.compliance.frameworks import (
     ComplianceFramework,
@@ -289,9 +289,7 @@ class ComplianceReporter:
                 RequirementCategory.DATA_PROTECTION: FindingSeverity.HIGH,
                 RequirementCategory.INCIDENT_RESPONSE: FindingSeverity.MEDIUM,
             }
-            return category_severity.get(
-                requirement.category, FindingSeverity.MEDIUM
-            )
+            return category_severity.get(requirement.category, FindingSeverity.MEDIUM)
         return FindingSeverity.LOW
 
     def _run_check(self, requirement: ComplianceRequirement) -> ReportFinding:

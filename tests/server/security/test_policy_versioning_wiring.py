@@ -23,7 +23,6 @@ from fastmcp.server.security.policy.provider import (
     PolicyResult,
 )
 from fastmcp.server.security.policy.versioning.manager import PolicyVersionManager
-from fastmcp.server.security.policy.versioning.models import PolicyVersion
 from fastmcp.server.security.storage.memory import MemoryBackend as InMemoryBackend
 
 
@@ -154,7 +153,8 @@ class TestEngineVersionManagerWiring:
                 raise RuntimeError("Storage failure")
 
         vm = PolicyVersionManager(
-            policy_set_id="test", backend=BrokenBackend()  # type: ignore[arg-type]
+            policy_set_id="test",
+            backend=BrokenBackend(),  # type: ignore[arg-type]
         )
         engine = PolicyEngine(
             providers=[AllowAllPolicy()],
@@ -274,9 +274,7 @@ class TestOrchestratorVersioning:
         assert ctx.policy_engine is not None
         assert ctx.policy_version_manager is not None
 
-        await ctx.policy_engine.hot_swap(
-            0, CustomPolicy(), reason="Orchestrator test"
-        )
+        await ctx.policy_engine.hot_swap(0, CustomPolicy(), reason="Orchestrator test")
         assert ctx.policy_version_manager.version_count == 1
 
 

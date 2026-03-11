@@ -39,11 +39,10 @@ from fastmcp.server.security.policy.provider import PolicyProvider
 from fastmcp.server.security.policy.validator import (
     PolicyValidator,
     ValidationResult,
-    ValidationSeverity,
 )
 
 if TYPE_CHECKING:
-    from fastmcp.server.security.policy.engine import PolicyEngine, PolicySwapRecord
+    from fastmcp.server.security.policy.engine import PolicyEngine
     from fastmcp.server.security.policy.simulation import (
         Scenario,
         SimulationReport,
@@ -441,16 +440,13 @@ class PolicyGovernor:
 
         if self.require_simulation and proposal.simulation_report is None:
             raise ValueError(
-                "Simulation is required before approval. "
-                "Run simulate_proposal() first."
+                "Simulation is required before approval. Run simulate_proposal() first."
             )
 
         proposal.approved_by = approver
         proposal.approved_at = datetime.now(timezone.utc)
         proposal.status = ProposalStatus.APPROVED
-        logger.info(
-            "Policy proposal approved: %s by %s", proposal_id, approver
-        )
+        logger.info("Policy proposal approved: %s by %s", proposal_id, approver)
         return proposal
 
     def reject(
@@ -557,7 +553,10 @@ class PolicyGovernor:
         elif proposal.action == ProposalAction.REMOVE:
             assert proposal.target_index is not None
             removed = await self._engine.remove_provider(proposal.target_index)
-            proposal.deployment_record = {"action": "remove", "removed_type": type(removed).__name__}
+            proposal.deployment_record = {
+                "action": "remove",
+                "removed_type": type(removed).__name__,
+            }
 
         proposal.deployed_at = datetime.now(timezone.utc)
         proposal.status = ProposalStatus.DEPLOYED

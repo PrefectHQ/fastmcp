@@ -13,7 +13,7 @@ from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +65,7 @@ class InvariantVerificationResult:
     invariant: Invariant
     satisfied: bool
     counter_example: dict[str, Any] | None = None
-    verified_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    verified_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     verifier_id: str = "unknown"
 
 
@@ -144,7 +142,7 @@ class ExpressionInvariantVerifier:
             namespace.update(context)
 
             # Evaluate expression
-            result = eval(invariant.expression, namespace)  # noqa: S307
+            result = eval(invariant.expression, namespace)
 
             return InvariantVerificationResult(
                 invariant=invariant,

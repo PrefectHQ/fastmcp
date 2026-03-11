@@ -14,8 +14,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastmcp.server.security.alerts.bus import SecurityEventBus
-from fastmcp.server.security.alerts.handlers import BufferedHandler
-from fastmcp.server.security.certification.pipeline import CertificationPipeline
 from fastmcp.server.security.compliance.reports import ComplianceReporter, ReportType
 from fastmcp.server.security.federation.crl import CertificateRevocationList
 from fastmcp.server.security.federation.federation import TrustFederation
@@ -131,15 +129,11 @@ class DashboardSnapshot:
 
     @property
     def critical_count(self) -> int:
-        return sum(
-            1 for c in self.component_health if c.level == HealthLevel.CRITICAL
-        )
+        return sum(1 for c in self.component_health if c.level == HealthLevel.CRITICAL)
 
     @property
     def degraded_count(self) -> int:
-        return sum(
-            1 for c in self.component_health if c.level == HealthLevel.DEGRADED
-        )
+        return sum(1 for c in self.component_health if c.level == HealthLevel.DEGRADED)
 
     @property
     def component_count(self) -> int:
@@ -433,9 +427,7 @@ class SecurityDashboard:
         if self._registry:
             all_records = self._registry.get_all()
             summary["total_tools"] = self._registry.record_count
-            summary["certified_tools"] = sum(
-                1 for r in all_records if r.is_certified
-            )
+            summary["certified_tools"] = sum(1 for r in all_records if r.is_certified)
 
         if self._marketplace:
             stats = self._marketplace.get_statistics()

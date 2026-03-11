@@ -21,22 +21,25 @@ Then visit:
 
 from __future__ import annotations
 
-from fastmcp import FastMCP
 from fastmcp.server.security.alerts.bus import SecurityEventBus
 from fastmcp.server.security.certification import SecurityManifest  # noqa: F401
 from fastmcp.server.security.compliance.reports import ComplianceReporter
 from fastmcp.server.security.dashboard.snapshot import SecurityDashboard
 from fastmcp.server.security.federation.crl import CertificateRevocationList
 from fastmcp.server.security.federation.federation import TrustFederation
-from fastmcp.server.security.gateway.tool_marketplace import ToolCategory, ToolMarketplace
-from fastmcp.server.security.http import SecurityAPI, mount_security_routes
+from fastmcp.server.security.gateway.tool_marketplace import (
+    ToolCategory,
+    ToolMarketplace,
+)
 from fastmcp.server.security.provenance.ledger import ProvenanceLedger
 from fastmcp.server.security.provenance.records import ProvenanceAction
 from fastmcp.server.security.registry.registry import TrustRegistry
+from securemcp import SecureMCP
+from securemcp.http import SecurityAPI
 
 # ── 1. Create an MCP server ─────────────────────────────────────
 
-server = FastMCP("securemcp-demo")
+server = SecureMCP("securemcp-demo")
 
 # ── 2. Create security components ───────────────────────────────
 
@@ -100,10 +103,11 @@ api = SecurityAPI(
     crl=crl,
     event_bus=event_bus,
 )
-mount_security_routes(server, api=api)
+server.mount_security_api(api=api)
 
 
 # ── 7. Add a regular MCP tool ───────────────────────────────────
+
 
 @server.tool()
 def weather_lookup(city: str) -> str:

@@ -19,7 +19,6 @@ from fastmcp.server.security.certification.attestation import (
 from fastmcp.server.security.registry.models import (
     CERTIFICATION_BASE_SCORES,
     ReputationEvent,
-    ReputationEventType,
     TrustRecord,
     TrustScore,
 )
@@ -166,9 +165,7 @@ class TrustRegistry:
         self._recompute_score(record)
         return record.trust_score
 
-    def record_reputation_event(
-        self, tool_name: str, event: ReputationEvent
-    ) -> bool:
+    def record_reputation_event(self, tool_name: str, event: ReputationEvent) -> bool:
         """Record a reputation event for a tool.
 
         Updates the trust score after recording.
@@ -192,9 +189,7 @@ class TrustRegistry:
 
         return True
 
-    def update_attestation(
-        self, tool_name: str, attestation: ToolAttestation
-    ) -> bool:
+    def update_attestation(self, tool_name: str, attestation: ToolAttestation) -> bool:
         """Update a tool's attestation.
 
         Returns True if the tool was found.

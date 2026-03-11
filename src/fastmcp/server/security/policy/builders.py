@@ -110,7 +110,7 @@ class _TagFilterPolicy:
             if self._allowed & context.tags:
                 return PolicyResult(
                     decision=PolicyDecision.ALLOW,
-                    reason=f"Required tags present",
+                    reason="Required tags present",
                     policy_id=self._policy_id,
                 )
             return PolicyResult(

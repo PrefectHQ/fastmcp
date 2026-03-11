@@ -59,10 +59,12 @@ class TestAuditAPIProvenance:
             resource_id="tool-b",
         )
         api = AuditAPI(provenance_ledger=ledger)
-        result = api.query(AuditQuery(
-            query_type=AuditQueryType.PROVENANCE,
-            actor_id="agent-1",
-        ))
+        result = api.query(
+            AuditQuery(
+                query_type=AuditQueryType.PROVENANCE,
+                actor_id="agent-1",
+            )
+        )
         assert len(result.records) == 1
 
     def test_query_provenance_has_more(self):
@@ -74,10 +76,12 @@ class TestAuditAPIProvenance:
                 resource_id=f"r-{i}",
             )
         api = AuditAPI(provenance_ledger=ledger)
-        result = api.query(AuditQuery(
-            query_type=AuditQueryType.PROVENANCE,
-            limit=3,
-        ))
+        result = api.query(
+            AuditQuery(
+                query_type=AuditQueryType.PROVENANCE,
+                limit=3,
+            )
+        )
         assert len(result.records) == 3
         assert result.has_more
 
@@ -127,10 +131,12 @@ class TestAuditAPIConsent:
         graph.grant("owner", "agent-1", {"read"})
         graph.grant("owner", "agent-2", {"write"})
         api = AuditAPI(consent_graph=graph)
-        result = api.query(AuditQuery(
-            query_type=AuditQueryType.CONSENT,
-            actor_id="agent-1",
-        ))
+        result = api.query(
+            AuditQuery(
+                query_type=AuditQueryType.CONSENT,
+                actor_id="agent-1",
+            )
+        )
         assert len(result.records) == 1
 
 

@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
 from fastmcp.server.security.alerts.bus import SecurityEventBus
 from fastmcp.server.security.alerts.handlers import BufferedHandler
 from fastmcp.server.security.certification.manifest import (
@@ -20,13 +18,12 @@ from fastmcp.server.security.certification.manifest import (
 )
 from fastmcp.server.security.federation.crl import (
     CertificateRevocationList,
-    RevocationReason,
 )
 from fastmcp.server.security.sandbox.enforcer import (
     ExecutionContext,
     ManifestEnforcer,
-    SandboxViolation,
     SandboxedRunner,
+    SandboxViolation,
     ViolationAction,
 )
 from fastmcp.server.security.sandbox.policies import (
@@ -34,7 +31,6 @@ from fastmcp.server.security.sandbox.policies import (
     ResourcePolicy,
     TimeoutPolicy,
 )
-
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -324,9 +320,7 @@ class TestSandboxedRunner:
 
     def test_check_operation(self):
         runner = SandboxedRunner()
-        manifest = _make_manifest(
-            permissions={PermissionScope.NETWORK_ACCESS}
-        )
+        manifest = _make_manifest(permissions={PermissionScope.NETWORK_ACCESS})
         ctx = runner.start(manifest)
         assert runner.check(ctx, "network_access") is None
         assert runner.check(ctx, "file_write") is not None
@@ -408,26 +402,14 @@ class TestSandboxViolation:
 class TestImports:
     def test_sandbox_imports(self):
         from fastmcp.server.security.sandbox import (
-            ExecutionContext,
-            ExecutionPolicy,
-            ManifestEnforcer,
-            ResourcePolicy,
-            SandboxViolation,
             SandboxedRunner,
-            TimeoutPolicy,
-            ViolationAction,
         )
+
         assert SandboxedRunner is not None
 
     def test_top_level_imports(self):
         from fastmcp.server.security import (
-            ExecutionContext,
-            ExecutionPolicy,
-            ManifestEnforcer,
-            ResourcePolicy,
-            SandboxViolation,
             SandboxedRunner,
-            TimeoutPolicy,
-            ViolationAction,
         )
+
         assert SandboxedRunner is not None

@@ -74,7 +74,10 @@ class Marketplace:
         """Load marketplace state from backend."""
         if self._backend is None:
             return
-        from fastmcp.server.security.storage.serialization import server_registration_from_dict
+        from fastmcp.server.security.storage.serialization import (
+            server_registration_from_dict,
+        )
+
         data = self._backend.load_marketplace(self.marketplace_id)
         for server_id, server_data in data.get("servers", {}).items():
             self._servers[server_id] = server_registration_from_dict(server_data)
@@ -126,7 +129,10 @@ class Marketplace:
 
         # Persist registration
         if self._backend is not None:
-            from fastmcp.server.security.storage.serialization import server_registration_to_dict
+            from fastmcp.server.security.storage.serialization import (
+                server_registration_to_dict,
+            )
+
             self._backend.save_server_registration(
                 self.marketplace_id, reg.server_id, server_registration_to_dict(reg)
             )
@@ -226,15 +232,16 @@ class Marketplace:
         reg.last_heartbeat = datetime.now(timezone.utc)
         # Persist updated heartbeat
         if self._backend is not None:
-            from fastmcp.server.security.storage.serialization import server_registration_to_dict
+            from fastmcp.server.security.storage.serialization import (
+                server_registration_to_dict,
+            )
+
             self._backend.save_server_registration(
                 self.marketplace_id, server_id, server_registration_to_dict(reg)
             )
         return True
 
-    def update_trust_level(
-        self, server_id: str, trust_level: TrustLevel
-    ) -> bool:
+    def update_trust_level(self, server_id: str, trust_level: TrustLevel) -> bool:
         """Update a server's trust level.
 
         Args:
@@ -253,7 +260,10 @@ class Marketplace:
 
         # Persist updated trust level
         if self._backend is not None:
-            from fastmcp.server.security.storage.serialization import server_registration_to_dict
+            from fastmcp.server.security.storage.serialization import (
+                server_registration_to_dict,
+            )
+
             self._backend.save_server_registration(
                 self.marketplace_id, server_id, server_registration_to_dict(reg)
             )

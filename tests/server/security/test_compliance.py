@@ -23,7 +23,6 @@ from fastmcp.server.security.compliance.reports import (
     ReportType,
 )
 
-
 # ── Requirement tests ─────────────────────────────────────────────
 
 
@@ -50,7 +49,9 @@ class TestComplianceRequirement:
         assert req.check_key == "r-002"
 
     def test_to_dict(self):
-        req = ComplianceRequirement(name="Test", category=RequirementCategory.AUDIT_LOGGING)
+        req = ComplianceRequirement(
+            name="Test", category=RequirementCategory.AUDIT_LOGGING
+        )
         d = req.to_dict()
         assert d["name"] == "Test"
         assert d["category"] == "audit_logging"
@@ -100,7 +101,10 @@ class TestComplianceFramework:
         fw.add_requirement(
             ComplianceRequirement(category=RequirementCategory.ACCESS_CONTROL)
         )
-        assert len(fw.get_requirements_by_category(RequirementCategory.ACCESS_CONTROL)) == 2
+        assert (
+            len(fw.get_requirements_by_category(RequirementCategory.ACCESS_CONTROL))
+            == 2
+        )
 
     def test_mandatory_requirements(self):
         fw = ComplianceFramework()
@@ -186,7 +190,9 @@ class TestReportSection:
         assert s.compliance_rate == 1.0
 
     def test_to_dict(self):
-        s = ReportSection(name="Access Control", category=RequirementCategory.ACCESS_CONTROL)
+        s = ReportSection(
+            name="Access Control", category=RequirementCategory.ACCESS_CONTROL
+        )
         s.add_finding(ReportFinding(status=ComplianceStatus.COMPLIANT))
         d = s.to_dict()
         assert d["name"] == "Access Control"
@@ -346,7 +352,9 @@ class TestComplianceReporter:
         assert report.compliance_score == 0.0
         finding = report.all_findings[0]
         assert finding.status == ComplianceStatus.NON_COMPLIANT
-        assert finding.severity == FindingSeverity.CRITICAL  # ACCESS_CONTROL + mandatory
+        assert (
+            finding.severity == FindingSeverity.CRITICAL
+        )  # ACCESS_CONTROL + mandatory
 
     def test_generate_report_error_handling(self):
         fw = ComplianceFramework(name="Test")
@@ -599,30 +607,14 @@ class TestDefaultFramework:
 class TestImports:
     def test_compliance_imports(self):
         from fastmcp.server.security.compliance import (
-            ComplianceFramework,
-            ComplianceReport,
             ComplianceReporter,
-            ComplianceRequirement,
-            ComplianceStatus,
-            FindingSeverity,
-            ReportFinding,
-            ReportSection,
-            ReportType,
-            RequirementCategory,
         )
+
         assert ComplianceReporter is not None
 
     def test_top_level_imports(self):
         from fastmcp.server.security import (
-            ComplianceFramework,
-            ComplianceReport,
             ComplianceReporter,
-            ComplianceRequirement,
-            ComplianceStatus,
-            FindingSeverity,
-            ReportFinding,
-            ReportSection,
-            ReportType,
-            RequirementCategory,
         )
+
         assert ComplianceReporter is not None

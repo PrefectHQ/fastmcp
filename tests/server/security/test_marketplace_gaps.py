@@ -6,8 +6,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from fastmcp.server.security.certification.attestation import (
     AttestationStatus,
     CertificationLevel,
@@ -15,21 +13,16 @@ from fastmcp.server.security.certification.attestation import (
 )
 from fastmcp.server.security.certification.manifest import SecurityManifest
 from fastmcp.server.security.gateway.tool_marketplace import (
-    InstallRecord,
     ModerationAction,
     ModerationDecision,
     PublishStatus,
     ReviewRating,
-    SortBy,
     ToolCategory,
-    ToolListing,
     ToolMarketplace,
-    ToolReview,
     ToolVersion,
     compute_manifest_digest,
     verify_attestation_signature,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -326,11 +319,14 @@ class TestModeration:
 
     def test_moderate_nonexistent(self) -> None:
         mp = _make_marketplace()
-        assert mp.moderate(
-            "nonexistent",
-            moderator_id="mod-1",
-            action=ModerationAction.APPROVE,
-        ) is None
+        assert (
+            mp.moderate(
+                "nonexistent",
+                moderator_id="mod-1",
+                action=ModerationAction.APPROVE,
+            )
+            is None
+        )
 
     def test_moderation_log(self) -> None:
         mp = _make_marketplace(require_moderation=True)
@@ -676,9 +672,7 @@ class TestMarketplaceAPI:
         api, mp = self._make_api()
         att = _make_attestation()
         listing = mp.publish("t1", version="1.0.0", attestation=att)
-        result = api.marketplace_install(
-            listing.listing_id, verify_signature=True
-        )
+        result = api.marketplace_install(listing.listing_id, verify_signature=True)
         assert result["signature_verified"] is True
 
     def test_uninstall_endpoint(self) -> None:
@@ -730,9 +724,7 @@ class TestMarketplaceAPI:
         mp.publish("t1", version="1.0.0")
         listing = mp.get_by_name("t1")
         assert listing is not None
-        result = api.marketplace_yank_version(
-            listing.listing_id, "1.0.0", reason="Bug"
-        )
+        result = api.marketplace_yank_version(listing.listing_id, "1.0.0", reason="Bug")
         assert result["success"] is True
 
     def test_marketplace_not_configured(self) -> None:
@@ -741,7 +733,12 @@ class TestMarketplaceAPI:
         api = SecurityAPI()
         assert api.marketplace_install("x").get("status") == 503
         assert api.marketplace_uninstall("x").get("status") == 503
-        assert api.marketplace_moderate("x", moderator_id="m", action="approve").get("status") == 503
+        assert (
+            api.marketplace_moderate("x", moderator_id="m", action="approve").get(
+                "status"
+            )
+            == 503
+        )
         assert api.marketplace_moderation_queue().get("status") == 503
         assert api.marketplace_version_history("x").get("status") == 503
         assert api.marketplace_yank_version("x", "1.0").get("status") == 503

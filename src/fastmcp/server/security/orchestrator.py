@@ -37,7 +37,10 @@ from fastmcp.server.security.policy.monitoring import PolicyMonitor
 from fastmcp.server.security.policy.validator import PolicyValidator
 from fastmcp.server.security.policy.versioning.manager import PolicyVersionManager
 from fastmcp.server.security.provenance.ledger import ProvenanceLedger
-from fastmcp.server.security.reflexive.analyzer import BehavioralAnalyzer, EscalationEngine
+from fastmcp.server.security.reflexive.analyzer import (
+    BehavioralAnalyzer,
+    EscalationEngine,
+)
 from fastmcp.server.security.registry.registry import TrustRegistry
 from fastmcp.server.security.sandbox.enforcer import SandboxedRunner
 

@@ -153,8 +153,7 @@ class PolicyVersionHistory:
             idx = num - 1
             if idx < 0 or idx >= len(self.versions):
                 raise ValueError(
-                    f"Invalid version number {num}. "
-                    f"Valid range: 1-{len(self.versions)}"
+                    f"Invalid version number {num}. Valid range: 1-{len(self.versions)}"
                 )
 
         v1_data = self.versions[v1_number - 1].policy_data

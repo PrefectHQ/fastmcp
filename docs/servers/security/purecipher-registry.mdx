@@ -1,0 +1,285 @@
+---
+title: PureCipher Secured MCP Registry
+description: Build a secured MCP tool registry on top of SecureMCP.
+---
+
+PureCipher Secured MCP Registry is an opinionated product layer on top of SecureMCP. It takes the generic security primitives already in the stack, narrows them to a registry workflow, and gives you one server that can:
+
+- accept tool submissions with a `SecurityManifest`
+- certify those tools with the SecureMCP certification pipeline
+- reject tools below a minimum certification level
+- publish accepted tools into a verified catalog
+- launch a browser UI at `GET /registry`
+- support JWT-backed login with role-based submission and moderation
+- expose registry-specific HTTP routes under `/registry/*`
+
+This is the right MVP for a marketplace-style product because it focuses on verification, trust, and discoverability before taking on the harder runtime-hosting problem.
+
+## Quick Start
+
+```python
+from purecipher import (
+    CertificationLevel,
+    DataClassification,
+    DataFlowDeclaration,
+    PermissionScope,
+    PureCipherRegistry,
+    ResourceAccessDeclaration,
+    SecurityManifest,
+    ToolCategory,
+)
+
+registry = PureCipherRegistry(
+    "purecipher-registry",
+    signing_secret="development-secret",
+)
+
+manifest = SecurityManifest(
+    tool_name="weather-lookup",
+    version="1.0.0",
+    author="acme",
+    description="Fetch current weather for a city.",
+    permissions={PermissionScope.NETWORK_ACCESS},
+    data_flows=[
+        DataFlowDeclaration(
+            source="input.city",
+            destination="output.forecast",
+            classification=DataClassification.PUBLIC,
+            description="City name is sent to the weather provider.",
+        )
+    ],
+    resource_access=[
+        ResourceAccessDeclaration(
+            resource_pattern="https://api.weather.example/*",
+            access_type="read",
+            description="Call weather provider endpoint.",
+            classification=DataClassification.PUBLIC,
+        )
+    ],
+    tags={"weather", "api"},
+)
+
+result = registry.submit_tool(
+    manifest,
+    display_name="Weather Lookup",
+    categories={ToolCategory.NETWORK, ToolCategory.UTILITY},
+    source_url="https://github.com/acme/weather-lookup",
+    tool_license="MIT",
+    requested_level=CertificationLevel.BASIC,
+)
+
+assert result.accepted
+
+registry.run(transport="streamable-http")
+```
+
+## Default Behavior
+
+`PureCipherRegistry` wraps `SecureMCP` and automatically wires:
+
+- `TrustRegistry`
+- `ToolMarketplace`
+- `CertificationPipeline`
+- SecureMCP HTTP routes under `/security/*`
+- PureCipher registry routes under `/registry/*`
+
+If you pass your own `SecurityConfig`, it must still include registry, tool marketplace, and certification components. Otherwise the constructor raises immediately.
+
+## Registry API
+
+The MVP exposes a narrow HTTP surface:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /registry/health` | Service health, counts, and minimum certification policy |
+| `GET /registry/session` | Current browser/API session plus auth status |
+| `GET /registry/login` | Server-rendered login page for JWT registry auth |
+| `GET /registry/listings/{tool_name}` | Server-rendered listing page with install and attestation detail |
+| `GET /registry/install/{tool_name}` | Generated install recipes for a verified listing |
+| `GET /registry/publishers` | Public publisher summaries for published listings |
+| `GET /registry/publishers?view=html` | Server-rendered publisher directory |
+| `GET /registry/publishers/{publisher_id}` | Server-rendered publisher profile page |
+| `GET /registry/review` | Browser moderation queue for pending and managed listings |
+| `GET /registry/review/submissions` | JSON moderation queue payload |
+| `POST /registry/review/{listing_id}/{action_name}` | Apply moderation actions such as `approve`, `reject`, `suspend`, or `unsuspend` |
+| `GET /registry/tools` | Search the published verified catalog |
+| `GET /registry/tools/{tool_name}` | Full verified listing detail |
+| `POST /registry/submit` | Certify and publish a manifest into the registry |
+| `POST /registry/verify` | Verify a listing's attestation against its manifest |
+
+`GET /registry` serves the catalog, dashboard, and submission UI. Each listing opens as its own browser page under `/registry/listings/{tool_name}` with install recipes, manifest detail, and attestation detail. Publisher pages, the publisher directory, the login page, and the moderation queue are also server-rendered so the whole product layer can run without a frontend build step.
+
+## CLI Launch
+
+You can start the registry directly from the command line:
+
+```bash
+PURECIPHER_SIGNING_SECRET=development-secret uv run purecipher-registry --port 8000
+```
+
+Then open [http://localhost:8000/registry](http://localhost:8000/registry).
+
+To launch directly into moderation mode:
+
+```bash
+PURECIPHER_SIGNING_SECRET=development-secret PURECIPHER_REQUIRE_MODERATION=true uv run purecipher-registry --port 8000
+```
+
+To launch with JWT login and role-aware UI:
+
+```bash
+PURECIPHER_SIGNING_SECRET=development-secret \
+PURECIPHER_ENABLE_AUTH=true \
+PURECIPHER_JWT_SECRET=this-is-a-long-registry-jwt-secret \
+uv run purecipher-registry --port 8000
+```
+
+## Docker Launch
+
+The repo now includes a dedicated registry image and compose file:
+
+```bash
+docker compose -f docker-compose.purecipher-registry.yml up --build
+```
+
+To run the Dockerized registry in moderation mode:
+
+```bash
+PURECIPHER_REQUIRE_MODERATION=true docker compose -f docker-compose.purecipher-registry.yml up --build
+```
+
+To run Docker with auth enabled:
+
+```bash
+PURECIPHER_REQUIRE_MODERATION=true \
+PURECIPHER_ENABLE_AUTH=true \
+PURECIPHER_JWT_SECRET=this-is-a-long-registry-jwt-secret \
+docker compose -f docker-compose.purecipher-registry.yml up --build
+```
+
+The container serves:
+
+- UI: [http://localhost:8000/registry](http://localhost:8000/registry)
+- Health: [http://localhost:8000/registry/health](http://localhost:8000/registry/health)
+- MCP: `http://localhost:8000/mcp`
+
+The compose file mounts `./.data/purecipher-registry` into `/data` and stores the registry database at `/data/purecipher-registry.db`, so accepted tool listings survive container restarts.
+
+## JWT Auth And Roles
+
+PureCipher auth is product-layer auth owned by `src/purecipher`, not FastMCP core auth. When enabled, it protects the registry-specific routes and browser workflows:
+
+- public: catalog, listing pages, publisher pages, install recipes, attestation verification
+- publisher or higher: manifest submission
+- reviewer or admin: moderation queue access and approve/reject/request-changes actions
+- admin only: suspend and unsuspend actions
+
+Set `PURECIPHER_ENABLE_AUTH=true` and provide a signing key with `PURECIPHER_JWT_SECRET`. You can also configure static users through `PURECIPHER_USERS_JSON`.
+
+If auth is enabled and `PURECIPHER_USERS_JSON` is omitted, the registry falls back to development accounts:
+
+- `viewer / viewer123`
+- `publisher / publisher123`
+- `reviewer / reviewer123`
+- `admin / admin123`
+
+For production, define your own user list and use a longer secret.
+
+## Persistence
+
+`PureCipherRegistry` can persist catalog state to SQLite:
+
+```python
+registry = PureCipherRegistry(
+    "purecipher-registry",
+    signing_secret="development-secret",
+    persistence_path="purecipher-registry.db",
+)
+```
+
+The CLI and Docker launchers use the same setting through `PURECIPHER_REGISTRY_DB` or `--database-path`. Moderation mode can also be toggled through `PURECIPHER_REQUIRE_MODERATION=true`, and auth can be enabled through `PURECIPHER_ENABLE_AUTH=true`.
+
+## Moderation Mode
+
+If you want new listings to enter a review queue instead of going straight into the public catalog, enable moderation:
+
+```python
+registry = PureCipherRegistry(
+    "purecipher-registry",
+    signing_secret="development-secret",
+    require_moderation=True,
+)
+```
+
+In that mode, accepted submissions land in `pending_review`. They are visible under `GET /registry/review` and `GET /registry/review/submissions`, and they only appear in the public catalog after an explicit moderation action such as `approve`.
+
+## Submission Contract
+
+`POST /registry/submit` accepts a body shaped like:
+
+```json
+{
+  "manifest": {
+    "tool_name": "weather-lookup",
+    "version": "1.0.0",
+    "author": "acme",
+    "description": "Fetch current weather for a city.",
+    "permissions": ["network_access"],
+    "data_flows": [
+      {
+        "source": "input.city",
+        "destination": "output.forecast",
+        "classification": "public"
+      }
+    ],
+    "resource_access": [
+      {
+        "resource_pattern": "https://api.weather.example/*",
+        "access_type": "read"
+      }
+    ],
+    "tags": ["weather", "api"]
+  },
+  "display_name": "Weather Lookup",
+  "categories": ["network", "utility"],
+  "tool_license": "MIT",
+  "requested_level": "basic"
+}
+```
+
+The registry will:
+
+1. validate and score the manifest
+2. issue a signed attestation
+3. reject the submission if it fails certification or misses the minimum required level
+4. publish accepted tools into the verified catalog
+
+If you want install recipes to appear on the listing page, include runtime metadata when you submit:
+
+```json
+{
+  "metadata": {
+    "endpoint": "https://mcp.acme.example/weather",
+    "transport": "streamable-http",
+    "command": "uvx",
+    "args": ["weather-lookup"],
+    "docker_image": "ghcr.io/acme/weather-lookup:1.0.0",
+    "env": {
+      "WEATHER_API_KEY": "${WEATHER_API_KEY}"
+    }
+  }
+}
+```
+
+The registry uses that metadata to generate copyable client config, Docker, and verification snippets at `GET /registry/install/{tool_name}`.
+
+## Scope
+
+This MVP is intentionally a verified registry, not a full hosted runtime. It gives PureCipher a credible control-plane product now:
+
+- signed submissions
+- trust metadata
+- searchable verified listings
+- attestation verification
+
+Runtime hosting can come later as a separate layer.

@@ -31,12 +31,12 @@ SecureMCP is organized into composable layers that can be used independently or 
 
 ## Quick Start
 
-The recommended approach uses `attach_security()` to bootstrap and attach SecureMCP through FastMCP's public hooks. Under the hood it delegates to `SecurityOrchestrator`, which handles dependency ordering, event bus injection, and cross-wiring automatically.
+If you're building a SecureMCP-first server, use `SecureMCP`. It wraps `FastMCP` and attaches the security layer through the same public hooks exposed by `attach_security()`, so the integration stays additive while giving SecureMCP its own server surface.
 
 ```python
-from fastmcp import FastMCP
-from fastmcp.server.security import attach_security
-from fastmcp.server.security.config import (
+from fastmcp.server.security.gateway.tool_marketplace import ToolCategory
+from securemcp import SecureMCP
+from securemcp.config import (
     AlertConfig,
     ComplianceConfig,
     CRLConfig,
@@ -46,10 +46,6 @@ from fastmcp.server.security.config import (
     SecurityConfig,
     ToolMarketplaceConfig,
 )
-from fastmcp.server.security.gateway.tool_marketplace import ToolCategory
-from fastmcp.server.security.http import mount_security_routes
-
-server = FastMCP("my-secure-server")
 
 # Define what you need — omit any config you don't
 config = SecurityConfig(
@@ -62,8 +58,13 @@ config = SecurityConfig(
     compliance=ComplianceConfig(),
 )
 
-# Bootstrap and attach everything in one call
-ctx = attach_security(server, config)
+server = SecureMCP(
+    "my-secure-server",
+    security=config,
+    mount_security_api=True,
+)
+ctx = server.security_context
+assert ctx is not None
 
 # Register and publish a tool
 ctx.registry.register("my-tool", tool_version="1.0.0", author="acme")
@@ -76,13 +77,12 @@ ctx.tool_marketplace.publish(
     categories={ToolCategory.UTILITY},
 )
 
-# Mount the REST API from the attached context
-mount_security_routes(server)
-
 server.run(transport="streamable-http")
 ```
 
 After starting, visit `http://localhost:8000/security/health` to verify the security layer is active.
+
+If you're attaching SecureMCP to an existing `FastMCP` server instead, use `attach_security(server, config)` and `mount_security_routes(server)`. `SecureMCP` is the higher-level facade; the helper path remains the low-level integration surface.
 
 `attach_security()` reads SecureMCP-owned runtime settings from `SECUREMCP_*` variables. See [SecureMCP Settings](/servers/security/settings).
 

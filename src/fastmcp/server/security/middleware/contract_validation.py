@@ -111,9 +111,7 @@ class ContractValidationMiddleware(Middleware):
             # Check action restrictions
             denied_actions = constraint.get("denied_actions", [])
             if action in denied_actions:
-                return (
-                    f"Contract term '{term.term_id}' denies action '{action}'"
-                )
+                return f"Contract term '{term.term_id}' denies action '{action}'"
 
             allowed_actions = constraint.get("allowed_actions")
             if allowed_actions is not None and action not in allowed_actions:
@@ -137,9 +135,7 @@ class ContractValidationMiddleware(Middleware):
 
             # Check read_only constraint
             if constraint.get("read_only") and action in ("call_tool",):
-                return (
-                    f"Contract is read-only; action '{action}' is not permitted"
-                )
+                return f"Contract is read-only; action '{action}' is not permitted"
 
         return None  # All checks passed
 
@@ -189,9 +185,7 @@ class ContractValidationMiddleware(Middleware):
         # Filter tools by contract constraints
         permitted: list[Tool] = []
         for tool in tools:
-            violation = self._check_term_constraint(
-                contract, "call_tool", tool.name
-            )
+            violation = self._check_term_constraint(contract, "call_tool", tool.name)
             if violation is None:
                 permitted.append(tool)
 
@@ -280,9 +274,7 @@ class ContractValidationMiddleware(Middleware):
                 f"to access prompt '{prompt_name}'"
             )
 
-        violation = self._check_term_constraint(
-            contract, "get_prompt", prompt_name
-        )
+        violation = self._check_term_constraint(contract, "get_prompt", prompt_name)
         if violation:
             raise ContractViolationError(violation, contract_id=contract.contract_id)
 
@@ -306,9 +298,7 @@ class ContractValidationMiddleware(Middleware):
 
         permitted: list[Prompt] = []
         for prompt in prompts:
-            violation = self._check_term_constraint(
-                contract, "get_prompt", prompt.name
-            )
+            violation = self._check_term_constraint(contract, "get_prompt", prompt.name)
             if violation is None:
                 permitted.append(prompt)
 

@@ -366,7 +366,6 @@ class PolicyEnforcementMiddleware(Middleware):
 
         return permitted
 
-
     def _enforce_constraints(
         self,
         constraints: list[str],
@@ -407,7 +406,9 @@ class PolicyEnforcementMiddleware(Middleware):
             if constraint_lower.startswith("max_args:"):
                 try:
                     max_args = int(constraint_lower.split(":", 1)[1])
-                    if hasattr(context, "message") and hasattr(context.message, "arguments"):
+                    if hasattr(context, "message") and hasattr(
+                        context.message, "arguments"
+                    ):
                         args = context.message.arguments or {}
                         if len(args) > max_args:
                             raise PolicyViolationError(
@@ -422,7 +423,9 @@ class PolicyEnforcementMiddleware(Middleware):
 
             if constraint_lower.startswith("require_metadata:"):
                 required_key = constraint.split(":", 1)[1].strip()
-                if hasattr(context, "message") and hasattr(context.message, "arguments"):
+                if hasattr(context, "message") and hasattr(
+                    context.message, "arguments"
+                ):
                     args = context.message.arguments or {}
                     if required_key not in args:
                         raise PolicyViolationError(
@@ -434,9 +437,7 @@ class PolicyEnforcementMiddleware(Middleware):
                 continue
 
             if constraint_lower == "log_access":
-                logger.info(
-                    "Constrained access logged: %s", resource_id
-                )
+                logger.info("Constrained access logged: %s", resource_id)
                 continue
 
             # Unknown constraint — log but don't block
@@ -447,7 +448,7 @@ class PolicyEnforcementMiddleware(Middleware):
             )
 
 
-def _deny_result(reason: str) -> "PolicyResult":
+def _deny_result(reason: str) -> PolicyResult:
     """Create a DENY PolicyResult for error paths."""
     from fastmcp.server.security.policy.provider import PolicyResult
 

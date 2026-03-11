@@ -74,9 +74,7 @@ class AuditEntry:
     constraints: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     tags: frozenset[str] = field(default_factory=frozenset)
-    timestamp: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     elapsed_ms: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
@@ -277,15 +275,9 @@ class PolicyAuditLog:
             entries = list(self._entries)
 
         # Count by decision
-        allow_count = sum(
-            1 for e in entries if e.decision == PolicyDecision.ALLOW
-        )
-        deny_count = sum(
-            1 for e in entries if e.decision == PolicyDecision.DENY
-        )
-        defer_count = sum(
-            1 for e in entries if e.decision == PolicyDecision.DEFER
-        )
+        allow_count = sum(1 for e in entries if e.decision == PolicyDecision.ALLOW)
+        deny_count = sum(1 for e in entries if e.decision == PolicyDecision.DENY)
+        defer_count = sum(1 for e in entries if e.decision == PolicyDecision.DEFER)
 
         # Unique actors and resources
         actors = {e.actor_id for e in entries if e.actor_id}
@@ -316,7 +308,5 @@ class PolicyAuditLog:
             "top_denied_resources": [
                 {"resource_id": r, "count": c} for r, c in top_denied
             ],
-            "deny_rate": (
-                deny_count / len(entries) if entries else 0.0
-            ),
+            "deny_rate": (deny_count / len(entries) if entries else 0.0),
         }

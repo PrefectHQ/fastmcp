@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -58,13 +57,15 @@ class TestLoadFromDict:
 
     @pytest.mark.anyio
     async def test_rbac(self):
-        policy = load_policy({
-            "type": "rbac",
-            "role_mappings": {
-                "admin": ["*"],
-                "viewer": ["call_tool"],
-            },
-        })
+        policy = load_policy(
+            {
+                "type": "rbac",
+                "role_mappings": {
+                    "admin": ["*"],
+                    "viewer": ["call_tool"],
+                },
+            }
+        )
         # Admin can do anything
         result = await policy.evaluate(
             _ctx(action="delete_tool", metadata={"role": "admin"})
@@ -84,11 +85,13 @@ class TestLoadFromDict:
 
     @pytest.mark.anyio
     async def test_rate_limit(self):
-        policy = load_policy({
-            "type": "rate_limit",
-            "max_requests": 2,
-            "window_seconds": 60,
-        })
+        policy = load_policy(
+            {
+                "type": "rate_limit",
+                "max_requests": 2,
+                "window_seconds": 60,
+            }
+        )
         ctx = _ctx()
         assert (await policy.evaluate(ctx)).decision == PolicyDecision.ALLOW
         assert (await policy.evaluate(ctx)).decision == PolicyDecision.ALLOW
@@ -96,30 +99,30 @@ class TestLoadFromDict:
 
     @pytest.mark.anyio
     async def test_time_based(self):
-        policy = load_policy({
-            "type": "time_based",
-            "allowed_days": [0, 1, 2, 3, 4],
-            "start_hour": 9,
-            "end_hour": 17,
-        })
+        policy = load_policy(
+            {
+                "type": "time_based",
+                "allowed_days": [0, 1, 2, 3, 4],
+                "start_hour": 9,
+                "end_hour": 17,
+            }
+        )
         # Just verify it builds and evaluates without error
         result = await policy.evaluate(_ctx())
         assert result.decision in (PolicyDecision.ALLOW, PolicyDecision.DENY)
 
     @pytest.mark.anyio
     async def test_abac_metadata_conditions(self):
-        policy = load_policy({
-            "type": "abac",
-            "metadata_conditions": {"department": "engineering"},
-        })
-        result = await policy.evaluate(
-            _ctx(metadata={"department": "engineering"})
+        policy = load_policy(
+            {
+                "type": "abac",
+                "metadata_conditions": {"department": "engineering"},
+            }
         )
+        result = await policy.evaluate(_ctx(metadata={"department": "engineering"}))
         assert result.decision == PolicyDecision.ALLOW
 
-        result = await policy.evaluate(
-            _ctx(metadata={"department": "sales"})
-        )
+        result = await policy.evaluate(_ctx(metadata={"department": "sales"}))
         assert result.decision == PolicyDecision.DENY
 
     @pytest.mark.anyio
@@ -136,14 +139,16 @@ class TestLoadFromDict:
 
     @pytest.mark.anyio
     async def test_resource_scoped(self):
-        policy = load_policy({
-            "type": "resource_scoped",
-            "resource_rules": {
-                "admin-panel": {"type": "deny_all"},
-                "public-api": {"type": "allow_all"},
-            },
-            "default": {"type": "deny_all"},
-        })
+        policy = load_policy(
+            {
+                "type": "resource_scoped",
+                "resource_rules": {
+                    "admin-panel": {"type": "deny_all"},
+                    "public-api": {"type": "allow_all"},
+                },
+                "default": {"type": "deny_all"},
+            }
+        )
         result = await policy.evaluate(_ctx(resource_id="admin-panel"))
         assert result.decision == PolicyDecision.DENY
 
@@ -155,13 +160,15 @@ class TestLoadFromDict:
 
     @pytest.mark.anyio
     async def test_resource_scoped_prefix_match(self):
-        policy = load_policy({
-            "type": "resource_scoped",
-            "prefix_match": True,
-            "resource_rules": {
-                "admin": {"type": "deny_all"},
-            },
-        })
+        policy = load_policy(
+            {
+                "type": "resource_scoped",
+                "prefix_match": True,
+                "resource_rules": {
+                    "admin": {"type": "deny_all"},
+                },
+            }
+        )
         result = await policy.evaluate(_ctx(resource_id="admin-panel"))
         assert result.decision == PolicyDecision.DENY
 
@@ -171,10 +178,12 @@ class TestLoadFromDict:
 
     def test_type_aliases(self):
         # role_based is alias for rbac
-        policy = load_policy({
-            "type": "role_based",
-            "role_mappings": {"admin": ["*"]},
-        })
+        policy = load_policy(
+            {
+                "type": "role_based",
+                "role_mappings": {"admin": ["*"]},
+            }
+        )
         assert policy is not None
 
         # temporal is alias for time_based
@@ -192,13 +201,15 @@ class TestLoadFromDict:
 class TestComposition:
     @pytest.mark.anyio
     async def test_all_of(self):
-        policy = load_policy({
-            "composition": "all_of",
-            "policies": [
-                {"type": "allowlist", "allowed": ["tool-a"]},
-                {"type": "denylist", "denied": ["tool-b"]},
-            ],
-        })
+        policy = load_policy(
+            {
+                "composition": "all_of",
+                "policies": [
+                    {"type": "allowlist", "allowed": ["tool-a"]},
+                    {"type": "denylist", "denied": ["tool-b"]},
+                ],
+            }
+        )
         # tool-a: in allowlist, not in denylist → ALLOW
         result = await policy.evaluate(_ctx(resource_id="tool-a"))
         assert result.decision == PolicyDecision.ALLOW
@@ -209,13 +220,15 @@ class TestComposition:
 
     @pytest.mark.anyio
     async def test_any_of(self):
-        policy = load_policy({
-            "composition": "any_of",
-            "policies": [
-                {"type": "allowlist", "allowed": ["tool-a"]},
-                {"type": "allowlist", "allowed": ["tool-b"]},
-            ],
-        })
+        policy = load_policy(
+            {
+                "composition": "any_of",
+                "policies": [
+                    {"type": "allowlist", "allowed": ["tool-a"]},
+                    {"type": "allowlist", "allowed": ["tool-b"]},
+                ],
+            }
+        )
         result = await policy.evaluate(_ctx(resource_id="tool-a"))
         assert result.decision == PolicyDecision.ALLOW
 
@@ -227,29 +240,33 @@ class TestComposition:
 
     @pytest.mark.anyio
     async def test_any_of_with_require_minimum(self):
-        policy = load_policy({
-            "composition": "any_of",
-            "require_minimum": 2,
-            "policies": [
-                {"type": "allowlist", "allowed": ["tool-a", "tool-b"]},
-                {"type": "allowlist", "allowed": ["tool-b", "tool-c"]},
-                {"type": "allowlist", "allowed": ["tool-c", "tool-a"]},
-            ],
-        })
+        policy = load_policy(
+            {
+                "composition": "any_of",
+                "require_minimum": 2,
+                "policies": [
+                    {"type": "allowlist", "allowed": ["tool-a", "tool-b"]},
+                    {"type": "allowlist", "allowed": ["tool-b", "tool-c"]},
+                    {"type": "allowlist", "allowed": ["tool-c", "tool-a"]},
+                ],
+            }
+        )
         # tool-a: allowed by policy 1 and 3 → 2 allows → meets minimum
         result = await policy.evaluate(_ctx(resource_id="tool-a"))
         assert result.decision == PolicyDecision.ALLOW
 
     @pytest.mark.anyio
     async def test_first_match(self):
-        policy = load_policy({
-            "composition": "first_match",
-            "default_decision": "deny",
-            "policies": [
-                {"type": "denylist", "denied": ["blocked"]},
-                {"type": "allow_all"},
-            ],
-        })
+        policy = load_policy(
+            {
+                "composition": "first_match",
+                "default_decision": "deny",
+                "policies": [
+                    {"type": "denylist", "denied": ["blocked"]},
+                    {"type": "allow_all"},
+                ],
+            }
+        )
         # "blocked" → denied by first policy
         result = await policy.evaluate(_ctx(resource_id="blocked"))
         assert result.decision == PolicyDecision.DENY
@@ -260,12 +277,14 @@ class TestComposition:
 
     @pytest.mark.anyio
     async def test_not_composition(self):
-        policy = load_policy({
-            "composition": "not",
-            "policies": [
-                {"type": "denylist", "denied": ["blocked"]},
-            ],
-        })
+        policy = load_policy(
+            {
+                "composition": "not",
+                "policies": [
+                    {"type": "denylist", "denied": ["blocked"]},
+                ],
+            }
+        )
         # "blocked" → denied → inverted to ALLOW
         result = await policy.evaluate(_ctx(resource_id="blocked"))
         assert result.decision == PolicyDecision.ALLOW
@@ -276,39 +295,45 @@ class TestComposition:
 
     def test_not_requires_one_child(self):
         with pytest.raises(ValueError, match="exactly one child"):
-            load_policy({
-                "composition": "not",
-                "policies": [
-                    {"type": "allow_all"},
-                    {"type": "deny_all"},
-                ],
-            })
+            load_policy(
+                {
+                    "composition": "not",
+                    "policies": [
+                        {"type": "allow_all"},
+                        {"type": "deny_all"},
+                    ],
+                }
+            )
 
     def test_unknown_composition_raises(self):
         with pytest.raises(ValueError, match="Unknown composition"):
-            load_policy({
-                "composition": "invalid_comp",
-                "policies": [{"type": "allow_all"}],
-            })
+            load_policy(
+                {
+                    "composition": "invalid_comp",
+                    "policies": [{"type": "allow_all"}],
+                }
+            )
 
     @pytest.mark.anyio
     async def test_nested_composition(self):
         """Compositions can nest arbitrarily."""
-        policy = load_policy({
-            "composition": "all_of",
-            "policy_id": "outer",
-            "policies": [
-                {"type": "denylist", "denied": ["admin-*"]},
-                {
-                    "composition": "any_of",
-                    "policy_id": "inner",
-                    "policies": [
-                        {"type": "allowlist", "allowed": ["tool-a"]},
-                        {"type": "allowlist", "allowed": ["tool-b"]},
-                    ],
-                },
-            ],
-        })
+        policy = load_policy(
+            {
+                "composition": "all_of",
+                "policy_id": "outer",
+                "policies": [
+                    {"type": "denylist", "denied": ["admin-*"]},
+                    {
+                        "composition": "any_of",
+                        "policy_id": "inner",
+                        "policies": [
+                            {"type": "allowlist", "allowed": ["tool-a"]},
+                            {"type": "allowlist", "allowed": ["tool-b"]},
+                        ],
+                    },
+                ],
+            }
+        )
         # tool-a: not denied + in inner any_of → ALLOW
         result = await policy.evaluate(_ctx(resource_id="tool-a"))
         assert result.decision == PolicyDecision.ALLOW
@@ -325,21 +350,25 @@ class TestComposition:
     async def test_composition_aliases(self):
         """All composition aliases should work."""
         for alias in ("all_of", "allof", "all"):
-            policy = load_policy({
-                "composition": alias,
-                "policies": [{"type": "allow_all"}],
-            })
+            policy = load_policy(
+                {
+                    "composition": alias,
+                    "policies": [{"type": "allow_all"}],
+                }
+            )
             result = await policy.evaluate(_ctx())
             assert result.decision == PolicyDecision.ALLOW
 
     @pytest.mark.anyio
     async def test_custom_policy_id_and_version(self):
-        policy = load_policy({
-            "composition": "all_of",
-            "policy_id": "my-custom-id",
-            "version": "3.0",
-            "policies": [{"type": "allow_all"}],
-        })
+        policy = load_policy(
+            {
+                "composition": "all_of",
+                "policy_id": "my-custom-id",
+                "version": "3.0",
+                "policies": [{"type": "allow_all"}],
+            }
+        )
         assert await policy.get_policy_id() == "my-custom-id"
         assert await policy.get_policy_version() == "3.0"
 
@@ -515,13 +544,15 @@ class TestEngineIntegration:
     async def test_loaded_policy_in_engine(self):
         from fastmcp.server.security.policy.engine import PolicyEngine
 
-        policy = load_policy({
-            "composition": "all_of",
-            "policies": [
-                {"type": "allowlist", "allowed": ["safe-*"]},
-                {"type": "denylist", "denied": ["safe-but-blocked"]},
-            ],
-        })
+        policy = load_policy(
+            {
+                "composition": "all_of",
+                "policies": [
+                    {"type": "allowlist", "allowed": ["safe-*"]},
+                    {"type": "denylist", "denied": ["safe-but-blocked"]},
+                ],
+            }
+        )
 
         engine = PolicyEngine(providers=[policy])
         result = await engine.evaluate(_ctx(resource_id="safe-tool"))
@@ -563,8 +594,15 @@ class TestSchema:
         schema = dump_policy_schema()
         types = schema["policy_types"]
         expected = {
-            "allowlist", "denylist", "rbac", "rate_limit",
-            "time_based", "abac", "resource_scoped", "allow_all", "deny_all",
+            "allowlist",
+            "denylist",
+            "rbac",
+            "rate_limit",
+            "time_based",
+            "abac",
+            "resource_scoped",
+            "allow_all",
+            "deny_all",
         }
         assert set(types.keys()) == expected
 
@@ -587,59 +625,71 @@ class TestEdgeCases:
     @pytest.mark.anyio
     async def test_empty_policies_list_in_all_of(self):
         """AllOf with no children should still work."""
-        policy = load_policy({
-            "composition": "all_of",
-            "policies": [],
-        })
+        policy = load_policy(
+            {
+                "composition": "all_of",
+                "policies": [],
+            }
+        )
         result = await policy.evaluate(_ctx())
         # AllOf with no children → depends on implementation
-        assert result.decision in (PolicyDecision.ALLOW, PolicyDecision.DENY, PolicyDecision.DEFER)
+        assert result.decision in (
+            PolicyDecision.ALLOW,
+            PolicyDecision.DENY,
+            PolicyDecision.DEFER,
+        )
 
     @pytest.mark.anyio
     async def test_single_policy_in_all_of(self):
         """AllOf with single child."""
-        policy = load_policy({
-            "composition": "all_of",
-            "policies": [{"type": "allow_all"}],
-        })
+        policy = load_policy(
+            {
+                "composition": "all_of",
+                "policies": [{"type": "allow_all"}],
+            }
+        )
         result = await policy.evaluate(_ctx())
         assert result.decision == PolicyDecision.ALLOW
 
     @pytest.mark.anyio
     async def test_custom_policy_id_on_leaf(self):
-        policy = load_policy({
-            "type": "allowlist",
-            "allowed": ["tool-a"],
-            "policy_id": "my-leaf-policy",
-            "version": "5.0",
-        })
+        policy = load_policy(
+            {
+                "type": "allowlist",
+                "allowed": ["tool-a"],
+                "policy_id": "my-leaf-policy",
+                "version": "5.0",
+            }
+        )
         assert await policy.get_policy_id() == "my-leaf-policy"
         assert await policy.get_policy_version() == "5.0"
 
     @pytest.mark.anyio
     async def test_abac_require_all_false(self):
         """ABAC with OR logic."""
-        policy = load_policy({
-            "type": "abac",
-            "require_all": False,
-            "metadata_conditions": {
-                "department": "engineering",
-                "clearance": "top-secret",
-            },
-        })
-        # Only one condition met → still passes with require_all=False
-        result = await policy.evaluate(
-            _ctx(metadata={"department": "engineering"})
+        policy = load_policy(
+            {
+                "type": "abac",
+                "require_all": False,
+                "metadata_conditions": {
+                    "department": "engineering",
+                    "clearance": "top-secret",
+                },
+            }
         )
+        # Only one condition met → still passes with require_all=False
+        result = await policy.evaluate(_ctx(metadata={"department": "engineering"}))
         assert result.decision == PolicyDecision.ALLOW
 
     @pytest.mark.anyio
     async def test_rbac_default_decision_allow(self):
-        policy = load_policy({
-            "type": "rbac",
-            "role_mappings": {"admin": ["*"]},
-            "default_decision": "allow",
-        })
+        policy = load_policy(
+            {
+                "type": "rbac",
+                "role_mappings": {"admin": ["*"]},
+                "default_decision": "allow",
+            }
+        )
         # No role in metadata → default_decision = allow
         result = await policy.evaluate(_ctx(metadata={}))
         assert result.decision == PolicyDecision.ALLOW
@@ -647,18 +697,24 @@ class TestEdgeCases:
     @pytest.mark.anyio
     async def test_deeply_nested_composition(self):
         """Three levels of nesting."""
-        policy = load_policy({
-            "composition": "all_of",
-            "policies": [{
-                "composition": "any_of",
-                "policies": [{
-                    "composition": "not",
-                    "policies": [
-                        {"type": "denylist", "denied": ["blocked"]},
-                    ],
-                }],
-            }],
-        })
+        policy = load_policy(
+            {
+                "composition": "all_of",
+                "policies": [
+                    {
+                        "composition": "any_of",
+                        "policies": [
+                            {
+                                "composition": "not",
+                                "policies": [
+                                    {"type": "denylist", "denied": ["blocked"]},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
         # blocked → denied → not → ALLOW → any_of ALLOW → all_of ALLOW
         result = await policy.evaluate(_ctx(resource_id="blocked"))
         assert result.decision == PolicyDecision.ALLOW
