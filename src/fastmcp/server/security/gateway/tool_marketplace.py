@@ -4,10 +4,15 @@ Extends the server-level Marketplace with tool-level granularity:
 publishers submit tool packages with security manifests, tools are
 certified through the CertificationPipeline, and consumers discover
 tools via rich search (categories, trust scores, reviews, popularity).
+
+Includes persistence, versioning, moderation workflow, and signature
+verification on install.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -24,6 +29,7 @@ from fastmcp.server.security.certification.manifest import SecurityManifest
 if TYPE_CHECKING:
     from fastmcp.server.security.alerts.bus import SecurityEventBus
     from fastmcp.server.security.registry.registry import TrustRegistry
+    from fastmcp.server.security.storage.backend import StorageBackend
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +70,87 @@ class ReviewRating(Enum):
     THREE = 3
     FOUR = 4
     FIVE = 5
+
+
+class ModerationAction(Enum):
+    """Actions a moderator can take on a listing."""
+
+    APPROVE = "approve"
+    REJECT = "reject"
+    SUSPEND = "suspend"
+    UNSUSPEND = "unsuspend"
+    DEPRECATE = "deprecate"
+    REQUEST_CHANGES = "request_changes"
+
+
+@dataclass
+class ModerationDecision:
+    """A moderation decision on a tool listing.
+
+    Attributes:
+        decision_id: Unique identifier.
+        listing_id: The listing being moderated.
+        moderator_id: Who made the decision.
+        action: The moderation action taken.
+        reason: Explanation for the decision.
+        created_at: When the decision was made.
+        metadata: Additional context.
+    """
+
+    decision_id: str = field(default_factory=lambda: str(uuid.uuid4())[:12])
+    listing_id: str = ""
+    moderator_id: str = ""
+    action: ModerationAction = ModerationAction.APPROVE
+    reason: str = ""
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "decision_id": self.decision_id,
+            "listing_id": self.listing_id,
+            "moderator_id": self.moderator_id,
+            "action": self.action.value,
+            "reason": self.reason,
+            "created_at": self.created_at.isoformat(),
+            "metadata": self.metadata,
+        }
+
+
+@dataclass
+class ToolVersion:
+    """A versioned snapshot of a tool listing.
+
+    Attributes:
+        version: Semantic version string.
+        manifest_digest: SHA-256 of the manifest at this version.
+        attestation_id: Certification attestation at release time.
+        changelog: What changed in this version.
+        published_at: When this version was released.
+        yanked: Whether this version has been pulled.
+        yank_reason: Why the version was yanked.
+    """
+
+    version: str = ""
+    manifest_digest: str = ""
+    attestation_id: str = ""
+    changelog: str = ""
+    published_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    yanked: bool = False
+    yank_reason: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "version": self.version,
+            "manifest_digest": self.manifest_digest,
+            "attestation_id": self.attestation_id,
+            "changelog": self.changelog,
+            "published_at": self.published_at.isoformat(),
+            "yanked": self.yanked,
+            "yank_reason": self.yank_reason,
+        }
 
 
 @dataclass
@@ -116,6 +203,7 @@ class InstallRecord:
         installed_at: When installed.
         uninstalled_at: When uninstalled (if applicable).
         active: Whether the install is currently active.
+        signature_verified: Whether the package signature was verified.
     """
 
     install_id: str = field(default_factory=lambda: str(uuid.uuid4())[:12])
@@ -125,6 +213,7 @@ class InstallRecord:
     installed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     uninstalled_at: datetime | None = None
     active: bool = True
+    signature_verified: bool = False
 
 
 @dataclass
@@ -132,8 +221,8 @@ class ToolListing:
     """A tool's listing in the marketplace.
 
     Combines the tool's identity, security manifest, certification
-    status, reviews, and install statistics into a single discoverable
-    record.
+    status, reviews, version history, and install statistics into a
+    single discoverable record.
 
     Attributes:
         listing_id: Unique listing identifier.
@@ -147,6 +236,8 @@ class ToolListing:
         attestation: Current certification attestation.
         status: Publishing status.
         reviews: User reviews.
+        version_history: All published versions.
+        moderation_log: Moderation decisions.
         install_count: Total installs.
         active_installs: Currently active installs.
         created_at: When first published.
@@ -169,6 +260,8 @@ class ToolListing:
     attestation: ToolAttestation | None = None
     status: PublishStatus = PublishStatus.DRAFT
     reviews: list[ToolReview] = field(default_factory=list)
+    version_history: list[ToolVersion] = field(default_factory=list)
+    moderation_log: list[ModerationDecision] = field(default_factory=list)
     install_count: int = 0
     active_installs: int = 0
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -203,6 +296,19 @@ class ToolListing:
         """Number of reviews."""
         return len(self.reviews)
 
+    @property
+    def latest_version(self) -> ToolVersion | None:
+        """Most recently published non-yanked version."""
+        for v in reversed(self.version_history):
+            if not v.yanked:
+                return v
+        return None
+
+    @property
+    def available_versions(self) -> list[str]:
+        """List of non-yanked version strings."""
+        return [v.version for v in self.version_history if not v.yanked]
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
         return {
@@ -226,6 +332,8 @@ class ToolListing:
             "source_url": self.source_url,
             "license": self.license,
             "tags": sorted(self.tags),
+            "version_count": len(self.version_history),
+            "available_versions": self.available_versions,
         }
 
     def to_summary_dict(self) -> dict[str, Any]:
@@ -254,12 +362,58 @@ class SortBy(Enum):
     RECENTLY_UPDATED = "recently_updated"
 
 
+# ── Signature verification helpers ────────────────────────────
+
+
+def compute_manifest_digest(manifest: SecurityManifest) -> str:
+    """Compute a SHA-256 digest of a manifest for integrity verification."""
+    payload = json.dumps(manifest.to_dict(), sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def verify_attestation_signature(
+    attestation: ToolAttestation,
+    manifest: SecurityManifest | None = None,
+) -> tuple[bool, str]:
+    """Verify an attestation's integrity.
+
+    Checks:
+    1. Attestation is currently valid (not expired/revoked).
+    2. If a manifest is provided, its digest matches the attestation.
+    3. The attestation has a non-empty signature.
+
+    Returns:
+        (passed, reason) tuple.
+    """
+    if not attestation.is_valid():
+        return False, f"Attestation status is {attestation.status.value}, not valid"
+
+    if not attestation.signature:
+        return False, "Attestation has no signature"
+
+    if manifest is not None and attestation.manifest_digest:
+        expected_digest = compute_manifest_digest(manifest)
+        if attestation.manifest_digest != expected_digest:
+            return False, (
+                f"Manifest digest mismatch: attestation expects "
+                f"{attestation.manifest_digest[:16]}..., "
+                f"got {expected_digest[:16]}..."
+            )
+
+    return True, "Signature verification passed"
+
+
+# ── Main marketplace class ────────────────────────────────────
+
+
 class ToolMarketplace:
     """Tool-level marketplace for publishing, discovering, and installing tools.
 
-    Integrates with the TrustRegistry for trust scores and the
-    CertificationPipeline for attestation. Supports rich search,
-    user reviews, and install tracking.
+    Integrates with the TrustRegistry for trust scores, the
+    CertificationPipeline for attestation, and an optional
+    StorageBackend for persistence. Supports rich search,
+    user reviews, install tracking, version history, moderation,
+    and signature verification.
 
     Example::
 
@@ -283,12 +437,19 @@ class ToolMarketplace:
             min_certification=CertificationLevel.BASIC,
         )
 
-        # Install a tool
-        record = marketplace.install(listing.listing_id, installer_id="user-1")
+        # Install a tool (with signature verification)
+        record = marketplace.install(
+            listing.listing_id,
+            installer_id="user-1",
+            verify_signature=True,
+        )
 
     Args:
         trust_registry: Optional TrustRegistry for trust score lookups.
         event_bus: Optional event bus for marketplace events.
+        backend: Optional storage backend for persistence.
+        marketplace_id: Identifier for this marketplace instance.
+        require_moderation: If True, new listings start as PENDING_REVIEW.
     """
 
     def __init__(
@@ -296,12 +457,89 @@ class ToolMarketplace:
         *,
         trust_registry: TrustRegistry | None = None,
         event_bus: SecurityEventBus | None = None,
+        backend: StorageBackend | None = None,
+        marketplace_id: str = "default",
+        require_moderation: bool = False,
     ) -> None:
         self._trust_registry = trust_registry
         self._event_bus = event_bus
+        self._backend = backend
+        self._marketplace_id = marketplace_id
+        self._require_moderation = require_moderation
         self._listings: dict[str, ToolListing] = {}  # keyed by listing_id
         self._name_index: dict[str, str] = {}  # tool_name → listing_id
         self._installs: dict[str, list[InstallRecord]] = {}  # listing_id → installs
+
+        if self._backend is not None:
+            self._load_from_backend()
+
+    def _load_from_backend(self) -> None:
+        """Load marketplace state from persistence."""
+        if self._backend is None:
+            return
+        try:
+            data = self._backend.load_tool_marketplace(self._marketplace_id)
+            for listing_id, listing_data in data.get("listings", {}).items():
+                listing = self._deserialize_listing(listing_data)
+                self._listings[listing_id] = listing
+                self._name_index[listing.tool_name] = listing_id
+            logger.debug(
+                "Loaded %d tool listings from backend", len(self._listings)
+            )
+        except Exception:
+            logger.debug("Failed to load tool marketplace from backend", exc_info=True)
+
+    def _persist_listing(self, listing: ToolListing) -> None:
+        """Persist a listing to the backend."""
+        if self._backend is None:
+            return
+        try:
+            self._backend.save_tool_listing(
+                self._marketplace_id,
+                listing.listing_id,
+                listing.to_dict(),
+            )
+        except Exception:
+            logger.debug("Failed to persist listing %s", listing.listing_id, exc_info=True)
+
+    def _remove_persisted_listing(self, listing_id: str) -> None:
+        """Remove a listing from the backend."""
+        if self._backend is None:
+            return
+        try:
+            self._backend.remove_tool_listing(self._marketplace_id, listing_id)
+        except Exception:
+            logger.debug("Failed to remove listing %s", listing_id, exc_info=True)
+
+    @staticmethod
+    def _deserialize_listing(data: dict[str, Any]) -> ToolListing:
+        """Reconstruct a ToolListing from a persisted dict."""
+        listing = ToolListing(
+            listing_id=data.get("listing_id", str(uuid.uuid4())),
+            tool_name=data.get("tool_name", ""),
+            display_name=data.get("display_name", ""),
+            description=data.get("description", ""),
+            version=data.get("version", ""),
+            author=data.get("author", ""),
+            status=PublishStatus(data.get("status", "draft")),
+            install_count=data.get("install_count", 0),
+            active_installs=data.get("active_installs", 0),
+            homepage_url=data.get("homepage_url", ""),
+            source_url=data.get("source_url", ""),
+            license=data.get("license", ""),
+        )
+        # Restore categories
+        for cat_val in data.get("categories", []):
+            try:
+                listing.categories.add(ToolCategory(cat_val))
+            except ValueError:
+                pass
+        # Restore tags
+        for tag in data.get("tags", []):
+            listing.tags.add(tag)
+        return listing
+
+    # ── Publishing ────────────────────────────────────────────
 
     def publish(
         self,
@@ -320,11 +558,15 @@ class ToolMarketplace:
         tool_license: str = "",
         tags: set[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        changelog: str = "",
     ) -> ToolListing:
         """Publish a tool to the marketplace.
 
         If a listing already exists for this tool_name, it is updated
         (version bump). Otherwise a new listing is created.
+
+        When ``require_moderation`` is True, new listings start as
+        PENDING_REVIEW regardless of the ``status`` parameter.
 
         Args:
             tool_name: MCP tool name (unique identifier).
@@ -341,6 +583,7 @@ class ToolMarketplace:
             tool_license: SPDX license identifier.
             tags: Searchable keywords.
             metadata: Additional data.
+            changelog: What changed in this version.
 
         Returns:
             The created or updated ToolListing.
@@ -349,6 +592,7 @@ class ToolMarketplace:
 
         if existing_id is not None:
             listing = self._listings[existing_id]
+            old_version = listing.version
             listing.display_name = display_name or listing.display_name
             listing.description = description or listing.description
             listing.version = version or listing.version
@@ -369,9 +613,31 @@ class ToolMarketplace:
                 listing.metadata.update(metadata)
             listing.updated_at = datetime.now(timezone.utc)
 
+            # Record version history if version changed
+            if version and version != old_version:
+                manifest_digest = ""
+                if manifest is not None:
+                    manifest_digest = compute_manifest_digest(manifest)
+                attestation_id = ""
+                if attestation is not None:
+                    attestation_id = attestation.attestation_id
+                tv = ToolVersion(
+                    version=version,
+                    manifest_digest=manifest_digest,
+                    attestation_id=attestation_id,
+                    changelog=changelog,
+                )
+                listing.version_history.append(tv)
+
+            self._persist_listing(listing)
             self._emit_event("TOOL_UPDATED", listing)
             logger.info("Tool listing updated: %s (v%s)", tool_name, version)
             return listing
+
+        # Determine initial status
+        effective_status = status
+        if self._require_moderation and status == PublishStatus.PUBLISHED:
+            effective_status = PublishStatus.PENDING_REVIEW
 
         listing = ToolListing(
             tool_name=tool_name,
@@ -382,7 +648,7 @@ class ToolMarketplace:
             categories=categories or set(),
             manifest=manifest,
             attestation=attestation,
-            status=status,
+            status=effective_status,
             homepage_url=homepage_url,
             source_url=source_url,
             license=tool_license,
@@ -390,11 +656,27 @@ class ToolMarketplace:
             metadata=metadata or {},
         )
 
+        # Record initial version
+        if version:
+            manifest_digest = ""
+            if manifest is not None:
+                manifest_digest = compute_manifest_digest(manifest)
+            attestation_id = ""
+            if attestation is not None:
+                attestation_id = attestation.attestation_id
+            tv = ToolVersion(
+                version=version,
+                manifest_digest=manifest_digest,
+                attestation_id=attestation_id,
+                changelog=changelog or "Initial release",
+            )
+            listing.version_history.append(tv)
+
         self._listings[listing.listing_id] = listing
         self._name_index[tool_name] = listing.listing_id
         self._installs[listing.listing_id] = []
 
-        # Also register in the trust registry if available
+        # Register in the trust registry if available
         if self._trust_registry is not None:
             self._trust_registry.register(
                 tool_name,
@@ -404,6 +686,7 @@ class ToolMarketplace:
                 tags=tags,
             )
 
+        self._persist_listing(listing)
         self._emit_event("TOOL_PUBLISHED", listing)
         logger.info("Tool published: %s (v%s)", tool_name, version)
         return listing
@@ -424,8 +707,11 @@ class ToolMarketplace:
         if self._trust_registry is not None:
             self._trust_registry.unregister(listing.tool_name)
 
+        self._remove_persisted_listing(listing_id)
         self._emit_event("TOOL_UNPUBLISHED", listing)
         return True
+
+    # ── Lookup ────────────────────────────────────────────────
 
     def get(self, listing_id: str) -> ToolListing | None:
         """Get a listing by ID."""
@@ -437,6 +723,8 @@ class ToolMarketplace:
         if listing_id is None:
             return None
         return self._listings.get(listing_id)
+
+    # ── Search ────────────────────────────────────────────────
 
     def search(
         self,
@@ -478,11 +766,9 @@ class ToolMarketplace:
         results: list[ToolListing] = []
 
         for listing in self._listings.values():
-            # Status filter
             if listing.status != effective_status:
                 continue
 
-            # Text search
             if query is not None:
                 q_lower = query.lower()
                 searchable = (
@@ -492,11 +778,9 @@ class ToolMarketplace:
                 if q_lower not in searchable:
                     continue
 
-            # Category filter (any match)
             if categories and not categories.intersection(listing.categories):
                 continue
 
-            # Certification filters
             if certified_only and not listing.is_certified:
                 continue
             if min_certification is not None:
@@ -505,28 +789,24 @@ class ToolMarketplace:
                 ):
                     continue
 
-            # Author filter
             if author is not None and listing.author != author:
                 continue
 
-            # Tags filter (any match)
             if tags and not tags.intersection(listing.tags):
                 continue
 
-            # Rating filter
             if min_rating is not None and listing.average_rating < min_rating:
                 continue
 
-            # Installs filter
             if min_installs is not None and listing.install_count < min_installs:
                 continue
 
             results.append(listing)
 
-        # Sort
         results = self._sort_results(results, sort_by)
-
         return results[:limit]
+
+    # ── Reviews ───────────────────────────────────────────────
 
     def add_review(
         self,
@@ -557,6 +837,15 @@ class ToolMarketplace:
         listing.reviews.append(review)
         listing.updated_at = datetime.now(timezone.utc)
 
+        # Persist review
+        if self._backend is not None:
+            try:
+                self._backend.append_tool_review(
+                    self._marketplace_id, listing_id, review.to_dict()
+                )
+            except Exception:
+                logger.debug("Failed to persist review", exc_info=True)
+
         # Feed into trust registry reputation
         if self._trust_registry is not None:
             from fastmcp.server.security.registry.reputation import ReputationTracker
@@ -577,9 +866,10 @@ class ToolMarketplace:
         listing = self._listings.get(listing_id)
         if listing is None:
             return []
-        # Most recent first
         reviews = sorted(listing.reviews, key=lambda r: r.created_at, reverse=True)
         return reviews[:limit]
+
+    # ── Installation (with signature verification) ────────────
 
     def install(
         self,
@@ -587,19 +877,67 @@ class ToolMarketplace:
         *,
         installer_id: str = "",
         version: str | None = None,
+        verify_signature: bool = False,
     ) -> InstallRecord | None:
         """Record a tool installation.
 
-        Returns the install record if the listing was found, None otherwise.
+        When ``verify_signature`` is True, the attestation's integrity
+        is checked before allowing the install. If verification fails,
+        None is returned.
+
+        Args:
+            listing_id: The listing to install.
+            installer_id: Who is installing.
+            version: Specific version to install (defaults to latest).
+            verify_signature: Whether to verify the attestation signature.
+
+        Returns:
+            The install record, or None if the listing was not found
+            or signature verification failed.
         """
         listing = self._listings.get(listing_id)
         if listing is None:
             return None
 
+        signature_verified = False
+
+        if verify_signature:
+            if listing.attestation is None:
+                logger.warning(
+                    "Install rejected: no attestation for %s", listing.tool_name
+                )
+                self._emit_event("INSTALL_REJECTED", listing)
+                return None
+
+            passed, reason = verify_attestation_signature(
+                listing.attestation, listing.manifest
+            )
+            if not passed:
+                logger.warning(
+                    "Install rejected for %s: %s", listing.tool_name, reason
+                )
+                self._emit_event("INSTALL_REJECTED", listing)
+                return None
+            signature_verified = True
+
+        # Resolve version
+        install_version = version or listing.version
+        if version:
+            # Check version exists and is not yanked
+            version_record = self.get_version(listing_id, version)
+            if version_record is not None and version_record.yanked:
+                logger.warning(
+                    "Install rejected: version %s is yanked for %s",
+                    version,
+                    listing.tool_name,
+                )
+                return None
+
         record = InstallRecord(
             tool_listing_id=listing_id,
             installer_id=installer_id,
-            version=version or listing.version,
+            version=install_version,
+            signature_verified=signature_verified,
         )
 
         if listing_id not in self._installs:
@@ -609,6 +947,23 @@ class ToolMarketplace:
         listing.install_count += 1
         listing.active_installs += 1
 
+        # Persist install
+        if self._backend is not None:
+            try:
+                self._backend.append_tool_install(
+                    self._marketplace_id,
+                    listing_id,
+                    {
+                        "install_id": record.install_id,
+                        "installer_id": record.installer_id,
+                        "version": record.version,
+                        "installed_at": record.installed_at.isoformat(),
+                        "signature_verified": record.signature_verified,
+                    },
+                )
+            except Exception:
+                logger.debug("Failed to persist install record", exc_info=True)
+
         # Report successful installation to trust registry
         if self._trust_registry is not None:
             from fastmcp.server.security.registry.reputation import ReputationTracker
@@ -616,6 +971,7 @@ class ToolMarketplace:
             tracker = ReputationTracker(registry=self._trust_registry)
             tracker.report_success(listing.tool_name, actor_id=installer_id)
 
+        self._emit_event("TOOL_INSTALLED", listing)
         return record
 
     def uninstall(
@@ -650,6 +1006,158 @@ class ToolMarketplace:
             return [r for r in installs if r.active]
         return list(installs)
 
+    # ── Version management ────────────────────────────────────
+
+    def get_version_history(self, listing_id: str) -> list[ToolVersion]:
+        """Get the version history for a listing."""
+        listing = self._listings.get(listing_id)
+        if listing is None:
+            return []
+        return list(listing.version_history)
+
+    def get_version(self, listing_id: str, version: str) -> ToolVersion | None:
+        """Get a specific version record."""
+        listing = self._listings.get(listing_id)
+        if listing is None:
+            return None
+        for v in listing.version_history:
+            if v.version == version:
+                return v
+        return None
+
+    def yank_version(
+        self,
+        listing_id: str,
+        version: str,
+        *,
+        reason: str = "",
+    ) -> bool:
+        """Yank (pull) a specific version, preventing new installs.
+
+        Returns True if the version was found and yanked.
+        """
+        listing = self._listings.get(listing_id)
+        if listing is None:
+            return False
+
+        for v in listing.version_history:
+            if v.version == version:
+                v.yanked = True
+                v.yank_reason = reason
+                listing.updated_at = datetime.now(timezone.utc)
+                self._persist_listing(listing)
+                logger.info(
+                    "Version %s yanked for %s: %s",
+                    version,
+                    listing.tool_name,
+                    reason,
+                )
+                return True
+        return False
+
+    def unyank_version(self, listing_id: str, version: str) -> bool:
+        """Restore a yanked version.
+
+        Returns True if the version was found and restored.
+        """
+        listing = self._listings.get(listing_id)
+        if listing is None:
+            return False
+
+        for v in listing.version_history:
+            if v.version == version:
+                v.yanked = False
+                v.yank_reason = ""
+                listing.updated_at = datetime.now(timezone.utc)
+                self._persist_listing(listing)
+                return True
+        return False
+
+    # ── Moderation ────────────────────────────────────────────
+
+    @property
+    def require_moderation(self) -> bool:
+        """Whether new listings require moderation before publishing."""
+        return self._require_moderation
+
+    def get_pending_review(self) -> list[ToolListing]:
+        """Get all listings awaiting moderation."""
+        return [
+            listing
+            for listing in self._listings.values()
+            if listing.status == PublishStatus.PENDING_REVIEW
+        ]
+
+    def moderate(
+        self,
+        listing_id: str,
+        *,
+        moderator_id: str,
+        action: ModerationAction,
+        reason: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> ModerationDecision | None:
+        """Apply a moderation decision to a listing.
+
+        Transitions the listing status based on the action:
+          - APPROVE → PUBLISHED
+          - REJECT → REJECTED
+          - SUSPEND → SUSPENDED
+          - UNSUSPEND → PUBLISHED
+          - DEPRECATE → DEPRECATED
+          - REQUEST_CHANGES → DRAFT
+
+        Returns the decision if the listing was found, None otherwise.
+        """
+        listing = self._listings.get(listing_id)
+        if listing is None:
+            return None
+
+        decision = ModerationDecision(
+            listing_id=listing_id,
+            moderator_id=moderator_id,
+            action=action,
+            reason=reason,
+            metadata=metadata or {},
+        )
+
+        # Status transitions
+        status_map: dict[ModerationAction, PublishStatus] = {
+            ModerationAction.APPROVE: PublishStatus.PUBLISHED,
+            ModerationAction.REJECT: PublishStatus.REJECTED,
+            ModerationAction.SUSPEND: PublishStatus.SUSPENDED,
+            ModerationAction.UNSUSPEND: PublishStatus.PUBLISHED,
+            ModerationAction.DEPRECATE: PublishStatus.DEPRECATED,
+            ModerationAction.REQUEST_CHANGES: PublishStatus.DRAFT,
+        }
+
+        new_status = status_map.get(action)
+        if new_status is not None:
+            listing.status = new_status
+
+        listing.moderation_log.append(decision)
+        listing.updated_at = datetime.now(timezone.utc)
+
+        self._persist_listing(listing)
+        self._emit_event(f"TOOL_MODERATED_{action.value.upper()}", listing)
+        logger.info(
+            "Tool %s moderated: %s by %s — %s",
+            listing.tool_name,
+            action.value,
+            moderator_id,
+            reason,
+        )
+        return decision
+
+    def get_moderation_log(self, listing_id: str) -> list[ModerationDecision]:
+        """Get the moderation history for a listing."""
+        listing = self._listings.get(listing_id)
+        if listing is None:
+            return []
+        return list(listing.moderation_log)
+
+    # ── Status management ─────────────────────────────────────
+
     def update_status(
         self, listing_id: str, status: PublishStatus
     ) -> bool:
@@ -662,6 +1170,7 @@ class ToolMarketplace:
             return False
         listing.status = status
         listing.updated_at = datetime.now(timezone.utc)
+        self._persist_listing(listing)
         return True
 
     def update_attestation(
@@ -683,7 +1192,10 @@ class ToolMarketplace:
         if self._trust_registry is not None:
             self._trust_registry.update_attestation(listing.tool_name, attestation)
 
+        self._persist_listing(listing)
         return True
+
+    # ── Discovery helpers ─────────────────────────────────────
 
     def get_featured(self, *, limit: int = 10) -> list[ToolListing]:
         """Get featured/trending tools.
@@ -733,6 +1245,7 @@ class ToolMarketplace:
         total = len(self._listings)
         published = sum(1 for l in self._listings.values() if l.status == PublishStatus.PUBLISHED)
         certified = sum(1 for l in self._listings.values() if l.is_certified)
+        pending = sum(1 for l in self._listings.values() if l.status == PublishStatus.PENDING_REVIEW)
         total_installs = sum(l.install_count for l in self._listings.values())
         total_reviews = sum(l.review_count for l in self._listings.values())
 
@@ -746,12 +1259,13 @@ class ToolMarketplace:
             "total_listings": total,
             "published_listings": published,
             "certified_tools": certified,
+            "pending_review": pending,
             "total_installs": total_installs,
             "total_reviews": total_reviews,
             "categories": category_counts,
         }
 
-    # ── Sorting ───────────────────────────────────────────────────────
+    # ── Sorting ───────────────────────────────────────────────
 
     def _sort_results(
         self, results: list[ToolListing], sort_by: SortBy
@@ -792,7 +1306,7 @@ class ToolMarketplace:
             return 0.0
         return score.overall
 
-    # ── Event emission ────────────────────────────────────────────────
+    # ── Event emission ────────────────────────────────────────
 
     def _emit_event(self, action: str, listing: ToolListing) -> None:
         """Emit a marketplace event."""
@@ -809,12 +1323,21 @@ class ToolMarketplace:
             "TOOL_PUBLISHED": SecurityEventType.SERVER_REGISTERED,
             "TOOL_UPDATED": SecurityEventType.TRUST_CHANGED,
             "TOOL_UNPUBLISHED": SecurityEventType.SERVER_UNREGISTERED,
+            "TOOL_INSTALLED": SecurityEventType.SERVER_REGISTERED,
+            "INSTALL_REJECTED": SecurityEventType.TRUST_CHANGED,
         }
+
+        # For moderation events, use TRUST_CHANGED as a sensible default
+        event_type = event_map.get(action, SecurityEventType.TRUST_CHANGED)
+
+        severity = AlertSeverity.INFO
+        if "REJECTED" in action or "SUSPEND" in action:
+            severity = AlertSeverity.WARNING
 
         self._event_bus.emit(
             SecurityEvent(
-                event_type=event_map.get(action, SecurityEventType.SERVER_REGISTERED),
-                severity=AlertSeverity.INFO,
+                event_type=event_type,
+                severity=severity,
                 layer="tool_marketplace",
                 message=f"Tool marketplace: {action} — {listing.tool_name} v{listing.version}",
                 resource_id=listing.listing_id,

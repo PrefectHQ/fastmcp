@@ -1,7 +1,8 @@
 """Marketplace Data Bridge — generates frontend-ready JSON from ToolMarketplace.
 
 Converts ToolMarketplace state into the data structures consumed by the
-SecureMCP Marketplace React UI. Supports full export and per-listing detail.
+SecureMCP Marketplace React UI. Supports full export, per-listing detail,
+version history, and moderation queue.
 
 Usage:
     bridge = MarketplaceDataBridge(marketplace=marketplace, registry=registry)
@@ -23,7 +24,7 @@ from fastmcp.server.security.gateway.tool_marketplace import (
     ToolMarketplace,
 )
 
-# ── Colour palette for categories ───────────────────────────────
+# ── Colour palette for categories ───────────────────────────
 
 _CATEGORY_COLORS: dict[str, str] = {
     "data_access": "#6366f1",
@@ -80,7 +81,7 @@ def _stars_label(rating: float) -> str:
     return f"{rating:.1f}"
 
 
-# ── Data bridge ─────────────────────────────────────────────────
+# ── Data bridge ─────────────────────────────────────────────
 
 
 @dataclass
@@ -97,7 +98,7 @@ class MarketplaceDataBridge:
     marketplace: ToolMarketplace
     trust_registry: Any = None  # TrustRegistry, but avoid circular import
 
-    # ── Per-listing card data ─────────────────────────────────
+    # ── Per-listing card data ─────────────────────────────
 
     def _listing_to_card(self, listing: ToolListing) -> dict[str, Any]:
         """Convert a single ToolListing to a UI card dict."""
@@ -134,16 +135,18 @@ class MarketplaceDataBridge:
             "created_at": listing.created_at.isoformat(),
             "updated_at": listing.updated_at.isoformat(),
             "updated_relative": _relative_time(listing.updated_at),
+            "version_count": len(listing.version_history),
+            "available_versions": listing.available_versions,
         }
 
-    # ── Featured / trending ───────────────────────────────────
+    # ── Featured / trending ───────────────────────────────
 
     def build_featured(self, limit: int = 6) -> list[dict[str, Any]]:
         """Build featured tools list."""
         featured = self.marketplace.get_featured(limit=limit)
         return [self._listing_to_card(l) for l in featured]
 
-    # ── All listings (paginated) ──────────────────────────────
+    # ── All listings (paginated) ──────────────────────────
 
     def build_listings(
         self,
@@ -163,7 +166,7 @@ class MarketplaceDataBridge:
         )
         return [self._listing_to_card(l) for l in results]
 
-    # ── Category breakdown ────────────────────────────────────
+    # ── Category breakdown ────────────────────────────────
 
     def build_category_breakdown(self) -> list[dict[str, Any]]:
         """Build category distribution for charts."""
@@ -182,7 +185,7 @@ class MarketplaceDataBridge:
             )
         return result
 
-    # ── Statistics banner ─────────────────────────────────────
+    # ── Statistics banner ─────────────────────────────────
 
     def build_stats(self) -> dict[str, Any]:
         """Build marketplace statistics for the header."""
@@ -191,12 +194,13 @@ class MarketplaceDataBridge:
             "total_listings": stats.get("total_listings", 0),
             "published": stats.get("published_listings", 0),
             "certified": stats.get("certified_tools", 0),
+            "pending_review": stats.get("pending_review", 0),
             "total_installs": stats.get("total_installs", 0),
             "total_reviews": stats.get("total_reviews", 0),
             "categories": len(stats.get("categories", {})),
         }
 
-    # ── Reviews for a listing ─────────────────────────────────
+    # ── Reviews for a listing ─────────────────────────────
 
     def build_reviews(self, listing_id: str, limit: int = 20) -> list[dict[str, Any]]:
         """Build review cards for a specific listing."""
@@ -214,7 +218,47 @@ class MarketplaceDataBridge:
             for r in reviews
         ]
 
-    # ── Listing detail page ───────────────────────────────────
+    # ── Version history for a listing ─────────────────────
+
+    def build_version_history(self, listing_id: str) -> list[dict[str, Any]]:
+        """Build version history for a listing detail page."""
+        versions = self.marketplace.get_version_history(listing_id)
+        return [
+            {
+                "version": v.version,
+                "changelog": v.changelog,
+                "published_at": v.published_at.isoformat(),
+                "published_relative": _relative_time(v.published_at),
+                "yanked": v.yanked,
+                "yank_reason": v.yank_reason,
+                "manifest_digest": v.manifest_digest[:16] + "..." if v.manifest_digest else "",
+            }
+            for v in reversed(versions)  # newest first
+        ]
+
+    # ── Moderation queue ──────────────────────────────────
+
+    def build_moderation_queue(self) -> list[dict[str, Any]]:
+        """Build the moderation queue for moderator UI."""
+        pending = self.marketplace.get_pending_review()
+        return [self._listing_to_card(l) for l in pending]
+
+    def build_moderation_log(self, listing_id: str) -> list[dict[str, Any]]:
+        """Build moderation history for a listing."""
+        decisions = self.marketplace.get_moderation_log(listing_id)
+        return [
+            {
+                "decision_id": d.decision_id,
+                "moderator": d.moderator_id,
+                "action": d.action.value,
+                "reason": d.reason,
+                "date": _relative_time(d.created_at),
+                "created_at": d.created_at.isoformat(),
+            }
+            for d in reversed(decisions)  # newest first
+        ]
+
+    # ── Listing detail page ───────────────────────────────
 
     def build_listing_detail(self, listing_id: str) -> dict[str, Any] | None:
         """Build full detail view for a single listing."""
@@ -224,12 +268,14 @@ class MarketplaceDataBridge:
 
         card = self._listing_to_card(listing)
         card["reviews"] = self.build_reviews(listing_id)
+        card["version_history"] = self.build_version_history(listing_id)
+        card["moderation_log"] = self.build_moderation_log(listing_id)
         card["installs"] = self.marketplace.get_installs(listing_id)
         card["install_records"] = len(card["installs"])
         del card["installs"]  # Don't expose raw install records to frontend
         return card
 
-    # ── Full export ───────────────────────────────────────────
+    # ── Full export ───────────────────────────────────────
 
     def export(self) -> dict[str, Any]:
         """Export all marketplace data as a single dict.
@@ -241,6 +287,7 @@ class MarketplaceDataBridge:
                 "featured": [...],
                 "listings": [...],
                 "categories": [...],
+                "moderation_queue": [...],
                 "generated_at": "...",
             }
         """
@@ -249,6 +296,7 @@ class MarketplaceDataBridge:
             "featured": self.build_featured(),
             "listings": self.build_listings(),
             "categories": self.build_category_breakdown(),
+            "moderation_queue": self.build_moderation_queue(),
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 

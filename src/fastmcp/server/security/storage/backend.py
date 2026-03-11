@@ -208,3 +208,39 @@ class StorageBackend(Protocol):
     ) -> dict[str, Any] | None:
         """Load version history for a policy set. Returns None if not found."""
         ...
+
+    # ── Tool Marketplace ──────────────────────────────────────────
+
+    def save_tool_listing(
+        self, mp_id: str, listing_id: str, data: dict[str, Any]
+    ) -> None:
+        """Persist or update a tool listing."""
+        ...
+
+    def remove_tool_listing(self, mp_id: str, listing_id: str) -> None:
+        """Remove a tool listing."""
+        ...
+
+    def append_tool_install(
+        self, mp_id: str, listing_id: str, data: dict[str, Any]
+    ) -> None:
+        """Persist a tool install record (append-only)."""
+        ...
+
+    def append_tool_review(
+        self, mp_id: str, listing_id: str, data: dict[str, Any]
+    ) -> None:
+        """Persist a tool review (append-only)."""
+        ...
+
+    def load_tool_marketplace(self, mp_id: str) -> dict[str, Any]:
+        """Load tool marketplace state.
+
+        Returns::
+
+            {
+                "listings": {listing_id: data, ...},
+                "installs": {listing_id: [record, ...], ...},
+            }
+        """
+        ...

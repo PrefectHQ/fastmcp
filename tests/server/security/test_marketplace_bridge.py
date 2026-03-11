@@ -125,7 +125,7 @@ class TestEmptyMarketplace:
     def test_export_has_all_keys(self, empty_marketplace):
         bridge = MarketplaceDataBridge(marketplace=empty_marketplace)
         data = bridge.export()
-        expected = {"stats", "featured", "listings", "categories", "generated_at"}
+        expected = {"stats", "featured", "listings", "categories", "moderation_queue", "generated_at"}
         assert expected == set(data.keys())
 
     def test_empty_listings(self, empty_marketplace):

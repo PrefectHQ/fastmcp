@@ -175,6 +175,122 @@ class SecurityAPI:
             return {"error": "Listing not found", "status": 404}
         return detail
 
+    def marketplace_install(
+        self,
+        listing_id: str,
+        *,
+        installer_id: str = "",
+        version: str | None = None,
+        verify_signature: bool = False,
+    ) -> dict[str, Any]:
+        """Install a tool from the marketplace."""
+        if self.marketplace is None:
+            return {"error": "Marketplace not configured", "status": 503}
+
+        record = self.marketplace.install(
+            listing_id,
+            installer_id=installer_id,
+            version=version,
+            verify_signature=verify_signature,
+        )
+        if record is None:
+            return {"error": "Install failed — listing not found or signature verification failed", "status": 400}
+
+        return {
+            "install_id": record.install_id,
+            "listing_id": listing_id,
+            "version": record.version,
+            "signature_verified": record.signature_verified,
+            "installed_at": record.installed_at.isoformat(),
+        }
+
+    def marketplace_uninstall(
+        self,
+        listing_id: str,
+        *,
+        installer_id: str = "",
+    ) -> dict[str, Any]:
+        """Uninstall a tool."""
+        if self.marketplace is None:
+            return {"error": "Marketplace not configured", "status": 503}
+
+        success = self.marketplace.uninstall(listing_id, installer_id=installer_id)
+        return {"success": success, "listing_id": listing_id}
+
+    def marketplace_moderate(
+        self,
+        listing_id: str,
+        *,
+        moderator_id: str,
+        action: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """Moderate a tool listing."""
+        if self.marketplace is None:
+            return {"error": "Marketplace not configured", "status": 503}
+
+        from fastmcp.server.security.gateway.tool_marketplace import ModerationAction
+
+        try:
+            mod_action = ModerationAction(action)
+        except ValueError:
+            return {"error": f"Invalid moderation action: {action}", "status": 400}
+
+        decision = self.marketplace.moderate(
+            listing_id,
+            moderator_id=moderator_id,
+            action=mod_action,
+            reason=reason,
+        )
+        if decision is None:
+            return {"error": "Listing not found", "status": 404}
+
+        return decision.to_dict()
+
+    def marketplace_moderation_queue(self) -> dict[str, Any]:
+        """Get the moderation queue."""
+        if self.marketplace is None:
+            return {"error": "Marketplace not configured", "status": 503}
+
+        from fastmcp.server.security.gateway.marketplace_bridge import (
+            MarketplaceDataBridge,
+        )
+
+        bridge = MarketplaceDataBridge(
+            marketplace=self.marketplace,
+            trust_registry=self.registry,
+        )
+        return {"queue": bridge.build_moderation_queue()}
+
+    def marketplace_version_history(self, listing_id: str) -> dict[str, Any]:
+        """Get version history for a listing."""
+        if self.marketplace is None:
+            return {"error": "Marketplace not configured", "status": 503}
+
+        from fastmcp.server.security.gateway.marketplace_bridge import (
+            MarketplaceDataBridge,
+        )
+
+        bridge = MarketplaceDataBridge(
+            marketplace=self.marketplace,
+            trust_registry=self.registry,
+        )
+        return {"versions": bridge.build_version_history(listing_id)}
+
+    def marketplace_yank_version(
+        self,
+        listing_id: str,
+        version: str,
+        *,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """Yank a specific version."""
+        if self.marketplace is None:
+            return {"error": "Marketplace not configured", "status": 503}
+
+        success = self.marketplace.yank_version(listing_id, version, reason=reason)
+        return {"success": success, "listing_id": listing_id, "version": version}
+
     # ── Compliance ────────────────────────────────────────────
 
     def get_compliance_report(
@@ -635,6 +751,70 @@ def mount_security_routes(
     async def marketplace_detail_endpoint(request: Request) -> JSONResponse:
         lid = request.path_params.get("listing_id", "")
         return JSONResponse(api.get_marketplace_listing(lid))
+
+    @server.custom_route(f"{prefix}/marketplace/{{listing_id}}/install", methods=["POST"])
+    async def marketplace_install_endpoint(request: Request) -> JSONResponse:
+        lid = request.path_params.get("listing_id", "")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        return JSONResponse(
+            api.marketplace_install(
+                lid,
+                installer_id=body.get("installer_id", ""),
+                version=body.get("version"),
+                verify_signature=body.get("verify_signature", False),
+            )
+        )
+
+    @server.custom_route(f"{prefix}/marketplace/{{listing_id}}/uninstall", methods=["POST"])
+    async def marketplace_uninstall_endpoint(request: Request) -> JSONResponse:
+        lid = request.path_params.get("listing_id", "")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        return JSONResponse(
+            api.marketplace_uninstall(lid, installer_id=body.get("installer_id", ""))
+        )
+
+    @server.custom_route(f"{prefix}/marketplace/{{listing_id}}/moderate", methods=["POST"])
+    async def marketplace_moderate_endpoint(request: Request) -> JSONResponse:
+        lid = request.path_params.get("listing_id", "")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        return JSONResponse(
+            api.marketplace_moderate(
+                lid,
+                moderator_id=body.get("moderator_id", ""),
+                action=body.get("action", ""),
+                reason=body.get("reason", ""),
+            )
+        )
+
+    @server.custom_route(f"{prefix}/marketplace/moderation", methods=["GET"])
+    async def marketplace_moderation_queue_endpoint(request: Request) -> JSONResponse:
+        return JSONResponse(api.marketplace_moderation_queue())
+
+    @server.custom_route(f"{prefix}/marketplace/{{listing_id}}/versions", methods=["GET"])
+    async def marketplace_versions_endpoint(request: Request) -> JSONResponse:
+        lid = request.path_params.get("listing_id", "")
+        return JSONResponse(api.marketplace_version_history(lid))
+
+    @server.custom_route(f"{prefix}/marketplace/{{listing_id}}/versions/{{version}}/yank", methods=["POST"])
+    async def marketplace_yank_endpoint(request: Request) -> JSONResponse:
+        lid = request.path_params.get("listing_id", "")
+        ver = request.path_params.get("version", "")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        return JSONResponse(
+            api.marketplace_yank_version(lid, ver, reason=body.get("reason", ""))
+        )
 
     # Compliance
     @server.custom_route(f"{prefix}/compliance", methods=["GET"])
