@@ -31,10 +31,11 @@ SecureMCP is organized into composable layers that can be used independently or 
 
 ## Quick Start
 
-The recommended approach uses `SecurityOrchestrator` to bootstrap all components from a declarative config. The orchestrator handles dependency ordering, event bus injection, and cross-wiring automatically.
+The recommended approach uses `attach_security()` to bootstrap and attach SecureMCP through FastMCP's public hooks. Under the hood it delegates to `SecurityOrchestrator`, which handles dependency ordering, event bus injection, and cross-wiring automatically.
 
 ```python
 from fastmcp import FastMCP
+from fastmcp.server.security import attach_security
 from fastmcp.server.security.config import (
     AlertConfig,
     ComplianceConfig,
@@ -46,8 +47,7 @@ from fastmcp.server.security.config import (
     ToolMarketplaceConfig,
 )
 from fastmcp.server.security.gateway.tool_marketplace import ToolCategory
-from fastmcp.server.security.http import SecurityAPI, mount_security_routes
-from fastmcp.server.security.orchestrator import SecurityOrchestrator
+from fastmcp.server.security.http import mount_security_routes
 
 server = FastMCP("my-secure-server")
 
@@ -62,8 +62,8 @@ config = SecurityConfig(
     compliance=ComplianceConfig(),
 )
 
-# Bootstrap everything in one call
-ctx = SecurityOrchestrator.bootstrap(config, server_name="my-secure-server")
+# Bootstrap and attach everything in one call
+ctx = attach_security(server, config)
 
 # Register and publish a tool
 ctx.registry.register("my-tool", tool_version="1.0.0", author="acme")
@@ -76,18 +76,15 @@ ctx.tool_marketplace.publish(
     categories={ToolCategory.UTILITY},
 )
 
-# Mount the REST API (auto-wired from context)
-api = SecurityAPI.from_context(ctx)
-mount_security_routes(server, api=api)
-
-# Install middleware (policy → contracts → provenance → reflexive → consent)
-for mw in ctx.middleware:
-    server.add_middleware(mw)
+# Mount the REST API from the attached context
+mount_security_routes(server)
 
 server.run(transport="streamable-http")
 ```
 
 After starting, visit `http://localhost:8000/security/health` to verify the security layer is active.
+
+`attach_security()` reads SecureMCP-owned runtime settings from `SECUREMCP_*` variables. See [SecureMCP Settings](/servers/security/settings).
 
 ## SecurityOrchestrator
 

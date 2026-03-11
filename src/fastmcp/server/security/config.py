@@ -11,10 +11,23 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.security.alerts.bus import SecurityEventBus
+from fastmcp.server.security.certification.attestation import CertificationLevel
+from fastmcp.server.security.certification.pipeline import CertificationPipeline
+from fastmcp.server.security.certification.validator import ManifestValidator
+from fastmcp.server.security.compliance.reports import (
+    ComplianceFramework,
+    ComplianceReporter,
+)
+from fastmcp.server.security.consent.graph import ConsentGraph
 from fastmcp.server.security.contracts.broker import ContextBroker
 from fastmcp.server.security.contracts.crypto import ContractCryptoHandler
 from fastmcp.server.security.contracts.exchange_log import ExchangeLog
 from fastmcp.server.security.contracts.schema import ContractTerm
+from fastmcp.server.security.federation.crl import CertificateRevocationList
+from fastmcp.server.security.federation.federation import TrustFederation
+from fastmcp.server.security.gateway.audit import AuditAPI
+from fastmcp.server.security.gateway.marketplace import Marketplace
+from fastmcp.server.security.gateway.tool_marketplace import ToolMarketplace
 from fastmcp.server.security.policy.audit import PolicyAuditLog
 from fastmcp.server.security.policy.engine import PolicyEngine
 from fastmcp.server.security.policy.governance import PolicyGovernor
@@ -23,20 +36,12 @@ from fastmcp.server.security.policy.monitoring import PolicyMonitor
 from fastmcp.server.security.policy.provider import PolicyProvider
 from fastmcp.server.security.policy.validator import PolicyValidator
 from fastmcp.server.security.policy.versioning.manager import PolicyVersionManager
-from fastmcp.server.security.consent.graph import ConsentGraph
-from fastmcp.server.security.gateway.audit import AuditAPI
-from fastmcp.server.security.gateway.marketplace import Marketplace
 from fastmcp.server.security.provenance.ledger import ProvenanceLedger
-from fastmcp.server.security.reflexive.analyzer import BehavioralAnalyzer, EscalationEngine
+from fastmcp.server.security.reflexive.analyzer import (
+    BehavioralAnalyzer,
+    EscalationEngine,
+)
 from fastmcp.server.security.reflexive.models import DriftSeverity, EscalationRule
-from fastmcp.server.security.certification.attestation import CertificationLevel
-from fastmcp.server.security.certification.pipeline import CertificationPipeline
-from fastmcp.server.security.certification.validator import ManifestValidator
-from fastmcp.server.security.compliance.reports import ComplianceFramework, ComplianceReporter
-from fastmcp.server.security.dashboard.snapshot import SecurityDashboard
-from fastmcp.server.security.federation.crl import CertificateRevocationList
-from fastmcp.server.security.federation.federation import TrustFederation
-from fastmcp.server.security.gateway.tool_marketplace import ToolMarketplace
 from fastmcp.server.security.registry.registry import TrustRegistry
 from fastmcp.server.security.sandbox.enforcer import SandboxedRunner
 from fastmcp.server.security.storage.backend import StorageBackend
@@ -414,7 +419,9 @@ class RegistryConfig:
 
     registry: TrustRegistry | None = None
 
-    def get_registry(self, *, event_bus: SecurityEventBus | None = None) -> TrustRegistry:
+    def get_registry(
+        self, *, event_bus: SecurityEventBus | None = None
+    ) -> TrustRegistry:
         """Get or create the trust registry."""
         if self.registry is not None:
             return self.registry
@@ -534,12 +541,13 @@ class SandboxConfig:
 class SecurityConfig:
     """Master security configuration for SecureMCP.
 
-    Pass to ``FastMCP(security_config=...)`` to enable security layers.
+    Use with ``attach_security(server, config)`` to enable security layers.
 
     Example::
 
-        from fastmcp.server.security import SecurityConfig
-        from fastmcp.server.security.policy import GDPRPolicy, HIPAAPolicy
+        from fastmcp import FastMCP
+        from fastmcp.server.security import SecurityConfig, attach_security
+        from fastmcp.server.security.policy import GDPRPolicy, HIPAAPolicy, PolicyConfig
 
         config = SecurityConfig(
             policy=PolicyConfig(
@@ -547,7 +555,8 @@ class SecurityConfig:
                 fail_closed=True,
             ),
         )
-        mcp = FastMCP("my-server", security_config=config)
+        mcp = FastMCP("my-server")
+        attach_security(mcp, config)
 
     Attributes:
         policy: Policy Kernel configuration (Phase 1).

@@ -7,12 +7,12 @@ and health data over HTTP.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 
+from fastmcp import FastMCP
+from fastmcp.server.security import attach_security
+from fastmcp.server.security.config import RegistryConfig, SecurityConfig
 from fastmcp.server.security.http.api import SecurityAPI
-
 
 # ── Fixtures ────────────────────────────────────────────────────
 
@@ -105,7 +105,13 @@ def event_bus():
 
 @pytest.fixture()
 def full_api(
-    registry, marketplace, compliance_reporter, provenance_ledger, federation, crl, event_bus
+    registry,
+    marketplace,
+    compliance_reporter,
+    provenance_ledger,
+    federation,
+    crl,
+    event_bus,
 ):
     from fastmcp.server.security.dashboard.snapshot import SecurityDashboard
 
@@ -202,7 +208,9 @@ class TestDashboard:
     def test_dashboard_has_sections(self, full_api):
         result = full_api.get_dashboard()
         # DashboardDataBridge export keys
-        assert "trust_timeline" in result or "components" in result or "banner" in result
+        assert (
+            "trust_timeline" in result or "components" in result or "banner" in result
+        )
 
 
 # ── Marketplace tests ──────────────────────────────────────────
@@ -381,7 +389,6 @@ class TestMountRoutes:
     def test_mount_returns_api(self):
         """mount_security_routes should return the SecurityAPI instance."""
         from fastmcp import FastMCP
-
         from fastmcp.server.security.http.api import SecurityAPI, mount_security_routes
 
         server = FastMCP("test-server")
@@ -390,7 +397,6 @@ class TestMountRoutes:
 
     def test_mount_with_custom_prefix(self):
         from fastmcp import FastMCP
-
         from fastmcp.server.security.http.api import SecurityAPI, mount_security_routes
 
         server = FastMCP("test-server")
@@ -399,13 +405,21 @@ class TestMountRoutes:
 
     def test_mount_auto_build(self):
         """Without an explicit api arg, mount should still work (returns empty API)."""
-        from fastmcp import FastMCP
-
         from fastmcp.server.security.http.api import mount_security_routes
 
         server = FastMCP("test-server")
         api = mount_security_routes(server)
         assert api is not None
+
+    def test_mount_auto_build_uses_attached_context(self):
+        from fastmcp.server.security.http.api import mount_security_routes
+
+        server = FastMCP("test-server")
+        attach_security(server, SecurityConfig(registry=RegistryConfig()))
+
+        api = mount_security_routes(server)
+
+        assert api.registry is not None
 
 
 # ── from_context tests ──────────────────────────────────────

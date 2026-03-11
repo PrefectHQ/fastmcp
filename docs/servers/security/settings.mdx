@@ -1,0 +1,43 @@
+---
+title: SecureMCP Settings
+description: Configure SecureMCP's helper-based integration path without relying on FastMCP core settings.
+---
+
+SecureMCP now owns its helper-path settings in `fastmcp.server.security.settings`. This keeps extension-specific env handling out of `fastmcp.settings`.
+
+The canonical environment variable prefix is `SECUREMCP_`. Legacy `FASTMCP_SECURITY_` variables are still accepted during migration, but new examples should use `SECUREMCP_`.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.security import SecurityConfig, attach_security
+
+server = FastMCP("secure-server")
+ctx = attach_security(server, SecurityConfig(...))
+```
+
+`attach_security()` reads `SecuritySettings` automatically on each call unless you pass an explicit `bypass_stdio=` override.
+
+## Environment Variables
+
+| Environment Variable | Legacy Alias | Default | Description |
+|---|---|---|---|
+| `SECUREMCP_ENABLED` | `FASTMCP_SECURITY_ENABLED` | `true` | Master switch for helper-based SecureMCP attachment. When `false`, `attach_security()` attaches an empty context and registers no security middleware. |
+| `SECUREMCP_POLICY_BYPASS_STDIO` | `FASTMCP_SECURITY_POLICY_BYPASS_STDIO` | `true` | Default `bypass_stdio` value used by `attach_security()` when wiring security middleware. |
+| `SECUREMCP_POLICY_FAIL_CLOSED` | `FASTMCP_SECURITY_POLICY_FAIL_CLOSED` | `true` | Reserved default for environments that derive policy configuration from settings. |
+| `SECUREMCP_POLICY_HOT_SWAP` | `FASTMCP_SECURITY_POLICY_HOT_SWAP` | `true` | Reserved default for environments that derive policy hot-swap behavior from settings. |
+
+## Env Files
+
+SecureMCP loads settings from:
+
+1. `SECUREMCP_ENV_FILE` if set
+2. Otherwise `FASTMCP_ENV_FILE` if set
+3. Otherwise `.env`
+
+That keeps helper-based SecureMCP configuration compatible with existing FastMCP projects while moving ownership of the settings model into the security package.
+
+## Migration Notes
+
+- Prefer `SECUREMCP_*` for all new configuration.
+- Use `attach_security(server, config)` for all server integration.
+- FastMCP core no longer exposes SecureMCP settings or a `security_config=` constructor path.

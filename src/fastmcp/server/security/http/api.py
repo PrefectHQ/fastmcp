@@ -6,9 +6,11 @@ compliance, audit, trust, and provenance data to frontends.
 Usage with FastMCP::
 
     from fastmcp import FastMCP
+    from fastmcp.server.security import SecurityConfig, attach_security
     from fastmcp.server.security.http import mount_security_routes
 
-    server = FastMCP("my-server", security_config=config)
+    server = FastMCP("my-server")
+    attach_security(server, SecurityConfig(...))
     mount_security_routes(server)
     # Now GET /security/dashboard, /security/marketplace, etc. are live.
 
@@ -28,14 +30,15 @@ Standalone usage::
 
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+
+from fastmcp.server.security.integration import get_security_context
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -194,7 +197,10 @@ class SecurityAPI:
             verify_signature=verify_signature,
         )
         if record is None:
-            return {"error": "Install failed — listing not found or signature verification failed", "status": 400}
+            return {
+                "error": "Install failed — listing not found or signature verification failed",
+                "status": 400,
+            }
 
         return {
             "install_id": record.install_id,
@@ -293,9 +299,7 @@ class SecurityAPI:
 
     # ── Compliance ────────────────────────────────────────────
 
-    def get_compliance_report(
-        self, report_type: str = "full"
-    ) -> dict[str, Any]:
+    def get_compliance_report(self, report_type: str = "full") -> dict[str, Any]:
         """Generate a compliance report."""
         if self.compliance_reporter is None:
             return {"error": "Compliance reporter not configured", "status": 503}
@@ -419,9 +423,11 @@ class SecurityAPI:
 
         providers = []
         for p in self.policy_engine.providers:
-            providers.append({
-                "type": type(p).__name__,
-            })
+            providers.append(
+                {
+                    "type": type(p).__name__,
+                }
+            )
 
         return {
             "evaluation_count": self.policy_engine.evaluation_count,
@@ -485,14 +491,16 @@ class SecurityAPI:
 
         scenarios = []
         for s in scenarios_data:
-            scenarios.append(Scenario(
-                resource_id=s.get("resource_id", "unknown"),
-                action=s.get("action", "call_tool"),
-                actor_id=s.get("actor_id", "sim-actor"),
-                metadata=s.get("metadata", {}),
-                tags=frozenset(s.get("tags", [])),
-                label=s.get("label", ""),
-            ))
+            scenarios.append(
+                Scenario(
+                    resource_id=s.get("resource_id", "unknown"),
+                    action=s.get("action", "call_tool"),
+                    actor_id=s.get("actor_id", "sim-actor"),
+                    metadata=s.get("metadata", {}),
+                    tags=frozenset(s.get("tags", [])),
+                    label=s.get("label", ""),
+                )
+            )
 
         report = await simulate(self.policy_engine, scenarios)
         return report.to_dict()
@@ -554,9 +562,7 @@ class SecurityAPI:
             "version": policy_version_to_dict(version),
         }
 
-    def diff_policy_versions(
-        self, v1: int, v2: int
-    ) -> dict[str, Any]:
+    def diff_policy_versions(self, v1: int, v2: int) -> dict[str, Any]:
         """Get differences between two policy versions.
 
         Args:
@@ -601,9 +607,7 @@ class SecurityAPI:
         if self.policy_engine is None:
             return {"error": "Policy engine not configured", "status": 503}
 
-        result = self.policy_validator.validate_providers(
-            self.policy_engine.providers
-        )
+        result = self.policy_validator.validate_providers(self.policy_engine.providers)
         return result.to_dict()
 
     # ── Monitoring ────────────────────────────────────────────
@@ -712,7 +716,7 @@ def mount_security_routes(
     """Mount SecureMCP HTTP routes on a FastMCP server.
 
     If no ``api`` is provided, one is auto-constructed from the server's
-    SecurityContext (if ``security_config`` was set on the server).
+    attached SecurityContext.
 
     Args:
         server: The FastMCP server instance.
@@ -726,9 +730,11 @@ def mount_security_routes(
     Example::
 
         from fastmcp import FastMCP
+        from fastmcp.server.security import SecurityConfig, attach_security
         from fastmcp.server.security.http import mount_security_routes
 
-        server = FastMCP("secure-server", security_config=config)
+        server = FastMCP("secure-server")
+        attach_security(server, SecurityConfig(...))
         api = mount_security_routes(server)
         server.run(transport="streamable-http")
     """
@@ -752,7 +758,9 @@ def mount_security_routes(
         lid = request.path_params.get("listing_id", "")
         return JSONResponse(api.get_marketplace_listing(lid))
 
-    @server.custom_route(f"{prefix}/marketplace/{{listing_id}}/install", methods=["POST"])
+    @server.custom_route(
+        f"{prefix}/marketplace/{{listing_id}}/install", methods=["POST"]
+    )
     async def marketplace_install_endpoint(request: Request) -> JSONResponse:
         lid = request.path_params.get("listing_id", "")
         try:
@@ -768,7 +776,9 @@ def mount_security_routes(
             )
         )
 
-    @server.custom_route(f"{prefix}/marketplace/{{listing_id}}/uninstall", methods=["POST"])
+    @server.custom_route(
+        f"{prefix}/marketplace/{{listing_id}}/uninstall", methods=["POST"]
+    )
     async def marketplace_uninstall_endpoint(request: Request) -> JSONResponse:
         lid = request.path_params.get("listing_id", "")
         try:
@@ -779,7 +789,9 @@ def mount_security_routes(
             api.marketplace_uninstall(lid, installer_id=body.get("installer_id", ""))
         )
 
-    @server.custom_route(f"{prefix}/marketplace/{{listing_id}}/moderate", methods=["POST"])
+    @server.custom_route(
+        f"{prefix}/marketplace/{{listing_id}}/moderate", methods=["POST"]
+    )
     async def marketplace_moderate_endpoint(request: Request) -> JSONResponse:
         lid = request.path_params.get("listing_id", "")
         try:
@@ -799,12 +811,17 @@ def mount_security_routes(
     async def marketplace_moderation_queue_endpoint(request: Request) -> JSONResponse:
         return JSONResponse(api.marketplace_moderation_queue())
 
-    @server.custom_route(f"{prefix}/marketplace/{{listing_id}}/versions", methods=["GET"])
+    @server.custom_route(
+        f"{prefix}/marketplace/{{listing_id}}/versions", methods=["GET"]
+    )
     async def marketplace_versions_endpoint(request: Request) -> JSONResponse:
         lid = request.path_params.get("listing_id", "")
         return JSONResponse(api.marketplace_version_history(lid))
 
-    @server.custom_route(f"{prefix}/marketplace/{{listing_id}}/versions/{{version}}/yank", methods=["POST"])
+    @server.custom_route(
+        f"{prefix}/marketplace/{{listing_id}}/versions/{{version}}/yank",
+        methods=["POST"],
+    )
     async def marketplace_yank_endpoint(request: Request) -> JSONResponse:
         lid = request.path_params.get("listing_id", "")
         ver = request.path_params.get("version", "")
@@ -853,7 +870,9 @@ def mount_security_routes(
         resource = request.query_params.get("resource")
         actor = request.query_params.get("actor")
         limit = int(request.query_params.get("limit", "50"))
-        return JSONResponse(api.get_provenance(resource_id=resource, actor_id=actor, limit=limit))
+        return JSONResponse(
+            api.get_provenance(resource_id=resource, actor_id=actor, limit=limit)
+        )
 
     # Policy
     @server.custom_route(f"{prefix}/policy", methods=["GET"])
@@ -866,12 +885,14 @@ def mount_security_routes(
         resource = request.query_params.get("resource")
         decision = request.query_params.get("decision")
         limit = int(request.query_params.get("limit", "50"))
-        return JSONResponse(api.get_policy_audit(
-            actor_id=actor,
-            resource_id=resource,
-            decision=decision,
-            limit=limit,
-        ))
+        return JSONResponse(
+            api.get_policy_audit(
+                actor_id=actor,
+                resource_id=resource,
+                decision=decision,
+                limit=limit,
+            )
+        )
 
     @server.custom_route(f"{prefix}/policy/audit/stats", methods=["GET"])
     async def policy_audit_stats_endpoint(request: Request) -> JSONResponse:
@@ -948,7 +969,7 @@ def mount_security_routes(
 
 def _build_api_from_server(server: FastMCP) -> SecurityAPI:
     """Auto-construct a SecurityAPI from a FastMCP server's security context."""
-    ctx = getattr(server, "_security_context", None)
+    ctx = get_security_context(server)
     if ctx is None:
         logger.warning("No security context found on server; API will be empty")
         return SecurityAPI()

@@ -134,7 +134,8 @@
                     "group": "Security",
                     "icon": "shield-check",
                     "pages": [
-                      "servers/security/overview"
+                      "servers/security/overview",
+                      "servers/security/settings"
                     ],
                     "tag": "NEW"
                   },

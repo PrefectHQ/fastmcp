@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastmcp import FastMCP
+from fastmcp.server.security import attach_security, get_security_context
 from fastmcp.server.security.config import ProvenanceConfig, SecurityConfig
 from fastmcp.server.security.middleware.provenance_recording import (
     ProvenanceRecordingMiddleware,
@@ -49,10 +50,11 @@ class TestSecurityConfigProvenance:
 class TestServerProvenanceIntegration:
     def test_server_with_provenance(self):
         config = SecurityConfig(provenance=ProvenanceConfig())
-        mcp = FastMCP("test", security_config=config)
-        assert any(
-            isinstance(m, ProvenanceRecordingMiddleware) for m in mcp.middleware
-        )
+        mcp = FastMCP("test")
+
+        attach_security(mcp, config)
+
+        assert any(isinstance(m, ProvenanceRecordingMiddleware) for m in mcp.middleware)
 
     def test_server_without_provenance(self):
         mcp = FastMCP("test")
@@ -65,13 +67,19 @@ class TestServerProvenanceIntegration:
             provenance=ProvenanceConfig(),
             enabled=False,
         )
-        mcp = FastMCP("test", security_config=config)
+        mcp = FastMCP("test")
+
+        attach_security(mcp, config)
+
         assert not any(
             isinstance(m, ProvenanceRecordingMiddleware) for m in mcp.middleware
         )
 
     def test_server_stores_ledger_reference(self):
         config = SecurityConfig(provenance=ProvenanceConfig())
-        mcp = FastMCP("test", security_config=config)
-        assert hasattr(mcp, "_provenance_ledger")
-        assert isinstance(mcp._provenance_ledger, ProvenanceLedger)
+        mcp = FastMCP("test")
+
+        ctx = attach_security(mcp, config)
+
+        assert get_security_context(mcp) is ctx
+        assert isinstance(ctx.provenance_ledger, ProvenanceLedger)

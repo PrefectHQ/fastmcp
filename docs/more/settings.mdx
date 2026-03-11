@@ -6,6 +6,8 @@ icon: gear
 
 FastMCP uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for configuration. Every setting is available as an environment variable with a `FASTMCP_` prefix. Settings are loaded from environment variables and from a `.env` file (see the [Tasks (Docket)](#tasks-docket) section for a caveat about nested settings in `.env` files).
 
+SecureMCP extension settings are not part of `fastmcp.settings`. If you're using SecureMCP, configure it with `SECUREMCP_*` variables documented in [SecureMCP Settings](/servers/security/settings).
+
 ```bash
 # Set via environment
 export FASTMCP_LOG_LEVEL=DEBUG

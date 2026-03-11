@@ -62,8 +62,6 @@ from fastmcp.server.apps import (
     resolve_ui_mime_type,
 )
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
-from fastmcp.server.security.config import SecurityConfig
-from fastmcp.server.security.orchestrator import SecurityOrchestrator
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
@@ -123,6 +121,7 @@ _REMOVED_KWARGS: dict[str, str] = {
     "include_tags": "Use `server.enable(tags=..., only=True)` after creating the server.",
     "exclude_tags": "Use `server.disable(tags=...)` after creating the server.",
     "tool_transformations": "Use `server.add_transform(ToolTransform(...))` after creating the server.",
+    "security_config": "Use `attach_security(server, config)` from `fastmcp.server.security` after creating the server.",
 }
 
 
@@ -242,7 +241,6 @@ class FastMCP(
         session_state_store: AsyncKeyValue | None = None,
         sampling_handler: SamplingHandler | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
-        security_config: SecurityConfig | None = None,
         **kwargs: Any,
     ):
         _check_removed_kwargs(kwargs)
@@ -336,34 +334,6 @@ class FastMCP(
         )
 
         self.middleware: list[Middleware] = list(middleware or [])
-
-        # SecureMCP: Bootstrap all security layers via orchestrator
-        self.security_config: SecurityConfig | None = security_config
-        self._security_context = None
-        if security_config is not None and fastmcp.settings.security.enabled:
-            ctx = SecurityOrchestrator.bootstrap(
-                security_config,
-                server_name=self.name,
-                bypass_stdio=fastmcp.settings.security.policy_bypass_stdio,
-            )
-            self._security_context = ctx
-            self.middleware.extend(ctx.middleware)
-
-            # Expose component references for backwards compatibility
-            if ctx.provenance_ledger is not None:
-                self._provenance_ledger = ctx.provenance_ledger
-            if ctx.behavioral_analyzer is not None:
-                self._behavioral_analyzer = ctx.behavioral_analyzer
-            if ctx.escalation_engine is not None:
-                self._escalation_engine = ctx.escalation_engine
-            if ctx.consent_graph is not None:
-                self._consent_graph = ctx.consent_graph
-            if ctx.audit_api is not None:
-                self._audit_api = ctx.audit_api
-            if ctx.marketplace is not None:
-                self._marketplace = ctx.marketplace
-            if ctx.gateway_tools:
-                self._gateway_tools = ctx.gateway_tools
 
         if dereference_schemas:
             from fastmcp.server.middleware.dereference import (

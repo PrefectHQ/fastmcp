@@ -20,6 +20,11 @@ from fastmcp.server.security.consent.graph import ConsentGraph
 from fastmcp.server.security.contracts.broker import ContextBroker
 from fastmcp.server.security.gateway.audit import AuditAPI
 from fastmcp.server.security.gateway.marketplace import Marketplace
+from fastmcp.server.security.integration import (
+    attach_security,
+    get_security_context,
+    register_security_gateway_tools,
+)
 from fastmcp.server.security.middleware.consent_enforcement import (
     ConsentEnforcementMiddleware,
 )
@@ -41,7 +46,6 @@ from fastmcp.server.security.reflexive.analyzer import (
     BehavioralAnalyzer,
     EscalationEngine,
 )
-
 
 # ---------------------------------------------------------------------------
 # SecurityContext
@@ -327,44 +331,53 @@ class TestFullStackBootstrap:
 
 
 # ---------------------------------------------------------------------------
-# Server integration (backwards compatibility)
+# Server integration helpers
 # ---------------------------------------------------------------------------
 
 
 class TestServerIntegration:
-    def test_fastmcp_accepts_security_config(self):
+    def test_attach_security_returns_context(self):
         cfg = SecurityConfig(
             policy=PolicyConfig(providers=[AllowAllPolicy()]),
         )
-        mcp = FastMCP("test", security_config=cfg)
-        assert mcp.security_config is cfg
-        assert mcp._security_context is not None
+        mcp = FastMCP("test")
 
-    def test_fastmcp_exposes_component_refs(self):
+        ctx = attach_security(mcp, cfg)
+
+        assert isinstance(ctx, SecurityContext)
+        assert get_security_context(mcp) is ctx
+
+    def test_attached_context_exposes_component_refs(self):
         cfg = SecurityConfig(
             provenance=ProvenanceConfig(),
             reflexive=ReflexiveConfig(),
             consent=ConsentConfig(),
             gateway=GatewayConfig(),
         )
-        mcp = FastMCP("test", security_config=cfg)
-        assert hasattr(mcp, "_provenance_ledger")
-        assert hasattr(mcp, "_behavioral_analyzer")
-        assert hasattr(mcp, "_escalation_engine")
-        assert hasattr(mcp, "_consent_graph")
-        assert hasattr(mcp, "_audit_api")
-        assert hasattr(mcp, "_marketplace")
-
-    def test_fastmcp_no_security_no_context(self):
         mcp = FastMCP("test")
-        assert mcp._security_context is None
 
-    def test_fastmcp_middleware_registered(self):
+        ctx = attach_security(mcp, cfg)
+
+        assert isinstance(ctx.provenance_ledger, ProvenanceLedger)
+        assert isinstance(ctx.behavioral_analyzer, BehavioralAnalyzer)
+        assert isinstance(ctx.escalation_engine, EscalationEngine)
+        assert isinstance(ctx.consent_graph, ConsentGraph)
+        assert isinstance(ctx.audit_api, AuditAPI)
+        assert isinstance(ctx.marketplace, Marketplace)
+
+    def test_get_security_context_returns_none_when_unattached(self):
+        mcp = FastMCP("test")
+        assert get_security_context(mcp) is None
+
+    def test_attach_security_registers_middleware(self):
         cfg = SecurityConfig(
             policy=PolicyConfig(providers=[AllowAllPolicy()]),
             consent=ConsentConfig(),
         )
-        mcp = FastMCP("test", security_config=cfg)
+        mcp = FastMCP("test")
+
+        attach_security(mcp, cfg)
+
         policy_mw = [
             m for m in mcp.middleware if isinstance(m, PolicyEnforcementMiddleware)
         ]
@@ -374,14 +387,43 @@ class TestServerIntegration:
         assert len(policy_mw) == 1
         assert len(consent_mw) == 1
 
-    def test_fastmcp_with_alerts_wires_bus(self):
+    def test_attach_security_with_alerts_wires_bus(self):
         cfg = SecurityConfig(
             policy=PolicyConfig(providers=[AllowAllPolicy()]),
             alerts=AlertConfig(),
         )
-        mcp = FastMCP("test", security_config=cfg)
-        assert mcp._security_context is not None
-        assert mcp._security_context.event_bus is not None
+        mcp = FastMCP("test")
+
+        ctx = attach_security(mcp, cfg)
+
+        assert ctx.event_bus is not None
+        assert get_security_context(mcp) is ctx
+
+    def test_attach_security_rejects_duplicate_attachment(self):
+        cfg = SecurityConfig(
+            policy=PolicyConfig(providers=[AllowAllPolicy()]),
+        )
+        mcp = FastMCP("test")
+
+        attach_security(mcp, cfg)
+
+        with pytest.raises(RuntimeError, match="already attached"):
+            attach_security(mcp, cfg)
+
+    async def test_register_security_gateway_tools_is_explicit_and_idempotent(self):
+        cfg = SecurityConfig(gateway=GatewayConfig())
+        mcp = FastMCP("test")
+
+        ctx = attach_security(mcp, cfg)
+        registered = register_security_gateway_tools(mcp)
+
+        assert set(registered) == set(ctx.gateway_tools)
+
+        tools = await mcp.list_tools()
+        tool_names = {tool.name for tool in tools}
+        assert set(registered).issubset(tool_names)
+
+        assert register_security_gateway_tools(mcp) == []
 
 
 # ---------------------------------------------------------------------------

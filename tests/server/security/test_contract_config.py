@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastmcp import FastMCP
+from fastmcp.server.security import attach_security, get_security_context
 from fastmcp.server.security.config import ContractConfig, PolicyConfig, SecurityConfig
 from fastmcp.server.security.contracts.broker import ContextBroker
 from fastmcp.server.security.middleware.contract_validation import (
@@ -53,10 +54,12 @@ class TestSecurityConfigContracts:
 class TestServerContractIntegration:
     def test_server_with_contracts(self):
         config = SecurityConfig(contracts=ContractConfig())
-        mcp = FastMCP("test", security_config=config)
-        assert any(
-            isinstance(m, ContractValidationMiddleware) for m in mcp.middleware
-        )
+        mcp = FastMCP("test")
+
+        ctx = attach_security(mcp, config)
+
+        assert get_security_context(mcp) is ctx
+        assert any(isinstance(m, ContractValidationMiddleware) for m in mcp.middleware)
 
     def test_server_without_contracts(self):
         mcp = FastMCP("test")
@@ -69,20 +72,22 @@ class TestServerContractIntegration:
             policy=PolicyConfig(providers=[AllowAllPolicy()]),
             contracts=ContractConfig(),
         )
-        mcp = FastMCP("test", security_config=config)
-        assert any(
-            isinstance(m, PolicyEnforcementMiddleware) for m in mcp.middleware
-        )
-        assert any(
-            isinstance(m, ContractValidationMiddleware) for m in mcp.middleware
-        )
+        mcp = FastMCP("test")
+
+        attach_security(mcp, config)
+
+        assert any(isinstance(m, PolicyEnforcementMiddleware) for m in mcp.middleware)
+        assert any(isinstance(m, ContractValidationMiddleware) for m in mcp.middleware)
 
     def test_server_contracts_disabled_no_middleware(self):
         config = SecurityConfig(
             contracts=ContractConfig(),
             enabled=False,
         )
-        mcp = FastMCP("test", security_config=config)
+        mcp = FastMCP("test")
+
+        attach_security(mcp, config)
+
         assert not any(
             isinstance(m, ContractValidationMiddleware) for m in mcp.middleware
         )

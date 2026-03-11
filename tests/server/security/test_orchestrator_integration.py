@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import pytest
 
+from fastmcp import FastMCP
+from fastmcp.server.security import attach_security_context
 from fastmcp.server.security.config import (
     AlertConfig,
     ComplianceConfig,
@@ -20,8 +22,7 @@ from fastmcp.server.security.config import (
     SecurityConfig,
     ToolMarketplaceConfig,
 )
-from fastmcp.server.security.orchestrator import SecurityContext, SecurityOrchestrator
-
+from fastmcp.server.security.orchestrator import SecurityOrchestrator
 
 # ── Fixtures ────────────────────────────────────────────────────
 
@@ -203,7 +204,6 @@ class TestEndToEndDataFlow:
 
     def test_published_tool_appears_in_marketplace(self, full_ctx):
         from fastmcp.server.security.gateway.tool_marketplace import ToolCategory
-
         from fastmcp.server.security.http.api import SecurityAPI
 
         # Register + publish
@@ -226,9 +226,8 @@ class TestEndToEndDataFlow:
         assert len(result.get("listings", [])) >= 1
 
     def test_provenance_event_appears_in_api(self, full_ctx):
-        from fastmcp.server.security.provenance.records import ProvenanceAction
-
         from fastmcp.server.security.http.api import SecurityAPI
+        from fastmcp.server.security.provenance.records import ProvenanceAction
 
         full_ctx.provenance_ledger.record(
             action=ProvenanceAction.TOOL_CALLED,
@@ -242,7 +241,6 @@ class TestEndToEndDataFlow:
 
     def test_revocation_appears_in_api(self, full_ctx):
         from fastmcp.server.security.federation.crl import RevocationReason
-
         from fastmcp.server.security.http.api import SecurityAPI
 
         full_ctx.crl.revoke("bad-tool", reason=RevocationReason.POLICY_VIOLATION)
@@ -291,12 +289,10 @@ class TestPartialConfig:
 class TestBuildAPIFromServer:
     def test_auto_build_from_context(self, full_ctx):
         """Simulate what _build_api_from_server does."""
-        from fastmcp import FastMCP
-
         from fastmcp.server.security.http.api import _build_api_from_server
 
         server = FastMCP("test")
-        server._security_context = full_ctx
+        attach_security_context(server, full_ctx)
 
         api = _build_api_from_server(server)
         assert api.dashboard is full_ctx.dashboard

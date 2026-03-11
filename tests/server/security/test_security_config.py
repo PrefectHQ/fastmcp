@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 from fastmcp import FastMCP
+from fastmcp.server.security import attach_security, get_security_context
 from fastmcp.server.security.config import PolicyConfig, SecurityConfig
 from fastmcp.server.security.middleware.policy_enforcement import (
     PolicyEnforcementMiddleware,
@@ -19,9 +18,7 @@ class TestSecurityConfig:
         assert not config.is_policy_enabled()
 
     def test_policy_enabled_when_configured(self):
-        config = SecurityConfig(
-            policy=PolicyConfig(providers=[AllowAllPolicy()])
-        )
+        config = SecurityConfig(policy=PolicyConfig(providers=[AllowAllPolicy()]))
         assert config.is_policy_enabled()
 
     def test_policy_disabled_when_master_switch_off(self):
@@ -46,36 +43,41 @@ class TestSecurityConfig:
 class TestServerIntegration:
     def test_server_without_security(self):
         mcp = FastMCP("test")
-        assert mcp.security_config is None
+        assert get_security_context(mcp) is None
         # Should not have PolicyEnforcementMiddleware
         assert not any(
             isinstance(m, PolicyEnforcementMiddleware) for m in mcp.middleware
         )
 
-    def test_server_with_security_config(self):
-        config = SecurityConfig(
-            policy=PolicyConfig(providers=[AllowAllPolicy()])
-        )
-        mcp = FastMCP("test", security_config=config)
-        assert mcp.security_config is config
+    def test_server_with_attached_security(self):
+        config = SecurityConfig(policy=PolicyConfig(providers=[AllowAllPolicy()]))
+        mcp = FastMCP("test")
+
+        ctx = attach_security(mcp, config)
+
+        assert get_security_context(mcp) is ctx
         # Should have PolicyEnforcementMiddleware
-        assert any(
-            isinstance(m, PolicyEnforcementMiddleware) for m in mcp.middleware
-        )
+        assert any(isinstance(m, PolicyEnforcementMiddleware) for m in mcp.middleware)
 
     def test_server_security_disabled_no_middleware(self):
         config = SecurityConfig(
             policy=PolicyConfig(providers=[AllowAllPolicy()]),
             enabled=False,
         )
-        mcp = FastMCP("test", security_config=config)
+        mcp = FastMCP("test")
+
+        attach_security(mcp, config)
+
         assert not any(
             isinstance(m, PolicyEnforcementMiddleware) for m in mcp.middleware
         )
 
     def test_server_no_policy_no_middleware(self):
         config = SecurityConfig(policy=None)
-        mcp = FastMCP("test", security_config=config)
+        mcp = FastMCP("test")
+
+        attach_security(mcp, config)
+
         assert not any(
             isinstance(m, PolicyEnforcementMiddleware) for m in mcp.middleware
         )
@@ -88,7 +90,8 @@ class TestServerIntegration:
                 # Don't bypass stdio so we can test in-process
             )
         )
-        mcp = FastMCP("test", security_config=config)
+        mcp = FastMCP("test")
+        attach_security(mcp, config)
 
         @mcp.tool()
         def greet(name: str) -> str:
