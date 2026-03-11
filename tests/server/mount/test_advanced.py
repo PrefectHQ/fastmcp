@@ -3,6 +3,8 @@
 import pytest
 from mcp.types import TextContent
 
+from starlette.routing import Route
+
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.providers import FastMCPProvider
@@ -82,7 +84,7 @@ class TestCustomRouteForwarding:
 
         routes = server._get_additional_http_routes()
         assert len(routes) == 1
-        assert hasattr(routes[0], "path")
+        assert isinstance(routes[0], Route)
         assert routes[0].path == "/test"
 
     async def test_mounted_servers_tracking(self):
@@ -145,7 +147,7 @@ class TestCustomRouteForwarding:
 
         routes = server._get_additional_http_routes()
         assert len(routes) == 2
-        route_paths = [route.path for route in routes if hasattr(route, "path")]
+        route_paths = [route.path for route in routes if isinstance(route, Route)]
         assert "/route1" in route_paths
         assert "/route2" in route_paths
 
@@ -169,7 +171,7 @@ class TestCustomRouteForwarding:
 
         routes = parent._get_additional_http_routes()
         assert len(routes) == 1
-        assert hasattr(routes[0], "path")
+        assert isinstance(routes[0], Route)
         assert routes[0].path == "/readyz"
 
     async def test_mounted_server_custom_routes_with_namespace(self):
@@ -187,6 +189,7 @@ class TestCustomRouteForwarding:
 
         routes = parent._get_additional_http_routes()
         assert len(routes) == 1
+        assert isinstance(routes[0], Route)
         assert routes[0].path == "/health"
 
     async def test_deeply_nested_custom_routes_forwarded(self):
@@ -211,7 +214,7 @@ class TestCustomRouteForwarding:
         root.mount(middle)
 
         routes = root._get_additional_http_routes()
-        route_paths = [r.path for r in routes if hasattr(r, "path")]
+        route_paths = [r.path for r in routes if isinstance(r, Route)]
         assert "/leaf-health" in route_paths
         assert "/middle-health" in route_paths
         assert len(route_paths) == 2
