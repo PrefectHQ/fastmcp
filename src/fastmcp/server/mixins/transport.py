@@ -145,15 +145,36 @@ class TransportMixin:
         return decorator
 
     def _get_additional_http_routes(self: FastMCP) -> list[BaseRoute]:
-        """Get all additional HTTP routes including from providers.
+        """Get all additional HTTP routes including from mounted servers.
 
-        Returns a list of all custom HTTP routes from this server and
-        from all providers that have HTTP routes (e.g., FastMCPProvider).
+        Collects custom HTTP routes registered via ``@server.custom_route()``
+        from this server **and** from any FastMCP servers reachable through
+        mounted providers (recursively).  This ensures that routes defined on
+        a child server are forwarded to the parent's HTTP app when using
+        ``server.mount(child)``.
 
         Returns:
             List of Starlette BaseRoute objects
         """
-        return list(self._additional_http_routes)
+        from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
+        from fastmcp.server.providers.wrapped_provider import _WrappedProvider
+
+        routes: list[BaseRoute] = list(self._additional_http_routes)
+
+        def _unwrap_provider(provider: Any) -> Any:
+            """Unwrap _WrappedProvider layers to find the inner provider."""
+            while isinstance(provider, _WrappedProvider):
+                provider = provider._inner
+            return provider
+
+        for provider in self.providers:
+            inner = _unwrap_provider(provider)
+            if isinstance(inner, FastMCPProvider):
+                # Recurse into the mounted server to collect its routes
+                # (and any routes from servers mounted on *it*).
+                routes.extend(inner.server._get_additional_http_routes())
+
+        return routes
 
     async def run_stdio_async(
         self: FastMCP,
