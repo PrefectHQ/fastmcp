@@ -333,6 +333,42 @@ async def inspector(
         sys.exit(1)
 
 
+@dev_app.command
+async def apps(
+    server_spec: str,
+    *,
+    mcp_port: Annotated[
+        int,
+        cyclopts.Parameter(
+            "--mcp-port",
+            help="Port for the user's MCP server",
+        ),
+    ] = 8000,
+    dev_port: Annotated[
+        int,
+        cyclopts.Parameter(
+            "--dev-port",
+            help="Port for the FastMCP dev UI",
+        ),
+    ] = 8080,
+) -> None:
+    """Preview a FastMCPApp UI in the browser.
+
+    Starts the MCP server from SERVER_SPEC on --mcp-port, launches a local
+    dev UI on --dev-port with a tool picker and AppBridge host, then opens
+    the browser automatically.
+
+    Requires fastmcp[apps] to be installed (prefab-ui).
+    """
+    try:
+        from fastmcp.cli.apps_dev import run_dev_apps
+    except ImportError as e:
+        logger.error(f"Could not import dev apps module: {e}")
+        sys.exit(1)
+
+    await run_dev_apps(server_spec, mcp_port=mcp_port, dev_port=dev_port)
+
+
 @app.command
 async def run(
     server_spec: str | None = None,
