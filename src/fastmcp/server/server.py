@@ -36,7 +36,7 @@ from mcp.types import (
 )
 from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
-from starlette.routing import BaseRoute, Route
+from starlette.routing import BaseRoute
 from typing_extensions import Self
 
 import fastmcp
