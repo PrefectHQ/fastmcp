@@ -13,7 +13,7 @@ from mcp.server.stdio import stdio_server
 from starlette.middleware import Middleware as ASGIMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.routing import BaseRoute, Route
+from starlette.routing import Route
 
 import fastmcp
 from fastmcp.server.event_store import EventStore
@@ -144,7 +144,7 @@ class TransportMixin:
 
         return decorator
 
-    def _get_additional_http_routes(self: FastMCP) -> list[BaseRoute]:
+    def _get_additional_http_routes(self: FastMCP) -> list[Route]:
         """Get all additional HTTP routes including from mounted servers.
 
         Collects custom HTTP routes registered via ``@server.custom_route()``
@@ -154,12 +154,12 @@ class TransportMixin:
         ``server.mount(child)``.
 
         Returns:
-            List of Starlette BaseRoute objects
+            List of Starlette Route objects
         """
         from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
         from fastmcp.server.providers.wrapped_provider import _WrappedProvider
 
-        routes: list[BaseRoute] = list(self._additional_http_routes)
+        routes: list[Route] = list(self._additional_http_routes)
 
         def _unwrap_provider(provider: Any) -> Any:
             """Unwrap _WrappedProvider layers to find the inner provider."""

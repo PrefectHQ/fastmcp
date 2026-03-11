@@ -36,7 +36,7 @@ from mcp.types import (
 )
 from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
-from starlette.routing import BaseRoute
+from starlette.routing import Route
 from typing_extensions import Self
 
 import fastmcp
@@ -255,7 +255,7 @@ class FastMCP(
         self._docket = None
         self._worker = None
 
-        self._additional_http_routes: list[BaseRoute] = []
+        self._additional_http_routes: list[Route] = []
 
         # Session-scoped state store (shared across all requests)
         self._state_storage: AsyncKeyValue = session_state_store or MemoryStore()
