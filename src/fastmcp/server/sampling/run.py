@@ -238,7 +238,7 @@ async def call_sampling_handler(
             stopReason="endTurn",
         )
 
-    return cast(CreateMessageResult | CreateMessageResultWithTools, result)
+    return result
 
 
 async def execute_tools(

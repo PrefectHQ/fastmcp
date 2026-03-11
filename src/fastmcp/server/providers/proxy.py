@@ -127,14 +127,10 @@ class ProxyTool(Tool):
                 # request. Stash the current RequestContext in the shared
                 # ref so handlers can restore it before forwarding.
                 if isinstance(client, StatefulProxyClient):
-<<<<<<< fix-type-annotations
-                    client._proxy_rc_ref[0] = ctx.request_context
-=======
-                    cast(list[Any], client._proxy_rc_ref)[0] = (
+                    client._proxy_rc_ref[0] = (
                         ctx.request_context,
                         ctx._fastmcp,  # weakref to FastMCP, not the Context
                     )
->>>>>>> main
                 # Build meta dict from request context
                 meta: dict[str, Any] | None = None
                 if hasattr(ctx, "request_context"):
@@ -196,13 +192,8 @@ class ProxyResource(Resource):
         """Gets a client instance by calling the sync or async factory."""
         client = self._client_factory()
         if inspect.isawaitable(client):
-<<<<<<< fix-type-annotations
-            client = await client
-        return cast(Client, client)
-=======
             client = cast(Client, await client)
         return client
->>>>>>> main
 
     def model_copy(self, **kwargs: Any) -> ProxyResource:
         """Override to preserve _backend_uri when uri changes."""
@@ -300,13 +291,8 @@ class ProxyTemplate(ResourceTemplate):
         """Gets a client instance by calling the sync or async factory."""
         client = self._client_factory()
         if inspect.isawaitable(client):
-<<<<<<< fix-type-annotations
-            client = await client
-        return cast(Client, client)
-=======
             client = cast(Client, await client)
         return client
->>>>>>> main
 
     def model_copy(self, **kwargs: Any) -> ProxyTemplate:
         """Override to preserve _backend_uri_template when uri_template changes."""
@@ -420,13 +406,8 @@ class ProxyPrompt(Prompt):
         """Gets a client instance by calling the sync or async factory."""
         client = self._client_factory()
         if inspect.isawaitable(client):
-<<<<<<< fix-type-annotations
-            client = await client
-        return cast(Client, client)
-=======
             client = cast(Client, await client)
         return client
->>>>>>> main
 
     def model_copy(self, **kwargs: Any) -> ProxyPrompt:
         """Override to preserve _backend_name when name changes."""
@@ -539,13 +520,8 @@ class ProxyProvider(Provider):
         """Gets a client instance by calling the sync or async factory."""
         client = self.client_factory()
         if inspect.isawaitable(client):
-<<<<<<< fix-type-annotations
-            client = await client
-        return cast(Client, client)
-=======
             client = cast(Client, await client)
         return client
->>>>>>> main
 
     # -------------------------------------------------------------------------
     # Tool methods

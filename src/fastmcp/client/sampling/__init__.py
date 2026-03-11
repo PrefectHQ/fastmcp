@@ -61,7 +61,7 @@ def create_sampling_callback(
                     model="fastmcp-client",
                     content=mcp.types.TextContent(type="text", text=result),
                 )
-            return cast(CreateMessageResult | CreateMessageResultWithTools, result)
+            return result
         except Exception as e:
             return mcp.types.ErrorData(
                 code=mcp.types.INTERNAL_ERROR,
