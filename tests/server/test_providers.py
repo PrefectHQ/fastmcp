@@ -42,9 +42,9 @@ class SimpleTool(Tool):
 class SimpleToolProvider(Provider):
     """A simple provider that returns a configurable list of tools."""
 
-    def __init__(self, tools: list[Tool] | None = None):
+    def __init__(self, tools: Sequence[Tool] | None = None):
         super().__init__()
-        self._tools = tools or []
+        self._tools = list(tools) if tools else []
         self.list_tools_call_count = 0
         self.get_tool_call_count = 0
 
@@ -68,9 +68,9 @@ class SimpleToolProvider(Provider):
 class ListOnlyProvider(Provider):
     """A provider that only implements list_tools (uses default get_tool)."""
 
-    def __init__(self, tools: list[Tool]):
+    def __init__(self, tools: Sequence[Tool]):
         super().__init__()
-        self._tools = tools
+        self._tools = list(tools)
         self.list_tools_call_count = 0
 
     async def _list_tools(self) -> list[Tool]:

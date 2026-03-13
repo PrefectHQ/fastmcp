@@ -225,3 +225,29 @@ class TestResourcesAsToolsRepr:
         mcp = FastMCP("Test")
         transform = ResourcesAsTools(mcp)
         assert "ResourcesAsTools" in repr(transform)
+
+
+class TestResourcesAsToolsAnnotations:
+    """Test ToolAnnotations on generated resource tools."""
+
+    async def test_list_resources_is_read_only(self):
+        """list_resources is annotated as read-only by default."""
+        mcp = FastMCP("Test")
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool = next(t for t in tools if t.name == "list_resources")
+            assert tool.annotations is not None
+            assert tool.annotations.readOnlyHint is True
+
+    async def test_read_resource_is_read_only(self):
+        """read_resource is annotated as read-only by default."""
+        mcp = FastMCP("Test")
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool = next(t for t in tools if t.name == "read_resource")
+            assert tool.annotations is not None
+            assert tool.annotations.readOnlyHint is True

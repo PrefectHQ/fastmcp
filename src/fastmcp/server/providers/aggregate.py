@@ -211,7 +211,7 @@ class AggregateProvider(Provider):
             return_exceptions=True,
         )
         return self._get_highest_version_result(
-            results, f"get_resource_template({uri!r})"
+            list(results), f"get_resource_template({uri!r})"
         )  # type: ignore[return-value]
 
     # -------------------------------------------------------------------------

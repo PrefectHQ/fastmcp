@@ -6,7 +6,6 @@
   font-weight: 600 !important;
   padding-top: 12px !important;
   padding-bottom: 12px !important;
-  position: relative !important;
   overflow: hidden !important;
 }
 
@@ -63,5 +62,13 @@
 
 .dark #banner * {
   color: #f1f5f9 !important;
+}
+
+@media (max-width: 767px) {
+  #banner {
+    font-size: 0.8rem !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
 }
 

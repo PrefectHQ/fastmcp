@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
     Literal,
     Protocol,
@@ -20,6 +21,7 @@ import anyio
 import mcp.types
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, Icon, ToolAnnotations, ToolExecution
+from pydantic import Field
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
@@ -33,7 +35,10 @@ from fastmcp.tools.tool import (
     ToolResult,
     ToolResultSerializerType,
 )
-from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     NotSet,
@@ -84,6 +89,7 @@ class ToolMeta:
 
 class FunctionTool(Tool):
     fn: SkipJsonSchema[Callable[..., Any]]
+    return_type: Annotated[SkipJsonSchema[Any], Field(exclude=True)] = None
 
     def to_mcp_tool(
         self,
@@ -230,6 +236,7 @@ class FunctionTool(Tool):
 
         return cls(
             fn=parsed_fn.fn,
+            return_type=parsed_fn.return_type,
             name=metadata.name or parsed_fn.name,
             version=str(metadata.version) if metadata.version is not None else None,
             title=metadata.title,
@@ -256,7 +263,7 @@ class FunctionTool(Tool):
             try:
                 with anyio.fail_after(self.timeout):
                     # Thread pool execution for sync functions, direct await for async
-                    if inspect.iscoroutinefunction(wrapper_fn):
+                    if is_coroutine_function(wrapper_fn):
                         result = await type_adapter.validate_python(arguments)
                     else:
                         # Sync function: run in threadpool to avoid blocking
@@ -280,7 +287,7 @@ class FunctionTool(Tool):
                 ) from None
         else:
             # No timeout: use existing execution path
-            if inspect.iscoroutinefunction(wrapper_fn):
+            if is_coroutine_function(wrapper_fn):
                 result = await type_adapter.validate_python(arguments)
             else:
                 result = await call_sync_fn_in_threadpool(

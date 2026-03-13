@@ -1,7 +1,7 @@
 ---
-title: Low-Level API
-sidebarTitle: Low-Level API
-description: Integrate directly with the MCP Apps extension to build interactive tool UIs.
+title: Custom HTML Apps
+sidebarTitle: Custom HTML
+description: Build apps with your own HTML, CSS, and JavaScript using the MCP Apps extension directly.
 icon: code
 tag: NEW
 ---
@@ -10,9 +10,9 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.0.0" />
 
-The [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) (`io.modelcontextprotocol/ui`) lets tools return interactive UIs — an HTML page rendered in a sandboxed iframe inside the host client. Instead of returning plain text or JSON, a tool can show a chart, a form, an image viewer, or anything you can build with HTML and JavaScript.
+The [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) is an open protocol that lets tools return interactive UIs — an HTML page rendered in a sandboxed iframe inside the host client. [Prefab UI](/apps/prefab) builds on this protocol so you never have to think about it, but when you need full control — custom rendering, a specific JavaScript framework, maps, 3D, video — you can use the MCP Apps extension directly.
 
-This page covers the low-level extension API directly. FastMCP provides typed models for app configuration, automatic `ui://` resource handling, and CSP/permission management.
+This page covers how to write custom HTML apps and wire them up in FastMCP. You'll be working with the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) JavaScript SDK for host communication, and FastMCP's `AppConfig` for resource and CSP management.
 
 ## How It Works
 

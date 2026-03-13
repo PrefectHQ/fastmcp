@@ -21,10 +21,13 @@ async def default_progress_handler(
         total: Optional total expected value
         message: Optional status message
     """
-    if total is not None:
+    if total not in (None, 0):
         # We have both progress and total
         percent = (progress / total) * 100
         progress_str = f"{progress}/{total} ({percent:.1f}%)"
+    elif total == 0:
+        # Avoid division by zero when a server reports an invalid total.
+        progress_str = f"{progress}/{total}"
     else:
         # We only have progress
         progress_str = f"{progress}"

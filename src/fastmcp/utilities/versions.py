@@ -14,14 +14,17 @@ Examples:
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import total_ordering
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from packaging.version import InvalidVersion, Version
 
 if TYPE_CHECKING:
     from fastmcp.utilities.components import FastMCPComponent
+
+C = TypeVar("C", bound=Any)
 
 
 @dataclass
@@ -283,3 +286,48 @@ def min_version(a: str | None, b: str | None) -> str | None:
     if b is None:
         return a
     return a if compare_versions(a, b) <= 0 else b
+
+
+def dedupe_with_versions(
+    components: Sequence[C],
+    key_fn: Callable[[C], str],
+) -> list[C]:
+    """Deduplicate components by key, keeping highest version.
+
+    Groups components by key, selects the highest version from each group,
+    and injects available versions into meta if any component is versioned.
+
+    Args:
+        components: Sequence of components to deduplicate.
+        key_fn: Function to extract the grouping key from a component.
+
+    Returns:
+        Deduplicated list with versions injected into meta.
+    """
+    by_key: dict[str, list[C]] = {}
+    for c in components:
+        by_key.setdefault(key_fn(c), []).append(c)
+
+    result: list[C] = []
+    for versions in by_key.values():
+        highest: C = cast(C, max(versions, key=version_sort_key))
+        if any(c.version is not None for c in versions):
+            all_versions = sorted(
+                [c.version for c in versions if c.version is not None],
+                key=parse_version_key,
+                reverse=True,
+            )
+            meta = highest.meta or {}
+            highest = highest.model_copy(
+                update={
+                    "meta": {
+                        **meta,
+                        "fastmcp": {
+                            **meta.get("fastmcp", {}),
+                            "versions": all_versions,
+                        },
+                    }
+                }
+            )
+        result.append(highest)
+    return result

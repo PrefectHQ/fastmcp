@@ -23,6 +23,7 @@ dependencies = [
     "websockets>=15.0.1",
     "jsonschema-path>=0.3.4",
     "jsonref>=1.1.0",
+    "uncalled-for>=0.2.0",
     "watchfiles>=1.0.0",
 ]
 
@@ -52,14 +53,17 @@ classifiers = [
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40.0"]
+apps = ["prefab-ui>=0.11.0"]
 azure = ["azure-identity>=1.16.0"]
+code-mode = ["pydantic-monty>=0.0.7"]
+gemini = ["google-genai>=1.18.0"]
 openai = ["openai>=1.102.0"]
-tasks = ["pydocket>=0.17.2"]
+tasks = ["pydocket>=0.18.0"]
 
 [dependency-groups]
 dev = [
     "dirty-equals>=0.9.0",
-    "fastmcp[anthropic,azure,openai,tasks]",
+    "fastmcp[anthropic,apps,azure,code-mode,gemini,openai,tasks]",
     # add optional dependencies for fastmcp dev
     "fastapi>=0.115.12",
     "opentelemetry-sdk>=1.20.0",
@@ -80,7 +84,7 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff>=0.12.8",
-    "ty>=0.0.15",
+    "ty>=0.0.23",
     "prek>=0.2.12",
     "loq>=0.1.0a3",
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
@@ -103,6 +107,7 @@ source = "uv-dynamic-versioning"
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
 
 [tool.uv-dynamic-versioning]
 vcs = "git"
@@ -190,18 +195,6 @@ known-first-party = ["fastmcp"]
     "SIM", # flake8-simplify
 ]
 
-[tool.basedpyright]
-pythonVersion = "3.10"
-typeCheckingMode = "standard"
-reportMissingTypeStubs = false
-reportUnknownParameterType = false
-reportUnknownArgumentType = false
-reportUnknownMemberType = false
-reportUnknownVariableType = false
-reportPrivateUsage = false
-reportUnnecessaryIsInstance = false
-reportUnnecessaryComparison = false
-reportConstantRedefinition = false
 
 [tool.codespell]
 ignore-words-list = "asend,shttp,te"

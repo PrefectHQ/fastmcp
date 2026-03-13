@@ -215,9 +215,29 @@ class GitHubClient:
 
         return timeline
 
-    def close_issue(self, issue_number: int, comment: str) -> bool:
-        """Close an issue with a comment."""
-        # First add the comment
+    def close_issue(self, issue_number: int, comment: str) -> tuple[bool, bool]:
+        """Close an issue with a comment.
+
+        Closes first, then comments — so a failed comment never leaves
+        a misleading "closing" notice on a still-open issue.
+
+        Returns (closed, commented) so the caller can log partial failures.
+        """
+        # Close the issue first
+        issue_url = f"{self.base_url}/issues/{issue_number}"
+        with httpx.Client() as client:
+            response = client.patch(
+                issue_url, headers=self.headers, json={"state": "closed"}
+            )
+
+            if response.status_code != 200:
+                print(
+                    f"Failed to close issue #{issue_number}: "
+                    f"{response.status_code} {response.text}"
+                )
+                return False, False
+
+        # Then add the comment
         comment_url = f"{self.base_url}/issues/{issue_number}/comments"
         with httpx.Client() as client:
             response = client.post(
@@ -225,17 +245,13 @@ class GitHubClient:
             )
 
             if response.status_code != 201:
-                print(f"Failed to add comment to issue #{issue_number}")
-                return False
+                print(
+                    f"Issue #{issue_number} was closed but comment failed: "
+                    f"{response.status_code} {response.text}"
+                )
+                return True, False
 
-        # Then close the issue
-        issue_url = f"{self.base_url}/issues/{issue_number}"
-        with httpx.Client() as client:
-            response = client.patch(
-                issue_url, headers=self.headers, json={"state": "closed"}
-            )
-
-            return response.status_code == 200
+        return True, True
 
 
 def find_label_application_date(
@@ -371,9 +387,16 @@ def main():
                 "**If this was closed in error**, please leave a comment explaining the situation and we'll reopen it."
             )
 
-            if client.close_issue(issue.number, close_message):
-                print(f"[SUCCESS] Closed issue #{issue.number} (needs MRE)")
+            closed, commented = client.close_issue(issue.number, close_message)
+            if closed:
                 closed_count += 1
+                if commented:
+                    print(f"[SUCCESS] Closed issue #{issue.number} (needs MRE)")
+                else:
+                    print(
+                        f"[WARNING] Closed issue #{issue.number} but "
+                        f"comment was not posted"
+                    )
             else:
                 print(f"[ERROR] Failed to close issue #{issue.number}")
 

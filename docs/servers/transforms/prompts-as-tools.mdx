@@ -116,7 +116,7 @@ result = await client.call_tool(
 ## Message Format
 
 Rendered prompts return a messages array following the standard MCP format. Each message includes:
-- `role`: The message role (typically "user", "assistant", or "system")
+- `role`: The message role ("user" or "assistant")
 - `content`: The message text content
 
 Multi-message prompts are supported - the array will contain all messages in order.

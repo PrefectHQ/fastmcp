@@ -429,6 +429,15 @@ class OIDCProxy(OAuthProxy):
             return id_token
         return upstream_token_set.access_token
 
+    def _uses_alternate_verification(self) -> bool:
+        """Return True when id_token verification is enabled.
+
+        This ensures ``load_access_token`` always patches the validated
+        result with upstream scopes, even when the IdP issues the same
+        JWT for both ``access_token`` and ``id_token``.
+        """
+        return self._verify_id_token
+
     def get_oidc_configuration(
         self,
         config_url: AnyHttpUrl,

@@ -53,7 +53,7 @@ class TransportMixin:
         if show_banner is None:
             show_banner = fastmcp.settings.show_server_banner
         if transport is None:
-            transport = "stdio"
+            transport = fastmcp.settings.transport
         if transport not in {"stdio", "http", "sse", "streamable-http"}:
             raise ValueError(f"Unknown transport: {transport}")
 
@@ -255,7 +255,7 @@ class TransportMixin:
         uvicorn_config_from_user = uvicorn_config or {}
 
         config_kwargs: dict[str, Any] = {
-            "timeout_graceful_shutdown": 0,
+            "timeout_graceful_shutdown": 2,
             "lifespan": "on",
             "ws": "websockets-sansio",
         }

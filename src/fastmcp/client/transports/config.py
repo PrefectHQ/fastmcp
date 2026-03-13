@@ -91,40 +91,57 @@ class MCPConfigTransport(ClientTransport):
                 yield session
             return
 
-        # Multiple servers - create composite with mounted proxies
-        # Close any previous transports from prior connections to avoid leaking
-        for t in self._transports:
-            await t.close()
-        self._transports = []
+        # Multiple servers - create composite with mounted proxies, connecting
+        # each ProxyClient so its underlying transport session stays alive for
+        # the duration of this context (fixes session persistence for
+        # streamable-http backends — see #2790).
         timeout = session_kwargs.get("read_timeout_seconds")
         composite = FastMCP[Any](name="MCPRouter")
 
-        try:
-            for name, server_config in self.config.mcpServers.items():
-                transport, proxy = self._create_proxy(name, server_config, timeout)
-                self._transports.append(transport)
-                composite.mount(proxy, namespace=name if self.name_as_prefix else None)
-        except Exception:
-            # Clean up any transports created before the failure
+        async with contextlib.AsyncExitStack() as stack:
+            # Close any previous transports from prior connections to avoid leaking
             for t in self._transports:
                 await t.close()
             self._transports = []
-            raise
 
-        async with FastMCPTransport(mcp=composite).connect_session(
-            **session_kwargs
-        ) as session:
-            yield session
+            try:
+                for name, server_config in self.config.mcpServers.items():
+                    transport, _client, proxy = await self._create_proxy(
+                        name, server_config, timeout, stack
+                    )
+                    self._transports.append(transport)
+                    composite.mount(
+                        proxy, namespace=name if self.name_as_prefix else None
+                    )
+            except Exception:
+                # Clean up any transports created before the failure
+                for t in self._transports:
+                    await t.close()
+                self._transports = []
+                raise
 
-    def _create_proxy(
+            async with FastMCPTransport(mcp=composite).connect_session(
+                **session_kwargs
+            ) as session:
+                yield session
+
+    async def _create_proxy(
         self,
         name: str,
         config: MCPServerTypes,
         timeout: datetime.timedelta | None,
-    ) -> tuple[ClientTransport, FastMCP[Any]]:
-        """Create underlying transport and proxy server for a single backend."""
+        stack: contextlib.AsyncExitStack,
+    ) -> tuple[ClientTransport, Any, FastMCP[Any]]:
+        """Create underlying transport, proxy client, and proxy server for a single backend.
+
+        The ProxyClient is connected via the AsyncExitStack *before* being
+        passed to create_proxy so the factory sees it as connected and reuses
+        the same session for all tool calls (instead of creating fresh copies).
+
+        Returns a tuple of (transport, proxy_client, proxy_server).
+        """
         # Import here to avoid circular dependency
-        from fastmcp.server.providers.proxy import ProxyClient
+        from fastmcp.server.providers.proxy import StatefulProxyClient
 
         tool_transforms = None
         include_tags = None
@@ -144,7 +161,23 @@ class MCPConfigTransport(ClientTransport):
         else:
             transport = config.to_transport()
 
-        client = ProxyClient(transport=transport, timeout=timeout)
+        client = StatefulProxyClient(transport=transport, timeout=timeout)
+        # Connect the client *before* create_proxy so _create_client_factory
+        # detects it as connected and reuses it for all tool calls, preserving
+        # the session ID across requests. StatefulProxyClient is used instead
+        # of ProxyClient because its context-restoring handler wrappers prevent
+        # stale ContextVars in the reused session's receive loop.
+        #
+        # StatefulProxyClient.__aexit__ is a no-op (by design, for the
+        # new_stateful() use case), so we cannot rely on enter_async_context
+        # alone to clean up.  Instead we connect manually and push an
+        # explicit force-disconnect callback so the subprocess is terminated
+        # when the AsyncExitStack unwinds.
+        await client.__aenter__()
+        # Callbacks run LIFO: transport.close() must run *after*
+        # client._disconnect so push it first.
+        stack.push_async_callback(transport.close)
+        stack.push_async_callback(client._disconnect, force=True)
         # Create proxy without include_tags/exclude_tags - we'll add them after tool transforms
         proxy = create_proxy(
             client,
@@ -160,7 +193,7 @@ class MCPConfigTransport(ClientTransport):
             proxy.enable(tags=set(include_tags), only=True)
         if exclude_tags:
             proxy.disable(tags=set(exclude_tags))
-        return transport, proxy
+        return transport, client, proxy
 
     async def close(self):
         for transport in self._transports:

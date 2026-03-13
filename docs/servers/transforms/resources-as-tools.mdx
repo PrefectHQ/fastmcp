@@ -45,6 +45,8 @@ mcp.add_transform(ResourcesAsTools(mcp))
 
 Clients now see three tools: whatever tools you defined directly, plus `list_resources` and `read_resource`.
 
+Both generated tools are annotated with `readOnlyHint=True`, since they only read data. Clients that respect tool annotations (like Cursor) can use this to auto-confirm these tool calls without prompting the user.
+
 ## Static Resources vs Templates
 
 Resources come in two forms, and the `list_resources` tool distinguishes between them in its JSON output.

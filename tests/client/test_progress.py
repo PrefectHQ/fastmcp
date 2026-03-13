@@ -68,3 +68,9 @@ async def test_progress_handler_supplied_on_tool_call_overrides_default(
         await client.call_tool("progress_tool", {}, progress_handler=progress_handler)
 
     assert PROGRESS_MESSAGES == EXPECTED_PROGRESS_MESSAGES
+
+
+async def test_default_progress_handler_handles_zero_total() -> None:
+    from fastmcp.client.progress import default_progress_handler
+
+    await default_progress_handler(progress=1, total=0, message="starting")

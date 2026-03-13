@@ -554,12 +554,16 @@ class TransformedTool(Tool):
         # Additional validation: check for naming conflicts after transformation
         if transform_args:
             new_names = []
-            for old_name, transform in transform_args.items():
-                if not transform.hide:
-                    if transform.name is not NotSet:
-                        new_names.append(transform.name)
-                    else:
-                        new_names.append(old_name)
+            for old_name in parent_params:
+                transform = transform_args.get(old_name, ArgTransform())
+
+                if transform.hide:
+                    continue
+
+                if transform.name is not NotSet:
+                    new_names.append(transform.name)
+                else:
+                    new_names.append(old_name)
 
             # Check for duplicate names after transformation
             name_counts = {}

@@ -419,3 +419,105 @@ def charge(amount: float) -> str:
             assert len(tools_list) == 2
             names = {t.name for t in tools_list}
             assert names == {"greet", "charge"}
+
+
+class TestFileSystemProviderVersioning:
+    """Tests for version propagation through FileSystemProvider."""
+
+    async def test_versioned_tool_via_provider(self, tmp_path: Path):
+        """FileSystemProvider should preserve tool version in list_tools output."""
+        (tmp_path / "versioned.py").write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool(version="1.0", description="v1 greet")
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+"""
+        )
+
+        provider = FileSystemProvider(tmp_path)
+        mcp = FastMCP("TestServer", providers=[provider])
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 1
+            assert tools[0].name == "greet"
+            meta = tools[0].meta
+            assert meta is not None
+            assert meta["fastmcp"]["version"] == "1.0"
+
+    async def test_versioned_resource_via_provider(self, tmp_path: Path):
+        """FileSystemProvider should preserve resource version."""
+        (tmp_path / "versioned_resource.py").write_text(
+            """\
+from fastmcp.resources import resource
+
+@resource("data://config", version="2.0", name="config", description="v2 config")
+def config() -> str:
+    return '{"theme": "dark"}'
+"""
+        )
+
+        provider = FileSystemProvider(tmp_path)
+        mcp = FastMCP("TestServer", providers=[provider])
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert len(resources) == 1
+            assert resources[0].name == "config"
+            meta = resources[0].meta
+            assert meta is not None
+            assert meta["fastmcp"]["version"] == "2.0"
+
+    async def test_versioned_prompt_via_provider(self, tmp_path: Path):
+        """FileSystemProvider should preserve prompt version."""
+        (tmp_path / "versioned_prompt.py").write_text(
+            """\
+from fastmcp.prompts import prompt
+
+@prompt(name="summarize", version="1.0", description="v1 prompt")
+def summarize(text: str) -> str:
+    return f"Summarize: {text}"
+"""
+        )
+
+        provider = FileSystemProvider(tmp_path)
+        mcp = FastMCP("TestServer", providers=[provider])
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert len(prompts) == 1
+            assert prompts[0].name == "summarize"
+            meta = prompts[0].meta
+            assert meta is not None
+            assert meta["fastmcp"]["version"] == "1.0"
+
+    async def test_multiple_tool_versions_via_provider(self, tmp_path: Path):
+        """FileSystemProvider should handle multiple versions of the same tool."""
+        (tmp_path / "multi_version.py").write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool(name="add", version="1.0", description="v1 add")
+def add_v1(x: int, y: int) -> int:
+    return x + y
+
+@tool(name="add", version="2.0", description="v2 add with z")
+def add_v2(x: int, y: int, z: int = 0) -> int:
+    return x + y + z
+"""
+        )
+
+        provider = FileSystemProvider(tmp_path)
+        mcp = FastMCP("TestServer", providers=[provider])
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            add_tools = [t for t in tools if t.name == "add"]
+            # list_tools deduplicates to the highest version
+            assert len(add_tools) == 1
+            meta = add_tools[0].meta
+            assert meta is not None
+            assert meta["fastmcp"]["version"] == "2.0"
+            assert meta["fastmcp"]["versions"] == ["2.0", "1.0"]
