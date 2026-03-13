@@ -127,7 +127,7 @@ class ProxyTool(Tool):
                 # request. Stash the current RequestContext in the shared
                 # ref so handlers can restore it before forwarding.
                 if isinstance(client, StatefulProxyClient):
-                    cast(list[Any], client._proxy_rc_ref)[0] = (
+                    client._proxy_rc_ref[0] = (
                         ctx.request_context,
                         ctx._fastmcp,  # weakref to FastMCP, not the Context
                     )

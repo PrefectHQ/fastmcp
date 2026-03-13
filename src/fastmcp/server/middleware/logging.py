@@ -56,7 +56,7 @@ class BaseLoggingMiddleware(Middleware):
     def _create_before_message(
         self, context: MiddlewareContext[Any]
     ) -> dict[str, str | int | float]:
-        message = {
+        message: dict[str, str | int | float] = {
             "event": context.type + "_start",
             "method": context.method or "unknown",
             "source": context.source,

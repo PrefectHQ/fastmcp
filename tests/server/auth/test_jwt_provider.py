@@ -50,7 +50,7 @@ class SymmetricKeyHelper:
         header = {"alg": algorithm}
 
         # Create payload
-        payload = {
+        payload: dict[str, str | int | list[str]] = {
             "sub": subject,
             "iss": issuer,
             "iat": int(time.time()),
@@ -589,7 +589,7 @@ class TestBearerTokenJWKS:
         httpx_mock: HTTPXMock,
         mock_dns,
     ):
-        mock_jwks_data["keys"] = [  # type: ignore[typeddict-item]
+        mock_jwks_data["keys"] = [
             {
                 "kid": "test-key-1",
                 "alg": "RS256",
