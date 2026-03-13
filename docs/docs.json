@@ -494,6 +494,7 @@
                     "group": "fastmcp.server",
                     "pages": [
                       "python-sdk/fastmcp-server-__init__",
+                      "python-sdk/fastmcp-server-app",
                       "python-sdk/fastmcp-server-apps",
                       {
                         "group": "auth",
