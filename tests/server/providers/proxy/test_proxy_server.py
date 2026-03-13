@@ -815,6 +815,8 @@ class TestProxyProviderCache:
         assert provider._tools_cache is not None
         original_ts = provider._tools_cache.timestamp
 
+        time.sleep(0.01)
+
         await provider._get_tool("greet")
         assert provider._tools_cache.timestamp > original_ts
 
