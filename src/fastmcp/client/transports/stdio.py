@@ -1,11 +1,12 @@
 import asyncio
 import contextlib
+import hashlib
 import os
 import shutil
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import TextIO, cast
+from typing import Literal, TextIO, cast
 
 import anyio
 from mcp import ClientSession, StdioServerParameters
@@ -17,6 +18,8 @@ from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
 logger = get_logger(__name__)
+
+HashAlgorithm = Literal["sha256", "sha512", "sha1", "md5"]
 
 
 class StdioTransport(ClientTransport):
@@ -35,6 +38,8 @@ class StdioTransport(ClientTransport):
         cwd: str | None = None,
         keep_alive: bool | None = None,
         log_file: Path | TextIO | None = None,
+        expected_hash: str | None = None,
+        hash_algorithm: HashAlgorithm = "sha256",
     ):
         """
         Initialize a Stdio transport.
@@ -53,6 +58,11 @@ class StdioTransport(ClientTransport):
                    if not provided. When a Path is provided, the file will be created
                    if it doesn't exist, or appended to if it does. When set, server
                    errors will be written to this file instead of appearing in the console.
+            expected_hash: Optional hash to verify the executable against before spawning.
+                          Prevents MCP poisoning attacks by ensuring the binary hasn't been
+                          tampered with. Format: hexadecimal string (e.g., "abc123...").
+            hash_algorithm: Hash algorithm to use for verification (default: "sha256").
+                           Supported: "sha256", "sha512", "sha1", "md5".
         """
         self.command = command
         self.args = args
@@ -62,6 +72,8 @@ class StdioTransport(ClientTransport):
             keep_alive = True
         self.keep_alive = keep_alive
         self.log_file = log_file
+        self.expected_hash = expected_hash
+        self.hash_algorithm = hash_algorithm
 
         self._session: ClientSession | None = None
         self._connect_task: asyncio.Task | None = None
@@ -97,6 +109,8 @@ class StdioTransport(ClientTransport):
                 env=self.env,
                 cwd=self.cwd,
                 log_file=self.log_file,
+                expected_hash=self.expected_hash,
+                hash_algorithm=self.hash_algorithm,
                 # TODO(ty): remove when ty supports Unpack[TypedDict] inference
                 session_kwargs=session_kwargs,  # type: ignore[arg-type]
                 ready_event=self._ready_event,
@@ -152,6 +166,8 @@ async def _stdio_transport_connect_task(
     env: dict[str, str] | None,
     cwd: str | None,
     log_file: Path | TextIO | None,
+    expected_hash: str | None,
+    hash_algorithm: HashAlgorithm,
     session_kwargs: SessionKwargs,
     ready_event: anyio.Event,
     stop_event: anyio.Event,
@@ -161,6 +177,10 @@ async def _stdio_transport_connect_task(
     to ensure that the connection task does not hold a reference to the Transport object."""
 
     try:
+        # Verify executable hash before spawning if requested
+        if expected_hash:
+            _verify_executable_hash(command, expected_hash, hash_algorithm, env, cwd)
+
         async with contextlib.AsyncExitStack() as stack:
             try:
                 server_params = StdioServerParameters(
@@ -202,6 +222,90 @@ async def _stdio_transport_connect_task(
         raise
 
 
+def _verify_executable_hash(
+    command: str,
+    expected_hash: str,
+    hash_algorithm: HashAlgorithm,
+    env: dict[str, str] | None,
+    cwd: str | None,
+) -> None:
+    """Verify the executable hash matches the expected value.
+
+    Args:
+        command: Command to verify (will be resolved to full path)
+        expected_hash: Expected hash value (hexadecimal string)
+        hash_algorithm: Hash algorithm to use
+        env: Environment variables (for PATH resolution)
+        cwd: Working directory (for relative path resolution)
+
+    Raises:
+        FileNotFoundError: If executable cannot be found
+        ValueError: If hash doesn't match or algorithm is unsupported
+    """
+    # Resolve command to full path
+    executable_path = _resolve_executable_path(command, env, cwd)
+
+    # Compute hash
+    hasher = hashlib.new(hash_algorithm)
+    with open(executable_path, "rb") as f:
+        while chunk := f.read(8192):
+            hasher.update(chunk)
+    actual_hash = hasher.hexdigest()
+
+    # Compare
+    if actual_hash != expected_hash.lower():
+        raise ValueError(
+            f"Executable hash mismatch for {executable_path}: "
+            f"expected {expected_hash}, got {actual_hash}. "
+            f"This may indicate the executable has been tampered with."
+        )
+
+    logger.info(f"Executable hash verified: {executable_path} ({hash_algorithm})")
+
+
+def _resolve_executable_path(
+    command: str, env: dict[str, str] | None, cwd: str | None
+) -> Path:
+    """Resolve command to absolute executable path.
+
+    Args:
+        command: Command name or path
+        env: Environment variables (for PATH resolution)
+        cwd: Working directory (for relative path resolution)
+
+    Returns:
+        Absolute path to executable
+
+    Raises:
+        FileNotFoundError: If executable cannot be found
+    """
+    # If it's already an absolute path
+    if Path(command).is_absolute():
+        path = Path(command)
+        if not path.is_file():
+            raise FileNotFoundError(f"Executable not found: {command}")
+        return path
+
+    # If it's a relative path
+    if "/" in command or "\\" in command:
+        base = Path(cwd) if cwd else Path.cwd()
+        path = (base / command).resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"Executable not found: {command}")
+        return path
+
+    # Search in PATH
+    search_env = env if env else os.environ
+    path_str = shutil.which(command, path=search_env.get("PATH"))
+    if not path_str:
+        raise FileNotFoundError(
+            f"Executable '{command}' not found in PATH. "
+            f"Cannot verify hash without absolute path."
+        )
+
+    return Path(path_str).resolve()
+
+
 class PythonStdioTransport(StdioTransport):
     """Transport for running Python scripts."""
 
@@ -214,6 +318,8 @@ class PythonStdioTransport(StdioTransport):
         python_cmd: str = sys.executable,
         keep_alive: bool | None = None,
         log_file: Path | TextIO | None = None,
+        expected_hash: str | None = None,
+        hash_algorithm: HashAlgorithm = "sha256",
     ):
         """
         Initialize a Python transport.
@@ -233,6 +339,8 @@ class PythonStdioTransport(StdioTransport):
                    if not provided. When a Path is provided, the file will be created
                    if it doesn't exist, or appended to if it does. When set, server
                    errors will be written to this file instead of appearing in the console.
+            expected_hash: Optional hash to verify the Python interpreter against before spawning.
+            hash_algorithm: Hash algorithm to use for verification (default: "sha256").
         """
         script_path = Path(script_path).resolve()
         if not script_path.is_file():
@@ -251,6 +359,8 @@ class PythonStdioTransport(StdioTransport):
             cwd=cwd,
             keep_alive=keep_alive,
             log_file=log_file,
+            expected_hash=expected_hash,
+            hash_algorithm=hash_algorithm,
         )
         self.script_path = script_path
 
