@@ -9,6 +9,7 @@ from fastmcp import Client, FastMCP
 from fastmcp.utilities.inspect import (
     FastMCPInfo,
     ToolInfo,
+    format_fastmcp_info,
     inspect_fastmcp,
     inspect_fastmcp_v1,
 )
@@ -158,7 +159,7 @@ class TestGetFastMCPInfo:
         """Test get_fastmcp_info with a server that has prompts."""
         mcp = FastMCP("PromptServer")
 
-        @mcp.prompt
+        @mcp.prompt(meta={"text": "Analyze: {data}"})
         def analyze_data(data: str) -> list:
             return [{"role": "user", "content": f"Analyze: {data}"}]
 
@@ -173,6 +174,26 @@ class TestGetFastMCPInfo:
         prompt_names = [prompt.name for prompt in info.prompts]
         assert "analyze_data" in prompt_names
         assert "custom_prompt" in prompt_names
+        assert next(prompt for prompt in info.prompts if prompt.name == "analyze_data").text == "Analyze: {data}"
+        assert next(prompt for prompt in info.prompts if prompt.name == "custom_prompt").text is None
+
+    async def test_format_fastmcp_info_includes_prompt_text_from_meta(self):
+        """Prompt inspect output should surface prompt template text from meta."""
+        import json
+
+        mcp = FastMCP("PromptServer")
+
+        @mcp.prompt(meta={"text": "Hello, {name}!"})
+        def greet(name: str) -> list:
+            return [{"role": "user", "content": f"Hello, {name}!"}]
+
+        info = await inspect_fastmcp(mcp)
+        json_bytes = format_fastmcp_info(info)
+        data = json.loads(json_bytes)
+
+        assert data["prompts"][0]["name"] == "greet"
+        assert data["prompts"][0]["text"] == "Hello, {name}!"
+        assert data["prompts"][0]["meta"]["text"] == "Hello, {name}!"
 
     async def test_comprehensive_server(self):
         """Test get_fastmcp_info with a server that has all component types."""

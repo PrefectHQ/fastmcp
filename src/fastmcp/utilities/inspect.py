@@ -38,6 +38,7 @@ class PromptInfo:
     key: str
     name: str
     description: str | None
+    text: str | None = None
     arguments: list[dict[str, Any]] | None = None
     tags: list[str] | None = None
     title: str | None = None
@@ -141,6 +142,10 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 key=prompt.key,
                 name=prompt.name or prompt.key,
                 description=prompt.description,
+                text=prompt.meta.get("text")
+                if isinstance(prompt.meta, dict)
+                and isinstance(prompt.meta.get("text"), str)
+                else None,
                 arguments=[arg.model_dump() for arg in prompt.arguments]
                 if prompt.arguments
                 else None,
@@ -288,6 +293,7 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     key=mcp_prompt.name,
                     name=mcp_prompt.name,
                     description=mcp_prompt.description,
+                    text=None,
                     arguments=arguments,
                     tags=None,  # v1 doesn't have tags
                     title=None,  # v1 doesn't have title
