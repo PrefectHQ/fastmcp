@@ -178,13 +178,15 @@ class LifespanMixin:
             finally:
                 self._started.clear()
         finally:
-            with anyio.CancelScope(shield=True):
-                await stack.aclose()
-            async with self._lifespan_lock:
-                self._lifespan_ref_count -= 1
-                if self._lifespan_ref_count == 0:
-                    self._lifespan_result_set = False
-                    self._lifespan_result = None
+            try:
+                with anyio.CancelScope(shield=True):
+                    await stack.aclose()
+            finally:
+                async with self._lifespan_lock:
+                    self._lifespan_ref_count -= 1
+                    if self._lifespan_ref_count == 0:
+                        self._lifespan_result_set = False
+                        self._lifespan_result = None
 
     def _setup_task_protocol_handlers(self: FastMCP) -> None:
         """Register SEP-1686 task protocol handlers with SDK.
