@@ -21,9 +21,13 @@ import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, Any
 
+from mcp.types import ToolAnnotations
+
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.versions import VersionSpec
+
+_DEFAULT_ANNOTATIONS = ToolAnnotations(readOnlyHint=True)
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.base import Provider
@@ -119,7 +123,7 @@ class ResourcesAsTools(Transform):
 
             return json.dumps(result, indent=2)
 
-        return Tool.from_function(fn=list_resources)
+        return Tool.from_function(fn=list_resources, annotations=_DEFAULT_ANNOTATIONS)
 
     def _make_read_resource_tool(self) -> Tool:
         """Create the read_resource tool."""
@@ -158,7 +162,7 @@ class ResourcesAsTools(Transform):
 
             raise ValueError(f"Resource not found: {uri}")
 
-        return Tool.from_function(fn=read_resource)
+        return Tool.from_function(fn=read_resource, annotations=_DEFAULT_ANNOTATIONS)
 
 
 def _format_result(result: Any) -> str:
