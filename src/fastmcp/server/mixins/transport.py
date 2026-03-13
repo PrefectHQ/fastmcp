@@ -255,7 +255,7 @@ class TransportMixin:
         uvicorn_config_from_user = uvicorn_config or {}
 
         config_kwargs: dict[str, Any] = {
-            "timeout_graceful_shutdown": 0,
+            "timeout_graceful_shutdown": 2,
             "lifespan": "on",
             "ws": "websockets-sansio",
         }
