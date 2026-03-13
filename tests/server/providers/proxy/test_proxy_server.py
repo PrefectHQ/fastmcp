@@ -1,6 +1,8 @@
 import inspect
 import json
+import time
 from typing import Any, cast
+from unittest.mock import AsyncMock, patch
 
 import mcp.types as mcp_types
 import pytest
@@ -19,6 +21,7 @@ from fastmcp.server import create_proxy
 from fastmcp.server.providers.proxy import (
     FastMCPProxy,
     ProxyClient,
+    ProxyProvider,
 )
 from fastmcp.tools.tool import ToolResult
 from fastmcp.tools.tool_transform import (
@@ -767,3 +770,116 @@ class TestProxyComponentEnableDisable:
 
         with pytest.raises(NotImplementedError, match="server.disable"):
             prompt.disable()
+
+
+class TestProxyProviderCache:
+    """Tests for the ProxyProvider component list caching."""
+
+    async def test_get_tool_uses_cached_list(self, fastmcp_server):
+        """Calling call_tool should resolve from cache after an initial list."""
+        provider = ProxyProvider(
+            lambda: ProxyClient(FastMCPTransport(fastmcp_server)),
+        )
+        # Warm the cache via list
+        tools = await provider.list_tools()
+        assert any(t.name == "greet" for t in tools)
+
+        # _get_tool should resolve from cache without calling _list_tools again
+        with patch.object(
+            provider, "_get_client", new_callable=AsyncMock
+        ) as mock_client:
+            tool = await provider._get_tool("greet")
+            assert tool is not None
+            assert tool.name == "greet"
+            mock_client.assert_not_called()
+
+    async def test_get_tool_fetches_on_cold_cache(self, fastmcp_server):
+        """First _get_tool with no prior list should populate the cache."""
+        provider = ProxyProvider(
+            lambda: ProxyClient(FastMCPTransport(fastmcp_server)),
+        )
+        assert provider._tools_cache is None
+        tool = await provider._get_tool("greet")
+        assert tool is not None
+        assert provider._tools_cache is not None
+
+    async def test_cache_expires_after_ttl(self, fastmcp_server):
+        """After TTL expires, _get_tool should re-fetch from the backend."""
+        provider = ProxyProvider(
+            lambda: ProxyClient(FastMCPTransport(fastmcp_server)),
+            cache_ttl=0.0,
+        )
+        # Warm the cache
+        await provider._list_tools()
+        # With ttl=0 the cache is immediately stale, so _get_tool must re-fetch
+        assert provider._tools_cache is not None
+        original_ts = provider._tools_cache.timestamp
+
+        await provider._get_tool("greet")
+        assert provider._tools_cache.timestamp > original_ts
+
+    async def test_list_tools_refreshes_cache(self, fastmcp_server):
+        """Explicit list_tools always refreshes the cache timestamp."""
+        provider = ProxyProvider(
+            lambda: ProxyClient(FastMCPTransport(fastmcp_server)),
+        )
+        await provider._list_tools()
+        first_ts = provider._tools_cache.timestamp  # type: ignore[union-attr]
+
+        # Tiny sleep so monotonic clock advances
+        time.sleep(0.01)
+
+        await provider._list_tools()
+        assert provider._tools_cache.timestamp > first_ts  # type: ignore[union-attr]
+
+    async def test_cache_ttl_zero_disables_caching(self, fastmcp_server):
+        """With cache_ttl=0, every _get_tool call should re-fetch."""
+        provider = ProxyProvider(
+            lambda: ProxyClient(FastMCPTransport(fastmcp_server)),
+            cache_ttl=0.0,
+        )
+        # Each _get_tool call should trigger a fresh _list_tools
+        call_count = 0
+        original_list = provider._list_tools
+
+        async def counting_list():
+            nonlocal call_count
+            call_count += 1
+            return await original_list()
+
+        with patch.object(provider, "_list_tools", side_effect=counting_list):
+            await provider._get_tool("greet")
+            await provider._get_tool("add")
+        assert call_count == 2
+
+    async def test_get_resource_uses_cache(self, fastmcp_server):
+        """Resource lookups should also use the cache."""
+        provider = ProxyProvider(
+            lambda: ProxyClient(FastMCPTransport(fastmcp_server)),
+        )
+        await provider._list_resources()
+        with patch.object(
+            provider, "_get_client", new_callable=AsyncMock
+        ) as mock_client:
+            # Even if no resources match, the cache is used (no backend call)
+            await provider._get_resource("config://app")
+            mock_client.assert_not_called()
+
+    async def test_call_tool_through_server_uses_cache(self, fastmcp_server):
+        """End-to-end: calling a tool on a proxy server should only connect
+        for the actual tool execution, not for tool resolution."""
+        proxy = create_proxy(fastmcp_server)
+        # Warm the cache by listing
+        await proxy.list_tools()
+
+        # Now call a tool — the provider's _list_tools should NOT be called
+        # because the cache is warm. The connection happens only in ProxyTool.run.
+        proxy_provider = next(
+            p for p in proxy.providers if isinstance(p, ProxyProvider)
+        )
+        with patch.object(
+            proxy_provider, "_list_tools", wraps=proxy_provider._list_tools
+        ) as mock_list:
+            result = await proxy.call_tool("greet", {"name": "Alice"})
+            mock_list.assert_not_called()
+        assert result.content[0].text == "Hello, Alice!"  # type: ignore[union-attr]
