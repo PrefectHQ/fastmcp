@@ -174,8 +174,18 @@ class TestGetFastMCPInfo:
         prompt_names = [prompt.name for prompt in info.prompts]
         assert "analyze_data" in prompt_names
         assert "custom_prompt" in prompt_names
-        assert next(prompt for prompt in info.prompts if prompt.name == "analyze_data").text == "Analyze: {data}"
-        assert next(prompt for prompt in info.prompts if prompt.name == "custom_prompt").text is None
+        assert (
+            next(
+                prompt for prompt in info.prompts if prompt.name == "analyze_data"
+            ).text
+            == "Analyze: {data}"
+        )
+        assert (
+            next(
+                prompt for prompt in info.prompts if prompt.name == "custom_prompt"
+            ).text
+            is None
+        )
 
     async def test_format_fastmcp_info_includes_prompt_text_from_meta(self):
         """Prompt inspect output should surface prompt template text from meta."""
