@@ -262,7 +262,9 @@ When mounting proxy servers, this latency affects all operations on the parent s
 
 <VersionBadge version="3.2.0" />
 
-`ProxyProvider` caches component lists (tools, resources, templates, prompts) so that individual lookups — like resolving a tool by name during `call_tool` — don't require a separate backend connection. The cache refreshes whenever an explicit `list_*` call is made, and entries expire after a configurable TTL (default 300 seconds).
+`ProxyProvider` caches the backend's component lists (tools, resources, templates, prompts) so that individual lookups — like resolving a tool by name during `call_tool` — don't require a separate backend connection. The cache stores raw component metadata and is shared across all proxy sessions; per-session visibility, auth, and transforms are still applied after cache lookup by the server layer. The cache refreshes whenever an explicit `list_*` call is made, and entries expire after a configurable TTL (default 300 seconds).
+
+For backends whose component lists change dynamically, disable caching by setting `cache_ttl=0`.
 
 ```python
 from fastmcp.server.providers.proxy import ProxyProvider, ProxyClient

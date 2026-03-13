@@ -506,9 +506,13 @@ class ProxyProvider(Provider):
 
     Component lists (tools, resources, templates, prompts) are cached so that
     individual lookups (e.g. during ``call_tool``) can resolve from the cache
-    instead of opening a new backend connection.  The cache is refreshed
-    whenever a ``list_*`` call is made, and entries expire after ``cache_ttl``
-    seconds (default 300).  Set ``cache_ttl=0`` to disable caching.
+    instead of opening a new backend connection.  The cache stores the
+    backend's raw component metadata and is shared across all sessions;
+    per-session visibility and auth filtering are applied after cache lookup
+    by the server layer.  The cache is refreshed whenever a ``list_*`` call
+    is made, and entries expire after ``cache_ttl`` seconds (default 300).
+    Set ``cache_ttl=0`` to disable caching.  Disabling is recommended for
+    backends whose component lists change dynamically.
 
     Example:
         ```python
