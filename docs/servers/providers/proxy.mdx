@@ -258,7 +258,48 @@ Proxying introduces network latency:
 
 When mounting proxy servers, this latency affects all operations on the parent server.
 
-For low-latency requirements, consider caching strategies or limiting mounting depth.
+### Component List Caching
+
+<VersionBadge version="3.2.0" />
+
+`ProxyProvider` caches component lists (tools, resources, templates, prompts) so that individual lookups — like resolving a tool by name during `call_tool` — don't require a separate backend connection. The cache refreshes whenever an explicit `list_*` call is made, and entries expire after a configurable TTL (default 300 seconds).
+
+```python
+from fastmcp.server.providers.proxy import ProxyProvider, ProxyClient
+
+# Default 300s TTL
+provider = ProxyProvider(lambda: ProxyClient("http://backend/mcp"))
+
+# Custom TTL
+provider = ProxyProvider(lambda: ProxyClient("http://backend/mcp"), cache_ttl=60)
+
+# Disable caching
+provider = ProxyProvider(lambda: ProxyClient("http://backend/mcp"), cache_ttl=0)
+```
+
+### Session Reuse for Stateless Backends
+
+By default, each tool call opens a fresh MCP session to the backend. This is the safe default because it prevents state from leaking between requests. However, for stateless HTTP backends where there's no session state to protect, this overhead is unnecessary.
+
+You can reuse a single backend session by providing a client factory that returns the same client instance:
+
+```python
+from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
+
+base_client = ProxyClient("http://backend:8000/mcp")
+shared_client = base_client.new()
+
+proxy = FastMCPProxy(
+    client_factory=lambda: shared_client,
+    name="ReusedSessionProxy",
+)
+```
+
+This eliminates the MCP initialization handshake on every call, which can dramatically reduce latency under load. The `Client` uses reference counting for its session lifecycle, so concurrent callers sharing the same instance is safe.
+
+<Warning>
+Only reuse sessions when you know the backend is stateless (e.g. stateless HTTP). For stateful backends (stdio processes, servers that track session state), use the default fresh-session behavior to avoid context mixing.
+</Warning>
 
 ## Advanced Usage
 
