@@ -839,9 +839,12 @@ async def run_dev_apps(
         logger.info(f"Starting user server on port {mcp_port}…")
         logger.info("Fetching app-bridge.js from npm…")
 
-        user_proc, (app_bridge_js, import_map_json) = await asyncio.gather(
-            _start_user_server(server_spec, mcp_port, reload=reload),
-            _fetch_app_bridge_bundle(_EXT_APPS_VERSION, _MCP_SDK_VERSION),
+        # Start the server first so user_proc is assigned before anything
+        # that might fail (e.g. npm fetch).  This ensures the finally
+        # cleanup can kill the subprocess even if the bundle fetch raises.
+        user_proc = await _start_user_server(server_spec, mcp_port, reload=reload)
+        app_bridge_js, import_map_json = await _fetch_app_bridge_bundle(
+            _EXT_APPS_VERSION, _MCP_SDK_VERSION
         )
 
         import_map_tag = (
@@ -888,22 +891,27 @@ async def run_dev_apps(
         logging.getLogger("uvicorn.error").setLevel(logging.CRITICAL)
         task.cancel()
 
-    loop.add_signal_handler(signal.SIGINT, _on_signal)
-    loop.add_signal_handler(signal.SIGTERM, _on_signal)
+    if sys.platform != "win32":
+        loop.add_signal_handler(signal.SIGINT, _on_signal)
+        loop.add_signal_handler(signal.SIGTERM, _on_signal)
 
     try:
         await task
     except asyncio.CancelledError:
         pass
     finally:
-        loop.remove_signal_handler(signal.SIGINT)
-        loop.remove_signal_handler(signal.SIGTERM)
+        if sys.platform != "win32":
+            loop.remove_signal_handler(signal.SIGINT)
+            loop.remove_signal_handler(signal.SIGTERM)
         if user_proc is not None and user_proc.returncode is None:
             # Kill the entire process group (not just the top-level process)
             # because --reload creates a watcher that spawns child processes.
             # Killing only the watcher leaves the actual server holding the port.
             try:
-                os.killpg(os.getpgid(user_proc.pid), signal.SIGTERM)
+                if sys.platform != "win32":
+                    os.killpg(os.getpgid(user_proc.pid), signal.SIGTERM)
+                else:
+                    user_proc.kill()
             except (ProcessLookupError, PermissionError):
                 user_proc.kill()
             await user_proc.wait()
