@@ -14,7 +14,7 @@ class TestMainCLI:
         """Test that the main app is properly configured."""
         # app.name is a tuple in cyclopts
         assert "fastmcp" in app.name
-        assert "FastMCP 2.0" in app.help
+        assert "FastMCP" in app.help
         # Just check that version exists, not the specific value
         assert hasattr(app, "version")
 

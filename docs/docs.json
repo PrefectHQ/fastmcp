@@ -194,6 +194,7 @@
                   "apps/overview",
                   "apps/prefab",
                   "apps/patterns",
+                  "apps/development",
                   "apps/low-level"
                 ]
               },

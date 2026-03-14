@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import ssl
 from collections.abc import AsyncIterator
 from typing import Any, Literal, cast
 
@@ -31,6 +32,7 @@ class SSETransport(ClientTransport):
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
         httpx_client_factory: McpHttpClientFactory | None = None,
+        verify: ssl.SSLContext | bool | str | None = None,
     ):
         if isinstance(url, AnyUrl):
             url = str(url)
@@ -43,6 +45,20 @@ class SSETransport(ClientTransport):
         self.url: str = url
         self.headers = headers or {}
         self.httpx_client_factory = httpx_client_factory
+        self.verify: ssl.SSLContext | bool | str | None = verify
+
+        if httpx_client_factory is not None and verify is not None:
+            import warnings
+
+            warnings.warn(
+                "Both 'httpx_client_factory' and 'verify' were provided. "
+                "The 'verify' parameter will be ignored because "
+                "'httpx_client_factory' takes precedence. Configure SSL "
+                "verification directly in your httpx_client_factory instead.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         self._set_auth(auth)
 
         self.sse_read_timeout = normalize_timeout_to_timedelta(sse_read_timeout)
@@ -50,15 +66,50 @@ class SSETransport(ClientTransport):
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
         resolved: httpx.Auth | None
         if auth == "oauth":
-            resolved = OAuth(self.url, httpx_client_factory=self.httpx_client_factory)
+            resolved = OAuth(
+                self.url,
+                httpx_client_factory=self.httpx_client_factory
+                or self._make_verify_factory(),
+            )
         elif isinstance(auth, OAuth):
             auth._bind(self.url)
+            # Only inject the transport's factory into OAuth if OAuth still
+            # has the bare default — preserve any factory the caller attached
+            if auth.httpx_client_factory is httpx.AsyncClient:
+                factory = self.httpx_client_factory or self._make_verify_factory()
+                if factory is not None:
+                    auth.httpx_client_factory = factory
             resolved = auth
         elif isinstance(auth, str):
             resolved = BearerAuth(auth)
         else:
             resolved = auth
         self.auth: httpx.Auth | None = resolved
+
+    def _make_verify_factory(self) -> McpHttpClientFactory | None:
+        if self.verify is None:
+            return None
+        verify = self.verify
+
+        def factory(
+            headers: dict[str, str] | None = None,
+            timeout: httpx.Timeout | None = None,
+            auth: httpx.Auth | None = None,
+        ) -> httpx.AsyncClient:
+            if timeout is None:
+                timeout = httpx.Timeout(30.0, read=300.0)
+            kwargs: dict[str, Any] = {
+                "follow_redirects": True,
+                "timeout": timeout,
+                "verify": verify,
+            }
+            if headers is not None:
+                kwargs["headers"] = headers
+            if auth is not None:
+                kwargs["auth"] = auth
+            return httpx.AsyncClient(**kwargs)
+
+        return cast(McpHttpClientFactory, factory)
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -85,6 +136,10 @@ class SSETransport(ClientTransport):
 
         if self.httpx_client_factory is not None:
             client_kwargs["httpx_client_factory"] = self.httpx_client_factory
+        else:
+            verify_factory = self._make_verify_factory()
+            if verify_factory is not None:
+                client_kwargs["httpx_client_factory"] = verify_factory
 
         async with sse_client(self.url, auth=self.auth, **client_kwargs) as transport:
             read_stream, write_stream = transport
