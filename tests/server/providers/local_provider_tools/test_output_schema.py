@@ -268,6 +268,30 @@ class TestToolOutputSchema:
         assert isinstance(result.content[2], TextContent)
         assert result.content[2].text == "direct MCP content"
 
+    async def test_wrapped_result_includes_meta_flag(self):
+        """Wrapped results include wrap_result in meta."""
+        server = FastMCP()
+
+        @server.tool
+        def list_tool() -> list[dict]:
+            return [{"a": 1}]
+
+        result = await server.call_tool("list_tool", {})
+        assert result.structured_content == {"result": [{"a": 1}]}
+        assert result.meta == {"fastmcp": {"wrap_result": True}}
+
+    async def test_unwrapped_result_has_no_meta_flag(self):
+        """Unwrapped dict results do not include wrap_result in meta."""
+        server = FastMCP()
+
+        @server.tool
+        def dict_tool() -> dict[str, int]:
+            return {"value": 42}
+
+        result = await server.call_tool("dict_tool", {})
+        assert result.structured_content == {"value": 42}
+        assert result.meta is None
+
     async def test_output_schema_serialization_edge_cases(self):
         """Test edge cases in output schema serialization."""
         mcp = FastMCP()

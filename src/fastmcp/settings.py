@@ -21,6 +21,10 @@ ENV_FILE = os.getenv("FASTMCP_ENV_FILE", ".env")
 
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
+MCP_LOG_LEVEL = Literal[
+    "debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"
+]
+
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
 TEN_MB_IN_BYTES = 1024 * 1024 * 10
@@ -253,6 +257,20 @@ class Settings(BaseSettings):
             ),
         ),
     ] = False
+
+    client_log_level: Annotated[
+        MCP_LOG_LEVEL | None,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Default minimum log level for messages sent to MCP clients.
+                When set, log messages below this level are suppressed.
+                Individual clients can override this per-session using the
+                MCP logging/setLevel request.
+                """
+            ),
+        ),
+    ] = None
 
     strict_input_validation: Annotated[
         bool,
