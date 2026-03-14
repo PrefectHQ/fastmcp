@@ -53,7 +53,11 @@ class SSETransport(ClientTransport):
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
         resolved: httpx.Auth | None
         if auth == "oauth":
-            resolved = OAuth(self.url, httpx_client_factory=self.httpx_client_factory)
+            resolved = OAuth(
+                self.url,
+                httpx_client_factory=self.httpx_client_factory
+                or self._make_verify_factory(),
+            )
         elif isinstance(auth, OAuth):
             auth._bind(self.url)
             resolved = auth
@@ -62,6 +66,31 @@ class SSETransport(ClientTransport):
         else:
             resolved = auth
         self.auth: httpx.Auth | None = resolved
+
+    def _make_verify_factory(self) -> McpHttpClientFactory | None:
+        if self.verify is None:
+            return None
+        verify = self.verify
+
+        def factory(
+            headers: dict[str, str] | None = None,
+            timeout: httpx.Timeout | None = None,
+            auth: httpx.Auth | None = None,
+        ) -> httpx.AsyncClient:
+            if timeout is None:
+                timeout = httpx.Timeout(30.0, read=300.0)
+            kwargs: dict[str, Any] = {
+                "follow_redirects": True,
+                "timeout": timeout,
+                "verify": verify,
+            }
+            if headers is not None:
+                kwargs["headers"] = headers
+            if auth is not None:
+                kwargs["auth"] = auth
+            return httpx.AsyncClient(**kwargs)
+
+        return cast(McpHttpClientFactory, factory)
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -88,13 +117,10 @@ class SSETransport(ClientTransport):
 
         if self.httpx_client_factory is not None:
             client_kwargs["httpx_client_factory"] = self.httpx_client_factory
-        elif self.verify is not None:
-            verify = self.verify
-
-            def _factory(**kwargs: Any) -> httpx.AsyncClient:
-                return httpx.AsyncClient(verify=verify, **kwargs)
-
-            client_kwargs["httpx_client_factory"] = _factory
+        else:
+            verify_factory = self._make_verify_factory()
+            if verify_factory is not None:
+                client_kwargs["httpx_client_factory"] = verify_factory
 
         async with sse_client(self.url, auth=self.auth, **client_kwargs) as transport:
             read_stream, write_stream = transport

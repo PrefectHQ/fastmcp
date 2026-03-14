@@ -6,7 +6,7 @@ import contextlib
 import datetime
 import ssl
 from collections.abc import AsyncIterator, Callable
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import httpx
 from mcp import ClientSession
@@ -85,7 +85,11 @@ class StreamableHttpTransport(ClientTransport):
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
         resolved: httpx.Auth | None
         if auth == "oauth":
-            resolved = OAuth(self.url, httpx_client_factory=self.httpx_client_factory)
+            resolved = OAuth(
+                self.url,
+                httpx_client_factory=self.httpx_client_factory
+                or self._make_verify_factory(),
+            )
         elif isinstance(auth, OAuth):
             auth._bind(self.url)
             resolved = auth
@@ -94,6 +98,31 @@ class StreamableHttpTransport(ClientTransport):
         else:
             resolved = auth
         self.auth: httpx.Auth | None = resolved
+
+    def _make_verify_factory(self) -> McpHttpClientFactory | None:
+        if self.verify is None:
+            return None
+        verify = self.verify
+
+        def factory(
+            headers: dict[str, str] | None = None,
+            timeout: httpx.Timeout | None = None,
+            auth: httpx.Auth | None = None,
+        ) -> httpx.AsyncClient:
+            if timeout is None:
+                timeout = httpx.Timeout(30.0, read=300.0)
+            kwargs: dict[str, Any] = {
+                "follow_redirects": True,
+                "timeout": timeout,
+                "verify": verify,
+            }
+            if headers is not None:
+                kwargs["headers"] = headers
+            if auth is not None:
+                kwargs["auth"] = auth
+            return httpx.AsyncClient(**kwargs)
+
+        return cast(McpHttpClientFactory, factory)
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -115,6 +144,7 @@ class StreamableHttpTransport(ClientTransport):
         # Create httpx client from factory or use default with MCP-appropriate timeouts
         # create_mcp_http_client uses 30s connect/5min read timeout by default,
         # and always enables follow_redirects
+        verify_factory = self._make_verify_factory()
         if self.httpx_client_factory is not None:
             # Factory clients get the full kwargs for backwards compatibility
             http_client = self.httpx_client_factory(
@@ -123,17 +153,11 @@ class StreamableHttpTransport(ClientTransport):
                 follow_redirects=True,  # type: ignore[call-arg]
                 **({"timeout": timeout} if timeout else {}),
             )
-        elif self.verify is not None:
-            # create_mcp_http_client doesn't support verify, so construct
-            # the client directly with the same MCP defaults
-            if timeout is None:
-                timeout = httpx.Timeout(30.0, read=300.0)
-            http_client = httpx.AsyncClient(
+        elif verify_factory is not None:
+            http_client = verify_factory(
                 headers=headers,
                 timeout=timeout,
                 auth=self.auth,
-                follow_redirects=True,
-                verify=self.verify,
             )
         else:
             http_client = create_mcp_http_client(

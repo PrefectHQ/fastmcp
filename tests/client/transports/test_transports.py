@@ -129,3 +129,43 @@ class TestSSLVerify:
         client = Client("https://example.com/sse", verify=False)
         assert isinstance(client.transport, SSETransport)
         assert client.transport.verify is False
+
+    async def test_streamable_http_verify_propagates_to_oauth(self):
+        transport = StreamableHttpTransport(
+            "https://example.com/mcp",
+            verify=False,
+            auth="oauth",
+        )
+        assert isinstance(transport.auth, OAuth)
+        async with transport.auth.httpx_client_factory() as httpx_client:
+            assert (
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]
+                == VerifyMode.CERT_NONE
+            )
+
+    async def test_sse_verify_propagates_to_oauth(self):
+        transport = SSETransport(
+            "https://example.com/sse",
+            verify=False,
+            auth="oauth",
+        )
+        assert isinstance(transport.auth, OAuth)
+        async with transport.auth.httpx_client_factory() as httpx_client:
+            assert (
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]
+                == VerifyMode.CERT_NONE
+            )
+
+    async def test_client_verify_propagates_to_oauth(self):
+        client = Client(
+            "https://example.com/mcp",
+            verify=False,
+            auth="oauth",
+        )
+        assert isinstance(client.transport, StreamableHttpTransport)
+        assert isinstance(client.transport.auth, OAuth)
+        async with client.transport.auth.httpx_client_factory() as httpx_client:
+            assert (
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]
+                == VerifyMode.CERT_NONE
+            )
