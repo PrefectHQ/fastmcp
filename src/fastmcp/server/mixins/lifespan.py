@@ -105,6 +105,7 @@ class LifespanMixin:
                         "concurrency": settings.docket.concurrency,
                         "redelivery_timeout": settings.docket.redelivery_timeout,
                         "reconnection_delay": settings.docket.reconnection_delay,
+                        "minimum_check_interval": settings.docket.minimum_check_interval,
                     }
                     if settings.docket.worker_name:
                         worker_kwargs["name"] = settings.docket.worker_name

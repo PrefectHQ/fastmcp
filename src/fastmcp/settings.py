@@ -117,6 +117,21 @@ class DocketSettings(BaseSettings):
         ),
     ] = timedelta(seconds=5)
 
+    minimum_check_interval: Annotated[
+        timedelta,
+        Field(
+            description=inspect.cleandoc(
+                """
+                How frequently the worker polls for new tasks. Lower
+                values reduce latency for task pickup at the cost of
+                more CPU usage. The default of 50ms is a good balance;
+                increase for high-volume production deployments where
+                tasks are long-running.
+                """
+            ),
+        ),
+    ] = timedelta(milliseconds=50)
+
 
 class Settings(BaseSettings):
     """FastMCP settings."""
