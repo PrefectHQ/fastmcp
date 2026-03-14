@@ -73,9 +73,12 @@ class SSETransport(ClientTransport):
             )
         elif isinstance(auth, OAuth):
             auth._bind(self.url)
-            factory = self.httpx_client_factory or self._make_verify_factory()
-            if factory is not None:
-                auth.httpx_client_factory = factory
+            # Only inject the transport's factory into OAuth if OAuth still
+            # has the bare default — preserve any factory the caller attached
+            if auth.httpx_client_factory is httpx.AsyncClient:
+                factory = self.httpx_client_factory or self._make_verify_factory()
+                if factory is not None:
+                    auth.httpx_client_factory = factory
             resolved = auth
         elif isinstance(auth, str):
             resolved = BearerAuth(auth)

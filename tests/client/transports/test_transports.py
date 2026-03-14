@@ -230,6 +230,20 @@ class TestSSLVerify:
                 != VerifyMode.CERT_NONE
             )
 
+    async def test_oauth_custom_factory_preserved_with_verify(self):
+        custom_factory = cast(
+            McpHttpClientFactory,
+            lambda **kwargs: httpx.AsyncClient(verify=False, **kwargs),
+        )
+        auth = OAuth(httpx_client_factory=custom_factory)
+        transport = StreamableHttpTransport(
+            "https://example.com/mcp",
+            verify=True,
+            auth=auth,
+        )
+        assert isinstance(transport.auth, OAuth)
+        assert transport.auth.httpx_client_factory is custom_factory
+
     def test_warns_when_both_factory_and_verify_provided_streamable(self):
         factory = cast(McpHttpClientFactory, httpx.AsyncClient)
         with pytest.warns(UserWarning, match="httpx_client_factory.*takes precedence"):
