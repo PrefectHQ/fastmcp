@@ -389,29 +389,32 @@ async def _parse_call_tool_result(
         raise ToolError(msg)
     elif result.structuredContent:
         try:
-            # Check _meta first for the wrap-result flag (avoids schema lookup),
-            # then fall back to the output schema.
             meta = result.meta or {}
             wrap_from_meta = meta.get("x-fastmcp-wrap-result", False)
 
-            if name not in tool_output_schemas:
-                await list_tools_fn()
-            if name in tool_output_schemas:
-                output_schema = tool_output_schemas.get(name)
-                if output_schema:
-                    wrap_from_schema = output_schema.get("x-fastmcp-wrap-result")
-                    if wrap_from_meta or wrap_from_schema:
-                        output_schema = output_schema.get("properties", {}).get(
-                            "result"
-                        )
-                        structured_content = result.structuredContent.get("result")
+            if wrap_from_meta:
+                # The result is self-describing — unwrap directly without
+                # a listTools round-trip or schema lookup.
+                data = result.structuredContent.get("result")
+            else:
+                # Fall back to schema-based detection.
+                if name not in tool_output_schemas:
+                    await list_tools_fn()
+                if name in tool_output_schemas:
+                    output_schema = tool_output_schemas.get(name)
+                    if output_schema:
+                        if output_schema.get("x-fastmcp-wrap-result"):
+                            output_schema = output_schema.get("properties", {}).get(
+                                "result"
+                            )
+                            structured_content = result.structuredContent.get("result")
+                        else:
+                            structured_content = result.structuredContent
+                        output_type = json_schema_to_type(output_schema)
+                        type_adapter = get_cached_typeadapter(output_type)
+                        data = type_adapter.validate_python(structured_content)
                     else:
-                        structured_content = result.structuredContent
-                    output_type = json_schema_to_type(output_schema)
-                    type_adapter = get_cached_typeadapter(output_type)
-                    data = type_adapter.validate_python(structured_content)
-                else:
-                    data = result.structuredContent
+                        data = result.structuredContent
         except Exception as e:
             logger.error(
                 f"[{client_name or 'client'}] Error parsing structured content: {e}"
