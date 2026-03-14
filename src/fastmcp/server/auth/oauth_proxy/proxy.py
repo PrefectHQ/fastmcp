@@ -1520,14 +1520,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 async with httpx.AsyncClient(
                     timeout=HTTP_TIMEOUT_SECONDS
                 ) as http_client:
-                    request_kwargs: dict[str, Any] = {
-                        "data": {"token": token.token},
-                    }
+                    revocation_data: dict[str, str] = {"token": token.token}
+                    request_kwargs: dict[str, Any] = {"data": revocation_data}
                     if self._upstream_client_secret is not None:
                         request_kwargs["auth"] = (
                             self._upstream_client_id,
                             self._upstream_client_secret.get_secret_value(),
                         )
+                    else:
+                        # Public clients must still identify themselves per RFC 7009
+                        revocation_data["client_id"] = self._upstream_client_id
                     await http_client.post(
                         self._upstream_revocation_endpoint,
                         **request_kwargs,
