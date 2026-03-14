@@ -130,7 +130,7 @@ class MontySandboxProvider:
         monty = pydantic_monty.Monty(
             code,
             inputs=list(inputs.keys()),
-            external_functions=list(async_functions.keys()),
+            external_functions=list(async_functions.keys()),  # type: ignore[unknown-argument]
         )
         run_kwargs: dict[str, Any] = {"external_functions": async_functions}
         if inputs:

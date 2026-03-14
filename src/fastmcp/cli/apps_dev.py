@@ -379,6 +379,9 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
 
     first_name: str = tools[0]["name"]
 
+    def _tool_title(tool: dict[str, Any]) -> str:
+        return tool.get("title") or tool["name"]
+
     with Column(gap=6, css_class="p-8 max-w-lg mx-auto") as view:
         Heading("FastMCP App Preview")
 
@@ -391,10 +394,12 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
                 ):
                     for tool in tools:
                         SelectOption(
-                            tool["name"],
+                            _tool_title(tool),
                             value=tool["name"],
                             selected=tool["name"] == first_name,
                         )
+        else:
+            Heading(_tool_title(tools[0]), level=3)
 
         with Pages(name="activeTool", default_value=first_name):
             for tool in tools:
