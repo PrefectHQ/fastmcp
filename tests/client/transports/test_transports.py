@@ -1,8 +1,10 @@
 import ssl
 from ssl import VerifyMode
+from typing import cast
 
 import httpx
 import pytest
+from mcp.shared._httpx_utils import McpHttpClientFactory
 
 from fastmcp import Client
 from fastmcp.client.auth.oauth import OAuth
@@ -226,4 +228,22 @@ class TestSSLVerify:
             assert (
                 httpx_client._transport._pool._ssl_context.verify_mode
                 != VerifyMode.CERT_NONE
+            )
+
+    def test_warns_when_both_factory_and_verify_provided_streamable(self):
+        factory = cast(McpHttpClientFactory, httpx.AsyncClient)
+        with pytest.warns(UserWarning, match="httpx_client_factory.*takes precedence"):
+            StreamableHttpTransport(
+                "https://example.com/mcp",
+                httpx_client_factory=factory,
+                verify=False,
+            )
+
+    def test_warns_when_both_factory_and_verify_provided_sse(self):
+        factory = cast(McpHttpClientFactory, httpx.AsyncClient)
+        with pytest.warns(UserWarning, match="httpx_client_factory.*takes precedence"):
+            SSETransport(
+                "https://example.com/sse",
+                httpx_client_factory=factory,
+                verify=False,
             )

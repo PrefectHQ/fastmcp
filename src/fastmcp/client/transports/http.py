@@ -64,6 +64,19 @@ class StreamableHttpTransport(ClientTransport):
         self.headers = headers or {}
         self.httpx_client_factory = httpx_client_factory
         self.verify: ssl.SSLContext | bool | str | None = verify
+
+        if httpx_client_factory is not None and verify is not None:
+            import warnings
+
+            warnings.warn(
+                "Both 'httpx_client_factory' and 'verify' were provided. "
+                "The 'verify' parameter will be ignored because "
+                "'httpx_client_factory' takes precedence. Configure SSL "
+                "verification directly in your httpx_client_factory instead.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         self._set_auth(auth)
 
         if sse_read_timeout is not None:
