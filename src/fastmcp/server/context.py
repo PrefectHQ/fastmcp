@@ -1356,6 +1356,18 @@ class Context:
         await _reset_visibility(self)
 
 
+_MCP_LEVEL_SEVERITY: dict[LoggingLevel, int] = {
+    "debug": 0,
+    "info": 1,
+    "notice": 2,
+    "warning": 3,
+    "error": 4,
+    "critical": 5,
+    "alert": 6,
+    "emergency": 7,
+}
+
+
 async def _log_to_server_and_client(
     data: LogData,
     session: ServerSession,
@@ -1364,6 +1376,13 @@ async def _log_to_server_and_client(
     related_request_id: str | None = None,
 ) -> None:
     """Log a message to the server and client."""
+    from fastmcp.server.low_level import MiddlewareServerSession
+
+    if isinstance(session, MiddlewareServerSession):
+        min_level = session._minimum_logging_level or session.fastmcp.client_log_level
+        if min_level is not None:
+            if _MCP_LEVEL_SEVERITY[level] < _MCP_LEVEL_SEVERITY[min_level]:
+                return
 
     msg_prefix = f"Sending {level.upper()} to client"
 
