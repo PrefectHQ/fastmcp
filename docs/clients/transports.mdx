@@ -124,6 +124,38 @@ client = Client(
 )
 ```
 
+### SSL Verification
+
+By default, HTTPS connections verify the server's SSL certificate. You can customize this behavior with the `verify` parameter, which accepts the same values as [httpx](https://www.python-httpx.org/advanced/ssl/):
+
+```python
+from fastmcp import Client
+
+# Disable SSL verification (e.g., for self-signed certs in development)
+client = Client("https://dev-server.internal/mcp", verify=False)
+
+# Use a custom CA bundle
+client = Client("https://corp-server.internal/mcp", verify="/path/to/ca-bundle.pem")
+
+# Use a custom SSL context for full control
+import ssl
+ctx = ssl.create_default_context()
+ctx.load_verify_locations("/path/to/internal-ca.pem")
+client = Client("https://corp-server.internal/mcp", verify=ctx)
+```
+
+The `verify` parameter is also available directly on `StreamableHttpTransport` and `SSETransport`:
+
+```python
+from fastmcp.client.transports import StreamableHttpTransport
+
+transport = StreamableHttpTransport(
+    url="https://dev-server.internal/mcp",
+    verify=False,
+)
+client = Client(transport)
+```
+
 ### SSE Transport
 
 Server-Sent Events transport is maintained for backward compatibility. Use Streamable HTTP for new deployments unless you have specific infrastructure requirements.

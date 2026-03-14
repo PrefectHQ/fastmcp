@@ -79,6 +79,7 @@ class MCPOperationsMixin:
         )
         self._mcp_server.read_resource()(self._read_resource_mcp)
         self._mcp_server.get_prompt()(self._get_prompt_mcp)
+        self._mcp_server.set_logging_level()(self._set_logging_level_mcp)
 
         # Register SEP-1686 task protocol handlers
         self._setup_task_protocol_handlers()
@@ -352,3 +353,21 @@ class MCPOperationsMixin:
             raise NotFoundError(f"Unknown prompt: {name!r}") from e
         except NotFoundError:
             raise
+
+    async def _set_logging_level_mcp(self, level: mcp.types.LoggingLevel) -> None:
+        """Handle MCP 'logging/setLevel' requests.
+
+        Stores the requested minimum log level on the session so that
+        subsequent log messages below this level are suppressed.
+        """
+        from fastmcp.server.low_level import MiddlewareServerSession
+
+        server = cast("FastMCP", self)
+        logger.debug(f"[{server.name}] Handler called: set_logging_level %s", level)
+        try:
+            ctx = server._mcp_server.request_context
+            session = ctx.session
+            if isinstance(session, MiddlewareServerSession):
+                session._minimum_logging_level = level
+        except LookupError:
+            pass

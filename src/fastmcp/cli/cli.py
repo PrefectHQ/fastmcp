@@ -39,7 +39,7 @@ console = Console()
 
 app = cyclopts.App(
     name="fastmcp",
-    help="FastMCP 2.0 - The fast, Pythonic way to build MCP servers and clients.",
+    help="FastMCP - The fast, Pythonic way to build MCP servers and clients.",
     version=fastmcp.__version__,
     # Disable automatic negative parameters by default
     default_parameter=Parameter(negative=()),
@@ -331,6 +331,54 @@ async def inspector(
             extra={"file": str(server_spec)},
         )
         sys.exit(1)
+
+
+@dev_app.command
+async def apps(
+    server_spec: str,
+    *,
+    mcp_port: Annotated[
+        int,
+        cyclopts.Parameter(
+            "--mcp-port",
+            help="Port for the user's MCP server",
+        ),
+    ] = 8000,
+    dev_port: Annotated[
+        int,
+        cyclopts.Parameter(
+            "--dev-port",
+            help="Port for the FastMCP dev UI",
+        ),
+    ] = 8080,
+    reload: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--reload",
+            negative="--no-reload",
+            help="Auto-reload the MCP server on file changes",
+        ),
+    ] = True,
+) -> None:
+    """Preview a FastMCPApp UI in the browser.
+
+    Starts the MCP server from SERVER_SPEC on --mcp-port, launches a local
+    dev UI on --dev-port with a tool picker and AppBridge host, then opens
+    the browser automatically.
+
+    Requires fastmcp[apps] to be installed (prefab-ui).
+    """
+    try:
+        import prefab_ui  # noqa: F401
+    except ImportError:
+        logger.error(
+            "fastmcp dev apps requires prefab-ui. Install with: pip install 'fastmcp[apps]'"
+        )
+        sys.exit(1)
+
+    from fastmcp.cli.apps_dev import run_dev_apps
+
+    await run_dev_apps(server_spec, mcp_port=mcp_port, dev_port=dev_port, reload=reload)
 
 
 @app.command

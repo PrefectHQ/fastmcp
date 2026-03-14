@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import anyio
 import mcp.types
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
-from mcp import McpError
+from mcp import LoggingLevel, McpError
 from mcp.server.lowlevel.server import (
     LifespanResultT,
     NotificationOptions,
@@ -41,6 +41,8 @@ class MiddlewareServerSession(ServerSession):
         self._fastmcp_ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)
         # Task group for subscription tasks (set during session run)
         self._subscription_task_group: anyio.TaskGroup | None = None  # type: ignore[valid-type]
+        # Minimum logging level requested by the client via logging/setLevel
+        self._minimum_logging_level: LoggingLevel | None = None
 
     @property
     def fastmcp(self) -> FastMCP:
