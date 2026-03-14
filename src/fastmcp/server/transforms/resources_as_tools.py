@@ -25,6 +25,8 @@ from mcp.types import ToolAnnotations
 
 from fastmcp.exceptions import AuthorizationError
 from fastmcp.server.auth import AuthContext, run_auth_checks
+from fastmcp.server.context import _current_transport
+from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.server.transforms.visibility import (
     apply_session_transforms,
@@ -36,7 +38,19 @@ from fastmcp.utilities.versions import VersionSpec
 _DEFAULT_ANNOTATIONS = ToolAnnotations(readOnlyHint=True)
 
 if TYPE_CHECKING:
+    from fastmcp.server.auth import AccessToken
     from fastmcp.server.providers.base import Provider
+
+
+def _get_auth_context() -> tuple[bool, AccessToken | None]:
+    """Get auth context for the current request.
+
+    Returns (skip_auth, token) where skip_auth=True for STDIO transport.
+    Mirrors FastMCP._get_auth_context() to ensure consistent behavior.
+    """
+    if _current_transport.get() == "stdio":
+        return (True, None)
+    return (False, get_access_token())
 
 
 class ResourcesAsTools(Transform):
@@ -107,26 +121,20 @@ class ResourcesAsTools(Transform):
                 all_resources = await provider.list_resources()
                 all_templates = await provider.list_resource_templates()
             else:
+                transformed_resources = await apply_session_transforms(
+                    list(await provider.list_resources())
+                )
                 all_resources = list(
                     await _filter_authorized(
-                        await apply_session_transforms(
-                            [
-                                r
-                                for r in await provider.list_resources()
-                                if is_enabled(r)
-                            ]
-                        )
+                        [r for r in transformed_resources if is_enabled(r)]
                     )
+                )
+                transformed_templates = await apply_session_transforms(
+                    list(await provider.list_resource_templates())
                 )
                 all_templates = list(
                     await _filter_authorized(
-                        await apply_session_transforms(
-                            [
-                                t
-                                for t in await provider.list_resource_templates()
-                                if is_enabled(t)
-                            ]
-                        )
+                        [t for t in transformed_templates if is_enabled(t)]
                     )
                 )
 
@@ -201,16 +209,15 @@ async def _check_component_access(component: Any) -> None:
     """Check visibility and auth for a single component.
 
     Applies session transforms, then checks is_enabled and runs auth checks.
+    Skips auth checks for STDIO transport (consistent with FastMCP server).
     Raises ValueError if the component is disabled or unauthorized.
     """
-    from fastmcp.server.dependencies import get_access_token
-
     marked = await apply_session_transforms([component])
     if not marked or not is_enabled(marked[0]):
         raise ValueError(f"Resource not found: {component.name}")
 
-    if component.auth is not None:
-        token = get_access_token()
+    skip_auth, token = _get_auth_context()
+    if not skip_auth and component.auth is not None:
         ctx = AuthContext(token=token, component=component)
         try:
             if not await run_auth_checks(component.auth, ctx):
@@ -220,16 +227,17 @@ async def _check_component_access(component: Any) -> None:
 
 
 async def _filter_authorized(components: Sequence[Any]) -> Sequence[Any]:
-    """Filter components by visibility and auth.
+    """Filter components by auth checks.
 
-    Returns only components that are enabled and pass auth checks.
+    Skips auth checks for STDIO transport (consistent with FastMCP server).
+    Returns only components that pass auth checks.
     """
-    from fastmcp.server.dependencies import get_access_token
+    skip_auth, token = _get_auth_context()
+    if skip_auth:
+        return components
 
-    enabled = [c for c in components if is_enabled(c)]
-    token = get_access_token()
     authorized: list[Any] = []
-    for component in enabled:
+    for component in components:
         if component.auth is not None:
             ctx = AuthContext(token=token, component=component)
             try:
