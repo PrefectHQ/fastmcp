@@ -1,5 +1,7 @@
 """Unit tests for RequestDirector."""
 
+from urllib.parse import unquote
+
 import pytest
 from jsonschema_path import SchemaPath
 
@@ -460,3 +462,105 @@ class TestRequestDirectorIntegration:
 
             assert request.method == "GET"
             assert str(request.url).startswith("https://api.example.com/search")
+
+
+class TestPathTraversalPrevention:
+    """Test that path parameter values are URL-encoded to prevent SSRF/path traversal."""
+
+    @pytest.fixture
+    def director(self, basic_openapi_30_spec):
+        spec = SchemaPath.from_dict(basic_openapi_30_spec)
+        return RequestDirector(spec)
+
+    @pytest.fixture
+    def path_route(self):
+        return HTTPRoute(
+            path="/api/v1/users/{id}/profile",
+            method="GET",
+            operation_id="get_user_profile",
+            parameters=[
+                ParameterInfo(
+                    name="id",
+                    location="path",
+                    required=True,
+                    schema={"type": "string"},
+                )
+            ],
+            flat_param_schema={
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+                "required": ["id"],
+            },
+            parameter_map={"id": {"location": "path", "openapi_name": "id"}},
+        )
+
+    @pytest.mark.parametrize(
+        "malicious_id",
+        [
+            "../../../admin/delete-all?",
+            "../../secret",
+            "../../../etc/passwd",
+            "foo/../../../admin",
+            "..%2F..%2Fadmin",
+            "..%2f..%2fadmin",
+        ],
+    )
+    def test_path_traversal_encoded(self, director, path_route, malicious_id: str):
+        request = director.build(
+            path_route, {"id": malicious_id}, "https://api.example.com"
+        )
+        url = str(request.url)
+        assert "/admin" not in url
+        assert "/secret" not in url
+        assert "/etc/passwd" not in url
+        assert url.startswith("https://api.example.com/api/v1/users/")
+
+    def test_slash_in_param_is_encoded(self, director, path_route):
+        request = director.build(path_route, {"id": "a/b"}, "https://api.example.com")
+        url = str(request.url)
+        assert "/a/b/" not in url
+        assert "a%2Fb" in url
+
+    def test_dot_dot_slash_is_encoded(self, director, path_route):
+        request = director.build(
+            path_route, {"id": "../admin"}, "https://api.example.com"
+        )
+        url = str(request.url)
+        assert "..%2Fadmin" in url or "..%2fadmin" in url
+        assert url.startswith("https://api.example.com/api/v1/users/")
+
+    def test_question_mark_encoded(self, director, path_route):
+        request = director.build(
+            path_route, {"id": "foo?bar=baz"}, "https://api.example.com"
+        )
+        url = str(request.url)
+        assert "foo%3Fbar%3Dbaz" in url or "foo%3fbar%3dbaz" in url
+
+    def test_hash_encoded(self, director, path_route):
+        request = director.build(
+            path_route, {"id": "foo#fragment"}, "https://api.example.com"
+        )
+        url = str(request.url)
+        assert "foo%23fragment" in url
+
+    def test_normal_values_still_work(self, director, path_route):
+        request = director.build(
+            path_route, {"id": "user-123"}, "https://api.example.com"
+        )
+        assert (
+            str(request.url) == "https://api.example.com/api/v1/users/user-123/profile"
+        )
+
+    def test_numeric_values_still_work(self, director, path_route):
+        request = director.build(path_route, {"id": 42}, "https://api.example.com")
+        assert str(request.url) == "https://api.example.com/api/v1/users/42/profile"
+
+    def test_double_encoded_traversal(self, director, path_route):
+        request = director.build(
+            path_route,
+            {"id": "..%2F..%2Fadmin"},
+            "https://api.example.com",
+        )
+        url = str(request.url)
+        assert "/admin" not in unquote(unquote(url)).split("/api/v1/users/")[0]
+        assert url.startswith("https://api.example.com/api/v1/users/")
