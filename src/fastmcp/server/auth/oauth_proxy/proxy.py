@@ -86,6 +86,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     _hash_token,
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
+from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -895,7 +896,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # requested scope).  Fall back to requested scopes only when the IdP
         # omits scope, meaning it granted exactly what was requested.
         granted_scopes: list[str] = (
-            idp_tokens["scope"].split()
+            parse_scopes(idp_tokens["scope"]) or []
             if "scope" in idp_tokens
             else list(authorization_code.scopes)
         )
@@ -1242,7 +1243,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         # Prefer IdP-granted scopes from refresh response (RFC 6749 §5.1)
         refreshed_scopes: list[str] = (
-            token_response["scope"].split() if "scope" in token_response else scopes
+            parse_scopes(token_response["scope"]) or []
+            if "scope" in token_response
+            else scopes
         )
         upstream_token_set.scope = " ".join(refreshed_scopes)
 
