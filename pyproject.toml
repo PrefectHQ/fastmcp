@@ -55,7 +55,7 @@ classifiers = [
 anthropic = ["anthropic>=0.40.0"]
 apps = ["prefab-ui>=0.11.0"]
 azure = ["azure-identity>=1.16.0"]
-code-mode = ["pydantic-monty>=0.0.7"]
+code-mode = ["pydantic-monty>=0.0.8"]
 gemini = ["google-genai>=1.18.0"]
 openai = ["openai>=1.102.0"]
 tasks = ["pydocket>=0.18.0"]
