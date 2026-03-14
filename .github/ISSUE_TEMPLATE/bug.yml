@@ -5,22 +5,19 @@ labels: [bug, pending]
 body:
   - type: markdown
     attributes:
-      value: Thanks for contributing to FastMCP! 🙏
-
-  - type: markdown
-    attributes:
       value: |
+        Thanks for reporting a bug!
+
+        A good bug report is one of the most valuable contributions you can make — see [CONTRIBUTING.md](../CONTRIBUTING.md). If the fix is straightforward, a PR is also welcome.
+
         ### Before you submit
 
-        To help us help you, please:
-
-        - 🔄 **Make sure you're testing on the latest version of FastMCP** - many issues are already fixed in newer versions
-        - 🔍 **Check if someone else has already reported this issue** or if it's been fixed on the main branch
-        - 📋 **You MUST include a copy/pasteable and properly formatted MRE** (minimal reproducible example) below or your issue may be closed without response
-        - 💡 **The ideal issue is a clear problem description and an MRE — that's it.** If you've done a genuine investigation and have a non-obvious insight into the root cause, include it. But please don't speculate or ask an LLM to generate a diagnosis or proposed fix. We have LLMs too, and an incorrect analysis is harder to work with than none at all.
-        - ✂️ **Keep it short.** A one-paragraph description and a working MRE is the ideal bug report. Issues that are difficult to parse — due to length, speculation, or generated content — may be closed without response.
-
-        Thanks for helping to make FastMCP better! 🚀
+        - Make sure you're testing on the **latest version** of FastMCP — many issues are already fixed in newer releases
+        - Check if someone else has **already reported this** or if it's been fixed on the main branch
+        - You **must** include a copy/pasteable, properly formatted MRE (minimal reproducible example) or your issue may be closed without response
+        - **The ideal issue is a clear problem description and an MRE — that's it.** If you've done genuine investigation and have a non-obvious insight into the root cause, include it. But please don't speculate or ask an LLM to generate a diagnosis. We have LLMs too, and an incorrect analysis is harder to work with than none at all.
+        - **Keep it short.** Issues that are difficult to parse — due to length, speculation, or generated content — may be closed without response.
+        - **Using an LLM?** Great — but it must follow these guidelines. Generic LLM output that ignores our contributing conventions will be closed. See [CONTRIBUTING.md](../CONTRIBUTING.md).
 
   - type: textarea
     id: description

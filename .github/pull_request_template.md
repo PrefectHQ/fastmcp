@@ -1,28 +1,22 @@
 ## Description
-<!-- 
-Please provide a clear and concise description of the changes made in this pull request.
 
-Using AI to generate code? Please include a note in the description with which AI tool you used.
--->
+<!-- What does this PR do? Link to the issue it addresses. -->
 
-**Contributors Checklist**
-<!--
-NOTE:
-1. You must create an issue in the repository before making a Pull Request.
-2. You must not create a Pull Request for an issue that is already assigned to someone else.
+Closes #
 
-If you do not follow these steps, your Pull Request will be closed without review.
--->
+## Contribution type
 
-- [ ] My change closes #(issue number)
-- [ ] I have followed the repository's development workflow
-- [ ] I have tested my changes manually and by adding relevant tests
-- [ ] I have performed all required documentation updates
+<!-- Check the one that applies. If you're unsure whether your change is welcome, please open an issue first — see CONTRIBUTING.md. -->
 
-**Review Checklist**
-<!-- Your Pull Request will not be reviewed if tests are failing, you have not self-reviewed your changes, or you have not checked all of the following: -->
+- [ ] Bug fix (simple, well-scoped fix for a clearly broken behavior)
+- [ ] Documentation improvement
+- [ ] Enhancement (maintainers typically implement enhancements — see [CONTRIBUTING.md](../CONTRIBUTING.md))
 
+## Checklist
+
+- [ ] This PR addresses an existing issue (or fixes a self-evident bug)
+- [ ] I have read [CONTRIBUTING.md](../CONTRIBUTING.md)
+- [ ] I have added tests that cover my changes
+- [ ] I have run `uv run prek run --all-files` and all checks pass
 - [ ] I have self-reviewed my changes
-- [ ] My Pull Request is ready for review
-
----
+- [ ] If I used an LLM, it followed the repo's contributing conventions (not generic output)
