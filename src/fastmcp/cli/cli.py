@@ -351,6 +351,14 @@ async def apps(
             help="Port for the FastMCP dev UI",
         ),
     ] = 8080,
+    reload: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--reload",
+            negative="--no-reload",
+            help="Auto-reload the MCP server on file changes",
+        ),
+    ] = True,
 ) -> None:
     """Preview a FastMCPApp UI in the browser.
 
@@ -366,7 +374,7 @@ async def apps(
         logger.error(f"Could not import dev apps module: {e}")
         sys.exit(1)
 
-    await run_dev_apps(server_spec, mcp_port=mcp_port, dev_port=dev_port)
+    await run_dev_apps(server_spec, mcp_port=mcp_port, dev_port=dev_port, reload=reload)
 
 
 @app.command

@@ -37,5 +37,28 @@ def greet(
     return view
 
 
+FAREWELLS: dict[str, str] = {
+    "English": "Goodbye",
+    "Spanish": "Adiós",
+    "French": "Au revoir",
+    "Japanese": "さようなら",
+    "Arabic": "مع السلامة",
+}
+
+
+@mcp.tool(app=True)
+def farewell(
+    name: str,
+    language: Literal["English", "Spanish", "French", "Japanese", "Arabic"] = "English",
+) -> Column:
+    """Say farewell in their language."""
+    word = FAREWELLS[language]
+    with Column(gap=3, css_class="p-8") as view:
+        Heading(f"{word}, {name}!")
+        Muted("Farewell rendered by FastMCP")
+        Badge(language)
+    return view
+
+
 if __name__ == "__main__":
     mcp.run()
