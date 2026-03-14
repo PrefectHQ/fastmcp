@@ -11,36 +11,105 @@ The `FastMCP` class is the central piece of every FastMCP application. It acts a
 
 ## Creating a Server
 
-Instantiate a server by providing a name that identifies it in client applications and logs. You can also provide instructions that help clients understand the server's purpose.
+At its simplest, a FastMCP server just needs a name. Everything else has sensible defaults.
 
 ```python
 from fastmcp import FastMCP
 
-mcp = FastMCP(name="MyAssistantServer")
+mcp = FastMCP("MyServer")
+```
 
-# Instructions help clients understand how to interact with the server
-mcp_with_instructions = FastMCP(
-    name="HelpfulAssistant",
-    instructions="""
-        This server provides data analysis tools.
-        Call get_average() to analyze numerical data.
-    """,
+Instructions help clients (and the LLMs behind them) understand what your server does and how to use it effectively.
+
+```python
+mcp = FastMCP(
+    "DataAnalysis",
+    instructions="Provides tools for analyzing numerical datasets. Start with get_summary() for an overview.",
 )
 ```
 
-The `FastMCP` constructor accepts several configuration options. The most commonly used parameters control server identity, authentication, and component behavior.
+## Components
 
-<Card icon="code" title="FastMCP Constructor Parameters">
+FastMCP servers expose three types of components to clients, each serving a distinct role in the MCP protocol.
+
+**Tools** are functions that clients invoke to perform actions or access external systems.
+
+```python
+@mcp.tool
+def multiply(a: float, b: float) -> float:
+    """Multiplies two numbers together."""
+    return a * b
+```
+
+**Resources** expose data that clients can read — passive data sources rather than invocable functions.
+
+```python
+@mcp.resource("data://config")
+def get_config() -> dict:
+    return {"theme": "dark", "version": "1.0"}
+```
+
+**Prompts** are reusable message templates that guide LLM interactions.
+
+```python
+@mcp.prompt
+def analyze_data(data_points: list[float]) -> str:
+    formatted_data = ", ".join(str(point) for point in data_points)
+    return f"Please analyze these data points: {formatted_data}"
+```
+
+Each component type has detailed documentation: [Tools](/servers/tools), [Resources](/servers/resources) (including [Resource Templates](/servers/resources#resource-templates)), and [Prompts](/servers/prompts).
+
+## Running the Server
+
+Start your server by calling `mcp.run()`. The `if __name__` guard ensures compatibility with MCP clients that launch your server as a subprocess.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
+@mcp.tool
+def greet(name: str) -> str:
+    """Greet a user by name."""
+    return f"Hello, {name}!"
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+FastMCP supports several transports:
+- **STDIO** (default): For local integrations and CLI tools
+- **HTTP**: For web services using the Streamable HTTP protocol
+- **SSE**: Legacy web transport (deprecated)
+
+```python
+# Run with HTTP transport
+mcp.run(transport="http", host="127.0.0.1", port=9000)
+```
+
+The server can also be run using the FastMCP CLI. For detailed information on transports and deployment, see [Running Your Server](/deployment/running-server).
+
+
+## Configuration Reference
+
+The `FastMCP` constructor accepts parameters organized into four categories: identity, composition, behavior, and handlers.
+
+### Identity
+
+These parameters control how your server presents itself to clients.
+
+<Card>
 <ParamField body="name" type="str" default="FastMCP">
-  A human-readable name for your server
+  A human-readable name for your server, shown in client applications and logs
 </ParamField>
 
 <ParamField body="instructions" type="str | None">
-  Description of how to interact with this server. These instructions help clients understand the server's purpose and available functionality
+  Description of how to interact with this server. Clients surface these instructions to help LLMs understand the server's purpose and available functionality
 </ParamField>
 
 <ParamField body="version" type="str | None">
-  Version string for your server. If not provided, defaults to the FastMCP library version
+  Version string for your server. Defaults to the FastMCP library version if not provided
 </ParamField>
 
 <ParamField body="website_url" type="str | None">
@@ -52,108 +121,106 @@ The `FastMCP` constructor accepts several configuration options. The most common
 <ParamField body="icons" type="list[Icon] | None">
   <VersionBadge version="2.13.0" />
 
-  List of icon representations for your server. Icons help users visually identify your server in client applications. See [Icons](/servers/icons) for detailed examples
+  List of icon representations for your server. See [Icons](/servers/icons) for details
+</ParamField>
+</Card>
+
+### Composition
+
+These parameters control what your server is built from — its components, middleware, providers, and lifecycle.
+
+<Card>
+<ParamField body="tools" type="list[Tool | Callable] | None">
+  Tools to register on the server. An alternative to the `@mcp.tool` decorator when you need to add tools programmatically
 </ParamField>
 
 <ParamField body="auth" type="OAuthProvider | TokenVerifier | None">
-  Authentication provider for securing HTTP-based transports. See [Authentication](/servers/auth/authentication) for configuration options
+  Authentication provider for securing HTTP-based transports. See [Authentication](/servers/auth/authentication) for configuration
 </ParamField>
 
-<ParamField body="lifespan" type="Lifespan | AsyncContextManager | None">
-  Server-level setup and teardown logic. See [Lifespans](/servers/lifespan) for composable lifespans
+<ParamField body="middleware" type="list[Middleware] | None">
+  [Middleware](/servers/middleware) that intercepts and transforms every MCP message flowing through the server — requests, responses, and notifications in both directions. Use for cross-cutting concerns like logging, error handling, and rate limiting
 </ParamField>
 
-<ParamField body="tools" type="list[Tool | Callable] | None">
-  A list of tools (or functions to convert to tools) to add to the server. In some cases, providing tools programmatically may be more convenient than using the `@mcp.tool` decorator
+<ParamField body="providers" type="list[Provider] | None">
+  [Providers](/servers/providers) that supply tools, resources, and prompts dynamically. Providers are queried at request time, so they can serve components from databases, APIs, or other external sources
 </ParamField>
 
 <ParamField body="transforms" type="list[Transform] | None">
   <VersionBadge version="3.1.0" />
 
-  Server-level [transforms](/servers/transforms/transforms) to apply to all components. Transforms modify how tools, resources, and prompts are presented to clients — for example, [search transforms](/servers/transforms/tool-search) replace large catalogs with on-demand discovery, and [CodeMode](/servers/transforms/code-mode) lets LLMs write scripts that chain tool calls in a sandbox
+  Server-level [transforms](/servers/transforms/transforms) to apply to all components. Transforms modify how tools, resources, and prompts are presented to clients — for example, [search transforms](/servers/transforms/tool-search) replace large catalogs with on-demand discovery
 </ParamField>
 
+<ParamField body="lifespan" type="Lifespan | AsyncContextManager | None">
+  Server-level setup and teardown logic that runs when the server starts and stops. See [Lifespans](/servers/lifespan) for composable lifespans
+</ParamField>
+</Card>
+
+### Behavior
+
+These parameters tune how the server processes requests and communicates with clients.
+
+<Card>
 <ParamField body="on_duplicate" type='Literal["warn", "error", "replace", "ignore"]' default="warn">
   How to handle duplicate component registrations
 </ParamField>
 
-
 <ParamField body="strict_input_validation" type="bool" default="False">
   <VersionBadge version="2.13.0" />
-  Controls how tool input parameters are validated. When `False` (default), FastMCP uses Pydantic's flexible validation that coerces compatible inputs (e.g., `"10"` to `10` for int parameters). When `True`, uses the MCP SDK's JSON Schema validation to validate inputs against the exact schema before passing them to your function, rejecting any type mismatches. The default mode improves compatibility with LLM clients while maintaining type safety. See [Input Validation Modes](/servers/tools#input-validation-modes) for details
+
+  When `False` (default), FastMCP uses Pydantic's flexible validation that coerces compatible inputs (e.g., `"10"` → `10` for int parameters). When `True`, validates inputs against the exact JSON Schema before calling your function, rejecting type mismatches. See [Input Validation Modes](/servers/tools#input-validation-modes) for details
+</ParamField>
+
+<ParamField body="mask_error_details" type="bool | None">
+  When `True`, replaces internal error details in tool/resource responses with a generic message to avoid leaking implementation details to clients. Defaults to the `FASTMCP_MASK_ERROR_DETAILS` environment variable
 </ParamField>
 
 <ParamField body="list_page_size" type="int | None" default="None">
   <VersionBadge version="3.0.0" />
-  Maximum number of items per page for list operations (`tools/list`, `resources/list`, etc.). When `None` (default), all results are returned in a single response. When set, responses are paginated and include a `nextCursor` for fetching additional pages. See [Pagination](/servers/pagination) for details
+
+  Maximum items per page for list operations (`tools/list`, `resources/list`, etc.). When `None`, all results are returned in a single response. See [Pagination](/servers/pagination) for details
 </ParamField>
 
+<ParamField body="tasks" type="bool | None" default="False">
+  Enable background task support. When `True`, tools and resources can return `CreateTaskResult` to run work asynchronously while the client polls for results
+</ParamField>
+
+<ParamField body="client_log_level" type="LoggingLevel | None">
+  <VersionBadge version="3.2.0" />
+
+  Default minimum log level for messages sent to MCP clients via `context.log()`. When set, messages below this level are suppressed. Individual clients can override this per-session using the MCP `logging/setLevel` request. One of `"debug"`, `"info"`, `"notice"`, `"warning"`, `"error"`, `"critical"`, `"alert"`, or `"emergency"`
+</ParamField>
+
+<ParamField body="dereference_schemas" type="bool" default="True">
+  Automatically dereference `$ref` pointers in JSON schemas generated from complex Pydantic models. Most clients require flat schemas without `$ref`, so this should usually stay enabled
+</ParamField>
 </Card>
 
-## Components
+### Handlers and Storage
 
-FastMCP servers expose three types of components to clients. Each type serves a distinct purpose in the MCP protocol.
+These parameters provide custom handlers for MCP capabilities and persistent storage for session state.
 
-### Tools
+<Card>
+<ParamField body="sampling_handler" type="SamplingHandler | None">
+  Custom handler for MCP sampling requests (server-initiated LLM calls). See [Sampling](/servers/sampling) for details
+</ParamField>
 
-Tools are functions that clients can invoke to perform actions or access external systems. They're the primary way clients interact with your server's capabilities.
+<ParamField body="sampling_handler_behavior" type='Literal["always", "fallback"] | None' default="fallback">
+  When `"fallback"`, the sampling handler is used only when no tool-specific handler exists. When `"always"`, this handler is used for all sampling requests
+</ParamField>
 
-```python
-@mcp.tool
-def multiply(a: float, b: float) -> float:
-    """Multiplies two numbers together."""
-    return a * b
-```
+<ParamField body="session_state_store" type="AsyncKeyValue | None">
+  Persistent key-value store for session state that survives across requests. Defaults to an in-memory store. Provide a custom implementation for persistence across server restarts
+</ParamField>
+</Card>
 
-See [Tools](/servers/tools) for detailed documentation.
-
-### Resources
-
-Resources expose data that clients can read. Unlike tools, resources are passive data sources that clients pull from rather than invoke.
-
-```python
-@mcp.resource("data://config")
-def get_config() -> dict:
-    """Provides the application configuration."""
-    return {"theme": "dark", "version": "1.0"}
-```
-
-See [Resources](/servers/resources) for detailed documentation.
-
-### Resource Templates
-
-Resource templates are parameterized resources. The client provides values for template parameters in the URI, and the server returns data specific to those parameters.
-
-```python
-@mcp.resource("users://{user_id}/profile")
-def get_user_profile(user_id: int) -> dict:
-    """Retrieves a user's profile by ID."""
-    return {"id": user_id, "name": f"User {user_id}", "status": "active"}
-```
-
-See [Resource Templates](/servers/resources#resource-templates) for detailed documentation.
-
-### Prompts
-
-Prompts are reusable message templates that guide LLM interactions. They help establish consistent patterns for how clients should frame requests.
-
-```python
-@mcp.prompt
-def analyze_data(data_points: list[float]) -> str:
-    """Creates a prompt asking for analysis of numerical data."""
-    formatted_data = ", ".join(str(point) for point in data_points)
-    return f"Please analyze these data points: {formatted_data}"
-```
-
-See [Prompts](/servers/prompts) for detailed documentation.
 
 ## Tag-Based Filtering
 
 <VersionBadge version="2.8.0" />
 
-Tags let you categorize components and selectively expose them based on configurable include/exclude sets. This is useful for creating different views of your server for different environments or user types.
-
-Components can be tagged when defined using the `tags` parameter. A component can have multiple tags, and filtering operates on tag membership.
+Tags let you categorize components and selectively expose them. This is useful for creating different views of your server for different environments or user types.
 
 ```python
 @mcp.tool(tags={"public", "utility"})
@@ -174,8 +241,6 @@ The filtering logic works as follows:
 To ensure a component is never exposed, you can set `enabled=False` on the component itself. See the component-specific documentation for details.
 </Tip>
 
-Configure tag-based filtering after creating your server.
-
 ```python
 # Only expose components tagged with "public"
 mcp = FastMCP()
@@ -192,38 +257,9 @@ mcp.enable(tags={"admin"}, only=True).disable(tags={"deprecated"})
 
 This filtering applies to all component types (tools, resources, resource templates, and prompts) and affects both listing and access.
 
-## Running the Server
-
-FastMCP servers communicate with clients through transport mechanisms. Start your server by calling `mcp.run()`, typically within an `if __name__ == "__main__":` block. This pattern ensures compatibility with various MCP clients.
-
-```python
-from fastmcp import FastMCP
-
-mcp = FastMCP(name="MyServer")
-
-@mcp.tool
-def greet(name: str) -> str:
-    """Greet a user by name."""
-    return f"Hello, {name}!"
-
-if __name__ == "__main__":
-    # Defaults to STDIO transport
-    mcp.run()
-
-    # Or use HTTP transport
-    # mcp.run(transport="http", host="127.0.0.1", port=9000)
-```
-
-FastMCP supports several transports:
-- **STDIO** (default): For local integrations and CLI tools
-- **HTTP**: For web services using the Streamable HTTP protocol
-- **SSE**: Legacy web transport (deprecated)
-
-The server can also be run using the FastMCP CLI. For detailed information on transports and configuration, see the [Running Your Server](/deployment/running-server) guide.
-
 ## Custom Routes
 
-When running with HTTP transport, you can add custom web routes alongside your MCP endpoint using the `@custom_route` decorator. This is useful for auxiliary endpoints like health checks.
+When running with HTTP transport, you can add custom web routes alongside your MCP endpoint using the `@custom_route` decorator.
 
 ```python
 from fastmcp import FastMCP
@@ -240,9 +276,4 @@ if __name__ == "__main__":
     mcp.run(transport="http")  # Health check at http://localhost:8000/health
 ```
 
-Custom routes are served alongside your MCP endpoint and are useful for:
-- Health check endpoints for monitoring
-- Simple status or info endpoints
-- Basic webhooks or callbacks
-
-For more complex web applications, consider [mounting your MCP server into a FastAPI or Starlette app](/deployment/http#integration-with-web-frameworks).
+Custom routes are useful for health checks, status endpoints, and simple webhooks. For more complex web applications, consider [mounting your MCP server into a FastAPI or Starlette app](/deployment/http#integration-with-web-frameworks).

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 import weakref
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 import mcp.types
 from pydantic import RootModel
@@ -379,8 +379,9 @@ async def _parse_call_tool_result(
     Returns:
         CallToolResult: Parsed result with structured data
     """
-    from typing import cast
-
+    # Local import: CallToolResult is under TYPE_CHECKING at module level to
+    # avoid a circular import (client.client -> mixins.tools -> client.client),
+    # but we need the concrete class here to construct the return value.
     from fastmcp.client.client import CallToolResult
 
     data = None
@@ -389,23 +390,43 @@ async def _parse_call_tool_result(
         raise ToolError(msg)
     elif result.structuredContent:
         try:
+            raw_fastmcp_meta = (result.meta or {}).get("fastmcp")
+            fastmcp_meta = (
+                raw_fastmcp_meta if isinstance(raw_fastmcp_meta, dict) else {}
+            )
+            wrap_from_meta = fastmcp_meta.get("wrap_result", False)
+
+            # Ensure the schema cache is populated for type validation.
+            # When meta tells us the result is wrapped we can skip the
+            # schema check for *wrap detection*, but we still need the
+            # schema for proper type coercion (e.g. list → set, str → datetime).
             if name not in tool_output_schemas:
                 await list_tools_fn()
-            if name in tool_output_schemas:
+
+            if wrap_from_meta:
+                # Meta tells us the result is wrapped — unwrap and validate.
+                structured_content = result.structuredContent.get("result")
+            elif name in tool_output_schemas:
                 output_schema = tool_output_schemas.get(name)
-                if output_schema:
-                    if output_schema.get("x-fastmcp-wrap-result"):
-                        output_schema = output_schema.get("properties", {}).get(
-                            "result"
-                        )
-                        structured_content = result.structuredContent.get("result")
-                    else:
-                        structured_content = result.structuredContent
-                    output_type = json_schema_to_type(output_schema)
-                    type_adapter = get_cached_typeadapter(output_type)
-                    data = type_adapter.validate_python(structured_content)
+                if output_schema and output_schema.get("x-fastmcp-wrap-result"):
+                    structured_content = result.structuredContent.get("result")
                 else:
-                    data = result.structuredContent
+                    structured_content = result.structuredContent
+            else:
+                structured_content = result.structuredContent
+
+            # Type-validate through the schema if available.
+            output_schema = tool_output_schemas.get(name)
+            if output_schema:
+                if wrap_from_meta or output_schema.get("x-fastmcp-wrap-result"):
+                    output_schema = output_schema.get("properties", {}).get(
+                        "result", output_schema
+                    )
+                output_type = json_schema_to_type(output_schema)
+                type_adapter = get_cached_typeadapter(output_type)
+                data = type_adapter.validate_python(structured_content)
+            else:
+                data = structured_content
         except Exception as e:
             logger.error(
                 f"[{client_name or 'client'}] Error parsing structured content: {e}"

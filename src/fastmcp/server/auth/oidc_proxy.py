@@ -10,6 +10,7 @@ This implementation is based on:
 """
 
 from collections.abc import Sequence
+from typing import Literal
 
 import httpx
 from key_value.aio.protocols import AsyncKeyValue
@@ -223,7 +224,7 @@ class OIDCProxy(OAuthProxy):
         # Token validation configuration
         token_endpoint_auth_method: str | None = None,
         # Consent screen configuration
-        require_authorization_consent: bool = True,
+        require_authorization_consent: bool | Literal["external"] = True,
         consent_csp_policy: str | None = None,
         # Extra parameters
         extra_authorize_params: dict[str, str] | None = None,
@@ -273,7 +274,9 @@ class OIDCProxy(OAuthProxy):
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
-                SECURITY WARNING: Only disable for local development or testing environments.
+                When "external", the built-in consent screen is skipped but no warning is
+                logged, indicating that consent is handled externally (e.g. by the upstream IdP).
+                SECURITY WARNING: Only set to False for local development or testing environments.
             consent_csp_policy: Content Security Policy for the consent page.
                 If None (default), uses the built-in CSP policy with appropriate directives.
                 If empty string "", disables CSP entirely (no meta tag is rendered).
