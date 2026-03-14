@@ -224,6 +224,7 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
                 tool = Tool.from_function(
                     obj,
                     name=meta.name,
+                    version=meta.version,
                     title=meta.title,
                     description=meta.description,
                     icons=meta.icons,
@@ -248,6 +249,7 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
                         fn=obj,
                         uri_template=meta.uri,
                         name=meta.name,
+                        version=meta.version,
                         title=meta.title,
                         description=meta.description,
                         icons=meta.icons,
@@ -263,6 +265,7 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
                         fn=obj,
                         uri=meta.uri,
                         name=meta.name,
+                        version=meta.version,
                         title=meta.title,
                         description=meta.description,
                         icons=meta.icons,
@@ -279,6 +282,7 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
                 prompt = Prompt.from_function(
                     obj,
                     name=meta.name,
+                    version=meta.version,
                     title=meta.title,
                     description=meta.description,
                     icons=meta.icons,

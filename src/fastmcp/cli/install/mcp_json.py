@@ -65,7 +65,7 @@ def install_mcp_json(
         full_command = env_config.build_command(["fastmcp", "run", server_spec])
 
         # Build MCP server configuration
-        server_config = {
+        server_config: dict[str, str | list[str] | dict[str, str]] = {
             "command": full_command[0],
             "args": full_command[1:],
         }

@@ -1389,6 +1389,22 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         """
         return upstream_token_set.access_token
 
+    def _uses_alternate_verification(self) -> bool:
+        """Whether this provider verifies a different token than the access token.
+
+        When True, ``load_access_token`` patches the validated result with
+        the upstream access token, scopes, and expiry so that the returned
+        ``AccessToken`` reflects the access token rather than the
+        verification token.
+
+        The default implementation compares token values, but subclasses
+        should override this to use an intent-based flag so the patch is
+        applied even when the verification token and access token happen to
+        carry the same value (e.g., some OIDC providers issue identical
+        JWTs for both).
+        """
+        return False
+
     async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
         """Validate FastMCP JWT by swapping for upstream token.
 
@@ -1437,11 +1453,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 logger.debug("Upstream token validation failed")
                 return None
 
-            # When the verification token differs from the access token
-            # (e.g., id_token verification), ensure the returned AccessToken
+            # When alternate verification is in use (e.g., id_token
+            # verification in OIDCProxy), ensure the returned AccessToken
             # carries the upstream access token and its scopes, not the
-            # verification token's values.
-            if verification_token != upstream_token_set.access_token:
+            # verification token's values.  We use an intent-based check
+            # rather than value equality because some IdPs issue identical
+            # JWTs for both access_token and id_token, which would cause
+            # the scope patch to be skipped even though it's needed.
+            if self._uses_alternate_verification():
                 validated = validated.model_copy(
                     update={
                         "token": upstream_token_set.access_token,

@@ -1,14 +1,17 @@
 """Tests for server_lifespan and session_lifespan behavior."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
+import anyio
 import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
 from fastmcp.server.lifespan import ContextManagerLifespan, lifespan
+from fastmcp.server.providers import Provider
 from fastmcp.utilities.lifespan import combine_lifespans
 
 
@@ -542,4 +545,118 @@ class TestCombineLifespans:
             "dict_enter",
             "dict_exit",
             "mapping_exit",
+        ]
+
+
+class TestLifespanTeardownShielding:
+    """Test that async operations in lifespan teardown complete under cancellation.
+
+    When a server shuts down (e.g. Ctrl-C), the cancel scope becomes active.
+    Lifespan teardown must be shielded from cancellation so that async cleanup
+    (closing DB connections, flushing buffers, etc.) can actually run.
+    """
+
+    async def test_server_lifespan_async_teardown_under_cancellation(self):
+        """Async operations in server lifespan finally block complete even when cancelled."""
+        events: list[str] = []
+
+        @asynccontextmanager
+        async def server_lifespan(mcp: FastMCP) -> AsyncIterator[dict[str, Any]]:
+            events.append("setup")
+            try:
+                yield {}
+            finally:
+                events.append("teardown_start")
+                await asyncio.sleep(0)
+                events.append("teardown_complete")
+
+        mcp = FastMCP("TestServer", lifespan=server_lifespan)
+
+        async with anyio.create_task_group() as tg:
+
+            async def run_and_cancel() -> None:
+                async with mcp._lifespan_manager():
+                    tg.cancel_scope.cancel()
+
+            tg.start_soon(run_and_cancel)
+
+        assert "setup" in events
+        assert "teardown_start" in events
+        assert "teardown_complete" in events
+
+    async def test_provider_lifespan_async_teardown_under_cancellation(self):
+        """Async operations in provider lifespan finally block complete when cancelled."""
+        events: list[str] = []
+
+        class TestProvider(Provider):
+            @asynccontextmanager
+            async def lifespan(self) -> AsyncIterator[None]:
+                events.append("provider_setup")
+                try:
+                    yield
+                finally:
+                    events.append("provider_teardown_start")
+                    await asyncio.sleep(0)
+                    events.append("provider_teardown_complete")
+
+        mcp = FastMCP("TestServer", providers=[TestProvider()])
+
+        async with anyio.create_task_group() as tg:
+
+            async def run_and_cancel() -> None:
+                async with mcp._lifespan_manager():
+                    tg.cancel_scope.cancel()
+
+            tg.start_soon(run_and_cancel)
+
+        assert "provider_setup" in events
+        assert "provider_teardown_start" in events
+        assert "provider_teardown_complete" in events
+
+    async def test_composed_lifespans_async_teardown_under_cancellation(self):
+        """Both server and provider async teardown completes under cancellation."""
+        events: list[str] = []
+
+        @asynccontextmanager
+        async def server_lifespan(mcp: FastMCP) -> AsyncIterator[dict[str, Any]]:
+            events.append("server_setup")
+            try:
+                yield {}
+            finally:
+                events.append("server_teardown_start")
+                await asyncio.sleep(0)
+                events.append("server_teardown_complete")
+
+        class TestProvider(Provider):
+            @asynccontextmanager
+            async def lifespan(self) -> AsyncIterator[None]:
+                events.append("provider_setup")
+                try:
+                    yield
+                finally:
+                    events.append("provider_teardown_start")
+                    await asyncio.sleep(0)
+                    events.append("provider_teardown_complete")
+
+        mcp = FastMCP(
+            "TestServer",
+            lifespan=server_lifespan,
+            providers=[TestProvider()],
+        )
+
+        async with anyio.create_task_group() as tg:
+
+            async def run_and_cancel() -> None:
+                async with mcp._lifespan_manager():
+                    tg.cancel_scope.cancel()
+
+            tg.start_soon(run_and_cancel)
+
+        assert events == [
+            "server_setup",
+            "provider_setup",
+            "provider_teardown_start",
+            "provider_teardown_complete",
+            "server_teardown_start",
+            "server_teardown_complete",
         ]

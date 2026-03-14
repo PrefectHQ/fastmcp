@@ -96,7 +96,6 @@ jobs:
 
           STATUS (apply if applicable):
           - needs more info: Issue lacks reproduction steps, error messages, or clear description
-          - good first issue: ONLY if it's clearly scoped, has obvious solution, and touches limited files
           - invalid: Spam, completely off-topic, or nonsensical (often LLM-generated)
 
           AREA LABELS (apply ONLY when thematically central to the issue):

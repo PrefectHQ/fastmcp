@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import inspect
+import time
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
@@ -47,6 +48,7 @@ from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.components import FastMCPComponent, get_fastmcp_metadata
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -127,7 +129,7 @@ class ProxyTool(Tool):
                 # request. Stash the current RequestContext in the shared
                 # ref so handlers can restore it before forwarding.
                 if isinstance(client, StatefulProxyClient):
-                    cast(list[Any], client._proxy_rc_ref)[0] = (
+                    client._proxy_rc_ref[0] = (
                         ctx.request_context,
                         ctx._fastmcp,  # weakref to FastMCP, not the Context
                     )
@@ -477,6 +479,22 @@ class ProxyPrompt(Prompt):
 # -----------------------------------------------------------------------------
 
 
+class _CacheEntry:
+    """A cached sequence of components with a monotonic timestamp."""
+
+    __slots__ = ("items", "timestamp")
+
+    def __init__(self, items: Sequence[Any], timestamp: float):
+        self.items = items
+        self.timestamp = timestamp
+
+    def is_fresh(self, ttl: float) -> bool:
+        return (time.monotonic() - self.timestamp) < ttl
+
+
+_DEFAULT_CACHE_TTL: float = 300.0
+
+
 class ProxyProvider(Provider):
     """Provider that proxies to a remote MCP server via a client factory.
 
@@ -485,6 +503,16 @@ class ProxyProvider(Provider):
 
     All components returned by this provider have task_config.mode="forbidden"
     because tasks cannot be executed through a proxy.
+
+    Component lists (tools, resources, templates, prompts) are cached so that
+    individual lookups (e.g. during ``call_tool``) can resolve from the cache
+    instead of opening a new backend connection.  The cache stores the
+    backend's raw component metadata and is shared across all sessions;
+    per-session visibility and auth filtering are applied after cache lookup
+    by the server layer.  The cache is refreshed whenever a ``list_*`` call
+    is made, and entries expire after ``cache_ttl`` seconds (default 300).
+    Set ``cache_ttl=0`` to disable caching.  Disabling is recommended for
+    backends whose component lists change dynamically.
 
     Example:
         ```python
@@ -505,6 +533,7 @@ class ProxyProvider(Provider):
     def __init__(
         self,
         client_factory: ClientFactoryT,
+        cache_ttl: float | None = None,
     ):
         """Initialize a ProxyProvider.
 
@@ -512,9 +541,17 @@ class ProxyProvider(Provider):
             client_factory: A callable that returns a Client instance when called.
                            This gives you full control over session creation and reuse.
                            Can be either a synchronous or asynchronous function.
+            cache_ttl: How long (in seconds) to cache component lists for
+                      individual lookups.  Defaults to 300.  Set to 0 to
+                      disable caching.
         """
         super().__init__()
         self.client_factory = client_factory
+        self._cache_ttl = cache_ttl if cache_ttl is not None else _DEFAULT_CACHE_TTL
+        self._tools_cache: _CacheEntry[Tool] | None = None
+        self._resources_cache: _CacheEntry[Resource] | None = None
+        self._templates_cache: _CacheEntry[ResourceTemplate] | None = None
+        self._prompts_cache: _CacheEntry[Prompt] | None = None
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -533,13 +570,31 @@ class ProxyProvider(Provider):
             client = await self._get_client()
             async with client:
                 mcp_tools = await client.list_tools()
-                return [
+                tools = [
                     ProxyTool.from_mcp_tool(self.client_factory, t) for t in mcp_tools
                 ]
         except McpError as e:
             if e.error.code == METHOD_NOT_FOUND:
-                return []
-            raise
+                tools = []
+            else:
+                raise
+        self._tools_cache = _CacheEntry(tools, time.monotonic())
+        return tools
+
+    async def _get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
+        cache = self._tools_cache
+        if cache is None or not cache.is_fresh(self._cache_ttl):
+            await self._list_tools()
+            cache = self._tools_cache
+        assert cache is not None
+        matching = [t for t in cache.items if t.name == name]
+        if version:
+            matching = [t for t in matching if version.matches(t.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
     # -------------------------------------------------------------------------
     # Resource methods
@@ -551,14 +606,32 @@ class ProxyProvider(Provider):
             client = await self._get_client()
             async with client:
                 mcp_resources = await client.list_resources()
-                return [
+                resources = [
                     ProxyResource.from_mcp_resource(self.client_factory, r)
                     for r in mcp_resources
                 ]
         except McpError as e:
             if e.error.code == METHOD_NOT_FOUND:
-                return []
-            raise
+                resources = []
+            else:
+                raise
+        self._resources_cache = _CacheEntry(resources, time.monotonic())
+        return resources
+
+    async def _get_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> Resource | None:
+        cache = self._resources_cache
+        if cache is None or not cache.is_fresh(self._cache_ttl):
+            await self._list_resources()
+            cache = self._resources_cache
+        assert cache is not None
+        matching = [r for r in cache.items if str(r.uri) == uri]
+        if version:
+            matching = [r for r in matching if version.matches(r.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
     # -------------------------------------------------------------------------
     # Resource template methods
@@ -570,14 +643,32 @@ class ProxyProvider(Provider):
             client = await self._get_client()
             async with client:
                 mcp_templates = await client.list_resource_templates()
-                return [
+                templates = [
                     ProxyTemplate.from_mcp_template(self.client_factory, t)
                     for t in mcp_templates
                 ]
         except McpError as e:
             if e.error.code == METHOD_NOT_FOUND:
-                return []
-            raise
+                templates = []
+            else:
+                raise
+        self._templates_cache = _CacheEntry(templates, time.monotonic())
+        return templates
+
+    async def _get_resource_template(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> ResourceTemplate | None:
+        cache = self._templates_cache
+        if cache is None or not cache.is_fresh(self._cache_ttl):
+            await self._list_resource_templates()
+            cache = self._templates_cache
+        assert cache is not None
+        matching = [t for t in cache.items if t.matches(uri) is not None]
+        if version:
+            matching = [t for t in matching if version.matches(t.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
     # -------------------------------------------------------------------------
     # Prompt methods
@@ -589,14 +680,32 @@ class ProxyProvider(Provider):
             client = await self._get_client()
             async with client:
                 mcp_prompts = await client.list_prompts()
-                return [
+                prompts = [
                     ProxyPrompt.from_mcp_prompt(self.client_factory, p)
                     for p in mcp_prompts
                 ]
         except McpError as e:
             if e.error.code == METHOD_NOT_FOUND:
-                return []
-            raise
+                prompts = []
+            else:
+                raise
+        self._prompts_cache = _CacheEntry(prompts, time.monotonic())
+        return prompts
+
+    async def _get_prompt(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Prompt | None:
+        cache = self._prompts_cache
+        if cache is None or not cache.is_fresh(self._cache_ttl):
+            await self._list_prompts()
+            cache = self._prompts_cache
+        assert cache is not None
+        matching = [p for p in cache.items if p.name == name]
+        if version:
+            matching = [p for p in matching if version.matches(p.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]
 
     # -------------------------------------------------------------------------
     # Task methods

@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-from fastmcp.resources.template import FunctionResourceTemplate
+from fastmcp.prompts.prompt import Prompt
+from fastmcp.resources.resource import Resource
+from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.server.providers.filesystem_discovery import (
     discover_and_import,
     discover_files,
@@ -10,6 +12,7 @@ from fastmcp.server.providers.filesystem_discovery import (
     import_module_from_file,
 )
 from fastmcp.tools import FunctionTool
+from fastmcp.tools.tool import Tool
 
 
 class TestDiscoverFiles:
@@ -351,3 +354,134 @@ def bad_function():
         failed_path = tmp_path / "bad.py"
         assert failed_path in result.failed_files
         assert "nonexistent_module_xyz123" in result.failed_files[failed_path]
+
+
+class TestExtractComponentsVersion:
+    """Tests for version propagation in extract_components."""
+
+    def test_extract_tool_preserves_version(self, tmp_path: Path):
+        """Tools discovered from files should have their version attribute set."""
+        tool_file = tmp_path / "versioned_tool.py"
+        tool_file.write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool(version="1.0", description="v1")
+def greet_v1(name: str) -> str:
+    return f"Hi {name}"
+
+@tool(version="2.0", description="v2")
+def greet_v2(name: str) -> str:
+    return f"Hey {name}"
+"""
+        )
+
+        module = import_module_from_file(tool_file)
+        components = extract_components(module)
+
+        tools = [c for c in components if isinstance(c, Tool)]
+        assert len(tools) == 2
+
+        versions = {t.version for t in tools}
+        assert versions == {"1.0", "2.0"}
+
+    def test_extract_resource_preserves_version(self, tmp_path: Path):
+        """Resources discovered from files should have their version attribute set."""
+        resource_file = tmp_path / "versioned_resource.py"
+        resource_file.write_text(
+            """\
+from fastmcp.resources import resource
+
+@resource("data://config", version="1.0", name="config", description="v1 config")
+def config_v1() -> str:
+    return '{"theme": "light"}'
+"""
+        )
+
+        module = import_module_from_file(resource_file)
+        components = extract_components(module)
+
+        resources = [c for c in components if isinstance(c, Resource)]
+        assert len(resources) == 1
+        assert resources[0].version == "1.0"
+
+    def test_extract_resource_template_preserves_version(self, tmp_path: Path):
+        """Resource templates discovered from files should have their version set."""
+        template_file = tmp_path / "versioned_template.py"
+        template_file.write_text(
+            """\
+from fastmcp.resources import resource
+
+@resource("users://{user_id}/profile", version="2.0", description="v2 profile")
+def get_profile(user_id: str) -> dict:
+    return {"id": user_id}
+"""
+        )
+
+        module = import_module_from_file(template_file)
+        components = extract_components(module)
+
+        templates = [c for c in components if isinstance(c, ResourceTemplate)]
+        assert len(templates) == 1
+        assert templates[0].version == "2.0"
+
+    def test_extract_prompt_preserves_version(self, tmp_path: Path):
+        """Prompts discovered from files should have their version attribute set."""
+        prompt_file = tmp_path / "versioned_prompt.py"
+        prompt_file.write_text(
+            """\
+from fastmcp.prompts import prompt
+
+@prompt(name="summarize", version="1.0", description="v1 prompt")
+def summarize_v1(text: str) -> str:
+    return f"Summarize: {text}"
+"""
+        )
+
+        module = import_module_from_file(prompt_file)
+        components = extract_components(module)
+
+        prompts = [c for c in components if isinstance(c, Prompt)]
+        assert len(prompts) == 1
+        assert prompts[0].version == "1.0"
+
+    def test_discovered_tool_meta_includes_version(self, tmp_path: Path):
+        """get_meta() should include version for tools discovered via filesystem."""
+        tool_file = tmp_path / "meta_tool.py"
+        tool_file.write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool(name="echo", version="3.0", description="Echo tool")
+def echo(msg: str) -> str:
+    return msg
+"""
+        )
+
+        module = import_module_from_file(tool_file)
+        components = extract_components(module)
+
+        tool = components[0]
+        meta = tool.get_meta()
+        assert meta["fastmcp"]["version"] == "3.0"
+
+    def test_unversioned_components_have_no_version(self, tmp_path: Path):
+        """Components without version should have version=None."""
+        tool_file = tmp_path / "no_version_tool.py"
+        tool_file.write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool(description="No version")
+def my_tool(x: str) -> str:
+    return x
+"""
+        )
+
+        module = import_module_from_file(tool_file)
+        components = extract_components(module)
+
+        assert len(components) == 1
+        assert components[0].version is None
+        meta = components[0].get_meta()
+        assert "version" not in meta["fastmcp"]

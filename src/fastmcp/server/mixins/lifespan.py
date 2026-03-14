@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from typing import TYPE_CHECKING, Any
 
+import anyio
 from uncalled_for import SharedContext
 
 import fastmcp
@@ -155,30 +156,37 @@ class LifespanMixin:
                         self._lifespan_result = None
             return
 
+        # Use an explicit AsyncExitStack so we can shield teardown from
+        # cancellation. Without this, Ctrl-C causes CancelledError to
+        # propagate into lifespan finally blocks, preventing any async
+        # cleanup (e.g. closing DB connections, flushing buffers).
+        stack = AsyncExitStack()
         try:
-            async with (
-                self._lifespan(self) as user_lifespan_result,
-                self._docket_lifespan(),
-            ):
-                self._lifespan_result = user_lifespan_result
-                self._lifespan_result_set = True
+            user_lifespan_result = await stack.enter_async_context(self._lifespan(self))
+            await stack.enter_async_context(self._docket_lifespan())
 
-                async with AsyncExitStack[bool | None]() as stack:
-                    # Start lifespans for all providers
-                    for provider in self.providers:
-                        await stack.enter_async_context(provider.lifespan())
+            self._lifespan_result = user_lifespan_result
+            self._lifespan_result_set = True
 
-                    self._started.set()
-                    try:
-                        yield
-                    finally:
-                        self._started.clear()
+            # Start lifespans for all providers
+            for provider in self.providers:
+                await stack.enter_async_context(provider.lifespan())
+
+            self._started.set()
+            try:
+                yield
+            finally:
+                self._started.clear()
         finally:
-            async with self._lifespan_lock:
-                self._lifespan_ref_count -= 1
-                if self._lifespan_ref_count == 0:
-                    self._lifespan_result_set = False
-                    self._lifespan_result = None
+            try:
+                with anyio.CancelScope(shield=True):
+                    await stack.aclose()
+            finally:
+                async with self._lifespan_lock:
+                    self._lifespan_ref_count -= 1
+                    if self._lifespan_ref_count == 0:
+                        self._lifespan_result_set = False
+                        self._lifespan_result = None
 
     def _setup_task_protocol_handlers(self: FastMCP) -> None:
         """Register SEP-1686 task protocol handlers with SDK.
