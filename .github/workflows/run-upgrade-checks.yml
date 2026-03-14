@@ -135,7 +135,7 @@ jobs:
   close-on-success:
     name: Close issue on success
     needs: [static_analysis, run_tests, run_integration_tests]
-    if: success() && github.event.pull_request == null
+    if: success() && github.event.pull_request == null && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
