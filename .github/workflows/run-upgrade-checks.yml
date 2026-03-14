@@ -105,7 +105,7 @@ jobs:
         uses: jayqi/failed-build-issue-action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          label: "build-failure"
+          label: "build failed"
           title-template: "Upgrade checks failing on main branch"
           body-template: |
             ## Upgrade Checks Failure on Main Branch
@@ -131,3 +131,27 @@ jobs:
 
             ---
             *This issue was automatically created by a GitHub Action.*
+
+  close-on-success:
+    name: Close issue on success
+    needs: [static_analysis, run_tests, run_integration_tests]
+    if: success() && github.event.pull_request == null
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Close resolved failure issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          issue=$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --label "build failed" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [ -n "$issue" ]; then
+            gh issue close "$issue" \
+              --repo "$GITHUB_REPOSITORY" \
+              --comment "Upgrade checks are passing again as of [\`${GITHUB_SHA::7}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA})."
+          fi
