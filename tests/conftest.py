@@ -1,8 +1,10 @@
 import asyncio
 import logging
+import secrets
 import socket
 import sys
 from collections.abc import Callable, Generator
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -60,11 +62,20 @@ def isolate_settings_home(tmp_path: Path):
 
     This prevents file locking issues when multiple tests share the same
     storage directory in settings.home / "oauth-proxy".
+
+    Also sets a fast Docket polling interval for tests — the default 50ms
+    is fine for production but still adds ~25ms average pickup latency per
+    task. 10ms makes task tests near-instant.
     """
     test_home = tmp_path / "fastmcp-test-home"
     test_home.mkdir(exist_ok=True)
 
-    with temporary_settings(home=test_home):
+    with temporary_settings(
+        home=test_home,
+        docket__minimum_check_interval=timedelta(milliseconds=10),
+        docket__url=f"memory://{secrets.token_hex(4)}",
+        client_disconnect_timeout=1,
+    ):
         yield
 
 

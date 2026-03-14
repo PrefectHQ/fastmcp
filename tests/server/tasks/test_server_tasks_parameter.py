@@ -6,10 +6,13 @@ components (tools, prompts, resources), and that explicit component-level
 settings properly override the server default.
 """
 
+import pytest
+
 from fastmcp import FastMCP
 from fastmcp.client import Client
 
 
+@pytest.mark.timeout(10)
 async def test_server_tasks_true_defaults_all_components():
     """Server with tasks=True makes all components default to supporting tasks."""
     mcp = FastMCP("test", tasks=True)
