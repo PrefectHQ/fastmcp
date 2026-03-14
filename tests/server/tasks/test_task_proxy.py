@@ -17,7 +17,7 @@ from mcp.types import TextContent, TextResourceContents
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
-from fastmcp.server.providers.proxy import ProxyClient
+from fastmcp.server import create_proxy
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def backend_server() -> FastMCP:
 @pytest.fixture
 def proxy_server(backend_server: FastMCP) -> FastMCP:
     """Create a proxy server that forwards to the backend."""
-    return FastMCP.as_proxy(ProxyClient(transport=FastMCPTransport(backend_server)))
+    return create_proxy(FastMCPTransport(backend_server))
 
 
 class TestProxyToolsSyncExecution:

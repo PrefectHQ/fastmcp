@@ -174,6 +174,7 @@ async def test_task_cancellation_workflow(endpoint_server):
         assert status.status == "cancelled"
 
 
+@pytest.mark.timeout(10)
 async def test_task_cancellation_interrupts_running_coroutine(endpoint_server):
     """Task cancellation actually interrupts the running coroutine.
 
