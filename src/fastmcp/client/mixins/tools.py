@@ -389,12 +389,18 @@ async def _parse_call_tool_result(
         raise ToolError(msg)
     elif result.structuredContent:
         try:
+            # Check _meta first for the wrap-result flag (avoids schema lookup),
+            # then fall back to the output schema.
+            meta = result.meta or {}
+            wrap_from_meta = meta.get("x-fastmcp-wrap-result", False)
+
             if name not in tool_output_schemas:
                 await list_tools_fn()
             if name in tool_output_schemas:
                 output_schema = tool_output_schemas.get(name)
                 if output_schema:
-                    if output_schema.get("x-fastmcp-wrap-result"):
+                    wrap_from_schema = output_schema.get("x-fastmcp-wrap-result")
+                    if wrap_from_meta or wrap_from_schema:
                         output_schema = output_schema.get("properties", {}).get(
                             "result"
                         )

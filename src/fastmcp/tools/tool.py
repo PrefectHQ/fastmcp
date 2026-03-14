@@ -301,6 +301,7 @@ class Tool(FastMCPComponent):
         return ToolResult(
             content=content,
             structured_content={"result": structured} if wrap_result else structured,
+            meta={"x-fastmcp-wrap-result": True} if wrap_result else None,
         )
 
     @overload

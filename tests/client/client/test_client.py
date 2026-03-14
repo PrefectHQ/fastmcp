@@ -717,3 +717,35 @@ async def test_tagged_template_functionality(tagged_resources_server):
         content_str = str(result[0])
         assert '"id":"123"' in content_str
         assert '"type":"template_data"' in content_str
+
+
+async def test_client_unwraps_result_using_meta():
+    """Client should unwrap wrapped results using _meta flag."""
+    server = FastMCP()
+
+    @server.tool
+    def list_tool() -> list[int]:
+        return [1, 2, 3]
+
+    client = Client(transport=FastMCPTransport(server))
+    async with client:
+        result = await client.call_tool("list_tool", {})
+        assert result.structured_content == {"result": [1, 2, 3]}
+        assert result.data == [1, 2, 3]
+        assert result.meta == {"x-fastmcp-wrap-result": True}
+
+
+async def test_client_does_not_unwrap_dict_result():
+    """Client should not unwrap dict results that are not wrapped."""
+    server = FastMCP()
+
+    @server.tool
+    def dict_tool() -> dict[str, int]:
+        return {"a": 1}
+
+    client = Client(transport=FastMCPTransport(server))
+    async with client:
+        result = await client.call_tool("dict_tool", {})
+        assert result.structured_content == {"a": 1}
+        assert result.data == {"a": 1}
+        assert result.meta is None
