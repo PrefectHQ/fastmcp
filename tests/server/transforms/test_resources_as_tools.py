@@ -51,6 +51,21 @@ class TestResourcesAsToolsBasic:
             assert "read_resource" in tool_names
 
 
+class TestResourcesAsToolsMultipleTransforms:
+    """Regression tests for using ResourcesAsTools more than once."""
+
+    async def test_multiple_transforms_do_not_duplicate_tools(self):
+        mcp = FastMCP("Test")
+        mcp.add_transform(ResourcesAsTools(mcp))
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            names = [t.name for t in tools]
+            assert names.count("list_resources") == 1
+            assert names.count("read_resource") == 1
+
+
 class TestListResourcesTool:
     """Test the list_resources tool."""
 

@@ -60,17 +60,22 @@ class ResourcesAsTools(Transform):
                 the same FastMCP server the transform is added to.
         """
         self._provider = provider
+        self._list_tool: Tool | None = None
+        self._read_tool: Tool | None = None
 
     def __repr__(self) -> str:
         return f"ResourcesAsTools({self._provider!r})"
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Add resource tools to the tool list."""
-        return [
-            *tools,
-            self._make_list_resources_tool(),
-            self._make_read_resource_tool(),
-        ]
+        # Avoid adding duplicate tools if multiple ResourcesAsTools transforms are applied
+        names = {t.name for t in tools}
+        extra: list[Tool] = []
+        if "list_resources" not in names:
+            extra.append(self._make_list_resources_tool())
+        if "read_resource" not in names:
+            extra.append(self._make_read_resource_tool())
+        return [*tools, *extra]
 
     async def get_tool(
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
@@ -87,7 +92,14 @@ class ResourcesAsTools(Transform):
 
     def _make_list_resources_tool(self) -> Tool:
         """Create the list_resources tool."""
+        if self._list_tool is not None:
+            return self._list_tool
+
         provider = self._provider
+
+        # Snapshot provider methods at tool creation time to avoid later transforms overriding behavior
+        list_resources_fn = provider.list_resources
+        list_templates_fn = provider.list_resource_templates
 
         async def list_resources() -> str:
             """List all available resources and resource templates.
@@ -95,8 +107,8 @@ class ResourcesAsTools(Transform):
             Returns JSON with resource metadata. Static resources have a 'uri' field,
             while templates have a 'uri_template' field with placeholders like {name}.
             """
-            resources = await provider.list_resources()
-            templates = await provider.list_resource_templates()
+            resources = await list_resources_fn()
+            templates = await list_templates_fn()
 
             result: list[dict[str, Any]] = []
 
@@ -123,11 +135,22 @@ class ResourcesAsTools(Transform):
 
             return json.dumps(result, indent=2)
 
-        return Tool.from_function(fn=list_resources, annotations=_DEFAULT_ANNOTATIONS)
+        self._list_tool = Tool.from_function(
+            fn=list_resources, annotations=_DEFAULT_ANNOTATIONS
+        )
+        return self._list_tool
 
     def _make_read_resource_tool(self) -> Tool:
         """Create the read_resource tool."""
+        if self._read_tool is not None:
+            return self._read_tool
+
         provider = self._provider
+
+        # Snapshot provider methods at tool creation time to avoid later transforms overriding behavior
+        read_resource_fn = getattr(provider, "read_resource", None)
+        get_resource_fn = provider.get_resource
+        get_template_fn = provider.get_resource_template
 
         async def read_resource(
             uri: Annotated[str, "The URI of the resource to read"],
@@ -144,16 +167,16 @@ class ResourcesAsTools(Transform):
 
             # Use FastMCP.read_resource() if available - runs middleware chain
             if isinstance(provider, FastMCP):
-                result = await provider.read_resource(uri)
+                result = await read_resource_fn(uri)  # type: ignore[misc]
                 return _format_result(result)
 
             # Fallback for plain providers - no middleware
-            resource = await provider.get_resource(uri)
+            resource = await get_resource_fn(uri)
             if resource is not None:
                 result = await resource._read()
                 return _format_result(result)
 
-            template = await provider.get_resource_template(uri)
+            template = await get_template_fn(uri)
             if template is not None:
                 params = template.matches(uri)
                 if params is not None:
@@ -162,7 +185,10 @@ class ResourcesAsTools(Transform):
 
             raise ValueError(f"Resource not found: {uri}")
 
-        return Tool.from_function(fn=read_resource, annotations=_DEFAULT_ANNOTATIONS)
+        self._read_tool = Tool.from_function(
+            fn=read_resource, annotations=_DEFAULT_ANNOTATIONS
+        )
+        return self._read_tool
 
 
 def _format_result(result: Any) -> str:
