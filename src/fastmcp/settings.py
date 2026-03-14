@@ -117,6 +117,21 @@ class DocketSettings(BaseSettings):
         ),
     ] = timedelta(seconds=5)
 
+    minimum_check_interval: Annotated[
+        timedelta,
+        Field(
+            description=inspect.cleandoc(
+                """
+                How frequently the worker polls for new tasks. Lower
+                values reduce latency for task pickup at the cost of
+                more CPU usage. The default of 50ms is a good balance;
+                increase for high-volume production deployments where
+                tasks are long-running.
+                """
+            ),
+        ),
+    ] = timedelta(milliseconds=50)
+
 
 class Settings(BaseSettings):
     """FastMCP settings."""
@@ -230,6 +245,13 @@ class Settings(BaseSettings):
             description="The timeout for the client's initialization handshake, in seconds. Set to None or 0 to disable.",
         ),
     ] = None
+
+    client_disconnect_timeout: Annotated[
+        float,
+        Field(
+            description="Maximum time to wait for a clean disconnect before giving up, in seconds.",
+        ),
+    ] = 5
 
     # Transport settings
     transport: Literal["stdio", "http", "sse", "streamable-http"] = "stdio"

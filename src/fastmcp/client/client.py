@@ -336,6 +336,11 @@ class Client(
                 elicitation_handler
             )
 
+        # Maximum time to wait for a clean disconnect before giving up.
+        # Normally disconnects complete in <100ms; this is a safety net for
+        # unresponsive servers.
+        self._disconnect_timeout: float = fastmcp.settings.client_disconnect_timeout
+
         # Session context management - see class docstring for detailed explanation
         self._session_state = ClientSessionState()
 
@@ -511,7 +516,7 @@ class Client(
         # Use a timeout to prevent hanging during cleanup if the connection is in a bad
         # state (e.g., rate-limited). The MCP SDK's transport may try to terminate the
         # session which can hang if the server is unresponsive.
-        with anyio.move_on_after(5):
+        with anyio.move_on_after(self._disconnect_timeout):
             await self._disconnect()
 
     async def _connect(self):
