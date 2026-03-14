@@ -320,11 +320,13 @@ def _model_from_schema(tool_name: str, input_schema: dict[str, Any]) -> type[Any
         title = prop.get("title") or prop_name.replace("_", " ").title()
         description = prop.get("description")
         is_required = prop_name in required
-        default = (
-            pydantic.fields.PydanticUndefined
-            if is_required
-            else prop.get("default", "")
-        )
+        if is_required:
+            default = pydantic.fields.PydanticUndefined
+        elif "default" in prop:
+            default = prop["default"]
+        else:
+            default = None
+            py_type = py_type | None  # type: ignore[assignment]
 
         extra: dict[str, Any] = {}
         if prop.get("enum"):
@@ -858,8 +860,7 @@ async def run_dev_apps(
 
         ready = await _wait_for_server(mcp_url, timeout=15.0)
         if not ready:
-            logger.error(f"User server did not start on port {mcp_port}")
-            return
+            raise RuntimeError(f"User server did not start on port {mcp_port}")
 
         logger.info(f"FastMCP dev UI at {dev_url}")
 
