@@ -394,9 +394,20 @@ async def _parse_call_tool_result(
             wrap_from_meta = fastmcp_meta.get("wrap_result", False)
 
             if wrap_from_meta:
-                # The result is self-describing — unwrap directly without
-                # a listTools round-trip or schema lookup.
-                data = result.structuredContent.get("result")
+                # Meta tells us the result is wrapped — unwrap without
+                # a listTools round-trip. Still validate through the type
+                # adapter if the schema is already cached.
+                structured_content = result.structuredContent.get("result")
+                output_schema = tool_output_schemas.get(name)
+                if output_schema:
+                    inner_schema = output_schema.get("properties", {}).get(
+                        "result", output_schema
+                    )
+                    output_type = json_schema_to_type(inner_schema)
+                    type_adapter = get_cached_typeadapter(output_type)
+                    data = type_adapter.validate_python(structured_content)
+                else:
+                    data = structured_content
             else:
                 # Fall back to schema-based detection.
                 if name not in tool_output_schemas:
