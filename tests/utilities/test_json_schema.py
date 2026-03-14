@@ -1,5 +1,10 @@
+from unittest.mock import patch
+
+from jsonref import replace_refs
+
 from fastmcp.utilities.json_schema import (
     _prune_param,
+    _strip_remote_refs,
     compress_schema,
     dereference_refs,
     resolve_root_ref,
@@ -628,3 +633,126 @@ class TestResolveRootRef:
 
         # Should return original schema unchanged
         assert result is schema
+
+
+class TestStripRemoteRefs:
+    """Tests for _strip_remote_refs which prevents SSRF/LFI via $ref."""
+
+    def test_preserves_local_ref(self):
+        schema = {"$ref": "#/$defs/Foo"}
+        assert _strip_remote_refs(schema) == {"$ref": "#/$defs/Foo"}
+
+    def test_strips_http_ref(self):
+        schema = {"$ref": "http://evil.com/schema.json"}
+        assert _strip_remote_refs(schema) == {}
+
+    def test_strips_https_ref(self):
+        schema = {"$ref": "https://evil.com/schema.json"}
+        assert _strip_remote_refs(schema) == {}
+
+    def test_strips_file_ref(self):
+        schema = {"$ref": "file:///etc/passwd"}
+        assert _strip_remote_refs(schema) == {}
+
+    def test_preserves_siblings_when_stripping(self):
+        schema = {
+            "$ref": "http://evil.com/schema.json",
+            "description": "keep me",
+            "default": 42,
+        }
+        result = _strip_remote_refs(schema)
+        assert result == {"description": "keep me", "default": 42}
+
+    def test_strips_nested_remote_refs(self):
+        schema = {
+            "properties": {
+                "safe": {"$ref": "#/$defs/Safe"},
+                "evil": {"$ref": "http://169.254.169.254/latest/meta-data/"},
+            }
+        }
+        result = _strip_remote_refs(schema)
+        assert result["properties"]["safe"] == {"$ref": "#/$defs/Safe"}
+        assert "$ref" not in result["properties"]["evil"]
+
+    def test_strips_remote_refs_in_lists(self):
+        schema = {
+            "anyOf": [
+                {"$ref": "#/$defs/Good"},
+                {"$ref": "file:///etc/credentials.json"},
+            ]
+        }
+        result = _strip_remote_refs(schema)
+        assert result["anyOf"][0] == {"$ref": "#/$defs/Good"}
+        assert "$ref" not in result["anyOf"][1]
+
+    def test_deep_nesting(self):
+        schema = {
+            "properties": {
+                "a": {
+                    "type": "object",
+                    "properties": {"b": {"$ref": "https://internal-service/secret"}},
+                }
+            }
+        }
+        result = _strip_remote_refs(schema)
+        assert "$ref" not in result["properties"]["a"]["properties"]["b"]
+
+
+class TestDereferenceRefsRemoteRefSafety:
+    """Verify dereference_refs never fetches remote URIs."""
+
+    def test_http_ref_not_fetched(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"$ref": "http://evil.com/schema.json"},
+            },
+        }
+        with patch(
+            "fastmcp.utilities.json_schema.replace_refs", wraps=replace_refs
+        ) as mock:
+            result = dereference_refs(schema)
+            # The remote $ref should have been stripped before replace_refs
+            if mock.called:
+                call_schema = mock.call_args[0][0]
+                assert "$ref" not in call_schema.get("properties", {}).get("name", {})
+        # Result should not contain the remote $ref
+        assert "$ref" not in result.get("properties", {}).get("name", {})
+
+    def test_file_ref_not_fetched(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "secret": {"$ref": "file:///etc/passwd"},
+            },
+        }
+        result = dereference_refs(schema)
+        assert "$ref" not in result.get("properties", {}).get("secret", {})
+
+    def test_cloud_metadata_ref_not_fetched(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "creds": {
+                    "$ref": "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+                },
+            },
+        }
+        result = dereference_refs(schema)
+        assert "$ref" not in result.get("properties", {}).get("creds", {})
+
+    def test_local_refs_still_resolved(self):
+        schema = {
+            "$defs": {"Status": {"type": "string", "enum": ["a", "b"]}},
+            "type": "object",
+            "properties": {
+                "status": {"$ref": "#/$defs/Status"},
+                "evil": {"$ref": "https://evil.com/inject"},
+            },
+        }
+        result = dereference_refs(schema)
+        # Local ref should be resolved
+        assert result["properties"]["status"] == {"type": "string", "enum": ["a", "b"]}
+        # Remote ref should be stripped
+        assert "$ref" not in result["properties"]["evil"]
+        assert "$defs" not in result
