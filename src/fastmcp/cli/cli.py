@@ -39,7 +39,7 @@ console = Console()
 
 app = cyclopts.App(
     name="fastmcp",
-    help="FastMCP 2.0 - The fast, Pythonic way to build MCP servers and clients.",
+    help="FastMCP - The fast, Pythonic way to build MCP servers and clients.",
     version=fastmcp.__version__,
     # Disable automatic negative parameters by default
     default_parameter=Parameter(negative=()),

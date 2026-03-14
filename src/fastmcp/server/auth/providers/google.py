@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import contextlib
 import time
+from typing import Literal
 
 import httpx
 from key_value.aio.protocols import AsyncKeyValue
@@ -228,7 +229,7 @@ class GoogleProvider(OAuthProxy):
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
-        require_authorization_consent: bool = True,
+        require_authorization_consent: bool | Literal["external"] = True,
         consent_csp_policy: str | None = None,
         extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx.AsyncClient | None = None,
@@ -264,7 +265,9 @@ class GoogleProvider(OAuthProxy):
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to Google.
                 When False, authorization proceeds directly without user confirmation.
-                SECURITY WARNING: Only disable for local development or testing environments.
+                When "external", the built-in consent screen is skipped but no warning is
+                logged, indicating that consent is handled externally (e.g. by Google's own consent).
+                SECURITY WARNING: Only set to False for local development or testing environments.
             extra_authorize_params: Additional parameters to forward to Google's authorization endpoint.
                 By default, GoogleProvider sets {"access_type": "offline", "prompt": "consent"} to ensure
                 refresh tokens are returned. You can override these defaults or add additional parameters.

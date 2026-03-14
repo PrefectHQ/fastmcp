@@ -864,7 +864,7 @@ requires-dist = [
     { name = "prefab-ui", marker = "extra == 'apps'", specifier = ">=0.11.2" },
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], specifier = ">=0.4.4,<0.5.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
-    { name = "pydantic-monty", marker = "extra == 'code-mode'", specifier = ">=0.0.7" },
+    { name = "pydantic-monty", marker = "extra == 'code-mode'", specifier = ">=0.0.8" },
     { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.18.0" },
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },

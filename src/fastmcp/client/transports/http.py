@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import ssl
 from collections.abc import AsyncIterator, Callable
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import httpx
 from mcp import ClientSession
@@ -32,6 +33,7 @@ class StreamableHttpTransport(ClientTransport):
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
         httpx_client_factory: McpHttpClientFactory | None = None,
+        verify: ssl.SSLContext | bool | str | None = None,
     ):
         """Initialize a Streamable HTTP transport.
 
@@ -45,6 +47,10 @@ class StreamableHttpTransport(ClientTransport):
                 If provided, must accept keyword arguments: headers, auth,
                 follow_redirects, and optionally timeout. Using **kwargs is
                 recommended to ensure forward compatibility.
+            verify: SSL certificate verification. Accepts False to disable
+                verification, a path to a CA bundle, or an ssl.SSLContext
+                for full control. None (default) uses httpx defaults (verification
+                enabled). Ignored when httpx_client_factory is provided.
         """
         if isinstance(url, AnyUrl):
             url = str(url)
@@ -57,6 +63,20 @@ class StreamableHttpTransport(ClientTransport):
         self.url: str = url
         self.headers = headers or {}
         self.httpx_client_factory = httpx_client_factory
+        self.verify: ssl.SSLContext | bool | str | None = verify
+
+        if httpx_client_factory is not None and verify is not None:
+            import warnings
+
+            warnings.warn(
+                "Both 'httpx_client_factory' and 'verify' were provided. "
+                "The 'verify' parameter will be ignored because "
+                "'httpx_client_factory' takes precedence. Configure SSL "
+                "verification directly in your httpx_client_factory instead.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         self._set_auth(auth)
 
         if sse_read_timeout is not None:
@@ -78,15 +98,50 @@ class StreamableHttpTransport(ClientTransport):
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
         resolved: httpx.Auth | None
         if auth == "oauth":
-            resolved = OAuth(self.url, httpx_client_factory=self.httpx_client_factory)
+            resolved = OAuth(
+                self.url,
+                httpx_client_factory=self.httpx_client_factory
+                or self._make_verify_factory(),
+            )
         elif isinstance(auth, OAuth):
             auth._bind(self.url)
+            # Only inject the transport's factory into OAuth if OAuth still
+            # has the bare default — preserve any factory the caller attached
+            if auth.httpx_client_factory is httpx.AsyncClient:
+                factory = self.httpx_client_factory or self._make_verify_factory()
+                if factory is not None:
+                    auth.httpx_client_factory = factory
             resolved = auth
         elif isinstance(auth, str):
             resolved = BearerAuth(auth)
         else:
             resolved = auth
         self.auth: httpx.Auth | None = resolved
+
+    def _make_verify_factory(self) -> McpHttpClientFactory | None:
+        if self.verify is None:
+            return None
+        verify = self.verify
+
+        def factory(
+            headers: dict[str, str] | None = None,
+            timeout: httpx.Timeout | None = None,
+            auth: httpx.Auth | None = None,
+        ) -> httpx.AsyncClient:
+            if timeout is None:
+                timeout = httpx.Timeout(30.0, read=300.0)
+            kwargs: dict[str, Any] = {
+                "follow_redirects": True,
+                "timeout": timeout,
+                "verify": verify,
+            }
+            if headers is not None:
+                kwargs["headers"] = headers
+            if auth is not None:
+                kwargs["auth"] = auth
+            return httpx.AsyncClient(**kwargs)
+
+        return cast(McpHttpClientFactory, factory)
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -108,6 +163,7 @@ class StreamableHttpTransport(ClientTransport):
         # Create httpx client from factory or use default with MCP-appropriate timeouts
         # create_mcp_http_client uses 30s connect/5min read timeout by default,
         # and always enables follow_redirects
+        verify_factory = self._make_verify_factory()
         if self.httpx_client_factory is not None:
             # Factory clients get the full kwargs for backwards compatibility
             http_client = self.httpx_client_factory(
@@ -115,6 +171,12 @@ class StreamableHttpTransport(ClientTransport):
                 auth=self.auth,
                 follow_redirects=True,  # type: ignore[call-arg]
                 **({"timeout": timeout} if timeout else {}),
+            )
+        elif verify_factory is not None:
+            http_client = verify_factory(
+                headers=headers,
+                timeout=timeout,
+                auth=self.auth,
             )
         else:
             http_client = create_mcp_http_client(
