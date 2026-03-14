@@ -939,7 +939,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         refresh_expires_in = None
         refresh_token_expires_at = None
         if idp_tokens.get("refresh_token"):
-            if "refresh_expires_in" in idp_tokens:
+            if "refresh_expires_in" in idp_tokens and int(
+                idp_tokens["refresh_expires_in"]
+            ):
                 refresh_expires_in = int(idp_tokens["refresh_expires_in"])
                 refresh_token_expires_at = time.time() + refresh_expires_in
                 logger.debug(
@@ -1246,7 +1248,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 logger.debug("Upstream refresh token rotated")
 
             # Update refresh token expiry if provided
-            if "refresh_expires_in" in token_response:
+            if "refresh_expires_in" in token_response and int(
+                token_response["refresh_expires_in"]
+            ):
                 new_refresh_expires_in = int(token_response["refresh_expires_in"])
                 upstream_token_set.refresh_token_expires_at = (
                     time.time() + new_refresh_expires_in

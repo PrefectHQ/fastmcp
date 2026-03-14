@@ -17,6 +17,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     DEFAULT_ACCESS_TOKEN_EXPIRY_NO_REFRESH_SECONDS,
     DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS,
     ClientCode,
+    _hash_token,
 )
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 
@@ -501,3 +502,60 @@ class TestUpstreamTokenStorageTTL:
             key=jti_mapping.upstream_token_id
         )
         assert upstream_tokens is not None
+
+    async def test_refresh_expires_in_zero_issues_refresh_token(self, proxy):
+        """refresh_expires_in=0 should fall back to 30-day default.
+
+        Keycloak returns refresh_expires_in=0 for offline tokens (offline_access scope),
+        meaning "no fixed time-based expiry". The proxy should still issue a PROXY_RT.
+        """
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client)
+
+        client_code = ClientCode(
+            code="test-auth-code-keycloak-offline",
+            client_id="test-client",
+            redirect_uri="http://localhost:12345/callback",
+            code_challenge="test-challenge",
+            code_challenge_method="S256",
+            scopes=["read", "write"],
+            idp_tokens={
+                "access_token": "upstream-access-token-kc",
+                "refresh_token": "upstream-refresh-token-kc",
+                "expires_in": 3600,
+                "refresh_expires_in": 0,  # Keycloak offline token convention
+                "token_type": "Bearer",
+            },
+            expires_at=time.time() + 300,
+            created_at=time.time(),
+        )
+        await proxy._code_store.put(key=client_code.code, value=client_code)
+
+        auth_code = AuthorizationCode(
+            code="test-auth-code-keycloak-offline",
+            scopes=["read", "write"],
+            expires_at=time.time() + 300,
+            client_id="test-client",
+            code_challenge="test-challenge",
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+        )
+
+        result = await proxy.exchange_authorization_code(
+            client=client,
+            authorization_code=auth_code,
+        )
+
+        # refresh_expires_in=0 must NOT prevent refresh token issuance
+        assert result.access_token is not None
+        assert result.refresh_token is not None
+
+        # Verify refresh token metadata was stored
+        refresh_meta = await proxy._refresh_token_store.get(
+            key=_hash_token(result.refresh_token)
+        )
+        assert refresh_meta is not None
