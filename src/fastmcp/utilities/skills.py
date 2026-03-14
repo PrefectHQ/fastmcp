@@ -166,6 +166,11 @@ async def download_skill(
     target_dir = Path(target_dir).expanduser().resolve()
     skill_dir = target_dir / skill_name
 
+    # Security: ensure skill_dir stays within target_dir
+    resolved_skill_dir = skill_dir.resolve()
+    if not resolved_skill_dir.is_relative_to(target_dir):
+        raise ValueError(f"Skill name {skill_name!r} would escape the target directory")
+
     # Check if directory exists
     if skill_dir.exists() and not overwrite:
         raise FileExistsError(
@@ -184,8 +189,8 @@ async def download_skill(
         # Security: reject absolute paths and paths that escape skill_dir
         if Path(file_info.path).is_absolute():
             continue
-        file_path = (skill_dir / file_info.path).resolve()
-        if not file_path.is_relative_to(skill_dir):
+        file_path = (resolved_skill_dir / file_info.path).resolve()
+        if not file_path.is_relative_to(resolved_skill_dir):
             continue
 
         file_uri = f"skill://{skill_name}/{file_info.path}"

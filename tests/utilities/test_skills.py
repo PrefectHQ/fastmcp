@@ -267,3 +267,24 @@ class TestSyncSkills:
             assert isinstance(path, Path)
             assert path.exists()
             assert (path / "SKILL.md").exists()
+
+
+class TestPathTraversal:
+    @pytest.mark.parametrize(
+        "malicious_name",
+        [
+            "../escape",
+            "../../root",
+            "../../../etc/passwd",
+            "foo/../../escape",
+        ],
+    )
+    async def test_malicious_skill_name_raises(
+        self, skills_server: FastMCP, tmp_path: Path, malicious_name: str
+    ):
+        target = tmp_path / "downloaded"
+        target.mkdir()
+
+        async with Client(skills_server) as client:
+            with pytest.raises(ValueError, match="would escape the target directory"):
+                await download_skill(client, malicious_name, target)
