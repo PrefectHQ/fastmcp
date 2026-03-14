@@ -169,3 +169,38 @@ class TestSSLVerify:
                 httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]
                 == VerifyMode.CERT_NONE
             )
+
+    async def test_verify_propagates_to_preconstructed_oauth_instance(self):
+        transport = StreamableHttpTransport(
+            "https://example.com/mcp",
+            verify=False,
+            auth=OAuth(),
+        )
+        assert isinstance(transport.auth, OAuth)
+        async with transport.auth.httpx_client_factory() as httpx_client:
+            assert (
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]
+                == VerifyMode.CERT_NONE
+            )
+
+    async def test_client_verify_resyncs_existing_oauth_on_transport(self):
+        transport = StreamableHttpTransport(
+            "https://example.com/mcp",
+            auth="oauth",
+        )
+        assert isinstance(transport.auth, OAuth)
+        # OAuth was created without verify — factory should be default
+        async with transport.auth.httpx_client_factory() as httpx_client:
+            assert (
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]
+                != VerifyMode.CERT_NONE
+            )
+
+        # Now wrap in Client with verify=False — should resync OAuth
+        client = Client(transport, verify=False)
+        assert isinstance(client.transport.auth, OAuth)
+        async with client.transport.auth.httpx_client_factory() as httpx_client:
+            assert (
+                httpx_client._transport._pool._ssl_context.verify_mode
+                == VerifyMode.CERT_NONE
+            )

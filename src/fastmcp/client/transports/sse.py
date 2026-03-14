@@ -60,6 +60,12 @@ class SSETransport(ClientTransport):
             )
         elif isinstance(auth, OAuth):
             auth._bind(self.url)
+            if auth.httpx_client_factory is httpx.AsyncClient:
+                verify_factory = (
+                    self.httpx_client_factory or self._make_verify_factory()
+                )
+                if verify_factory is not None:
+                    auth.httpx_client_factory = verify_factory
             resolved = auth
         elif isinstance(auth, str):
             resolved = BearerAuth(auth)

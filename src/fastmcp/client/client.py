@@ -21,6 +21,7 @@ from mcp.types import GetTaskResult, TaskStatusNotification
 from pydantic import AnyUrl
 
 import fastmcp
+from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.elicitation import ElicitationHandler, create_elicitation_callback
 from fastmcp.client.logging import (
     LogHandler,
@@ -271,6 +272,9 @@ class Client(
 
             if isinstance(self.transport, StreamableHttpTransport | SSETransport):
                 self.transport.verify = verify
+                # Re-sync existing OAuth auth with the new verify setting
+                if isinstance(self.transport.auth, OAuth) and auth is None:
+                    self.transport._set_auth(self.transport.auth)
             else:
                 raise ValueError(
                     "The 'verify' parameter is only supported for HTTP transports."
