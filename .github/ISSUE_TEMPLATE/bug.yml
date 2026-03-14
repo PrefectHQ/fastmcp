@@ -16,17 +16,17 @@ body:
         - Check if someone else has **already reported this** or if it's been fixed on the main branch
         - You **must** include a copy/pasteable, properly formatted MRE (minimal reproducible example) or your issue may be closed without response
         - **The ideal issue is a clear problem description and an MRE — that's it.** If you've done genuine investigation and have a non-obvious insight into the root cause, include it. But please don't speculate or ask an LLM to generate a diagnosis. We have LLMs too, and an incorrect analysis is harder to work with than none at all.
-        - **Keep it short.** Issues that are difficult to parse — due to length, speculation, or generated content — may be closed without response.
+        - **Keep it short.** A good bug report fits in a single screen (~15 lines for the description). Issues that include unsolicited root cause analysis, proposed fixes, or multi-section diagnostic writeups will be labeled `too-long` and not triaged until condensed.
         - **Using an LLM?** Great — but it must follow these guidelines. Generic LLM output that ignores our contributing conventions will be closed. See [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
   - type: textarea
     id: description
     attributes:
-      label: Description
+      label: What happened?
       description: |
-        Please explain what you're experiencing and what you would expect to happen instead.
+        Describe the bug in a few sentences. What did you do, what happened, and what did you expect instead?
 
-        Provide as much detail as possible to help us understand and solve your problem quickly.
+        Do NOT include root cause analysis, proposed fixes, or diagnostic writeups — just describe the problem.
     validations:
       required: true
 

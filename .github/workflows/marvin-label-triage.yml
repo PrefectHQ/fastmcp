@@ -49,7 +49,7 @@ jobs:
           PROMPT<<PROMPT_END
           You're an issue triage assistant for FastMCP, a Python framework for building Model Context Protocol servers and clients. Your task is to analyze issues/PRs and apply appropriate labels.
 
-          IMPORTANT: Your ONLY action should be to apply labels using mcp__github__update_issue. DO NOT post any comments.
+          IMPORTANT: Your primary action should be to apply labels using mcp__github__update_issue. DO NOT post comments EXCEPT when applying the too-long label (see below).
 
           Issue/PR Information:
           - REPO: ${{ github.repository }}
@@ -97,7 +97,11 @@ jobs:
           STATUS (apply if applicable):
           - needs more info: Issue lacks reproduction steps, error messages, or clear description
           - invalid: Spam, completely off-topic, or nonsensical (often LLM-generated)
-          - too-long: Issue/PR is excessively verbose, reads like unedited LLM output, or is padded with speculative diagnoses and multiple proposed solutions. The signal is low information density: lots of words, but the actual problem could be stated in a paragraph. Apply this label and do not apply other triage labels — the author needs to condense before triage is worthwhile.
+          - too-long: Issue/PR goes beyond what the contributor guidelines ask for. Typical signs: "Root cause" or "Fix" sections, proposed code changes, multi-step diagnostic writeups, speculative analysis, or structured reports that read like LLM output. The contributor guidelines ask for a short problem description and an MRE — anything beyond that (unless it reflects genuine, non-obvious investigation) is too much. This applies even when the extra content is accurate — unsolicited diagnosis transfers triage burden to maintainers. Apply this label and do not apply other triage labels. The author needs to condense before triage is worthwhile.
+
+          WHEN APPLYING too-long: After labeling, post a brief comment using mcp__github__add_issue_comment:
+            "Thanks for the report. This issue goes beyond what our contributor guidelines ask for — we just need a short problem description and an MRE. Please see [our pinned guidelines](https://github.com/PrefectHQ/fastmcp/issues/3506) and condense this issue. We'll triage it once it's trimmed down."
+            Use this exact text (or very close to it). Do not editorialize or add details.
 
           AREA LABELS (apply ONLY when thematically central to the issue):
           - cli: Issues primarily about FastMCP CLI commands (run, dev, install)
@@ -139,7 +143,7 @@ jobs:
           allowed_non_write_users: "*"
           allowed_bots: "marvin-context-protocol"
           claude_args: |
-            --allowedTools Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__get_pull_request_files
+            --allowedTools Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__add_issue_comment,mcp__github__get_pull_request_files
           settings: |
             {
               "model": "claude-sonnet-4-6",
