@@ -555,6 +555,13 @@ class TestPathTraversalPrevention:
         request = director.build(path_route, {"id": 42}, "https://api.example.com")
         assert str(request.url) == "https://api.example.com/api/v1/users/42/profile"
 
+    def test_bare_dotdot_encoded(self, director, path_route):
+        """Bare '..' must be encoded so urljoin doesn't resolve it as traversal."""
+        request = director.build(path_route, {"id": ".."}, "https://api.example.com")
+        url = str(request.url)
+        assert "%2E%2E" in url or "%2e%2e" in url
+        assert url.startswith("https://api.example.com/api/v1/users/")
+
     def test_double_encoded_traversal(self, director, path_route):
         request = director.build(
             path_route,

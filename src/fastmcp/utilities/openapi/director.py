@@ -211,7 +211,7 @@ class RequestDirector:
         for param_name, param_value in path_params.items():
             placeholder = f"{{{param_name}}}"
             if placeholder in url_path:
-                safe_value = quote(str(param_value), safe="")
+                safe_value = quote(str(param_value), safe="").replace(".", "%2E")
                 url_path = url_path.replace(placeholder, safe_value)
 
         # Combine with base URL
