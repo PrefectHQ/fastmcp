@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 import weakref
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 import mcp.types
 from pydantic import RootModel
@@ -379,8 +379,9 @@ async def _parse_call_tool_result(
     Returns:
         CallToolResult: Parsed result with structured data
     """
-    from typing import cast
-
+    # Local import: CallToolResult is under TYPE_CHECKING at module level to
+    # avoid a circular import (client.client -> mixins.tools -> client.client),
+    # but we need the concrete class here to construct the return value.
     from fastmcp.client.client import CallToolResult
 
     data = None
@@ -389,8 +390,8 @@ async def _parse_call_tool_result(
         raise ToolError(msg)
     elif result.structuredContent:
         try:
-            meta = result.meta or {}
-            wrap_from_meta = meta.get("fastmcp", {}).get("wrap_result", False)
+            fastmcp_meta = (result.meta or {}).get("fastmcp") or {}
+            wrap_from_meta = fastmcp_meta.get("wrap_result", False)
 
             if wrap_from_meta:
                 # The result is self-describing — unwrap directly without
