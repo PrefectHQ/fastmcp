@@ -347,13 +347,15 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
             }
         }
 
-        # Convert based on component type
+        # Convert based on component type.
+        # Each branch merges related_task_meta with any existing _meta
+        # (e.g. fastmcp.wrap_result) rather than overwriting it.
         if isinstance(component, Tool):
             fastmcp_result = component.convert_result(raw_value)
             mcp_result = fastmcp_result.to_mcp_result()
-            # Ensure we have a CallToolResult and add metadata
             if isinstance(mcp_result, mcp.types.CallToolResult):
-                mcp_result._meta = related_task_meta  # type: ignore[attr-defined]
+                merged = {**(mcp_result.meta or {}), **related_task_meta}
+                mcp_result._meta = merged  # type: ignore[attr-defined]
             elif isinstance(mcp_result, tuple):
                 content, structured_content = mcp_result
                 mcp_result = mcp.types.CallToolResult(
@@ -371,19 +373,22 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
         elif isinstance(component, Prompt):
             fastmcp_result = component.convert_result(raw_value)
             mcp_result = fastmcp_result.to_mcp_prompt_result()
-            mcp_result._meta = related_task_meta  # type: ignore[attr-defined]
+            merged = {**(mcp_result.meta or {}), **related_task_meta}
+            mcp_result._meta = merged  # type: ignore[attr-defined]
             return mcp_result
 
         elif isinstance(component, ResourceTemplate):
             fastmcp_result = component.convert_result(raw_value)
             mcp_result = fastmcp_result.to_mcp_result(component.uri_template)
-            mcp_result._meta = related_task_meta  # type: ignore[attr-defined]
+            merged = {**(mcp_result.meta or {}), **related_task_meta}
+            mcp_result._meta = merged  # type: ignore[attr-defined]
             return mcp_result
 
         elif isinstance(component, Resource):
             fastmcp_result = component.convert_result(raw_value)
             mcp_result = fastmcp_result.to_mcp_result(str(component.uri))
-            mcp_result._meta = related_task_meta  # type: ignore[attr-defined]
+            merged = {**(mcp_result.meta or {}), **related_task_meta}
+            mcp_result._meta = merged  # type: ignore[attr-defined]
             return mcp_result
 
         else:

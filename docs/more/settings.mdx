@@ -21,8 +21,9 @@ You can change which `.env` file is loaded by setting the `FASTMCP_ENV_FILE` env
 
 | Environment Variable | Type | Default | Description |
 |---|---|---|---|
-| `FASTMCP_LOG_LEVEL` | `Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]` | `INFO` | Log level. Case-insensitive. |
+| `FASTMCP_LOG_LEVEL` | `Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]` | `INFO` | Log level for FastMCP's own logging output. Case-insensitive. |
 | `FASTMCP_LOG_ENABLED` | `bool` | `true` | Enable or disable FastMCP logging entirely. |
+| `FASTMCP_CLIENT_LOG_LEVEL` | `Literal["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"]` | None | Default minimum log level for messages sent to MCP clients via `context.log()`. When set, messages below this level are suppressed. Individual clients can override this per-session using the MCP `logging/setLevel` request. |
 | `FASTMCP_ENABLE_RICH_LOGGING` | `bool` | `true` | Use rich formatting for log output. Set to `false` for plain Python logging. |
 | `FASTMCP_ENABLE_RICH_TRACEBACKS` | `bool` | `true` | Use rich tracebacks for errors. |
 | `FASTMCP_DEPRECATION_WARNINGS` | `bool` | `true` | Show deprecation warnings. |

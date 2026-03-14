@@ -22,7 +22,7 @@ import hashlib
 import secrets
 import time
 from base64 import urlsafe_b64encode
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
@@ -257,7 +257,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # JWT signing key
         jwt_signing_key: str | bytes | None = None,
         # Consent screen configuration
-        require_authorization_consent: bool = True,
+        require_authorization_consent: bool | Literal["external"] = True,
         consent_csp_policy: str | None = None,
         # Token expiry fallback
         fallback_access_token_expiry_seconds: int | None = None,
@@ -305,7 +305,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
-                SECURITY WARNING: Only disable for local development or testing environments.
+                When "external", the built-in consent screen is skipped but no warning is
+                logged, indicating that consent is handled externally (e.g. by the upstream IdP).
+                SECURITY WARNING: Only set to False for local development or testing environments.
             consent_csp_policy: Content Security Policy for the consent page.
                 If None (default), uses the built-in CSP policy with appropriate directives.
                 If empty string "", disables CSP entirely (no meta tag is rendered).
@@ -379,9 +381,15 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         self._token_endpoint_auth_method: str | None = token_endpoint_auth_method
 
         # Consent screen configuration
-        self._require_authorization_consent: bool = require_authorization_consent
+        self._require_authorization_consent: bool | Literal["external"] = (
+            require_authorization_consent
+        )
         self._consent_csp_policy: str | None = consent_csp_policy
-        if not require_authorization_consent:
+        if require_authorization_consent == "external":
+            logger.info(
+                "Built-in consent screen disabled; consent is handled externally."
+            )
+        elif not require_authorization_consent:
             logger.warning(
                 "Authorization consent screen disabled - only use for local development or testing. "
                 + "In production, this screen protects against confused deputy attacks."
@@ -786,8 +794,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ttl=15 * 60,  # Auto-expire after 15 minutes
         )
 
-        # If consent is disabled, skip consent screen and go directly to upstream IdP
-        if not self._require_authorization_consent:
+        # If consent is disabled or handled externally, skip consent screen
+        if self._require_authorization_consent is not True:
             upstream_url = self._build_upstream_authorize_url(
                 txn_id, transaction.model_dump()
             )
@@ -1693,7 +1701,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             # When consent is enabled, the browser that approved consent receives
             # a signed cookie. A different browser (e.g., a victim lured to the
             # IdP URL) won't have this cookie and will be rejected.
-            if self._require_authorization_consent:
+            if self._require_authorization_consent is True:
                 consent_token = transaction_model.consent_token
                 if not consent_token:
                     logger.error("Transaction %s missing consent_token", txn_id)

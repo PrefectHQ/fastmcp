@@ -96,6 +96,31 @@ By default, `fastmcp run` uses your current Python environment directly. When yo
 
 The `--skip-env` flag is useful when you're already inside an activated venv, a Docker container with pre-installed dependencies, or a uv-managed project — it prevents uv from trying to set up another environment layer.
 
+## Previewing Apps
+
+<VersionBadge version="3.2.0" />
+
+`fastmcp dev apps` launches a browser-based preview UI for servers with [Prefab App tools](/apps/prefab). It starts your MCP server on one port and a local dev UI on another — giving you a live, interactive picker where you can call app tools and see their rendered output without needing a full MCP host client.
+
+```bash
+fastmcp dev apps server.py
+fastmcp dev apps server.py:mcp --mcp-port 9000 --dev-port 9090
+```
+
+The picker auto-generates a form from each tool's input schema. Submit the form and the result opens in a new tab as a rendered Prefab UI.
+
+Auto-reload is on by default — save a file and the MCP server restarts automatically.
+
+<Tip>
+`fastmcp dev apps` requires `fastmcp[apps]` — install with `pip install "fastmcp[apps]"`.
+</Tip>
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| MCP Port | `--mcp-port` | Port for the MCP server (default: `8000`) |
+| Dev Port | `--dev-port` | Port for the dev UI (default: `8080`) |
+| Auto-Reload | `--reload` / `--no-reload` | Watch for file changes (default: on) |
+
 ## Development with the Inspector
 
 `fastmcp dev inspector` launches your server inside the [MCP Inspector](https://github.com/modelcontextprotocol/inspector), a browser-based tool for interactively testing MCP servers. Auto-reload is on by default, so your server restarts when you save changes.

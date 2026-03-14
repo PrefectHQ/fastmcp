@@ -240,6 +240,7 @@ class FastMCP(
         session_state_store: AsyncKeyValue | None = None,
         sampling_handler: SamplingHandler | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
+        client_log_level: mcp.types.LoggingLevel | None = None,
         **kwargs: Any,
     ):
         _check_removed_kwargs(kwargs)
@@ -330,6 +331,12 @@ class FastMCP(
             strict_input_validation
             if strict_input_validation is not None
             else fastmcp.settings.strict_input_validation
+        )
+
+        self.client_log_level: mcp.types.LoggingLevel | None = (
+            client_log_level
+            if client_log_level is not None
+            else fastmcp.settings.client_log_level
         )
 
         self.middleware: list[Middleware] = list(middleware or [])
