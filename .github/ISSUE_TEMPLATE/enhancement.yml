@@ -8,14 +8,14 @@ body:
       value: |
         Thanks for suggesting an improvement to FastMCP!
 
-        Enhancement issues are the **primary way** features and improvements get into FastMCP. Maintainers use well-written issues to implement changes that fit the codebase's patterns and ship quickly. A clear issue here is more impactful than a PR — see [CONTRIBUTING.md](../CONTRIBUTING.md) for why.
+        Enhancement issues are the **primary way** features and improvements get into FastMCP. Maintainers use well-written issues to implement changes that fit the codebase's patterns and ship quickly. A clear issue here is more impactful than a PR — see [CONTRIBUTING.md](../../CONTRIBUTING.md) for why.
 
         ### Before you submit
 
         - 🔍 **Check if this has already been requested** — search existing issues first
         - 🎯 **Describe the problem you're trying to solve**, not the solution you want — we'll figure out the best implementation
         - ✂️ **Keep it short.** A motivating description and a concrete use case is the ideal request. Skip proposed implementations unless you have a specific, well-considered suggestion. Requests that are difficult to parse may be closed without response.
-        - 🤖 **Using an LLM?** Great — but it must follow these guidelines. Generic LLM output that ignores our contributing conventions will be closed. See [CONTRIBUTING.md](../CONTRIBUTING.md).
+        - 🤖 **Using an LLM?** Great — but it must follow these guidelines. Generic LLM output that ignores our contributing conventions will be closed. See [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
   - type: textarea
     id: description
