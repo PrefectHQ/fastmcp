@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import ssl
 from collections.abc import AsyncIterator, Callable
 from typing import Literal, cast
 
@@ -32,6 +33,7 @@ class StreamableHttpTransport(ClientTransport):
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
         httpx_client_factory: McpHttpClientFactory | None = None,
+        verify: ssl.SSLContext | bool | str | None = None,
     ):
         """Initialize a Streamable HTTP transport.
 
@@ -45,6 +47,10 @@ class StreamableHttpTransport(ClientTransport):
                 If provided, must accept keyword arguments: headers, auth,
                 follow_redirects, and optionally timeout. Using **kwargs is
                 recommended to ensure forward compatibility.
+            verify: SSL certificate verification. Accepts False to disable
+                verification, a path to a CA bundle, or an ssl.SSLContext
+                for full control. None (default) uses httpx defaults (verification
+                enabled). Ignored when httpx_client_factory is provided.
         """
         if isinstance(url, AnyUrl):
             url = str(url)
@@ -57,6 +63,7 @@ class StreamableHttpTransport(ClientTransport):
         self.url: str = url
         self.headers = headers or {}
         self.httpx_client_factory = httpx_client_factory
+        self.verify: ssl.SSLContext | bool | str | None = verify
         self._set_auth(auth)
 
         if sse_read_timeout is not None:
@@ -115,6 +122,18 @@ class StreamableHttpTransport(ClientTransport):
                 auth=self.auth,
                 follow_redirects=True,  # type: ignore[call-arg]
                 **({"timeout": timeout} if timeout else {}),
+            )
+        elif self.verify is not None:
+            # create_mcp_http_client doesn't support verify, so construct
+            # the client directly with the same MCP defaults
+            if timeout is None:
+                timeout = httpx.Timeout(30.0, read=300.0)
+            http_client = httpx.AsyncClient(
+                headers=headers,
+                timeout=timeout,
+                auth=self.auth,
+                follow_redirects=True,
+                verify=self.verify,
             )
         else:
             http_client = create_mcp_http_client(

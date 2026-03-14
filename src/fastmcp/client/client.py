@@ -4,6 +4,7 @@ import asyncio
 import copy
 import datetime
 import secrets
+import ssl
 import weakref
 from collections.abc import Coroutine
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
@@ -258,10 +259,23 @@ class Client(
         init_timeout: datetime.timedelta | float | int | None = None,
         client_info: mcp.types.Implementation | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
+        verify: ssl.SSLContext | bool | str | None = None,
     ) -> None:
         self.name = name or self.generate_name()
 
         self.transport = cast(ClientTransportT, infer_transport(transport))
+
+        if verify is not None:
+            from fastmcp.client.transports.http import StreamableHttpTransport
+            from fastmcp.client.transports.sse import SSETransport
+
+            if isinstance(self.transport, StreamableHttpTransport | SSETransport):
+                self.transport.verify = verify
+            else:
+                raise ValueError(
+                    "The 'verify' parameter is only supported for HTTP transports."
+                )
+
         if auth is not None:
             self.transport._set_auth(auth)
 

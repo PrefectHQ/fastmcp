@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import ssl
 from collections.abc import AsyncIterator
 from typing import Any, Literal, cast
 
@@ -31,6 +32,7 @@ class SSETransport(ClientTransport):
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
         httpx_client_factory: McpHttpClientFactory | None = None,
+        verify: ssl.SSLContext | bool | str | None = None,
     ):
         if isinstance(url, AnyUrl):
             url = str(url)
@@ -43,6 +45,7 @@ class SSETransport(ClientTransport):
         self.url: str = url
         self.headers = headers or {}
         self.httpx_client_factory = httpx_client_factory
+        self.verify: ssl.SSLContext | bool | str | None = verify
         self._set_auth(auth)
 
         self.sse_read_timeout = normalize_timeout_to_timedelta(sse_read_timeout)
@@ -85,6 +88,13 @@ class SSETransport(ClientTransport):
 
         if self.httpx_client_factory is not None:
             client_kwargs["httpx_client_factory"] = self.httpx_client_factory
+        elif self.verify is not None:
+            verify = self.verify
+
+            def _factory(**kwargs: Any) -> httpx.AsyncClient:
+                return httpx.AsyncClient(verify=verify, **kwargs)
+
+            client_kwargs["httpx_client_factory"] = _factory
 
         async with sse_client(self.url, auth=self.auth, **client_kwargs) as transport:
             read_stream, write_stream = transport
