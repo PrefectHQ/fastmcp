@@ -204,3 +204,26 @@ class TestSSLVerify:
                 httpx_client._transport._pool._ssl_context.verify_mode
                 == VerifyMode.CERT_NONE
             )
+
+    async def test_client_verify_overrides_transport_verify_in_oauth(self):
+        transport = StreamableHttpTransport(
+            "https://example.com/mcp",
+            verify=False,
+            auth="oauth",
+        )
+        assert isinstance(transport.auth, OAuth)
+        # OAuth should initially have verify=False
+        async with transport.auth.httpx_client_factory() as httpx_client:
+            assert (
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]
+                == VerifyMode.CERT_NONE
+            )
+
+        # Client overrides verify to True — OAuth should update
+        client = Client(transport, verify=True)
+        assert isinstance(client.transport.auth, OAuth)
+        async with client.transport.auth.httpx_client_factory() as httpx_client:
+            assert (
+                httpx_client._transport._pool._ssl_context.verify_mode
+                != VerifyMode.CERT_NONE
+            )
