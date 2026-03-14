@@ -97,6 +97,7 @@ jobs:
           STATUS (apply if applicable):
           - needs more info: Issue lacks reproduction steps, error messages, or clear description
           - invalid: Spam, completely off-topic, or nonsensical (often LLM-generated)
+          - too-long: Issue/PR is excessively verbose, reads like unedited LLM output, or is padded with speculative diagnoses and multiple proposed solutions. The signal is low information density: lots of words, but the actual problem could be stated in a paragraph. Apply this label and do not apply other triage labels — the author needs to condense before triage is worthwhile.
 
           AREA LABELS (apply ONLY when thematically central to the issue):
           - cli: Issues primarily about FastMCP CLI commands (run, dev, install)
