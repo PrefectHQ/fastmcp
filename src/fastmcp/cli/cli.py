@@ -369,10 +369,14 @@ async def apps(
     Requires fastmcp[apps] to be installed (prefab-ui).
     """
     try:
-        from fastmcp.cli.apps_dev import run_dev_apps
-    except ImportError as e:
-        logger.error(f"Could not import dev apps module: {e}")
+        import prefab_ui  # noqa: F401
+    except ImportError:
+        logger.error(
+            "fastmcp dev apps requires prefab-ui. Install with: pip install 'fastmcp[apps]'"
+        )
         sys.exit(1)
+
+    from fastmcp.cli.apps_dev import run_dev_apps
 
     await run_dev_apps(server_spec, mcp_port=mcp_port, dev_port=dev_port, reload=reload)
 
