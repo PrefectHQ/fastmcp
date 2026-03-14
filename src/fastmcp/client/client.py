@@ -272,11 +272,14 @@ class Client(
 
             if isinstance(self.transport, StreamableHttpTransport | SSETransport):
                 self.transport.verify = verify
-                # Re-sync existing OAuth auth with the new verify setting.
-                # Apply verify factory directly rather than going through
-                # _set_auth, which guards against overwriting user-provided
-                # factories — here Client is explicitly changing verify.
-                if isinstance(self.transport.auth, OAuth) and auth is None:
+                # Re-sync existing OAuth auth with the new verify setting,
+                # but only if the transport doesn't have a custom factory
+                # (which takes precedence and was already applied to OAuth).
+                if (
+                    isinstance(self.transport.auth, OAuth)
+                    and auth is None
+                    and self.transport.httpx_client_factory is None
+                ):
                     verify_factory = self.transport._make_verify_factory()
                     if verify_factory is not None:
                         self.transport.auth.httpx_client_factory = verify_factory
