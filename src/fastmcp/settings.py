@@ -246,6 +246,13 @@ class Settings(BaseSettings):
         ),
     ] = None
 
+    client_disconnect_timeout: Annotated[
+        float,
+        Field(
+            description="Maximum time to wait for a clean disconnect before giving up, in seconds.",
+        ),
+    ] = 5
+
     # Transport settings
     transport: Literal["stdio", "http", "sse", "streamable-http"] = "stdio"
 

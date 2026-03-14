@@ -151,6 +151,7 @@ class TestMountedToolTasks:
             status = await task.status()
             assert status.status == "completed"
 
+    @pytest.mark.timeout(10)
     async def test_mounted_tool_task_cancellation(self, parent_server):
         """Can cancel a mounted tool task."""
         async with Client(parent_server) as client:

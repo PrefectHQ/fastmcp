@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import secrets
 import socket
 import sys
 from collections.abc import Callable, Generator
@@ -72,6 +73,8 @@ def isolate_settings_home(tmp_path: Path):
     with temporary_settings(
         home=test_home,
         docket__minimum_check_interval=timedelta(milliseconds=10),
+        docket__url=f"memory://{secrets.token_hex(4)}",
+        client_disconnect_timeout=1,
     ):
         yield
 

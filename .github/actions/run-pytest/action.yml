@@ -38,6 +38,7 @@ runs:
         uv run --no-sync pytest \
           --inline-snapshot=disable \
           --timeout=$TIMEOUT \
+          --durations=50 \
           -m "$MARKER" \
           $PARALLEL_FLAGS \
           $EXTRA_FLAGS \
