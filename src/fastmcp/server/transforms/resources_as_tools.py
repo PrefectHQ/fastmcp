@@ -23,7 +23,13 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from mcp.types import ToolAnnotations
 
+from fastmcp.exceptions import AuthorizationError
+from fastmcp.server.auth import AuthContext, run_auth_checks
 from fastmcp.server.transforms import GetToolNext, Transform
+from fastmcp.server.transforms.visibility import (
+    apply_session_transforms,
+    is_enabled,
+)
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.versions import VersionSpec
 
@@ -41,8 +47,8 @@ class ResourcesAsTools(Transform):
     - `read_resource`: Reads a resource by URI
 
     The transform captures a provider reference at construction and queries it
-    for resources when the generated tools are called. When used with FastMCP,
-    the provider's auth and visibility filtering is automatically applied.
+    for resources when the generated tools are called. Auth and visibility
+    filtering is applied regardless of provider type.
 
     Example:
         ```python
@@ -95,13 +101,38 @@ class ResourcesAsTools(Transform):
             Returns JSON with resource metadata. Static resources have a 'uri' field,
             while templates have a 'uri_template' field with placeholders like {name}.
             """
-            resources = await provider.list_resources()
-            templates = await provider.list_resource_templates()
+            from fastmcp.server.server import FastMCP
+
+            if isinstance(provider, FastMCP):
+                all_resources = await provider.list_resources()
+                all_templates = await provider.list_resource_templates()
+            else:
+                all_resources = list(
+                    await _filter_authorized(
+                        await apply_session_transforms(
+                            [
+                                r
+                                for r in await provider.list_resources()
+                                if is_enabled(r)
+                            ]
+                        )
+                    )
+                )
+                all_templates = list(
+                    await _filter_authorized(
+                        await apply_session_transforms(
+                            [
+                                t
+                                for t in await provider.list_resource_templates()
+                                if is_enabled(t)
+                            ]
+                        )
+                    )
+                )
 
             result: list[dict[str, Any]] = []
 
-            # Static resources
-            for r in resources:
+            for r in all_resources:
                 result.append(
                     {
                         "uri": str(r.uri),
@@ -111,8 +142,7 @@ class ResourcesAsTools(Transform):
                     }
                 )
 
-            # Resource templates (URI contains placeholders like {name})
-            for t in templates:
+            for t in all_templates:
                 result.append(
                     {
                         "uri_template": t.uri_template,
@@ -140,21 +170,23 @@ class ResourcesAsTools(Transform):
             Returns the resource content as a string. Binary content is
             base64-encoded.
             """
-            from fastmcp import FastMCP
+            from fastmcp.server.server import FastMCP
 
             # Use FastMCP.read_resource() if available - runs middleware chain
             if isinstance(provider, FastMCP):
                 result = await provider.read_resource(uri)
                 return _format_result(result)
 
-            # Fallback for plain providers - no middleware
+            # Plain providers: apply visibility and auth checks
             resource = await provider.get_resource(uri)
             if resource is not None:
+                await _check_component_access(resource)
                 result = await resource._read()
                 return _format_result(result)
 
             template = await provider.get_resource_template(uri)
             if template is not None:
+                await _check_component_access(template)
                 params = template.matches(uri)
                 if params is not None:
                     result = await template._read(uri, params)
@@ -163,6 +195,50 @@ class ResourcesAsTools(Transform):
             raise ValueError(f"Resource not found: {uri}")
 
         return Tool.from_function(fn=read_resource, annotations=_DEFAULT_ANNOTATIONS)
+
+
+async def _check_component_access(component: Any) -> None:
+    """Check visibility and auth for a single component.
+
+    Applies session transforms, then checks is_enabled and runs auth checks.
+    Raises ValueError if the component is disabled or unauthorized.
+    """
+    from fastmcp.server.dependencies import get_access_token
+
+    marked = await apply_session_transforms([component])
+    if not marked or not is_enabled(marked[0]):
+        raise ValueError(f"Resource not found: {component.name}")
+
+    if component.auth is not None:
+        token = get_access_token()
+        ctx = AuthContext(token=token, component=component)
+        try:
+            if not await run_auth_checks(component.auth, ctx):
+                raise ValueError(f"Resource not found: {component.name}")
+        except AuthorizationError:
+            raise ValueError(f"Resource not found: {component.name}") from None
+
+
+async def _filter_authorized(components: Sequence[Any]) -> Sequence[Any]:
+    """Filter components by visibility and auth.
+
+    Returns only components that are enabled and pass auth checks.
+    """
+    from fastmcp.server.dependencies import get_access_token
+
+    enabled = [c for c in components if is_enabled(c)]
+    token = get_access_token()
+    authorized: list[Any] = []
+    for component in enabled:
+        if component.auth is not None:
+            ctx = AuthContext(token=token, component=component)
+            try:
+                if not await run_auth_checks(component.auth, ctx):
+                    continue
+            except AuthorizationError:
+                continue
+        authorized.append(component)
+    return authorized
 
 
 def _format_result(result: Any) -> str:
