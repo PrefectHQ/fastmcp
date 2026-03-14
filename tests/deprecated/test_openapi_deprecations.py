@@ -5,8 +5,6 @@ import warnings
 
 import pytest
 
-pytestmark = pytest.mark.filterwarnings("default::DeprecationWarning")
-
 
 class TestExperimentalOpenAPIImportDeprecation:
     """Test experimental OpenAPI import path deprecations."""

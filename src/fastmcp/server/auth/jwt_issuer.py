@@ -17,11 +17,13 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+import fastmcp
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
-KDF_ITERATIONS = 1000000
+KDF_ITERATIONS = 1_000_000
+KDF_ITERATIONS_TEST = 10
 
 
 @overload
@@ -57,11 +59,14 @@ def derive_jwt_key(
         return base64.urlsafe_b64encode(derived_key)
 
     if low_entropy_material is not None:
+        iterations = (
+            KDF_ITERATIONS_TEST if fastmcp.settings.test_mode else KDF_ITERATIONS
+        )
         pbkdf2 = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
             salt=salt.encode(),
-            iterations=KDF_ITERATIONS,
+            iterations=iterations,
         ).derive(key_material=low_entropy_material.encode())
 
         return base64.urlsafe_b64encode(pbkdf2)

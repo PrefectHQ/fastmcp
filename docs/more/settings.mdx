@@ -57,6 +57,7 @@ These control how the server listens when running with an HTTP transport.
 | Environment Variable | Type | Default | Description |
 |---|---|---|---|
 | `FASTMCP_CLIENT_INIT_TIMEOUT` | `float \| None` | None | Timeout in seconds for the client initialization handshake. Set to `0` or leave unset to disable. |
+| `FASTMCP_CLIENT_DISCONNECT_TIMEOUT` | `float` | `5` | Maximum time in seconds to wait for a clean disconnect before giving up. |
 | `FASTMCP_CLIENT_RAISE_FIRST_EXCEPTIONGROUP_ERROR` | `bool` | `true` | When an `ExceptionGroup` is raised, re-raise the first error directly instead of the group. Simplifies debugging but may mask secondary errors. |
 
 ## CLI & Display
@@ -82,6 +83,7 @@ When setting Docket values in a `.env` file, use a **double** underscore: `FASTM
 | `FASTMCP_DOCKET_CONCURRENCY` | `int` | `10` | Maximum concurrent tasks per worker. |
 | `FASTMCP_DOCKET_REDELIVERY_TIMEOUT` | `timedelta` | `300s` | If a worker doesn't complete a task within this time, it's redelivered to another worker. |
 | `FASTMCP_DOCKET_RECONNECTION_DELAY` | `timedelta` | `5s` | Delay between reconnection attempts when the worker loses its backend connection. |
+| `FASTMCP_DOCKET_MINIMUM_CHECK_INTERVAL` | `timedelta` | `50ms` | How frequently the worker polls for new tasks. Lower values reduce latency at the cost of more CPU usage. |
 
 ## Advanced
 

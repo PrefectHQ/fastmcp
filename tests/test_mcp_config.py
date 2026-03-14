@@ -38,12 +38,16 @@ from fastmcp.mcp_config import (
 )
 from fastmcp.tools.tool import Tool as FastMCPTool
 
-# Skip all tests in this file on Windows - they spawn subprocess servers via stdio
-# which has process lifecycle issues on Windows
-pytestmark = pytest.mark.skipif(
-    sys.platform.startswith("win32"),
-    reason="Windows has process lifecycle issues with stdio subprocesses",
-)
+# These tests spawn subprocess servers via stdio which can be slow under
+# parallel CI load. Give them more headroom than the 5s default, and skip
+# entirely on Windows due to process lifecycle issues.
+pytestmark = [
+    pytest.mark.timeout(15),
+    pytest.mark.skipif(
+        sys.platform.startswith("win32"),
+        reason="Windows has process lifecycle issues with stdio subprocesses",
+    ),
+]
 
 
 def running_under_debugger():

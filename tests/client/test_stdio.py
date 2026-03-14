@@ -62,6 +62,7 @@ class TestParallelCalls:
         assert len(errors) == 0
 
 
+@pytest.mark.timeout(15)
 class TestKeepAlive:
     # https://github.com/PrefectHQ/fastmcp/issues/581
 

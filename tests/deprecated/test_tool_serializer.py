@@ -17,9 +17,6 @@ from fastmcp.tools.tool import Tool, _convert_to_content
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.tests import temporary_settings
 
-# Reset deprecation warnings for this module
-pytestmark = pytest.mark.filterwarnings("default::DeprecationWarning")
-
 
 class TestToolSerializerDeprecated:
     """Tests for deprecated serializer functionality."""
