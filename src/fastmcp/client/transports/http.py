@@ -45,8 +45,8 @@ class StreamableHttpTransport(ClientTransport):
             sse_read_timeout: Deprecated. Use read_timeout_seconds in session_kwargs.
             httpx_client_factory: Optional factory for creating httpx.AsyncClient.
                 If provided, must accept keyword arguments: headers, auth,
-                and optionally timeout. Using **kwargs is recommended to
-                ensure forward compatibility.
+                follow_redirects, and optionally timeout. Using **kwargs is
+                recommended to ensure forward compatibility.
             verify: SSL certificate verification. Accepts False to disable
                 verification, a path to a CA bundle, or an ssl.SSLContext
                 for full control. None (default) uses httpx defaults (verification
@@ -169,6 +169,7 @@ class StreamableHttpTransport(ClientTransport):
             http_client = self.httpx_client_factory(
                 headers=headers,
                 auth=self.auth,
+                follow_redirects=True,  # type: ignore[call-arg]
                 **({"timeout": timeout} if timeout else {}),
             )
         elif verify_factory is not None:
