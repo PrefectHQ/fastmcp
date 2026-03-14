@@ -147,23 +147,60 @@ class TestOIDCScopeHandling:
         # Token validator should only require non-OIDC scopes
         assert provider._token_validator.required_scopes == ["read"]
 
-    def test_required_scopes_all_oidc_results_in_no_validation(
+    def test_required_scopes_all_oidc_raises_value_error(
         self, memory_storage: MemoryStore
     ):
-        """Test that if all required_scopes are OIDC, no scope validation occurs."""
-        provider = AzureProvider(
-            client_id="test_client",
-            client_secret="test_secret",
-            tenant_id="test-tenant",
-            base_url="https://myserver.com",
-            identifier_uri="api://my-api",
-            required_scopes=["openid", "profile"],
-            jwt_signing_key="test-secret",
-            client_storage=memory_storage,
-        )
+        """Test that providing only OIDC scopes raises ValueError."""
+        with pytest.raises(ValueError, match="at least one non-OIDC scope"):
+            AzureProvider(
+                client_id="test_client",
+                client_secret="test_secret",
+                tenant_id="test-tenant",
+                base_url="https://myserver.com",
+                identifier_uri="api://my-api",
+                required_scopes=["openid", "profile"],
+                jwt_signing_key="test-secret",
+                client_storage=memory_storage,
+            )
 
-        # Token validator should have empty required scopes (all were OIDC)
-        assert provider._token_validator.required_scopes == []
+    def test_empty_required_scopes_raises_value_error(
+        self, memory_storage: MemoryStore
+    ):
+        """Test that providing empty required_scopes raises ValueError."""
+        with pytest.raises(ValueError, match="at least one non-OIDC scope"):
+            AzureProvider(
+                client_id="test_client",
+                client_secret="test_secret",
+                tenant_id="test-tenant",
+                base_url="https://myserver.com",
+                identifier_uri="api://my-api",
+                required_scopes=[],
+                jwt_signing_key="test-secret",
+                client_storage=memory_storage,
+            )
+
+    @pytest.mark.parametrize(
+        "scopes",
+        [
+            ["offline_access"],
+            ["openid", "email", "profile", "offline_access"],
+            ["email"],
+        ],
+    )
+    def test_only_oidc_scopes_raises_value_error(
+        self, memory_storage: MemoryStore, scopes: list[str]
+    ):
+        """Test that various OIDC-only scope combinations raise ValueError."""
+        with pytest.raises(ValueError, match="at least one non-OIDC scope"):
+            AzureProvider(
+                client_id="test_client",
+                client_secret="test_secret",
+                tenant_id="test-tenant",
+                base_url="https://myserver.com",
+                required_scopes=scopes,
+                jwt_signing_key="test-secret",
+                client_storage=memory_storage,
+            )
 
     def test_valid_scopes_includes_oidc_scopes(self, memory_storage: MemoryStore):
         """Test that valid_scopes advertises OIDC scopes to clients."""
