@@ -68,7 +68,7 @@ jobs:
 
           3. Analyze and apply labels based on these guidelines:
 
-          CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive):
+          CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive; skip if applying too-long):
           - bug: Reports of broken functionality OR PRs that fix bugs
           - enhancement: New functions/endpoints, improvements to existing features, internal tooling, workflow improvements, minor new capabilities
           - feature: ONLY for major headline functionality worthy of a blog post announcement (2-4 per release, never for issues)
