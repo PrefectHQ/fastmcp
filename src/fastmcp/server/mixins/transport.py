@@ -16,6 +16,9 @@ from starlette.responses import Response
 from starlette.routing import BaseRoute, Route
 
 import fastmcp
+from fastmcp.server.providers.base import Provider
+from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
+from fastmcp.server.providers.wrapped_provider import _WrappedProvider
 from fastmcp.server.event_store import EventStore
 from fastmcp.server.http import (
     StarletteWithLifespan,
@@ -153,15 +156,17 @@ class TransportMixin:
         a child server are forwarded to the parent's HTTP app when using
         ``server.mount(child)``.
 
+        Note:
+            When path collisions occur between a parent and a mounted child,
+            the parent's routes take precedence because they appear first in
+            the returned list.
+
         Returns:
             List of Starlette Route objects
         """
-        from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
-        from fastmcp.server.providers.wrapped_provider import _WrappedProvider
-
         routes: list[BaseRoute] = list(self._additional_http_routes)
 
-        def _unwrap_provider(provider: Any) -> Any:
+        def _unwrap_provider(provider: Provider) -> Provider:
             """Unwrap _WrappedProvider layers to find the inner provider."""
             while isinstance(provider, _WrappedProvider):
                 provider = provider._inner
