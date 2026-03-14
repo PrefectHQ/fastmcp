@@ -203,7 +203,7 @@ class OIDCProxy(OAuthProxy):
         strict: bool | None = None,
         # Upstream server configuration
         client_id: str,
-        client_secret: str,
+        client_secret: str | None = None,
         audience: str | None = None,
         timeout_seconds: int | None = None,
         # Token verifier
@@ -239,7 +239,9 @@ class OIDCProxy(OAuthProxy):
             config_url: URL of upstream configuration
             strict: Optional strict flag for the configuration
             client_id: Client ID registered with upstream server
-            client_secret: Client secret for upstream server
+            client_secret: Client secret for upstream server. Optional for PKCE public
+                clients or when using alternative credentials. When omitted,
+                jwt_signing_key must be provided.
             audience: Audience for upstream server
             timeout_seconds: HTTP request timeout in seconds
             token_verifier: Optional custom token verifier (e.g., IntrospectionTokenVerifier for opaque tokens).
@@ -295,8 +297,12 @@ class OIDCProxy(OAuthProxy):
         if not client_id:
             raise ValueError("Missing required client id")
 
-        if not client_secret:
-            raise ValueError("Missing required client secret")
+        if not client_secret and not jwt_signing_key:
+            raise ValueError(
+                "Either client_secret or jwt_signing_key must be provided. "
+                "jwt_signing_key is required when client_secret is omitted "
+                "(e.g., for PKCE public clients)."
+            )
 
         if not base_url:
             raise ValueError("Missing required base URL")

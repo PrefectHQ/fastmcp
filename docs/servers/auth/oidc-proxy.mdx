@@ -70,8 +70,9 @@ mcp = FastMCP(name="My Server", auth=auth)
   Client ID from your registered OAuth application
 </ParamField>
 
-<ParamField body="client_secret" type="str" required>
-  Client secret from your registered OAuth application
+<ParamField body="client_secret" type="str | None">
+  Client secret from your registered OAuth application. Optional for PKCE public
+  clients. When omitted, `jwt_signing_key` must be provided.
 </ParamField>
 
 <ParamField body="base_url" type="AnyHttpUrl | str" required>

@@ -34,6 +34,7 @@ class TestAzureProvider:
         )
 
         assert provider._upstream_client_id == "12345678-1234-1234-1234-123456789012"
+        assert provider._upstream_client_secret is not None
         assert provider._upstream_client_secret.get_secret_value() == "azure_secret_123"
         assert str(provider.base_url) == "https://myserver.com/"
         # Check tenant is in the endpoints

@@ -62,13 +62,23 @@ class ConsentMixin:
             return f"__Host-{base_name}"
         return f"__{base_name}"
 
+    def _cookie_signing_key(self: OAuthProxy) -> bytes:
+        """Return the key used for HMAC-signing consent cookies.
+
+        Uses the upstream client secret when available, falling back to the
+        JWT signing key (which is always present — OAuthProxy requires it
+        when no client secret is provided).
+        """
+        if self._upstream_client_secret is not None:
+            return self._upstream_client_secret.get_secret_value().encode()
+        return self._jwt_signing_key
+
     def _sign_cookie(self: OAuthProxy, payload: str) -> str:
         """Sign a cookie payload with HMAC-SHA256.
 
         Returns: base64(payload).base64(signature)
         """
-        # Use upstream client secret as signing key
-        key = self._upstream_client_secret.get_secret_value().encode()
+        key = self._cookie_signing_key()
         signature = hmac.new(key, payload.encode(), hashlib.sha256).digest()
         signature_b64 = base64.b64encode(signature).decode()
         return f"{payload}.{signature_b64}"
@@ -84,7 +94,7 @@ class ConsentMixin:
             payload, signature_b64 = signed_value.rsplit(".", 1)
 
             # Verify signature
-            key = self._upstream_client_secret.get_secret_value().encode()
+            key = self._cookie_signing_key()
             expected_sig = hmac.new(key, payload.encode(), hashlib.sha256).digest()
             provided_sig = base64.b64decode(signature_b64.encode())
 
