@@ -269,7 +269,7 @@ class TestToolOutputSchema:
         assert result.content[2].text == "direct MCP content"
 
     async def test_wrapped_result_includes_meta_flag(self):
-        """Wrapped results include x-fastmcp-wrap-result in meta."""
+        """Wrapped results include wrap_result in meta."""
         server = FastMCP()
 
         @server.tool
@@ -278,10 +278,10 @@ class TestToolOutputSchema:
 
         result = await server.call_tool("list_tool", {})
         assert result.structured_content == {"result": [{"a": 1}]}
-        assert result.meta == {"x-fastmcp-wrap-result": True}
+        assert result.meta == {"fastmcp": {"wrap_result": True}}
 
     async def test_unwrapped_result_has_no_meta_flag(self):
-        """Unwrapped dict results do not include x-fastmcp-wrap-result in meta."""
+        """Unwrapped dict results do not include wrap_result in meta."""
         server = FastMCP()
 
         @server.tool

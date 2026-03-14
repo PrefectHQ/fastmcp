@@ -732,7 +732,7 @@ async def test_client_unwraps_result_using_meta():
         result = await client.call_tool("list_tool", {})
         assert result.structured_content == {"result": [1, 2, 3]}
         assert result.data == [1, 2, 3]
-        assert result.meta == {"x-fastmcp-wrap-result": True}
+        assert result.meta == {"fastmcp": {"wrap_result": True}}
 
 
 async def test_client_does_not_unwrap_dict_result():

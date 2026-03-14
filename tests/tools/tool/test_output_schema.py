@@ -536,7 +536,7 @@ class TestToolFromFunctionOutputSchema:
 
 class TestWrapResultMeta:
     async def test_list_return_includes_wrap_result_meta(self):
-        """A tool returning list[dict] should set x-fastmcp-wrap-result in meta."""
+        """A tool returning list[dict] should set wrap_result in meta."""
 
         def func() -> list[dict]:
             return [{"a": 1}, {"b": 2}]
@@ -544,10 +544,10 @@ class TestWrapResultMeta:
         tool = Tool.from_function(func)
         result = await tool.run({})
         assert result.structured_content == {"result": [{"a": 1}, {"b": 2}]}
-        assert result.meta == {"x-fastmcp-wrap-result": True}
+        assert result.meta == {"fastmcp": {"wrap_result": True}}
 
     async def test_int_return_includes_wrap_result_meta(self):
-        """A tool returning int should set x-fastmcp-wrap-result in meta."""
+        """A tool returning int should set wrap_result in meta."""
 
         def func() -> int:
             return 42
@@ -555,10 +555,10 @@ class TestWrapResultMeta:
         tool = Tool.from_function(func)
         result = await tool.run({})
         assert result.structured_content == {"result": 42}
-        assert result.meta == {"x-fastmcp-wrap-result": True}
+        assert result.meta == {"fastmcp": {"wrap_result": True}}
 
     async def test_dict_return_does_not_include_wrap_result_meta(self):
-        """A tool returning dict should NOT set x-fastmcp-wrap-result in meta."""
+        """A tool returning dict should NOT set wrap_result in meta."""
 
         def func() -> dict[str, int]:
             return {"value": 42}

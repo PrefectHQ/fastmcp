@@ -390,7 +390,7 @@ async def _parse_call_tool_result(
     elif result.structuredContent:
         try:
             meta = result.meta or {}
-            wrap_from_meta = meta.get("x-fastmcp-wrap-result", False)
+            wrap_from_meta = meta.get("fastmcp", {}).get("wrap_result", False)
 
             if wrap_from_meta:
                 # The result is self-describing — unwrap directly without
