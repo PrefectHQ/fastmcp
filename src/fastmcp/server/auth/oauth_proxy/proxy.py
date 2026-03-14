@@ -890,6 +890,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Get stored upstream tokens
         idp_tokens = code_model.idp_tokens
 
+        # Use IdP-granted scopes when available (RFC 6749 §5.1: the IdP MUST
+        # include a scope parameter when the granted scope differs from the
+        # requested scope).  Fall back to requested scopes only when the IdP
+        # omits scope, meaning it granted exactly what was requested.
+        granted_scopes: list[str] = (
+            idp_tokens["scope"].split()
+            if "scope" in idp_tokens
+            else list(authorization_code.scopes)
+        )
+
         # Clean up client code (one-time use)
         await self._code_store.delete(key=authorization_code.code)
 
@@ -956,7 +966,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             refresh_token_expires_at=refresh_token_expires_at,
             expires_at=time.time() + expires_in,
             token_type=idp_tokens.get("token_type", "Bearer"),
-            scope=" ".join(authorization_code.scopes),
+            scope=" ".join(granted_scopes),
             client_id=client.client_id or "",
             created_at=time.time(),
             raw_token_data=idp_tokens,
@@ -978,7 +988,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             raise TokenError("invalid_client", "Client ID is required")
         fastmcp_access_token = self.jwt_issuer.issue_access_token(
             client_id=client.client_id,
-            scopes=authorization_code.scopes,
+            scopes=granted_scopes,
             jti=access_jti,
             expires_in=expires_in,
             upstream_claims=upstream_claims,
@@ -990,7 +1000,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         if refresh_jti and refresh_expires_in:
             fastmcp_refresh_token = self.jwt_issuer.issue_refresh_token(
                 client_id=client.client_id,
-                scopes=authorization_code.scopes,
+                scopes=granted_scopes,
                 jti=refresh_jti,
                 expires_in=refresh_expires_in,
                 upstream_claims=upstream_claims,
@@ -1023,7 +1033,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 key=_hash_token(fastmcp_refresh_token),
                 value=RefreshTokenMetadata(
                     client_id=client.client_id,
-                    scopes=authorization_code.scopes,
+                    scopes=granted_scopes,
                     expires_at=int(time.time()) + refresh_expires_in,
                     created_at=time.time(),
                 ),
@@ -1043,7 +1053,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             token_type="Bearer",
             expires_in=expires_in,
             refresh_token=fastmcp_refresh_token,
-            scope=" ".join(authorization_code.scopes),
+            scope=" ".join(granted_scopes),
         )
 
     # -------------------------------------------------------------------------
@@ -1230,6 +1240,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         upstream_token_set.access_token = token_response["access_token"]
         upstream_token_set.expires_at = time.time() + new_expires_in
 
+        # Prefer IdP-granted scopes from refresh response (RFC 6749 §5.1)
+        refreshed_scopes: list[str] = (
+            token_response["scope"].split() if "scope" in token_response else scopes
+        )
+        upstream_token_set.scope = " ".join(refreshed_scopes)
+
         # Handle upstream refresh token rotation and expiry
         new_refresh_expires_in = None
         if new_upstream_refresh := token_response.get("refresh_token"):
@@ -1288,7 +1304,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         new_access_jti = secrets.token_urlsafe(32)
         new_fastmcp_access = self.jwt_issuer.issue_access_token(
             client_id=client.client_id,
-            scopes=scopes,
+            scopes=refreshed_scopes,
             jti=new_access_jti,
             expires_in=new_expires_in,
             upstream_claims=upstream_claims,
@@ -1310,7 +1326,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         new_refresh_jti = secrets.token_urlsafe(32)
         new_fastmcp_refresh = self.jwt_issuer.issue_refresh_token(
             client_id=client.client_id,
-            scopes=scopes,
+            scopes=refreshed_scopes,
             jti=new_refresh_jti,
             expires_in=new_refresh_expires_in
             or 60 * 60 * 24 * 30,  # Fallback to 30 days
@@ -1340,7 +1356,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             key=_hash_token(new_fastmcp_refresh),
             value=RefreshTokenMetadata(
                 client_id=client.client_id,
-                scopes=scopes,
+                scopes=refreshed_scopes,
                 expires_at=int(time.time()) + refresh_ttl,
                 created_at=time.time(),
             ),
@@ -1363,7 +1379,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             token_type="Bearer",
             expires_in=new_expires_in,
             refresh_token=new_fastmcp_refresh,  # NEW refresh token (rotated)
-            scope=" ".join(scopes),
+            scope=" ".join(refreshed_scopes),
         )
 
     # -------------------------------------------------------------------------
