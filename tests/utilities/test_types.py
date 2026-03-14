@@ -671,3 +671,21 @@ class TestAnnotationStringDescriptions:
 
         # Should keep the Field description
         assert schema["properties"]["name"]["description"] == "Field desc"
+
+    def test_kwonly_defaults_preserved_when_annotations_are_processed(self):
+        """Keyword-only defaults should survive function cloning during annotation processing."""
+
+        def func(*, limit: Annotated[int, "Maximum number of results"] = 5) -> int:
+            return limit
+
+        adapter = get_cached_typeadapter(func)
+        schema = adapter.json_schema()
+
+        assert "required" not in schema
+        assert schema["properties"]["limit"]["default"] == 5
+        assert (
+            schema["properties"]["limit"]["description"] == "Maximum number of results"
+        )
+
+        validated = adapter.validate_python({})
+        assert validated == 5

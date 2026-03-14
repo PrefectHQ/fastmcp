@@ -15,7 +15,7 @@ classes that forward execution to remote servers.
 
 ## Functions
 
-### `default_proxy_roots_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L723" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_proxy_roots_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L733" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_proxy_roots_handler(context: RequestContext[ClientSession, LifespanContextT]) -> RootsList
@@ -25,7 +25,7 @@ default_proxy_roots_handler(context: RequestContext[ClientSession, LifespanConte
 Forward list roots request from remote server to proxy's connected clients.
 
 
-### `default_proxy_sampling_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L731" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_proxy_sampling_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L741" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_proxy_sampling_handler(messages: list[mcp.types.SamplingMessage], params: mcp.types.CreateMessageRequestParams, context: RequestContext[ClientSession, LifespanContextT]) -> mcp.types.CreateMessageResult
@@ -35,7 +35,7 @@ default_proxy_sampling_handler(messages: list[mcp.types.SamplingMessage], params
 Forward sampling request from remote server to proxy's connected clients.
 
 
-### `default_proxy_elicitation_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L754" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_proxy_elicitation_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L764" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_proxy_elicitation_handler(message: str, response_type: type, params: mcp.types.ElicitRequestParams, context: RequestContext[ClientSession, LifespanContextT]) -> ElicitResult
@@ -45,7 +45,7 @@ default_proxy_elicitation_handler(message: str, response_type: type, params: mcp
 Forward elicitation request from remote server to proxy's connected clients.
 
 
-### `default_proxy_log_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L776" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_proxy_log_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L786" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_proxy_log_handler(message: LogMessage) -> None
@@ -55,7 +55,7 @@ default_proxy_log_handler(message: LogMessage) -> None
 Forward log notification from remote server to proxy's connected clients.
 
 
-### `default_proxy_progress_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L784" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_proxy_progress_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L794" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_proxy_progress_handler(progress: float, total: float | None, message: str | None) -> None
@@ -258,7 +258,7 @@ server lifespan initialization, which would open the client before any
 context is set. All Proxy* components have task_config.mode="forbidden".
 
 
-### `FastMCPProxy` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L676" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPProxy` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L686" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A FastMCP server that acts as a proxy to a remote MCP-compliant server.
@@ -267,7 +267,7 @@ This is a convenience wrapper that creates a FastMCP server with a
 ProxyProvider. For more control, use FastMCP with add_provider(ProxyProvider(...)).
 
 
-### `ProxyClient` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L848" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ProxyClient` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L858" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A proxy client that forwards advanced interactions between a remote MCP server and the proxy's connected clients.
@@ -275,7 +275,7 @@ A proxy client that forwards advanced interactions between a remote MCP server a
 Supports forwarding roots, sampling, elicitation, logging, and progress.
 
 
-### `StatefulProxyClient` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L881" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `StatefulProxyClient` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L891" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A proxy client that provides a stateful client factory for the proxy server.
@@ -296,7 +296,7 @@ it to detect (and correct) staleness.
 
 **Methods:**
 
-#### `clear` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L932" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `clear` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L942" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 clear(self)
@@ -305,7 +305,7 @@ clear(self)
 Clear all cached clients and force disconnect them.
 
 
-#### `new_stateful` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L938" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `new_stateful` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L948" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 new_stateful(self) -> Client[ClientTransportT]

@@ -1,4 +1,3 @@
-import asyncio
 import importlib
 import json
 from collections.abc import Awaitable, Callable, Sequence
@@ -16,6 +15,7 @@ from fastmcp.server.transforms.search.base import (
     serialize_tools_for_output_markdown,
 )
 from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.utilities.async_utils import is_coroutine_function
 from fastmcp.utilities.versions import VersionSpec
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ DiscoveryToolFactory = Callable[[GetToolCatalog], Tool]
 
 
 def _ensure_async(fn: Callable[..., Any]) -> Callable[..., Any]:
-    if asyncio.iscoroutinefunction(fn):
+    if is_coroutine_function(fn):
         return fn
 
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -541,16 +541,9 @@ class CodeMode(CatalogTransform):
             ctx: Context = None,  # type: ignore[assignment]
         ) -> Any:
             """Execute tool calls using Python code."""
-            cached_tools: Sequence[Tool] | None = None
-
-            async def _get_cached_tools() -> Sequence[Tool]:
-                nonlocal cached_tools
-                if cached_tools is None:
-                    cached_tools = await transform.get_tool_catalog(ctx)
-                return cached_tools
 
             async def call_tool(tool_name: str, params: dict[str, Any]) -> Any:
-                backend_tools = await _get_cached_tools()
+                backend_tools = await transform.get_tool_catalog(ctx)
                 tool = transform._find_tool(tool_name, backend_tools)
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {tool_name}")

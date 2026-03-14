@@ -54,7 +54,7 @@ def _get_npx_command():
             try:
                 subprocess.run([cmd, "--version"], check=True, capture_output=True)
                 return cmd
-            except subprocess.CalledProcessError:
+            except (subprocess.CalledProcessError, FileNotFoundError):
                 continue
         return None
     return "npx"  # On Unix-like systems, just use npx

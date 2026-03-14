@@ -19,6 +19,13 @@ Be friendly and welcoming while maintaining high standards. Call out what works 
 
 Even perfect code for unwanted features should be rejected.
 
+### Dependency version compatibility
+
+When a PR adapts code to a new version of a dependency (e.g., removing a parameter that was dropped upstream, using a new API):
+- **The version pin in `pyproject.toml` must match.** If the change breaks compatibility with the previously-pinned minimum version, the minimum version must be bumped. Otherwise users on the old version get a regression.
+- **If backwards compatibility with the old version is desired**, the code must handle both versions (e.g., try/except, version check). Simply deleting the old API usage without bumping the pin is always wrong — it silently breaks users on the old version.
+- **Lock file (`uv.lock`) changes should be scoped to the PR's purpose.** A PR fixing a ty compatibility issue should not also include unrelated dependency version bumps (anthropic, google-auth, etc.) from running `uv sync --upgrade`. These create noise and make the diff harder to review.
+
 ### API design and naming
 
 Identify confusing patterns or non-idiomatic code:

@@ -420,6 +420,96 @@ class TestPaginationCycleDetection:
             assert len(tools) == 1
             assert tools[0].name == "my_tool"
 
+    async def test_tools_raises_on_auto_pagination_limit(self) -> None:
+        """list_tools should raise RuntimeError after exceeding max_pages."""
+        server = FastMCP()
+
+        @server.tool
+        def my_tool() -> str:
+            return "ok"
+
+        async with Client(server) as client:
+            original = client.list_tools_mcp
+            call_count = 0
+
+            async def returning_unique_cursor(
+                *,
+                cursor: str | None = None,
+            ) -> mcp.types.ListToolsResult:
+                nonlocal call_count
+                result = await original(cursor=cursor)
+                call_count += 1
+                result.nextCursor = f"cursor-{call_count}"
+                return result
+
+            with (
+                patch.object(
+                    client, "list_tools_mcp", side_effect=returning_unique_cursor
+                ),
+                pytest.raises(RuntimeError, match="auto-pagination limit"),
+            ):
+                await client.list_tools(max_pages=5)
+
+    async def test_resources_raises_on_auto_pagination_limit(self) -> None:
+        """list_resources should raise RuntimeError after exceeding max_pages."""
+        server = FastMCP()
+
+        @server.resource("test://r")
+        def my_resource() -> str:
+            return "data"
+
+        async with Client(server) as client:
+            original = client.list_resources_mcp
+            call_count = 0
+
+            async def returning_unique_cursor(
+                *,
+                cursor: str | None = None,
+            ) -> mcp.types.ListResourcesResult:
+                nonlocal call_count
+                result = await original(cursor=cursor)
+                call_count += 1
+                result.nextCursor = f"cursor-{call_count}"
+                return result
+
+            with (
+                patch.object(
+                    client, "list_resources_mcp", side_effect=returning_unique_cursor
+                ),
+                pytest.raises(RuntimeError, match="auto-pagination limit"),
+            ):
+                await client.list_resources(max_pages=5)
+
+    async def test_prompts_raises_on_auto_pagination_limit(self) -> None:
+        """list_prompts should raise RuntimeError after exceeding max_pages."""
+        server = FastMCP()
+
+        @server.prompt
+        def my_prompt() -> str:
+            return "text"
+
+        async with Client(server) as client:
+            original = client.list_prompts_mcp
+            call_count = 0
+
+            async def returning_unique_cursor(
+                *,
+                cursor: str | None = None,
+            ) -> mcp.types.ListPromptsResult:
+                nonlocal call_count
+                result = await original(cursor=cursor)
+                call_count += 1
+                result.nextCursor = f"cursor-{call_count}"
+                return result
+
+            with (
+                patch.object(
+                    client, "list_prompts_mcp", side_effect=returning_unique_cursor
+                ),
+                pytest.raises(RuntimeError, match="auto-pagination limit"),
+            ):
+                await client.list_prompts(max_pages=5)
+
     async def test_normal_pagination_unaffected(self) -> None:
         """Cycle detection should not interfere with normal pagination."""
         server = FastMCP(list_page_size=10)

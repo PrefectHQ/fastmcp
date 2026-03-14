@@ -35,7 +35,10 @@ from fastmcp.tools.tool import (
     ToolResult,
     ToolResultSerializerType,
 )
-from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     NotSet,
@@ -260,7 +263,7 @@ class FunctionTool(Tool):
             try:
                 with anyio.fail_after(self.timeout):
                     # Thread pool execution for sync functions, direct await for async
-                    if inspect.iscoroutinefunction(wrapper_fn):
+                    if is_coroutine_function(wrapper_fn):
                         result = await type_adapter.validate_python(arguments)
                     else:
                         # Sync function: run in threadpool to avoid blocking
@@ -284,7 +287,7 @@ class FunctionTool(Tool):
                 ) from None
         else:
             # No timeout: use existing execution path
-            if inspect.iscoroutinefunction(wrapper_fn):
+            if is_coroutine_function(wrapper_fn):
                 result = await type_adapter.validate_python(arguments)
             else:
                 result = await call_sync_fn_in_threadpool(

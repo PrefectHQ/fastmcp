@@ -37,6 +37,22 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger(__name__)
 
 
+GOOGLE_SCOPE_ALIASES: dict[str, str] = {
+    "email": "https://www.googleapis.com/auth/userinfo.email",
+    "profile": "https://www.googleapis.com/auth/userinfo.profile",
+}
+
+
+def _normalize_google_scope(scope: str) -> str:
+    """Normalize a Google scope shorthand to its canonical full URI.
+
+    Google accepts shorthand scopes like "email" and "profile" in authorization
+    requests, but returns the full URI form in token responses. This normalizes
+    to the full URI so comparisons work regardless of which form was used.
+    """
+    return GOOGLE_SCOPE_ALIASES.get(scope, scope)
+
+
 class GoogleTokenVerifier(TokenVerifier):
     """Token verifier for Google OAuth tokens.
 
@@ -60,7 +76,12 @@ class GoogleTokenVerifier(TokenVerifier):
                 the client is reused across calls and the caller is responsible for its
                 lifecycle. When None (default), a fresh client is created per call.
         """
-        super().__init__(required_scopes=required_scopes)
+        normalized = (
+            [_normalize_google_scope(s) for s in required_scopes]
+            if required_scopes
+            else required_scopes
+        )
+        super().__init__(required_scopes=normalized)
         self.timeout_seconds = timeout_seconds
         self._http_client = http_client
 
@@ -202,11 +223,13 @@ class GoogleProvider(OAuthProxy):
         issuer_url: AnyHttpUrl | str | None = None,
         redirect_path: str | None = None,
         required_scopes: list[str] | None = None,
+        valid_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
+        consent_csp_policy: str | None = None,
         extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx.AsyncClient | None = None,
     ):
@@ -223,6 +246,12 @@ class GoogleProvider(OAuthProxy):
                 - "openid" for OpenID Connect (default)
                 - "https://www.googleapis.com/auth/userinfo.email" for email access
                 - "https://www.googleapis.com/auth/userinfo.profile" for profile info
+                Google scope shorthands like "email" and "profile" are automatically
+                normalized to their full URI forms for token verification.
+            valid_scopes: All scopes that clients are allowed to request, advertised through
+                well-known endpoints. Defaults to required_scopes if not provided. Use this
+                when you want clients to be able to request additional scopes beyond the
+                required minimum. Shorthands are normalized to full URI forms.
             timeout_seconds: HTTP request timeout for Google API calls (defaults to 10)
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
@@ -250,7 +279,19 @@ class GoogleProvider(OAuthProxy):
             parse_scopes(required_scopes) if required_scopes is not None else ["openid"]
         )
 
+        # Normalize valid_scopes if provided
+        parsed_valid_scopes = (
+            parse_scopes(valid_scopes) if valid_scopes is not None else None
+        )
+        valid_scopes_final = (
+            [_normalize_google_scope(s) for s in parsed_valid_scopes]
+            if parsed_valid_scopes is not None
+            else None
+        )
+
         # Create Google token verifier
+        # Normalization of shorthand scopes (e.g. "email" -> full URI) happens
+        # inside GoogleTokenVerifier so required_scopes match what Google returns.
         token_verifier = GoogleTokenVerifier(
             required_scopes=required_scopes_final,
             timeout_seconds=timeout_seconds,
@@ -283,7 +324,9 @@ class GoogleProvider(OAuthProxy):
             client_storage=client_storage,
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
+            consent_csp_policy=consent_csp_policy,
             extra_authorize_params=extra_authorize_params_final,
+            valid_scopes=valid_scopes_final,
         )
 
         logger.debug(

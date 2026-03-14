@@ -142,6 +142,20 @@ class TestClaudeDesktopInstall:
         assert bound.arguments["project"] == Path("/my/project")
         assert bound.arguments["with_requirements"] == Path("reqs.txt")
 
+    def test_claude_desktop_with_config_path(self):
+        """Test claude-desktop install with custom config path."""
+        command, bound, _ = install_app.parse_args(
+            ["claude-desktop", "server.py", "--config-path", "/custom/path/Claude"]
+        )
+
+        assert bound.arguments["config_path"] == Path("/custom/path/Claude")
+
+    def test_claude_desktop_without_config_path(self):
+        """Test claude-desktop install without config path defaults to None."""
+        command, bound, _ = install_app.parse_args(["claude-desktop", "server.py"])
+
+        assert bound.arguments.get("config_path") is None
+
 
 class TestCursorInstall:
     """Test cursor install command."""

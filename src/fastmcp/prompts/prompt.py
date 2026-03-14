@@ -17,8 +17,10 @@ if TYPE_CHECKING:
 import mcp.types
 from mcp import GetPromptResult
 from mcp.types import (
+    AudioContent,
     EmbeddedResource,
     Icon,
+    ImageContent,
     PromptMessage,
     TextContent,
 )
@@ -61,7 +63,7 @@ class Message(pydantic.BaseModel):
     """
 
     role: Literal["user", "assistant"]
-    content: TextContent | EmbeddedResource
+    content: TextContent | ImageContent | AudioContent | EmbeddedResource
 
     def __init__(
         self,
@@ -72,13 +74,18 @@ class Message(pydantic.BaseModel):
 
         Args:
             content: The message content. str passes through directly.
-                     TextContent and EmbeddedResource pass through.
+                     TextContent, ImageContent, AudioContent, and
+                     EmbeddedResource pass through.
                      Other types (dict, list, BaseModel) are JSON-serialized.
             role: The message role, either "user" or "assistant".
         """
         # Handle already-wrapped content types
-        if isinstance(content, (TextContent, EmbeddedResource)):
-            normalized_content: TextContent | EmbeddedResource = content
+        if isinstance(
+            content, (TextContent, ImageContent, AudioContent, EmbeddedResource)
+        ):
+            normalized_content: (
+                TextContent | ImageContent | AudioContent | EmbeddedResource
+            ) = content
         elif isinstance(content, str):
             normalized_content = TextContent(type="text", text=content)
         else:

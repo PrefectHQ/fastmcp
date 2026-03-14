@@ -48,6 +48,7 @@ class DiscordTokenVerifier(TokenVerifier):
     def __init__(
         self,
         *,
+        expected_client_id: str,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
         http_client: httpx.AsyncClient | None = None,
@@ -55,6 +56,7 @@ class DiscordTokenVerifier(TokenVerifier):
         """Initialize the Discord token verifier.
 
         Args:
+            expected_client_id: Expected Discord OAuth client ID for audience binding
             required_scopes: Required OAuth scopes (e.g., ['email'])
             timeout_seconds: HTTP request timeout
             http_client: Optional httpx.AsyncClient for connection pooling. When provided,
@@ -62,6 +64,7 @@ class DiscordTokenVerifier(TokenVerifier):
                 lifecycle. When None (default), a fresh client is created per call.
         """
         super().__init__(required_scopes=required_scopes)
+        self.expected_client_id = expected_client_id
         self.timeout_seconds = timeout_seconds
         self._http_client = http_client
 
@@ -121,6 +124,13 @@ class DiscordTokenVerifier(TokenVerifier):
                 user_data = token_info.get("user", {})
                 application = token_info.get("application") or {}
                 client_id = str(application.get("id", "unknown"))
+                if client_id != self.expected_client_id:
+                    logger.debug(
+                        "Discord token app ID mismatch: expected %s, got %s",
+                        self.expected_client_id,
+                        client_id,
+                    )
+                    return None
 
                 # Create AccessToken with Discord user info
                 access_token = AccessToken(
@@ -193,6 +203,7 @@ class DiscordProvider(OAuthProxy):
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
+        consent_csp_policy: str | None = None,
         http_client: httpx.AsyncClient | None = None,
     ):
         """Initialize Discord OAuth provider.
@@ -234,6 +245,7 @@ class DiscordProvider(OAuthProxy):
 
         # Create Discord token verifier
         token_verifier = DiscordTokenVerifier(
+            expected_client_id=client_id,
             required_scopes=required_scopes_final,
             timeout_seconds=timeout_seconds,
             http_client=http_client,
@@ -253,6 +265,7 @@ class DiscordProvider(OAuthProxy):
             client_storage=client_storage,
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
+            consent_csp_policy=consent_csp_policy,
         )
 
         logger.debug(

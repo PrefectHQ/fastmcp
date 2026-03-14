@@ -289,8 +289,8 @@ class TestConsentPageServerIcon:
 class TestConsentCSPPolicy:
     """Tests for Content Security Policy customization on consent page."""
 
-    async def test_default_csp_includes_form_action(self):
-        """Test that default CSP includes form-action directive."""
+    async def test_default_csp_omits_form_action(self):
+        """Test that default CSP omits form-action to avoid Chrome redirect chain issues."""
 
         verifier = Mock(spec=TokenVerifier)
         verifier.required_scopes = ["read"]
@@ -335,9 +335,9 @@ class TestConsentCSPPolicy:
             response = client.get(f"/consent?txn_id={txn_id}")
 
             assert response.status_code == 200
-            # Default CSP should be present with form-action
+            # Default CSP should be present but WITHOUT form-action
             assert 'http-equiv="Content-Security-Policy"' in response.text
-            assert "form-action" in response.text
+            assert "form-action" not in response.text
 
     async def test_empty_csp_disables_csp_meta_tag(self):
         """Test that empty string CSP disables CSP meta tag entirely."""

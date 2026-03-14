@@ -14,6 +14,7 @@ import re
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, overload
+from urllib.parse import quote
 
 import mcp.types
 from mcp.types import AnyUrl
@@ -38,11 +39,28 @@ if TYPE_CHECKING:
 def _expand_uri_template(template: str, params: dict[str, Any]) -> str:
     """Expand a URI template with parameters.
 
-    Simple implementation that handles {name} style placeholders.
+    Handles both {name} path placeholders and RFC 6570 {?param1,param2}
+    query parameter syntax.
     """
     result = template
+
+    # Replace {name} path placeholders
     for key, value in params.items():
         result = re.sub(rf"\{{{key}\}}", str(value), result)
+
+    # Expand {?param1,param2,...} query parameter blocks
+    def _expand_query_block(match: re.Match[str]) -> str:
+        names = [n.strip() for n in match.group(1).split(",")]
+        parts = []
+        for name in names:
+            if name in params:
+                parts.append(f"{quote(name)}={quote(str(params[name]))}")
+        if parts:
+            return "?" + "&".join(parts)
+        return ""
+
+    result = re.sub(r"\{\?([^}]+)\}", _expand_query_block, result)
+
     return result
 
 

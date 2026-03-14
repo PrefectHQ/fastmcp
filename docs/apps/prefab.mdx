@@ -10,6 +10,10 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.1.0" />
 
+<Tip>
+[Prefab](https://prefab.prefect.io) is in extremely early, active development — its API changes frequently and breaking changes can occur with any release. The FastMCP integration is equally new and under rapid development. These docs are included for users who want to work on the cutting edge; production use is not recommended. Always pin `prefab-ui` to a specific version in your dependencies (see below).
+</Tip>
+
 [Prefab UI](https://prefab.prefect.io) is a declarative UI framework for Python. You describe what your interface should look like — a chart, a table, a form — and return it from your tool. FastMCP takes care of everything else: registering the renderer, wiring the protocol metadata, and delivering the component tree to the host.
 
 Prefab started as a component library inside FastMCP and grew into a full framework for building interactive applications — with its own state management, reactive expression system, and action model. The [Prefab documentation](https://prefab.prefect.io) covers all of this in depth. This page focuses on the FastMCP integration: what you return from a tool, and what FastMCP does with it.

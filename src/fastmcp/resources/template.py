@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import re
 from collections.abc import Callable
@@ -409,9 +410,17 @@ class FunctionResourceTemplate(ResourceTemplate):
                     elif annotation is float:
                         kwargs[param_name] = float(param_value)
                     elif annotation is bool:
-                        kwargs[param_name] = param_value.lower() in ("true", "1", "yes")
+                        lower = param_value.lower()
+                        if lower in ("true", "1", "yes"):
+                            kwargs[param_name] = True
+                        elif lower in ("false", "0", "no"):
+                            kwargs[param_name] = False
+                        else:
+                            raise ValueError(
+                                f"Invalid boolean value for {param_name}: {param_value!r}"
+                            )
                 except (ValueError, AttributeError):
-                    pass
+                    raise
 
         # self.fn is wrapped by without_injected_parameters which handles
         # dependency resolution internally, so we call it directly
@@ -552,7 +561,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         task_config.validate_function(fn, func_name)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn):
+        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
