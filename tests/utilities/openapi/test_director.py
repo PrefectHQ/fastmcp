@@ -526,7 +526,7 @@ class TestPathTraversalPrevention:
             path_route, {"id": "../admin"}, "https://api.example.com"
         )
         url = str(request.url)
-        assert "..%2Fadmin" in url or "..%2fadmin" in url
+        assert "%2E%2E%2Fadmin" in url or "%2e%2e%2fadmin" in url
         assert url.startswith("https://api.example.com/api/v1/users/")
 
     def test_question_mark_encoded(self, director, path_route):
@@ -550,6 +550,13 @@ class TestPathTraversalPrevention:
         assert (
             str(request.url) == "https://api.example.com/api/v1/users/user-123/profile"
         )
+
+    def test_dotted_values_preserve_single_dots(self, director, path_route):
+        """Single dots in values like 'v1.2.3' should not be encoded."""
+        request = director.build(
+            path_route, {"id": "v1.2.3"}, "https://api.example.com"
+        )
+        assert str(request.url) == "https://api.example.com/api/v1/users/v1.2.3/profile"
 
     def test_numeric_values_still_work(self, director, path_route):
         request = director.build(path_route, {"id": 42}, "https://api.example.com")
