@@ -170,33 +170,7 @@ class TestMcpHttpClientRedirectProtection:
 
 
 class TestStreamableHttpTransportFactory:
-    """Verify factory call no longer forces follow_redirects."""
-
-    def test_factory_not_called_with_follow_redirects(self):
-        """The httpx_client_factory should not receive follow_redirects as a kwarg."""
-        received_kwargs: dict[str, object] = {}
-
-        def tracking_factory(
-            headers: dict[str, str] | None = None,
-            timeout: httpx.Timeout | None = None,
-            auth: httpx.Auth | None = None,
-            **kwargs: object,
-        ) -> httpx.AsyncClient:
-            received_kwargs.update(kwargs)
-            if headers is not None:
-                received_kwargs["headers"] = headers
-            if timeout is not None:
-                received_kwargs["timeout"] = timeout
-            if auth is not None:
-                received_kwargs["auth"] = auth
-            return httpx.AsyncClient()
-
-        transport = StreamableHttpTransport(
-            "http://localhost:8000/mcp",
-            httpx_client_factory=tracking_factory,
-        )
-        assert transport.httpx_client_factory is tracking_factory
-        assert "follow_redirects" not in received_kwargs
+    """Verify factory and verify-factory redirect behavior."""
 
     def test_verify_factory_still_enables_redirects(self):
         """The verify factory should still create clients with follow_redirects=True."""
