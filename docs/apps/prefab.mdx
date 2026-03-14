@@ -188,22 +188,9 @@ def map_view() -> str:
     ...
 ```
 
-## Development Preview
-
-<VersionBadge version="3.2.0" />
-
-`fastmcp dev apps` is a CLI command that launches a browser-based picker for your app tools — no MCP host client required. It starts your server and a local dev UI side by side, auto-generates a form from each tool's input schema, and renders the result in a new tab.
-
-```bash
-pip install "fastmcp[apps]"
-fastmcp dev apps server.py
-# Opens picker at http://localhost:8080
-```
-
-Save a file and the server reloads automatically. See [Previewing Apps](/cli/running#previewing-apps) for options.
-
 ## Next Steps
 
 - **[Patterns](/apps/patterns)** — Charts, tables, forms, and other common tool UIs
+- **[Development](/apps/development)** — Preview and test app tools locally with `fastmcp dev apps`
 - **[Custom HTML Apps](/apps/low-level)** — When you need your own HTML, CSS, and JavaScript
 - **[Prefab UI Docs](https://prefab.prefect.io)** — Components, state, expressions, and actions

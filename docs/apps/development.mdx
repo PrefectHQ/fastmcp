@@ -1,0 +1,54 @@
+---
+title: Development
+sidebarTitle: Development
+description: Preview and test your app tools locally without a full MCP host.
+icon: flask
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.2.0" />
+
+`fastmcp dev apps` launches a browser-based preview for your app tools. It starts your MCP server and a local dev UI side by side — you pick a tool, fill in its arguments, and see the rendered result in a new tab. No MCP host client needed.
+
+This works with both [Prefab apps](/apps/prefab) and [custom HTML apps](/apps/low-level).
+
+## Quick Start
+
+```bash
+pip install "fastmcp[apps]"
+fastmcp dev apps server.py
+```
+
+The dev UI opens at `http://localhost:8080`. Your MCP server runs on port 8000 with auto-reload enabled by default — save a file and the server restarts automatically.
+
+## How It Works
+
+The dev server does three things:
+
+The **picker page** connects to your MCP server, finds all tools with UI metadata, and renders a form for each one. The forms are auto-generated from the tool's input schema — text fields, dropdowns, checkboxes, all wired up.
+
+When you submit a form, the dev server **calls your tool** via the MCP protocol and opens the result in a new tab. The result page loads the tool's UI resource (the Prefab renderer or your custom HTML) inside an AppBridge — the same protocol that real MCP hosts use.
+
+A **reverse proxy** on `/mcp` forwards requests from the browser to your MCP server, avoiding CORS issues that would otherwise block the iframe-based renderer from talking to a different port.
+
+## Options
+
+```bash
+fastmcp dev apps server.py:mcp --mcp-port 9000 --dev-port 9090 --no-reload
+```
+
+| Option | Flag | Default | Description |
+| ------ | ---- | ------- | ----------- |
+| MCP Port | `--mcp-port` | `8000` | Port for your MCP server |
+| Dev Port | `--dev-port` | `8080` | Port for the dev UI |
+| Auto-Reload | `--reload` / `--no-reload` | On | Watch files and restart the server on changes |
+
+## Multiple Tools
+
+If your server has multiple app tools, the picker shows a dropdown. Each tool gets its own form and launch button. The tool's `title` is displayed when available, falling back to the tool name.
+
+```bash
+# Server with multiple app tools
+fastmcp dev apps examples/apps/contacts/contacts_server.py
+```
