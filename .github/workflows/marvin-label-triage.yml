@@ -108,6 +108,7 @@ jobs:
           - http: HTTP transport or networking is the main issue
           - contrib: Specifically about community contributions in src/contrib/
           - tests: Issues primarily about testing infrastructure, CI/CD workflows, or test coverage
+          - security: Apply ONLY when the issue/PR addresses an exploitable vulnerability or hardens against one. Examples: SSRF, LFI, path traversal, injection, auth bypass allowing unauthorized access, scope escalation, open redirects. Do NOT apply for ordinary auth bugs (wrong scopes returned, token refresh logic, OAuth flow correctness) unless an attacker could exploit the bug to bypass access controls or escalate privileges. The key question: "Could a malicious actor exploit this?" If the answer is just "it breaks for legitimate users," that's a bug, not a security issue.
 
           IMPORTANT LABELING RULES:
           - Be selective - only apply labels that are clearly relevant
