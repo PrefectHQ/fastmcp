@@ -421,7 +421,9 @@ class TestUpstreamTokenStorageTTL:
         # by checking that we can still look up the tokens for refresh purposes.
         #
         # Extract the JTI from the refresh token to look up the mapping
-        refresh_payload = proxy.jwt_issuer.verify_token(result.refresh_token)
+        refresh_payload = proxy.jwt_issuer.verify_token(
+            result.refresh_token, expected_token_use="refresh"
+        )
         refresh_jti = refresh_payload["jti"]
 
         # The JTI mapping should exist
@@ -492,7 +494,9 @@ class TestUpstreamTokenStorageTTL:
         assert result.refresh_token is not None
 
         # Verify upstream tokens are accessible
-        refresh_payload = proxy.jwt_issuer.verify_token(result.refresh_token)
+        refresh_payload = proxy.jwt_issuer.verify_token(
+            result.refresh_token, expected_token_use="refresh"
+        )
         refresh_jti = refresh_payload["jti"]
 
         jti_mapping = await proxy._jti_mapping_store.get(key=refresh_jti)

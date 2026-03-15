@@ -207,13 +207,19 @@ class JWTIssuer:
 
         return token
 
-    def verify_token(self, token: str) -> dict[str, Any]:
+    def verify_token(
+        self,
+        token: str,
+        expected_token_use: str = "access",
+    ) -> dict[str, Any]:
         """Verify and decode a FastMCP token.
 
-        Validates JWT signature, expiration, issuer, and audience.
+        Validates JWT signature, expiration, issuer, audience, and token type.
 
         Args:
             token: JWT token to verify
+            expected_token_use: Expected token type ("access" or "refresh").
+                Defaults to "access", which rejects refresh tokens.
 
         Returns:
             Decoded token payload
@@ -224,6 +230,19 @@ class JWTIssuer:
         try:
             # Decode and verify signature
             payload = self._jwt.decode(token, self._signing_key)
+
+            # Validate token type
+            token_use = payload.get("token_use", "access")
+            if token_use != expected_token_use:
+                logger.debug(
+                    "Token type mismatch: expected %s, got %s",
+                    expected_token_use,
+                    token_use,
+                )
+                raise JoseError(
+                    f"Token type mismatch: expected {expected_token_use}, "
+                    f"got {token_use}"
+                )
 
             # Validate expiration
             exp = payload.get("exp")

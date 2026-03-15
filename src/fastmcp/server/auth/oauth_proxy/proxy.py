@@ -1208,7 +1208,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         """
         # Verify FastMCP refresh token
         try:
-            refresh_payload = self.jwt_issuer.verify_token(refresh_token.token)
+            refresh_payload = self.jwt_issuer.verify_token(
+                refresh_token.token, expected_token_use="refresh"
+            )
             refresh_jti = refresh_payload["jti"]
         except Exception as e:
             logger.debug("FastMCP refresh token validation failed: %s", e)
