@@ -126,7 +126,7 @@ jobs:
 
           4. Apply selected labels:
              Use mcp__github__update_issue to apply your selected labels
-             DO NOT post any comments
+             DO NOT post any comments unless applying too-long (see above)
           PROMPT_END
           EOF
 
