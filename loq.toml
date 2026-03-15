@@ -4,7 +4,7 @@
 default_max_lines = 1000
 respect_gitignore = true
 
-exclude = ["**/uv.lock", ".git/**", "docs/**"]
+exclude = ["**/uv.lock", ".git/**", ".claude/**", "docs/**"]
 
 [[rules]]
 path = "tests/**"

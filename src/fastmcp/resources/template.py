@@ -44,13 +44,16 @@ def extract_query_params(uri_template: str) -> set[str]:
     return set()
 
 
-def build_regex(template: str) -> re.Pattern:
+def build_regex(template: str) -> re.Pattern[str] | None:
     """Build regex pattern for URI template, handling RFC 6570 syntax.
 
     Supports:
     - `{var}` - simple path parameter
     - `{var*}` - wildcard path parameter (captures multiple segments)
     - `{?var1,var2}` - query parameters (ignored in path matching)
+
+    Returns None if the template produces an invalid regex (e.g. parameter
+    names with hyphens, leading digits, or duplicates from a remote server).
     """
     # Remove query parameter syntax for path matching
     template_without_query = re.sub(r"\{\?[^}]+\}", "", template)
@@ -67,7 +70,10 @@ def build_regex(template: str) -> re.Pattern:
                 pattern += f"(?P<{name}>[^/]+)"
         else:
             pattern += re.escape(part)
-    return re.compile(f"^{pattern}$")
+    try:
+        return re.compile(f"^{pattern}$")
+    except re.error:
+        return None
 
 
 def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
@@ -82,6 +88,8 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
 
     # Match path parameters
     regex = build_regex(uri_template)
+    if regex is None:
+        return None
     match = regex.match(uri_path)
     if not match:
         return None

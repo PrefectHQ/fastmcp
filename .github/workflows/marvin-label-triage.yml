@@ -36,7 +36,7 @@ jobs:
 
       - name: Generate Marvin App token
         id: marvin-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
@@ -68,7 +68,7 @@ jobs:
 
           3. Analyze and apply labels based on these guidelines:
 
-          CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive):
+          CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive; skip if applying too-long):
           - bug: Reports of broken functionality OR PRs that fix bugs
           - enhancement: New functions/endpoints, improvements to existing features, internal tooling, workflow improvements, minor new capabilities
           - feature: ONLY for major headline functionality worthy of a blog post announcement (2-4 per release, never for issues)
@@ -97,6 +97,7 @@ jobs:
           STATUS (apply if applicable):
           - needs more info: Issue lacks reproduction steps, error messages, or clear description
           - invalid: Spam, completely off-topic, or nonsensical (often LLM-generated)
+          - too-long: Issue/PR is excessively verbose, reads like unedited LLM output, or is padded with speculative diagnoses and multiple proposed solutions. The signal is low information density: lots of words, but the actual problem could be stated in a paragraph. Apply this label and do not apply other triage labels — the author needs to condense before triage is worthwhile.
 
           AREA LABELS (apply ONLY when thematically central to the issue):
           - cli: Issues primarily about FastMCP CLI commands (run, dev, install)

@@ -53,6 +53,26 @@ def _defs_have_cycles(defs: dict[str, Any]) -> bool:
     return any(state[name] == UNVISITED and _has_cycle(name) for name in defs)
 
 
+def _strip_remote_refs(obj: Any) -> Any:
+    """Return a deep copy of *obj* with non-local ``$ref`` values removed.
+
+    Local refs (starting with ``#``) are kept intact.  Remote refs
+    (``http://``, ``https://``, ``file://``, or any other URI scheme) are
+    stripped so that ``jsonref.replace_refs`` never attempts to fetch an
+    external resource.  This prevents SSRF / LFI when proxying schemas
+    from untrusted servers.
+    """
+    if isinstance(obj, dict):
+        ref = obj.get("$ref")
+        if isinstance(ref, str) and not ref.startswith("#"):
+            # Drop the remote $ref key; keep all other keys.
+            return {k: _strip_remote_refs(v) for k, v in obj.items() if k != "$ref"}
+        return {k: _strip_remote_refs(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_strip_remote_refs(item) for item in obj]
+    return obj
+
+
 def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     """Resolve all $ref references in a JSON schema by inlining definitions.
 
@@ -66,6 +86,11 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     For self-referencing/circular schemas where full dereferencing is not possible,
     this function falls back to resolving only the root-level $ref while preserving
     $defs for nested references.
+
+    Only local ``$ref`` values (those starting with ``#``) are resolved.
+    Remote URIs (``http://``, ``file://``, etc.) are stripped before
+    resolution to prevent SSRF / local-file-inclusion attacks when proxying
+    schemas from untrusted servers.
 
     Args:
         schema: JSON schema dict that may contain $ref references
@@ -82,6 +107,9 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         >>> resolved = dereference_refs(schema)
         >>> # Result: {"properties": {"cat": {"enum": ["a", "b"], "type": "string", "default": "a"}}}
     """
+    # Strip any remote $ref values before processing to prevent SSRF / LFI.
+    schema = _strip_remote_refs(schema)
+
     # Circular $defs can't be fully inlined — jsonref.replace_refs produces
     # Python dicts with object-identity cycles that Pydantic's model_dump
     # rejects with "Circular reference detected (id repeated)".

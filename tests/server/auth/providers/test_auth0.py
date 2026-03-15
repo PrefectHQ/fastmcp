@@ -61,6 +61,7 @@ class TestAuth0Provider:
             assert str(call_args[0][0]) == TEST_CONFIG_URL
 
             assert provider._upstream_client_id == TEST_CLIENT_ID
+            assert provider._upstream_client_secret is not None
             assert (
                 provider._upstream_client_secret.get_secret_value()
                 == TEST_CLIENT_SECRET

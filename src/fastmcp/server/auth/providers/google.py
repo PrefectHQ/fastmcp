@@ -219,7 +219,7 @@ class GoogleProvider(OAuthProxy):
         self,
         *,
         client_id: str,
-        client_secret: str,
+        client_secret: str | None = None,
         base_url: AnyHttpUrl | str,
         issuer_url: AnyHttpUrl | str | None = None,
         redirect_path: str | None = None,
@@ -238,7 +238,9 @@ class GoogleProvider(OAuthProxy):
 
         Args:
             client_id: Google OAuth client ID (e.g., "123456789.apps.googleusercontent.com")
-            client_secret: Google OAuth client secret (e.g., "GOCSPX-abc123...")
+            client_secret: Google OAuth client secret (e.g., "GOCSPX-abc123...").
+                Optional for PKCE public clients (e.g., native apps). When omitted,
+                jwt_signing_key must be provided.
             base_url: Public URL where OAuth endpoints will be accessible (includes any mount path)
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.

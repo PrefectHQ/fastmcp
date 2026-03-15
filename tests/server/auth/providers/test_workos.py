@@ -39,6 +39,7 @@ class TestWorkOSProvider:
         )
 
         assert provider._upstream_client_id == "client_test123"
+        assert provider._upstream_client_secret is not None
         assert provider._upstream_client_secret.get_secret_value() == "secret_test456"
         assert str(provider.base_url) == "https://myserver.com/"
 

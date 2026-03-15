@@ -96,7 +96,7 @@ class AzureProvider(OAuthProxy):
         self,
         *,
         client_id: str,
-        client_secret: str,
+        client_secret: str | None = None,
         tenant_id: str,
         required_scopes: list[str],
         base_url: str,
@@ -116,7 +116,10 @@ class AzureProvider(OAuthProxy):
 
         Args:
             client_id: Azure application (client) ID from your App registration
-            client_secret: Azure client secret from your App registration
+            client_secret: Azure client secret from your App registration. Optional when
+                using alternative credentials (e.g., managed identity with a custom
+                _create_upstream_oauth_client override). When omitted, jwt_signing_key
+                must be provided.
             tenant_id: Azure tenant ID (specific tenant GUID, "organizations", or "consumers")
             identifier_uri: Optional Application ID URI for your custom API (defaults to api://{client_id}).
                 This URI is automatically prefixed to all required_scopes during initialization.
@@ -195,15 +198,17 @@ class AzureProvider(OAuthProxy):
         # NOT standard OIDC scopes (openid, profile, email, offline_access).
         # Filter out OIDC scopes from validation - they'll still be sent to Azure
         # during authorization (handled by _prefix_scopes_for_azure).
-        if parsed_required_scopes:
-            validation_scopes = [
-                s for s in parsed_required_scopes if s not in OIDC_SCOPES
-            ]
-            # If all scopes were OIDC scopes, use None (no scope validation)
-            if not validation_scopes:
-                validation_scopes = None
-        else:
-            validation_scopes = None
+        validation_scopes = [
+            s for s in (parsed_required_scopes or []) if s not in OIDC_SCOPES
+        ]
+        if not validation_scopes:
+            raise ValueError(
+                "AzureProvider requires at least one non-OIDC scope in "
+                "required_scopes (e.g., 'read', 'write'). OIDC scopes like "
+                "'openid', 'profile', 'email', and 'offline_access' are not "
+                "included in Azure access token claims and cannot be used for "
+                "scope enforcement."
+            )
 
         token_verifier = JWTVerifier(
             jwks_uri=jwks_uri,
@@ -502,13 +507,23 @@ class AzureProvider(OAuthProxy):
             self._obo_credentials.move_to_end(key)
             return self._obo_credentials[key]
 
-        credential = OnBehalfOfCredential(
-            tenant_id=self._tenant_id,
-            client_id=self._upstream_client_id,
-            client_secret=self._upstream_client_secret.get_secret_value(),
-            user_assertion=user_assertion,
-            authority=f"https://{self._base_authority}",
-        )
+        obo_kwargs: dict[str, Any] = {
+            "tenant_id": self._tenant_id,
+            "client_id": self._upstream_client_id,
+            "user_assertion": user_assertion,
+            "authority": f"https://{self._base_authority}",
+        }
+        if self._upstream_client_secret is not None:
+            obo_kwargs["client_secret"] = (
+                self._upstream_client_secret.get_secret_value()
+            )
+        else:
+            raise ValueError(
+                "OBO token exchange requires either a client_secret or a subclass "
+                "that overrides get_obo_credential() to provide alternative credentials "
+                "(e.g., client_assertion_func for managed identity)."
+            )
+        credential = OnBehalfOfCredential(**obo_kwargs)
         self._obo_credentials[key] = credential
 
         # Evict oldest if over capacity

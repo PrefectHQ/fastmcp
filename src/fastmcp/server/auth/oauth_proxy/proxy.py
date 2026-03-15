@@ -233,7 +233,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         upstream_authorization_endpoint: str,
         upstream_token_endpoint: str,
         upstream_client_id: str,
-        upstream_client_secret: str,
+        upstream_client_secret: str | None = None,
         upstream_revocation_endpoint: str | None = None,
         # Token validation
         token_verifier: TokenVerifier,
@@ -271,7 +271,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             upstream_authorization_endpoint: URL of upstream authorization endpoint
             upstream_token_endpoint: URL of upstream token endpoint
             upstream_client_id: Client ID registered with upstream server
-            upstream_client_secret: Client secret for upstream server
+            upstream_client_secret: Client secret for upstream server. Optional for
+                PKCE public clients or when using alternative credentials (e.g.,
+                managed identity). When omitted, jwt_signing_key must be provided.
             upstream_revocation_endpoint: Optional upstream revocation endpoint
             token_verifier: Token verifier for validating access tokens
             base_url: Public URL of the server that exposes this FastMCP server; redirect path is
@@ -349,8 +351,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         self._upstream_authorization_endpoint: str = upstream_authorization_endpoint
         self._upstream_token_endpoint: str = upstream_token_endpoint
         self._upstream_client_id: str = upstream_client_id
-        self._upstream_client_secret: SecretStr = SecretStr(
-            secret_value=upstream_client_secret
+        self._upstream_client_secret: SecretStr | None = (
+            SecretStr(secret_value=upstream_client_secret)
+            if upstream_client_secret is not None
+            else None
         )
         self._upstream_revocation_endpoint: str | None = upstream_revocation_endpoint
         self._default_scope_str: str = " ".join(self.required_scopes or [])
@@ -406,6 +410,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         )
 
         if jwt_signing_key is None:
+            if upstream_client_secret is None:
+                raise ValueError(
+                    "jwt_signing_key is required when upstream_client_secret is not provided. "
+                    "The JWT signing key cannot be derived without a client secret."
+                )
             jwt_signing_key = derive_jwt_key(
                 high_entropy_material=upstream_client_secret,
                 salt="fastmcp-jwt-signing-key",
@@ -582,6 +591,29 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "before token operations."
             )
         return self._jwt_issuer
+
+    # -------------------------------------------------------------------------
+    # Upstream OAuth Client
+    # -------------------------------------------------------------------------
+
+    def _create_upstream_oauth_client(self) -> AsyncOAuth2Client:
+        """Create an OAuth2 client for communicating with the upstream IdP.
+
+        This is the single point for constructing the client used in token
+        exchange, refresh, and other upstream interactions. Subclasses can
+        override this to provide alternative authentication methods (e.g.,
+        managed-identity client assertions instead of a static client secret).
+        """
+        return AsyncOAuth2Client(
+            client_id=self._upstream_client_id,
+            client_secret=(
+                self._upstream_client_secret.get_secret_value()
+                if self._upstream_client_secret is not None
+                else None
+            ),
+            token_endpoint_auth_method=self._token_endpoint_auth_method,
+            timeout=HTTP_TIMEOUT_SECONDS,
+        )
 
     # -------------------------------------------------------------------------
     # PKCE Helper Methods
@@ -1201,12 +1233,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             raise TokenError("invalid_grant", "Refresh not supported for this token")
 
         # Refresh upstream token using authlib
-        oauth_client = AsyncOAuth2Client(
-            client_id=self._upstream_client_id,
-            client_secret=self._upstream_client_secret.get_secret_value(),
-            token_endpoint_auth_method=self._token_endpoint_auth_method,
-            timeout=HTTP_TIMEOUT_SECONDS,
-        )
+        oauth_client = self._create_upstream_oauth_client()
 
         # Allow child classes to transform scopes before sending to upstream
         # This enables provider-specific scope formatting (e.g., Azure prefixing)
@@ -1520,13 +1547,26 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 async with httpx.AsyncClient(
                     timeout=HTTP_TIMEOUT_SECONDS
                 ) as http_client:
+                    revocation_data: dict[str, str] = {"token": token.token}
+                    request_kwargs: dict[str, Any] = {"data": revocation_data}
+
+                    # Use the factory method when available (supports alternative auth like
+                    # client assertions for managed identity), falling back to basic auth
+                    # or client_id-only for public clients per RFC 7009
+                    oauth_client = self._create_upstream_oauth_client()
+                    if oauth_client.client_secret is not None:
+                        # Client secret is available, use HTTP Basic auth
+                        request_kwargs["auth"] = (
+                            self._upstream_client_id,
+                            oauth_client.client_secret,
+                        )
+                    else:
+                        # No secret; public client must still identify itself per RFC 7009
+                        revocation_data["client_id"] = self._upstream_client_id
+
                     await http_client.post(
                         self._upstream_revocation_endpoint,
-                        data={"token": token.token},
-                        auth=(
-                            self._upstream_client_id,
-                            self._upstream_client_secret.get_secret_value(),
-                        ),
+                        **request_kwargs,
                     )
                     logger.debug("Successfully revoked token with upstream server")
             except Exception as e:
@@ -1751,12 +1791,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             transaction = transaction_model.model_dump()
 
             # Exchange IdP code for tokens (server-side)
-            oauth_client = AsyncOAuth2Client(
-                client_id=self._upstream_client_id,
-                client_secret=self._upstream_client_secret.get_secret_value(),
-                token_endpoint_auth_method=self._token_endpoint_auth_method,
-                timeout=HTTP_TIMEOUT_SECONDS,
-            )
+            oauth_client = self._create_upstream_oauth_client()
 
             try:
                 idp_redirect_uri = (

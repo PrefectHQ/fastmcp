@@ -32,6 +32,7 @@ class TestGoogleProvider:
         )
 
         assert provider._upstream_client_id == "123456789.apps.googleusercontent.com"
+        assert provider._upstream_client_secret is not None
         assert provider._upstream_client_secret.get_secret_value() == "GOCSPX-test123"
         assert str(provider.base_url) == "https://myserver.com/"
 

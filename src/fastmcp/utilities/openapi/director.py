@@ -1,7 +1,7 @@
 """Request director using openapi-core for stateless HTTP request building."""
 
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 import httpx
 from jsonschema_path import SchemaPath
@@ -205,12 +205,14 @@ class RequestDirector:
         Returns:
             Complete URL with path parameters substituted
         """
-        # Substitute path parameters
+        # Substitute path parameters with URL-encoding to prevent
+        # path traversal and SSRF via crafted parameter values
         url_path = path_template
         for param_name, param_value in path_params.items():
             placeholder = f"{{{param_name}}}"
             if placeholder in url_path:
-                url_path = url_path.replace(placeholder, str(param_value))
+                safe_value = quote(str(param_value), safe="").replace(".", "%2E")
+                url_path = url_path.replace(placeholder, safe_value)
 
         # Combine with base URL
         return urljoin(base_url.rstrip("/") + "/", url_path.lstrip("/"))

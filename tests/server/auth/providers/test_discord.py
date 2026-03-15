@@ -29,6 +29,7 @@ class TestDiscordProvider:
         )
 
         assert provider._upstream_client_id == "env_client_id"
+        assert provider._upstream_client_secret is not None
         assert provider._upstream_client_secret.get_secret_value() == "GOCSPX-test123"
         assert str(provider.base_url) == "https://myserver.com/"
 

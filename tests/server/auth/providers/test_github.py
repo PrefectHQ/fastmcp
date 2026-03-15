@@ -35,6 +35,7 @@ class TestGitHubProvider:
 
         # Check that the provider was initialized correctly
         assert provider._upstream_client_id == "test_client"
+        assert provider._upstream_client_secret is not None
         assert provider._upstream_client_secret.get_secret_value() == "test_secret"
         assert (
             str(provider.base_url) == "https://example.com/"

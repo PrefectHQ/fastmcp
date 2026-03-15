@@ -18,6 +18,8 @@ from fastmcp.server.auth import (
     run_auth_checks,
 )
 from fastmcp.server.middleware import AuthMiddleware
+from fastmcp.server.transforms import ToolTransform
+from fastmcp.tools.tool_transform import ToolTransformConfig, TransformedTool
 
 # =============================================================================
 # Test helpers
@@ -677,8 +679,6 @@ class TestAsyncAuthIntegration:
 class TestTransformedToolAuth:
     async def test_transformed_tool_preserves_auth(self):
         """Transformed tools should inherit auth from parent."""
-        from fastmcp.tools.tool_transform import TransformedTool
-
         mcp = FastMCP()
 
         @mcp.tool(auth=require_scopes("test"))
@@ -702,8 +702,6 @@ class TestTransformedToolAuth:
 
     async def test_transformed_tool_filtered_without_token(self):
         """Transformed tools with auth should be filtered without token."""
-        from fastmcp.tools.tool_transform import ToolTransformConfig
-
         mcp = FastMCP()
 
         @mcp.tool(auth=require_scopes("test"))
@@ -711,8 +709,10 @@ class TestTransformedToolAuth:
             return str(x)
 
         # Add transformation
-        mcp.add_tool_transformation(
-            "protected_tool", ToolTransformConfig(name="renamed_protected")
+        mcp.add_transform(
+            ToolTransform(
+                {"protected_tool": ToolTransformConfig(name="renamed_protected")}
+            )
         )
 
         # Without token, transformed tool should not be visible
@@ -721,8 +721,6 @@ class TestTransformedToolAuth:
 
     async def test_transformed_tool_visible_with_token(self):
         """Transformed tools with auth should be visible with token."""
-        from fastmcp.tools.tool_transform import ToolTransformConfig
-
         mcp = FastMCP()
 
         @mcp.tool(auth=require_scopes("test"))
@@ -730,8 +728,10 @@ class TestTransformedToolAuth:
             return str(x)
 
         # Add transformation
-        mcp.add_tool_transformation(
-            "protected_tool", ToolTransformConfig(name="renamed_protected")
+        mcp.add_transform(
+            ToolTransform(
+                {"protected_tool": ToolTransformConfig(name="renamed_protected")}
+            )
         )
 
         # With token, transformed tool should be visible
