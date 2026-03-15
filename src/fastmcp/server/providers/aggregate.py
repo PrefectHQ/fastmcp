@@ -43,6 +43,22 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+def _provider_matches_scope(provider: Provider, scope: list[Provider]) -> bool:
+    """Check if a provider matches any provider in the scope list.
+
+    Handles wrapped providers by walking the inner chain — a
+    WrappedProvider(Namespace, inner=MyProvider) matches if MyProvider
+    is in the scope list.
+    """
+    from fastmcp.server.providers.wrapped_provider import _WrappedProvider
+
+    if provider in scope:
+        return True
+    if isinstance(provider, _WrappedProvider):
+        return _provider_matches_scope(provider._inner, scope)
+    return False
+
+
 class AggregateProvider(Provider):
     """Utility provider that combines multiple providers into one.
 
@@ -146,6 +162,18 @@ class AggregateProvider(Provider):
     def __repr__(self) -> str:
         return f"AggregateProvider(providers={self.providers!r})"
 
+    def _providers_for_scope(self, scope: list[Provider] | None) -> list[Provider]:
+        """Return providers filtered by scope.
+
+        If scope is None or this aggregate itself is in the scope, returns
+        all providers. Otherwise, returns only providers that match the
+        scope — either directly or through wrapping (e.g., a
+        WrappedProvider whose inner matches).
+        """
+        if scope is None or self in scope:
+            return self.providers
+        return [p for p in self.providers if _provider_matches_scope(p, scope)]
+
     # -------------------------------------------------------------------------
     # Tools
     # -------------------------------------------------------------------------
@@ -180,6 +208,22 @@ class AggregateProvider(Provider):
         )
         return self._collect_list_results(results, "list_resources")
 
+    async def list_resources(
+        self, *, _scope: list[Provider] | None = None
+    ) -> Sequence[Resource]:
+        """List resources, optionally scoped to specific providers."""
+        providers = self._providers_for_scope(_scope)
+        results = await gather(
+            *[p.list_resources() for p in providers],
+            return_exceptions=True,
+        )
+        resources: Sequence[Resource] = self._collect_list_results(
+            results, "list_resources"
+        )
+        for transform in self.transforms:
+            resources = await transform.list_resources(resources)
+        return resources
+
     async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
@@ -201,6 +245,22 @@ class AggregateProvider(Provider):
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_resource_templates")
+
+    async def list_resource_templates(
+        self, *, _scope: list[Provider] | None = None
+    ) -> Sequence[ResourceTemplate]:
+        """List resource templates, optionally scoped to specific providers."""
+        providers = self._providers_for_scope(_scope)
+        results = await gather(
+            *[p.list_resource_templates() for p in providers],
+            return_exceptions=True,
+        )
+        templates: Sequence[ResourceTemplate] = self._collect_list_results(
+            results, "list_resource_templates"
+        )
+        for transform in self.transforms:
+            templates = await transform.list_resource_templates(templates)
+        return templates
 
     async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
@@ -225,6 +285,20 @@ class AggregateProvider(Provider):
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_prompts")
+
+    async def list_prompts(
+        self, *, _scope: list[Provider] | None = None
+    ) -> Sequence[Prompt]:
+        """List prompts, optionally scoped to specific providers."""
+        providers = self._providers_for_scope(_scope)
+        results = await gather(
+            *[p.list_prompts() for p in providers],
+            return_exceptions=True,
+        )
+        prompts: Sequence[Prompt] = self._collect_list_results(results, "list_prompts")
+        for transform in self.transforms:
+            prompts = await transform.list_prompts(prompts)
+        return prompts
 
     async def _get_prompt(
         self, name: str, version: VersionSpec | None = None

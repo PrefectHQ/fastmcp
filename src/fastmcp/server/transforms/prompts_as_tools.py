@@ -89,6 +89,7 @@ class PromptsAsTools(Transform):
 
     def _make_list_prompts_tool(self) -> Tool:
         """Create the list_prompts tool."""
+        scope = [self._provider]
 
         async def list_prompts(
             ctx: Context = None,  # type: ignore[assignment]
@@ -98,7 +99,7 @@ class PromptsAsTools(Transform):
             Returns JSON with prompt metadata including name, description,
             and optional arguments.
             """
-            prompts = await ctx.fastmcp.list_prompts()
+            prompts = await ctx.fastmcp.list_prompts(_scope=scope)
 
             result: list[dict[str, Any]] = []
             for p in prompts:

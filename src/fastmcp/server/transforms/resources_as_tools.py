@@ -92,6 +92,7 @@ class ResourcesAsTools(Transform):
 
     def _make_list_resources_tool(self) -> Tool:
         """Create the list_resources tool."""
+        scope = [self._provider]
 
         async def list_resources(
             ctx: Context = None,  # type: ignore[assignment]
@@ -101,8 +102,8 @@ class ResourcesAsTools(Transform):
             Returns JSON with resource metadata. Static resources have a 'uri' field,
             while templates have a 'uri_template' field with placeholders like {name}.
             """
-            resources = await ctx.fastmcp.list_resources()
-            templates = await ctx.fastmcp.list_resource_templates()
+            resources = await ctx.fastmcp.list_resources(_scope=scope)
+            templates = await ctx.fastmcp.list_resource_templates(_scope=scope)
 
             result: list[dict[str, Any]] = []
 

@@ -515,7 +515,12 @@ class FastMCP(
                 stacklevel=2,
             )
 
-    async def list_tools(self, *, run_middleware: bool = True) -> Sequence[Tool]:
+    async def list_tools(
+        self,
+        *,
+        run_middleware: bool = True,
+        _scope: list[Provider] | None = None,
+    ) -> Sequence[Tool]:
         """List all enabled tools from providers.
 
         Overrides Provider.list_tools() to add visibility filtering, auth filtering,
@@ -533,11 +538,13 @@ class FastMCP(
                 )
                 return await self._run_middleware(
                     context=mw_context,
-                    call_next=lambda context: self.list_tools(run_middleware=False),
+                    call_next=lambda context: self.list_tools(
+                        run_middleware=False, _scope=_scope
+                    ),
                 )
 
             # Get all tools, apply session transforms, then filter enabled
-            tools = list(await super().list_tools())
+            tools = list(await super().list_tools(_scope=_scope))
             tools = await apply_session_transforms(tools)
             tools = [t for t in tools if is_enabled(t)]
 
@@ -639,13 +646,20 @@ class FastMCP(
         return cast(Tool, max(authorized, key=version_sort_key))
 
     async def list_resources(
-        self, *, run_middleware: bool = True
+        self,
+        *,
+        run_middleware: bool = True,
+        _scope: list[Provider] | None = None,
     ) -> Sequence[Resource]:
         """List all enabled resources from providers.
 
         Overrides Provider.list_resources() to add visibility filtering, auth filtering,
         and middleware execution. Returns all versions (no deduplication).
         Protocol handlers deduplicate for MCP wire format.
+
+        Args:
+            run_middleware: If True (default), apply the middleware chain.
+            _scope: If provided, only list resources from these providers.
         """
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
@@ -658,11 +672,13 @@ class FastMCP(
                 )
                 return await self._run_middleware(
                     context=mw_context,
-                    call_next=lambda context: self.list_resources(run_middleware=False),
+                    call_next=lambda context: self.list_resources(
+                        run_middleware=False, _scope=_scope
+                    ),
                 )
 
             # Get all resources, apply session transforms, then filter enabled
-            resources = list(await super().list_resources())
+            resources = list(await super().list_resources(_scope=_scope))
             resources = await apply_session_transforms(resources)
             resources = [r for r in resources if is_enabled(r)]
 
@@ -761,7 +777,10 @@ class FastMCP(
         return cast(Resource, max(authorized, key=version_sort_key))
 
     async def list_resource_templates(
-        self, *, run_middleware: bool = True
+        self,
+        *,
+        run_middleware: bool = True,
+        _scope: list[Provider] | None = None,
     ) -> Sequence[ResourceTemplate]:
         """List all enabled resource templates from providers.
 
@@ -781,12 +800,12 @@ class FastMCP(
                 return await self._run_middleware(
                     context=mw_context,
                     call_next=lambda context: self.list_resource_templates(
-                        run_middleware=False
+                        run_middleware=False, _scope=_scope
                     ),
                 )
 
             # Get all templates, apply session transforms, then filter enabled
-            templates = list(await super().list_resource_templates())
+            templates = list(await super().list_resource_templates(_scope=_scope))
             templates = await apply_session_transforms(templates)
             templates = [t for t in templates if is_enabled(t)]
 
@@ -888,7 +907,12 @@ class FastMCP(
             return None
         return cast(ResourceTemplate, max(authorized, key=version_sort_key))
 
-    async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
+    async def list_prompts(
+        self,
+        *,
+        run_middleware: bool = True,
+        _scope: list[Provider] | None = None,
+    ) -> Sequence[Prompt]:
         """List all enabled prompts from providers.
 
         Overrides Provider.list_prompts() to add visibility filtering, auth filtering,
@@ -906,11 +930,13 @@ class FastMCP(
                 )
                 return await self._run_middleware(
                     context=mw_context,
-                    call_next=lambda context: self.list_prompts(run_middleware=False),
+                    call_next=lambda context: self.list_prompts(
+                        run_middleware=False, _scope=_scope
+                    ),
                 )
 
             # Get all prompts, apply session transforms, then filter enabled
-            prompts = list(await super().list_prompts())
+            prompts = list(await super().list_prompts(_scope=_scope))
             prompts = await apply_session_transforms(prompts)
             prompts = [p for p in prompts if is_enabled(p)]
 
