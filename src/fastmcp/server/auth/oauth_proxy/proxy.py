@@ -1530,14 +1530,21 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 ) as http_client:
                     revocation_data: dict[str, str] = {"token": token.token}
                     request_kwargs: dict[str, Any] = {"data": revocation_data}
-                    if self._upstream_client_secret is not None:
+
+                    # Use the factory method when available (supports alternative auth like
+                    # client assertions for managed identity), falling back to basic auth
+                    # or client_id-only for public clients per RFC 7009
+                    oauth_client = self._create_upstream_oauth_client()
+                    if oauth_client.client_secret is not None:
+                        # Client secret is available, use HTTP Basic auth
                         request_kwargs["auth"] = (
                             self._upstream_client_id,
-                            self._upstream_client_secret.get_secret_value(),
+                            oauth_client.client_secret,
                         )
                     else:
-                        # Public clients must still identify themselves per RFC 7009
+                        # No secret; public client must still identify itself per RFC 7009
                         revocation_data["client_id"] = self._upstream_client_id
+
                     await http_client.post(
                         self._upstream_revocation_endpoint,
                         **request_kwargs,
