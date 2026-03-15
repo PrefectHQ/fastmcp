@@ -7,7 +7,6 @@ this behavior correctly and do not override it.
 
 import httpx
 import pytest
-from mcp.shared._httpx_utils import create_mcp_http_client
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
@@ -157,10 +156,14 @@ class TestMcpHttpClientRedirectProtection:
             ]
         )
 
-        client = create_mcp_http_client(
+        # Use AsyncClient directly with ASGI transport rather than
+        # monkey-patching _transport on create_mcp_http_client, which
+        # breaks when proxy env vars are set.
+        client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
             headers={"Authorization": "Bearer secret"},
+            follow_redirects=True,
         )
-        client._transport = httpx.ASGITransport(app=app)
 
         async with client:
             response = await client.get("http://legit.example.com/api")
