@@ -21,7 +21,11 @@ This means any client that can call tools can now access prompts, even if the cl
 
 ## Basic Usage
 
-Pass your server to `PromptsAsTools` when adding the transform. The transform queries that server for prompts whenever the generated tools are called.
+Pass your FastMCP server to `PromptsAsTools` when adding the transform. The generated tools route through the server at runtime, which means all server middleware — auth, visibility, rate limiting — applies to prompt operations automatically, exactly as it would for direct `prompts/get` calls.
+
+<Note>
+`PromptsAsTools` (and `ResourcesAsTools`) should be applied to a FastMCP server instance, not a raw Provider. The generated tools call back into the server's middleware chain at runtime, so they need a server to route through. If you want to expose only a subset of prompts, create a dedicated FastMCP server for those prompts and apply the transform there.
+</Note>
 
 ```python
 from fastmcp import FastMCP
