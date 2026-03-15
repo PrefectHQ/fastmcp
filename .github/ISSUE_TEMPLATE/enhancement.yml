@@ -14,7 +14,7 @@ body:
 
         - 🔍 **Check if this has already been requested** — search existing issues first
         - 🎯 **Describe the problem you're trying to solve**, not the solution you want — we'll figure out the best implementation
-        - ✂️ **Keep it short (~15 lines).** A motivating description and a concrete use case is the ideal request. Skip proposed implementations, API designs, or multi-option analyses — maintainers will figure out the approach. Requests that are difficult to parse will be labeled `too-long` and not triaged until condensed.
+        - ✂️ **Keep it short.** A motivating description and a concrete use case is the ideal request — aim to fit in a single screen. Skip proposed implementations, API designs, or multi-option analyses — maintainers will figure out the approach. Requests that are difficult to parse will be labeled `too-long` and not triaged until condensed.
         - 🤖 **Using an LLM?** Great — but it must follow these guidelines. Generic LLM output that ignores our contributing conventions will be closed. See [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
   - type: textarea

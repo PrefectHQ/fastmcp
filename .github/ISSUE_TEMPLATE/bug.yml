@@ -16,7 +16,7 @@ body:
         - Check if someone else has **already reported this** or if it's been fixed on the main branch
         - You **must** include a copy/pasteable, properly formatted MRE (minimal reproducible example) or your issue may be closed without response
         - **The ideal issue is a clear problem description and an MRE — that's it.** If you've done genuine investigation and have a non-obvious insight into the root cause, include it. But please don't speculate or ask an LLM to generate a diagnosis. We have LLMs too, and an incorrect analysis is harder to work with than none at all.
-        - **Keep it short.** A good bug report fits in a single screen (~15 lines for the description). Issues that include unsolicited root cause analysis, proposed fixes, or multi-section diagnostic writeups will be labeled `too-long` and not triaged until condensed.
+        - **Keep it short.** A clear description plus a concise MRE is ideal — aim to fit in a single screen. Issues that include unsolicited root cause analysis, proposed fixes, or multi-section diagnostic writeups will be labeled `too-long` and not triaged until condensed.
         - **Using an LLM?** Great — but it must follow these guidelines. Generic LLM output that ignores our contributing conventions will be closed. See [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
   - type: textarea
