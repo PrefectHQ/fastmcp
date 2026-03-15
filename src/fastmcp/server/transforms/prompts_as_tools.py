@@ -3,6 +3,10 @@
 This transform generates tools for listing and getting prompts, enabling
 clients that only support tools to access prompt functionality.
 
+The generated tools call back into the server at runtime via ``ctx.fastmcp``,
+so all server middleware (auth, visibility, rate limiting, etc.) applies to
+prompt operations exactly as it would for direct ``prompts/get`` calls.
+
 Example:
     ```python
     from fastmcp import FastMCP
@@ -22,45 +26,25 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from mcp.types import TextContent
 
-from fastmcp.exceptions import AuthorizationError
-from fastmcp.server.auth import AuthContext, run_auth_checks
+from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext, Transform
-from fastmcp.server.transforms.visibility import (
-    apply_session_transforms,
-    is_enabled,
-)
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
-    from fastmcp.server.auth import AccessToken
     from fastmcp.server.providers.base import Provider
-
-
-def _get_auth_context() -> tuple[bool, AccessToken | None]:
-    """Get auth context for the current request.
-
-    Returns (skip_auth, token) where skip_auth=True for STDIO transport.
-    Mirrors FastMCP._get_auth_context() to ensure consistent behavior.
-    """
-    from fastmcp.server.context import _current_transport
-    from fastmcp.server.dependencies import get_access_token
-
-    if _current_transport.get() == "stdio":
-        return (True, None)
-    return (False, get_access_token())
 
 
 class PromptsAsTools(Transform):
     """Transform that adds tools for listing and getting prompts.
 
     Generates two tools:
-    - `list_prompts`: Lists all prompts from the provider
-    - `get_prompt`: Gets a specific prompt with optional arguments
+    - ``list_prompts``: Lists all prompts from the provider
+    - ``get_prompt``: Gets a specific prompt with optional arguments
 
-    The transform captures a provider reference at construction and queries it
-    for prompts when the generated tools are called. Auth and visibility
-    filtering is applied regardless of provider type.
+    The transform captures a provider reference at construction for listing,
+    but tool execution routes through the server (``ctx.fastmcp``) so that
+    auth, middleware, and visibility apply automatically.
 
     Example:
         ```python
@@ -105,28 +89,19 @@ class PromptsAsTools(Transform):
 
     def _make_list_prompts_tool(self) -> Tool:
         """Create the list_prompts tool."""
-        provider = self._provider
 
-        async def list_prompts() -> str:
+        async def list_prompts(
+            ctx: Context = None,  # type: ignore[assignment]
+        ) -> str:
             """List all available prompts.
 
             Returns JSON with prompt metadata including name, description,
             and optional arguments.
             """
-            from fastmcp.server.server import FastMCP
-
-            if isinstance(provider, FastMCP):
-                all_prompts = await provider.list_prompts()
-            else:
-                transformed = await apply_session_transforms(
-                    list(await provider.list_prompts())
-                )
-                all_prompts = list(
-                    await _filter_authorized([p for p in transformed if is_enabled(p)])
-                )
+            prompts = await ctx.fastmcp.list_prompts()
 
             result: list[dict[str, Any]] = []
-            for p in all_prompts:
+            for p in prompts:
                 result.append(
                     {
                         "name": p.name,
@@ -148,7 +123,6 @@ class PromptsAsTools(Transform):
 
     def _make_get_prompt_tool(self) -> Tool:
         """Create the get_prompt tool."""
-        provider = self._provider
 
         async def get_prompt(
             name: Annotated[str, "The name of the prompt to get"],
@@ -156,74 +130,17 @@ class PromptsAsTools(Transform):
                 dict[str, Any] | None,
                 "Optional arguments for the prompt",
             ] = None,
+            ctx: Context = None,  # type: ignore[assignment]
         ) -> str:
             """Get a prompt by name with optional arguments.
 
             Returns the rendered prompt as JSON with a messages array.
             Arguments should be provided as a dict mapping argument names to values.
             """
-            from fastmcp.server.server import FastMCP
-
-            # Use FastMCP.render_prompt() if available - runs middleware chain
-            if isinstance(provider, FastMCP):
-                result = await provider.render_prompt(name, arguments=arguments or {})
-                return _format_prompt_result(result)
-
-            # Plain providers: apply visibility and auth checks
-            prompt = await provider.get_prompt(name)
-            if prompt is None:
-                raise ValueError(f"Prompt not found: {name}")
-
-            await _check_component_access(prompt)
-
-            result = await prompt._render(arguments or {})
+            result = await ctx.fastmcp.render_prompt(name, arguments=arguments or {})
             return _format_prompt_result(result)
 
         return Tool.from_function(fn=get_prompt)
-
-
-async def _check_component_access(component: Any) -> None:
-    """Check visibility and auth for a single component.
-
-    Applies session transforms, then checks is_enabled and runs auth checks.
-    Skips auth checks for STDIO transport (consistent with FastMCP server).
-    Raises ValueError if the component is disabled or unauthorized.
-    """
-    marked = await apply_session_transforms([component])
-    if not marked or not is_enabled(marked[0]):
-        raise ValueError(f"Prompt not found: {component.name}")
-
-    skip_auth, token = _get_auth_context()
-    if not skip_auth and component.auth is not None:
-        ctx = AuthContext(token=token, component=component)
-        try:
-            if not await run_auth_checks(component.auth, ctx):
-                raise ValueError(f"Prompt not found: {component.name}")
-        except AuthorizationError:
-            raise ValueError(f"Prompt not found: {component.name}") from None
-
-
-async def _filter_authorized(components: Sequence[Any]) -> Sequence[Any]:
-    """Filter components by auth checks.
-
-    Skips auth checks for STDIO transport (consistent with FastMCP server).
-    Returns only components that pass auth checks.
-    """
-    skip_auth, token = _get_auth_context()
-    if skip_auth:
-        return components
-
-    authorized: list[Any] = []
-    for component in components:
-        if component.auth is not None:
-            ctx = AuthContext(token=token, component=component)
-            try:
-                if not await run_auth_checks(component.auth, ctx):
-                    continue
-            except AuthorizationError:
-                continue
-        authorized.append(component)
-    return authorized
 
 
 def _format_prompt_result(result: Any) -> str:

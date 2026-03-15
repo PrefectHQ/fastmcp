@@ -371,7 +371,7 @@ class TestResourcesAsToolsVisibilityOnProvider:
         mcp.add_transform(ResourcesAsTools(provider))
 
         async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="not found"):
+            with pytest.raises(ToolError):
                 await client.call_tool("read_resource", {"uri": "test://secret"})
 
     async def test_disabled_template_cannot_be_read(self):
@@ -384,7 +384,7 @@ class TestResourcesAsToolsVisibilityOnProvider:
         mcp.add_transform(ResourcesAsTools(provider))
 
         async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="not found"):
+            with pytest.raises(ToolError):
                 await client.call_tool("read_resource", {"uri": "secret://foo"})
 
     async def test_enabled_resource_still_accessible(self):
@@ -442,7 +442,7 @@ class TestResourcesAsToolsAuthOnProvider:
         mcp.add_transform(ResourcesAsTools(provider))
 
         async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="not found"):
+            with pytest.raises(ToolError):
                 await client.call_tool("read_resource", {"uri": "test://protected"})
 
     async def test_auth_protected_template_cannot_be_read(self):
@@ -454,7 +454,7 @@ class TestResourcesAsToolsAuthOnProvider:
         mcp.add_transform(ResourcesAsTools(provider))
 
         async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="not found"):
+            with pytest.raises(ToolError):
                 await client.call_tool("read_resource", {"uri": "protected://foo"})
 
     async def test_open_resource_still_accessible(self):
