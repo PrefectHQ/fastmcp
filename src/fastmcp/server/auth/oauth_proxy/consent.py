@@ -110,9 +110,13 @@ class ConsentMixin:
         self: OAuthProxy, request: Request, base_name: str
     ) -> list[str]:
         """Decode and verify a signed base64-encoded JSON list from cookie. Returns [] if missing/invalid."""
-        # Prefer secure name, but also check non-secure variant for dev
         secure_name = self._cookie_name(base_name)
-        raw = request.cookies.get(secure_name) or request.cookies.get(f"__{base_name}")
+        raw = request.cookies.get(secure_name)
+        # Only fall back to the non-__Host- name over plain HTTP. On HTTPS,
+        # __Host- enforces host-only scope; accepting the weaker name would
+        # let a sibling-subdomain attacker inject a domain-scoped cookie.
+        if not raw and not self._is_https:
+            raw = request.cookies.get(f"__{base_name}")
         if not raw:
             return []
         try:
