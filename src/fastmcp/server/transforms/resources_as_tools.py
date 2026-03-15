@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import base64
 import json
-import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -32,8 +31,6 @@ from fastmcp.server.dependencies import get_context
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.versions import VersionSpec
-
-logger = logging.getLogger(__name__)
 
 _DEFAULT_ANNOTATIONS = ToolAnnotations(readOnlyHint=True)
 
@@ -67,11 +64,11 @@ class ResourcesAsTools(Transform):
         from fastmcp.server.server import FastMCP
 
         if not isinstance(provider, FastMCP):
-            logger.warning(
-                "ResourcesAsTools should be applied to a FastMCP server, not a"
-                " raw Provider. The generated tools route through ctx.fastmcp"
-                " at runtime, so they will list all resources on the server —"
-                " not just resources from this provider."
+            raise TypeError(
+                "ResourcesAsTools requires a FastMCP server instance, not a"
+                f" {type(provider).__name__}. The generated tools route through"
+                " the server's middleware chain at runtime for auth and"
+                " visibility. Pass your FastMCP server: ResourcesAsTools(mcp)"
             )
         self._provider = provider
 
