@@ -165,9 +165,11 @@ class StreamableHttpTransport(ClientTransport):
         # and always enables follow_redirects
         verify_factory = self._make_verify_factory()
         if self.httpx_client_factory is not None:
+            # Factory clients get the full kwargs for backwards compatibility
             http_client = self.httpx_client_factory(
                 headers=headers,
                 auth=self.auth,
+                follow_redirects=True,  # type: ignore[call-arg]
                 **({"timeout": timeout} if timeout else {}),
             )
         elif verify_factory is not None:

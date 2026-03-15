@@ -22,18 +22,14 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from mcp.types import TextContent
 
-from fastmcp.exceptions import AuthorizationError
-from fastmcp.server.auth import AuthContext, run_auth_checks
 from fastmcp.server.transforms import GetToolNext, Transform
-from fastmcp.server.transforms.visibility import (
-    apply_session_transforms,
-    is_enabled,
-)
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.base import Provider
+
+# Note: FastMCP imported inside tools to avoid circular import
 
 
 class PromptsAsTools(Transform):
@@ -98,21 +94,10 @@ class PromptsAsTools(Transform):
             Returns JSON with prompt metadata including name, description,
             and optional arguments.
             """
-            from fastmcp.server.server import FastMCP
-
-            if isinstance(provider, FastMCP):
-                all_prompts = await provider.list_prompts()
-            else:
-                all_prompts = list(
-                    await _filter_authorized(
-                        await apply_session_transforms(
-                            [p for p in await provider.list_prompts() if is_enabled(p)]
-                        )
-                    )
-                )
+            prompts = await provider.list_prompts()
 
             result: list[dict[str, Any]] = []
-            for p in all_prompts:
+            for p in prompts:
                 result.append(
                     {
                         "name": p.name,
@@ -155,61 +140,15 @@ class PromptsAsTools(Transform):
                 result = await provider.render_prompt(name, arguments=arguments or {})
                 return _format_prompt_result(result)
 
-            # Plain providers: apply visibility and auth checks
+            # Fallback for plain providers - no middleware
             prompt = await provider.get_prompt(name)
             if prompt is None:
                 raise ValueError(f"Prompt not found: {name}")
-
-            await _check_component_access(prompt)
 
             result = await prompt._render(arguments or {})
             return _format_prompt_result(result)
 
         return Tool.from_function(fn=get_prompt)
-
-
-async def _check_component_access(component: Any) -> None:
-    """Check visibility and auth for a single component.
-
-    Applies session transforms, then checks is_enabled and runs auth checks.
-    Raises ValueError if the component is disabled or unauthorized.
-    """
-    from fastmcp.server.dependencies import get_access_token
-
-    marked = await apply_session_transforms([component])
-    if not marked or not is_enabled(marked[0]):
-        raise ValueError(f"Prompt not found: {component.name}")
-
-    if component.auth is not None:
-        token = get_access_token()
-        ctx = AuthContext(token=token, component=component)
-        try:
-            if not await run_auth_checks(component.auth, ctx):
-                raise ValueError(f"Prompt not found: {component.name}")
-        except AuthorizationError:
-            raise ValueError(f"Prompt not found: {component.name}") from None
-
-
-async def _filter_authorized(components: Sequence[Any]) -> Sequence[Any]:
-    """Filter components by visibility and auth.
-
-    Returns only components that are enabled and pass auth checks.
-    """
-    from fastmcp.server.dependencies import get_access_token
-
-    enabled = [c for c in components if is_enabled(c)]
-    token = get_access_token()
-    authorized: list[Any] = []
-    for component in enabled:
-        if component.auth is not None:
-            ctx = AuthContext(token=token, component=component)
-            try:
-                if not await run_auth_checks(component.auth, ctx):
-                    continue
-            except AuthorizationError:
-                continue
-        authorized.append(component)
-    return authorized
 
 
 def _format_prompt_result(result: Any) -> str:
