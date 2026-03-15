@@ -397,11 +397,13 @@ class ConsentMixin:
             cimd_domain=cimd_domain,
         )
         response = create_secure_html_response(html)
-        # Store CSRF in cookie with short lifetime
+        # Merge new CSRF token with any existing ones (supports concurrent flows)
+        existing_tokens = self._decode_list_cookie(request, "MCP_CONSENT_STATE")
+        existing_tokens.append(csrf_token)
         self._set_list_cookie(
             response,
             "MCP_CONSENT_STATE",
-            self._encode_list_cookie([csrf_token]),
+            self._encode_list_cookie(existing_tokens),
             max_age=15 * 60,
         )
         return response

@@ -485,16 +485,17 @@ class TestCSRFDoubleSubmit:
             csrf_token = _extract_csrf(consent_resp.text)
             assert csrf_token
 
-            # Now simulate the attack: submit the form with a valid CSRF token
-            # but WITHOUT the cookie (as if from a different browser)
-            response = test_client.post(
+        # Simulate the attack: use a FRESH client (no cookies from the consent
+        # page) to submit the form with a valid CSRF token — as if the attacker
+        # tricked the victim's browser into POSTing their tx_id/csrf_token.
+        with TestClient(app) as attacker_client:
+            response = attacker_client.post(
                 "/consent",
                 data={
                     "action": "approve",
                     "txn_id": txn_id,
                     "csrf_token": csrf_token,
                 },
-                cookies={},  # No cookies — simulates cross-origin submission
                 follow_redirects=False,
             )
             assert response.status_code == 403
