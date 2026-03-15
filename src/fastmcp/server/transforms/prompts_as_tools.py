@@ -21,6 +21,7 @@ Example:
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -30,6 +31,8 @@ from fastmcp.server.dependencies import get_context
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.versions import VersionSpec
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.base import Provider
@@ -58,6 +61,15 @@ class PromptsAsTools(Transform):
     """
 
     def __init__(self, provider: Provider) -> None:
+        from fastmcp.server.server import FastMCP
+
+        if not isinstance(provider, FastMCP):
+            logger.warning(
+                "PromptsAsTools should be applied to a FastMCP server, not a"
+                " raw Provider. The generated tools route through ctx.fastmcp"
+                " at runtime, so they will list all prompts on the server —"
+                " not just prompts from this provider."
+            )
         self._provider = provider
 
     def __repr__(self) -> str:
