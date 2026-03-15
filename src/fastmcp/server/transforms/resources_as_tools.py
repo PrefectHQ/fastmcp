@@ -25,8 +25,6 @@ from mcp.types import ToolAnnotations
 
 from fastmcp.exceptions import AuthorizationError
 from fastmcp.server.auth import AuthContext, run_auth_checks
-from fastmcp.server.context import _current_transport
-from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.server.transforms.visibility import (
     apply_session_transforms,
@@ -48,6 +46,9 @@ def _get_auth_context() -> tuple[bool, AccessToken | None]:
     Returns (skip_auth, token) where skip_auth=True for STDIO transport.
     Mirrors FastMCP._get_auth_context() to ensure consistent behavior.
     """
+    from fastmcp.server.context import _current_transport
+    from fastmcp.server.dependencies import get_access_token
+
     if _current_transport.get() == "stdio":
         return (True, None)
     return (False, get_access_token())
