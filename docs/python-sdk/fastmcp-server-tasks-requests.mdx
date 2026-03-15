@@ -52,7 +52,7 @@ Converts raw task return values to MCP types based on task type.
 - MCP result (CallToolResult, GetPromptResult, or ReadResourceResult)
 
 
-### `tasks_list_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/requests.py#L398" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `tasks_list_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/requests.py#L403" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tasks_list_handler(server: FastMCP, params: dict[str, Any]) -> ListTasksResult
@@ -71,7 +71,7 @@ Note: With client-side tracking, this returns minimal info.
 - Response with tasks list and pagination
 
 
-### `tasks_cancel_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/requests.py#L416" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `tasks_cancel_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/requests.py#L421" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tasks_cancel_handler(server: FastMCP, params: dict[str, Any]) -> CancelTaskResult

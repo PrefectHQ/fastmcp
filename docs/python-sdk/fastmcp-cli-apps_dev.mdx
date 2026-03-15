@@ -1,0 +1,47 @@
+---
+title: apps_dev
+sidebarTitle: apps_dev
+---
+
+# `fastmcp.cli.apps_dev`
+
+
+Dev server for previewing FastMCPApp UIs locally.
+
+Starts the user's MCP server on a configurable port, then starts a lightweight
+Starlette dev server that:
+
+  - Serves a Prefab-based tool picker at GET /
+  - Proxies /mcp to the user's server (avoids browser CORS restrictions)
+  - Serves the AppBridge host page at GET /launch
+
+The host page uses @modelcontextprotocol/ext-apps to connect to the MCP server
+and render the selected UI tool inside an iframe.
+
+Startup sequence
+----------------
+1. Download ext-apps app-bridge.js from npm and patch its bare
+   ``@modelcontextprotocol/sdk/…`` imports to use concrete esm.sh URLs.
+2. Detect the exact Zod v4 module URL that esm.sh serves for that SDK version
+   and build an import-map entry that redirects the broken ``v4.mjs`` (which
+   only re-exports ``{z, default}``) to ``v4/classic/index.mjs`` (which
+   correctly exports every named Zod v4 function).  Import maps apply to the
+   full module graph in the document, including cross-origin esm.sh modules.
+3. Serve both the patched JS and the import-map JSON from the dev server.
+
+
+## Functions
+
+### `run_dev_apps` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/cli/apps_dev.py#L825" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_dev_apps(server_spec: str) -> None
+```
+
+
+Start the full dev environment for a FastMCPApp server.
+
+Starts the user's MCP server on *mcp_port*, starts the Prefab dev UI
+on *dev_port* (with an /mcp proxy to the user's server), then opens
+the browser.
+
