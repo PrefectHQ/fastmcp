@@ -46,10 +46,10 @@ T = TypeVar("T")
 def _provider_matches_scope(provider: Provider, scope: list[Provider]) -> bool:
     """Check if a provider matches any provider in the scope list.
 
-    Handles wrapped providers by walking the inner chain — a
-    WrappedProvider(Namespace, inner=MyProvider) matches if MyProvider
-    is in the scope list. Also unwraps FastMCPProvider which wraps
-    FastMCP servers when they're added via add_provider().
+    Recursively unwraps provider wrappers to find a match:
+    - _WrappedProvider: checks inner provider
+    - FastMCPProvider: checks wrapped server
+    - AggregateProvider: checks children
     """
     from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
     from fastmcp.server.providers.wrapped_provider import _WrappedProvider
@@ -60,6 +60,10 @@ def _provider_matches_scope(provider: Provider, scope: list[Provider]) -> bool:
         return _provider_matches_scope(provider._inner, scope)
     if isinstance(provider, FastMCPProvider):
         return provider.server in scope
+    if isinstance(provider, AggregateProvider):
+        return any(
+            _provider_matches_scope(child, scope) for child in provider.providers
+        )
     return False
 
 
@@ -216,6 +220,8 @@ class AggregateProvider(Provider):
         self, *, _scope: list[Provider] | None = None
     ) -> Sequence[Resource]:
         """List resources, optionally scoped to specific providers."""
+        if _scope is None:
+            return await super().list_resources()
         providers = self._providers_for_scope(_scope)
         results = await gather(
             *[p.list_resources() for p in providers],
@@ -254,6 +260,8 @@ class AggregateProvider(Provider):
         self, *, _scope: list[Provider] | None = None
     ) -> Sequence[ResourceTemplate]:
         """List resource templates, optionally scoped to specific providers."""
+        if _scope is None:
+            return await super().list_resource_templates()
         providers = self._providers_for_scope(_scope)
         results = await gather(
             *[p.list_resource_templates() for p in providers],
@@ -294,6 +302,8 @@ class AggregateProvider(Provider):
         self, *, _scope: list[Provider] | None = None
     ) -> Sequence[Prompt]:
         """List prompts, optionally scoped to specific providers."""
+        if _scope is None:
+            return await super().list_prompts()
         providers = self._providers_for_scope(_scope)
         results = await gather(
             *[p.list_prompts() for p in providers],
