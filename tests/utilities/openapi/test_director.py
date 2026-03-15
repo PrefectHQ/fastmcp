@@ -585,5 +585,7 @@ class TestPathTraversalPrevention:
             "https://api.example.com",
         )
         url = str(request.url)
-        assert "/admin" not in unquote(unquote(url)).split("/api/v1/users/")[0]
+        decoded = unquote(unquote(url))
+        # Verify traversal didn't escape the users/ prefix
+        assert decoded.startswith("https://api.example.com/api/v1/users/")
         assert url.startswith("https://api.example.com/api/v1/users/")
