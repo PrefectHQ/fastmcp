@@ -551,16 +551,25 @@ class TestPathTraversalPrevention:
             str(request.url) == "https://api.example.com/api/v1/users/user-123/profile"
         )
 
-    def test_dotted_values_preserve_single_dots(self, director, path_route):
-        """Single dots in values like 'v1.2.3' should not be encoded."""
+    def test_dotted_values_encode_dots(self, director, path_route):
+        """Dots are encoded to prevent path normalization by urljoin."""
         request = director.build(
             path_route, {"id": "v1.2.3"}, "https://api.example.com"
         )
-        assert str(request.url) == "https://api.example.com/api/v1/users/v1.2.3/profile"
+        url = str(request.url)
+        assert "v1%2E2%2E3" in url
+        assert url.startswith("https://api.example.com/api/v1/users/")
 
     def test_numeric_values_still_work(self, director, path_route):
         request = director.build(path_route, {"id": 42}, "https://api.example.com")
         assert str(request.url) == "https://api.example.com/api/v1/users/42/profile"
+
+    def test_bare_single_dot_encoded(self, director, path_route):
+        """Bare '.' must be encoded so urljoin doesn't normalize it away."""
+        request = director.build(path_route, {"id": "."}, "https://api.example.com")
+        url = str(request.url)
+        assert "%2E" in url
+        assert url.startswith("https://api.example.com/api/v1/users/")
 
     def test_bare_dotdot_encoded(self, director, path_route):
         """Bare '..' must be encoded so urljoin doesn't resolve it as traversal."""
