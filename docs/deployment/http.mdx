@@ -630,13 +630,13 @@ For horizontally scaled deployments, enable stateless HTTP mode. In stateless mo
 ```python
 from fastmcp import FastMCP
 
-mcp = FastMCP("My Server", stateless_http=True)
+mcp = FastMCP("My Server")
 
 @mcp.tool
 def process(data: str) -> str:
     return f"Processed: {data}"
 
-app = mcp.http_app()
+app = mcp.http_app(stateless_http=True)
 ```
 
 **Option 2: Via `run()`**
