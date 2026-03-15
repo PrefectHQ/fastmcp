@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from mcp.server.auth.routes import build_resource_metadata_url
 from mcp.server.lowlevel.server import LifespanResultT
@@ -271,6 +271,7 @@ def create_streamable_http_app(
     auth: AuthProvider | None = None,
     json_response: bool = False,
     stateless_http: bool = False,
+    session_idle_timeout: float | None = None,
     debug: bool = False,
     routes: list[BaseRoute] | None = None,
     middleware: list[Middleware] | None = None,
@@ -287,6 +288,11 @@ def create_streamable_http_app(
         auth: Optional authentication provider (AuthProvider)
         json_response: Whether to use JSON response format
         stateless_http: Whether to use stateless mode (new transport per request)
+        session_idle_timeout: Optional timeout in seconds for idle sessions.
+            When set, sessions that receive no requests within this duration are
+            automatically cleaned up, preventing unbounded memory growth from
+            abandoned sessions. Only applies when stateless_http is False.
+            Requires mcp SDK >= 1.27.0.
         debug: Whether to enable debug mode
         routes: Optional list of custom routes
         middleware: Optional list of middleware
@@ -298,13 +304,29 @@ def create_streamable_http_app(
     server_middleware: list[Middleware] = []
 
     # Create session manager using the provided event store
-    session_manager = StreamableHTTPSessionManager(
-        app=server._mcp_server,
-        event_store=event_store,
-        retry_interval=retry_interval,
-        json_response=json_response,
-        stateless=stateless_http,
-    )
+    session_manager_kwargs: dict[str, Any] = {
+        "app": server._mcp_server,
+        "event_store": event_store,
+        "retry_interval": retry_interval,
+        "json_response": json_response,
+        "stateless": stateless_http,
+    }
+
+    # Pass session_idle_timeout if the MCP SDK supports it (>= 1.27.0)
+    if session_idle_timeout is not None:
+        import inspect
+
+        sig = inspect.signature(StreamableHTTPSessionManager.__init__)
+        if "session_idle_timeout" in sig.parameters:
+            session_manager_kwargs["session_idle_timeout"] = session_idle_timeout
+        else:
+            logger.warning(
+                "session_idle_timeout was specified but the installed version of "
+                "the MCP SDK does not support it. Upgrade to mcp >= 1.27.0 to "
+                "enable idle session cleanup."
+            )
+
+    session_manager = StreamableHTTPSessionManager(**session_manager_kwargs)
 
     # Create the ASGI app wrapper
     streamable_http_app = StreamableHTTPASGIApp(session_manager)

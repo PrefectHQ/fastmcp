@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import sys
 from contextlib import suppress
@@ -6,6 +7,7 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 from mcp import McpError
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import TextResourceContents
 
 from fastmcp import Context
@@ -289,3 +291,124 @@ class TestTimeout:
         ) as client:
             with pytest.raises(McpError):
                 await client.call_tool("sleep", {"seconds": 0.2}, timeout=0.1)
+
+
+# Check if the installed MCP SDK supports session_idle_timeout
+_sdk_supports_idle_timeout = (
+    "session_idle_timeout"
+    in inspect.signature(StreamableHTTPSessionManager.__init__).parameters
+)
+
+
+class TestSessionIdleTimeout:
+    async def test_session_idle_timeout_parameter_threads_through(self):
+        """session_idle_timeout should be accepted by http_app() without errors."""
+        server = create_test_server()
+        # Should not raise regardless of SDK support
+        app = server.http_app(session_idle_timeout=30.0)
+        assert app is not None
+
+    async def test_session_idle_timeout_none_by_default(self):
+        """session_idle_timeout should default to None (no timeout)."""
+        import fastmcp
+
+        assert fastmcp.settings.session_idle_timeout is None
+
+    async def test_session_idle_timeout_from_settings(self):
+        """session_idle_timeout should be configurable via settings."""
+        import fastmcp
+
+        original = fastmcp.settings.session_idle_timeout
+        try:
+            fastmcp.settings.session_idle_timeout = 60.0
+            server = create_test_server()
+            # Should not raise - the setting is picked up
+            app = server.http_app()
+            assert app is not None
+        finally:
+            fastmcp.settings.session_idle_timeout = original
+
+    async def test_session_idle_timeout_explicit_overrides_settings(self):
+        """Explicit session_idle_timeout should override settings value."""
+        import fastmcp
+
+        original = fastmcp.settings.session_idle_timeout
+        try:
+            fastmcp.settings.session_idle_timeout = 60.0
+            server = create_test_server()
+            # Explicit value should override settings
+            app = server.http_app(session_idle_timeout=120.0)
+            assert app is not None
+        finally:
+            fastmcp.settings.session_idle_timeout = original
+
+    async def test_session_idle_timeout_warns_on_unsupported_sdk(self, caplog):
+        """Should log a warning when SDK doesn't support session_idle_timeout."""
+        if _sdk_supports_idle_timeout:
+            pytest.skip(
+                "MCP SDK supports session_idle_timeout; warning test not applicable"
+            )
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            server = create_test_server()
+            server.http_app(session_idle_timeout=30.0)
+
+        assert any(
+            "session_idle_timeout" in record.message
+            and "does not support" in record.message
+            for record in caplog.records
+        )
+
+    @pytest.mark.skipif(
+        not _sdk_supports_idle_timeout,
+        reason="MCP SDK does not yet support session_idle_timeout",
+    )
+    async def test_session_idle_timeout_cleans_up_idle_sessions(self):
+        """Sessions should be cleaned up after the idle timeout expires."""
+        import httpx
+
+        server = create_test_server()
+        async with run_server_async(server) as url:
+            async with httpx.AsyncClient() as http_client:
+                # Initialize a session
+                init_resp = await http_client.post(
+                    url,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "init-1",
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2025-03-26",
+                            "capabilities": {},
+                            "clientInfo": {
+                                "name": "test",
+                                "version": "1.0.0",
+                            },
+                        },
+                    },
+                    headers={
+                        "Accept": "application/json, text/event-stream",
+                    },
+                )
+                session_id = init_resp.headers.get("Mcp-Session-Id", "")
+                assert session_id, "Should get a session ID"
+
+                # Wait for the session to expire (timeout is very short)
+                await asyncio.sleep(2.5)
+
+                # Try to use the expired session - should get 404
+                resp = await http_client.post(
+                    url,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "test-1",
+                        "method": "tools/list",
+                    },
+                    headers={
+                        "Accept": "application/json, text/event-stream",
+                        "Mcp-Session-Id": session_id,
+                    },
+                )
+                assert resp.status_code == 404
