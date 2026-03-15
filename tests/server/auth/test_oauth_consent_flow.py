@@ -462,6 +462,44 @@ class TestCSRFProtection:
             )
 
 
+class TestCSRFDoubleSubmit:
+    """Tests for CSRF double-submit cookie validation (GHSA-rww4-4w9c-7733 bypass)."""
+
+    async def test_consent_rejected_without_csrf_cookie(self, oauth_proxy_with_storage):
+        """Submitting a valid CSRF token without the matching cookie should be rejected.
+
+        This prevents an attacker from using their own tx_id/csrf_token to CSRF
+        the victim's browser into approving consent.
+        """
+        txn_id, _ = await _start_flow(
+            oauth_proxy_with_storage,
+            "csrf-double-submit-client",
+            "http://localhost:9090/callback",
+        )
+
+        app = Starlette(routes=oauth_proxy_with_storage.get_routes())
+        with TestClient(app) as test_client:
+            # Visit consent page to populate the transaction with a CSRF token
+            consent_resp = test_client.get(f"/consent?txn_id={txn_id}")
+            assert consent_resp.status_code == 200
+            csrf_token = _extract_csrf(consent_resp.text)
+            assert csrf_token
+
+            # Now simulate the attack: submit the form with a valid CSRF token
+            # but WITHOUT the cookie (as if from a different browser)
+            response = test_client.post(
+                "/consent",
+                data={
+                    "action": "approve",
+                    "txn_id": txn_id,
+                    "csrf_token": csrf_token,
+                },
+                cookies={},  # No cookies — simulates cross-origin submission
+                follow_redirects=False,
+            )
+            assert response.status_code == 403
+
+
 class TestStoragePersistence:
     """Tests for state persistence across storage backends."""
 

@@ -435,6 +435,23 @@ class ConsentMixin:
                 "<h1>Error</h1><p>Invalid or expired consent token</p>", status_code=400
             )
 
+        # Double-submit CSRF check: verify the form token matches the cookie.
+        # Without this, an attacker who knows their own tx_id/csrf_token can
+        # CSRF the victim's browser into approving consent, bypassing the
+        # consent binding cookie protection.
+        cookie_csrf_tokens = self._decode_list_cookie(request, "MCP_CONSENT_STATE")
+        if csrf_token not in cookie_csrf_tokens:
+            logger.warning(
+                "CSRF double-submit check failed for transaction %s "
+                "(possible cross-site consent forgery)",
+                txn_id,
+            )
+            return create_secure_html_response(
+                "<h1>Error</h1><p>Authorization session mismatch. "
+                "Please try authenticating again.</p>",
+                status_code=403,
+            )
+
         client_key = self._make_client_key(txn["client_id"], txn["client_redirect_uri"])
 
         if action == "approve":
