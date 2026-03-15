@@ -3,9 +3,9 @@
 This transform generates tools for listing and getting prompts, enabling
 clients that only support tools to access prompt functionality.
 
-The generated tools call back into the server at runtime via `ctx.fastmcp`,
-so all server middleware (auth, visibility, rate limiting, etc.) applies to
-prompt operations exactly as it would for direct `prompts/get` calls.
+The generated tools route through `ctx.fastmcp` at runtime, so all server
+middleware (auth, visibility, rate limiting, etc.) applies to prompt
+operations exactly as it would for direct `prompts/get` calls.
 
 Example:
     ```python
@@ -39,12 +39,15 @@ class PromptsAsTools(Transform):
     """Transform that adds tools for listing and getting prompts.
 
     Generates two tools:
-    - `list_prompts`: Lists all prompts from the provider
+    - `list_prompts`: Lists all prompts
     - `get_prompt`: Gets a specific prompt with optional arguments
 
-    The transform captures a provider reference at construction for listing,
-    but tool execution routes through the server (`ctx.fastmcp`) so that
-    auth, middleware, and visibility apply automatically.
+    The generated tools route through the server at runtime, so auth,
+    middleware, and visibility apply automatically.
+
+    This transform should be applied to a FastMCP server instance, not
+    a raw Provider, because the generated tools need the server's
+    middleware chain for auth and visibility filtering.
 
     Example:
         ```python
@@ -55,12 +58,6 @@ class PromptsAsTools(Transform):
     """
 
     def __init__(self, provider: Provider) -> None:
-        """Initialize the transform with a provider reference.
-
-        Args:
-            provider: The provider to query for prompts. Typically this is
-                the same FastMCP server the transform is added to.
-        """
         self._provider = provider
 
     def __repr__(self) -> str:
@@ -86,7 +83,6 @@ class PromptsAsTools(Transform):
 
     def _make_list_prompts_tool(self) -> Tool:
         """Create the list_prompts tool."""
-        scope = [self._provider]
 
         async def list_prompts() -> str:
             """List all available prompts.
@@ -95,7 +91,7 @@ class PromptsAsTools(Transform):
             and optional arguments.
             """
             ctx = get_context()
-            prompts = await ctx.fastmcp.list_prompts(_scope=scope)
+            prompts = await ctx.fastmcp.list_prompts()
 
             result: list[dict[str, Any]] = []
             for p in prompts:
@@ -131,7 +127,8 @@ class PromptsAsTools(Transform):
             """Get a prompt by name with optional arguments.
 
             Returns the rendered prompt as JSON with a messages array.
-            Arguments should be provided as a dict mapping argument names to values.
+            Arguments should be provided as a dict mapping argument names
+            to values.
             """
             ctx = get_context()
             result = await ctx.fastmcp.render_prompt(name, arguments=arguments or {})

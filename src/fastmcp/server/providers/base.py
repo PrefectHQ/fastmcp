@@ -133,20 +133,13 @@ class Provider:
     # Internal transform chain building
     # -------------------------------------------------------------------------
 
-    async def list_tools(
-        self, *, _scope: list[Provider] | None = None
-    ) -> Sequence[Tool]:
+    async def list_tools(self) -> Sequence[Tool]:
         """List tools with all transforms applied.
 
         Applies transforms sequentially: base → transforms (in order).
         Each transform receives the result from the previous transform.
         Components may be marked as disabled but are NOT filtered here -
         filtering happens at the server level to allow session transforms to override.
-
-        Args:
-            _scope: If provided, only return components from providers in this
-                list. Used internally by transforms like ResourcesAsTools to
-                scope listings to a specific provider.
 
         Returns:
             Transformed sequence of tools (including disabled ones).
@@ -182,9 +175,7 @@ class Provider:
 
         return await chain(name, version=version)
 
-    async def list_resources(
-        self, *, _scope: list[Provider] | None = None
-    ) -> Sequence[Resource]:
+    async def list_resources(self) -> Sequence[Resource]:
         """List resources with all transforms applied.
 
         Components may be marked as disabled but are NOT filtered here.
@@ -219,9 +210,7 @@ class Provider:
 
         return await chain(uri, version=version)
 
-    async def list_resource_templates(
-        self, *, _scope: list[Provider] | None = None
-    ) -> Sequence[ResourceTemplate]:
+    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List resource templates with all transforms applied.
 
         Components may be marked as disabled but are NOT filtered here.
@@ -258,9 +247,7 @@ class Provider:
 
         return await chain(uri, version=version)
 
-    async def list_prompts(
-        self, *, _scope: list[Provider] | None = None
-    ) -> Sequence[Prompt]:
+    async def list_prompts(self) -> Sequence[Prompt]:
         """List prompts with all transforms applied.
 
         Components may be marked as disabled but are NOT filtered here.

@@ -3,9 +3,9 @@
 This transform generates tools for listing and reading resources, enabling
 clients that only support tools to access resource functionality.
 
-The generated tools call back into the server at runtime via `ctx.fastmcp`,
-so all server middleware (auth, visibility, rate limiting, etc.) applies to
-resource operations exactly as it would for direct `resources/read` calls.
+The generated tools route through `ctx.fastmcp` at runtime, so all server
+middleware (auth, visibility, rate limiting, etc.) applies to resource
+operations exactly as it would for direct `resources/read` calls.
 
 Example:
     ```python
@@ -42,12 +42,15 @@ class ResourcesAsTools(Transform):
     """Transform that adds tools for listing and reading resources.
 
     Generates two tools:
-    - `list_resources`: Lists all resources and templates from the provider
+    - `list_resources`: Lists all resources and templates
     - `read_resource`: Reads a resource by URI
 
-    The transform captures a provider reference at construction for listing,
-    but tool execution routes through the server (`ctx.fastmcp`) so that
-    auth, middleware, and visibility apply automatically.
+    The generated tools route through the server at runtime, so auth,
+    middleware, and visibility apply automatically.
+
+    This transform should be applied to a FastMCP server instance, not
+    a raw Provider, because the generated tools need the server's
+    middleware chain for auth and visibility filtering.
 
     Example:
         ```python
@@ -58,12 +61,6 @@ class ResourcesAsTools(Transform):
     """
 
     def __init__(self, provider: Provider) -> None:
-        """Initialize the transform with a provider reference.
-
-        Args:
-            provider: The provider to query for resources. Typically this is
-                the same FastMCP server the transform is added to.
-        """
         self._provider = provider
 
     def __repr__(self) -> str:
@@ -89,17 +86,17 @@ class ResourcesAsTools(Transform):
 
     def _make_list_resources_tool(self) -> Tool:
         """Create the list_resources tool."""
-        scope = [self._provider]
 
         async def list_resources() -> str:
             """List all available resources and resource templates.
 
-            Returns JSON with resource metadata. Static resources have a 'uri' field,
-            while templates have a 'uri_template' field with placeholders like {name}.
+            Returns JSON with resource metadata. Static resources have a
+            'uri' field, while templates have a 'uri_template' field with
+            placeholders like {name}.
             """
             ctx = get_context()
-            resources = await ctx.fastmcp.list_resources(_scope=scope)
-            templates = await ctx.fastmcp.list_resource_templates(_scope=scope)
+            resources = await ctx.fastmcp.list_resources()
+            templates = await ctx.fastmcp.list_resource_templates()
 
             result: list[dict[str, Any]] = []
 
@@ -134,8 +131,8 @@ class ResourcesAsTools(Transform):
         ) -> str:
             """Read a resource by its URI.
 
-            For static resources, provide the exact URI. For templated resources,
-            provide the URI with template parameters filled in.
+            For static resources, provide the exact URI. For templated
+            resources, provide the URI with template parameters filled in.
 
             Returns the resource content as a string. Binary content is
             base64-encoded.
@@ -150,8 +147,8 @@ class ResourcesAsTools(Transform):
 def _format_result(result: Any) -> str:
     """Format ResourceResult for tool output.
 
-    Single text content is returned as-is. Single binary content is base64-encoded.
-    Multiple contents are JSON-encoded with each item containing content and mime_type.
+    Single text content is returned as-is. Single binary content is
+    base64-encoded. Multiple contents are JSON-encoded.
     """
     if len(result.contents) == 1:
         content = result.contents[0].content

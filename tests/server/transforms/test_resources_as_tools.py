@@ -2,19 +2,13 @@
 
 import base64
 import json
-from collections.abc import Sequence
 
 import pytest
-from pydantic import AnyUrl
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp.resources.function_resource import FunctionResource
-from fastmcp.resources.resource import Resource
-from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.server.auth import AuthContext
-from fastmcp.server.providers.base import Provider
 from fastmcp.server.transforms import ResourcesAsTools
 
 
@@ -266,151 +260,22 @@ def _deny_all(ctx: AuthContext) -> bool:
     return False
 
 
-class _ResourceProviderWithVisibility(Provider):
-    """A non-FastMCP provider with a public and a disabled resource."""
-
-    async def _list_resources(self) -> Sequence[Resource]:
-        return [
-            FunctionResource(
-                uri=AnyUrl("test://public"),
-                name="public_data",
-                fn=lambda: "public content",
-            ),
-            FunctionResource(
-                uri=AnyUrl("test://secret"),
-                name="secret_data",
-                fn=lambda: "secret content",
-            ),
-        ]
-
-    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
-        return [
-            FunctionResourceTemplate.from_function(
-                fn=lambda name: f"public {name}",
-                uri_template="public://{name}",
-                name="public_template",
-            ),
-            FunctionResourceTemplate.from_function(
-                fn=lambda name: f"secret {name}",
-                uri_template="secret://{name}",
-                name="secret_template",
-            ),
-        ]
-
-
-class _ResourceProviderWithAuth(Provider):
-    """A non-FastMCP provider with auth-protected resources."""
-
-    async def _list_resources(self) -> Sequence[Resource]:
-        return [
-            FunctionResource(
-                uri=AnyUrl("test://open"),
-                name="open_data",
-                fn=lambda: "open content",
-            ),
-            FunctionResource(
-                uri=AnyUrl("test://protected"),
-                name="protected_data",
-                fn=lambda: "protected content",
-                auth=_deny_all,
-            ),
-        ]
-
-    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
-        template = FunctionResourceTemplate.from_function(
-            fn=lambda name: f"protected {name}",
-            uri_template="protected://{name}",
-            name="protected_template",
-            auth=_deny_all,
-        )
-        return [template]
-
-
-class TestResourcesAsToolsVisibilityOnProvider:
-    """Visibility transforms on non-FastMCP providers are respected."""
-
-    async def test_disabled_resources_hidden_from_list(self):
-        """Disabled resources are not listed via list_resources tool."""
-        provider = _ResourceProviderWithVisibility()
-        provider.disable(names={"test://secret"})
-
-        mcp = FastMCP("Test")
-        mcp.add_provider(provider)
-        mcp.add_transform(ResourcesAsTools(provider))
-
-        async with Client(mcp) as client:
-            result = await client.call_tool("list_resources", {})
-            items = json.loads(result.data)
-            uris = [r.get("uri") for r in items if r.get("uri")]
-            assert "test://public" in uris
-            assert "test://secret" not in uris
-
-    async def test_disabled_templates_hidden_from_list(self):
-        """Disabled templates are not listed via list_resources tool."""
-        provider = _ResourceProviderWithVisibility()
-        provider.disable(names={"secret_template"})
-
-        mcp = FastMCP("Test")
-        mcp.add_provider(provider)
-        mcp.add_transform(ResourcesAsTools(provider))
-
-        async with Client(mcp) as client:
-            result = await client.call_tool("list_resources", {})
-            items = json.loads(result.data)
-            templates = [r.get("uri_template") for r in items if r.get("uri_template")]
-            assert "public://{name}" in templates
-            assert "secret://{name}" not in templates
-
-    async def test_disabled_resource_cannot_be_read(self):
-        """Disabled resources cannot be read via read_resource tool."""
-        provider = _ResourceProviderWithVisibility()
-        provider.disable(names={"test://secret"})
-
-        mcp = FastMCP("Test")
-        mcp.add_provider(provider)
-        mcp.add_transform(ResourcesAsTools(provider))
-
-        async with Client(mcp) as client:
-            with pytest.raises(ToolError):
-                await client.call_tool("read_resource", {"uri": "test://secret"})
-
-    async def test_disabled_template_cannot_be_read(self):
-        """Disabled templates cannot be read via read_resource tool."""
-        provider = _ResourceProviderWithVisibility()
-        provider.disable(names={"secret_template"})
-
-        mcp = FastMCP("Test")
-        mcp.add_provider(provider)
-        mcp.add_transform(ResourcesAsTools(provider))
-
-        async with Client(mcp) as client:
-            with pytest.raises(ToolError):
-                await client.call_tool("read_resource", {"uri": "secret://foo"})
-
-    async def test_enabled_resource_still_accessible(self):
-        """Enabled resources can still be read via read_resource tool."""
-        provider = _ResourceProviderWithVisibility()
-        provider.disable(names={"test://secret"})
-
-        mcp = FastMCP("Test")
-        mcp.add_provider(provider)
-        mcp.add_transform(ResourcesAsTools(provider))
-
-        async with Client(mcp) as client:
-            result = await client.call_tool("read_resource", {"uri": "test://public"})
-            assert result.data == "public content"
-
-
-class TestResourcesAsToolsAuthOnProvider:
-    """Auth checks on non-FastMCP providers are respected."""
+class TestResourcesAsToolsAuthOnServer:
+    """Auth checks work when using ResourcesAsTools on a FastMCP server."""
 
     async def test_auth_protected_resources_hidden_from_list(self):
         """Auth-protected resources are filtered from list_resources tool."""
-        provider = _ResourceProviderWithAuth()
-
         mcp = FastMCP("Test")
-        mcp.add_provider(provider)
-        mcp.add_transform(ResourcesAsTools(provider))
+
+        @mcp.resource("test://open")
+        def open_resource() -> str:
+            return "open content"
+
+        @mcp.resource("test://protected", auth=_deny_all)
+        def protected_resource() -> str:
+            return "protected content"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
 
         async with Client(mcp) as client:
             result = await client.call_tool("list_resources", {})
@@ -419,96 +284,75 @@ class TestResourcesAsToolsAuthOnProvider:
             assert "test://open" in uris
             assert "test://protected" not in uris
 
-    async def test_auth_protected_templates_hidden_from_list(self):
-        """Auth-protected templates are filtered from list_resources tool."""
-        provider = _ResourceProviderWithAuth()
-
-        mcp = FastMCP("Test")
-        mcp.add_provider(provider)
-        mcp.add_transform(ResourcesAsTools(provider))
-
-        async with Client(mcp) as client:
-            result = await client.call_tool("list_resources", {})
-            items = json.loads(result.data)
-            templates = [r.get("uri_template") for r in items if r.get("uri_template")]
-            assert "protected://{name}" not in templates
-
     async def test_auth_protected_resource_cannot_be_read(self):
         """Auth-protected resources cannot be read via read_resource tool."""
-        provider = _ResourceProviderWithAuth()
-
         mcp = FastMCP("Test")
-        mcp.add_provider(provider)
-        mcp.add_transform(ResourcesAsTools(provider))
+
+        @mcp.resource("test://protected", auth=_deny_all)
+        def protected_resource() -> str:
+            return "protected content"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
 
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
                 await client.call_tool("read_resource", {"uri": "test://protected"})
 
-    async def test_auth_protected_template_cannot_be_read(self):
-        """Auth-protected templates cannot be read via read_resource tool."""
-        provider = _ResourceProviderWithAuth()
-
-        mcp = FastMCP("Test")
-        mcp.add_provider(provider)
-        mcp.add_transform(ResourcesAsTools(provider))
-
-        async with Client(mcp) as client:
-            with pytest.raises(ToolError):
-                await client.call_tool("read_resource", {"uri": "protected://foo"})
-
     async def test_open_resource_still_accessible(self):
         """Non-auth-protected resources can still be read."""
-        provider = _ResourceProviderWithAuth()
-
         mcp = FastMCP("Test")
-        mcp.add_provider(provider)
-        mcp.add_transform(ResourcesAsTools(provider))
+
+        @mcp.resource("test://open")
+        def open_resource() -> str:
+            return "open content"
+
+        @mcp.resource("test://protected", auth=_deny_all)
+        def protected_resource() -> str:
+            return "protected content"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
 
         async with Client(mcp) as client:
             result = await client.call_tool("read_resource", {"uri": "test://open"})
             assert result.data == "open content"
 
 
-class TestResourcesAsToolsScopedToSubServer:
-    """Scope matching works when wrapping a FastMCP sub-server."""
+class TestResourcesAsToolsVisibilityOnServer:
+    """Visibility filtering works when using ResourcesAsTools on a server."""
 
-    async def test_scoped_to_sub_server(self):
-        """ResourcesAsTools(sub) only lists sub's resources, not main's."""
-        sub = FastMCP("Sub")
+    async def test_disabled_resources_hidden_from_list(self):
+        """Disabled resources are not listed via list_resources tool."""
+        mcp = FastMCP("Test")
 
-        @sub.resource("sub://data")
-        def sub_resource() -> str:
-            return "sub content"
+        @mcp.resource("test://public")
+        def public_resource() -> str:
+            return "public content"
 
-        main = FastMCP("Main")
+        @mcp.resource("test://secret")
+        def secret_resource() -> str:
+            return "secret content"
 
-        @main.resource("main://data")
-        def main_resource() -> str:
-            return "main content"
+        mcp.disable(names={"test://secret"})
+        mcp.add_transform(ResourcesAsTools(mcp))
 
-        main.add_provider(sub)
-        main.add_transform(ResourcesAsTools(sub))
-
-        async with Client(main) as client:
+        async with Client(mcp) as client:
             result = await client.call_tool("list_resources", {})
             items = json.loads(result.data)
             uris = [r.get("uri") for r in items if r.get("uri")]
-            assert "sub://data" in uris
-            assert "main://data" not in uris
+            assert "test://public" in uris
+            assert "test://secret" not in uris
 
-    async def test_scoped_sub_server_read(self):
-        """Resources from a scoped sub-server can be read."""
-        sub = FastMCP("Sub")
+    async def test_disabled_resource_cannot_be_read(self):
+        """Disabled resources cannot be read via read_resource tool."""
+        mcp = FastMCP("Test")
 
-        @sub.resource("sub://data")
-        def sub_resource() -> str:
-            return "sub content"
+        @mcp.resource("test://secret")
+        def secret_resource() -> str:
+            return "secret content"
 
-        main = FastMCP("Main")
-        main.add_provider(sub)
-        main.add_transform(ResourcesAsTools(sub))
+        mcp.disable(names={"test://secret"})
+        mcp.add_transform(ResourcesAsTools(mcp))
 
-        async with Client(main) as client:
-            result = await client.call_tool("read_resource", {"uri": "sub://data"})
-            assert result.data == "sub content"
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool("read_resource", {"uri": "test://secret"})
