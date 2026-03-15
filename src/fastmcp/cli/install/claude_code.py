@@ -12,7 +12,7 @@ from rich import print
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
-from .shared import process_common_args
+from .shared import process_common_args, validate_server_name
 
 logger = get_logger(__name__)
 
@@ -123,6 +123,8 @@ def install_claude_code(
 
     # Build the full command
     full_command = env_config.build_command(["fastmcp", "run", server_spec])
+
+    validate_server_name(name)
 
     # Build claude mcp add command
     cmd_parts = [claude_cmd, "mcp", "add", name]

@@ -144,8 +144,6 @@ async def process_common_args(
             )
             name = file.stem
 
-    validate_server_name(name)
-
     # Process environment variables if provided
     env_dict: dict[str, str] | None = None
     if env_file or env_vars:
