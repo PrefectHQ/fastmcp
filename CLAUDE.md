@@ -111,6 +111,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 - **Structure:** Headers form navigation guide, logical H2/H3 hierarchy
 - **Content:** User-focused sections, motivate features (why) before mechanics (how)
 - **Style:** Prose over code comments for important information
+- **Docstrings:** FastMCP docstrings are automatically compiled into MDX documents. Use markdown (single backticks, fenced code blocks), not RST (no double backticks). Bare `{}` in examples will be interpreted as JSX — wrap in backticks instead.
 
 ## Critical Patterns
 

@@ -3,9 +3,9 @@
 This transform generates tools for listing and reading resources, enabling
 clients that only support tools to access resource functionality.
 
-The generated tools call back into the server at runtime via ``ctx.fastmcp``,
+The generated tools call back into the server at runtime via `ctx.fastmcp`,
 so all server middleware (auth, visibility, rate limiting, etc.) applies to
-resource operations exactly as it would for direct ``resources/read`` calls.
+resource operations exactly as it would for direct `resources/read` calls.
 
 Example:
     ```python
@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from mcp.types import ToolAnnotations
 
-from fastmcp.server.context import Context
+from fastmcp.server.dependencies import get_context
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.versions import VersionSpec
@@ -42,11 +42,11 @@ class ResourcesAsTools(Transform):
     """Transform that adds tools for listing and reading resources.
 
     Generates two tools:
-    - ``list_resources``: Lists all resources and templates from the provider
-    - ``read_resource``: Reads a resource by URI
+    - `list_resources`: Lists all resources and templates from the provider
+    - `read_resource`: Reads a resource by URI
 
     The transform captures a provider reference at construction for listing,
-    but tool execution routes through the server (``ctx.fastmcp``) so that
+    but tool execution routes through the server (`ctx.fastmcp`) so that
     auth, middleware, and visibility apply automatically.
 
     Example:
@@ -81,27 +81,23 @@ class ResourcesAsTools(Transform):
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name, including generated resource tools."""
-        # Check if it's one of our generated tools
         if name == "list_resources":
             return self._make_list_resources_tool()
         if name == "read_resource":
             return self._make_read_resource_tool()
-
-        # Otherwise delegate to downstream
         return await call_next(name, version=version)
 
     def _make_list_resources_tool(self) -> Tool:
         """Create the list_resources tool."""
         scope = [self._provider]
 
-        async def list_resources(
-            ctx: Context = None,  # type: ignore[assignment]
-        ) -> str:
+        async def list_resources() -> str:
             """List all available resources and resource templates.
 
             Returns JSON with resource metadata. Static resources have a 'uri' field,
             while templates have a 'uri_template' field with placeholders like {name}.
             """
+            ctx = get_context()
             resources = await ctx.fastmcp.list_resources(_scope=scope)
             templates = await ctx.fastmcp.list_resource_templates(_scope=scope)
 
@@ -135,7 +131,6 @@ class ResourcesAsTools(Transform):
 
         async def read_resource(
             uri: Annotated[str, "The URI of the resource to read"],
-            ctx: Context = None,  # type: ignore[assignment]
         ) -> str:
             """Read a resource by its URI.
 
@@ -145,6 +140,7 @@ class ResourcesAsTools(Transform):
             Returns the resource content as a string. Binary content is
             base64-encoded.
             """
+            ctx = get_context()
             result = await ctx.fastmcp.read_resource(uri)
             return _format_result(result)
 
@@ -157,14 +153,12 @@ def _format_result(result: Any) -> str:
     Single text content is returned as-is. Single binary content is base64-encoded.
     Multiple contents are JSON-encoded with each item containing content and mime_type.
     """
-    # result is a ResourceResult with .contents list
     if len(result.contents) == 1:
         content = result.contents[0].content
         if isinstance(content, bytes):
             return base64.b64encode(content).decode()
         return content
 
-    # Multiple contents - JSON encode
     return json.dumps(
         [
             {

@@ -468,3 +468,47 @@ class TestResourcesAsToolsAuthOnProvider:
         async with Client(mcp) as client:
             result = await client.call_tool("read_resource", {"uri": "test://open"})
             assert result.data == "open content"
+
+
+class TestResourcesAsToolsScopedToSubServer:
+    """Scope matching works when wrapping a FastMCP sub-server."""
+
+    async def test_scoped_to_sub_server(self):
+        """ResourcesAsTools(sub) only lists sub's resources, not main's."""
+        sub = FastMCP("Sub")
+
+        @sub.resource("sub://data")
+        def sub_resource() -> str:
+            return "sub content"
+
+        main = FastMCP("Main")
+
+        @main.resource("main://data")
+        def main_resource() -> str:
+            return "main content"
+
+        main.add_provider(sub)
+        main.add_transform(ResourcesAsTools(sub))
+
+        async with Client(main) as client:
+            result = await client.call_tool("list_resources", {})
+            items = json.loads(result.data)
+            uris = [r.get("uri") for r in items if r.get("uri")]
+            assert "sub://data" in uris
+            assert "main://data" not in uris
+
+    async def test_scoped_sub_server_read(self):
+        """Resources from a scoped sub-server can be read."""
+        sub = FastMCP("Sub")
+
+        @sub.resource("sub://data")
+        def sub_resource() -> str:
+            return "sub content"
+
+        main = FastMCP("Main")
+        main.add_provider(sub)
+        main.add_transform(ResourcesAsTools(sub))
+
+        async with Client(main) as client:
+            result = await client.call_tool("read_resource", {"uri": "sub://data"})
+            assert result.data == "sub content"

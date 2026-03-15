@@ -48,14 +48,18 @@ def _provider_matches_scope(provider: Provider, scope: list[Provider]) -> bool:
 
     Handles wrapped providers by walking the inner chain — a
     WrappedProvider(Namespace, inner=MyProvider) matches if MyProvider
-    is in the scope list.
+    is in the scope list. Also unwraps FastMCPProvider which wraps
+    FastMCP servers when they're added via add_provider().
     """
+    from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
     from fastmcp.server.providers.wrapped_provider import _WrappedProvider
 
     if provider in scope:
         return True
     if isinstance(provider, _WrappedProvider):
         return _provider_matches_scope(provider._inner, scope)
+    if isinstance(provider, FastMCPProvider):
+        return provider.server in scope
     return False
 
 
