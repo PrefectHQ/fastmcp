@@ -257,27 +257,54 @@ class TestPureCipherRegistryAuth:
             assert payload["versions"]["version_count"] == 1
 
             add_response = client.post(
-                "/registry/policy/providers",
+                "/registry/policy/proposals",
                 json={
+                    "action": "add",
                     "config": {"type": "denylist", "denied": ["admin-*"]},
-                    "reason": "Protect admin tools",
+                    "description": "Protect admin tools",
                 },
             )
             assert add_response.status_code == 200
-            assert add_response.json()["policy"]["provider_count"] == 2
+            proposal_id = add_response.json()["proposal"]["proposal_id"]
+            assert add_response.json()["proposal"]["status"] == "validated"
 
-            update_response = client.put(
-                "/registry/policy/providers/1",
+            proposal_queue = client.get("/registry/policy/proposals")
+            assert proposal_queue.status_code == 200
+            assert proposal_queue.json()["pending_count"] == 1
+
+            assign_response = client.post(
+                f"/registry/policy/proposals/{proposal_id}/assign",
                 json={
-                    "config": {"type": "allowlist", "allowed": ["tool:*"]},
-                    "reason": "Swap rule type",
+                    "reviewer": "reviewer",
+                    "note": "Taking ownership before simulation.",
                 },
             )
-            assert update_response.status_code == 200
-            assert (
-                update_response.json()["policy"]["providers"][1]["config"]["type"]
-                == "allowlist"
+            assert assign_response.status_code == 200
+            assert assign_response.json()["proposal"]["assigned_reviewer"] == "reviewer"
+
+            simulate_response = client.post(
+                f"/registry/policy/proposals/{proposal_id}/simulate",
             )
+            assert simulate_response.status_code == 200
+            assert simulate_response.json()["proposal"]["status"] == "simulated"
+
+            approve_response = client.post(
+                f"/registry/policy/proposals/{proposal_id}/approve",
+                json={"note": "Ready for release."},
+            )
+            assert approve_response.status_code == 200
+            assert approve_response.json()["proposal"]["status"] == "approved"
+
+            deploy_response = client.post(
+                f"/registry/policy/proposals/{proposal_id}/deploy",
+                json={"note": "Applying to live chain."},
+            )
+            assert deploy_response.status_code == 200
+            assert deploy_response.json()["policy"]["provider_count"] == 2
+            trail = deploy_response.json()["proposal"]["decision_trail"]
+            events = [item["event"] for item in trail]
+            assert "assigned" in events
+            assert events[-3:] == ["simulated", "approved", "deployed"]
 
             rollback_response = client.post(
                 "/registry/policy/versions/rollback",

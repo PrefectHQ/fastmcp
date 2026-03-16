@@ -98,6 +98,14 @@ class TestPureCipherRegistry:
         assert "/registry/policy/versions" in paths
         assert "/registry/policy/versions/diff" in paths
         assert "/registry/policy/versions/rollback" in paths
+        assert "/registry/policy/proposals" in paths
+        assert "/registry/policy/proposals/{proposal_id}" in paths
+        assert "/registry/policy/proposals/{proposal_id}/approve" in paths
+        assert "/registry/policy/proposals/{proposal_id}/assign" in paths
+        assert "/registry/policy/proposals/{proposal_id}/simulate" in paths
+        assert "/registry/policy/proposals/{proposal_id}/deploy" in paths
+        assert "/registry/policy/proposals/{proposal_id}/reject" in paths
+        assert "/registry/policy/proposals/{proposal_id}/withdraw" in paths
         assert "/registry/policy/providers" in paths
         assert "/registry/policy/providers/{index}" in paths
         assert "/registry/tools" in paths
@@ -518,6 +526,130 @@ class TestPureCipherRegistry:
             assert "Overview" in response.text
             assert "Featured Publishers" in response.text
             assert "Share A Tool" in response.text
+
+    def test_http_registry_policy_proposal_lifecycle(self):
+        registry = PureCipherRegistry(signing_secret=TEST_SIGNING_SECRET)
+        app = registry.http_app()
+
+        with TestClient(app) as client:
+            created = client.post(
+                "/registry/policy/proposals",
+                json={
+                    "action": "add",
+                    "config": {
+                        "type": "denylist",
+                        "policy_id": "admin-guard",
+                        "version": "1.0.0",
+                        "denied": ["admin-*"],
+                    },
+                    "description": "Protect admin tools.",
+                },
+            )
+            assert created.status_code == 200
+            proposal = created.json()["proposal"]
+            proposal_id = proposal["proposal_id"]
+            assert proposal["status"] == "validated"
+
+            proposals = client.get("/registry/policy/proposals")
+            assert proposals.status_code == 200
+            assert proposals.json()["pending_count"] == 1
+
+            assigned = client.post(
+                f"/registry/policy/proposals/{proposal_id}/assign",
+                json={
+                    "reviewer": "reviewer",
+                    "note": "Reviewer owns the rollout.",
+                },
+            )
+            assert assigned.status_code == 200
+            assert assigned.json()["proposal"]["assigned_reviewer"] == "reviewer"
+
+            simulated = client.post(
+                f"/registry/policy/proposals/{proposal_id}/simulate"
+            )
+            assert simulated.status_code == 200
+            assert simulated.json()["proposal"]["status"] == "simulated"
+            assert simulated.json()["simulation"]["total"] == 5
+
+            approved = client.post(
+                f"/registry/policy/proposals/{proposal_id}/approve",
+                json={"note": "Ready to release."},
+            )
+            assert approved.status_code == 200
+            assert approved.json()["proposal"]["status"] == "approved"
+
+            deployed = client.post(
+                f"/registry/policy/proposals/{proposal_id}/deploy",
+                json={"note": "Applying to the live chain."},
+            )
+            assert deployed.status_code == 200
+            assert deployed.json()["proposal"]["status"] == "deployed"
+            assert deployed.json()["policy"]["provider_count"] == 2
+            trail = deployed.json()["proposal"]["decision_trail"]
+            events = [item["event"] for item in trail]
+            assert "assigned" in events
+            assert events[-3:] == ["simulated", "approved", "deployed"]
+
+    def test_http_registry_rejects_stale_policy_proposal(self):
+        registry = PureCipherRegistry(signing_secret=TEST_SIGNING_SECRET)
+        app = registry.http_app()
+
+        with TestClient(app) as client:
+            original = client.post(
+                "/registry/policy/proposals",
+                json={
+                    "action": "add",
+                    "config": {
+                        "type": "allowlist",
+                        "policy_id": "tool-gate",
+                        "version": "1.0.0",
+                        "allowed": ["tool:*"],
+                    },
+                    "description": "Gate tool access.",
+                },
+            )
+            assert original.status_code == 200
+            original_proposal = original.json()["proposal"]
+            original_id = original_proposal["proposal_id"]
+            assert original_proposal["base_version_number"] == 1
+            assert original_proposal["live_version_number"] == 1
+            assert original_proposal["is_stale"] is False
+
+            live = client.post(
+                "/registry/policy/proposals",
+                json={
+                    "action": "add",
+                    "config": {
+                        "type": "denylist",
+                        "policy_id": "admin-guard",
+                        "version": "1.0.0",
+                        "denied": ["admin-*"],
+                    },
+                    "description": "Protect admin tools.",
+                },
+            )
+            assert live.status_code == 200
+            live_id = live.json()["proposal"]["proposal_id"]
+
+            simulate_live = client.post(
+                f"/registry/policy/proposals/{live_id}/simulate"
+            )
+            assert simulate_live.status_code == 200
+            approve_live = client.post(f"/registry/policy/proposals/{live_id}/approve")
+            assert approve_live.status_code == 200
+            deploy_live = client.post(f"/registry/policy/proposals/{live_id}/deploy")
+            assert deploy_live.status_code == 200
+
+            refreshed = client.get(f"/registry/policy/proposals/{original_id}")
+            assert refreshed.status_code == 200
+            assert refreshed.json()["live_version_number"] == 2
+            assert refreshed.json()["is_stale"] is True
+
+            stale_simulate = client.post(
+                f"/registry/policy/proposals/{original_id}/simulate"
+            )
+            assert stale_simulate.status_code == 400
+            assert "Create a fresh proposal" in stale_simulate.json()["error"]
 
     def test_http_registry_ui_hides_review_details_from_public_users(self):
         registry = PureCipherRegistry(

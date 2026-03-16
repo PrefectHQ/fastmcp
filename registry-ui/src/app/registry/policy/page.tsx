@@ -1,9 +1,15 @@
 import Link from "next/link";
-import { getPolicyManagement, requirePolicyRole } from "@/lib/registryClient";
+import {
+  getPolicyManagement,
+  getRegistrySession,
+  requirePolicyRole,
+} from "@/lib/registryClient";
 import { PolicyManager } from "./PolicyManager";
 
 export default async function PolicyPage() {
   const { allowed } = await requirePolicyRole();
+  const sessionPayload = await getRegistrySession();
+  const username = sessionPayload?.session?.username ?? null;
 
   if (!allowed) {
     return (
@@ -36,15 +42,18 @@ export default async function PolicyPage() {
             Policy management
           </p>
           <h1 className="text-2xl font-semibold text-emerald-50">
-            Manage SecureMCP access rules
+            Propose, review, and apply SecureMCP rules
           </h1>
           <p className="max-w-2xl text-[11px] text-emerald-100/80">
-            Update the live policy chain, keep a clean version history, and roll back quickly
-            when a rule change needs to be reverted.
+            Draft changes first, run a quick simulation, approve them before they go live,
+            and keep every draft tied to the live policy version it came from.
           </p>
         </header>
 
-        <PolicyManager initialData={policyData ?? {}} />
+        <PolicyManager
+          initialData={policyData ?? {}}
+          currentUsername={username}
+        />
       </div>
     </main>
   );

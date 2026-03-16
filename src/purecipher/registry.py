@@ -639,8 +639,199 @@ class PureCipherRegistry(SecureMCP[LifespanResultT], Generic[LifespanResultT]):
             "versions": versions,
             "schema": schema,
             "governance": proposals,
+            "simulation_defaults": self.get_default_policy_simulation_scenarios(),
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
+
+    def get_default_policy_simulation_scenarios(self) -> list[dict[str, Any]]:
+        """Return a small default scenario set for policy proposal simulation."""
+
+        public_listings = self._marketplace().search(
+            certified_only=True,
+            min_certification=self.minimum_certification,
+            limit=1,
+        )
+        public_tool = public_listings[0] if public_listings else None
+        public_tool_name = (
+            public_tool.tool_name if public_tool is not None else "weather-lookup"
+        )
+        public_tags = (
+            sorted(public_tool.tags)
+            if public_tool is not None
+            else ["published", "tool"]
+        )
+        category_tags = (
+            [
+                category.value
+                for category in sorted(
+                    public_tool.categories, key=lambda item: item.value
+                )
+            ]
+            if public_tool is not None
+            else ["network", "utility"]
+        )
+
+        return [
+            {
+                "label": "Viewer uses a published tool",
+                "resource_id": f"tool:{public_tool_name}",
+                "action": "call_tool",
+                "actor_id": "viewer",
+                "metadata": {"role": "viewer", "surface": "catalog"},
+                "tags": ["tool", *public_tags, *category_tags],
+            },
+            {
+                "label": "Viewer tries an admin tool",
+                "resource_id": "admin-panel",
+                "action": "call_tool",
+                "actor_id": "viewer",
+                "metadata": {"role": "viewer", "surface": "catalog"},
+                "tags": ["admin", "tool"],
+            },
+            {
+                "label": "Publisher shares a tool",
+                "resource_id": "registry:submit",
+                "action": "submit_listing",
+                "actor_id": "publisher",
+                "metadata": {"role": "publisher", "surface": "publish"},
+                "tags": ["registry", "publish"],
+            },
+            {
+                "label": "Reviewer manages a listing",
+                "resource_id": "registry:review",
+                "action": "review_listing",
+                "actor_id": "reviewer",
+                "metadata": {"role": "reviewer", "surface": "review"},
+                "tags": ["registry", "review"],
+            },
+            {
+                "label": "Admin edits policy",
+                "resource_id": "registry:policy",
+                "action": "manage_policy",
+                "actor_id": "admin",
+                "metadata": {"role": "admin", "surface": "policy"},
+                "tags": ["registry", "policy"],
+            },
+        ]
+
+    async def create_policy_proposal(
+        self,
+        *,
+        action: str,
+        config: dict[str, Any] | None,
+        target_index: int | None,
+        description: str = "",
+        author: str = "registry-admin",
+    ) -> dict[str, Any]:
+        """Create a policy governance proposal."""
+
+        return await self._policy_api().create_governance_proposal(
+            action=action,
+            config=config,
+            target_index=target_index,
+            description=description,
+            author=author,
+        )
+
+    def get_policy_proposal(self, proposal_id: str) -> dict[str, Any]:
+        """Return a single policy governance proposal."""
+
+        return self._policy_api().get_governance_proposal(proposal_id)
+
+    def list_policy_proposals(self) -> dict[str, Any]:
+        """Return policy governance proposals."""
+
+        return self._policy_api().get_governance_proposals()
+
+    def approve_policy_proposal(
+        self,
+        proposal_id: str,
+        *,
+        approver: str = "registry-admin",
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Approve a policy governance proposal."""
+
+        return self._policy_api().approve_governance_proposal(
+            proposal_id,
+            approver=approver,
+            note=note,
+        )
+
+    def assign_policy_proposal(
+        self,
+        proposal_id: str,
+        *,
+        reviewer: str,
+        actor: str = "registry-admin",
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Assign ownership of a policy governance proposal."""
+
+        return self._policy_api().assign_governance_proposal(
+            proposal_id,
+            reviewer=reviewer,
+            actor=actor,
+            note=note,
+        )
+
+    async def simulate_policy_proposal(
+        self,
+        proposal_id: str,
+        *,
+        scenarios: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Simulate a policy governance proposal."""
+
+        return await self._policy_api().simulate_governance_proposal(
+            proposal_id,
+            scenarios_data=scenarios or self.get_default_policy_simulation_scenarios(),
+        )
+
+    async def deploy_policy_proposal(
+        self,
+        proposal_id: str,
+        *,
+        actor: str = "registry-admin",
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Deploy a policy governance proposal."""
+
+        return await self._policy_api().deploy_governance_proposal(
+            proposal_id,
+            actor=actor,
+            note=note,
+        )
+
+    def reject_policy_proposal(
+        self,
+        proposal_id: str,
+        *,
+        reason: str = "",
+        actor: str = "registry-admin",
+    ) -> dict[str, Any]:
+        """Reject a policy governance proposal."""
+
+        return self._policy_api().reject_governance_proposal(
+            proposal_id,
+            reason=reason,
+            actor=actor,
+        )
+
+    def withdraw_policy_proposal(
+        self,
+        proposal_id: str,
+        *,
+        actor: str = "registry-admin",
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Withdraw a policy governance proposal."""
+
+        return self._policy_api().withdraw_governance_proposal(
+            proposal_id,
+            actor=actor,
+            note=note,
+        )
 
     async def add_policy_provider(
         self,
@@ -1447,6 +1638,281 @@ class PureCipherRegistry(SecureMCP[LifespanResultT], Generic[LifespanResultT]):
             v1 = int(request.query_params.get("v1", "0"))
             v2 = int(request.query_params.get("v2", "0"))
             payload = self.diff_policy_versions(v1, v2)
+            return JSONResponse(payload, status_code=_status_code_from_payload(payload))
+
+        @self.custom_route(f"{prefix}/policy/proposals", methods=["GET"])
+        async def registry_policy_proposals(request: Request) -> JSONResponse:
+            session = self._session_from_request(request)
+            allowed_roles = {RegistryRole.REVIEWER, RegistryRole.ADMIN}
+            if self.auth_enabled and session is None:
+                return JSONResponse(
+                    {"error": "Authentication required.", "status": 401},
+                    status_code=401,
+                )
+            if self.auth_enabled and not self._has_roles(session, allowed_roles):
+                return JSONResponse(
+                    {
+                        "error": "Reviewer or admin role required.",
+                        "status": 403,
+                    },
+                    status_code=403,
+                )
+            return JSONResponse(self.list_policy_proposals())
+
+        @self.custom_route(f"{prefix}/policy/proposals", methods=["POST"])
+        async def registry_policy_create_proposal(request: Request) -> JSONResponse:
+            session = self._session_from_request(request)
+            allowed_roles = {RegistryRole.REVIEWER, RegistryRole.ADMIN}
+            if self.auth_enabled and session is None:
+                return JSONResponse(
+                    {"error": "Authentication required.", "status": 401},
+                    status_code=401,
+                )
+            if self.auth_enabled and not self._has_roles(session, allowed_roles):
+                return JSONResponse(
+                    {
+                        "error": "Reviewer or admin role required.",
+                        "status": 403,
+                    },
+                    status_code=403,
+                )
+            try:
+                body = await request.json()
+            except Exception:
+                return JSONResponse(
+                    {"error": "Invalid JSON body", "status": 400},
+                    status_code=400,
+                )
+            config = body.get("config")
+            payload = await self.create_policy_proposal(
+                action=str(body.get("action", "")),
+                config=config if isinstance(config, dict) else None,
+                target_index=(
+                    int(body["target_index"])
+                    if body.get("target_index") is not None
+                    else None
+                ),
+                description=str(body.get("description", "")),
+                author=session.username if session is not None else "registry-admin",
+            )
+            return JSONResponse(payload, status_code=_status_code_from_payload(payload))
+
+        @self.custom_route(
+            f"{prefix}/policy/proposals/{{proposal_id}}",
+            methods=["GET"],
+        )
+        async def registry_policy_proposal_detail(request: Request) -> JSONResponse:
+            session = self._session_from_request(request)
+            allowed_roles = {RegistryRole.REVIEWER, RegistryRole.ADMIN}
+            if self.auth_enabled and session is None:
+                return JSONResponse(
+                    {"error": "Authentication required.", "status": 401},
+                    status_code=401,
+                )
+            if self.auth_enabled and not self._has_roles(session, allowed_roles):
+                return JSONResponse(
+                    {
+                        "error": "Reviewer or admin role required.",
+                        "status": 403,
+                    },
+                    status_code=403,
+                )
+            proposal_id = str(request.path_params.get("proposal_id", ""))
+            payload = self.get_policy_proposal(proposal_id)
+            return JSONResponse(payload, status_code=_status_code_from_payload(payload))
+
+        @self.custom_route(
+            f"{prefix}/policy/proposals/{{proposal_id}}/approve",
+            methods=["POST"],
+        )
+        async def registry_policy_approve_proposal(request: Request) -> JSONResponse:
+            session = self._session_from_request(request)
+            allowed_roles = {RegistryRole.REVIEWER, RegistryRole.ADMIN}
+            if self.auth_enabled and session is None:
+                return JSONResponse(
+                    {"error": "Authentication required.", "status": 401},
+                    status_code=401,
+                )
+            if self.auth_enabled and not self._has_roles(session, allowed_roles):
+                return JSONResponse(
+                    {
+                        "error": "Reviewer or admin role required.",
+                        "status": 403,
+                    },
+                    status_code=403,
+                )
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            proposal_id = str(request.path_params.get("proposal_id", ""))
+            payload = self.approve_policy_proposal(
+                proposal_id,
+                approver=session.username if session is not None else "registry-admin",
+                note=str(body.get("note", body.get("reason", ""))),
+            )
+            return JSONResponse(payload, status_code=_status_code_from_payload(payload))
+
+        @self.custom_route(
+            f"{prefix}/policy/proposals/{{proposal_id}}/assign",
+            methods=["POST"],
+        )
+        async def registry_policy_assign_proposal(request: Request) -> JSONResponse:
+            session = self._session_from_request(request)
+            allowed_roles = {RegistryRole.REVIEWER, RegistryRole.ADMIN}
+            if self.auth_enabled and session is None:
+                return JSONResponse(
+                    {"error": "Authentication required.", "status": 401},
+                    status_code=401,
+                )
+            if self.auth_enabled and not self._has_roles(session, allowed_roles):
+                return JSONResponse(
+                    {
+                        "error": "Reviewer or admin role required.",
+                        "status": 403,
+                    },
+                    status_code=403,
+                )
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            proposal_id = str(request.path_params.get("proposal_id", ""))
+            reviewer = str(body.get("reviewer", "")).strip()
+            payload = self.assign_policy_proposal(
+                proposal_id,
+                reviewer=reviewer,
+                actor=session.username if session is not None else "registry-admin",
+                note=str(body.get("note", "")),
+            )
+            return JSONResponse(payload, status_code=_status_code_from_payload(payload))
+
+        @self.custom_route(
+            f"{prefix}/policy/proposals/{{proposal_id}}/simulate",
+            methods=["POST"],
+        )
+        async def registry_policy_simulate_proposal(request: Request) -> JSONResponse:
+            session = self._session_from_request(request)
+            allowed_roles = {RegistryRole.REVIEWER, RegistryRole.ADMIN}
+            if self.auth_enabled and session is None:
+                return JSONResponse(
+                    {"error": "Authentication required.", "status": 401},
+                    status_code=401,
+                )
+            if self.auth_enabled and not self._has_roles(session, allowed_roles):
+                return JSONResponse(
+                    {
+                        "error": "Reviewer or admin role required.",
+                        "status": 403,
+                    },
+                    status_code=403,
+                )
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            scenarios = body.get("scenarios")
+            proposal_id = str(request.path_params.get("proposal_id", ""))
+            payload = await self.simulate_policy_proposal(
+                proposal_id,
+                scenarios=scenarios if isinstance(scenarios, list) else None,
+            )
+            return JSONResponse(payload, status_code=_status_code_from_payload(payload))
+
+        @self.custom_route(
+            f"{prefix}/policy/proposals/{{proposal_id}}/deploy",
+            methods=["POST"],
+        )
+        async def registry_policy_deploy_proposal(request: Request) -> JSONResponse:
+            session = self._session_from_request(request)
+            allowed_roles = {RegistryRole.REVIEWER, RegistryRole.ADMIN}
+            if self.auth_enabled and session is None:
+                return JSONResponse(
+                    {"error": "Authentication required.", "status": 401},
+                    status_code=401,
+                )
+            if self.auth_enabled and not self._has_roles(session, allowed_roles):
+                return JSONResponse(
+                    {
+                        "error": "Reviewer or admin role required.",
+                        "status": 403,
+                    },
+                    status_code=403,
+                )
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            proposal_id = str(request.path_params.get("proposal_id", ""))
+            payload = await self.deploy_policy_proposal(
+                proposal_id,
+                actor=session.username if session is not None else "registry-admin",
+                note=str(body.get("note", body.get("reason", ""))),
+            )
+            return JSONResponse(payload, status_code=_status_code_from_payload(payload))
+
+        @self.custom_route(
+            f"{prefix}/policy/proposals/{{proposal_id}}/reject",
+            methods=["POST"],
+        )
+        async def registry_policy_reject_proposal(request: Request) -> JSONResponse:
+            session = self._session_from_request(request)
+            allowed_roles = {RegistryRole.REVIEWER, RegistryRole.ADMIN}
+            if self.auth_enabled and session is None:
+                return JSONResponse(
+                    {"error": "Authentication required.", "status": 401},
+                    status_code=401,
+                )
+            if self.auth_enabled and not self._has_roles(session, allowed_roles):
+                return JSONResponse(
+                    {
+                        "error": "Reviewer or admin role required.",
+                        "status": 403,
+                    },
+                    status_code=403,
+                )
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            proposal_id = str(request.path_params.get("proposal_id", ""))
+            payload = self.reject_policy_proposal(
+                proposal_id,
+                reason=str(body.get("reason", "")),
+                actor=session.username if session is not None else "registry-admin",
+            )
+            return JSONResponse(payload, status_code=_status_code_from_payload(payload))
+
+        @self.custom_route(
+            f"{prefix}/policy/proposals/{{proposal_id}}/withdraw",
+            methods=["POST"],
+        )
+        async def registry_policy_withdraw_proposal(request: Request) -> JSONResponse:
+            session = self._session_from_request(request)
+            allowed_roles = {RegistryRole.REVIEWER, RegistryRole.ADMIN}
+            if self.auth_enabled and session is None:
+                return JSONResponse(
+                    {"error": "Authentication required.", "status": 401},
+                    status_code=401,
+                )
+            if self.auth_enabled and not self._has_roles(session, allowed_roles):
+                return JSONResponse(
+                    {
+                        "error": "Reviewer or admin role required.",
+                        "status": 403,
+                    },
+                    status_code=403,
+                )
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            proposal_id = str(request.path_params.get("proposal_id", ""))
+            payload = self.withdraw_policy_proposal(
+                proposal_id,
+                actor=session.username if session is not None else "registry-admin",
+                note=str(body.get("note", body.get("reason", ""))),
+            )
             return JSONResponse(payload, status_code=_status_code_from_payload(payload))
 
         @self.custom_route(f"{prefix}/policy/providers", methods=["POST"])

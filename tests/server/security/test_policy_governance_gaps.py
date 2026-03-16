@@ -36,6 +36,8 @@ from fastmcp.server.security.policy.simulation import Scenario
 from fastmcp.server.security.policy.validator import (
     PolicyValidator,
 )
+from fastmcp.server.security.policy.versioning.manager import PolicyVersionManager
+from fastmcp.server.security.storage.memory import MemoryBackend
 
 # ── PolicyValidator Tests ─────────────────────────────────────
 
@@ -269,8 +271,19 @@ class TestValidatorSemanticValidation:
 class TestGovernorWorkflow:
     """Tests for the policy governance workflow."""
 
-    def test_propose_add(self) -> None:
+    @staticmethod
+    def _make_versioned_engine() -> PolicyEngine:
         engine = PolicyEngine(providers=[AllowAllPolicy()])
+        engine.attach_version_manager(
+            PolicyVersionManager(
+                policy_set_id="test-governance",
+                backend=MemoryBackend(),
+            )
+        )
+        return engine
+
+    def test_propose_add(self) -> None:
+        engine = self._make_versioned_engine()
         gov = PolicyGovernor(engine=engine, require_simulation=False)
         proposal = gov.propose_add(
             AllowlistPolicy(allowed={"tool-a"}),
@@ -280,6 +293,7 @@ class TestGovernorWorkflow:
         assert proposal.status == ProposalStatus.DRAFT
         assert proposal.action == ProposalAction.ADD
         assert proposal.author == "test-user"
+        assert proposal.base_version_number == 1
 
     def test_propose_swap(self) -> None:
         engine = PolicyEngine(providers=[AllowAllPolicy()])
@@ -451,6 +465,22 @@ class TestGovernorWorkflow:
         gov = PolicyGovernor(engine=engine)
         with pytest.raises(KeyError):
             gov.validate_proposal("nonexistent")
+
+    @pytest.mark.anyio
+    async def test_stale_proposal_cannot_be_approved(self) -> None:
+        engine = self._make_versioned_engine()
+        gov = PolicyGovernor(engine=engine, require_simulation=False)
+
+        stale = gov.propose_add(AllowlistPolicy(allowed={"tool-a"}))
+        gov.validate_proposal(stale.proposal_id)
+
+        live = gov.propose_add(DenylistPolicy(denied={"admin-*"}))
+        gov.validate_proposal(live.proposal_id)
+        gov.approve(live.proposal_id)
+        await gov.deploy(live.proposal_id)
+
+        with pytest.raises(ValueError, match="based on policy version 1"):
+            gov.approve(stale.proposal_id)
 
 
 # ── PolicyMonitor Tests ───────────────────────────────────────
@@ -816,6 +846,141 @@ class TestSecurityAPIGovernance:
         api = self._make_api()
         result = api.get_governance_proposal("nonexistent")
         assert result["status"] == 404
+
+    @pytest.mark.anyio
+    async def test_create_governance_proposal(self) -> None:
+        api = self._make_api()
+
+        result = await api.create_governance_proposal(
+            action="add",
+            config={"type": "denylist", "denied": ["admin-*"]},
+            target_index=None,
+            description="Protect admin tools",
+            author="reviewer",
+        )
+
+        assert result["status"] == "created"
+        assert result["proposal"]["status"] == "validated"
+        assert result["proposal"]["provider"]["config"]["type"] == "denylist"
+        assert result["governance"]["pending_count"] == 1
+
+    @pytest.mark.anyio
+    async def test_approve_and_deploy_governance_proposal(self) -> None:
+        api = self._make_api()
+        created = await api.create_governance_proposal(
+            action="add",
+            config={"type": "denylist", "denied": ["admin-*"]},
+            target_index=None,
+            description="Protect admin tools",
+            author="reviewer",
+        )
+        proposal_id = created["proposal"]["proposal_id"]
+
+        assigned = api.assign_governance_proposal(
+            proposal_id,
+            reviewer="reviewer",
+            actor="admin",
+            note="Reviewer owns the rollout.",
+        )
+        assert assigned["status"] == "assigned"
+        assert assigned["proposal"]["assigned_reviewer"] == "reviewer"
+
+        approved = api.approve_governance_proposal(
+            proposal_id,
+            approver="admin",
+            note="Looks safe to release.",
+        )
+        assert approved["status"] == "approved"
+        assert approved["proposal"]["status"] == "approved"
+
+        deployed = await api.deploy_governance_proposal(
+            proposal_id,
+            actor="admin",
+            note="Deploying after reviewer sign-off.",
+        )
+        assert deployed["status"] == "deployed"
+        assert deployed["proposal"]["status"] == "deployed"
+        assert deployed["policy"]["provider_count"] == 2
+        trail = deployed["proposal"]["decision_trail"]
+        events = [item["event"] for item in trail]
+        assert "assigned" in events
+        assert events[-3:] == ["assigned", "approved", "deployed"]
+        assert trail[-2]["event"] == "approved"
+        assert trail[-2]["note"] == "Looks safe to release."
+        assert trail[-1]["event"] == "deployed"
+        assert trail[-1]["note"] == "Deploying after reviewer sign-off."
+
+    @pytest.mark.anyio
+    async def test_simulate_governance_proposal(self) -> None:
+        api = self._make_api()
+        created = await api.create_governance_proposal(
+            action="add",
+            config={"type": "allowlist", "allowed": ["tool:*"]},
+            target_index=None,
+            description="Limit access to named tools",
+            author="reviewer",
+        )
+        proposal_id = created["proposal"]["proposal_id"]
+
+        simulated = await api.simulate_governance_proposal(
+            proposal_id,
+            scenarios_data=[
+                {
+                    "resource_id": "tool:weather-lookup",
+                    "label": "Published tool",
+                },
+                {
+                    "resource_id": "admin-panel",
+                    "label": "Admin surface",
+                },
+            ],
+        )
+
+        assert simulated["status"] == "simulated"
+        assert simulated["proposal"]["status"] == "simulated"
+        assert simulated["simulation"]["total"] == 2
+        assert simulated["simulation"]["denied"] == 1
+
+    @pytest.mark.anyio
+    async def test_reject_governance_proposal(self) -> None:
+        api = self._make_api()
+        created = await api.create_governance_proposal(
+            action="remove",
+            config=None,
+            target_index=0,
+            description="Remove baseline rule",
+            author="reviewer",
+        )
+        proposal_id = created["proposal"]["proposal_id"]
+
+        rejected = api.reject_governance_proposal(
+            proposal_id,
+            reason="Keep the baseline rule.",
+        )
+
+        assert rejected["status"] == "rejected"
+        assert rejected["proposal"]["status"] == "rejected"
+        assert rejected["proposal"]["rejection_reason"] == "Keep the baseline rule."
+        assert rejected["proposal"]["decision_trail"][-1]["event"] == "rejected"
+        assert rejected["proposal"]["decision_trail"][-1]["actor"] == "api"
+
+    def test_assign_requires_reviewer_name(self) -> None:
+        api = self._make_api()
+        assert api.policy_governor is not None
+        proposal = api.policy_governor.propose_add(
+            DenylistPolicy(denied={"admin-*"}),
+            author="reviewer",
+            description="Protect admin tools",
+        )
+
+        assigned = api.assign_governance_proposal(
+            proposal.proposal_id,
+            reviewer="   ",
+            actor="admin",
+        )
+
+        assert assigned["status"] == 400
+        assert "reviewer username" in assigned["error"]
 
     def test_not_configured_returns_503(self) -> None:
         from fastmcp.server.security.http.api import SecurityAPI

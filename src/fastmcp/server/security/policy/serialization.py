@@ -65,7 +65,9 @@ def describe_policy_provider(provider: PolicyProvider, *, index: int) -> dict[st
             "This provider is active, but its runtime state cannot be edited "
             "through the management API."
         )
-        policy_id = getattr(provider, "policy_id", None) or getattr(provider, "_id", None)
+        policy_id = getattr(provider, "policy_id", None) or getattr(
+            provider, "_id", None
+        )
         policy_version = getattr(provider, "version", None) or getattr(
             provider, "_version", None
         )
@@ -96,7 +98,9 @@ def describe_policy_config(config: dict[str, Any]) -> str:
         return f"At least {minimum} of {len(children)} child policies must allow."
     if composition == "first_match":
         children = list(config.get("policies") or [])
-        return f"The first matching decision wins across {len(children)} child policies."
+        return (
+            f"The first matching decision wins across {len(children)} child policies."
+        )
     if composition == "not":
         return "Inverts the result of a single child policy."
 
@@ -262,7 +266,9 @@ def policy_provider_to_config(provider: PolicyProvider) -> dict[str, Any]:
     if isinstance(provider, AllOf):
         return {
             "composition": "all_of",
-            "policies": [policy_provider_to_config(child) for child in provider.policies],
+            "policies": [
+                policy_provider_to_config(child) for child in provider.policies
+            ],
             "policy_id": provider.policy_id,
             "version": provider.version,
         }
@@ -270,7 +276,9 @@ def policy_provider_to_config(provider: PolicyProvider) -> dict[str, Any]:
     if isinstance(provider, AnyOf):
         return {
             "composition": "any_of",
-            "policies": [policy_provider_to_config(child) for child in provider.policies],
+            "policies": [
+                policy_provider_to_config(child) for child in provider.policies
+            ],
             "policy_id": provider.policy_id,
             "version": provider.version,
             "require_minimum": provider.require_minimum,
@@ -279,7 +287,9 @@ def policy_provider_to_config(provider: PolicyProvider) -> dict[str, Any]:
     if isinstance(provider, FirstMatch):
         return {
             "composition": "first_match",
-            "policies": [policy_provider_to_config(child) for child in provider.policies],
+            "policies": [
+                policy_provider_to_config(child) for child in provider.policies
+            ],
             "policy_id": provider.policy_id,
             "version": provider.version,
             "default_decision": provider.default_decision.value,
@@ -445,7 +455,9 @@ def _decode_value(value: Any) -> Any:
             enum_cls = _import_class(str(value["class_path"]))
             return enum_cls(value["value"])
         if marker == "frozenset":
-            return frozenset(_decode_value(item) for item in list(value.get("items", [])))
+            return frozenset(
+                _decode_value(item) for item in list(value.get("items", []))
+            )
         if marker == "set":
             return {_decode_value(item) for item in list(value.get("items", []))}
         if marker == "tuple":
@@ -458,7 +470,9 @@ def _decode_value(value: Any) -> Any:
         if marker == "policy_provider":
             raw_config = value.get("config")
             if not isinstance(raw_config, dict):
-                raise ValueError("Encoded policy provider must include a config object.")
+                raise ValueError(
+                    "Encoded policy provider must include a config object."
+                )
             return policy_provider_from_config(raw_config)
         return {key: _decode_value(item) for key, item in value.items()}
 

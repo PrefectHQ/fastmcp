@@ -72,6 +72,25 @@ class ProposalAction(Enum):
     REMOVE = "remove"
 
 
+@dataclass(frozen=True)
+class PolicyProposalEvent:
+    """A single event in the lifecycle of a proposal."""
+
+    event: str
+    actor: str
+    note: str = ""
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Export as JSON-serializable dict."""
+        return {
+            "event": self.event,
+            "actor": self.actor,
+            "note": self.note,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
 @dataclass
 class PolicyProposal:
     """A proposed policy change awaiting review.
@@ -83,6 +102,7 @@ class PolicyProposal:
         target_index: Index of provider to swap/remove (None for ADD).
         author: Who proposed the change.
         description: Human-readable description of the change.
+        assigned_reviewer: Reviewer/admin currently owning the proposal.
         status: Current lifecycle state.
         created_at: When the proposal was created.
         validation_result: Result of schema/semantic validation.
@@ -100,6 +120,8 @@ class PolicyProposal:
     target_index: int | None
     author: str
     description: str
+    base_version_number: int | None = None
+    assigned_reviewer: str | None = None
     status: ProposalStatus = ProposalStatus.DRAFT
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     validation_result: ValidationResult | None = None
@@ -109,6 +131,7 @@ class PolicyProposal:
     deployed_at: datetime | None = None
     deployment_record: Any = None
     rejection_reason: str | None = None
+    decision_trail: list[PolicyProposalEvent] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Export as JSON-serializable dict."""
@@ -117,12 +140,15 @@ class PolicyProposal:
             "action": self.action.value,
             "author": self.author,
             "description": self.description,
+            "base_version_number": self.base_version_number,
+            "assigned_reviewer": self.assigned_reviewer,
             "status": self.status.value,
             "created_at": self.created_at.isoformat(),
             "approved_by": self.approved_by,
             "approved_at": self.approved_at.isoformat() if self.approved_at else None,
             "deployed_at": self.deployed_at.isoformat() if self.deployed_at else None,
             "rejection_reason": self.rejection_reason,
+            "decision_trail": [event.to_dict() for event in self.decision_trail],
         }
         if self.validation_result is not None:
             data["validation"] = self.validation_result.to_dict()
@@ -208,6 +234,14 @@ class PolicyGovernor:
             target_index=None,
             author=author,
             description=description,
+            base_version_number=self._current_version_number(),
+        )
+        proposal.decision_trail.append(
+            PolicyProposalEvent(
+                event="proposed",
+                actor=author,
+                note=description,
+            )
         )
         self._proposals[proposal.proposal_id] = proposal
         logger.info(
@@ -249,6 +283,14 @@ class PolicyGovernor:
             target_index=index,
             author=author,
             description=description,
+            base_version_number=self._current_version_number(),
+        )
+        proposal.decision_trail.append(
+            PolicyProposalEvent(
+                event="proposed",
+                actor=author,
+                note=description,
+            )
         )
         self._proposals[proposal.proposal_id] = proposal
         logger.info(
@@ -289,6 +331,14 @@ class PolicyGovernor:
             target_index=index,
             author=author,
             description=description,
+            base_version_number=self._current_version_number(),
+        )
+        proposal.decision_trail.append(
+            PolicyProposalEvent(
+                event="proposed",
+                actor=author,
+                note=description,
+            )
         )
         self._proposals[proposal.proposal_id] = proposal
         logger.info(
@@ -318,6 +368,7 @@ class PolicyGovernor:
             ValueError: If the proposal is not in DRAFT status.
         """
         proposal = self._get_or_raise(proposal_id)
+        self._raise_if_stale(proposal, action="validate")
         if proposal.status not in (
             ProposalStatus.DRAFT,
             ProposalStatus.VALIDATION_FAILED,
@@ -345,8 +396,22 @@ class PolicyGovernor:
 
         if result.valid:
             proposal.status = ProposalStatus.VALIDATED
+            proposal.decision_trail.append(
+                PolicyProposalEvent(
+                    event="validated",
+                    actor="policy-validator",
+                    note="Validation passed.",
+                )
+            )
         else:
             proposal.status = ProposalStatus.VALIDATION_FAILED
+            proposal.decision_trail.append(
+                PolicyProposalEvent(
+                    event="validation_failed",
+                    actor="policy-validator",
+                    note="Validation found blocking issues.",
+                )
+            )
 
         return result
 
@@ -376,6 +441,7 @@ class PolicyGovernor:
         from fastmcp.server.security.policy.simulation import simulate
 
         proposal = self._get_or_raise(proposal_id)
+        self._raise_if_stale(proposal, action="simulate")
         if proposal.status not in (
             ProposalStatus.VALIDATED,
             ProposalStatus.SIMULATED,
@@ -406,15 +472,56 @@ class PolicyGovernor:
         )
         proposal.simulation_report = report
         proposal.status = ProposalStatus.SIMULATED
+        proposal.decision_trail.append(
+            PolicyProposalEvent(
+                event="simulated",
+                actor="policy-simulator",
+                note=f"Ran {report.total} scenarios.",
+            )
+        )
         return report
 
     # ── Approve / Reject ──────────────────────────────────────
+
+    def assign(
+        self,
+        proposal_id: str,
+        *,
+        reviewer: str,
+        actor: str = "unknown",
+        note: str = "",
+    ) -> PolicyProposal:
+        """Assign a reviewer/admin owner to a proposal."""
+        proposal = self._get_or_raise(proposal_id)
+        terminal = {
+            ProposalStatus.DEPLOYED,
+            ProposalStatus.REJECTED,
+            ProposalStatus.WITHDRAWN,
+        }
+        if proposal.status in terminal:
+            raise ValueError(
+                f"Cannot assign proposal in {proposal.status.value} status"
+            )
+        reviewer_name = reviewer.strip()
+        if not reviewer_name:
+            raise ValueError("Reviewer assignment requires a reviewer username.")
+
+        proposal.assigned_reviewer = reviewer_name
+        proposal.decision_trail.append(
+            PolicyProposalEvent(
+                event="assigned",
+                actor=actor,
+                note=note or f"Assigned to {reviewer_name}.",
+            )
+        )
+        return proposal
 
     def approve(
         self,
         proposal_id: str,
         *,
         approver: str = "unknown",
+        note: str = "",
     ) -> PolicyProposal:
         """Approve a proposal for deployment.
 
@@ -430,6 +537,7 @@ class PolicyGovernor:
             ValueError: If prerequisites aren't met.
         """
         proposal = self._get_or_raise(proposal_id)
+        self._raise_if_stale(proposal, action="approve")
 
         valid_statuses = {ProposalStatus.VALIDATED, ProposalStatus.SIMULATED}
         if proposal.status not in valid_statuses:
@@ -446,6 +554,13 @@ class PolicyGovernor:
         proposal.approved_by = approver
         proposal.approved_at = datetime.now(timezone.utc)
         proposal.status = ProposalStatus.APPROVED
+        proposal.decision_trail.append(
+            PolicyProposalEvent(
+                event="approved",
+                actor=approver,
+                note=note or "Approved for deployment.",
+            )
+        )
         logger.info("Policy proposal approved: %s by %s", proposal_id, approver)
         return proposal
 
@@ -454,6 +569,7 @@ class PolicyGovernor:
         proposal_id: str,
         *,
         reason: str = "",
+        actor: str = "unknown",
     ) -> PolicyProposal:
         """Reject a proposal.
 
@@ -477,10 +593,23 @@ class PolicyGovernor:
 
         proposal.status = ProposalStatus.REJECTED
         proposal.rejection_reason = reason
+        proposal.decision_trail.append(
+            PolicyProposalEvent(
+                event="rejected",
+                actor=actor,
+                note=reason,
+            )
+        )
         logger.info("Policy proposal rejected: %s — %s", proposal_id, reason)
         return proposal
 
-    def withdraw(self, proposal_id: str) -> PolicyProposal:
+    def withdraw(
+        self,
+        proposal_id: str,
+        *,
+        actor: str = "unknown",
+        note: str = "",
+    ) -> PolicyProposal:
         """Withdraw a proposal (by the author).
 
         Args:
@@ -497,11 +626,24 @@ class PolicyGovernor:
             )
 
         proposal.status = ProposalStatus.WITHDRAWN
+        proposal.decision_trail.append(
+            PolicyProposalEvent(
+                event="withdrawn",
+                actor=actor,
+                note=note or "Withdrawn before deployment.",
+            )
+        )
         return proposal
 
     # ── Deploy ────────────────────────────────────────────────
 
-    async def deploy(self, proposal_id: str) -> PolicyProposal:
+    async def deploy(
+        self,
+        proposal_id: str,
+        *,
+        actor: str = "unknown",
+        note: str = "",
+    ) -> PolicyProposal:
         """Deploy an approved proposal to the live engine.
 
         Applies the proposed change (add, swap, or remove) to the
@@ -518,6 +660,7 @@ class PolicyGovernor:
             ValueError: If the proposal isn't approved.
         """
         proposal = self._get_or_raise(proposal_id)
+        self._raise_if_stale(proposal, action="deploy")
 
         if self.require_approval and proposal.status != ProposalStatus.APPROVED:
             raise ValueError(
@@ -537,7 +680,11 @@ class PolicyGovernor:
 
         if proposal.action == ProposalAction.ADD:
             assert proposal.new_provider is not None
-            await self._engine.add_provider(proposal.new_provider)
+            await self._engine.add_provider(
+                proposal.new_provider,
+                reason=f"Governance: {proposal.description or 'Policy proposal'}",
+                author=proposal.author,
+            )
             proposal.deployment_record = {"action": "add"}
 
         elif proposal.action == ProposalAction.SWAP:
@@ -552,7 +699,11 @@ class PolicyGovernor:
 
         elif proposal.action == ProposalAction.REMOVE:
             assert proposal.target_index is not None
-            removed = await self._engine.remove_provider(proposal.target_index)
+            removed = await self._engine.remove_provider(
+                proposal.target_index,
+                reason=f"Governance: {proposal.description or 'Policy proposal'}",
+                author=proposal.author,
+            )
             proposal.deployment_record = {
                 "action": "remove",
                 "removed_type": type(removed).__name__,
@@ -560,6 +711,13 @@ class PolicyGovernor:
 
         proposal.deployed_at = datetime.now(timezone.utc)
         proposal.status = ProposalStatus.DEPLOYED
+        proposal.decision_trail.append(
+            PolicyProposalEvent(
+                event="deployed",
+                actor=actor,
+                note=note or "Applied to the live policy chain.",
+            )
+        )
         logger.info("Policy proposal deployed: %s", proposal_id)
         return proposal
 
@@ -571,3 +729,28 @@ class PolicyGovernor:
         if proposal is None:
             raise KeyError(f"Proposal not found: {proposal_id}")
         return proposal
+
+    def _current_version_number(self) -> int | None:
+        """Return the active live policy version, if versioning is enabled."""
+        version_manager = self._engine.version_manager
+        current_version = (
+            version_manager.current_version if version_manager is not None else None
+        )
+        return current_version.version_number if current_version is not None else None
+
+    def _raise_if_stale(self, proposal: PolicyProposal, *, action: str) -> None:
+        """Reject operations on proposals drafted against an older live version."""
+        current_version = self._current_version_number()
+        base_version = proposal.base_version_number
+        if (
+            current_version is None
+            or base_version is None
+            or current_version == base_version
+        ):
+            return
+
+        raise ValueError(
+            f"Cannot {action} proposal based on policy version {base_version} while "
+            f"the live policy chain is now on version {current_version}. "
+            "Create a fresh proposal from the current chain."
+        )

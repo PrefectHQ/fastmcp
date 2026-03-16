@@ -509,21 +509,9 @@ class SecurityAPI:
         if self.policy_engine is None:
             return {"error": "Policy engine not configured", "status": 503}
 
-        from fastmcp.server.security.policy.simulation import Scenario, simulate
+        from fastmcp.server.security.policy.simulation import simulate
 
-        scenarios = []
-        for s in scenarios_data:
-            scenarios.append(
-                Scenario(
-                    resource_id=s.get("resource_id", "unknown"),
-                    action=s.get("action", "call_tool"),
-                    actor_id=s.get("actor_id", "sim-actor"),
-                    metadata=s.get("metadata", {}),
-                    tags=frozenset(s.get("tags", [])),
-                    label=s.get("label", ""),
-                )
-            )
-
+        scenarios = self._build_scenarios(scenarios_data)
         report = await simulate(self.policy_engine, scenarios)
         return report.to_dict()
 
@@ -855,10 +843,28 @@ class SecurityAPI:
             return {"error": "Policy governance not configured", "status": 503}
 
         proposals = self.policy_governor.proposals
+        current_version = (
+            self.policy_version_manager.current_version
+            if self.policy_version_manager is not None
+            else None
+        )
+        serialized = [self._serialize_governance_proposal(p) for p in proposals]
+        terminal_statuses = {"deployed", "rejected", "withdrawn"}
         return {
             "total_proposals": len(proposals),
             "pending_count": len(self.policy_governor.pending_proposals),
-            "proposals": [p.to_dict() for p in proposals],
+            "require_simulation": self.policy_governor.require_simulation,
+            "require_approval": self.policy_governor.require_approval,
+            "current_version": (
+                current_version.version_number if current_version is not None else None
+            ),
+            "stale_count": sum(
+                1
+                for proposal in serialized
+                if proposal.get("is_stale") is True
+                and proposal.get("status") not in terminal_statuses
+            ),
+            "proposals": serialized,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -871,7 +877,304 @@ class SecurityAPI:
         if proposal is None:
             return {"error": f"Proposal not found: {proposal_id}", "status": 404}
 
-        return proposal.to_dict()
+        return self._serialize_governance_proposal(proposal)
+
+    async def create_governance_proposal(
+        self,
+        *,
+        action: str,
+        config: dict[str, Any] | None,
+        target_index: int | None,
+        description: str = "",
+        author: str = "api",
+    ) -> dict[str, Any]:
+        """Create and validate a governance proposal."""
+        if self.policy_governor is None:
+            return {"error": "Policy governance not configured", "status": 503}
+
+        provider: Any = None
+        action_name = action.strip().lower()
+
+        if action_name in {"add", "swap"}:
+            if config is None:
+                return {
+                    "error": "`config` is required for add and swap proposals.",
+                    "status": 400,
+                }
+
+            if (
+                self.policy_validator is not None
+                and config.get("type") != "python_class"
+            ):
+                result = self.policy_validator.validate_declarative(config)
+                if not result.valid:
+                    return {
+                        "error": "Policy config failed validation.",
+                        "status": 400,
+                        "validation": result.to_dict(),
+                    }
+            try:
+                provider = policy_provider_from_config(config)
+            except Exception as exc:
+                return {"error": str(exc), "status": 400}
+
+        try:
+            if action_name == "add":
+                assert provider is not None
+                proposal = self.policy_governor.propose_add(
+                    provider,
+                    author=author,
+                    description=description,
+                )
+            elif action_name == "swap":
+                if target_index is None:
+                    raise ValueError("`target_index` is required for swap proposals.")
+                assert provider is not None
+                proposal = self.policy_governor.propose_swap(
+                    target_index,
+                    provider,
+                    author=author,
+                    description=description,
+                )
+            elif action_name == "remove":
+                if target_index is None:
+                    raise ValueError("`target_index` is required for remove proposals.")
+                proposal = self.policy_governor.propose_remove(
+                    target_index,
+                    author=author,
+                    description=description,
+                )
+            else:
+                raise ValueError(f"Unsupported proposal action: {action}")
+            validation = self.policy_governor.validate_proposal(proposal.proposal_id)
+        except (IndexError, KeyError, ValueError) as exc:
+            return {"error": str(exc), "status": 400}
+
+        return {
+            "status": "created",
+            "proposal": self._serialize_governance_proposal(proposal),
+            "validation": validation.to_dict(),
+            "governance": self.get_governance_proposals(),
+        }
+
+    def approve_governance_proposal(
+        self,
+        proposal_id: str,
+        *,
+        approver: str = "api",
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Approve a governance proposal."""
+        if self.policy_governor is None:
+            return {"error": "Policy governance not configured", "status": 503}
+
+        try:
+            proposal = self.policy_governor.approve(
+                proposal_id,
+                approver=approver,
+                note=note,
+            )
+        except KeyError as exc:
+            return {"error": str(exc), "status": 404}
+        except ValueError as exc:
+            return {"error": str(exc), "status": 400}
+
+        return {
+            "status": "approved",
+            "proposal": self._serialize_governance_proposal(proposal),
+            "governance": self.get_governance_proposals(),
+        }
+
+    async def deploy_governance_proposal(
+        self,
+        proposal_id: str,
+        *,
+        actor: str = "api",
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Deploy an approved governance proposal."""
+        if self.policy_governor is None:
+            return {"error": "Policy governance not configured", "status": 503}
+
+        try:
+            proposal = await self.policy_governor.deploy(
+                proposal_id,
+                actor=actor,
+                note=note,
+            )
+        except KeyError as exc:
+            return {"error": str(exc), "status": 404}
+        except ValueError as exc:
+            return {"error": str(exc), "status": 400}
+
+        return {
+            "status": "deployed",
+            "proposal": self._serialize_governance_proposal(proposal),
+            "policy": self.get_policy_status(),
+            "versions": self.get_policy_versions(),
+            "governance": self.get_governance_proposals(),
+        }
+
+    async def simulate_governance_proposal(
+        self,
+        proposal_id: str,
+        *,
+        scenarios_data: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Run simulation for a governance proposal."""
+        if self.policy_governor is None:
+            return {"error": "Policy governance not configured", "status": 503}
+
+        scenarios = self._build_scenarios(scenarios_data)
+        try:
+            report = await self.policy_governor.simulate_proposal(
+                proposal_id, scenarios
+            )
+        except KeyError as exc:
+            return {"error": str(exc), "status": 404}
+        except ValueError as exc:
+            return {"error": str(exc), "status": 400}
+
+        proposal = self.policy_governor.get_proposal(proposal_id)
+        payload: dict[str, Any] = {
+            "status": "simulated",
+            "simulation": report.to_dict(),
+            "governance": self.get_governance_proposals(),
+        }
+        if proposal is not None:
+            payload["proposal"] = self._serialize_governance_proposal(proposal)
+        return payload
+
+    def reject_governance_proposal(
+        self,
+        proposal_id: str,
+        *,
+        reason: str = "",
+        actor: str = "api",
+    ) -> dict[str, Any]:
+        """Reject a governance proposal."""
+        if self.policy_governor is None:
+            return {"error": "Policy governance not configured", "status": 503}
+
+        try:
+            proposal = self.policy_governor.reject(
+                proposal_id,
+                reason=reason,
+                actor=actor,
+            )
+        except KeyError as exc:
+            return {"error": str(exc), "status": 404}
+        except ValueError as exc:
+            return {"error": str(exc), "status": 400}
+
+        return {
+            "status": "rejected",
+            "proposal": self._serialize_governance_proposal(proposal),
+            "governance": self.get_governance_proposals(),
+        }
+
+    def withdraw_governance_proposal(
+        self,
+        proposal_id: str,
+        *,
+        actor: str = "api",
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Withdraw a governance proposal."""
+        if self.policy_governor is None:
+            return {"error": "Policy governance not configured", "status": 503}
+
+        try:
+            proposal = self.policy_governor.withdraw(
+                proposal_id,
+                actor=actor,
+                note=note,
+            )
+        except KeyError as exc:
+            return {"error": str(exc), "status": 404}
+        except ValueError as exc:
+            return {"error": str(exc), "status": 400}
+
+        return {
+            "status": "withdrawn",
+            "proposal": self._serialize_governance_proposal(proposal),
+            "governance": self.get_governance_proposals(),
+        }
+
+    def assign_governance_proposal(
+        self,
+        proposal_id: str,
+        *,
+        reviewer: str,
+        actor: str = "api",
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Assign ownership of a governance proposal."""
+        if self.policy_governor is None:
+            return {"error": "Policy governance not configured", "status": 503}
+
+        try:
+            proposal = self.policy_governor.assign(
+                proposal_id,
+                reviewer=reviewer,
+                actor=actor,
+                note=note,
+            )
+        except KeyError as exc:
+            return {"error": str(exc), "status": 404}
+        except ValueError as exc:
+            return {"error": str(exc), "status": 400}
+
+        return {
+            "status": "assigned",
+            "proposal": self._serialize_governance_proposal(proposal),
+            "governance": self.get_governance_proposals(),
+        }
+
+    def _serialize_governance_proposal(self, proposal: Any) -> dict[str, Any]:
+        """Return a UI-friendly governance proposal payload."""
+        payload = proposal.to_dict()
+        current_version = (
+            self.policy_version_manager.current_version
+            if self.policy_version_manager is not None
+            else None
+        )
+        live_version_number = (
+            current_version.version_number if current_version is not None else None
+        )
+        payload["live_version_number"] = live_version_number
+        payload["is_stale"] = (
+            payload.get("base_version_number") is not None
+            and live_version_number is not None
+            and payload["base_version_number"] != live_version_number
+        )
+        if proposal.new_provider is not None:
+            payload["provider"] = describe_policy_provider(
+                proposal.new_provider,
+                index=proposal.target_index
+                if proposal.target_index is not None
+                else -1,
+            )
+        return payload
+
+    @staticmethod
+    def _build_scenarios(scenarios_data: list[dict[str, Any]]) -> list[Any]:
+        """Convert plain payloads to simulation scenarios."""
+        from fastmcp.server.security.policy.simulation import Scenario
+
+        scenarios: list[Scenario] = []
+        for item in scenarios_data:
+            scenarios.append(
+                Scenario(
+                    resource_id=str(item.get("resource_id", "unknown")),
+                    action=str(item.get("action", "call_tool")),
+                    actor_id=str(item.get("actor_id", "sim-actor")),
+                    metadata=dict(item.get("metadata", {})),
+                    tags=frozenset(item.get("tags", [])),
+                    label=str(item.get("label", "")),
+                )
+            )
+        return scenarios
 
     # ── Health ────────────────────────────────────────────────
 
@@ -1169,6 +1472,146 @@ def mount_security_routes(
     async def policy_governance_detail_endpoint(request: Request) -> JSONResponse:
         pid = request.path_params.get("proposal_id", "")
         return JSONResponse(api.get_governance_proposal(pid))
+
+    @server.custom_route(f"{prefix}/policy/governance/proposals", methods=["POST"])
+    async def policy_governance_create_endpoint(request: Request) -> JSONResponse:
+        body = await request.json()
+        payload = await api.create_governance_proposal(
+            action=str(body.get("action", "")),
+            config=body.get("config") if isinstance(body.get("config"), dict) else None,
+            target_index=(
+                int(body["target_index"])
+                if body.get("target_index") is not None
+                else None
+            ),
+            description=str(body.get("description", "")),
+            author=str(body.get("author", "api")),
+        )
+        status_code = (
+            payload["status"] if isinstance(payload.get("status"), int) else 200
+        )
+        return JSONResponse(payload, status_code=status_code)
+
+    @server.custom_route(
+        f"{prefix}/policy/governance/{{proposal_id}}/approve",
+        methods=["POST"],
+    )
+    async def policy_governance_approve_endpoint(request: Request) -> JSONResponse:
+        pid = request.path_params.get("proposal_id", "")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        payload = api.approve_governance_proposal(
+            pid,
+            approver=str(body.get("approver", "api")),
+            note=str(body.get("note", body.get("reason", ""))),
+        )
+        status_code = (
+            payload["status"] if isinstance(payload.get("status"), int) else 200
+        )
+        return JSONResponse(payload, status_code=status_code)
+
+    @server.custom_route(
+        f"{prefix}/policy/governance/{{proposal_id}}/assign",
+        methods=["POST"],
+    )
+    async def policy_governance_assign_endpoint(request: Request) -> JSONResponse:
+        pid = request.path_params.get("proposal_id", "")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        payload = api.assign_governance_proposal(
+            pid,
+            reviewer=str(body.get("reviewer", "")),
+            actor=str(body.get("actor", "api")),
+            note=str(body.get("note", "")),
+        )
+        status_code = (
+            payload["status"] if isinstance(payload.get("status"), int) else 200
+        )
+        return JSONResponse(payload, status_code=status_code)
+
+    @server.custom_route(
+        f"{prefix}/policy/governance/{{proposal_id}}/simulate",
+        methods=["POST"],
+    )
+    async def policy_governance_simulate_endpoint(request: Request) -> JSONResponse:
+        pid = request.path_params.get("proposal_id", "")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        scenarios = body.get("scenarios")
+        payload = await api.simulate_governance_proposal(
+            pid,
+            scenarios_data=scenarios if isinstance(scenarios, list) else [],
+        )
+        status_code = (
+            payload["status"] if isinstance(payload.get("status"), int) else 200
+        )
+        return JSONResponse(payload, status_code=status_code)
+
+    @server.custom_route(
+        f"{prefix}/policy/governance/{{proposal_id}}/deploy",
+        methods=["POST"],
+    )
+    async def policy_governance_deploy_endpoint(request: Request) -> JSONResponse:
+        pid = request.path_params.get("proposal_id", "")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        payload = await api.deploy_governance_proposal(
+            pid,
+            actor=str(body.get("actor", "api")),
+            note=str(body.get("note", body.get("reason", ""))),
+        )
+        status_code = (
+            payload["status"] if isinstance(payload.get("status"), int) else 200
+        )
+        return JSONResponse(payload, status_code=status_code)
+
+    @server.custom_route(
+        f"{prefix}/policy/governance/{{proposal_id}}/reject",
+        methods=["POST"],
+    )
+    async def policy_governance_reject_endpoint(request: Request) -> JSONResponse:
+        pid = request.path_params.get("proposal_id", "")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        payload = api.reject_governance_proposal(
+            pid,
+            reason=str(body.get("reason", "")),
+            actor=str(body.get("actor", "api")),
+        )
+        status_code = (
+            payload["status"] if isinstance(payload.get("status"), int) else 200
+        )
+        return JSONResponse(payload, status_code=status_code)
+
+    @server.custom_route(
+        f"{prefix}/policy/governance/{{proposal_id}}/withdraw",
+        methods=["POST"],
+    )
+    async def policy_governance_withdraw_endpoint(request: Request) -> JSONResponse:
+        pid = request.path_params.get("proposal_id", "")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        payload = api.withdraw_governance_proposal(
+            pid,
+            actor=str(body.get("actor", "api")),
+            note=str(body.get("note", body.get("reason", ""))),
+        )
+        status_code = (
+            payload["status"] if isinstance(payload.get("status"), int) else 200
+        )
+        return JSONResponse(payload, status_code=status_code)
 
     # Health
     @server.custom_route(f"{prefix}/health", methods=["GET"])

@@ -200,14 +200,89 @@ export type PolicySchemaResponse = RegistryErrorResponse & {
   properties?: Record<string, unknown>;
 };
 
-export type PolicyProposalSummary = {
+export type PolicyValidationFinding = {
+  severity?: string;
+  message?: string;
+  path?: string;
+  code?: string;
+};
+
+export type PolicyValidationSummary = {
+  valid?: boolean;
+  error_count?: number;
+  warning_count?: number;
+  findings?: PolicyValidationFinding[];
+};
+
+export type PolicyProposalEvent = {
+  event?: string;
+  actor?: string;
+  note?: string;
+  created_at?: string;
+};
+
+export type PolicyProposalItem = {
   proposal_id?: string;
+  action?: string;
+  author?: string;
+  description?: string;
+  base_version_number?: number | null;
+  live_version_number?: number | null;
+  is_stale?: boolean;
+  assigned_reviewer?: string | null;
   status?: string;
+  created_at?: string;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  deployed_at?: string | null;
+  rejection_reason?: string | null;
+  target_index?: number | null;
+  new_provider_type?: string;
+  validation?: PolicyValidationSummary;
+  provider?: PolicyProviderItem;
+  simulation?: PolicySimulationReport;
+  decision_trail?: PolicyProposalEvent[];
 };
 
 export type PolicyGovernanceResponse = RegistryErrorResponse & {
+  total_proposals?: number;
   pending_count?: number;
-  proposals?: PolicyProposalSummary[];
+  require_simulation?: boolean;
+  require_approval?: boolean;
+  current_version?: number | null;
+  stale_count?: number;
+  proposals?: PolicyProposalItem[];
+  generated_at?: string;
+};
+
+export type PolicySimulationScenarioResult = {
+  resource_id?: string;
+  action?: string;
+  actor_id?: string;
+  label?: string;
+  decision?: string;
+  reason?: string;
+  policy_id?: string;
+  error?: string | null;
+};
+
+export type PolicySimulationReport = {
+  total?: number;
+  allowed?: number;
+  denied?: number;
+  deferred?: number;
+  errors?: number;
+  created_at?: string;
+  results?: PolicySimulationScenarioResult[];
+};
+
+export type PolicySimulationScenario = {
+  label?: string;
+  resource_id?: string;
+  action?: string;
+  actor_id?: string;
+  metadata?: Record<string, unknown>;
+  tags?: string[];
 };
 
 export type PolicyManagementResponse = RegistryErrorResponse & {
@@ -215,6 +290,7 @@ export type PolicyManagementResponse = RegistryErrorResponse & {
   versions?: PolicyVersionsResponse;
   schema?: PolicySchemaResponse;
   governance?: PolicyGovernanceResponse;
+  simulation_defaults?: PolicySimulationScenario[];
   generated_at?: string;
 };
 

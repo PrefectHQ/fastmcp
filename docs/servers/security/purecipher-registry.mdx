@@ -107,6 +107,15 @@ The MVP exposes a narrow HTTP surface:
 | `GET /registry/policy/schema` | Declarative policy schema for policy editor helpers |
 | `GET /registry/policy/versions` | Saved policy version history |
 | `GET /registry/policy/versions/diff?v1=1&v2=2` | Diff two saved policy versions before rollback |
+| `GET /registry/policy/proposals` | List staged policy proposals and their approval state |
+| `GET /registry/policy/proposals/{proposal_id}` | Inspect one policy proposal in detail |
+| `POST /registry/policy/proposals` | Create a new policy proposal from a declarative config |
+| `POST /registry/policy/proposals/{proposal_id}/approve` | Approve a staged proposal |
+| `POST /registry/policy/proposals/{proposal_id}/assign` | Assign proposal ownership to a reviewer or admin |
+| `POST /registry/policy/proposals/{proposal_id}/simulate` | Run the default registry simulation scenarios against a proposal |
+| `POST /registry/policy/proposals/{proposal_id}/deploy` | Apply an approved proposal to the live chain |
+| `POST /registry/policy/proposals/{proposal_id}/reject` | Reject a proposal with a reviewer note |
+| `POST /registry/policy/proposals/{proposal_id}/withdraw` | Withdraw a proposal before it goes live |
 | `POST /registry/policy/providers` | Add a live policy provider |
 | `PUT /registry/policy/providers/{index}` | Replace a live policy provider at a given position |
 | `DELETE /registry/policy/providers/{index}` | Remove a live policy provider |
@@ -119,7 +128,7 @@ The MVP exposes a narrow HTTP surface:
 
 `GET /registry/app` serves the catalog, discovery homepage, and launchpad entry point after you sign in. The homepage is designed to help end users find a good fit, understand who published a tool, and jump into setup-ready listings without leading with protocol details. The dedicated publisher workflow lives at `GET /registry/publish`, where publishers can load presets, add runtime metadata, run preflight validation, and then publish. Each listing opens as its own browser page under `/registry/listings/{tool_name}` with a guided "start here" setup section, install recipes, and the deeper manifest and attestation detail further down the page. Publisher pages, the publisher directory, the login page, and the moderation queue are also server-rendered so the whole product layer can run without a frontend build step.
 
-`GET /registry/policy` is the live policy-management surface for the registry. Reviewers and admins can inspect the active provider chain, edit or remove providers, add new providers from declarative templates, compare saved versions, and roll the live engine back to a known-good version. The registry delegates those mutations into SecureMCP's policy engine and version manager, so policy changes update the same runtime controls that protect tool calls.
+`GET /registry/policy` is the live policy-management surface for the registry. Reviewers and admins can inspect the active provider chain, draft adds/edits/removals as proposals, assign an owner, run the default registry simulation scenarios, approve and apply those proposals, compare saved versions, and roll the live engine back to a known-good version. Proposals are version-aware: each one records the live policy version it was drafted against, and the registry blocks stale proposals once the live chain moves forward. The registry delegates those mutations into SecureMCP's policy governor, simulation engine, and version manager, so policy changes update the same runtime controls that protect tool calls while keeping assignment, review notes, decision trail history, and version safety in front of live deploys.
 
 ## CLI Launch
 
@@ -190,7 +199,7 @@ PureCipher auth is product-layer auth owned by `src/purecipher`, not FastMCP cor
 - public: catalog, listing pages, publisher pages, install recipes, attestation verification
 - publisher or higher: manifest submission
 - reviewer or admin: moderation queue access and approve/reject/request-changes actions
-- reviewer or admin: policy management, provider edits, version diff, and rollback
+- reviewer or admin: policy management, proposal approval, live deploys, version diff, and rollback
 - admin only: suspend and unsuspend actions
 
 Set `PURECIPHER_ENABLE_AUTH=true` and provide a signing key with `PURECIPHER_JWT_SECRET`. You can also configure static users through `PURECIPHER_USERS_JSON`.
