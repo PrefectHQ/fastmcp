@@ -65,6 +65,7 @@ dmypy.json
 
 # Claude worktree management
 .claude-wt/worktrees
+.claude/worktrees/
 
 # Agents
 /PLAN.md
