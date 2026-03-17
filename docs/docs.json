@@ -478,16 +478,16 @@
                     "group": "fastmcp.prompts",
                     "pages": [
                       "python-sdk/fastmcp-prompts-__init__",
-                      "python-sdk/fastmcp-prompts-function_prompt",
-                      "python-sdk/fastmcp-prompts-prompt"
+                      "python-sdk/fastmcp-prompts-base",
+                      "python-sdk/fastmcp-prompts-function_prompt"
                     ]
                   },
                   {
                     "group": "fastmcp.resources",
                     "pages": [
                       "python-sdk/fastmcp-resources-__init__",
+                      "python-sdk/fastmcp-resources-base",
                       "python-sdk/fastmcp-resources-function_resource",
-                      "python-sdk/fastmcp-resources-resource",
                       "python-sdk/fastmcp-resources-template",
                       "python-sdk/fastmcp-resources-types"
                     ]
@@ -688,9 +688,9 @@
                     "group": "fastmcp.tools",
                     "pages": [
                       "python-sdk/fastmcp-tools-__init__",
+                      "python-sdk/fastmcp-tools-base",
                       "python-sdk/fastmcp-tools-function_parsing",
                       "python-sdk/fastmcp-tools-function_tool",
-                      "python-sdk/fastmcp-tools-tool",
                       "python-sdk/fastmcp-tools-tool_transform"
                     ]
                   },

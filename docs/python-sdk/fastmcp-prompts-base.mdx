@@ -1,0 +1,145 @@
+---
+title: base
+sidebarTitle: base
+---
+
+# `fastmcp.prompts.base`
+
+
+Base classes for FastMCP prompts.
+
+## Classes
+
+### `Message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Wrapper for prompt message with auto-serialization.
+
+Accepts any content - strings pass through, other types
+(dict, list, BaseModel) are JSON-serialized to text.
+
+
+**Methods:**
+
+#### `to_mcp_prompt_message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+to_mcp_prompt_message(self) -> PromptMessage
+```
+
+Convert to MCP PromptMessage.
+
+
+### `PromptArgument` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L103" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+An argument that can be passed to a prompt.
+
+
+### `PromptResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L115" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Canonical result type for prompt rendering.
+
+Provides explicit control over prompt responses: multiple messages,
+roles, and metadata at both the message and result level.
+
+
+**Methods:**
+
+#### `to_mcp_prompt_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L187" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+to_mcp_prompt_result(self) -> GetPromptResult
+```
+
+Convert to MCP GetPromptResult.
+
+
+### `Prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L197" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A prompt template that can be rendered with parameters.
+
+
+**Methods:**
+
+#### `to_mcp_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L209" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+to_mcp_prompt(self, **overrides: Any) -> SDKPrompt
+```
+
+Convert the prompt to an MCP prompt.
+
+
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L235" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+from_function(cls, fn: Callable[..., Any]) -> FunctionPrompt
+```
+
+Create a Prompt from a function.
+
+The function can return:
+- str: wrapped as single user Message
+- list\[Message | str]: converted to list\[Message]
+- PromptResult: used directly
+
+
+#### `render` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L271" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+render(self, arguments: dict[str, Any] | None = None) -> str | list[Message | str] | PromptResult
+```
+
+Render the prompt with arguments.
+
+Subclasses must implement this method. Return one of:
+- str: Wrapped as single user Message
+- list\[Message | str]: Converted to list\[Message]
+- PromptResult: Used directly
+
+
+#### `convert_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L284" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+convert_result(self, raw_value: Any) -> PromptResult
+```
+
+Convert a raw return value to PromptResult.
+
+**Raises:**
+- `TypeError`: for unsupported types
+
+
+#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L374" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+register_with_docket(self, docket: Docket) -> None
+```
+
+Register this prompt with docket for background execution.
+
+
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L380" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_to_docket(self, docket: Docket, arguments: dict[str, Any] | None, **kwargs: Any) -> Execution
+```
+
+Schedule this prompt for background execution via docket.
+
+**Args:**
+- `docket`: The Docket instance
+- `arguments`: Prompt arguments
+- `fn_key`: Function lookup key in Docket registry (defaults to self.key)
+- `task_key`: Redis storage key for the result
+- `**kwargs`: Additional kwargs passed to docket.add()
+
+
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/base.py#L403" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_span_attributes(self) -> dict[str, Any]
+```
