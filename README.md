@@ -7,6 +7,8 @@
   <source width="550" media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/brand/f-watercolor-waves-4.png">
   <img width="550" alt="FastMCP Logo" src="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/brand/f-watercolor-waves-2.png">
 </picture>
+[![AgentRank](https://agentrank-ai.com/api/badge/tool/punkpeye--fastmcp)](https://agentrank-ai.com/tool/punkpeye--fastmcp/)
+
 
 # FastMCP 🚀
 
