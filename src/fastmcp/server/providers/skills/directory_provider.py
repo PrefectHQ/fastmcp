@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
-from fastmcp.resources.resource import Resource
+from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.providers.skills.skill_provider import SkillProvider

@@ -36,7 +36,7 @@ from fastmcp.mcp_config import (
     StdioMCPServer,
     TransformingStdioMCPServer,
 )
-from fastmcp.tools.tool import Tool as FastMCPTool
+from fastmcp.tools.base import Tool as FastMCPTool
 
 # These tests spawn subprocess servers via stdio which can be slow under
 # parallel CI load. Give them more headroom than the 5s default, and skip

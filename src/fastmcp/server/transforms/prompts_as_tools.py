@@ -28,7 +28,7 @@ from mcp.types import TextContent
 
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.transforms import GetToolNext, Transform
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:

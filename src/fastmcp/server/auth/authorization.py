@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from fastmcp.server.auth import AccessToken
-    from fastmcp.tools.tool import Tool
+    from fastmcp.tools.base import Tool
     from fastmcp.utilities.components import FastMCPComponent
 
 
@@ -66,7 +66,7 @@ class AuthContext:
 
         Returns the component if it's a Tool, None otherwise.
         """
-        from fastmcp.tools.tool import Tool
+        from fastmcp.tools.base import Tool
 
         return self.component if isinstance(self.component, Tool) else None
 

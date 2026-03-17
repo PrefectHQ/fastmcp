@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 from fastmcp import FastMCP
 from fastmcp.client.client import Client
 from fastmcp.tools import Tool, forward, forward_raw, tool
+from fastmcp.tools.base import ToolResult
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import ToolResult
 from fastmcp.tools.tool_transform import (
     ArgTransform,
     TransformedTool,

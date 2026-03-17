@@ -10,7 +10,7 @@ from mcp.types import (
 )
 from pydantic import BaseModel
 
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.types import Audio, File, Image
 
 

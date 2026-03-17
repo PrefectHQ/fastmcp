@@ -1,5 +1,5 @@
 from .function_resource import FunctionResource, resource
-from .resource import Resource, ResourceContent, ResourceResult
+from .base import Resource, ResourceContent, ResourceResult
 from .template import ResourceTemplate
 from .types import (
     BinaryResource,

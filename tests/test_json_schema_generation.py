@@ -7,8 +7,8 @@ using SkipJsonSchema annotations.
 from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.resources.template import FunctionResourceTemplate
+from fastmcp.tools.base import Tool
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import Tool
 from fastmcp.tools.tool_transform import TransformedTool
 
 

@@ -8,7 +8,7 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.base import ToolResult
 
 
 @dataclass

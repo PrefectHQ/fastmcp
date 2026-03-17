@@ -16,7 +16,7 @@ from fastmcp.experimental.transforms.code_mode import (
     _ensure_async,
 )
 from fastmcp.server.context import Context
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 
 
 def _unwrap_result(result: ToolResult) -> Any:

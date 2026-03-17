@@ -37,15 +37,15 @@ from fastmcp.client.transports import ClientTransportT
 from fastmcp.exceptions import ResourceError, ToolError
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Message, Prompt, PromptResult
-from fastmcp.prompts.prompt import PromptArgument
+from fastmcp.prompts.base import PromptArgument
 from fastmcp.resources import Resource, ResourceTemplate
-from fastmcp.resources.resource import ResourceContent, ResourceResult
+from fastmcp.resources.base import ResourceContent, ResourceResult
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.server import FastMCP
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.components import FastMCPComponent, get_fastmcp_metadata
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec, version_sort_key

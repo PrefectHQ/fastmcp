@@ -20,10 +20,10 @@ from fastmcp.server.tasks.keys import build_task_key
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
-    from fastmcp.prompts.prompt import Prompt
-    from fastmcp.resources.resource import Resource
+    from fastmcp.prompts.base import Prompt
+    from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
-    from fastmcp.tools.tool import Tool
+    from fastmcp.tools.base import Tool
 
 logger = get_logger(__name__)
 

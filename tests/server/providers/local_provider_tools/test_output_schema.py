@@ -11,8 +11,8 @@ from pydantic import AnyUrl, BaseModel, TypeAdapter
 from typing_extensions import TypeAliasType, TypedDict
 
 from fastmcp import FastMCP
+from fastmcp.tools.base import ToolResult
 from fastmcp.tools.function_parsing import _is_object_schema
-from fastmcp.tools.tool import ToolResult
 from fastmcp.utilities.json_schema import compress_schema
 
 

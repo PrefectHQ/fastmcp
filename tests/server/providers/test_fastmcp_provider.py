@@ -4,11 +4,11 @@ import mcp.types as mt
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.prompts.prompt import PromptResult
-from fastmcp.resources.resource import ResourceResult
+from fastmcp.prompts.base import PromptResult
+from fastmcp.resources.base import ResourceResult
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers import FastMCPProvider
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.base import ToolResult
 
 
 class ToolTracingMiddleware(Middleware):

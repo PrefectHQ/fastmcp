@@ -28,7 +28,7 @@ from fastmcp.server.providers.openapi.routing import (
     RouteMapFn,
     _determine_route_type,
 )
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import (

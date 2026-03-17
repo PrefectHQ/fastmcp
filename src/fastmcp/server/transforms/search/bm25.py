@@ -12,7 +12,7 @@ from fastmcp.server.transforms.search.base import (
     SearchResultSerializer,
     _extract_searchable_text,
 )
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 
 def _tokenize(text: str) -> list[str]:

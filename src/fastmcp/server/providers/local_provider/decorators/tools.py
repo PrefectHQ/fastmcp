@@ -29,8 +29,8 @@ from mcp.types import AnyFunction, ToolAnnotations
 import fastmcp
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.tools.base import Tool
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import Tool
 from fastmcp.utilities.types import NotSet, NotSetT
 
 try:
@@ -43,7 +43,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider
-    from fastmcp.tools.tool import ToolResultSerializerType
+    from fastmcp.tools.base import ToolResultSerializerType
 
 F = TypeVar("F", bound=Callable[..., Any])
 

@@ -12,7 +12,7 @@ from pydantic import Field, ValidationInfo
 from typing_extensions import override
 
 from fastmcp.exceptions import ResourceError
-from fastmcp.resources.resource import Resource, ResourceContent, ResourceResult
+from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)

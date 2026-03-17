@@ -27,9 +27,9 @@ from pydantic import AnyUrl, BaseModel
 from fastmcp import Context, FastMCP
 from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client.transports import FastMCPTransport
+from fastmcp.prompts.base import Message, Prompt
 from fastmcp.prompts.function_prompt import FunctionPrompt
-from fastmcp.prompts.prompt import Message, Prompt
-from fastmcp.resources.resource import Resource
+from fastmcp.resources.base import Resource
 from fastmcp.server.middleware.caching import (
     CachableToolResult,
     CallToolSettings,
@@ -40,7 +40,7 @@ from fastmcp.server.middleware.caching import (
     _make_read_resource_cache_key,
 )
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 
 TEST_URI = AnyUrl("https://test_uri")
 

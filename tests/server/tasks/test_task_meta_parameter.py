@@ -13,7 +13,7 @@ from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.tasks.config import TaskMeta
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 
 
 class TestTaskMetaParameter:

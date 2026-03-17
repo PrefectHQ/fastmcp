@@ -5,7 +5,7 @@ from typing import Any
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.server.transforms import Namespace
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 
 
 class CustomTool(Tool):

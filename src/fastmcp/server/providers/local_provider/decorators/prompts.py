@@ -15,8 +15,8 @@ import mcp.types
 from mcp.types import AnyFunction
 
 import fastmcp
+from fastmcp.prompts.base import Prompt
 from fastmcp.prompts.function_prompt import FunctionPrompt
-from fastmcp.prompts.prompt import Prompt
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
 

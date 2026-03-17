@@ -13,7 +13,7 @@ from mcp.types import (
 )
 from pydantic import AnyUrl, BaseModel
 
-from fastmcp.tools.tool import Tool, _convert_to_content
+from fastmcp.tools.base import Tool, _convert_to_content
 from fastmcp.utilities.types import Audio, File, Image
 
 

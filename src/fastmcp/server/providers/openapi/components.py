@@ -21,7 +21,7 @@ from fastmcp.resources import (
 )
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import HTTPRoute
 from fastmcp.utilities.openapi.director import RequestDirector

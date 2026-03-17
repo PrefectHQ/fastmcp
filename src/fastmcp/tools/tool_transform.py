@@ -16,8 +16,8 @@ from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
+from fastmcp.tools.base import Tool, ToolResult, _convert_to_content
 from fastmcp.tools.function_parsing import ParsedFunction
-from fastmcp.tools.tool import Tool, ToolResult, _convert_to_content
 from fastmcp.utilities.components import _convert_set_default_none
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger

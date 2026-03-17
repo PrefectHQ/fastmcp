@@ -15,7 +15,7 @@ from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
-from fastmcp.resources.resource import Resource, ResourceResult
+from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.server.apps import resolve_ui_mime_type
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (

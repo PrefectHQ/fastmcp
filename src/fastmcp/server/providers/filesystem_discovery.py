@@ -189,14 +189,14 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
     import inspect
 
     from fastmcp.decorators import get_fastmcp_meta
+    from fastmcp.prompts.base import Prompt
     from fastmcp.prompts.function_prompt import PromptMeta
-    from fastmcp.prompts.prompt import Prompt
+    from fastmcp.resources.base import Resource
     from fastmcp.resources.function_resource import ResourceMeta
-    from fastmcp.resources.resource import Resource
     from fastmcp.resources.template import ResourceTemplate
     from fastmcp.server.dependencies import without_injected_parameters
+    from fastmcp.tools.base import Tool
     from fastmcp.tools.function_tool import ToolMeta
-    from fastmcp.tools.tool import Tool
 
     component_types = (Tool, Resource, ResourceTemplate, Prompt)
     components: list[FastMCPComponent] = []

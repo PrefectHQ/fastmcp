@@ -11,10 +11,10 @@ from pydantic import AnyUrl
 from typing_extensions import override
 
 import fastmcp
-from fastmcp.resources.resource import ResourceResult
+from fastmcp.resources.base import ResourceResult
 from fastmcp.server.context import Context
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 
 logger: Logger = get_logger(name=__name__)

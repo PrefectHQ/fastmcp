@@ -7,7 +7,7 @@ from pydantic import FileUrl
 
 from fastmcp.exceptions import ResourceError
 from fastmcp.resources import FileResource
-from fastmcp.resources.resource import ResourceResult
+from fastmcp.resources.base import ResourceResult
 
 
 @pytest.fixture

@@ -27,8 +27,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal, TypeVar
 
-from fastmcp.prompts.prompt import Prompt
-from fastmcp.resources.resource import Resource
+from fastmcp.prompts.base import Prompt
+from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.local_provider.decorators import (
@@ -36,7 +36,7 @@ from fastmcp.server.providers.local_provider.decorators import (
     ResourceDecoratorMixin,
     ToolDecoratorMixin,
 )
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec, version_sort_key

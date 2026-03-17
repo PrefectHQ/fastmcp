@@ -35,11 +35,11 @@ from typing import TYPE_CHECKING, Literal, cast
 
 from typing_extensions import Self
 
-from fastmcp.prompts.prompt import Prompt
-from fastmcp.resources.resource import Resource
+from fastmcp.prompts.base import Prompt
+from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.transforms.visibility import Visibility
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.versions import VersionSpec, version_sort_key

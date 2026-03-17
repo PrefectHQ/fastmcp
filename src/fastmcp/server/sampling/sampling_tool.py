@@ -13,9 +13,9 @@ from pydantic import ConfigDict
 from fastmcp.exceptions import AuthorizationError
 from fastmcp.server.auth.authorization import AuthContext, run_auth_checks
 from fastmcp.server.dependencies import get_access_token
+from fastmcp.tools.base import ToolResult
 from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import ToolResult
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.types import FastMCPBaseModel
 

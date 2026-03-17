@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import mcp.types
 
-from fastmcp.resources.resource import Resource
+from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.transforms import (
     GetPromptNext,
@@ -24,9 +24,9 @@ from fastmcp.server.transforms import (
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
-    from fastmcp.prompts.prompt import Prompt
+    from fastmcp.prompts.base import Prompt
     from fastmcp.server.context import Context
-    from fastmcp.tools.tool import Tool
+    from fastmcp.tools.base import Tool
     from fastmcp.utilities.components import FastMCPComponent
 
 T = TypeVar("T", bound="FastMCPComponent")

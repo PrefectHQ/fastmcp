@@ -33,10 +33,10 @@ from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 if TYPE_CHECKING:
-    from fastmcp.prompts.prompt import Prompt
-    from fastmcp.resources.resource import Resource
+    from fastmcp.prompts.base import Prompt
+    from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
-    from fastmcp.tools.tool import Tool
+    from fastmcp.tools.base import Tool
 
 logger = logging.getLogger(__name__)
 

@@ -52,9 +52,9 @@ from fastmcp.exceptions import (
 )
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
+from fastmcp.prompts.base import PromptResult
 from fastmcp.prompts.function_prompt import FunctionPrompt
-from fastmcp.prompts.prompt import PromptResult
-from fastmcp.resources.resource import Resource, ResourceResult
+from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.apps import (
     AppConfig,
@@ -76,8 +76,8 @@ from fastmcp.server.transforms import (
 )
 from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
 from fastmcp.utilities.logging import get_logger

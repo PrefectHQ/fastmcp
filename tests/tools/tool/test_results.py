@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 
 
 class TestToolResultCasting:

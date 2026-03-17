@@ -550,7 +550,7 @@ def __getattr__(name: str) -> Any:
 
         if fastmcp.settings.deprecation_warnings:
             warnings.warn(
-                f"Importing {name} from fastmcp.tools.tool is deprecated. "
+                f"Importing {name} from fastmcp.tools.base is deprecated. "
                 f"Import from fastmcp.tools.function_tool instead.",
                 DeprecationWarning,
                 stacklevel=2,
