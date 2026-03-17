@@ -25,7 +25,8 @@ __all__ = [
     "resource",
 ]
 
-# Preserve the old import path (fastmcp.resources.resource) for backward compatibility.
-# The module was renamed to base.py to avoid shadowing the `resource` decorator function,
-# which caused Pyright to report "Module is not callable" errors.
+# Backward compat: resource.py was renamed to base.py to stop Pyright from resolving
+# `from fastmcp.resources import resource` as the submodule instead of the decorator function.
+# This shim keeps `from fastmcp.resources.resource import Resource` working at runtime.
+# Safe to remove once we're confident no external code imports from the old path.
 sys.modules[f"{__name__}.resource"] = sys.modules[f"{__name__}.base"]

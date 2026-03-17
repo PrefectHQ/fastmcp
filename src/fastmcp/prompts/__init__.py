@@ -3,9 +3,10 @@ import sys
 from .function_prompt import FunctionPrompt, prompt
 from .base import Message, Prompt, PromptArgument, PromptMessage, PromptResult
 
-# Preserve the old import path (fastmcp.prompts.prompt) for backward compatibility.
-# The module was renamed to base.py to avoid shadowing the `prompt` decorator function,
-# which caused Pyright to report "Module is not callable" errors.
+# Backward compat: prompt.py was renamed to base.py to stop Pyright from resolving
+# `from fastmcp.prompts import prompt` as the submodule instead of the decorator function.
+# This shim keeps `from fastmcp.prompts.prompt import Prompt` working at runtime.
+# Safe to remove once we're confident no external code imports from the old path.
 sys.modules[f"{__name__}.prompt"] = sys.modules[f"{__name__}.base"]
 
 __all__ = [
