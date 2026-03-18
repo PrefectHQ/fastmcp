@@ -1007,6 +1007,145 @@ async def test_single_server_config_transport():
     assert len(transport._transports) == 1
 
 
+async def test_multi_server_partial_failure(tmp_path: Path):
+    """When one server fails to connect, the others should still work."""
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "test.py"
+    script_path.write_text(server_script)
+
+    config = {
+        "mcpServers": {
+            "good_server": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+            "bad_server": {
+                "command": "this-command-does-not-exist-anywhere",
+                "args": [],
+            },
+        }
+    }
+
+    client = Client(config)
+    async with client:
+        tools = await client.list_tools()
+        tool_names = [t.name for t in tools]
+        assert "good_server_add" in tool_names
+        assert len(tools) == 1
+
+
+async def test_multi_server_partial_failure_logs_warning(tmp_path: Path, caplog):
+    """A warning should be logged when a server fails to connect."""
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "test.py"
+    script_path.write_text(server_script)
+
+    config = {
+        "mcpServers": {
+            "good_server": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+            "bad_server": {
+                "command": "this-command-does-not-exist-anywhere",
+                "args": [],
+            },
+        }
+    }
+
+    with caplog.at_level(logging.WARNING):
+        async with Client(config):
+            pass
+
+    warning_records = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "bad_server" in r.message
+    ]
+    assert len(warning_records) == 1
+
+
+async def test_multi_server_all_fail():
+    """When all servers fail to connect, a ConnectionError should be raised."""
+    config = MCPConfig(
+        mcpServers={
+            "bad_1": StdioMCPServer(
+                command="this-command-does-not-exist-anywhere",
+                args=[],
+            ),
+            "bad_2": StdioMCPServer(
+                command="this-other-command-does-not-exist-either",
+                args=[],
+            ),
+        }
+    )
+
+    transport = MCPConfigTransport(config)
+    with pytest.raises(ConnectionError, match="All MCP servers failed to connect"):
+        async with transport.connect_session():
+            pass
+
+
+async def test_multi_server_partial_failure_cleanup(tmp_path: Path):
+    """Transports for failed servers should not leak into _transports."""
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def ping() -> str:
+            return "pong"
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "test.py"
+    script_path.write_text(server_script)
+
+    config = {
+        "mcpServers": {
+            "working": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+            "broken": {
+                "command": "this-command-does-not-exist-anywhere",
+                "args": [],
+            },
+        }
+    }
+
+    transport = MCPConfigTransport(config)
+    async with transport.connect_session():
+        assert len(transport._transports) == 1
+
+
 def sample_tool_fn(arg1: int, arg2: str) -> str:
     return f"Hello, world! {arg1} {arg2}"
 

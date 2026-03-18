@@ -17,6 +17,9 @@ from fastmcp.mcp_config import (
     TransformingStdioMCPServer,
 )
 from fastmcp.server.server import FastMCP, create_proxy
+from fastmcp.utilities.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class MCPConfigTransport(ClientTransport):
@@ -104,21 +107,23 @@ class MCPConfigTransport(ClientTransport):
                 await t.close()
             self._transports = []
 
-            try:
-                for name, server_config in self.config.mcpServers.items():
+            for name, server_config in self.config.mcpServers.items():
+                try:
                     transport, _client, proxy = await self._create_proxy(
                         name, server_config, timeout, stack
                     )
-                    self._transports.append(transport)
-                    composite.mount(
-                        proxy, namespace=name if self.name_as_prefix else None
+                except Exception:
+                    logger.warning(
+                        "Failed to connect to MCP server %r, skipping",
+                        name,
+                        exc_info=True,
                     )
-            except Exception:
-                # Clean up any transports created before the failure
-                for t in self._transports:
-                    await t.close()
-                self._transports = []
-                raise
+                    continue
+                self._transports.append(transport)
+                composite.mount(proxy, namespace=name if self.name_as_prefix else None)
+
+            if not self._transports:
+                raise ConnectionError("All MCP servers failed to connect")
 
             async with FastMCPTransport(mcp=composite).connect_session(
                 **session_kwargs
