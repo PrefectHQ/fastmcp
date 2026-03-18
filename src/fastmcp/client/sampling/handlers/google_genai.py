@@ -1,11 +1,13 @@
 """Google GenAI sampling handler with tool support for FastMCP 3.0."""
 
+import base64
 from collections.abc import Sequence
 from uuid import uuid4
 
 try:
     from google.genai import Client as GoogleGenaiClient
     from google.genai.types import (
+        Blob,
         Candidate,
         Content,
         FunctionCall,
@@ -196,6 +198,22 @@ def _sampling_content_to_google_genai_part(
     """Convert MCP content to Google GenAI Part."""
     if isinstance(content, TextContent):
         return Part(text=content.text)
+
+    if isinstance(content, ImageContent):
+        return Part(
+            inline_data=Blob(
+                data=base64.b64decode(content.data),
+                mime_type=content.mimeType,
+            )
+        )
+
+    if isinstance(content, AudioContent):
+        return Part(
+            inline_data=Blob(
+                data=base64.b64decode(content.data),
+                mime_type=content.mimeType,
+            )
+        )
 
     if isinstance(content, ToolUseContent):
         # Note: thought_signature bypass is required for manually constructed tool calls.

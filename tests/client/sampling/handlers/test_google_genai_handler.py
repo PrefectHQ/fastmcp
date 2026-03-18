@@ -1,3 +1,4 @@
+import base64
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,9 +15,12 @@ try:
         UserContent,
     )
     from mcp.types import (
+        AudioContent,
         CreateMessageResult,
+        ImageContent,
         ModelHint,
         ModelPreferences,
+        SamplingMessage,
         TextContent,
         ToolChoice,
         ToolResultContent,
@@ -42,8 +46,6 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_convert_sampling_messages_to_google_genai_content():
-    from mcp.types import SamplingMessage, TextContent
-
     msgs = _convert_messages_to_google_genai_content(
         messages=[
             SamplingMessage(
@@ -62,20 +64,98 @@ def test_convert_sampling_messages_to_google_genai_content():
     assert msgs[1].parts[0].text == "ok"
 
 
-def test_convert_to_google_genai_messages_raises_on_non_text():
-    from mcp.types import SamplingMessage
+def test_convert_single_image_content_to_google_genai():
+    part = _sampling_content_to_google_genai_part(
+        ImageContent(type="image", data="YWJj", mimeType="image/png")
+    )
 
-    from fastmcp.utilities.types import Image
+    assert part.inline_data is not None
+    assert part.inline_data.data == base64.b64decode("YWJj")
+    assert part.inline_data.mime_type == "image/png"
 
-    with pytest.raises(ValueError):
-        _convert_messages_to_google_genai_content(
-            messages=[
-                SamplingMessage(
-                    role="user",
-                    content=Image(data=b"abc").to_image_content(),
-                )
-            ],
-        )
+
+def test_convert_single_audio_content_to_google_genai():
+    part = _sampling_content_to_google_genai_part(
+        AudioContent(type="audio", data="YWJj", mimeType="audio/wav")
+    )
+
+    assert part.inline_data is not None
+    assert part.inline_data.data == base64.b64decode("YWJj")
+    assert part.inline_data.mime_type == "audio/wav"
+
+
+def test_convert_image_message_to_google_genai_content():
+    msgs = _convert_messages_to_google_genai_content(
+        messages=[
+            SamplingMessage(
+                role="user",
+                content=ImageContent(type="image", data="YWJj", mimeType="image/jpeg"),
+            )
+        ],
+    )
+
+    assert len(msgs) == 1
+    assert isinstance(msgs[0], UserContent)
+    assert msgs[0].parts[0].inline_data is not None
+    assert msgs[0].parts[0].inline_data.mime_type == "image/jpeg"
+
+
+def test_convert_audio_message_to_google_genai_content():
+    msgs = _convert_messages_to_google_genai_content(
+        messages=[
+            SamplingMessage(
+                role="user",
+                content=AudioContent(type="audio", data="YWJj", mimeType="audio/mp3"),
+            )
+        ],
+    )
+
+    assert len(msgs) == 1
+    assert isinstance(msgs[0], UserContent)
+    assert msgs[0].parts[0].inline_data is not None
+    assert msgs[0].parts[0].inline_data.mime_type == "audio/mp3"
+
+
+def test_convert_list_content_with_image_and_text():
+    msgs = _convert_messages_to_google_genai_content(
+        messages=[
+            SamplingMessage(
+                role="user",
+                content=[
+                    TextContent(type="text", text="What is in this image?"),
+                    ImageContent(type="image", data="YWJj", mimeType="image/png"),
+                ],
+            )
+        ],
+    )
+
+    assert len(msgs) == 1
+    assert isinstance(msgs[0], UserContent)
+    assert len(msgs[0].parts) == 2
+    assert msgs[0].parts[0].text == "What is in this image?"
+    assert msgs[0].parts[1].inline_data is not None
+    assert msgs[0].parts[1].inline_data.mime_type == "image/png"
+
+
+def test_convert_list_content_with_audio_and_text():
+    msgs = _convert_messages_to_google_genai_content(
+        messages=[
+            SamplingMessage(
+                role="user",
+                content=[
+                    TextContent(type="text", text="Transcribe this audio"),
+                    AudioContent(type="audio", data="YWJj", mimeType="audio/wav"),
+                ],
+            )
+        ],
+    )
+
+    assert len(msgs) == 1
+    assert isinstance(msgs[0], UserContent)
+    assert len(msgs[0].parts) == 2
+    assert msgs[0].parts[0].text == "Transcribe this audio"
+    assert msgs[0].parts[1].inline_data is not None
+    assert msgs[0].parts[1].inline_data.mime_type == "audio/wav"
 
 
 def test_get_model():
@@ -207,8 +287,6 @@ def test_sampling_content_to_google_genai_part_tool_result_no_underscore():
 
 def test_convert_messages_with_tool_use():
     """Test converting messages containing ToolUseContent."""
-    from mcp.types import SamplingMessage
-
     msgs = _convert_messages_to_google_genai_content(
         messages=[
             SamplingMessage(
@@ -236,8 +314,6 @@ def test_convert_messages_with_tool_use():
 
 def test_convert_messages_with_tool_result():
     """Test converting messages containing ToolResultContent."""
-    from mcp.types import SamplingMessage
-
     msgs = _convert_messages_to_google_genai_content(
         messages=[
             SamplingMessage(
@@ -245,7 +321,7 @@ def test_convert_messages_with_tool_result():
                 content=ToolResultContent(
                     type="tool_result",
                     toolUseId="get_weather_123",
-                    content=[TextContent(type="text", text="Sunny, 72°F")],
+                    content=[TextContent(type="text", text="Sunny, 72F")],
                 ),
             ),
         ],
@@ -259,8 +335,6 @@ def test_convert_messages_with_tool_result():
 
 def test_convert_messages_with_multiple_content_blocks():
     """Test converting messages with multiple content blocks (list content)."""
-    from mcp.types import SamplingMessage
-
     msgs = _convert_messages_to_google_genai_content(
         messages=[
             SamplingMessage(

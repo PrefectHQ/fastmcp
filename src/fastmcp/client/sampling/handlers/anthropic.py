@@ -3,10 +3,11 @@
 from collections.abc import Iterator, Sequence
 from typing import Any
 
-from mcp.types import CreateMessageRequestParams as SamplingParams
 from mcp.types import (
+    AudioContent,
     CreateMessageResult,
     CreateMessageResultWithTools,
+    ImageContent,
     ModelPreferences,
     SamplingMessage,
     SamplingMessageContentBlock,
@@ -17,10 +18,13 @@ from mcp.types import (
     ToolResultContent,
     ToolUseContent,
 )
+from mcp.types import CreateMessageRequestParams as SamplingParams
 
 try:
     from anthropic import AsyncAnthropic
     from anthropic.types import (
+        Base64ImageSourceParam,
+        ImageBlockParam,
         Message,
         MessageParam,
         TextBlock,
@@ -41,6 +45,28 @@ except ImportError as e:
     ) from e
 
 __all__ = ["AnthropicSamplingHandler"]
+
+# Anthropic supports these image MIME types
+_ANTHROPIC_IMAGE_MEDIA_TYPES = frozenset(
+    {"image/jpeg", "image/png", "image/gif", "image/webp"}
+)
+
+
+def _image_content_to_anthropic_block(content: ImageContent) -> ImageBlockParam:
+    """Convert MCP ImageContent to Anthropic ImageBlockParam."""
+    if content.mimeType not in _ANTHROPIC_IMAGE_MEDIA_TYPES:
+        raise ValueError(
+            f"Unsupported image MIME type for Anthropic: {content.mimeType!r}. "
+            f"Supported types: {', '.join(sorted(_ANTHROPIC_IMAGE_MEDIA_TYPES))}"
+        )
+    return ImageBlockParam(
+        type="image",
+        source=Base64ImageSourceParam(
+            type="base64",
+            media_type=content.mimeType,  # type: ignore[arg-type]
+            data=content.data,
+        ),
+    )
 
 
 class AnthropicSamplingHandler:
@@ -155,7 +181,10 @@ class AnthropicSamplingHandler:
             # Handle list content (from CreateMessageResultWithTools)
             if isinstance(content, list):
                 content_blocks: list[
-                    TextBlockParam | ToolUseBlockParam | ToolResultBlockParam
+                    TextBlockParam
+                    | ImageBlockParam
+                    | ToolUseBlockParam
+                    | ToolResultBlockParam
                 ] = []
 
                 for item in content:
@@ -171,6 +200,12 @@ class AnthropicSamplingHandler:
                     elif isinstance(item, TextContent):
                         content_blocks.append(
                             TextBlockParam(type="text", text=item.text)
+                        )
+                    elif isinstance(item, ImageContent):
+                        content_blocks.append(_image_content_to_anthropic_block(item))
+                    elif isinstance(item, AudioContent):
+                        raise ValueError(
+                            "AudioContent is not supported by the Anthropic API"
                         )
                     elif isinstance(item, ToolResultContent):
                         # Extract text content from the result
@@ -261,6 +296,20 @@ class AnthropicSamplingHandler:
                     )
                 )
                 continue
+
+            # Handle ImageContent
+            if isinstance(content, ImageContent):
+                anthropic_messages.append(
+                    MessageParam(
+                        role=message.role,
+                        content=[_image_content_to_anthropic_block(content)],
+                    )
+                )
+                continue
+
+            # Handle AudioContent - not supported by Anthropic
+            if isinstance(content, AudioContent):
+                raise ValueError("AudioContent is not supported by the Anthropic API")
 
             raise ValueError(f"Unsupported content type: {type(content)}")
 

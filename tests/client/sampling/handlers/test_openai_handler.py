@@ -1,9 +1,12 @@
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcp.types import (
+    AudioContent,
     CreateMessageRequestParams,
     CreateMessageResult,
+    ImageContent,
     ModelHint,
     ModelPreferences,
     SamplingMessage,
@@ -13,13 +16,20 @@ from openai import AsyncOpenAI
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionAssistantMessageParam,
+    ChatCompletionContentPartImageParam,
+    ChatCompletionContentPartInputAudioParam,
+    ChatCompletionContentPartTextParam,
     ChatCompletionMessage,
     ChatCompletionSystemMessageParam,
     ChatCompletionUserMessageParam,
 )
 from openai.types.chat.chat_completion import Choice
 
-from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
+from fastmcp.client.sampling.handlers.openai import (
+    OpenAISamplingHandler,
+    _audio_content_to_openai_part,
+    _image_content_to_openai_part,
+)
 
 
 def test_convert_sampling_messages_to_openai_messages():
@@ -42,16 +52,143 @@ def test_convert_sampling_messages_to_openai_messages():
     ]
 
 
-def test_convert_to_openai_messages_raises_on_non_text():
-    from fastmcp.utilities.types import Image
+def test_image_content_to_openai_part():
+    part = _image_content_to_openai_part(
+        ImageContent(type="image", data="YWJj", mimeType="image/png")
+    )
 
-    with pytest.raises(ValueError):
+    assert part == ChatCompletionContentPartImageParam(
+        type="image_url",
+        image_url={"url": "data:image/png;base64,YWJj"},
+    )
+
+
+def test_audio_content_to_openai_part_wav():
+    part = _audio_content_to_openai_part(
+        AudioContent(type="audio", data="YWJj", mimeType="audio/wav")
+    )
+
+    assert part == ChatCompletionContentPartInputAudioParam(
+        type="input_audio",
+        input_audio={"data": "YWJj", "format": "wav"},
+    )
+
+
+def test_audio_content_to_openai_part_mp3():
+    part = _audio_content_to_openai_part(
+        AudioContent(type="audio", data="YWJj", mimeType="audio/mpeg")
+    )
+
+    assert part["input_audio"]["format"] == "mp3"
+
+
+def test_audio_content_to_openai_part_unsupported_raises():
+    with pytest.raises(ValueError, match="Unsupported audio MIME type"):
+        _audio_content_to_openai_part(
+            AudioContent(type="audio", data="YWJj", mimeType="audio/ogg")
+        )
+
+
+def test_convert_single_image_content_to_openai_message():
+    msgs = OpenAISamplingHandler._convert_to_openai_messages(
+        system_prompt=None,
+        messages=[
+            SamplingMessage(
+                role="user",
+                content=ImageContent(type="image", data="YWJj", mimeType="image/png"),
+            )
+        ],
+    )
+
+    assert len(msgs) == 1
+    assert msgs[0] == ChatCompletionUserMessageParam(
+        role="user",
+        content=[
+            ChatCompletionContentPartImageParam(
+                type="image_url",
+                image_url={"url": "data:image/png;base64,YWJj"},
+            )
+        ],
+    )
+
+
+def test_convert_single_audio_content_to_openai_message():
+    msgs = OpenAISamplingHandler._convert_to_openai_messages(
+        system_prompt=None,
+        messages=[
+            SamplingMessage(
+                role="user",
+                content=AudioContent(type="audio", data="YWJj", mimeType="audio/wav"),
+            )
+        ],
+    )
+
+    assert len(msgs) == 1
+    assert msgs[0] == ChatCompletionUserMessageParam(
+        role="user",
+        content=[
+            ChatCompletionContentPartInputAudioParam(
+                type="input_audio",
+                input_audio={"data": "YWJj", "format": "wav"},
+            )
+        ],
+    )
+
+
+def test_convert_list_content_with_image_and_text():
+    msgs = OpenAISamplingHandler._convert_to_openai_messages(
+        system_prompt=None,
+        messages=[
+            SamplingMessage(
+                role="user",
+                content=[
+                    TextContent(type="text", text="What is in this image?"),
+                    ImageContent(type="image", data="YWJj", mimeType="image/jpeg"),
+                ],
+            )
+        ],
+    )
+
+    assert len(msgs) == 1
+    assert msgs[0] == ChatCompletionUserMessageParam(
+        role="user",
+        content=[
+            ChatCompletionContentPartTextParam(
+                type="text", text="What is in this image?"
+            ),
+            ChatCompletionContentPartImageParam(
+                type="image_url",
+                image_url={"url": "data:image/jpeg;base64,YWJj"},
+            ),
+        ],
+    )
+
+
+def test_convert_image_in_assistant_message_raises():
+    with pytest.raises(ValueError, match="ImageContent is only supported in user"):
         OpenAISamplingHandler._convert_to_openai_messages(
             system_prompt=None,
             messages=[
                 SamplingMessage(
-                    role="user",
-                    content=Image(data=b"abc").to_image_content(),
+                    role="assistant",
+                    content=ImageContent(
+                        type="image", data="YWJj", mimeType="image/png"
+                    ),
+                )
+            ],
+        )
+
+
+def test_convert_audio_in_assistant_message_raises():
+    with pytest.raises(ValueError, match="AudioContent is only supported in user"):
+        OpenAISamplingHandler._convert_to_openai_messages(
+            system_prompt=None,
+            messages=[
+                SamplingMessage(
+                    role="assistant",
+                    content=AudioContent(
+                        type="audio", data="YWJj", mimeType="audio/wav"
+                    ),
                 )
             ],
         )
@@ -67,7 +204,7 @@ def test_convert_to_openai_messages_raises_on_non_text():
         (["unknown-model"], "fallback-model"),
     ],
 )
-def test_select_model_from_preferences(prefs, expected):
+def test_select_model_from_preferences(prefs: Any, expected: str) -> None:
     mock_client = MagicMock(spec=AsyncOpenAI)
     handler = OpenAISamplingHandler(default_model="fallback-model", client=mock_client)  # type: ignore[arg-type]
     assert handler._select_model_from_preferences(prefs) == expected
