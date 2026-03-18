@@ -11,6 +11,7 @@ from mcp.types import (
     ModelPreferences,
     SamplingMessage,
     TextContent,
+    ToolUseContent,
 )
 from openai import AsyncOpenAI
 from openai.types.chat import (
@@ -211,6 +212,28 @@ def test_convert_list_image_in_assistant_message_raises():
                     role="assistant",
                     content=[
                         TextContent(type="text", text="Here's the image"),
+                        ImageContent(type="image", data="YWJj", mimeType="image/png"),
+                    ],
+                )
+            ],
+        )
+
+
+def test_convert_list_tool_calls_with_image_raises():
+    """Image/audio alongside tool_calls in assistant list should raise."""
+    with pytest.raises(ValueError, match="only supported in user messages"):
+        OpenAISamplingHandler._convert_to_openai_messages(
+            system_prompt=None,
+            messages=[
+                SamplingMessage(
+                    role="assistant",
+                    content=[
+                        ToolUseContent(
+                            type="tool_use",
+                            id="call_1",
+                            name="my_tool",
+                            input={"arg": "val"},
+                        ),
                         ImageContent(type="image", data="YWJj", mimeType="image/png"),
                     ],
                 )

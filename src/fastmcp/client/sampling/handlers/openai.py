@@ -248,7 +248,12 @@ class OpenAISamplingHandler:
                 # OpenAI requires: assistant (with tool_calls) -> tool messages
                 if tool_calls or content_parts:
                     if tool_calls:
-                        # When there are tool calls, content must be text-only
+                        has_multimodal = len(content_parts) > len(text_parts)
+                        if has_multimodal:
+                            raise ValueError(
+                                "ImageContent/AudioContent is only supported "
+                                "in user messages for OpenAI"
+                            )
                         text_str = "\n".join(text_parts) or None
                         openai_messages.append(
                             ChatCompletionAssistantMessageParam(
