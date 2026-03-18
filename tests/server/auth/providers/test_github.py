@@ -152,6 +152,7 @@ def _mock_github_success(mock_client: AsyncMock) -> None:
     }
 
     scopes_response = MagicMock()
+    scopes_response.status_code = 200
     scopes_response.headers = {"x-oauth-scopes": "user,repo"}
 
     mock_client.get.side_effect = [user_response, scopes_response]
@@ -259,6 +260,37 @@ class TestGitHubTokenVerifierCaching:
             result2 = await verifier.verify_token("tok-1")
             assert result2 is not None
             assert result2.claims["login"] == "testuser"
+
+    async def test_scope_failure_skips_cache(self):
+        """Token verified with fallback scopes (scope API failed) should not be cached."""
+        verifier = GitHubTokenVerifier(cache_ttl_seconds=300)
+
+        mock_client = AsyncMock()
+
+        user_response = MagicMock()
+        user_response.status_code = 200
+        user_response.json.return_value = {
+            "id": 12345,
+            "login": "testuser",
+            "name": "Test User",
+            "email": "test@example.com",
+            "avatar_url": "https://github.com/testuser.png",
+        }
+
+        scopes_response = MagicMock()
+        scopes_response.status_code = 500
+        scopes_response.headers = {}
+
+        with patch(
+            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+        ) as mock_cls:
+            mock_cls.return_value.__aenter__.return_value = mock_client
+
+            mock_client.get.side_effect = [user_response, scopes_response]
+            result = await verifier.verify_token("tok-1")
+            assert result is not None
+            # Should NOT be cached because scope response was not 200
+            assert not verifier._cache.enabled or len(verifier._cache._entries) == 0
 
     def test_provider_passes_cache_params(self, memory_storage: MemoryStore):
         provider = GitHubProvider(

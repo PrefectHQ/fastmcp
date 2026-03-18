@@ -55,8 +55,8 @@ class TokenCache:
     - Defensive deep copies on both store and retrieve to prevent
       callers from mutating cached values.
 
-    Caching is disabled when ``ttl_seconds`` is ``None``, ``0``, or
-    negative, or when ``max_size`` is ``0`` or negative.
+    Caching is disabled when ``ttl_seconds`` is ``None`` or ``0``, or
+    when ``max_size`` is ``0``.  Negative values raise ``ValueError``.
     """
 
     def __init__(
@@ -125,10 +125,11 @@ class TokenCache:
         if not self.enabled:
             return
 
-        self._maybe_cleanup()
-        self._enforce_size_limit()
-
         cache_key = self._hash_token(token)
+
+        self._maybe_cleanup()
+        if cache_key not in self._entries:
+            self._enforce_size_limit()
 
         expires_at = time.time() + self._ttl
         if result.expires_at:

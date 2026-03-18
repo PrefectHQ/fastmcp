@@ -124,6 +124,7 @@ class GitHubTokenVerifier(TokenVerifier):
                 )
 
                 # Extract scopes from X-OAuth-Scopes header if available
+                scopes_verified = scopes_response.status_code == 200
                 oauth_scopes_header = scopes_response.headers.get("x-oauth-scopes", "")
                 token_scopes = [
                     scope.strip()
@@ -162,7 +163,8 @@ class GitHubTokenVerifier(TokenVerifier):
                         "github_user_data": user_data,
                     },
                 )
-                self._cache.set(token, result)
+                if scopes_verified:
+                    self._cache.set(token, result)
                 return result
 
         except httpx.RequestError as e:

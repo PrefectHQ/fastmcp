@@ -193,6 +193,23 @@ class TestTokenCacheSizeLimit:
         assert hit_1
         assert hit_2
 
+    def test_overwrite_does_not_evict(self):
+        """Overwriting an existing key should not evict another entry."""
+        cache = TokenCache(ttl_seconds=300, max_size=2)
+        cache.set("tok-0", _make_token(client_id="0"))
+        cache.set("tok-1", _make_token(client_id="1"))
+
+        # Overwrite tok-0 — should NOT evict tok-1
+        cache.set("tok-0", _make_token(client_id="0-updated"))
+
+        assert len(cache._entries) == 2
+        hit_0, result_0 = cache.get("tok-0")
+        hit_1, _ = cache.get("tok-1")
+        assert hit_0
+        assert hit_1
+        assert result_0 is not None
+        assert result_0.client_id == "0-updated"
+
 
 class TestTokenCacheHashing:
     """SHA-256 key hashing."""
