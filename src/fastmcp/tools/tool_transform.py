@@ -26,6 +26,7 @@ from fastmcp.utilities.types import (
     NotSet,
     NotSetT,
     get_cached_typeadapter,
+    issubclass_safe,
 )
 
 logger = get_logger(__name__)
@@ -316,8 +317,8 @@ class TransformedTool(Tool):
                     # Check if this is from a custom function that returns ToolResult
 
                     return_annotation = inspect.signature(self.fn).return_annotation
-                    if return_annotation is ToolResult:
-                        # Custom function returns ToolResult - preserve its content
+                    if issubclass_safe(return_annotation, ToolResult):
+                        # Custom function returns ToolResult (or subclass) - preserve its content
                         return result
                     else:
                         # Forwarded call with no explicit schema - preserve parent's structured content
@@ -496,11 +497,11 @@ class TransformedTool(Tool):
                 # parsed fn is not none here
                 final_output_schema = cast(ParsedFunction, parsed_fn).output_schema
                 if final_output_schema is None:
-                    # Check if function returns ToolResult - if so, don't fall back to parent
+                    # Check if function returns ToolResult (or subclass) - if so, don't fall back to parent
                     return_annotation = inspect.signature(
                         transform_fn
                     ).return_annotation
-                    if return_annotation is ToolResult:
+                    if issubclass_safe(return_annotation, ToolResult):
                         final_output_schema = None
                     else:
                         final_output_schema = tool.output_schema

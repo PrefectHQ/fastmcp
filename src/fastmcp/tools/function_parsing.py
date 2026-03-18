@@ -26,6 +26,7 @@ from fastmcp.utilities.types import (
     Image,
     create_function_without_params,
     get_cached_typeadapter,
+    is_class_member_of_type,
     replace_type,
 )
 
@@ -45,16 +46,6 @@ def _contains_prefab_type(tp: Any) -> bool:
     origin = get_origin(tp)
     if origin is Union or origin is types.UnionType or origin is Annotated:
         return any(_contains_prefab_type(a) for a in get_args(tp))
-    return False
-
-
-def _contains_tool_result_type(tp: Any) -> bool:
-    """Check if *tp* is or contains a ToolResult subclass, recursing through unions and Annotated."""
-    if isinstance(tp, type) and issubclass(tp, ToolResult):
-        return True
-    origin = get_origin(tp)
-    if origin is Union or origin is types.UnionType or origin is Annotated:
-        return any(_contains_tool_result_type(a) for a in get_args(tp))
     return False
 
 
@@ -224,7 +215,7 @@ class ParsedFunction:
 
             # ToolResult subclasses should suppress schema generation just
             # like ToolResult itself — replace_type only does exact matching.
-            if _contains_tool_result_type(output_type):
+            if is_class_member_of_type(output_type, ToolResult):
                 output_type = _UnserializableType
 
             # there are a variety of types that we don't want to attempt to
