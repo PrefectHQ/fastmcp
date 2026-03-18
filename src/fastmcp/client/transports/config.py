@@ -112,7 +112,9 @@ class MCPConfigTransport(ClientTransport):
                     transport, _client, proxy = await self._create_proxy(
                         name, server_config, timeout, stack
                     )
-                except Exception:
+                except Exception:  # Broad catch is intentional: failure modes
+                    # are diverse (OSError, TimeoutError, RuntimeError, etc.)
+                    # and the whole point is to skip any server that can't connect.
                     logger.warning(
                         "Failed to connect to MCP server %r, skipping",
                         name,

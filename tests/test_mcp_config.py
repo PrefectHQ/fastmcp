@@ -1007,7 +1007,15 @@ async def test_single_server_config_transport():
     assert len(transport._transports) == 1
 
 
-async def test_multi_server_partial_failure(tmp_path: Path):
+@pytest.mark.parametrize(
+    "server_order",
+    [
+        {"good_server": True, "bad_server": False},
+        {"bad_server": False, "good_server": True},
+    ],
+    ids=["good_first", "bad_first"],
+)
+async def test_multi_server_partial_failure(tmp_path: Path, server_order: dict):
     """When one server fails to connect, the others should still work."""
     server_script = inspect.cleandoc("""
         from fastmcp import FastMCP
@@ -1025,20 +1033,20 @@ async def test_multi_server_partial_failure(tmp_path: Path):
     script_path = tmp_path / "test.py"
     script_path.write_text(server_script)
 
-    config = {
-        "mcpServers": {
-            "good_server": {
+    servers = {}
+    for name, is_good in server_order.items():
+        if is_good:
+            servers[name] = {
                 "command": "python",
                 "args": [str(script_path)],
-            },
-            "bad_server": {
+            }
+        else:
+            servers[name] = {
                 "command": "this-command-does-not-exist-anywhere",
                 "args": [],
-            },
-        }
-    }
+            }
 
-    client = Client(config)
+    client = Client({"mcpServers": servers})
     async with client:
         tools = await client.list_tools()
         tool_names = [t.name for t in tools]
