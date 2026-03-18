@@ -1,0 +1,46 @@
+server_name: "Command Tools Example"
+
+tools:
+  - name: "echo_tool"
+    description: "Echo a message to stdout (for testing parameter passthrough)"
+    command: "python"
+    args_template:
+      - "scripts/echo_tool.py"
+      - "--msg"
+      - "{msg}"
+    working_dir: "."
+    env:
+      PYTHONUNBUFFERED: "1"
+    timeout_seconds: 30
+    parameters:
+      msg:
+        type: "string"
+        description: "Message to echo"
+        required: true
+
+  - name: "fail_stub"
+    description: "Intentionally exits with code 1 and writes to stderr (for testing error path)"
+    command: "python"
+    args_template:
+      - "scripts/fail_stub.py"
+    working_dir: "."
+    env:
+      PYTHONUNBUFFERED: "1"
+    timeout_seconds: 10
+    parameters: {}
+
+  - name: "sleep_tool"
+    description: "Sleep for a given number of seconds (for testing timeout)"
+    command: "python"
+    args_template:
+      - "-c"
+      - "import time, sys; time.sleep(int(sys.argv[1])); print('done')"
+      - "{seconds}"
+    working_dir: "."
+    timeout_seconds: 2
+    parameters:
+      seconds:
+        type: "integer"
+        description: "Seconds to sleep"
+        required: false
+        default: 1
