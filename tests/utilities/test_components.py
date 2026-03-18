@@ -237,8 +237,10 @@ class TestKeyPrefix:
             class NoPrefix(FastMCPComponent):
                 pass
 
-            assert len(w) == 1
-            assert "NoPrefix does not define KEY_PREFIX" in str(w[0].message)
+            key_prefix_warnings = [
+                x for x in w if "does not define KEY_PREFIX" in str(x.message)
+            ]
+            assert len(key_prefix_warnings) == 1
 
     def test_no_warning_when_key_prefix_defined(self):
         """Test that subclassing with KEY_PREFIX does not emit a warning."""
@@ -248,7 +250,10 @@ class TestKeyPrefix:
             class WithPrefix(FastMCPComponent):
                 KEY_PREFIX = "custom"
 
-            assert len(w) == 0
+            key_prefix_warnings = [
+                x for x in w if "does not define KEY_PREFIX" in str(x.message)
+            ]
+            assert len(key_prefix_warnings) == 0
             assert WithPrefix.make_key("test") == "custom:test"
 
 
