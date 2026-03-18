@@ -25,7 +25,7 @@ from pydantic.json_schema import SkipJsonSchema
 import fastmcp
 from fastmcp.decorators import resolve_task_config
 from fastmcp.exceptions import PromptError
-from fastmcp.prompts.prompt import Prompt, PromptArgument, PromptResult
+from fastmcp.prompts.base import Prompt, PromptArgument, PromptResult
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (
     transform_context_annotations,

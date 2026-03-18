@@ -38,7 +38,7 @@ from fastmcp.decorators import get_fastmcp_meta
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.local_provider import LocalProvider
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)

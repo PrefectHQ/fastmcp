@@ -14,7 +14,7 @@ from fastmcp.server.transforms.search.base import (
     serialize_tools_for_output_json,
     serialize_tools_for_output_markdown,
 )
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.async_utils import is_coroutine_function
 from fastmcp.utilities.versions import VersionSpec
 

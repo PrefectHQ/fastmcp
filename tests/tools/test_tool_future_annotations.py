@@ -7,7 +7,7 @@ from pydantic import Field
 
 from fastmcp import Context, FastMCP
 from fastmcp.client import Client
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.types import Image
 
 fastmcp_server = FastMCP()

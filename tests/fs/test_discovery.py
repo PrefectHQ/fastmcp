@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from fastmcp.prompts.prompt import Prompt
-from fastmcp.resources.resource import Resource
+from fastmcp.prompts.base import Prompt
+from fastmcp.resources.base import Resource
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.server.providers.filesystem_discovery import (
     discover_and_import,
@@ -12,7 +12,7 @@ from fastmcp.server.providers.filesystem_discovery import (
     import_module_from_file,
 )
 from fastmcp.tools import FunctionTool
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 
 class TestDiscoverFiles:

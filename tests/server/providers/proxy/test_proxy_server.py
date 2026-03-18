@@ -23,7 +23,7 @@ from fastmcp.server.providers.proxy import (
     ProxyClient,
     ProxyProvider,
 )
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.base import ToolResult
 from fastmcp.tools.tool_transform import (
     ToolTransformConfig,
 )
@@ -136,7 +136,7 @@ def fastmcp_server():
     @server.prompt
     def image_prompt():
         """A prompt that returns an image."""
-        from fastmcp.prompts.prompt import Message, PromptResult
+        from fastmcp.prompts.base import Message, PromptResult
 
         return PromptResult(
             messages=[

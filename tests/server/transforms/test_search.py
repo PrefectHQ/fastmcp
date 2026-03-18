@@ -20,7 +20,7 @@ from fastmcp.server.transforms.search.bm25 import (
     _catalog_hash,
 )
 from fastmcp.server.transforms.search.regex import RegexSearchTransform
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 
 # ---------------------------------------------------------------------------
 # Helpers

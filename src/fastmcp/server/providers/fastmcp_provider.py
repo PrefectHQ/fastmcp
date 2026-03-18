@@ -19,13 +19,13 @@ from urllib.parse import quote
 import mcp.types
 from mcp.types import AnyUrl
 
-from fastmcp.prompts.prompt import Prompt, PromptResult
-from fastmcp.resources.resource import Resource, ResourceResult
+from fastmcp.prompts.base import Prompt, PromptResult
+from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.telemetry import delegate_span
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.versions import VersionSpec
 

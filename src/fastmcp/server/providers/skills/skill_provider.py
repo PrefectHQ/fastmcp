@@ -10,7 +10,7 @@ from typing import Any, Literal, cast
 
 from pydantic import AnyUrl
 
-from fastmcp.resources.resource import Resource, ResourceResult
+from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.skills._common import (

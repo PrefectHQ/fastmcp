@@ -26,7 +26,7 @@ from starlette.requests import Request
 from typing_extensions import TypeVar
 from uncalled_for import SharedContext
 
-from fastmcp.resources.resource import ResourceResult
+from fastmcp.resources.base import ResourceResult
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,

@@ -9,7 +9,7 @@ from mcp.types import TextContent
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.tools.tool_transform import TransformedTool
 
 

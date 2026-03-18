@@ -25,7 +25,7 @@ from fastmcp.server.app import (
     _make_global_key,
     _resolve_tool_ref,
 )
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers

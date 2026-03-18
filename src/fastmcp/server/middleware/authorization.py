@@ -29,8 +29,8 @@ from collections.abc import Sequence
 import mcp.types as mt
 
 from fastmcp.exceptions import AuthorizationError
-from fastmcp.prompts.prompt import Prompt, PromptResult
-from fastmcp.resources.resource import Resource, ResourceResult
+from fastmcp.prompts.base import Prompt, PromptResult
+from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth.authorization import (
     AuthCheck,
@@ -43,7 +43,7 @@ from fastmcp.server.middleware.middleware import (
     Middleware,
     MiddlewareContext,
 )
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 
 logger = logging.getLogger(__name__)
 

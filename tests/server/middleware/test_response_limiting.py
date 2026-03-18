@@ -5,7 +5,7 @@ from mcp.types import ImageContent, TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.base import ToolResult
 
 
 class TestResponseLimitingMiddleware:

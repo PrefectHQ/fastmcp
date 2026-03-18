@@ -19,7 +19,7 @@ from fastmcp.server.apps import UI_MIME_TYPE, AppConfig
 from fastmcp.server.providers.local_provider.decorators.tools import (
     PREFAB_RENDERER_URI,
 )
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 
 # ---------------------------------------------------------------------------
 # convert_result

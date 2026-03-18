@@ -18,10 +18,10 @@ from key_value.aio.wrappers.statistics.wrapper import (
 from pydantic import Field
 from typing_extensions import NotRequired, Self, override
 
-from fastmcp.prompts.prompt import Message, Prompt, PromptResult
-from fastmcp.resources.resource import Resource, ResourceContent, ResourceResult
+from fastmcp.prompts.base import Message, Prompt, PromptResult
+from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel
 

@@ -10,7 +10,7 @@ from mcp.types import ErrorData, TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 
 class InitializationMiddleware(Middleware):

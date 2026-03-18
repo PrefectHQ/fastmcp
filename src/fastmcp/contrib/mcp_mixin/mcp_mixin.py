@@ -6,9 +6,9 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import fastmcp
-from fastmcp.prompts.prompt import Prompt
-from fastmcp.resources.resource import Resource
-from fastmcp.tools.tool import Tool
+from fastmcp.prompts.base import Prompt
+from fastmcp.resources.base import Resource
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.types import get_fn_name
 
 if TYPE_CHECKING:

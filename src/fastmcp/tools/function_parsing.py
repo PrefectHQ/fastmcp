@@ -17,7 +17,7 @@ from fastmcp.server.dependencies import (
     transform_context_annotations,
     without_injected_parameters,
 )
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (

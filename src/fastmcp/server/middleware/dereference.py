@@ -8,7 +8,7 @@ from typing_extensions import override
 
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.json_schema import dereference_refs
 
 

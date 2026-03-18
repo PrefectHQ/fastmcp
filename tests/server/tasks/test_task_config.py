@@ -16,7 +16,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.tasks import TaskConfig
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 
 class TestTaskConfigNormalization:

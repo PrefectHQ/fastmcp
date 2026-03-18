@@ -17,10 +17,10 @@ from typing import (
 import mcp.types as mt
 from typing_extensions import TypeVar
 
-from fastmcp.prompts.prompt import Prompt, PromptResult
-from fastmcp.resources.resource import Resource, ResourceResult
+from fastmcp.prompts.base import Prompt, PromptResult
+from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
