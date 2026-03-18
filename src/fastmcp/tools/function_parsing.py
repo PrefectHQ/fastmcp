@@ -48,6 +48,16 @@ def _contains_prefab_type(tp: Any) -> bool:
     return False
 
 
+def _contains_tool_result_type(tp: Any) -> bool:
+    """Check if *tp* is or contains a ToolResult subclass, recursing through unions and Annotated."""
+    if isinstance(tp, type) and issubclass(tp, ToolResult):
+        return True
+    origin = get_origin(tp)
+    if origin is Union or origin is types.UnionType or origin is Annotated:
+        return any(_contains_tool_result_type(a) for a in get_args(tp))
+    return False
+
+
 T = TypeVarExt("T", default=Any)
 
 logger = get_logger(__name__)
@@ -210,6 +220,11 @@ class ParsedFunction:
             # to handle composite types like ``Column | None`` and
             # ``Annotated[PrefabApp, ...]`` by recursing into their args.
             if _PREFAB_TYPES and _contains_prefab_type(output_type):
+                output_type = _UnserializableType
+
+            # ToolResult subclasses should suppress schema generation just
+            # like ToolResult itself — replace_type only does exact matching.
+            if _contains_tool_result_type(output_type):
                 output_type = _UnserializableType
 
             # there are a variety of types that we don't want to attempt to
