@@ -33,6 +33,7 @@ from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.token_cache import TokenCache
 
 logger = get_logger(__name__)
 
@@ -42,6 +43,10 @@ class GitHubTokenVerifier(TokenVerifier):
 
     GitHub OAuth tokens are opaque (not JWTs), so we verify them
     by calling GitHub's API to check if they're valid and get user info.
+
+    Caching is disabled by default.  Set ``cache_ttl_seconds`` to a positive
+    integer to cache successful verification results and avoid repeated
+    GitHub API calls for the same token.
     """
 
     def __init__(
@@ -49,6 +54,8 @@ class GitHubTokenVerifier(TokenVerifier):
         *,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
+        cache_ttl_seconds: int | None = None,
+        max_cache_size: int | None = None,
         http_client: httpx.AsyncClient | None = None,
     ):
         """Initialize the GitHub token verifier.
@@ -56,6 +63,10 @@ class GitHubTokenVerifier(TokenVerifier):
         Args:
             required_scopes: Required OAuth scopes (e.g., ['user:email'])
             timeout_seconds: HTTP request timeout
+            cache_ttl_seconds: How long to cache verification results in seconds.
+                Caching is disabled by default (None).  Set to a positive integer
+                to enable (e.g., 300 for 5 minutes).
+            max_cache_size: Maximum number of tokens to cache.  Default: 10 000.
             http_client: Optional httpx.AsyncClient for connection pooling. When provided,
                 the client is reused across calls and the caller is responsible for its
                 lifecycle. When None (default), a fresh client is created per call.
@@ -63,9 +74,18 @@ class GitHubTokenVerifier(TokenVerifier):
         super().__init__(required_scopes=required_scopes)
         self.timeout_seconds = timeout_seconds
         self._http_client = http_client
+        self._cache = TokenCache(
+            ttl_seconds=cache_ttl_seconds,
+            max_size=max_cache_size,
+        )
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify GitHub OAuth token by calling GitHub API."""
+        is_cached, cached_result = self._cache.get(token)
+        if is_cached:
+            logger.debug("GitHub token cache hit")
+            return cached_result
+
         try:
             async with (
                 contextlib.nullcontext(self._http_client)
@@ -128,7 +148,7 @@ class GitHubTokenVerifier(TokenVerifier):
                         return None
 
                 # Create AccessToken with GitHub user info
-                return AccessToken(
+                result = AccessToken(
                     token=token,
                     client_id=str(user_data.get("id", "unknown")),  # Use GitHub user ID
                     scopes=token_scopes,
@@ -142,6 +162,8 @@ class GitHubTokenVerifier(TokenVerifier):
                         "github_user_data": user_data,
                     },
                 )
+                self._cache.set(token, result)
+                return result
 
         except httpx.RequestError as e:
             logger.debug("Failed to verify GitHub token: %s", e)
@@ -189,6 +211,8 @@ class GitHubProvider(OAuthProxy):
         redirect_path: str | None = None,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
+        cache_ttl_seconds: int | None = None,
+        max_cache_size: int | None = None,
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
@@ -207,6 +231,10 @@ class GitHubProvider(OAuthProxy):
             redirect_path: Redirect path configured in GitHub OAuth app (defaults to "/auth/callback")
             required_scopes: Required GitHub scopes (defaults to ["user"])
             timeout_seconds: HTTP request timeout for GitHub API calls (defaults to 10)
+            cache_ttl_seconds: How long to cache token verification results in seconds.
+                Caching is disabled by default (None).  Set to a positive integer to
+                enable (e.g., 300 for 5 minutes).
+            max_cache_size: Maximum number of tokens to cache.  Default: 10 000.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
@@ -234,6 +262,8 @@ class GitHubProvider(OAuthProxy):
         token_verifier = GitHubTokenVerifier(
             required_scopes=required_scopes_final,
             timeout_seconds=timeout_seconds,
+            cache_ttl_seconds=cache_ttl_seconds,
+            max_cache_size=max_cache_size,
             http_client=http_client,
         )
 

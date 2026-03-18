@@ -554,8 +554,7 @@ class TestIntrospectionCaching:
             client_id="test-client",
             client_secret="test-secret",
         )
-        assert verifier._cache_ttl == 0  # Disabled by default
-        assert verifier._max_cache_size == 10000
+        assert not verifier._cache.enabled
 
     def test_custom_cache_settings(self):
         """Test that cache settings can be customized."""
@@ -566,8 +565,8 @@ class TestIntrospectionCaching:
             cache_ttl_seconds=60,
             max_cache_size=500,
         )
-        assert verifier._cache_ttl == 60
-        assert verifier._max_cache_size == 500
+        assert verifier._cache._ttl == 60
+        assert verifier._cache._max_size == 500
 
     def test_cache_disabled_with_zero_ttl(self):
         """Test that cache is disabled when TTL is 0 or None."""
@@ -578,7 +577,7 @@ class TestIntrospectionCaching:
             client_secret="test-secret",
             cache_ttl_seconds=0,
         )
-        assert verifier._cache_ttl == 0
+        assert not verifier._cache.enabled
 
         # Explicit None (same as default)
         verifier2 = IntrospectionTokenVerifier(
@@ -587,7 +586,7 @@ class TestIntrospectionCaching:
             client_secret="test-secret",
             cache_ttl_seconds=None,
         )
-        assert verifier2._cache_ttl == 0
+        assert not verifier2._cache.enabled
 
     async def test_cache_disabled_with_zero_or_negative_max_size(
         self, httpx_mock: HTTPXMock
@@ -854,9 +853,9 @@ class TestIntrospectionCaching:
 
     def test_token_hashing(self, verifier_with_cache: IntrospectionTokenVerifier):
         """Test that tokens are hashed consistently."""
-        hash1 = verifier_with_cache._hash_token("test-token")
-        hash2 = verifier_with_cache._hash_token("test-token")
-        hash3 = verifier_with_cache._hash_token("different-token")
+        hash1 = verifier_with_cache._cache._hash_token("test-token")
+        hash2 = verifier_with_cache._cache._hash_token("test-token")
+        hash3 = verifier_with_cache._cache._hash_token("different-token")
 
         # Same token produces same hash
         assert hash1 == hash2
@@ -885,8 +884,8 @@ class TestIntrospectionCaching:
         await verifier_with_cache.verify_token("test-token")
 
         # Check that cache entry uses the shorter expiration
-        cache_key = verifier_with_cache._hash_token("test-token")
-        entry = verifier_with_cache._cache[cache_key]
+        cache_key = verifier_with_cache._cache._hash_token("test-token")
+        entry = verifier_with_cache._cache._entries[cache_key]
         # Cache expiration should be at or before token expiration
         assert entry.expires_at <= short_exp
 
@@ -917,8 +916,8 @@ class TestIntrospectionCaching:
         assert len(httpx_mock.get_requests()) == 1
 
         # Expire the cache entry manually
-        cache_key = verifier._hash_token("test-token")
-        verifier._cache[cache_key].expires_at = time.time() - 1
+        cache_key = verifier._cache._hash_token("test-token")
+        verifier._cache._entries[cache_key].expires_at = time.time() - 1
 
         # Second call — cache miss, new introspection
         await verifier.verify_token("test-token")
@@ -944,15 +943,15 @@ class TestIntrospectionCaching:
         # Fill cache to capacity
         await verifier.verify_token("token-0")
         await verifier.verify_token("token-1")
-        assert len(verifier._cache) == 2
+        assert len(verifier._cache._entries) == 2
 
         # Third token should evict the oldest entry
         await verifier.verify_token("token-2")
-        assert len(verifier._cache) == 2
+        assert len(verifier._cache._entries) == 2
 
         # token-0 should have been evicted (FIFO)
-        hash_0 = verifier._hash_token("token-0")
-        assert hash_0 not in verifier._cache
+        hash_0 = verifier._cache._hash_token("token-0")
+        assert hash_0 not in verifier._cache._entries
 
 
 class TestIntrospectionTokenVerifierIntegration:

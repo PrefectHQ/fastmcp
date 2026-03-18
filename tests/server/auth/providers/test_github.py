@@ -1,6 +1,6 @@
 """Unit tests for GitHub OAuth provider."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from key_value.aio.stores.memory import MemoryStore
@@ -100,8 +100,6 @@ class TestGitHubTokenVerifier:
 
     async def test_verify_token_success(self):
         """Test successful token verification."""
-        from unittest.mock import AsyncMock
-
         verifier = GitHubTokenVerifier(required_scopes=["user"])
 
         # Mock the httpx.AsyncClient directly
@@ -139,3 +137,141 @@ class TestGitHubTokenVerifier:
             assert result.scopes == ["user", "repo"]
             assert result.claims["login"] == "testuser"
             assert result.claims["name"] == "Test User"
+
+
+def _mock_github_success(mock_client: AsyncMock) -> None:
+    """Configure *mock_client* to return a successful GitHub user + scopes response."""
+    user_response = MagicMock()
+    user_response.status_code = 200
+    user_response.json.return_value = {
+        "id": 12345,
+        "login": "testuser",
+        "name": "Test User",
+        "email": "test@example.com",
+        "avatar_url": "https://github.com/testuser.png",
+    }
+
+    scopes_response = MagicMock()
+    scopes_response.headers = {"x-oauth-scopes": "user,repo"}
+
+    mock_client.get.side_effect = [user_response, scopes_response]
+
+
+def _mock_github_failure(mock_client: AsyncMock) -> None:
+    """Configure *mock_client* to return a 401 GitHub response."""
+    fail_response = MagicMock()
+    fail_response.status_code = 401
+    fail_response.text = "Bad credentials"
+    mock_client.get.return_value = fail_response
+
+
+class TestGitHubTokenVerifierCaching:
+    """Test caching behaviour on GitHubTokenVerifier."""
+
+    def test_cache_disabled_by_default(self):
+        verifier = GitHubTokenVerifier()
+        assert not verifier._cache.enabled
+
+    def test_cache_enabled_with_ttl(self):
+        verifier = GitHubTokenVerifier(cache_ttl_seconds=300)
+        assert verifier._cache.enabled
+
+    async def test_cache_hit_avoids_second_api_call(self):
+        verifier = GitHubTokenVerifier(
+            required_scopes=["user"],
+            cache_ttl_seconds=300,
+        )
+
+        mock_client = AsyncMock()
+
+        with patch(
+            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+        ) as mock_cls:
+            mock_cls.return_value.__aenter__.return_value = mock_client
+
+            _mock_github_success(mock_client)
+            result1 = await verifier.verify_token("tok-1")
+            assert result1 is not None
+            assert mock_client.get.call_count == 2  # /user + /user/repos
+
+            result2 = await verifier.verify_token("tok-1")
+            assert result2 is not None
+            assert result2.client_id == result1.client_id
+            assert mock_client.get.call_count == 2  # no additional calls
+
+    async def test_cache_disabled_makes_every_call(self):
+        verifier = GitHubTokenVerifier(
+            required_scopes=["user"],
+            cache_ttl_seconds=0,
+        )
+
+        mock_client = AsyncMock()
+
+        with patch(
+            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+        ) as mock_cls:
+            mock_cls.return_value.__aenter__.return_value = mock_client
+
+            _mock_github_success(mock_client)
+            await verifier.verify_token("tok-1")
+            assert mock_client.get.call_count == 2
+
+            _mock_github_success(mock_client)
+            await verifier.verify_token("tok-1")
+            assert mock_client.get.call_count == 4
+
+    async def test_failures_are_not_cached(self):
+        verifier = GitHubTokenVerifier(cache_ttl_seconds=300)
+
+        mock_client = AsyncMock()
+
+        with patch(
+            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+        ) as mock_cls:
+            mock_cls.return_value.__aenter__.return_value = mock_client
+
+            _mock_github_failure(mock_client)
+            result1 = await verifier.verify_token("bad-tok")
+            assert result1 is None
+
+            _mock_github_success(mock_client)
+            result2 = await verifier.verify_token("bad-tok")
+            assert result2 is not None
+
+    async def test_cached_result_is_defensive_copy(self):
+        verifier = GitHubTokenVerifier(
+            required_scopes=["user"],
+            cache_ttl_seconds=300,
+        )
+
+        mock_client = AsyncMock()
+
+        with patch(
+            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+        ) as mock_cls:
+            mock_cls.return_value.__aenter__.return_value = mock_client
+
+            _mock_github_success(mock_client)
+            result1 = await verifier.verify_token("tok-1")
+            assert result1 is not None
+            result1.claims["login"] = "MUTATED"
+
+            result2 = await verifier.verify_token("tok-1")
+            assert result2 is not None
+            assert result2.claims["login"] == "testuser"
+
+    def test_provider_passes_cache_params(self, memory_storage: MemoryStore):
+        provider = GitHubProvider(
+            client_id="cid",
+            client_secret="csec",
+            base_url="https://example.com",
+            cache_ttl_seconds=120,
+            max_cache_size=500,
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+        verifier = provider._token_validator
+        assert isinstance(verifier, GitHubTokenVerifier)
+        assert verifier._cache.enabled
+        assert verifier._cache._ttl == 120
+        assert verifier._cache._max_size == 500
