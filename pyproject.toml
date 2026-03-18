@@ -52,7 +52,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-anthropic = ["anthropic>=0.40.0"]
+anthropic = ["anthropic>=0.48.0"]
 apps = ["prefab-ui>=0.11.2"]
 # PyJWT floor: transitive via msal; CVE-2026-32597 affects <= 2.11.0
 azure = ["azure-identity>=1.16.0", "PyJWT>=2.12.0"]

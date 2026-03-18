@@ -847,7 +847,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.40.0" },
+    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.48.0" },
     { name = "authlib", specifier = ">=1.6.5" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.16.0" },
     { name = "cyclopts", specifier = ">=4.0.0" },
