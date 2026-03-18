@@ -754,6 +754,7 @@
                       "python-sdk/fastmcp-utilities-skills",
                       "python-sdk/fastmcp-utilities-tests",
                       "python-sdk/fastmcp-utilities-timeout",
+                      "python-sdk/fastmcp-utilities-token_cache",
                       "python-sdk/fastmcp-utilities-types",
                       "python-sdk/fastmcp-utilities-ui",
                       "python-sdk/fastmcp-utilities-version_check",
