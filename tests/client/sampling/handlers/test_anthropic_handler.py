@@ -148,6 +148,35 @@ def test_convert_list_content_with_audio_raises():
         )
 
 
+def test_convert_image_in_assistant_message_raises():
+    with pytest.raises(ValueError, match="ImageContent is only supported in user"):
+        AnthropicSamplingHandler._convert_to_anthropic_messages(
+            messages=[
+                SamplingMessage(
+                    role="assistant",
+                    content=ImageContent(
+                        type="image", data="YWJj", mimeType="image/png"
+                    ),
+                )
+            ],
+        )
+
+
+def test_convert_list_image_in_assistant_message_raises():
+    with pytest.raises(ValueError, match="ImageContent is only supported in user"):
+        AnthropicSamplingHandler._convert_to_anthropic_messages(
+            messages=[
+                SamplingMessage(
+                    role="assistant",
+                    content=[
+                        TextContent(type="text", text="Here's the image"),
+                        ImageContent(type="image", data="YWJj", mimeType="image/png"),
+                    ],
+                )
+            ],
+        )
+
+
 @pytest.mark.parametrize(
     "prefs,expected",
     [

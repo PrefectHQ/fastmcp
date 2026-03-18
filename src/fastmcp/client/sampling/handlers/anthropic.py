@@ -202,6 +202,11 @@ class AnthropicSamplingHandler:
                             TextBlockParam(type="text", text=item.text)
                         )
                     elif isinstance(item, ImageContent):
+                        if message.role != "user":
+                            raise ValueError(
+                                "ImageContent is only supported in user messages "
+                                "for Anthropic"
+                            )
                         content_blocks.append(_image_content_to_anthropic_block(item))
                     elif isinstance(item, AudioContent):
                         raise ValueError(
@@ -299,9 +304,13 @@ class AnthropicSamplingHandler:
 
             # Handle ImageContent
             if isinstance(content, ImageContent):
+                if message.role != "user":
+                    raise ValueError(
+                        "ImageContent is only supported in user messages for Anthropic"
+                    )
                 anthropic_messages.append(
                     MessageParam(
-                        role=message.role,
+                        role="user",
                         content=[_image_content_to_anthropic_block(content)],
                     )
                 )
