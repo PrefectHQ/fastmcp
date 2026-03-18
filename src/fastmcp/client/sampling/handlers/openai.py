@@ -55,11 +55,20 @@ _OPENAI_AUDIO_FORMATS: dict[str, str] = {
     "audio/mpeg": "mp3",
 }
 
+_OPENAI_IMAGE_MEDIA_TYPES: frozenset[str] = frozenset(
+    {"image/jpeg", "image/png", "image/gif", "image/webp"}
+)
+
 
 def _image_content_to_openai_part(
     content: ImageContent,
 ) -> ChatCompletionContentPartImageParam:
     """Convert MCP ImageContent to OpenAI image_url content part."""
+    if content.mimeType not in _OPENAI_IMAGE_MEDIA_TYPES:
+        raise ValueError(
+            f"Unsupported image MIME type for OpenAI: {content.mimeType!r}. "
+            f"Supported types: {', '.join(sorted(_OPENAI_IMAGE_MEDIA_TYPES))}"
+        )
     data_url = f"data:{content.mimeType};base64,{content.data}"
     return ChatCompletionContentPartImageParam(
         type="image_url",
@@ -259,7 +268,12 @@ class OpenAISamplingHandler:
                                 )
                             )
                         else:
-                            # Assistant messages only support text content
+                            has_multimodal = len(content_parts) > len(text_parts)
+                            if has_multimodal:
+                                raise ValueError(
+                                    "ImageContent/AudioContent is only supported "
+                                    "in user messages for OpenAI"
+                                )
                             assistant_text = "\n".join(text_parts)
                             if assistant_text:
                                 openai_messages.append(

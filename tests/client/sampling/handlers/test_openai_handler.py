@@ -89,6 +89,13 @@ def test_audio_content_to_openai_part_unsupported_raises():
         )
 
 
+def test_image_content_to_openai_part_unsupported_raises():
+    with pytest.raises(ValueError, match="Unsupported image MIME type"):
+        _image_content_to_openai_part(
+            ImageContent(type="image", data="YWJj", mimeType="image/bmp")
+        )
+
+
 def test_convert_single_image_content_to_openai_message():
     msgs = OpenAISamplingHandler._convert_to_openai_messages(
         system_prompt=None,
@@ -189,6 +196,23 @@ def test_convert_audio_in_assistant_message_raises():
                     content=AudioContent(
                         type="audio", data="YWJj", mimeType="audio/wav"
                     ),
+                )
+            ],
+        )
+
+
+def test_convert_list_image_in_assistant_message_raises():
+    """Image/audio in an assistant list-content message should raise, not silently drop."""
+    with pytest.raises(ValueError, match="only supported in user messages"):
+        OpenAISamplingHandler._convert_to_openai_messages(
+            system_prompt=None,
+            messages=[
+                SamplingMessage(
+                    role="assistant",
+                    content=[
+                        TextContent(type="text", text="Here's the image"),
+                        ImageContent(type="image", data="YWJj", mimeType="image/png"),
+                    ],
                 )
             ],
         )
