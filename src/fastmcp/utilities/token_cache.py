@@ -74,6 +74,12 @@ class TokenCache:
                 reached, expired entries are swept first; if still full the
                 oldest entry is evicted.  Defaults to 10 000.
         """
+        if ttl_seconds is not None and ttl_seconds < 0:
+            raise ValueError(
+                f"cache_ttl_seconds must be non-negative, got {ttl_seconds}"
+            )
+        if max_size is not None and max_size < 0:
+            raise ValueError(f"max_cache_size must be non-negative, got {max_size}")
         self._ttl = ttl_seconds or 0
         self._max_size = max_size if max_size is not None else DEFAULT_MAX_CACHE_SIZE
         self._entries: dict[str, _CacheEntry] = {}

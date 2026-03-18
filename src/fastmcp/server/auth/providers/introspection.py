@@ -77,9 +77,6 @@ class IntrospectionTokenVerifier(TokenVerifier):
         ```
     """
 
-    # Default cache settings
-    DEFAULT_MAX_CACHE_SIZE = 10000
-
     def __init__(
         self,
         *,

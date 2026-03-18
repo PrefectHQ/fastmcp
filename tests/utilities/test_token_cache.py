@@ -31,14 +31,20 @@ class TestTokenCacheDisabled:
         [
             (None, None),
             (0, 100),
-            (-1, 100),
             (300, 0),
-            (300, -1),
         ],
     )
     def test_disabled_configurations(self, ttl: int | None, max_size: int | None):
         cache = TokenCache(ttl_seconds=ttl, max_size=max_size)
         assert not cache.enabled
+
+    def test_negative_ttl_raises(self):
+        with pytest.raises(ValueError, match="cache_ttl_seconds must be non-negative"):
+            TokenCache(ttl_seconds=-1)
+
+    def test_negative_max_size_raises(self):
+        with pytest.raises(ValueError, match="max_cache_size must be non-negative"):
+            TokenCache(max_size=-1)
 
     def test_get_returns_miss_when_disabled(self):
         cache = TokenCache(ttl_seconds=0)
