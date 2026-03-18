@@ -314,16 +314,7 @@ class TransformedTool(Tool):
             # If transform function returns ToolResult, respect our output_schema setting
             if isinstance(result, ToolResult):
                 if self.output_schema is None:
-                    # Check if this is from a custom function that returns ToolResult
-
-                    return_annotation = inspect.signature(self.fn).return_annotation
-                    if issubclass_safe(return_annotation, ToolResult):
-                        # Custom function returns ToolResult (or subclass) - preserve its content
-                        return result
-                    else:
-                        # Forwarded call with no explicit schema - preserve parent's structured content
-                        # The parent tool may have generated structured content via its own fallback logic
-                        return result
+                    return result
                 elif self.output_schema.get(
                     "type"
                 ) != "object" and not self.output_schema.get("x-fastmcp-wrap-result"):
@@ -497,11 +488,11 @@ class TransformedTool(Tool):
                 # parsed fn is not none here
                 final_output_schema = cast(ParsedFunction, parsed_fn).output_schema
                 if final_output_schema is None:
-                    # Check if function returns ToolResult (or subclass) - if so, don't fall back to parent
-                    return_annotation = inspect.signature(
-                        transform_fn
-                    ).return_annotation
-                    if issubclass_safe(return_annotation, ToolResult):
+                    # Check if function returns ToolResult (or subclass) - if so, don't fall back to parent.
+                    # Use parsed_fn.return_type (resolved via get_type_hints) instead of
+                    # inspect.signature, which returns strings under `from __future__ import annotations`.
+                    return_type = cast(ParsedFunction, parsed_fn).return_type
+                    if issubclass_safe(return_type, ToolResult):
                         final_output_schema = None
                     else:
                         final_output_schema = tool.output_schema
