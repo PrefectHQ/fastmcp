@@ -723,6 +723,17 @@ class ProxyProvider(Provider):
     # lifespan() uses default implementation (empty context manager)
     # because client cleanup is handled per-request
 
+    # -------------------------------------------------------------------------
+    # Instructions
+    # -------------------------------------------------------------------------
+
+    async def fetch_remote_instructions(self) -> str | None:
+        """Fetch instructions from the remote server."""
+        client = await self._get_client()
+        async with client:
+            result = await client.initialize()
+            return result.instructions
+
 
 # -----------------------------------------------------------------------------
 # Factory Functions

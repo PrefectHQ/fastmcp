@@ -129,6 +129,7 @@ Proxies automatically forward MCP protocol features:
 
 | Feature | Description |
 |---------|-------------|
+| Instructions | Server instructions from the backend |
 | Roots | Filesystem root access requests |
 | Sampling | LLM completion requests |
 | Elicitation | User input requests |
@@ -146,6 +147,24 @@ proxy = create_proxy("advanced_backend.py")
 # - Logs messages → appear in your client
 # - Reports progress → shown in your client
 ```
+
+### Server Instructions
+
+When you use `create_proxy()`, the proxy automatically fetches the backend server's instructions at startup and exposes them to clients. If you pass explicit `instructions` to `create_proxy()`, those take precedence.
+
+```python
+from fastmcp.server import create_proxy
+
+# Inherits instructions from the backend server
+proxy = create_proxy("http://example.com/mcp")
+
+# Override with your own instructions
+proxy = create_proxy("http://example.com/mcp", instructions="Custom proxy instructions")
+```
+
+<Note>
+Automatic instruction forwarding is a `create_proxy()` convenience. If you use `FastMCPProxy` or `ProxyProvider` directly, you'll need to handle instructions yourself.
+</Note>
 
 ### Disabling Features
 

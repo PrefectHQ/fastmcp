@@ -95,7 +95,7 @@ if TYPE_CHECKING:
     from fastmcp.server.providers.openapi import ComponentFn as OpenAPIComponentFn
     from fastmcp.server.providers.openapi import RouteMap
     from fastmcp.server.providers.openapi import RouteMapFn as OpenAPIRouteMapFn
-    from fastmcp.server.providers.proxy import FastMCPProxy
+    from fastmcp.server.providers.proxy import FastMCPProxy, ProxyProvider
 
 logger = get_logger(__name__)
 
@@ -2216,6 +2216,33 @@ class FastMCP(
 # -----------------------------------------------------------------------------
 
 
+def _install_instructions_lifespan(
+    server: FastMCP,
+    provider: ProxyProvider,
+) -> None:
+    """Wrap the server's lifespan to fetch remote instructions at startup.
+
+    If the remote server provides instructions and the proxy doesn't already
+    have any, the remote instructions are set on the proxy server so that
+    clients see them during initialization.
+    """
+    original_lifespan = server._lifespan
+
+    @asynccontextmanager
+    async def _proxy_lifespan(app: FastMCP) -> AsyncIterator[Any]:
+        async with original_lifespan(app) as result:
+            if app.instructions is None:
+                try:
+                    instructions = await provider.fetch_remote_instructions()
+                    if instructions is not None:
+                        app.instructions = instructions
+                except Exception:
+                    logger.debug("Failed to fetch remote server instructions for proxy")
+            yield result
+
+    server._lifespan = _proxy_lifespan
+
+
 def create_proxy(
     target: (
         Client[ClientTransportT]
@@ -2261,11 +2288,21 @@ def create_proxy(
     """
     from fastmcp.server.providers.proxy import (
         FastMCPProxy,
+        ProxyProvider,
         _create_client_factory,
     )
 
     client_factory = _create_client_factory(target)
-    return FastMCPProxy(
+    explicit_instructions = "instructions" in settings
+    proxy = FastMCPProxy(
         client_factory=client_factory,
         **settings,
     )
+
+    if not explicit_instructions:
+        proxy_provider = next(
+            p for p in proxy.providers if isinstance(p, ProxyProvider)
+        )
+        _install_instructions_lifespan(proxy, proxy_provider)
+
+    return proxy

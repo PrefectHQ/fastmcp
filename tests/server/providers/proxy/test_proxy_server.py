@@ -245,6 +245,65 @@ async def test_proxy_with_async_client_factory():
     assert client.transport.url == "http://example.com/mcp/"
 
 
+class TestProxyInstructions:
+    async def test_proxy_inherits_remote_instructions(self):
+        """Proxy should inherit instructions from the remote server."""
+        server = FastMCP("RemoteServer", instructions="Remote server instructions")
+
+        @server.tool
+        def hello() -> str:
+            return "hi"
+
+        proxy = create_proxy(server)
+        assert proxy.instructions is None
+
+        async with Client(proxy) as client:
+            result = await client.initialize()
+            assert result.instructions == "Remote server instructions"
+
+    async def test_proxy_explicit_instructions_override_remote(self):
+        """Explicitly set instructions should take precedence over remote."""
+        server = FastMCP("RemoteServer", instructions="Remote instructions")
+
+        @server.tool
+        def hello() -> str:
+            return "hi"
+
+        proxy = create_proxy(server, instructions="My proxy instructions")
+
+        async with Client(proxy) as client:
+            result = await client.initialize()
+            assert result.instructions == "My proxy instructions"
+
+    async def test_proxy_no_instructions_when_remote_has_none(self):
+        """Proxy instructions should remain None if remote has none."""
+        server = FastMCP("RemoteServer")
+
+        @server.tool
+        def hello() -> str:
+            return "hi"
+
+        proxy = create_proxy(server)
+
+        async with Client(proxy) as client:
+            result = await client.initialize()
+            assert result.instructions is None
+
+    async def test_fastmcp_proxy_does_not_fetch_instructions(self):
+        """FastMCPProxy used directly should not auto-fetch instructions."""
+        server = FastMCP("RemoteServer", instructions="Remote instructions")
+
+        @server.tool
+        def hello() -> str:
+            return "hi"
+
+        proxy = FastMCPProxy(client_factory=lambda: Client(server))
+
+        async with Client(proxy) as client:
+            result = await client.initialize()
+            assert result.instructions is None
+
+
 class TestTools:
     async def test_get_tools(self, proxy_server):
         tools = await proxy_server.list_tools()
