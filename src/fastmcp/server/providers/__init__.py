@@ -46,15 +46,22 @@ if TYPE_CHECKING:
 __all__ = [
     "AggregateProvider",
     "ClaudeSkillsProvider",
+    "CommandBackedTool",
+    "CommandConfigProvider",
+    "CommandToolSpec",
+    "CommandToolsSpec",
     "FastMCPProvider",
     "FileSystemProvider",
     "LocalProvider",
     "OpenAPIProvider",
+    "ParameterSpec",
     "Provider",
     "ProxyProvider",
     "SkillProvider",
     "SkillsDirectoryProvider",
     "SkillsProvider",  # Backwards compatibility alias for SkillsDirectoryProvider
+    "load_command_tools_spec",
+    "parameter_spec_to_json_schema",
 ]
 
 
@@ -68,4 +75,16 @@ def __getattr__(name: str):
         from fastmcp.server.providers.openapi import OpenAPIProvider
 
         return OpenAPIProvider
+    if name in (
+        "CommandBackedTool",
+        "CommandConfigProvider",
+        "CommandToolSpec",
+        "CommandToolsSpec",
+        "ParameterSpec",
+        "load_command_tools_spec",
+        "parameter_spec_to_json_schema",
+    ):
+        from fastmcp.server.providers import command_config
+
+        return getattr(command_config, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
