@@ -35,6 +35,7 @@ import signal
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 import webbrowser
 from pathlib import Path
@@ -52,6 +53,110 @@ from starlette.routing import Route
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# MCP message log (captures proxy traffic for the dev UI log panel)
+# ---------------------------------------------------------------------------
+
+
+class _MessageLog:
+    """In-memory buffer of MCP JSON-RPC messages flowing through the proxy."""
+
+    def __init__(self) -> None:
+        self._entries: list[dict[str, Any]] = []
+        self._counter = 0
+        self._request_methods: dict[int | str, str] = {}
+        self._request_times: dict[int | str, float] = {}
+
+    def log_request(self, body: dict[str, Any]) -> None:
+        method = body.get("method", "unknown")
+        jsonrpc_id = body.get("id")
+        timestamp = time.time()
+        if jsonrpc_id is not None:
+            self._request_methods[jsonrpc_id] = method
+            self._request_times[jsonrpc_id] = timestamp
+        self._counter += 1
+        self._entries.append(
+            {
+                "id": self._counter,
+                "timestamp": timestamp,
+                "direction": "request",
+                "method": method,
+                "body": body,
+            }
+        )
+
+    def log_response(self, body: dict[str, Any]) -> None:
+        jsonrpc_id = body.get("id")
+        method = (
+            self._request_methods.pop(jsonrpc_id, None)
+            if jsonrpc_id is not None
+            else None
+        )
+        request_time = (
+            self._request_times.pop(jsonrpc_id, None)
+            if jsonrpc_id is not None
+            else None
+        )
+        timestamp = time.time()
+        duration_ms = (
+            round((timestamp - request_time) * 1000, 1) if request_time else None
+        )
+        self._counter += 1
+        self._entries.append(
+            {
+                "id": self._counter,
+                "timestamp": timestamp,
+                "direction": "response",
+                "method": method,
+                "body": body,
+                "duration_ms": duration_ms,
+            }
+        )
+
+    def get_since(self, since_id: int = 0) -> list[dict[str, Any]]:
+        return [e for e in self._entries if e["id"] > since_id]
+
+    def log_bridge(self, body: dict[str, Any]) -> None:
+        method = body.get("method", "unknown")
+        self._counter += 1
+        self._entries.append(
+            {
+                "id": self._counter,
+                "timestamp": time.time(),
+                "direction": "bridge",
+                "method": method,
+                "body": body,
+            }
+        )
+
+    def clear(self) -> None:
+        self._entries.clear()
+        self._request_methods.clear()
+        self._request_times.clear()
+
+
+def _log_response_bytes(log: _MessageLog, raw: bytes, content_type: str) -> None:
+    """Parse accumulated proxy response bytes and log as message entries."""
+    if not raw:
+        return
+    try:
+        if "text/event-stream" in content_type:
+            for line in raw.decode("utf-8", errors="replace").splitlines():
+                if line.startswith("data: "):
+                    with contextlib.suppress(json.JSONDecodeError):
+                        log.log_response(json.loads(line[6:]))
+        else:
+            body = json.loads(raw)
+            if isinstance(body, list):
+                for item in body:
+                    log.log_response(item)
+            else:
+                log.log_response(body)
+    except (json.JSONDecodeError, TypeError):
+        pass
+
 
 _EXT_APPS_VERSION = "1.0.1"
 # Pin to the SDK version ext-apps 1.0.1 was compiled against so the client
@@ -281,6 +386,289 @@ _HOST_HTML_TEMPLATE = """\
 """
 
 # ---------------------------------------------------------------------------
+# Dev log panel (injected into host pages)
+# ---------------------------------------------------------------------------
+
+_LOG_PANEL_HTML = """\
+<style>
+  #mcp-log-panel {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 360px;
+    z-index: 10000;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 12px; background: #1e1e2e; color: #cdd6f4;
+    border-left: 1px solid #45475a;
+    display: flex; flex-direction: column;
+  }
+  #mcp-log-panel.hidden { display: none; }
+  #app-frame { width: calc(100% - 360px) !important; height: 100% !important; }
+  #mcp-log-resize {
+    position: absolute; left: -3px; top: 0; bottom: 0; width: 6px;
+    cursor: col-resize; z-index: 1;
+  }
+  #mcp-log-resize:hover, #mcp-log-resize.active { background: #585b70; }
+  #mcp-log-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 12px; background: #181825;
+    border-bottom: 1px solid #45475a; flex-shrink: 0;
+  }
+  #mcp-log-brand {
+    display: flex; align-items: center; gap: 8px;
+  }
+  #mcp-log-brand svg { flex-shrink: 0; }
+  #mcp-log-brand-text {
+    font-weight: 700; font-size: 13px; color: #cdd6f4;
+    letter-spacing: -0.3px;
+  }
+  #mcp-log-count-badge {
+    font-size: 11px; color: #6c7086; font-weight: 400;
+  }
+  #mcp-log-actions { display: flex; gap: 6px; }
+  #mcp-log-actions button {
+    background: #313244; color: #cdd6f4; border: 1px solid #45475a;
+    padding: 2px 8px; border-radius: 3px; cursor: pointer;
+    font-size: 11px; font-family: inherit;
+  }
+  #mcp-log-actions button:hover { background: #45475a; }
+  #mcp-log-entries { flex: 1; overflow-y: auto; }
+  .log-entry {
+    padding: 6px 12px; border-bottom: 1px solid #232334; cursor: pointer;
+  }
+  .log-entry:hover { background: #313244; }
+  .log-primary {
+    display: flex; justify-content: space-between;
+    align-items: baseline; gap: 8px;
+  }
+  .log-left {
+    display: flex; gap: 6px; align-items: baseline; min-width: 0;
+  }
+  .log-dir { flex-shrink: 0; }
+  .log-dir.request { color: #89b4fa; }
+  .log-dir.response { color: #a6e3a1; }
+  .log-dir.error { color: #f38ba8; }
+  .log-dir.bridge { color: #cba6f7; }
+  .log-method {
+    color: #f9e2af; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .log-meta { color: #6c7086; font-size: 11px; white-space: nowrap; flex-shrink: 0; }
+  .log-subtitle {
+    color: #a6adc8; font-size: 11px; padding-left: 22px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    margin-top: 1px;
+  }
+  .log-detail {
+    display: none; padding: 8px 12px 4px 22px; background: #11111b;
+    white-space: pre-wrap; word-break: break-all;
+    color: #bac2de; font-size: 11px; line-height: 1.4;
+    margin-top: 4px; border-radius: 4px;
+  }
+  .log-entry.expanded .log-detail { display: block; }
+  #mcp-log-open {
+    position: fixed; bottom: 12px; right: 12px; z-index: 10000;
+    background: #181825; color: #cdd6f4; border: 1px solid #45475a;
+    padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 11px; display: none;
+  }
+  #mcp-log-open:hover { background: #313244; }
+</style>
+<div id="mcp-log-panel">
+  <div id="mcp-log-resize"></div>
+  <div id="mcp-log-header">
+    <div id="mcp-log-brand">
+      <svg width="20" height="20" viewBox="0 0 196 196" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M145.747 44.611L145.355 44.3877L144.96 44.611L86.0283 78.5276V171.267L86.4014 171.499L99.6674 179.667V86.3859L159 52.2379L145.747 44.611Z" fill="#cdd6f4"/><path d="M121.616 30.2714L121.224 30.0454L120.832 30.2714L61.8975 64.188V156.928L62.2732 157.156L75.5393 165.325V72.0463L134.869 37.8983L121.616 30.2714Z" fill="#cdd6f4"/><path d="M97.4894 16.3818L97.0973 16.1558L96.7025 16.3818L37.7705 50.3038V142.066L51.4096 150.463V58.1567L110.742 24.0086L97.4894 16.3818Z" fill="#cdd6f4"/><path d="M131.23 113.671L124.979 117.266L124.584 117.494V117.5L116.796 121.987L110.547 125.581L110.152 125.807V141.51L144.564 121.709V121.698L158.999 113.394V97.6851L139.277 109.034L131.23 113.671Z" fill="#cdd6f4"/></svg>
+      <span id="mcp-log-brand-text">FastMCP Apps</span>
+      <span id="mcp-log-count-badge">\u00b7 <span id="mcp-log-count">0</span></span>
+    </div>
+    <div id="mcp-log-actions">
+      <button id="mcp-log-clear">Clear</button>
+      <button id="mcp-log-close">\u00d7</button>
+    </div>
+  </div>
+  <div id="mcp-log-entries"></div>
+</div>
+<button id="mcp-log-open">MCP Log</button>
+<script>
+(function() {
+  var lastId = 0, totalCount = 0, panelWidth = 360;
+  var panel = document.getElementById("mcp-log-panel");
+  var entries = document.getElementById("mcp-log-entries");
+  var countEl = document.getElementById("mcp-log-count");
+  var openBtn = document.getElementById("mcp-log-open");
+  var resizeHandle = document.getElementById("mcp-log-resize");
+
+  function setFrameWidth(w) {
+    var frame = document.getElementById("app-frame");
+    if (frame) frame.style.setProperty("width", w, "important");
+  }
+
+  document.getElementById("mcp-log-close").addEventListener("click", function() {
+    panel.classList.add("hidden");
+    openBtn.style.display = "block";
+    setFrameWidth("100%");
+  });
+
+  openBtn.addEventListener("click", function() {
+    panel.classList.remove("hidden");
+    openBtn.style.display = "none";
+    setFrameWidth("calc(100% - " + panelWidth + "px)");
+  });
+
+  resizeHandle.addEventListener("mousedown", function(e) {
+    e.preventDefault();
+    resizeHandle.classList.add("active");
+    var frame = document.getElementById("app-frame");
+    if (frame) frame.style.pointerEvents = "none";
+    document.addEventListener("mousemove", onResize);
+    document.addEventListener("mouseup", stopResize);
+  });
+
+  function onResize(e) {
+    var w = Math.max(200, Math.min(window.innerWidth - e.clientX, window.innerWidth * 0.8));
+    panelWidth = w;
+    panel.style.width = w + "px";
+    setFrameWidth("calc(100% - " + w + "px)");
+  }
+
+  function stopResize() {
+    resizeHandle.classList.remove("active");
+    var frame = document.getElementById("app-frame");
+    if (frame) frame.style.pointerEvents = "";
+    document.removeEventListener("mousemove", onResize);
+    document.removeEventListener("mouseup", stopResize);
+  }
+
+  document.getElementById("mcp-log-clear").addEventListener("click", function() {
+    entries.innerHTML = "";
+    totalCount = 0;
+    countEl.textContent = "0";
+    fetch("/api/logs/clear", { method: "POST" });
+  });
+
+  function summarize(entry) {
+    var b = entry.body;
+    if (!b) return "";
+    if (entry.direction === "request") {
+      if (b.method === "tools/call" && b.params) return b.params.name || "";
+      if (b.method === "resources/read" && b.params) return b.params.uri || "";
+      return "";
+    }
+    if (b.error) return "error: " + (b.error.message || JSON.stringify(b.error));
+    if (b.result && typeof b.result === "object") {
+      if (Array.isArray(b.result.tools)) return b.result.tools.length + " tools";
+      if (Array.isArray(b.result.resources)) return b.result.resources.length + " resources";
+      if (Array.isArray(b.result.prompts)) return b.result.prompts.length + " prompts";
+      if (b.result.content) {
+        var first = b.result.content[0];
+        if (first && first.text) {
+          return first.text.length > 60 ? first.text.slice(0, 60) + "\u2026" : first.text;
+        }
+        return b.result.content.length + " content item(s)";
+      }
+    }
+    return "";
+  }
+
+  function formatTime(ts) {
+    var d = new Date(ts * 1000);
+    return String(d.getHours()).padStart(2, "0") + ":"
+      + String(d.getMinutes()).padStart(2, "0") + ":"
+      + String(d.getSeconds()).padStart(2, "0");
+  }
+
+  function renderEntry(entry) {
+    var div = document.createElement("div");
+    div.className = "log-entry";
+    var isError = entry.direction === "response" && entry.body && entry.body.error;
+    var dirClass = isError ? "error" : entry.direction;
+
+    var primary = document.createElement("div");
+    primary.className = "log-primary";
+
+    var left = document.createElement("div");
+    left.className = "log-left";
+
+    var dirEl = document.createElement("span");
+    dirEl.className = "log-dir " + dirClass;
+    dirEl.textContent = entry.direction === "request" ? "\u2192"
+      : entry.direction === "bridge" ? "\u2191" : "\u2190";
+
+    var methodEl = document.createElement("span");
+    methodEl.className = "log-method";
+    methodEl.textContent = entry.method || "";
+
+    left.appendChild(dirEl);
+    left.appendChild(methodEl);
+
+    var metaEl = document.createElement("span");
+    metaEl.className = "log-meta";
+    metaEl.textContent = entry.duration_ms != null
+      ? entry.duration_ms + "ms"
+      : formatTime(entry.timestamp);
+
+    primary.appendChild(left);
+    primary.appendChild(metaEl);
+    div.appendChild(primary);
+
+    var summary = summarize(entry);
+    if (summary) {
+      var subtitle = document.createElement("div");
+      subtitle.className = "log-subtitle";
+      subtitle.textContent = summary;
+      div.appendChild(subtitle);
+    }
+
+    var detail = document.createElement("div");
+    detail.className = "log-detail";
+    detail.textContent = JSON.stringify(entry.body, null, 2);
+    div.appendChild(detail);
+
+    div.addEventListener("click", function() { div.classList.toggle("expanded"); });
+    return div;
+  }
+
+  function poll() {
+    fetch("/api/logs?since=" + lastId)
+      .then(function(r) { return r.ok ? r.json() : []; })
+      .then(function(data) {
+        if (!data || !data.length) return;
+        lastId = data[data.length - 1].id;
+        totalCount += data.length;
+        countEl.textContent = String(totalCount);
+        var atBottom = entries.scrollHeight - entries.scrollTop - entries.clientHeight < 40;
+        for (var i = 0; i < data.length; i++) entries.appendChild(renderEntry(data[i]));
+        if (atBottom) entries.scrollTop = entries.scrollHeight;
+      })
+      .catch(function() {});
+  }
+
+  window.addEventListener("message", function(event) {
+    var data = event.data;
+    if (typeof data === "string") {
+      try { data = JSON.parse(data); } catch(e) { return; }
+    }
+    if (!data || typeof data !== "object") return;
+    if (!data.jsonrpc && !data.method) return;
+    fetch("/api/logs/bridge", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({body: data})
+    });
+  });
+
+  setInterval(poll, 500);
+  poll();
+})();
+</script>
+"""
+
+
+def _inject_log_panel(html: str) -> str:
+    """Inject the MCP message log panel before </body>."""
+    return html.replace("</body>", _LOG_PANEL_HTML + "\n</body>")
+
+
+# ---------------------------------------------------------------------------
 # Picker UI (Prefab-based, built in Python)
 # ---------------------------------------------------------------------------
 
@@ -373,11 +761,11 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
 
     if not tools:
         with Column(gap=4, css_class="p-6 max-w-2xl mx-auto") as view:
-            Heading("FastMCP App Preview")
+            Heading("FastMCP Apps")
             Muted(
                 "No UI tools found on this server. Use @app.ui() to register entry-point tools."
             )
-        return PrefabApp(title="FastMCP App Preview", view=view).html()
+        return PrefabApp(title="FastMCP Apps", view=view).html()
 
     first_name: str = tools[0]["name"]
 
@@ -385,7 +773,7 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
         return tool.get("title") or tool["name"]
 
     with Column(gap=6, css_class="p-8 max-w-lg mx-auto") as view:
-        Heading("FastMCP App Preview")
+        Heading("FastMCP Apps")
 
         if len(tools) > 1:
             with Column(gap=1):
@@ -437,7 +825,7 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
             css_class="text-xs text-muted-foreground text-right",
         )
 
-    return PrefabApp(title="FastMCP App Preview", view=view).html()
+    return PrefabApp(title="FastMCP Apps", view=view).html()
 
 
 # ---------------------------------------------------------------------------
@@ -607,13 +995,14 @@ def _make_dev_app(
     mcp_url: str,
     app_bridge_js: str,
     import_map_tag: str,
+    message_log: _MessageLog,
 ) -> Starlette:
     """Build the Starlette dev server application."""
 
     async def picker(request: Request) -> HTMLResponse:
         """AppBridge host page — loads the picker app in an iframe and wires the bridge."""
         host_html = _HOST_SHELL.format(
-            title="FastMCP App Preview",
+            title="FastMCP Apps",
             import_map_tag=import_map_tag,
             status_text="",
             status_display="none",
@@ -623,7 +1012,7 @@ def _make_dev_app(
             on_open_link="bridge.onopenlink = async ({ url }) => { window.location.href = url; return {}; };",
             on_initialized="bridge.oninitialized = async () => {};",
         )
-        return HTMLResponse(host_html)
+        return HTMLResponse(_inject_log_panel(host_html))
 
     async def picker_app(request: Request) -> HTMLResponse:
         """Prefab picker UI — tool list with one tab per UI tool."""
@@ -648,7 +1037,7 @@ def _make_dev_app(
             tool_args_json=json.dumps(tool_args),
             mcp_sdk_version=_MCP_SDK_VERSION,
         )
-        return HTMLResponse(host_html)
+        return HTMLResponse(_inject_log_panel(host_html))
 
     async def api_launch(request: Request) -> Response:
         """Picker form submits here; returns a /launch URL string for OpenLink."""
@@ -690,6 +1079,19 @@ def _make_dev_app(
     async def proxy_mcp(request: Request) -> Response:
         """Proxy all MCP requests to the user's server (avoids browser CORS)."""
         body = await request.body()
+
+        # Log MCP requests
+        if body and request.method == "POST":
+            try:
+                req_json = json.loads(body)
+                if isinstance(req_json, list):
+                    for item in req_json:
+                        message_log.log_request(item)
+                else:
+                    message_log.log_request(req_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         headers = {
             k: v
             for k, v in request.headers.items()
@@ -699,8 +1101,10 @@ def _make_dev_app(
         client = httpx.AsyncClient(timeout=None)
 
         async def _stream_and_cleanup(resp: httpx.Response) -> Any:
+            chunks: list[bytes] = []
             try:
                 async for chunk in resp.aiter_bytes():
+                    chunks.append(chunk)
                     yield chunk
             except (
                 httpx.RemoteProtocolError,
@@ -709,6 +1113,13 @@ def _make_dev_app(
             ):
                 pass  # Connection closed during shutdown — not an error
             finally:
+                # Log MCP responses
+                if request.method == "POST" and chunks:
+                    _log_response_bytes(
+                        message_log,
+                        b"".join(chunks),
+                        resp.headers.get("content-type", ""),
+                    )
                 with contextlib.suppress(Exception):
                     await resp.aclose()
                 with contextlib.suppress(Exception):
@@ -750,12 +1161,35 @@ def _make_dev_app(
                 media_type="application/json",
             )
 
+    async def api_logs(request: Request) -> Response:
+        """Return message log entries since a given id."""
+        since = int(request.query_params.get("since", "0"))
+        entries = message_log.get_since(since)
+        return Response(
+            content=json.dumps(entries),
+            media_type="application/json",
+        )
+
+    async def api_logs_bridge(request: Request) -> Response:
+        """Log a bridge message (postMessage between app iframe and host)."""
+        data = await request.json()
+        message_log.log_bridge(data.get("body", data))
+        return Response(content="{}", media_type="application/json")
+
+    async def api_logs_clear(request: Request) -> Response:
+        """Clear the message log."""
+        message_log.clear()
+        return Response(content="{}", media_type="application/json")
+
     return Starlette(
         routes=[
             Route("/", picker),
             Route("/picker-app", picker_app),
             Route("/launch", launch),
             Route("/api/launch", api_launch, methods=["POST"]),
+            Route("/api/logs", api_logs),
+            Route("/api/logs/bridge", api_logs_bridge, methods=["POST"]),
+            Route("/api/logs/clear", api_logs_clear, methods=["POST"]),
             Route("/ui-resource", ui_resource),
             Route("/js/app-bridge.js", serve_app_bridge_js),
             Route(
@@ -864,7 +1298,7 @@ async def run_dev_apps(
 
         logger.info(f"FastMCP dev UI at {dev_url}")
 
-        dev_app = _make_dev_app(mcp_url, app_bridge_js, import_map_tag)
+        dev_app = _make_dev_app(mcp_url, app_bridge_js, import_map_tag, _MessageLog())
         config = uvicorn.Config(
             dev_app,
             host="localhost",
