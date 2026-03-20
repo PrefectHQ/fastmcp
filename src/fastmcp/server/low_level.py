@@ -3,6 +3,7 @@ from __future__ import annotations
 import weakref
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
+from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
 import anyio
@@ -70,6 +71,47 @@ class MiddlewareServerSession(ServerSession):
         if not extensions:
             return False
         return extension_id in extensions
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> bool | None:
+        """Fire on_disconnect middleware before the session tears down.
+
+        The MCP specification does not define a disconnect message, so
+        this lifecycle event is the only reliable point to run cleanup.
+        The session (and any state stored via ``set_state``) is still
+        accessible when the middleware runs; it is torn down by the
+        ``super().__aexit__()`` call that follows.
+        """
+        try:
+            import fastmcp.server.context
+            from fastmcp.server.middleware.middleware import MiddlewareContext
+
+            async with fastmcp.server.context.Context(
+                fastmcp=self.fastmcp, session=self
+            ) as ctx:
+                mw_context = MiddlewareContext(
+                    message=None,
+                    source="server",
+                    type="lifecycle",
+                    method="disconnect",
+                    fastmcp_context=ctx,
+                )
+
+                async def _noop(context: MiddlewareContext) -> None:
+                    return None
+
+                await self.fastmcp._run_middleware(mw_context, _noop)
+        except Exception:
+            logger.warning(
+                "on_disconnect middleware failed",
+                exc_info=True,
+            )
+
+        return await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def _received_request(
         self,

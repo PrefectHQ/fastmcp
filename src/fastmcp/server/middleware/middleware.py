@@ -55,7 +55,7 @@ class MiddlewareContext(Generic[T]):
 
     # Common metadata
     source: Literal["client", "server"] = "client"
-    type: Literal["request", "notification"] = "request"
+    type: Literal["request", "notification", "lifecycle"] = "request"
     method: str | None = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -100,6 +100,8 @@ class Middleware:
         match context.method:
             case "initialize":
                 handler = partial(self.on_initialize, call_next=handler)
+            case "disconnect":
+                handler = partial(self.on_disconnect, call_next=handler)
             case "tools/call":
                 handler = partial(self.on_call_tool, call_next=handler)
             case "resources/read":
@@ -120,6 +122,8 @@ class Middleware:
                 handler = partial(self.on_request, call_next=handler)
             case "notification":
                 handler = partial(self.on_notification, call_next=handler)
+            case "lifecycle":
+                handler = partial(self.on_lifecycle, call_next=handler)
 
         handler = partial(self.on_message, call_next=handler)
 
@@ -146,11 +150,36 @@ class Middleware:
     ) -> Any:
         return await call_next(context)
 
+    async def on_lifecycle(
+        self,
+        context: MiddlewareContext[Any],
+        call_next: CallNext[Any, Any],
+    ) -> Any:
+        """Called for lifecycle events (initialize, disconnect)."""
+        return await call_next(context)
+
     async def on_initialize(
         self,
         context: MiddlewareContext[mt.InitializeRequest],
         call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None],
     ) -> mt.InitializeResult | None:
+        return await call_next(context)
+
+    async def on_disconnect(
+        self,
+        context: MiddlewareContext[None],
+        call_next: CallNext[None, None],
+    ) -> None:
+        """Called when a client session disconnects.
+
+        The MCP spec does not define a disconnect message, so this is a
+        server-side lifecycle event.  ``context.message`` is ``None``.
+        Session state set during earlier requests is still accessible via
+        ``context.fastmcp_context``.
+
+        Use this hook for cleanup, usage tracking, generating summaries,
+        or releasing per-session resources.
+        """
         return await call_next(context)
 
     async def on_call_tool(
