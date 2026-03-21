@@ -57,11 +57,9 @@ _APP_TOOL_REGISTRY: dict[str, Tool] = {}
 # translate ``CallTool(save_contact)`` → ``"save_contact-a1b2c3d4"``.
 _FN_TO_GLOBAL_KEY: dict[int, str] = {}
 
-# tool name → global key(s).  Used by the CallTool resolver to translate
+# tool name → global key.  Used by the CallTool resolver to translate
 # ``CallTool("save_contact")`` → ``"save_contact-a1b2c3d4"``.
-# Maps to a list so we can detect ambiguity when multiple apps register
-# the same tool name.
-_NAME_TO_GLOBAL_KEY: dict[str, list[str]] = {}
+_NAME_TO_GLOBAL_KEY: dict[str, str] = {}
 
 
 def get_global_tool(name: str) -> Tool | None:
@@ -83,7 +81,7 @@ def _register_global_key(tool: Tool, fn: Any, global_key: str) -> None:
     """Register a tool in all process-level registries."""
     _APP_TOOL_REGISTRY[global_key] = tool
     _FN_TO_GLOBAL_KEY[id(fn)] = global_key
-    _NAME_TO_GLOBAL_KEY.setdefault(tool.name, []).append(global_key)
+    _NAME_TO_GLOBAL_KEY[tool.name] = global_key
 
 
 def _stamp_global_key(tool: Tool, global_key: str) -> None:
@@ -118,14 +116,8 @@ def _resolve_tool_ref(fn: Any) -> Any:
     from prefab_ui.app import ResolvedTool
 
     if isinstance(fn, str):
-        global_keys = _NAME_TO_GLOBAL_KEY.get(fn)
-        if global_keys is not None:
-            if len(global_keys) > 1:
-                raise ValueError(
-                    f"Ambiguous tool name {fn!r}: registered by multiple apps. "
-                    f"Use CallTool(fn) with a function reference to disambiguate."
-                )
-            global_key = global_keys[0]
+        global_key = _NAME_TO_GLOBAL_KEY.get(fn)
+        if global_key is not None:
             tool = _APP_TOOL_REGISTRY.get(global_key)
             unwrap = bool(
                 tool is not None
@@ -445,7 +437,7 @@ class FastMCPApp(Provider):
         self._local._add_component(tool)
 
         _APP_TOOL_REGISTRY[global_key] = tool
-        _NAME_TO_GLOBAL_KEY.setdefault(tool.name, []).append(global_key)
+        _NAME_TO_GLOBAL_KEY[tool.name] = global_key
         if fn is not None:
             _FN_TO_GLOBAL_KEY[id(fn)] = global_key
 
