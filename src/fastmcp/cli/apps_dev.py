@@ -1258,8 +1258,9 @@ def _make_dev_app(
                 req_json = json.loads(body)
                 if isinstance(req_json, list):
                     for item in req_json:
-                        message_log.log_request(item)
-                else:
+                        if isinstance(item, dict):
+                            message_log.log_request(item)
+                elif isinstance(req_json, dict):
                     message_log.log_request(req_json)
             except (json.JSONDecodeError, TypeError):
                 pass
@@ -1273,11 +1274,23 @@ def _make_dev_app(
         client = httpx.AsyncClient(timeout=None)
 
         async def _stream_and_cleanup(resp: httpx.Response) -> Any:
-            chunks: list[bytes] = []
+            is_sse = "text/event-stream" in resp.headers.get("content-type", "")
+            buf: list[bytes] = []
+            sse_buf = ""
             try:
                 async for chunk in resp.aiter_bytes():
-                    chunks.append(chunk)
                     yield chunk
+                    if is_sse:
+                        # Parse SSE events incrementally
+                        sse_buf += chunk.decode("utf-8", errors="replace")
+                        while "\n\n" in sse_buf:
+                            event, sse_buf = sse_buf.split("\n\n", 1)
+                            for line in event.splitlines():
+                                if line.startswith("data: "):
+                                    with contextlib.suppress(json.JSONDecodeError):
+                                        message_log.log_response(json.loads(line[6:]))
+                    else:
+                        buf.append(chunk)
             except (
                 httpx.RemoteProtocolError,
                 httpx.ReadError,
@@ -1285,13 +1298,9 @@ def _make_dev_app(
             ):
                 pass  # Connection closed during shutdown — not an error
             finally:
-                # Log MCP responses (POST results + GET SSE notifications)
-                if chunks:
-                    _log_response_bytes(
-                        message_log,
-                        b"".join(chunks),
-                        resp.headers.get("content-type", ""),
-                    )
+                # Log non-SSE responses (JSON) after stream completes
+                if buf:
+                    _log_response_bytes(message_log, b"".join(buf), "application/json")
                 with contextlib.suppress(Exception):
                     await resp.aclose()
                 with contextlib.suppress(Exception):
