@@ -2,8 +2,6 @@
 
 from typing import Any
 
-import pytest
-
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
