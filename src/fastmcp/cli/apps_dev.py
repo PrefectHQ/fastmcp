@@ -406,17 +406,20 @@ _HOST_HTML_TEMPLATE = """\
 _LOG_PANEL_HTML = """\
 <style>
   #mcp-log-panel {
-    position: fixed; top: 0; right: 0; bottom: 0; width: 360px;
+    position: fixed; top: 0; left: 0; bottom: 0; width: 360px;
     z-index: 10000;
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
     font-size: 12px; background: #1e1e2e; color: #cdd6f4;
-    border-left: 1px solid #45475a;
+    border-right: 1px solid #45475a;
     display: flex; flex-direction: column;
   }
   #mcp-log-panel.hidden { display: none; }
-  #app-frame { width: calc(100% - 360px) !important; height: 100% !important; }
+  #app-frame {
+    width: calc(100% - 360px) !important; height: 100% !important;
+    margin-left: 360px !important;
+  }
   #mcp-log-resize {
-    position: absolute; left: -3px; top: 0; bottom: 0; width: 6px;
+    position: absolute; right: -3px; top: 0; bottom: 0; width: 6px;
     cursor: col-resize; z-index: 1;
   }
   #mcp-log-resize:hover, #mcp-log-resize.active { background: #585b70; }
@@ -448,6 +451,9 @@ _LOG_PANEL_HTML = """\
     padding: 6px 12px; border-bottom: 1px solid #232334; cursor: pointer;
   }
   .log-entry:hover { background: #313244; }
+  .log-entry.error { background: rgba(243, 139, 168, 0.08); }
+  .log-entry.error:hover { background: rgba(243, 139, 168, 0.14); }
+  .log-entry.error .log-method { color: #f38ba8; }
   .log-primary {
     display: flex; justify-content: space-between;
     align-items: baseline; gap: 8px;
@@ -478,14 +484,70 @@ _LOG_PANEL_HTML = """\
     margin-top: 4px; border-radius: 4px;
   }
   .log-entry.expanded .log-detail { display: block; }
+  @keyframes log-flash {
+    from { background: rgba(137, 180, 250, 0.22); }
+    to { background: transparent; }
+  }
+  @keyframes log-flash-error {
+    from { background: rgba(243, 139, 168, 0.25); }
+    to { background: rgba(243, 139, 168, 0.08); }
+  }
+  .log-entry.new { animation: log-flash 2s ease-out; }
+  .log-entry.error.new { animation: log-flash-error 2s ease-out; }
+  .log-copy {
+    opacity: 0; transition: opacity 0.15s;
+    background: #313244; color: #a6adc8; border: 1px solid #45475a;
+    padding: 1px 6px; border-radius: 3px; cursor: pointer;
+    font-size: 10px; font-family: inherit; flex-shrink: 0;
+  }
+  .log-entry:hover .log-copy { opacity: 1; }
+  .log-copy:hover { background: #45475a; color: #cdd6f4; }
   #mcp-log-open {
-    position: fixed; bottom: 12px; right: 12px; z-index: 10000;
+    position: fixed; bottom: 12px; left: 12px; z-index: 10000;
     background: #181825; color: #cdd6f4; border: 1px solid #45475a;
     padding: 6px 12px; border-radius: 6px; cursor: pointer;
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
     font-size: 11px; display: none;
   }
   #mcp-log-open:hover { background: #313244; }
+  #mcp-log-filters {
+    display: flex; gap: 8px; align-items: center;
+    padding: 6px 12px; border-bottom: 1px solid #45475a; flex-shrink: 0;
+  }
+  .log-seg {
+    display: inline-flex; border: 1px solid #45475a; border-radius: 6px;
+    overflow: hidden;
+  }
+  .log-seg button {
+    background: transparent; color: #6c7086; border: none;
+    border-right: 1px solid #45475a; padding: 3px 10px; cursor: pointer;
+    font-size: 10px; font-family: inherit; transition: all 0.15s;
+  }
+  .log-seg button:last-child { border-right: none; }
+  .log-seg button:hover { background: rgba(205, 214, 244, 0.06); }
+  .log-seg button.active[data-filter="tools"] { background: rgba(137, 180, 250, 0.15); color: #89b4fa; }
+  .log-seg button.active[data-filter="notifications"] { background: rgba(250, 179, 135, 0.15); color: #fab387; }
+  .log-seg button.active[data-filter="bridge"] { background: rgba(203, 166, 247, 0.15); color: #cba6f7; }
+  .log-seg button.active[data-filter="errors"] { background: rgba(243, 139, 168, 0.15); color: #f38ba8; }
+  #mcp-log-filters-label {
+    font-size: 9px; color: #6c7086; text-transform: uppercase;
+    letter-spacing: 0.5px; font-weight: 600;
+  }
+  #mcp-log-level-select {
+    background: #313244; color: #cdd6f4; border: 1px solid #45475a;
+    border-radius: 6px; padding: 3px 8px; cursor: pointer;
+    font-size: 10px; font-family: inherit;
+  }
+  #mcp-log-level-select option { background: #1e1e2e; }
+  .log-level {
+    font-size: 9px; padding: 0 5px; border-radius: 3px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
+    flex-shrink: 0; line-height: 16px;
+  }
+  .log-level-debug { background: #313244; color: #6c7086; }
+  .log-level-info { background: rgba(137, 180, 250, 0.15); color: #89b4fa; }
+  .log-level-warning { background: rgba(249, 226, 175, 0.15); color: #f9e2af; }
+  .log-level-error { background: rgba(243, 139, 168, 0.15); color: #f38ba8; }
 </style>
 <div id="mcp-log-panel">
   <div id="mcp-log-resize"></div>
@@ -500,6 +562,21 @@ _LOG_PANEL_HTML = """\
       <button id="mcp-log-close">\u00d7</button>
     </div>
   </div>
+  <div id="mcp-log-filters">
+    <span id="mcp-log-filters-label">Show</span>
+    <div class="log-seg">
+      <button class="active" data-filter="tools">Tools</button>
+      <button class="active" data-filter="notifications">Logs</button>
+      <button class="active" data-filter="bridge">Host</button>
+      <button class="active" data-filter="errors">Errors</button>
+    </div>
+    <select id="mcp-log-level-select">
+      <option value="debug">Debug+</option>
+      <option value="info">Info+</option>
+      <option value="warning">Warn+</option>
+      <option value="error">Error</option>
+    </select>
+  </div>
   <div id="mcp-log-entries"></div>
 </div>
 <button id="mcp-log-open">MCP Log</button>
@@ -512,21 +589,23 @@ _LOG_PANEL_HTML = """\
   var openBtn = document.getElementById("mcp-log-open");
   var resizeHandle = document.getElementById("mcp-log-resize");
 
-  function setFrameWidth(w) {
+  function setFrameLayout(w) {
     var frame = document.getElementById("app-frame");
-    if (frame) frame.style.setProperty("width", w, "important");
+    if (!frame) return;
+    frame.style.setProperty("width", w, "important");
+    frame.style.setProperty("margin-left", w === "100%" ? "0" : panelWidth + "px", "important");
   }
 
   document.getElementById("mcp-log-close").addEventListener("click", function() {
     panel.classList.add("hidden");
     openBtn.style.display = "block";
-    setFrameWidth("100%");
+    setFrameLayout("100%");
   });
 
   openBtn.addEventListener("click", function() {
     panel.classList.remove("hidden");
     openBtn.style.display = "none";
-    setFrameWidth("calc(100% - " + panelWidth + "px)");
+    setFrameLayout("calc(100% - " + panelWidth + "px)");
   });
 
   resizeHandle.addEventListener("mousedown", function(e) {
@@ -539,10 +618,10 @@ _LOG_PANEL_HTML = """\
   });
 
   function onResize(e) {
-    var w = Math.max(200, Math.min(window.innerWidth - e.clientX, window.innerWidth * 0.8));
+    var w = Math.max(200, Math.min(e.clientX, window.innerWidth * 0.8));
     panelWidth = w;
     panel.style.width = w + "px";
-    setFrameWidth("calc(100% - " + w + "px)");
+    setFrameLayout("calc(100% - " + w + "px)");
   }
 
   function stopResize() {
@@ -560,14 +639,50 @@ _LOG_PANEL_HTML = """\
     fetch("/api/logs/clear", { method: "POST" });
   });
 
+  var activeFilters = {tools: true, notifications: true, bridge: true, errors: true};
+  var levelOrder = ["debug", "info", "warning", "error"];
+  var minLevel = 0;
+
+  document.getElementById("mcp-log-filters").addEventListener("click", function(e) {
+    var btn = e.target.closest("[data-filter]");
+    if (!btn) return;
+    var f = btn.dataset.filter;
+    activeFilters[f] = !activeFilters[f];
+    btn.classList.toggle("active", activeFilters[f]);
+    applyFilters();
+  });
+
+  document.getElementById("mcp-log-level-select").addEventListener("change", function(e) {
+    minLevel = levelOrder.indexOf(e.target.value);
+    applyFilters();
+  });
+
+  function shouldShow(el) {
+    var cat = el.dataset.category || "";
+    if (activeFilters[cat] === false) return false;
+    var lv = el.dataset.level;
+    if (lv && levelOrder.indexOf(lv) < minLevel) return false;
+    return true;
+  }
+
+  function applyFilters() {
+    var items = entries.querySelectorAll(".log-entry");
+    for (var i = 0; i < items.length; i++) {
+      items[i].style.display = shouldShow(items[i]) ? "" : "none";
+    }
+  }
+
   function summarize(entry) {
     var b = entry.body;
     if (!b) return "";
     if (entry.direction === "request" || entry.direction === "notification") {
       if (b.method === "tools/call" && b.params) return b.params.name || "";
       if (b.method === "resources/read" && b.params) return b.params.uri || "";
-      if (b.method === "notifications/message" && b.params)
-        return b.params.data || b.params.level || "";
+      if (b.method === "notifications/message" && b.params) {
+        var d = b.params.data;
+        if (d && typeof d === "object") return d.msg || d.message || JSON.stringify(d);
+        return d || b.params.level || "";
+      }
       return "";
     }
     if (b.error) return "error: " + (b.error.message || JSON.stringify(b.error));
@@ -595,10 +710,17 @@ _LOG_PANEL_HTML = """\
 
   function renderEntry(entry) {
     var div = document.createElement("div");
-    div.className = "log-entry";
-    var isError = entry.direction === "response" && entry.body && entry.body.error;
+    var isError = entry.direction === "response" && entry.body
+      && (entry.body.error || (entry.body.result && entry.body.result.isError));
+    div.className = "log-entry" + (isError ? " error" : "");
     var dirClass = isError ? "error" : entry.direction;
     var arrows = {request: "\u2192", response: "\u2190", bridge: "\u2191", notification: "\u2193"};
+
+    // Categorize for filtering
+    if (isError) div.dataset.category = "errors";
+    else if (entry.direction === "bridge") div.dataset.category = "bridge";
+    else if (entry.direction === "notification") div.dataset.category = "notifications";
+    else div.dataset.category = "tools";
 
     var primary = document.createElement("div");
     primary.className = "log-primary";
@@ -617,14 +739,37 @@ _LOG_PANEL_HTML = """\
     left.appendChild(dirEl);
     left.appendChild(methodEl);
 
+    // Log level badge for notifications
+    if (entry.direction === "notification" && entry.body && entry.body.params) {
+      var level = (entry.body.params.level || "").toLowerCase();
+      if (level) {
+        div.dataset.level = level;
+        var lvl = document.createElement("span");
+        lvl.className = "log-level log-level-" + level;
+        lvl.textContent = level;
+        left.appendChild(lvl);
+      }
+    }
+
     var metaEl = document.createElement("span");
     metaEl.className = "log-meta";
     metaEl.textContent = entry.duration_ms != null
       ? entry.duration_ms + "ms"
       : formatTime(entry.timestamp);
 
+    var copyBtn = document.createElement("button");
+    copyBtn.className = "log-copy";
+    copyBtn.textContent = "Copy";
+    copyBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      navigator.clipboard.writeText(JSON.stringify(entry.body, null, 2));
+      copyBtn.textContent = "Copied";
+      setTimeout(function() { copyBtn.textContent = "Copy"; }, 1000);
+    });
+
     primary.appendChild(left);
     primary.appendChild(metaEl);
+    primary.appendChild(copyBtn);
     div.appendChild(primary);
 
     var summary = summarize(entry);
@@ -653,7 +798,12 @@ _LOG_PANEL_HTML = """\
         totalCount += data.length;
         countEl.textContent = String(totalCount);
         var atBottom = entries.scrollHeight - entries.scrollTop - entries.clientHeight < 40;
-        for (var i = 0; i < data.length; i++) entries.appendChild(renderEntry(data[i]));
+        for (var i = 0; i < data.length; i++) {
+          var el = renderEntry(data[i]);
+          el.classList.add("new");
+          if (!shouldShow(el)) el.style.display = "none";
+          entries.appendChild(el);
+        }
         if (atBottom) entries.scrollTop = entries.scrollHeight;
       })
       .catch(function() {});
