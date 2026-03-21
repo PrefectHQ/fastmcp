@@ -794,7 +794,10 @@ _LOG_PANEL_HTML = """\
     return div;
   }
 
+  var polling = false;
   function poll() {
+    if (polling) return;
+    polling = true;
     fetch("/api/logs?since=" + lastId)
       .then(function(r) { return r.ok ? r.json() : []; })
       .then(function(data) {
@@ -811,7 +814,8 @@ _LOG_PANEL_HTML = """\
         }
         if (atBottom) entries.scrollTop = entries.scrollHeight;
       })
-      .catch(function() {});
+      .catch(function() {})
+      .finally(function() { polling = false; });
   }
 
   window.addEventListener("message", function(event) {
@@ -1283,8 +1287,14 @@ def _make_dev_app(
                     if is_sse:
                         # Parse SSE events incrementally
                         sse_buf += chunk.decode("utf-8", errors="replace")
-                        while "\n\n" in sse_buf:
-                            event, sse_buf = sse_buf.split("\n\n", 1)
+                        while "\r\n\r\n" in sse_buf or "\n\n" in sse_buf:
+                            # Split on whichever double-newline appears first
+                            ri = sse_buf.find("\r\n\r\n")
+                            ni = sse_buf.find("\n\n")
+                            if ri >= 0 and (ni < 0 or ri < ni):
+                                event, sse_buf = sse_buf[:ri], sse_buf[ri + 4 :]
+                            else:
+                                event, sse_buf = sse_buf[:ni], sse_buf[ni + 2 :]
                             for line in event.splitlines():
                                 if line.startswith("data: "):
                                     with contextlib.suppress(json.JSONDecodeError):
