@@ -548,6 +548,10 @@ _LOG_PANEL_HTML = """\
   .log-level-info { background: rgba(137, 180, 250, 0.15); color: #89b4fa; }
   .log-level-warning { background: rgba(249, 226, 175, 0.15); color: #f9e2af; }
   .log-level-error { background: rgba(243, 139, 168, 0.15); color: #f38ba8; }
+  .log-level-notice { background: rgba(148, 226, 213, 0.15); color: #94e2d5; }
+  .log-level-critical { background: rgba(243, 139, 168, 0.2); color: #f38ba8; }
+  .log-level-alert { background: rgba(243, 139, 168, 0.25); color: #f38ba8; }
+  .log-level-emergency { background: rgba(243, 139, 168, 0.3); color: #f38ba8; }
 </style>
 <div id="mcp-log-panel">
   <div id="mcp-log-resize"></div>
@@ -574,7 +578,8 @@ _LOG_PANEL_HTML = """\
       <option value="debug">Debug+</option>
       <option value="info">Info+</option>
       <option value="warning">Warn+</option>
-      <option value="error">Error</option>
+      <option value="error">Error+</option>
+      <option value="critical">Critical+</option>
     </select>
   </div>
   <div id="mcp-log-entries"></div>
@@ -640,7 +645,7 @@ _LOG_PANEL_HTML = """\
   });
 
   var activeFilters = {tools: true, notifications: true, bridge: true, errors: true};
-  var levelOrder = ["debug", "info", "warning", "error"];
+  var levelOrder = ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"];
   var minLevel = 0;
 
   document.getElementById("mcp-log-filters").addEventListener("click", function(e) {
