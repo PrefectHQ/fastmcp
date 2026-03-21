@@ -88,6 +88,20 @@ class _MessageLog:
         )
 
     def log_response(self, body: dict[str, Any]) -> None:
+        # Server-initiated notifications have "method" but no "id"
+        if "method" in body and "id" not in body:
+            self._counter += 1
+            self._entries.append(
+                {
+                    "id": self._counter,
+                    "timestamp": time.time(),
+                    "direction": "notification",
+                    "method": body.get("method", "unknown"),
+                    "body": body,
+                }
+            )
+            return
+
         jsonrpc_id = body.get("id")
         method = (
             self._request_methods.pop(jsonrpc_id, None)
@@ -446,6 +460,7 @@ _LOG_PANEL_HTML = """\
   .log-dir.response { color: #a6e3a1; }
   .log-dir.error { color: #f38ba8; }
   .log-dir.bridge { color: #cba6f7; }
+  .log-dir.notification { color: #fab387; }
   .log-method {
     color: #f9e2af; font-weight: 600;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -548,9 +563,11 @@ _LOG_PANEL_HTML = """\
   function summarize(entry) {
     var b = entry.body;
     if (!b) return "";
-    if (entry.direction === "request") {
+    if (entry.direction === "request" || entry.direction === "notification") {
       if (b.method === "tools/call" && b.params) return b.params.name || "";
       if (b.method === "resources/read" && b.params) return b.params.uri || "";
+      if (b.method === "notifications/message" && b.params)
+        return b.params.data || b.params.level || "";
       return "";
     }
     if (b.error) return "error: " + (b.error.message || JSON.stringify(b.error));
@@ -581,6 +598,7 @@ _LOG_PANEL_HTML = """\
     div.className = "log-entry";
     var isError = entry.direction === "response" && entry.body && entry.body.error;
     var dirClass = isError ? "error" : entry.direction;
+    var arrows = {request: "\u2192", response: "\u2190", bridge: "\u2191", notification: "\u2193"};
 
     var primary = document.createElement("div");
     primary.className = "log-primary";
@@ -590,8 +608,7 @@ _LOG_PANEL_HTML = """\
 
     var dirEl = document.createElement("span");
     dirEl.className = "log-dir " + dirClass;
-    dirEl.textContent = entry.direction === "request" ? "\u2192"
-      : entry.direction === "bridge" ? "\u2191" : "\u2190";
+    dirEl.textContent = arrows[entry.direction] || "\u2190";
 
     var methodEl = document.createElement("span");
     methodEl.className = "log-method";
@@ -1113,8 +1130,8 @@ def _make_dev_app(
             ):
                 pass  # Connection closed during shutdown — not an error
             finally:
-                # Log MCP responses
-                if request.method == "POST" and chunks:
+                # Log MCP responses (POST results + GET SSE notifications)
+                if chunks:
                     _log_response_bytes(
                         message_log,
                         b"".join(chunks),
