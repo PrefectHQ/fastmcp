@@ -384,6 +384,39 @@ class TestResolveToolRef:
         assert isinstance(result, ResolvedTool)
         assert result.name == "my_tool"
 
+    def test_resolve_string_name(self):
+        """CallTool("save") resolves to the global key."""
+        app = FastMCPApp("test")
+
+        @app.tool()
+        def save(name: str) -> str:
+            return name
+
+        result = _resolve_tool_ref("save")
+        assert isinstance(result, ResolvedTool)
+        assert GLOBAL_KEY_PATTERN.match(result.name)
+        assert result.name.startswith("save-")
+        assert result.unwrap_result is True
+
+    def test_resolve_string_name_object_return(self):
+        """String resolution also sets unwrap_result correctly."""
+        app = FastMCPApp("test")
+
+        @app.tool()
+        def save(name: str) -> dict:
+            return {"name": name}
+
+        result = _resolve_tool_ref("save")
+        assert isinstance(result, ResolvedTool)
+        assert result.name.startswith("save-")
+        assert result.unwrap_result is False
+
+    def test_resolve_string_unknown_passes_through(self):
+        """Unknown string names pass through as-is."""
+        result = _resolve_tool_ref("unknown_tool")
+        assert isinstance(result, ResolvedTool)
+        assert result.name == "unknown_tool"
+
     def test_resolve_unresolvable_raises(self):
         with pytest.raises(ValueError):
             _resolve_tool_ref(42)

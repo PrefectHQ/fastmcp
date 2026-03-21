@@ -57,6 +57,10 @@ _APP_TOOL_REGISTRY: dict[str, Tool] = {}
 # translate ``CallTool(save_contact)`` → ``"save_contact-a1b2c3d4"``.
 _FN_TO_GLOBAL_KEY: dict[int, str] = {}
 
+# tool name → global key.  Used by the CallTool resolver to translate
+# ``CallTool("save_contact")`` → ``"save_contact-a1b2c3d4"``.
+_NAME_TO_GLOBAL_KEY: dict[str, str] = {}
+
 
 def get_global_tool(name: str) -> Tool | None:
     """Look up a tool by its global key, or return None."""
@@ -74,9 +78,10 @@ def _make_global_key(name: str) -> str:
 
 
 def _register_global_key(tool: Tool, fn: Any, global_key: str) -> None:
-    """Register a tool in both process-level registries."""
+    """Register a tool in all process-level registries."""
     _APP_TOOL_REGISTRY[global_key] = tool
     _FN_TO_GLOBAL_KEY[id(fn)] = global_key
+    _NAME_TO_GLOBAL_KEY[tool.name] = global_key
 
 
 def _stamp_global_key(tool: Tool, global_key: str) -> None:
@@ -94,17 +99,33 @@ def _stamp_global_key(tool: Tool, global_key: str) -> None:
 
 
 def _resolve_tool_ref(fn: Any) -> Any:
-    """Resolve a callable to a ``ResolvedTool`` for CallTool serialization.
+    """Resolve a callable or string to a ``ResolvedTool`` for CallTool serialization.
 
     Always returns a ``ResolvedTool`` with the resolved name and any
     metadata the renderer needs (e.g. ``unwrap_result``).
 
-    Resolution order:
+    Resolution order for callables:
     1. Global key registry (FastMCPApp tools) — includes metadata
     2. ``__fastmcp__`` metadata (decorated but not on a FastMCPApp)
     3. ``fn.__name__`` (bare function — works for standalone servers)
+
+    Resolution for strings:
+    1. Name registry (FastMCPApp tools registered by name)
+    2. Pass through as-is (plain tool name)
     """
     from prefab_ui.app import ResolvedTool
+
+    if isinstance(fn, str):
+        global_key = _NAME_TO_GLOBAL_KEY.get(fn)
+        if global_key is not None:
+            tool = _APP_TOOL_REGISTRY.get(global_key)
+            unwrap = bool(
+                tool is not None
+                and tool.output_schema
+                and tool.output_schema.get("x-fastmcp-wrap-result")
+            )
+            return ResolvedTool(name=global_key, unwrap_result=unwrap)
+        return ResolvedTool(name=fn)
 
     global_key = _FN_TO_GLOBAL_KEY.get(id(fn))
     if global_key is not None:
@@ -416,6 +437,7 @@ class FastMCPApp(Provider):
         self._local._add_component(tool)
 
         _APP_TOOL_REGISTRY[global_key] = tool
+        _NAME_TO_GLOBAL_KEY[tool.name] = global_key
         if fn is not None:
             _FN_TO_GLOBAL_KEY[id(fn)] = global_key
 

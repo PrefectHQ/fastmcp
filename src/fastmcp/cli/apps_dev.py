@@ -967,7 +967,7 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
         else:
             Heading(_tool_title(tools[0]), level=3)
 
-        with Pages(name="activeTool", default_value=first_name):
+        with Pages(name="activeTool", value=first_name):
             for tool in tools:
                 name: str = tool["name"]
                 desc: str = tool.get("description") or ""
