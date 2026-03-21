@@ -21,6 +21,7 @@ from fastmcp import Client, FastMCP
 from fastmcp.server.app import (
     _APP_TOOL_REGISTRY,
     _FN_TO_GLOBAL_KEY,
+    _NAME_TO_GLOBAL_KEY,
     FastMCPApp,
     _make_global_key,
     _resolve_tool_ref,
@@ -38,6 +39,7 @@ def _clear_registries() -> None:
     """Clear process-level registries between tests."""
     _APP_TOOL_REGISTRY.clear()
     _FN_TO_GLOBAL_KEY.clear()
+    _NAME_TO_GLOBAL_KEY.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -416,6 +418,27 @@ class TestResolveToolRef:
         result = _resolve_tool_ref("unknown_tool")
         assert isinstance(result, ResolvedTool)
         assert result.name == "unknown_tool"
+
+    def test_resolve_string_ambiguous_raises(self):
+        """Two apps with the same tool name raises on string resolution."""
+        app1 = FastMCPApp("app1")
+        app2 = FastMCPApp("app2")
+
+        @app1.tool()
+        def save(name: str) -> str:
+            return name
+
+        @app2.tool("save")
+        def save2(name: str) -> str:
+            return name
+
+        with pytest.raises(ValueError, match="Ambiguous tool name"):
+            _resolve_tool_ref("save")
+
+        # Callable refs still work — they're unambiguous
+        result1 = _resolve_tool_ref(save)
+        result2 = _resolve_tool_ref(save2)
+        assert result1.name != result2.name
 
     def test_resolve_unresolvable_raises(self):
         with pytest.raises(ValueError):
