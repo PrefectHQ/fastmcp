@@ -65,6 +65,14 @@ class FileResource(Resource):
         default="text/plain",
         description="MIME type of the resource content",
     )
+    encoding: str | None = Field(
+        default=None,
+        description=(
+            "Encoding to use when reading text files. "
+            "If None, defaults to the system encoding. "
+            "Set to 'utf-8' for cross-platform compatibility with non-ASCII content."
+        ),
+    )
 
     @property
     def _async_path(self) -> AsyncPath:
@@ -94,7 +102,7 @@ class FileResource(Resource):
             if self.is_binary:
                 content: str | bytes = await self._async_path.read_bytes()
             else:
-                content = await self._async_path.read_text()
+                content = await self._async_path.read_text(encoding=self.encoding)
             return ResourceResult(
                 contents=[ResourceContent(content=content, mime_type=self.mime_type)]
             )
