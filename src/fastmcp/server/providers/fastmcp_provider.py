@@ -137,11 +137,23 @@ class FastMCPProviderTool(Tool):
         # Pass exact version so child executes the correct version
         version = VersionSpec(eq=self.version) if self.version else None
 
+        # If this tool belongs to a FastMCPApp, pass app_name so the
+        # child server routes via get_app_tool (bypassing transforms).
+        app_name: str | None = None
+        meta = self.meta or {}
+        fastmcp_meta = meta.get("fastmcp")
+        if isinstance(fastmcp_meta, dict):
+            app_name = fastmcp_meta.get("app")
+
         with delegate_span(
             self._original_name or "", "FastMCPProvider", self._original_name or ""
         ):
             return await self._server.call_tool(
-                self._original_name, arguments, version=version, task_meta=task_meta
+                self._original_name,
+                arguments,
+                version=version,
+                task_meta=task_meta,
+                app_name=app_name,
             )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
@@ -563,8 +575,11 @@ class FastMCPProvider(Provider):
         return FastMCPProviderTool.wrap(self.server, raw_tool)
 
     async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
-        """Delegate to nested server's get_app_tool, bypassing transforms."""
-        return await self.server.get_app_tool(app_name, tool_name)
+        """Delegate to nested server's get_app_tool, wrapping for middleware."""
+        raw_tool = await self.server.get_app_tool(app_name, tool_name)
+        if raw_tool is None:
+            return None
+        return FastMCPProviderTool.wrap(self.server, raw_tool)
 
     # -------------------------------------------------------------------------
     # Resource methods

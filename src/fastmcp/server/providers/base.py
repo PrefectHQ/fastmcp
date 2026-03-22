@@ -194,7 +194,16 @@ class Provider:
         if tool is not None:
             meta = tool.meta or {}
             fastmcp_meta = meta.get("fastmcp")
-            if isinstance(fastmcp_meta, dict) and fastmcp_meta.get("app") == app_name:
+            ui_meta = meta.get("ui")
+            # Must match app name AND have app visibility (not model-only)
+            visibility = (
+                ui_meta.get("visibility", []) if isinstance(ui_meta, dict) else []
+            )
+            if (
+                isinstance(fastmcp_meta, dict)
+                and fastmcp_meta.get("app") == app_name
+                and "app" in visibility
+            ):
                 return tool
         return None
 

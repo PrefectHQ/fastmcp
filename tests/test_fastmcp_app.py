@@ -386,8 +386,9 @@ class TestGetAppTool:
         assert tool is not None
         assert tool.name == "save_contact"
 
-    async def test_ui_tool_findable_by_app_name(self):
-        """@app.ui() tools are also tagged with app name."""
+    async def test_ui_tool_not_findable_via_get_app_tool(self):
+        """@app.ui() tools have model visibility and should NOT be
+        returned by get_app_tool (only app-visible tools are)."""
         app = FastMCPApp("dashboard")
 
         @app.ui()
@@ -395,6 +396,17 @@ class TestGetAppTool:
             return "ui"
 
         tool = await app.get_app_tool("dashboard", "show")
+        assert tool is None
+
+    async def test_model_visible_tool_findable(self):
+        """@app.tool(model=True) has app visibility and IS findable."""
+        app = FastMCPApp("test")
+
+        @app.tool(model=True)
+        def query(q: str) -> str:
+            return q
+
+        tool = await app.get_app_tool("test", "query")
         assert tool is not None
 
 

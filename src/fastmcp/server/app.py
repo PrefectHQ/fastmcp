@@ -354,9 +354,12 @@ class FastMCPApp(Provider):
         if not isinstance(tool, Tool):
             tool = Tool._ensure_tool(tool)
 
-        # Tag with app name for routing
+        # Tag with app name and visibility for routing
         meta = dict(tool.meta) if tool.meta else {}
         meta.setdefault("fastmcp", {})["app"] = self.name
+        ui = meta.setdefault("ui", {})
+        if "visibility" not in ui:
+            ui["visibility"] = ["app"]
         tool.meta = meta
 
         self._local._add_component(tool)
