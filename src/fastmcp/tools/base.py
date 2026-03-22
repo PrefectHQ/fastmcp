@@ -268,9 +268,15 @@ class Tool(FastMCPComponent):
 
         if _HAS_PREFAB:
             if isinstance(raw_value, _PrefabApp):
-                return _prefab_to_tool_result(raw_value)
+                return _prefab_to_tool_result(
+                    raw_value,
+                    fastmcp_app_name=_get_fastmcp_app_name(self),
+                )
             if isinstance(raw_value, _PrefabComponent):
-                return _prefab_to_tool_result(_PrefabApp(view=raw_value))
+                return _prefab_to_tool_result(
+                    _PrefabApp(view=raw_value),
+                    fastmcp_app_name=_get_fastmcp_app_name(self),
+                )
 
         content = _convert_to_content(raw_value, serializer=self.serializer)
 
@@ -492,16 +498,38 @@ def _get_tool_resolver() -> Callable[..., str] | None:
         return None
 
 
-def _prefab_to_json(app: Any) -> dict[str, Any]:
-    """Call PrefabApp.to_json() with the FastMCPApp callable resolver."""
-    return app.to_json(tool_resolver=_get_tool_resolver())
+def _prefab_to_json(app: Any, fastmcp_app_name: str | None = None) -> dict[str, Any]:
+    """Call PrefabApp.to_json() with the FastMCPApp callable resolver.
+
+    If ``fastmcp_app_name`` is set, injects ``_meta.fastmcp.app`` into the
+    serialized output so the renderer can tag subsequent tool calls with the
+    app identity for direct routing.
+    """
+    data = app.to_json(tool_resolver=_get_tool_resolver())
+    if fastmcp_app_name is not None:
+        meta = data.setdefault("_meta", {})
+        meta.setdefault("fastmcp", {})["app"] = fastmcp_app_name
+    return data
 
 
-def _prefab_to_tool_result(app: Any) -> ToolResult:
+def _get_fastmcp_app_name(tool: Tool) -> str | None:
+    """Read the FastMCPApp name from a tool's metadata, if present."""
+    meta = tool.meta
+    if not meta:
+        return None
+    fastmcp_meta = meta.get("fastmcp")
+    if isinstance(fastmcp_meta, dict):
+        app = fastmcp_meta.get("app")
+        if isinstance(app, str):
+            return app
+    return None
+
+
+def _prefab_to_tool_result(app: Any, fastmcp_app_name: str | None = None) -> ToolResult:
     """Convert a PrefabApp to a FastMCP ToolResult."""
     return ToolResult(
         content=[TextContent(type="text", text=_PREFAB_TEXT_FALLBACK)],
-        structured_content=_prefab_to_json(app),
+        structured_content=_prefab_to_json(app, fastmcp_app_name=fastmcp_app_name),
     )
 
 

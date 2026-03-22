@@ -220,11 +220,12 @@ class MCPOperationsMixin:
             app_name: str | None = None
             try:
                 ctx = server._mcp_server.request_context
-                # Extract version from _meta.fastmcp, app name from _meta.prefab
+                # Extract version and app name from _meta.fastmcp
                 if ctx.meta:
                     meta_dict = ctx.meta.model_dump(exclude_none=True)
-                    version_str = meta_dict.get("fastmcp", {}).get("version")
-                    app_name = meta_dict.get("prefab", {}).get("app")
+                    fastmcp_meta = meta_dict.get("fastmcp", {})
+                    version_str = fastmcp_meta.get("version")
+                    app_name = fastmcp_meta.get("app")
                 # Extract SEP-1686 task metadata
                 if ctx.experimental.is_task:
                     mcp_task_meta = ctx.experimental.task_metadata

@@ -326,7 +326,10 @@ class FastMCPApp(Provider):
                     visibility=["model"],
                 )
 
-            meta: dict[str, Any] = {"ui": app_config_to_meta_dict(app_config)}
+            meta: dict[str, Any] = {
+                "ui": app_config_to_meta_dict(app_config),
+                "fastmcp": {"app": self.name},
+            }
 
             tool_obj = Tool.from_function(
                 fn,
