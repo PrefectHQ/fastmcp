@@ -1,9 +1,9 @@
 """Tests for FastMCPApp — the composable application provider.
 
 Covers:
-- @app.tool() decorator (global keys, visibility, calling patterns)
+- @app.tool() decorator (visibility, calling patterns)
 - @app.ui() decorator (model visibility, CSP auto-wiring)
-- Global key registry and call_tool routing
+- App tool registry and call_tool routing
 - Callable resolver (_resolve_tool_ref)
 - Composition with namespaced servers
 - Provider interface delegation
@@ -11,7 +11,6 @@ Covers:
 
 from __future__ import annotations
 
-import re
 from unittest.mock import AsyncMock
 
 import pytest
@@ -19,12 +18,10 @@ from prefab_ui.app import ResolvedTool
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.app import (
-    _APP_TOOL_REGISTRY,
-    _FN_TO_GLOBAL_KEY,
-    _NAME_TO_GLOBAL_KEY,
+    _APP_TOOLS,
     FastMCPApp,
-    _make_global_key,
     _resolve_tool_ref,
+    get_app_tool,
 )
 from fastmcp.tools.base import Tool
 
@@ -32,30 +29,10 @@ from fastmcp.tools.base import Tool
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
 
-GLOBAL_KEY_PATTERN = re.compile(r"^.+-[0-9a-f]{8}$")
-
 
 def _clear_registries() -> None:
     """Clear process-level registries between tests."""
-    _APP_TOOL_REGISTRY.clear()
-    _FN_TO_GLOBAL_KEY.clear()
-    _NAME_TO_GLOBAL_KEY.clear()
-
-
-# ---------------------------------------------------------------------------
-# Global key generation
-# ---------------------------------------------------------------------------
-
-
-class TestGlobalKeyGeneration:
-    def test_make_global_key_format(self):
-        key = _make_global_key("save_contact")
-        assert GLOBAL_KEY_PATTERN.match(key)
-        assert key.startswith("save_contact-")
-
-    def test_make_global_key_uniqueness(self):
-        keys = {_make_global_key("my_tool") for _ in range(100)}
-        assert len(keys) == 100
+    _APP_TOOLS.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +51,6 @@ class TestAppTool:
         def save(name: str) -> str:
             return name
 
-        # Function is returned unchanged
         assert save("alice") == "alice"
 
     def test_tool_empty_parens(self):
@@ -135,33 +111,24 @@ class TestAppTool:
         assert len(tools) == 1
         assert tools[0].name == "custom_save"
 
-    def test_tool_gets_global_key(self):
+    def test_tool_registered_in_app_tools(self):
         app = FastMCPApp("test")
 
         @app.tool()
         def save(name: str) -> str:
             return name
 
-        # Check the function is registered in the global key registry
-        assert id(save) in _FN_TO_GLOBAL_KEY
-        global_key = _FN_TO_GLOBAL_KEY[id(save)]
-        assert GLOBAL_KEY_PATTERN.match(global_key)
-        assert global_key.startswith("save-")
-        assert global_key in _APP_TOOL_REGISTRY
+        assert ("test", "save") in _APP_TOOLS
+        assert _APP_TOOLS[("test", "save")].name == "save"
 
-    async def test_tool_global_key_in_meta(self):
-        app = FastMCPApp("test")
+    def test_tool_custom_name_registered_correctly(self):
+        app = FastMCPApp("myapp")
 
-        @app.tool()
+        @app.tool("custom_save")
         def save(name: str) -> str:
             return name
 
-        tools = await app._list_tools()
-        tool = tools[0]
-        assert tool.meta is not None
-        assert "ui" in tool.meta
-        assert "globalKey" in tool.meta["ui"]
-        assert GLOBAL_KEY_PATTERN.match(tool.meta["ui"]["globalKey"])
+        assert ("myapp", "custom_save") in _APP_TOOLS
 
     async def test_tool_default_visibility_app_only(self):
         app = FastMCPApp("test")
@@ -186,6 +153,19 @@ class TestAppTool:
         meta = tools[0].meta
         assert meta is not None
         assert meta["ui"]["visibility"] == ["app", "model"]
+
+    async def test_tool_no_global_key_in_meta(self):
+        """Tools should NOT have globalKey in meta (removed in refactor)."""
+        app = FastMCPApp("test")
+
+        @app.tool()
+        def save(name: str) -> str:
+            return name
+
+        tools = await app._list_tools()
+        meta = tools[0].meta
+        assert meta is not None
+        assert "globalKey" not in meta.get("ui", {})
 
     def test_tool_with_description(self):
         app = FastMCPApp("test")
@@ -269,15 +249,15 @@ class TestAppUI:
         assert meta is not None
         assert meta["ui"]["visibility"] == ["model"]
 
-    def test_ui_no_global_key(self):
-        """UI entry points should NOT get global keys."""
+    def test_ui_not_in_app_tools(self):
+        """UI entry points should NOT be in the app tool registry."""
         app = FastMCPApp("test")
 
         @app.ui()
         def dashboard() -> str:
             return "dashboard"
 
-        assert id(dashboard) not in _FN_TO_GLOBAL_KEY
+        assert ("test", "dashboard") not in _APP_TOOLS
 
     async def test_ui_has_resource_uri(self):
         app = FastMCPApp("test")
@@ -335,38 +315,21 @@ class TestResolveToolRef:
     def setup_method(self) -> None:
         _clear_registries()
 
-    def test_resolve_global_key(self):
-        app = FastMCPApp("test")
-
-        @app.tool()
-        def save(name: str) -> str:
-            return name
-
-        result = _resolve_tool_ref(save)
-        # str return → wrapped tool → ResolvedTool with unwrap_result
+    def test_resolve_string_passes_through(self):
+        """Strings pass through as-is — server resolves at call time."""
+        result = _resolve_tool_ref("save_contact")
         assert isinstance(result, ResolvedTool)
-        assert GLOBAL_KEY_PATTERN.match(result.name)
-        assert result.name.startswith("save-")
-        assert result.unwrap_result is True
+        assert result.name == "save_contact"
 
-    def test_resolve_global_key_object_return(self):
-        """Tools returning dicts don't need unwrapping."""
+    def test_resolve_callable_uses_name(self):
+        def my_tool():
+            pass
 
-        app = FastMCPApp("test")
-
-        @app.tool()
-        def save(name: str) -> dict:
-            return {"name": name}
-
-        result = _resolve_tool_ref(save)
+        result = _resolve_tool_ref(my_tool)
         assert isinstance(result, ResolvedTool)
-        assert GLOBAL_KEY_PATTERN.match(result.name)
-        assert result.name.startswith("save-")
-        assert result.unwrap_result is False
+        assert result.name == "my_tool"
 
     def test_resolve_fastmcp_metadata(self):
-        """Functions with __fastmcp__ metadata but no global key."""
-
         from fastmcp.tools.function_tool import ToolMeta
 
         def my_tool():
@@ -378,50 +341,66 @@ class TestResolveToolRef:
         assert isinstance(result, ResolvedTool)
         assert result.name == "custom_name"
 
-    def test_resolve_bare_function(self):
-        def my_tool():
-            pass
+    def test_resolve_unresolvable_raises(self):
+        with pytest.raises(ValueError):
+            _resolve_tool_ref(42)
 
-        result = _resolve_tool_ref(my_tool)
-        assert isinstance(result, ResolvedTool)
-        assert result.name == "my_tool"
 
-    def test_resolve_string_name(self):
-        """CallTool("save") resolves to the global key."""
-        app = FastMCPApp("test")
+# ---------------------------------------------------------------------------
+# get_app_tool registry
+# ---------------------------------------------------------------------------
+
+
+class TestGetAppTool:
+    def setup_method(self) -> None:
+        _clear_registries()
+
+    def test_lookup_by_app_and_tool_name(self):
+        app = FastMCPApp("contacts")
 
         @app.tool()
         def save(name: str) -> str:
             return name
 
-        result = _resolve_tool_ref("save")
-        assert isinstance(result, ResolvedTool)
-        assert GLOBAL_KEY_PATTERN.match(result.name)
-        assert result.name.startswith("save-")
-        assert result.unwrap_result is True
+        tool = get_app_tool("contacts", "save")
+        assert tool is not None
+        assert tool.name == "save"
 
-    def test_resolve_string_name_object_return(self):
-        """String resolution also sets unwrap_result correctly."""
-        app = FastMCPApp("test")
+    def test_lookup_wrong_app_returns_none(self):
+        app = FastMCPApp("contacts")
 
         @app.tool()
-        def save(name: str) -> dict:
-            return {"name": name}
+        def save(name: str) -> str:
+            return name
 
-        result = _resolve_tool_ref("save")
-        assert isinstance(result, ResolvedTool)
-        assert result.name.startswith("save-")
-        assert result.unwrap_result is False
+        assert get_app_tool("billing", "save") is None
 
-    def test_resolve_string_unknown_passes_through(self):
-        """Unknown string names pass through as-is."""
-        result = _resolve_tool_ref("unknown_tool")
-        assert isinstance(result, ResolvedTool)
-        assert result.name == "unknown_tool"
+    def test_lookup_wrong_tool_returns_none(self):
+        app = FastMCPApp("contacts")
 
-    def test_resolve_unresolvable_raises(self):
-        with pytest.raises(ValueError):
-            _resolve_tool_ref(42)
+        @app.tool()
+        def save(name: str) -> str:
+            return name
+
+        assert get_app_tool("contacts", "missing") is None
+
+    def test_two_apps_same_tool_name_no_collision(self):
+        app1 = FastMCPApp("contacts")
+        app2 = FastMCPApp("billing")
+
+        @app1.tool()
+        def save(name: str) -> str:
+            return f"contact: {name}"
+
+        @app2.tool("save")
+        def save_billing(amount: int) -> str:
+            return f"invoice: {amount}"
+
+        t1 = get_app_tool("contacts", "save")
+        t2 = get_app_tool("billing", "save")
+        assert t1 is not None
+        assert t2 is not None
+        assert t1 is not t2
 
 
 # ---------------------------------------------------------------------------
@@ -458,17 +437,17 @@ class TestProviderInterface:
 
 
 # ---------------------------------------------------------------------------
-# call_tool with global key routing
+# call_tool with app_name routing
 # ---------------------------------------------------------------------------
 
 
-class TestCallToolGlobalKeyRouting:
+class TestCallToolAppRouting:
     def setup_method(self) -> None:
         _clear_registries()
 
-    async def test_call_tool_by_global_key(self):
-        """Server.call_tool can find a FastMCPApp tool by its global key."""
-        app = FastMCPApp("test")
+    async def test_call_tool_with_app_name(self):
+        """Server.call_tool routes directly when app_name is provided."""
+        app = FastMCPApp("contacts")
 
         @app.tool()
         def save(name: str) -> str:
@@ -477,12 +456,10 @@ class TestCallToolGlobalKeyRouting:
         server = FastMCP("Platform")
         server.add_provider(app)
 
-        global_key = _FN_TO_GLOBAL_KEY[id(save)]
-
-        result = await server.call_tool(global_key, {"name": "alice"})
+        result = await server.call_tool("save", {"name": "alice"}, app_name="contacts")
         assert result.content[0].text == "saved alice"  # type: ignore[union-attr]
 
-    async def test_call_tool_by_name(self):
+    async def test_call_tool_by_name_without_app_name(self):
         """Regular name-based resolution still works."""
         app = FastMCPApp("test")
 
@@ -496,8 +473,8 @@ class TestCallToolGlobalKeyRouting:
         result = await server.call_tool("save", {"name": "bob"})
         assert result.content[0].text == "saved bob"  # type: ignore[union-attr]
 
-    async def test_global_key_survives_namespace(self):
-        """Global key works even when the app is mounted under a namespace."""
+    async def test_app_name_survives_namespace(self):
+        """app_name routing works even when the app is namespaced."""
         app = FastMCPApp("crm")
 
         @app.tool()
@@ -507,10 +484,10 @@ class TestCallToolGlobalKeyRouting:
         server = FastMCP("Platform")
         server.add_provider(app, namespace="crm")
 
-        global_key = _FN_TO_GLOBAL_KEY[id(save_contact)]
-
-        # Global key should still work
-        result = await server.call_tool(global_key, {"name": "alice"})
+        # app_name routes directly, bypassing namespace
+        result = await server.call_tool(
+            "save_contact", {"name": "alice"}, app_name="crm"
+        )
         assert result.content[0].text == "saved alice"  # type: ignore[union-attr]
 
     async def test_namespaced_name_also_works(self):
@@ -527,8 +504,8 @@ class TestCallToolGlobalKeyRouting:
         result = await server.call_tool("crm_save_contact", {"name": "bob"})
         assert result.content[0].text == "saved bob"  # type: ignore[union-attr]
 
-    async def test_global_key_auth_blocks_unauthorized(self):
-        """Auth checks run even when resolving via global key."""
+    async def test_app_name_auth_blocks_unauthorized(self):
+        """Auth checks run even when routing via app_name."""
         from fastmcp.exceptions import NotFoundError
         from fastmcp.server.context import _current_transport
 
@@ -542,15 +519,35 @@ class TestCallToolGlobalKeyRouting:
         server = FastMCP("Platform")
         server.add_provider(app)
 
-        global_key = _FN_TO_GLOBAL_KEY[id(secret)]
-
-        # Simulate non-stdio transport so auth is not skipped
         token = _current_transport.set("streamable-http")
         try:
             with pytest.raises(NotFoundError):
-                await server.call_tool(global_key, {})
+                await server.call_tool("secret", {}, app_name="test")
         finally:
             _current_transport.reset(token)
+
+    async def test_two_apps_same_tool_name_routed_correctly(self):
+        """Two apps with same tool name are disambiguated by app_name."""
+        contacts = FastMCPApp("contacts")
+        billing = FastMCPApp("billing")
+
+        @contacts.tool()
+        def save(name: str) -> str:
+            return f"contact: {name}"
+
+        @billing.tool("save")
+        def save_billing(amount: str) -> str:
+            return f"invoice: {amount}"
+
+        server = FastMCP("Platform")
+        server.add_provider(contacts)
+        server.add_provider(billing)
+
+        r1 = await server.call_tool("save", {"name": "alice"}, app_name="contacts")
+        r2 = await server.call_tool("save", {"amount": "100"}, app_name="billing")
+
+        assert r1.content[0].text == "contact: alice"  # type: ignore[union-attr]
+        assert r2.content[0].text == "invoice: 100"  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------------------
@@ -563,7 +560,6 @@ class TestEndToEnd:
         _clear_registries()
 
     async def test_ui_tool_visible_to_client(self):
-        """UI entry-point tools show up in list_tools via Client."""
         app = FastMCPApp("test")
 
         @app.ui()
@@ -579,7 +575,6 @@ class TestEndToEnd:
             assert "dashboard" in names
 
     async def test_app_tool_model_true_visible(self):
-        """App tools with model=True are visible via Client."""
         app = FastMCPApp("test")
 
         @app.tool(model=True)
@@ -593,23 +588,6 @@ class TestEndToEnd:
             tools = await client.list_tools()
             names = [t.name for t in tools]
             assert "query" in names
-
-    async def test_call_tool_via_global_key_through_client(self):
-        """Client can call a tool using its global key."""
-        app = FastMCPApp("test")
-
-        @app.tool()
-        def save(name: str) -> str:
-            return f"saved {name}"
-
-        server = FastMCP("Platform")
-        server.add_provider(app)
-
-        global_key = _FN_TO_GLOBAL_KEY[id(save)]
-
-        async with Client(server) as client:
-            result = await client.call_tool(global_key, {"name": "test"})
-            assert "saved test" in result.content[0].text
 
 
 # ---------------------------------------------------------------------------
@@ -644,15 +622,14 @@ class TestAddTool:
         tools = await app._list_tools()
         assert len(tools) == 1
 
-    async def test_add_tool_gets_global_key(self):
+    async def test_add_tool_registered_in_app_tools(self):
         app = FastMCPApp("test")
 
         def save(name: str) -> str:
             return name
 
-        tool = app.add_tool(save)
-        assert tool.meta is not None
-        assert "globalKey" in tool.meta.get("ui", {})
+        app.add_tool(save)
+        assert ("test", "save") in _APP_TOOLS
 
     async def test_add_tool_object(self):
         app = FastMCPApp("test")
@@ -689,12 +666,10 @@ class TestComposition:
         server.add_provider(crm, namespace="crm")
         server.add_provider(billing, namespace="billing")
 
-        # Both tools reachable by global key
-        crm_key = _FN_TO_GLOBAL_KEY[id(save_contact)]
-        billing_key = _FN_TO_GLOBAL_KEY[id(create_invoice)]
-
-        r1 = await server.call_tool(crm_key, {"name": "alice"})
-        r2 = await server.call_tool(billing_key, {"amount": 100})
+        r1 = await server.call_tool("save_contact", {"name": "alice"}, app_name="CRM")
+        r2 = await server.call_tool(
+            "create_invoice", {"amount": 100}, app_name="Billing"
+        )
 
         assert r1.content[0].text == "alice"  # type: ignore[union-attr]
         assert r2.content[0].text == "100"  # type: ignore[union-attr]

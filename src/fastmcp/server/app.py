@@ -1,10 +1,11 @@
 """FastMCPApp — a Provider that represents a composable MCP application.
 
 FastMCPApp binds entry-point tools (model calls these) together with backend
-tools (the UI calls these via CallTool). Backend tools get global keys —
-UUID-suffixed stable identifiers that survive namespace transforms when
-servers are composed — so ``CallTool(save_contact)`` keeps working even when
-the app is mounted under a namespace.
+tools (the UI calls these via CallTool).  Backend tools are registered in a
+process-level registry keyed by ``(app_name, tool_name)`` so that
+``CallTool("save_contact")`` reaches the right tool regardless of namespace
+transforms — the server looks up the tool directly when the request carries
+``_meta.fastmcp.app``.
 
 Usage::
 
@@ -27,14 +28,12 @@ Usage::
 from __future__ import annotations
 
 import inspect
-import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager, suppress
 from typing import Any, Literal, TypeVar, overload
 
 from mcp.types import AnyFunction, Icon, ToolAnnotations
 
-from fastmcp.decorators import get_fastmcp_meta
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.local_provider import LocalProvider
@@ -46,98 +45,47 @@ logger = get_logger(__name__)
 F = TypeVar("F", bound=Callable[..., Any])
 
 # ---------------------------------------------------------------------------
-# Process-level registries
+# Process-level registry
 # ---------------------------------------------------------------------------
-# Global key → Tool object.  FastMCP.call_tool checks this before normal
-# provider resolution so that CallTool("save_contact-a1b2c3d4") reaches the
-# right tool regardless of namespace transforms.
-_APP_TOOL_REGISTRY: dict[str, Tool] = {}
-
-# id(original_fn) → global key.  Used by the CallTool callable resolver to
-# translate ``CallTool(save_contact)`` → ``"save_contact-a1b2c3d4"``.
-_FN_TO_GLOBAL_KEY: dict[int, str] = {}
-
-# tool name → global key.  Used by the CallTool resolver to translate
-# ``CallTool("save_contact")`` → ``"save_contact-a1b2c3d4"``.
-_NAME_TO_GLOBAL_KEY: dict[str, str] = {}
+# (app_name, tool_name) → Tool object.  Populated by @app.tool() at
+# decoration time.  The server checks this registry (via get_app_tool)
+# when a call_tool request carries _meta.fastmcp.app, bypassing the
+# normal transform chain entirely.
+_APP_TOOLS: dict[tuple[str, str], Tool] = {}
 
 
-def get_global_tool(name: str) -> Tool | None:
-    """Look up a tool by its global key, or return None."""
-    return _APP_TOOL_REGISTRY.get(name)
+def get_app_tool(app_name: str, tool_name: str) -> Tool | None:
+    """Look up an app tool by (app_name, tool_name), or return None."""
+    return _APP_TOOLS.get((app_name, tool_name))
 
 
 # ---------------------------------------------------------------------------
-# Global key helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_global_key(name: str) -> str:
-    """Generate a global key: ``{name}-{8_hex_chars}``."""
-    return f"{name}-{uuid.uuid4().hex[:8]}"
-
-
-def _register_global_key(tool: Tool, fn: Any, global_key: str) -> None:
-    """Register a tool in all process-level registries."""
-    _APP_TOOL_REGISTRY[global_key] = tool
-    _FN_TO_GLOBAL_KEY[id(fn)] = global_key
-    _NAME_TO_GLOBAL_KEY[tool.name] = global_key
-
-
-def _stamp_global_key(tool: Tool, global_key: str) -> None:
-    """Write the global key into the tool's ``meta["ui"]["globalKey"]``."""
-    meta = dict(tool.meta) if tool.meta else {}
-    ui = dict(meta.get("ui", {})) if isinstance(meta.get("ui"), dict) else {}
-    ui["globalKey"] = global_key
-    meta["ui"] = ui
-    tool.meta = meta
-
-
-# ---------------------------------------------------------------------------
-# CallTool callable resolver
+# CallTool resolver
 # ---------------------------------------------------------------------------
 
 
 def _resolve_tool_ref(fn: Any) -> Any:
     """Resolve a callable or string to a ``ResolvedTool`` for CallTool serialization.
 
-    Always returns a ``ResolvedTool`` with the resolved name and any
-    metadata the renderer needs (e.g. ``unwrap_result``).
+    For strings, passes them through as-is — the server resolves them at
+    call time using ``_meta.fastmcp.app``.
 
-    Resolution order for callables:
-    1. Global key registry (FastMCPApp tools) — includes metadata
-    2. ``__fastmcp__`` metadata (decorated but not on a FastMCPApp)
-    3. ``fn.__name__`` (bare function — works for standalone servers)
-
-    Resolution for strings:
-    1. Name registry (FastMCPApp tools registered by name)
-    2. Pass through as-is (plain tool name)
+    For callables, extracts the tool name from ``__fastmcp__`` metadata
+    or ``__name__``.
     """
     from prefab_ui.app import ResolvedTool
 
     if isinstance(fn, str):
-        global_key = _NAME_TO_GLOBAL_KEY.get(fn)
-        if global_key is not None:
-            tool = _APP_TOOL_REGISTRY.get(global_key)
-            unwrap = bool(
-                tool is not None
-                and tool.output_schema
-                and tool.output_schema.get("x-fastmcp-wrap-result")
-            )
-            return ResolvedTool(name=global_key, unwrap_result=unwrap)
         return ResolvedTool(name=fn)
 
-    global_key = _FN_TO_GLOBAL_KEY.get(id(fn))
-    if global_key is not None:
-        tool = _APP_TOOL_REGISTRY.get(global_key)
-        unwrap = bool(
-            tool is not None
-            and tool.output_schema
-            and tool.output_schema.get("x-fastmcp-wrap-result")
-        )
-        return ResolvedTool(name=global_key, unwrap_result=unwrap)
+    fmeta: Any = None
+    try:
+        from fastmcp.decorators import get_fastmcp_meta
 
-    fmeta = get_fastmcp_meta(fn)
+        fmeta = get_fastmcp_meta(fn)
+    except Exception:
+        pass
+
     if fmeta is not None:
         name: str | None = getattr(fmeta, "name", None)
         if name is not None:
@@ -189,9 +137,10 @@ class FastMCPApp(Provider):
     """A Provider that represents an MCP application.
 
     Binds together entry-point tools (``@app.ui``), backend tools
-    (``@app.tool``), the Prefab renderer resource, and global-key
-    infrastructure so that composed/namespaced servers can still reach
-    backend tools by stable identifiers.
+    (``@app.tool``), and the Prefab renderer resource.  Backend tools
+    are registered in a process-level registry keyed by
+    ``(app_name, tool_name)`` so the server can route app-originated
+    calls directly, bypassing transforms.
     """
 
     def __init__(self, name: str) -> None:
@@ -242,9 +191,8 @@ class FastMCPApp(Provider):
     ) -> Any:
         """Register a backend tool that the UI calls via CallTool.
 
-        Backend tools get a global key for composition safety and default
-        to ``visibility=["app"]``.  Pass ``model=True`` to also expose the
-        tool to the model (``visibility=["app", "model"]``).
+        Backend tools default to ``visibility=["app"]``.  Pass ``model=True``
+        to also expose the tool to the model (``visibility=["app", "model"]``).
 
         Supports multiple calling patterns::
 
@@ -268,10 +216,8 @@ class FastMCPApp(Provider):
 
             from fastmcp.server.apps import AppConfig, app_config_to_meta_dict
 
-            global_key = _make_global_key(resolved_name)
             app_config = AppConfig(visibility=visibility)
             meta: dict[str, Any] = {"ui": app_config_to_meta_dict(app_config)}
-            meta["ui"]["globalKey"] = global_key
 
             tool_obj = Tool.from_function(
                 fn,
@@ -282,7 +228,7 @@ class FastMCPApp(Provider):
                 auth=auth,
             )
             self._local._add_component(tool_obj)
-            _register_global_key(tool_obj, fn, global_key)
+            _APP_TOOLS[(self.name, resolved_name)] = tool_obj
             return fn
 
         return _dispatch_decorator(name_or_fn, name, _register, "tool")
@@ -337,8 +283,9 @@ class FastMCPApp(Provider):
         """Register a UI entry-point tool that the model calls.
 
         Entry-point tools default to ``visibility=["model"]`` and auto-wire
-        the Prefab renderer resource and CSP. They do NOT get a global key —
-        the model resolves them through the normal transform chain.
+        the Prefab renderer resource and CSP. They do NOT get registered in
+        the app tool registry — the model resolves them through the normal
+        transform chain.
 
         Supports multiple calling patterns::
 
@@ -410,37 +357,16 @@ class FastMCPApp(Provider):
     def add_tool(
         self,
         tool: Tool | Callable[..., Any],
-        *,
-        fn: Any | None = None,
     ) -> Tool:
         """Add a tool to this app programmatically.
 
-        If the tool has ``meta["ui"]["globalKey"]``, it is assumed to already
-        be configured (but still registered for lookup). Otherwise it is
-        treated as a backend tool and gets a global key assigned automatically.
-
-        Pass ``fn`` to register the original callable in the resolver so that
-        ``CallTool(fn)`` can resolve to the global key.
+        The tool is registered as a backend tool in the app's registry.
         """
         if not isinstance(tool, Tool):
-            fn = fn or tool
             tool = Tool._ensure_tool(tool)
 
-        meta = tool.meta or {}
-        ui = meta.get("ui", {})
-        if isinstance(ui, dict) and "globalKey" in ui:
-            global_key = ui["globalKey"]
-        else:
-            global_key = _make_global_key(tool.name)
-            _stamp_global_key(tool, global_key)
-
         self._local._add_component(tool)
-
-        _APP_TOOL_REGISTRY[global_key] = tool
-        _NAME_TO_GLOBAL_KEY[tool.name] = global_key
-        if fn is not None:
-            _FN_TO_GLOBAL_KEY[id(fn)] = global_key
-
+        _APP_TOOLS[(self.name, tool.name)] = tool
         return tool
 
     # ------------------------------------------------------------------

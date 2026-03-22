@@ -158,6 +158,11 @@ class Provider:
         (FastMCP) performs enabled filtering after all transforms complete,
         allowing session-level transforms to override provider-level disables.
 
+        If the transform chain returns None, a fallback checks for
+        app-visible tools by their original (untransformed) name. This
+        lets ``CallTool("save_contact")`` reach backend tools even when
+        namespace or other transforms have been applied to the provider.
+
         Args:
             name: The transformed tool name to look up.
             version: Optional version filter. If None, returns highest version.

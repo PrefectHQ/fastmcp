@@ -1017,6 +1017,7 @@ class FastMCP(
         version: VersionSpec | None = None,
         run_middleware: bool = True,
         task_meta: None = None,
+        app_name: str | None = None,
     ) -> ToolResult: ...
 
     @overload
@@ -1028,6 +1029,7 @@ class FastMCP(
         version: VersionSpec | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta,
+        app_name: str | None = None,
     ) -> mcp.types.CreateTaskResult: ...
 
     async def call_tool(
@@ -1038,6 +1040,7 @@ class FastMCP(
         version: VersionSpec | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta | None = None,
+        app_name: str | None = None,
     ) -> ToolResult | mcp.types.CreateTaskResult:
         """Call a tool by name.
 
@@ -1052,6 +1055,9 @@ class FastMCP(
             task_meta: If provided, execute as a background task and return
                 CreateTaskResult. If None (default), execute synchronously and
                 return ToolResult.
+            app_name: If set (from ``_meta.fastmcp.app``), the call originated
+                from an app UI and should be routed directly to the named app's
+                tool registry, bypassing transforms.
 
         Returns:
             ToolResult when task_meta is None.
@@ -1085,6 +1091,7 @@ class FastMCP(
                         version=version,
                         run_middleware=False,
                         task_meta=task_meta,
+                        app_name=app_name,
                     ),
                 )
 
@@ -1093,18 +1100,16 @@ class FastMCP(
             with server_span(
                 f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
-                # Try normal provider resolution first (applies transforms,
-                # visibility, auth).  Fall back to the global key registry
-                # so that FastMCPApp CallTool references survive namespace
-                # transforms.  Global keys contain a UUID suffix, so they
-                # won't collide with human-written tool names.
-                tool = await self.get_tool(name, version=version)
-                if tool is None:
-                    from fastmcp.server.app import get_global_tool
+                # If the call came from an app UI (_meta.fastmcp.app is set),
+                # look up the tool directly in the app registry, bypassing
+                # transforms.  Otherwise use normal provider resolution.
+                tool: Tool | None = None
+                if app_name is not None:
+                    from fastmcp.server.app import get_app_tool
 
-                    tool = get_global_tool(name)
+                    tool = get_app_tool(app_name, name)
                     if tool is not None:
-                        # Auth still applies to global-key tools
+                        # Auth still applies to app tools
                         skip_auth, token = _get_auth_context()
                         if not skip_auth and tool.auth is not None:
                             try:
@@ -1113,6 +1118,8 @@ class FastMCP(
                                     raise NotFoundError(f"Unknown tool: {name!r}")
                             except AuthorizationError:
                                 raise NotFoundError(f"Unknown tool: {name!r}") from None
+                if tool is None:
+                    tool = await self.get_tool(name, version=version)
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")
                 span.set_attributes(tool.get_span_attributes())
