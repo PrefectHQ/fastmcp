@@ -137,16 +137,17 @@ class TestFileResource:
         result = await resource.read()
         assert result.contents[0].content == content
 
-    async def test_read_without_encoding_uses_system_default(self, tmp_path: Path):
-        """FileResource without encoding should use system default (backward compat)."""
-        content = "ASCII-only content is safe everywhere"
-        file = tmp_path / "ascii_test.txt"
-        file.write_text(content)
+    async def test_default_encoding_is_utf8(self, tmp_path: Path):
+        """FileResource defaults to UTF-8, reading non-ASCII without explicit encoding."""
+        content = "Smart quotes: \u201cleft\u201d and em-dash\u2014here"
+        file = tmp_path / "default_utf8_test.txt"
+        file.write_text(content, encoding="utf-8")
 
         resource = FileResource(
-            uri=FileUrl("file:///test/ascii"),
+            uri=FileUrl("file:///test/default"),
             path=file,
         )
+        assert resource.encoding == "utf-8"
         result = await resource.read()
         assert result.contents[0].content == content
 

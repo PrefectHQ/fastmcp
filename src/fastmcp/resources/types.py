@@ -66,11 +66,11 @@ class FileResource(Resource):
         description="MIME type of the resource content",
     )
     encoding: str | None = Field(
-        default=None,
+        default="utf-8",
         description=(
             "Encoding to use when reading text files. "
-            "If None, defaults to the system encoding. "
-            "Set to 'utf-8' for cross-platform compatibility with non-ASCII content."
+            "Defaults to 'utf-8' for cross-platform compatibility. "
+            "Set to None to use the system default encoding."
         ),
     )
 

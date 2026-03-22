@@ -319,7 +319,6 @@ if readme_path.exists():
         name="README File",
         description="The project's README.",
         mime_type="text/markdown",
-        encoding="utf-8",  # ensures correct reading on all platforms
         tags={"documentation"}
     )
     mcp.add_resource(readme_resource)
