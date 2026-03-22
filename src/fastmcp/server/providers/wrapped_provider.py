@@ -63,6 +63,10 @@ class _WrappedProvider(Provider):
         """Delegate to inner's get_tool (includes inner's transforms)."""
         return await self._inner.get_tool(name, version)
 
+    async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
+        """Delegate to inner, bypassing this wrapper's transforms."""
+        return await self._inner.get_app_tool(app_name, tool_name)
+
     async def _list_resources(self) -> Sequence[Resource]:
         """Delegate to inner's list_resources (includes inner's transforms)."""
         return await self._inner.list_resources()

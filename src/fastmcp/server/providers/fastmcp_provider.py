@@ -562,6 +562,10 @@ class FastMCPProvider(Provider):
             return None
         return FastMCPProviderTool.wrap(self.server, raw_tool)
 
+    async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
+        """Delegate to nested server's get_app_tool, bypassing transforms."""
+        return await self.server.get_app_tool(app_name, tool_name)
+
     # -------------------------------------------------------------------------
     # Resource methods
     # -------------------------------------------------------------------------

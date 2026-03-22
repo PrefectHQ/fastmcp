@@ -1,11 +1,11 @@
 """FastMCPApp — a Provider that represents a composable MCP application.
 
 FastMCPApp binds entry-point tools (model calls these) together with backend
-tools (the UI calls these via CallTool).  Backend tools are registered in a
-process-level registry keyed by ``(app_name, tool_name)`` so that
-``CallTool("save_contact")`` reaches the right tool regardless of namespace
-transforms — the server looks up the tool directly when the request carries
-``_meta.fastmcp.app``.
+tools (the UI calls these via CallTool).  Backend tools are tagged with
+``meta["fastmcp"]["app"]`` so they can be found through the provider chain
+even when transforms (namespace, visibility, etc.) have renamed or hidden
+them — the server sets a context var that tells ``Provider.get_tool`` to
+fall back to a direct lookup for app-visible tools.
 
 Usage::
 
@@ -43,20 +43,6 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger(__name__)
 
 F = TypeVar("F", bound=Callable[..., Any])
-
-# ---------------------------------------------------------------------------
-# Process-level registry
-# ---------------------------------------------------------------------------
-# (app_name, tool_name) → Tool object.  Populated by @app.tool() at
-# decoration time.  The server checks this registry (via get_app_tool)
-# when a call_tool request carries _meta.fastmcp.app, bypassing the
-# normal transform chain entirely.
-_APP_TOOLS: dict[tuple[str, str], Tool] = {}
-
-
-def get_app_tool(app_name: str, tool_name: str) -> Tool | None:
-    """Look up an app tool by (app_name, tool_name), or return None."""
-    return _APP_TOOLS.get((app_name, tool_name))
 
 
 # ---------------------------------------------------------------------------
@@ -138,9 +124,8 @@ class FastMCPApp(Provider):
 
     Binds together entry-point tools (``@app.ui``), backend tools
     (``@app.tool``), and the Prefab renderer resource.  Backend tools
-    are registered in a process-level registry keyed by
-    ``(app_name, tool_name)`` so the server can route app-originated
-    calls directly, bypassing transforms.
+    are tagged with ``meta["fastmcp"]["app"]`` so ``Provider.get_tool``
+    can find them by original name even when transforms have been applied.
     """
 
     def __init__(self, name: str) -> None:
@@ -217,7 +202,10 @@ class FastMCPApp(Provider):
             from fastmcp.server.apps import AppConfig, app_config_to_meta_dict
 
             app_config = AppConfig(visibility=visibility)
-            meta: dict[str, Any] = {"ui": app_config_to_meta_dict(app_config)}
+            meta: dict[str, Any] = {
+                "ui": app_config_to_meta_dict(app_config),
+                "fastmcp": {"app": self.name},
+            }
 
             tool_obj = Tool.from_function(
                 fn,
@@ -228,7 +216,6 @@ class FastMCPApp(Provider):
                 auth=auth,
             )
             self._local._add_component(tool_obj)
-            _APP_TOOLS[(self.name, resolved_name)] = tool_obj
             return fn
 
         return _dispatch_decorator(name_or_fn, name, _register, "tool")
@@ -283,9 +270,8 @@ class FastMCPApp(Provider):
         """Register a UI entry-point tool that the model calls.
 
         Entry-point tools default to ``visibility=["model"]`` and auto-wire
-        the Prefab renderer resource and CSP. They do NOT get registered in
-        the app tool registry — the model resolves them through the normal
-        transform chain.
+        the Prefab renderer resource and CSP. They are tagged with the app
+        name so structured content includes ``_meta.fastmcp.app``.
 
         Supports multiple calling patterns::
 
@@ -363,13 +349,17 @@ class FastMCPApp(Provider):
     ) -> Tool:
         """Add a tool to this app programmatically.
 
-        The tool is registered as a backend tool in the app's registry.
+        The tool is tagged with this app's name for routing.
         """
         if not isinstance(tool, Tool):
             tool = Tool._ensure_tool(tool)
 
+        # Tag with app name for routing
+        meta = dict(tool.meta) if tool.meta else {}
+        meta.setdefault("fastmcp", {})["app"] = self.name
+        tool.meta = meta
+
         self._local._add_component(tool)
-        _APP_TOOLS[(self.name, tool.name)] = tool
         return tool
 
     # ------------------------------------------------------------------

@@ -158,11 +158,6 @@ class Provider:
         (FastMCP) performs enabled filtering after all transforms complete,
         allowing session-level transforms to override provider-level disables.
 
-        If the transform chain returns None, a fallback checks for
-        app-visible tools by their original (untransformed) name. This
-        lets ``CallTool("save_contact")`` reach backend tools even when
-        namespace or other transforms have been applied to the provider.
-
         Args:
             name: The transformed tool name to look up.
             version: Optional version filter. If None, returns highest version.
@@ -179,6 +174,29 @@ class Provider:
             chain = partial(transform.get_tool, call_next=chain)
 
         return await chain(name, version=version)
+
+    async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
+        """Look up an app-visible tool by original name, bypassing transforms.
+
+        This is the routing path for tool calls from app UIs (identified by
+        ``_meta.fastmcp.app`` on the request).  It skips the transform chain
+        entirely — the tool is found by its registered name and matched
+        against the app identity in its metadata.
+
+        The default implementation checks this provider's own storage via
+        ``_get_tool``.  Aggregate and wrapped providers override to
+        delegate to children.
+
+        Returns:
+            The tool if found and tagged with the given app name, else None.
+        """
+        tool = await self._get_tool(tool_name)
+        if tool is not None:
+            meta = tool.meta or {}
+            fastmcp_meta = meta.get("fastmcp")
+            if isinstance(fastmcp_meta, dict) and fastmcp_meta.get("app") == app_name:
+                return tool
+        return None
 
     async def list_resources(self) -> Sequence[Resource]:
         """List resources with all transforms applied.

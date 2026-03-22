@@ -3,7 +3,7 @@
 Covers:
 - @app.tool() decorator (visibility, calling patterns)
 - @app.ui() decorator (model visibility, CSP auto-wiring)
-- App tool registry and call_tool routing
+- get_app_tool routing through provider chain
 - Callable resolver (_resolve_tool_ref)
 - Composition with namespaced servers
 - Provider interface delegation
@@ -18,22 +18,10 @@ from prefab_ui.app import ResolvedTool
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.app import (
-    _APP_TOOLS,
     FastMCPApp,
     _resolve_tool_ref,
-    get_app_tool,
 )
 from fastmcp.tools.base import Tool
-
-# ---------------------------------------------------------------------------
-# Fixtures / helpers
-# ---------------------------------------------------------------------------
-
-
-def _clear_registries() -> None:
-    """Clear process-level registries between tests."""
-    _APP_TOOLS.clear()
-
 
 # ---------------------------------------------------------------------------
 # @app.tool() decorator
@@ -41,9 +29,6 @@ def _clear_registries() -> None:
 
 
 class TestAppTool:
-    def setup_method(self) -> None:
-        _clear_registries()
-
     def test_tool_bare_decorator(self):
         app = FastMCPApp("test")
 
@@ -111,24 +96,17 @@ class TestAppTool:
         assert len(tools) == 1
         assert tools[0].name == "custom_save"
 
-    def test_tool_registered_in_app_tools(self):
-        app = FastMCPApp("test")
+    async def test_tool_has_app_name_in_meta(self):
+        app = FastMCPApp("contacts")
 
         @app.tool()
         def save(name: str) -> str:
             return name
 
-        assert ("test", "save") in _APP_TOOLS
-        assert _APP_TOOLS[("test", "save")].name == "save"
-
-    def test_tool_custom_name_registered_correctly(self):
-        app = FastMCPApp("myapp")
-
-        @app.tool("custom_save")
-        def save(name: str) -> str:
-            return name
-
-        assert ("myapp", "custom_save") in _APP_TOOLS
+        tools = await app._list_tools()
+        meta = tools[0].meta
+        assert meta is not None
+        assert meta["fastmcp"]["app"] == "contacts"
 
     async def test_tool_default_visibility_app_only(self):
         app = FastMCPApp("test")
@@ -153,19 +131,6 @@ class TestAppTool:
         meta = tools[0].meta
         assert meta is not None
         assert meta["ui"]["visibility"] == ["app", "model"]
-
-    async def test_tool_no_global_key_in_meta(self):
-        """Tools should NOT have globalKey in meta (removed in refactor)."""
-        app = FastMCPApp("test")
-
-        @app.tool()
-        def save(name: str) -> str:
-            return name
-
-        tools = await app._list_tools()
-        meta = tools[0].meta
-        assert meta is not None
-        assert "globalKey" not in meta.get("ui", {})
 
     def test_tool_with_description(self):
         app = FastMCPApp("test")
@@ -196,9 +161,6 @@ class TestAppTool:
 
 
 class TestAppUI:
-    def setup_method(self) -> None:
-        _clear_registries()
-
     def test_ui_bare_decorator(self):
         app = FastMCPApp("test")
 
@@ -249,15 +211,17 @@ class TestAppUI:
         assert meta is not None
         assert meta["ui"]["visibility"] == ["model"]
 
-    def test_ui_not_in_app_tools(self):
-        """UI entry points should NOT be in the app tool registry."""
+    async def test_ui_has_app_name_in_meta(self):
         app = FastMCPApp("test")
 
         @app.ui()
         def dashboard() -> str:
             return "dashboard"
 
-        assert ("test", "dashboard") not in _APP_TOOLS
+        tools = await app._list_tools()
+        meta = tools[0].meta
+        assert meta is not None
+        assert meta["fastmcp"]["app"] == "test"
 
     async def test_ui_has_resource_uri(self):
         app = FastMCPApp("test")
@@ -312,9 +276,6 @@ class TestAppUI:
 
 
 class TestResolveToolRef:
-    def setup_method(self) -> None:
-        _clear_registries()
-
     def test_resolve_string_passes_through(self):
         """Strings pass through as-is — server resolves at call time."""
         result = _resolve_tool_ref("save_contact")
@@ -347,44 +308,43 @@ class TestResolveToolRef:
 
 
 # ---------------------------------------------------------------------------
-# get_app_tool registry
+# get_app_tool — provider chain routing
 # ---------------------------------------------------------------------------
 
 
 class TestGetAppTool:
-    def setup_method(self) -> None:
-        _clear_registries()
-
-    def test_lookup_by_app_and_tool_name(self):
+    async def test_direct_lookup(self):
+        """FastMCPApp.get_app_tool finds tools by app name + tool name."""
         app = FastMCPApp("contacts")
 
         @app.tool()
         def save(name: str) -> str:
             return name
 
-        tool = get_app_tool("contacts", "save")
+        tool = await app.get_app_tool("contacts", "save")
         assert tool is not None
         assert tool.name == "save"
 
-    def test_lookup_wrong_app_returns_none(self):
+    async def test_wrong_app_returns_none(self):
         app = FastMCPApp("contacts")
 
         @app.tool()
         def save(name: str) -> str:
             return name
 
-        assert get_app_tool("billing", "save") is None
+        assert await app.get_app_tool("billing", "save") is None
 
-    def test_lookup_wrong_tool_returns_none(self):
+    async def test_wrong_tool_returns_none(self):
         app = FastMCPApp("contacts")
 
         @app.tool()
         def save(name: str) -> str:
             return name
 
-        assert get_app_tool("contacts", "missing") is None
+        assert await app.get_app_tool("contacts", "missing") is None
 
-    def test_two_apps_same_tool_name_no_collision(self):
+    async def test_two_apps_no_collision(self):
+        """Two apps with the same tool name are disambiguated."""
         app1 = FastMCPApp("contacts")
         app2 = FastMCPApp("billing")
 
@@ -396,11 +356,46 @@ class TestGetAppTool:
         def save_billing(amount: int) -> str:
             return f"invoice: {amount}"
 
-        t1 = get_app_tool("contacts", "save")
-        t2 = get_app_tool("billing", "save")
+        server = FastMCP("Platform")
+        server.add_provider(app1)
+        server.add_provider(app2)
+
+        t1 = await server.get_app_tool("contacts", "save")
+        t2 = await server.get_app_tool("billing", "save")
         assert t1 is not None
         assert t2 is not None
         assert t1 is not t2
+
+    async def test_survives_namespace_transform(self):
+        """get_app_tool bypasses namespace transforms."""
+        app = FastMCPApp("crm")
+
+        @app.tool()
+        def save_contact(name: str) -> str:
+            return name
+
+        server = FastMCP("Platform")
+        server.add_provider(app, namespace="crm")
+
+        # Normal get_tool with untransformed name fails
+        tool = await server.get_tool("save_contact")
+        assert tool is None
+
+        # get_app_tool bypasses transforms
+        tool = await server.get_app_tool("crm", "save_contact")
+        assert tool is not None
+        assert tool.name == "save_contact"
+
+    async def test_ui_tool_findable_by_app_name(self):
+        """@app.ui() tools are also tagged with app name."""
+        app = FastMCPApp("dashboard")
+
+        @app.ui()
+        def show() -> str:
+            return "ui"
+
+        tool = await app.get_app_tool("dashboard", "show")
+        assert tool is not None
 
 
 # ---------------------------------------------------------------------------
@@ -409,9 +404,6 @@ class TestGetAppTool:
 
 
 class TestProviderInterface:
-    def setup_method(self) -> None:
-        _clear_registries()
-
     async def test_list_tools_empty(self):
         app = FastMCPApp("test")
         assert await app._list_tools() == []
@@ -442,11 +434,8 @@ class TestProviderInterface:
 
 
 class TestCallToolAppRouting:
-    def setup_method(self) -> None:
-        _clear_registries()
-
     async def test_call_tool_with_app_name(self):
-        """Server.call_tool routes directly when app_name is provided."""
+        """Server.call_tool routes via get_app_tool when app_name is set."""
         app = FastMCPApp("contacts")
 
         @app.tool()
@@ -459,7 +448,7 @@ class TestCallToolAppRouting:
         result = await server.call_tool("save", {"name": "alice"}, app_name="contacts")
         assert result.content[0].text == "saved alice"  # type: ignore[union-attr]
 
-    async def test_call_tool_by_name_without_app_name(self):
+    async def test_call_tool_without_app_name(self):
         """Regular name-based resolution still works."""
         app = FastMCPApp("test")
 
@@ -474,7 +463,7 @@ class TestCallToolAppRouting:
         assert result.content[0].text == "saved bob"  # type: ignore[union-attr]
 
     async def test_app_name_survives_namespace(self):
-        """app_name routing works even when the app is namespaced."""
+        """app_name routing bypasses namespace transforms."""
         app = FastMCPApp("crm")
 
         @app.tool()
@@ -484,7 +473,6 @@ class TestCallToolAppRouting:
         server = FastMCP("Platform")
         server.add_provider(app, namespace="crm")
 
-        # app_name routes directly, bypassing namespace
         result = await server.call_tool(
             "save_contact", {"name": "alice"}, app_name="crm"
         )
@@ -527,7 +515,7 @@ class TestCallToolAppRouting:
             _current_transport.reset(token)
 
     async def test_two_apps_same_tool_name_routed_correctly(self):
-        """Two apps with same tool name are disambiguated by app_name."""
+        """Two apps with same tool name disambiguated by app_name."""
         contacts = FastMCPApp("contacts")
         billing = FastMCPApp("billing")
 
@@ -549,6 +537,25 @@ class TestCallToolAppRouting:
         assert r1.content[0].text == "contact: alice"  # type: ignore[union-attr]
         assert r2.content[0].text == "invoice: 100"  # type: ignore[union-attr]
 
+    async def test_deeply_nested_app(self):
+        """App tool is found even through multiple levels of nesting."""
+        app = FastMCPApp("deep")
+
+        @app.tool()
+        def hidden(x: str) -> str:
+            return x
+
+        inner = FastMCP("Inner")
+        inner.add_provider(app, namespace="app")
+
+        outer = FastMCP("Outer")
+        outer.mount(inner, namespace="inner")
+
+        # Normal resolution: would need "inner_app_hidden"
+        # App routing: bypasses all transforms
+        result = await outer.call_tool("hidden", {"x": "found"}, app_name="deep")
+        assert result.content[0].text == "found"  # type: ignore[union-attr]
+
 
 # ---------------------------------------------------------------------------
 # End-to-end via Client
@@ -556,9 +563,6 @@ class TestCallToolAppRouting:
 
 
 class TestEndToEnd:
-    def setup_method(self) -> None:
-        _clear_registries()
-
     async def test_ui_tool_visible_to_client(self):
         app = FastMCPApp("test")
 
@@ -607,9 +611,6 @@ class TestRun:
 
 
 class TestAddTool:
-    def setup_method(self) -> None:
-        _clear_registries()
-
     async def test_add_tool_from_function(self):
         app = FastMCPApp("test")
 
@@ -622,14 +623,25 @@ class TestAddTool:
         tools = await app._list_tools()
         assert len(tools) == 1
 
-    async def test_add_tool_registered_in_app_tools(self):
-        app = FastMCPApp("test")
+    async def test_add_tool_tagged_with_app_name(self):
+        app = FastMCPApp("myapp")
+
+        def save(name: str) -> str:
+            return name
+
+        tool = app.add_tool(save)
+        assert tool.meta is not None
+        assert tool.meta["fastmcp"]["app"] == "myapp"
+
+    async def test_add_tool_findable_via_get_app_tool(self):
+        app = FastMCPApp("myapp")
 
         def save(name: str) -> str:
             return name
 
         app.add_tool(save)
-        assert ("test", "save") in _APP_TOOLS
+        tool = await app.get_app_tool("myapp", "save")
+        assert tool is not None
 
     async def test_add_tool_object(self):
         app = FastMCPApp("test")
@@ -647,9 +659,6 @@ class TestAddTool:
 
 
 class TestComposition:
-    def setup_method(self) -> None:
-        _clear_registries()
-
     async def test_multiple_apps_on_one_server(self):
         crm = FastMCPApp("CRM")
         billing = FastMCPApp("Billing")

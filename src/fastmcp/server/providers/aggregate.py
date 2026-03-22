@@ -168,6 +168,19 @@ class AggregateProvider(Provider):
         )
         return self._get_highest_version_result(results, f"get_tool({name!r})")  # type: ignore[return-value]
 
+    async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
+        """Query all child providers for an app tool."""
+        results = await gather(
+            *[p.get_app_tool(app_name, tool_name) for p in self.providers],
+            return_exceptions=True,
+        )
+        for r in results:
+            if isinstance(r, BaseException):
+                continue
+            if r is not None:
+                return r
+        return None
+
     # -------------------------------------------------------------------------
     # Resources
     # -------------------------------------------------------------------------

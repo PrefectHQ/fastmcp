@@ -1100,14 +1100,13 @@ class FastMCP(
             with server_span(
                 f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
-                # If the call came from an app UI (_meta.fastmcp.app is set),
-                # look up the tool directly in the app registry, bypassing
-                # transforms.  Otherwise use normal provider resolution.
+                # If the call came from an app UI (_meta.fastmcp.app),
+                # look up the tool via get_app_tool which walks the
+                # provider tree bypassing transforms.  Otherwise use
+                # normal provider resolution.
                 tool: Tool | None = None
                 if app_name is not None:
-                    from fastmcp.server.app import get_app_tool
-
-                    tool = get_app_tool(app_name, name)
+                    tool = await self.get_app_tool(app_name, name)
                     if tool is not None:
                         # Auth still applies to app tools
                         skip_auth, token = _get_auth_context()
