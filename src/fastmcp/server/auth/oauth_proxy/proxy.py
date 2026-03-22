@@ -1457,6 +1457,90 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         """
         return False
 
+    async def _try_transparent_refresh(
+        self,
+        upstream_token_set: UpstreamTokenSet,
+    ) -> UpstreamTokenSet:
+        """Refresh the upstream token transparently and update storage.
+
+        Called during load_access_token when the upstream token has expired
+        but a refresh token is available. This avoids returning a 401 that
+        would force the client into a full re-authentication flow.
+
+        Mutates and returns the upstream_token_set with refreshed token data.
+        Raises on failure (caller should catch and fall through to None).
+        """
+        scopes = upstream_token_set.scope.split() if upstream_token_set.scope else []
+        upstream_scopes = self._prepare_scopes_for_upstream_refresh(scopes)
+        oauth_client = self._create_upstream_oauth_client()
+
+        token_response: dict[str, Any] = await oauth_client.refresh_token(
+            url=self._upstream_token_endpoint,
+            refresh_token=upstream_token_set.refresh_token,
+            scope=" ".join(upstream_scopes) if upstream_scopes else None,
+            **self._extra_token_params,
+        )
+        logger.debug(
+            "Transparent upstream refresh succeeded (token_id=%s)",
+            upstream_token_set.upstream_token_id[:8],
+        )
+
+        # Calculate new expiry
+        if "expires_in" in token_response:
+            new_expires_in = int(token_response["expires_in"])
+        elif self._fallback_access_token_expiry_seconds is not None:
+            new_expires_in = self._fallback_access_token_expiry_seconds
+        else:
+            new_expires_in = DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS
+
+        upstream_token_set.access_token = token_response["access_token"]
+        upstream_token_set.expires_at = time.time() + new_expires_in
+        upstream_token_set.scope = " ".join(
+            parse_scopes(token_response["scope"]) or []
+            if "scope" in token_response
+            else scopes
+        )
+
+        # Handle upstream refresh token rotation
+        new_refresh_expires_in = None
+        if new_upstream_refresh := token_response.get("refresh_token"):
+            if new_upstream_refresh != upstream_token_set.refresh_token:
+                upstream_token_set.refresh_token = new_upstream_refresh
+            if "refresh_expires_in" in token_response and int(
+                token_response["refresh_expires_in"]
+            ):
+                new_refresh_expires_in = int(token_response["refresh_expires_in"])
+                upstream_token_set.refresh_token_expires_at = (
+                    time.time() + new_refresh_expires_in
+                )
+            elif upstream_token_set.refresh_token_expires_at:
+                new_refresh_expires_in = int(
+                    upstream_token_set.refresh_token_expires_at - time.time()
+                )
+            else:
+                new_refresh_expires_in = 60 * 60 * 24 * 30
+                upstream_token_set.refresh_token_expires_at = (
+                    time.time() + new_refresh_expires_in
+                )
+
+        upstream_token_set.raw_token_data = {
+            **upstream_token_set.raw_token_data,
+            **token_response,
+        }
+
+        refresh_ttl = new_refresh_expires_in or (
+            int(upstream_token_set.refresh_token_expires_at - time.time())
+            if upstream_token_set.refresh_token_expires_at
+            else 60 * 60 * 24 * 30
+        )
+        await self._upstream_token_store.put(
+            key=upstream_token_set.upstream_token_id,
+            value=upstream_token_set,
+            ttl=max(refresh_ttl, new_expires_in, 1),
+        )
+
+        return upstream_token_set
+
     async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
         """Validate FastMCP JWT by swapping for upstream token.
 
@@ -1465,7 +1549,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         2. Look up upstream token via JTI mapping
         3. Decrypt upstream token
         4. Validate upstream token with provider (GitHub API, JWT validation, etc.)
-        5. Return upstream validation result
+        5. If upstream validation fails, attempt transparent refresh
+        6. Return upstream validation result
 
         The FastMCP JWT is a reference token - all authorization data comes
         from validating the upstream token via the TokenVerifier.
@@ -1500,6 +1585,23 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 logger.debug("No verification token available")
                 return None
             validated = await self._token_validator.verify_token(verification_token)
+
+            # 4. If upstream validation failed and we have a refresh token,
+            # attempt transparent refresh to avoid forcing a full re-auth.
+            if not validated and upstream_token_set.refresh_token:
+                try:
+                    upstream_token_set = await self._try_transparent_refresh(
+                        upstream_token_set
+                    )
+                    verification_token = self._get_verification_token(
+                        upstream_token_set
+                    )
+                    if verification_token is not None:
+                        validated = await self._token_validator.verify_token(
+                            verification_token
+                        )
+                except Exception as e:
+                    logger.debug("Transparent upstream refresh failed: %s", e)
 
             if not validated:
                 logger.debug("Upstream token validation failed")
