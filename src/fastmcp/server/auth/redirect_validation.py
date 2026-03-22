@@ -68,6 +68,17 @@ def _match_host(uri_host: str | None, pattern_host: str | None) -> bool:
     return uri_host == pattern_host
 
 
+def _is_loopback_host(host: str | None) -> bool:
+    """Check if a host is a loopback address.
+
+    Per RFC 8252 §7.3, loopback addresses include localhost, 127.0.0.1, and ::1.
+    """
+    if not host:
+        return False
+    host = host.lower()
+    return host in ("localhost", "127.0.0.1", "::1")
+
+
 def _match_port(
     uri_port: str | None,
     pattern_port: str | None,
@@ -164,9 +175,10 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     if not _match_host(uri_host, pattern_host):
         return False
 
-    # Port must match (with * wildcard support)
-    if not _match_port(uri_port, pattern_port, uri_parsed.scheme.lower()):
-        return False
+    # RFC 8252 §7.3: loopback patterns without an explicit port match any port
+    if not (_is_loopback_host(pattern_host) and pattern_port is None):
+        if not _match_port(uri_port, pattern_port, uri_parsed.scheme.lower()):
+            return False
 
     # Path must match (with fnmatch wildcards)
     return _match_path(uri_parsed.path, pattern_parsed.path)

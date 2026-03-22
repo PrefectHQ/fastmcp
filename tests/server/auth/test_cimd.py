@@ -179,6 +179,16 @@ class TestCIMDFetcher:
         assert fetcher.validate_redirect_uri(doc, "http://localhost:8080/callback")
         assert not fetcher.validate_redirect_uri(doc, "http://localhost:3000/other")
 
+    def test_validate_redirect_uri_loopback_no_port(self, fetcher: CIMDFetcher):
+        """RFC 8252 §7.3: loopback URI without port should match any port."""
+        doc = CIMDDocument(
+            client_id=AnyHttpUrl("https://example.com/client.json"),
+            redirect_uris=["http://localhost/callback", "http://127.0.0.1/callback"],
+        )
+        assert fetcher.validate_redirect_uri(doc, "http://localhost:51353/callback")
+        assert fetcher.validate_redirect_uri(doc, "http://127.0.0.1:3000/callback")
+        assert not fetcher.validate_redirect_uri(doc, "http://localhost:51353/other")
+
 
 class TestCIMDFetcherHTTP:
     """Tests for CIMDFetcher HTTP fetching (using httpx mock).

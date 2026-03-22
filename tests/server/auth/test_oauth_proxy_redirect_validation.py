@@ -188,6 +188,30 @@ class TestProxyDCRClient:
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(None)
 
+    def test_cimd_loopback_no_port_matches_dynamic_port(self):
+        """RFC 8252 §7.3: CIMD redirect_uris without port match any loopback port."""
+        cimd_doc = CIMDDocument(
+            client_id=AnyHttpUrl("https://example.com/client.json"),
+            redirect_uris=[
+                "http://localhost/callback",
+                "http://127.0.0.1/callback",
+            ],
+        )
+        client = ProxyDCRClient(
+            client_id="https://example.com/client.json",
+            client_secret=None,
+            redirect_uris=None,
+            cimd_document=cimd_doc,
+        )
+
+        # Dynamic ports should be accepted per RFC 8252 §7.3
+        assert client.validate_redirect_uri(AnyUrl("http://localhost:51353/callback"))
+        assert client.validate_redirect_uri(AnyUrl("http://127.0.0.1:3000/callback"))
+
+        # Wrong path should still be rejected
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("http://localhost:51353/other"))
+
     def test_cimd_empty_proxy_allowlist_rejects_redirect_uri(self):
         """An explicit empty proxy allowlist should reject all CIMD redirect URIs."""
         cimd_doc = CIMDDocument(
