@@ -25,6 +25,7 @@ from base64 import urlsafe_b64encode
 from typing import Any, Literal
 from urllib.parse import urlencode, urlparse, urlunparse
 
+import anyio
 import httpx
 from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
@@ -545,6 +546,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 default_scope=self._default_scope_str,
                 allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
             )
+
+        # Advisory locks for transparent upstream token refresh, keyed by
+        # upstream_token_id. Prevents concurrent async tasks from racing to
+        # refresh the same token within a single process. Does not protect
+        # against cross-process races in distributed deployments — those are
+        # handled by re-reading from storage after refresh failure.
+        self._refresh_locks: dict[str, anyio.Lock] = {}
 
         logger.debug(
             "Initialized OAuth proxy provider with upstream server %s",
@@ -1586,20 +1594,52 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 return None
             validated = await self._token_validator.verify_token(verification_token)
 
-            # 4. If upstream validation failed and we have a refresh token,
-            # attempt transparent refresh to avoid forcing a full re-auth.
-            if not validated and upstream_token_set.refresh_token:
+            # 4. If upstream validation failed due to token expiry and we
+            # have a refresh token, attempt transparent refresh to avoid
+            # forcing the client into a full re-auth flow. Only refresh on
+            # expiry — other failures (scope mismatch, revocation) won't be
+            # helped by a refresh and would just burn tokens.
+            if (
+                not validated
+                and upstream_token_set.refresh_token
+                and upstream_token_set.expires_at <= time.time()
+            ):
                 try:
-                    upstream_token_set = await self._try_transparent_refresh(
-                        upstream_token_set
-                    )
-                    verification_token = self._get_verification_token(
-                        upstream_token_set
-                    )
-                    if verification_token is not None:
-                        validated = await self._token_validator.verify_token(
-                            verification_token
+                    token_id = upstream_token_set.upstream_token_id
+
+                    # Advisory lock prevents concurrent requests from racing
+                    # to refresh the same upstream token.
+                    if token_id not in self._refresh_locks:
+                        self._refresh_locks[token_id] = anyio.Lock()
+                    lock = self._refresh_locks[token_id]
+
+                    async with lock:
+                        # Re-read from storage — another task may have
+                        # already refreshed while we waited for the lock.
+                        upstream_token_set = (
+                            await self._upstream_token_store.get(key=token_id)
+                            or upstream_token_set
                         )
+
+                        verification_token = self._get_verification_token(
+                            upstream_token_set
+                        )
+                        if verification_token is not None:
+                            validated = await self._token_validator.verify_token(
+                                verification_token
+                            )
+
+                        if not validated:
+                            upstream_token_set = await self._try_transparent_refresh(
+                                upstream_token_set
+                            )
+                            verification_token = self._get_verification_token(
+                                upstream_token_set
+                            )
+                            if verification_token is not None:
+                                validated = await self._token_validator.verify_token(
+                                    verification_token
+                                )
                 except Exception as e:
                     logger.debug("Transparent upstream refresh failed: %s", e)
 

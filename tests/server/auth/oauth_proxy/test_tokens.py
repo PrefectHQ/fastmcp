@@ -756,3 +756,53 @@ class TestTransparentUpstreamRefresh:
 
         # "still-bad-token" doesn't start with "refreshed-" so verifier rejects it
         assert result is None
+
+    async def test_no_refresh_when_token_not_expired(self, proxy):
+        """Non-expiry validation failures (e.g. revocation) should not trigger refresh."""
+        upstream_token_id = "upstream-tok-id"
+        access_jti = "test-access-jti"
+
+        # Token is NOT expired — verification failure is for another reason
+        upstream_token_set = UpstreamTokenSet(
+            upstream_token_id=upstream_token_id,
+            access_token="revoked-upstream-access",
+            refresh_token="upstream-refresh-tok",
+            refresh_token_expires_at=time.time() + 86400,
+            expires_at=time.time() + 3600,  # still valid for 1 hour
+            token_type="Bearer",
+            scope="read",
+            client_id="test-client",
+            created_at=time.time() - 60,
+        )
+        await proxy._upstream_token_store.put(
+            key=upstream_token_id,
+            value=upstream_token_set,
+            ttl=86400,
+        )
+        await proxy._jti_mapping_store.put(
+            key=access_jti,
+            value=JTIMapping(
+                jti=access_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=time.time(),
+            ),
+            ttl=3600,
+        )
+        fastmcp_jwt = proxy.jwt_issuer.issue_access_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=access_jti,
+            expires_in=3600,
+        )
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock()
+
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_oauth_client
+        ):
+            result = await proxy.load_access_token(fastmcp_jwt)
+
+        assert result is None
+        # Refresh should NOT have been attempted
+        mock_oauth_client.refresh_token.assert_not_called()
