@@ -74,7 +74,9 @@ gh release create v3.2.0 --target main --title "v3.2.0: Theme Here" --generate-n
 
 The handwritten notes go *above* the auto-generated changelog and are the part that matters. Work with the maintainer to draft them — propose a draft, get feedback, iterate. Do not publish without the maintainer's sign-off.
 
-**Point releases** (3.0, 3.1, 3.2) get narrative prose: open with the theme of the release, then walk through headline features conceptually — what they enable, why they matter, how they fit together. Write it the way a blog post reads, not a changelog. Multiple paragraphs, code examples where they clarify. See `v3.1.0` and `v3.0.0` for the bar.
+**Before drafting, always read recent existing releases** (`gh release list` then `gh release view <tag>`) to absorb the voice, structure, and level of detail. Each release builds on the tone of previous ones — don't guess at the style from these instructions alone.
+
+**Point releases** (3.0, 3.1, 3.2) get narrative prose: open with the theme of the release, then walk through headline features conceptually — what they enable, why they matter, how they fit together. Write it the way a blog post reads, not a changelog. Multiple paragraphs, code examples where they clarify.
 
 **Patch releases** (3.1.1, 3.0.2) get 1-2 sentences explaining what broke and what the fix does. Keep it minimal — the auto-generated changelog has the details.
 
