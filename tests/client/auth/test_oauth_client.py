@@ -1,3 +1,4 @@
+import time
 from unittest.mock import patch
 from urllib.parse import urlparse
 
@@ -356,3 +357,103 @@ class TestTokenStorageTTL:
         stored = await adapter.get_tokens()
         assert stored is not None
         assert stored.refresh_token == "refresh-token-should-survive"
+
+    async def test_set_tokens_stores_absolute_expiry(self):
+        """set_tokens should persist an absolute expires_at timestamp."""
+        from key_value.aio.stores.memory import MemoryStore
+        from mcp.shared.auth import OAuthToken
+
+        from fastmcp.client.auth.oauth import TokenStorageAdapter
+
+        storage = MemoryStore()
+        adapter = TokenStorageAdapter(
+            async_key_value=storage, server_url="https://test"
+        )
+
+        before = time.time()
+        token = OAuthToken(
+            access_token="a",
+            token_type="Bearer",
+            expires_in=300,
+            refresh_token="r",
+        )
+        await adapter.set_tokens(token)
+        after = time.time()
+
+        expiry = await adapter.get_token_expiry()
+        assert expiry is not None
+        assert before + 300 <= expiry <= after + 300
+
+    async def test_reload_uses_stored_expiry_not_stale_expires_in(self):
+        """On reload, _initialize should use the stored absolute expiry rather
+        than recomputing from the stale relative expires_in.
+
+        This is the core bug from #2862: a token issued with expires_in=300
+        that's reloaded an hour later should NOT appear valid for another 5
+        minutes.
+        """
+        from key_value.aio.stores.memory import MemoryStore
+        from mcp.shared.auth import OAuthToken
+
+        from fastmcp.client.auth.oauth import TokenStorageAdapter
+
+        storage = MemoryStore()
+        adapter = TokenStorageAdapter(
+            async_key_value=storage, server_url="https://test"
+        )
+
+        token = OAuthToken(
+            access_token="a",
+            token_type="Bearer",
+            expires_in=300,
+            refresh_token="r",
+        )
+        await adapter.set_tokens(token)
+
+        # Simulate time passing by overwriting the stored expiry to a past time
+        past_expiry = time.time() - 600
+        await storage.put(
+            key="https://test/token_expiry",
+            value={"expires_at": past_expiry},
+            collection="mcp-oauth-token-expiry",
+        )
+
+        reloaded = await adapter.get_token_expiry()
+        assert reloaded is not None
+        assert reloaded == pytest.approx(past_expiry)
+
+    async def test_get_token_expiry_returns_none_when_not_stored(self):
+        """get_token_expiry returns None for tokens stored before the fix."""
+        from key_value.aio.stores.memory import MemoryStore
+
+        from fastmcp.client.auth.oauth import TokenStorageAdapter
+
+        storage = MemoryStore()
+        adapter = TokenStorageAdapter(
+            async_key_value=storage, server_url="https://test"
+        )
+        assert await adapter.get_token_expiry() is None
+
+    async def test_clear_removes_token_expiry(self):
+        """clear() should also remove the stored token expiry."""
+        from key_value.aio.stores.memory import MemoryStore
+        from mcp.shared.auth import OAuthToken
+
+        from fastmcp.client.auth.oauth import TokenStorageAdapter
+
+        storage = MemoryStore()
+        adapter = TokenStorageAdapter(
+            async_key_value=storage, server_url="https://test"
+        )
+
+        token = OAuthToken(
+            access_token="a",
+            token_type="Bearer",
+            expires_in=300,
+            refresh_token="r",
+        )
+        await adapter.set_tokens(token)
+        assert await adapter.get_token_expiry() is not None
+
+        await adapter.clear()
+        assert await adapter.get_token_expiry() is None

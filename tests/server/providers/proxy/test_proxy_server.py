@@ -815,7 +815,7 @@ class TestProxyProviderCache:
         assert provider._tools_cache is not None
         original_ts = provider._tools_cache.timestamp
 
-        time.sleep(0.01)
+        time.sleep(0.05)
 
         await provider._get_tool("greet")
         assert provider._tools_cache.timestamp > original_ts
@@ -829,7 +829,7 @@ class TestProxyProviderCache:
         first_ts = provider._tools_cache.timestamp  # type: ignore[union-attr]
 
         # Tiny sleep so monotonic clock advances
-        time.sleep(0.01)
+        time.sleep(0.05)
 
         await provider._list_tools()
         assert provider._tools_cache.timestamp > first_ts  # type: ignore[union-attr]
