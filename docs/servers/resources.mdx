@@ -319,6 +319,7 @@ if readme_path.exists():
         name="README File",
         description="The project's README.",
         mime_type="text/markdown",
+        encoding="utf-8",  # ensures correct reading on all platforms
         tags={"documentation"}
     )
     mcp.add_resource(readme_resource)
@@ -349,7 +350,7 @@ if data_dir_path.is_dir():
 
 -   `TextResource`: For simple string content.
 -   `BinaryResource`: For raw `bytes` content.
--   `FileResource`: Reads content from a local file path. Handles text/binary modes and lazy reading.
+-   `FileResource`: Reads content from a local file path. Handles text/binary modes, encoding, and lazy reading.
 -   `HttpResource`: Fetches content from an HTTP(S) URL (requires `httpx`).
 -   `DirectoryResource`: Lists files in a local directory (returns JSON).
 -   (`FunctionResource`: Internal class used by `@mcp.resource`).
