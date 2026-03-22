@@ -165,8 +165,14 @@ class FastMCPProviderTool(Tool):
         # Pass exact version so child executes the correct version
         version = VersionSpec(eq=self.version) if self.version else None
 
+        app_name: str | None = None
+        meta = self.meta or {}
+        fastmcp_meta = meta.get("fastmcp")
+        if isinstance(fastmcp_meta, dict):
+            app_name = fastmcp_meta.get("app")
+
         result = await self._server.call_tool(
-            self._original_name, arguments, version=version
+            self._original_name, arguments, version=version, app_name=app_name
         )
         # Result from call_tool should always be ToolResult when no task_meta
         if isinstance(result, mcp.types.CreateTaskResult):
