@@ -359,8 +359,10 @@ def _single_pass_optimize(
             # Schema objects have keywords like "type", "properties", "$ref", etc.
             # If we see these, then "title" is metadata, not a property name
             if prune_titles and "title" in node:
-                # Check if this looks like a schema node
-                if any(
+                # Only remove "title" if it's a string (schema metadata).
+                # In a "properties" dict, "title" would be a dict (a sub-schema
+                # for a parameter named "title"), which we must preserve.
+                if isinstance(node["title"], str) and any(  # type: ignore
                     k in node
                     for k in [
                         "type",

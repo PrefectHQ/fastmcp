@@ -360,6 +360,35 @@ class TestCompressSchema:
         assert "title" not in compressed["properties"]["name"]
         assert "title" not in compressed["properties"]["title"]
 
+    def test_title_pruning_preserves_title_property_when_type_property_exists(self):
+        """Regression test for #3576: properties dict containing both 'title' and
+        'type' as parameter names caused the heuristic to treat 'title' as schema
+        metadata and strip the entire property definition."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "dashboard_id": {"type": "string", "title": "Dashboard Id"},
+                "title": {"type": "string", "title": "Title"},
+                "type": {"type": "string", "title": "Type", "default": "vis"},
+            },
+            "required": ["dashboard_id", "title"],
+        }
+
+        compressed = compress_schema(schema, prune_titles=True)
+
+        # All three properties must survive
+        assert "dashboard_id" in compressed["properties"]
+        assert "title" in compressed["properties"]
+        assert "type" in compressed["properties"]
+
+        # 'title' is still required
+        assert "title" in compressed["required"]
+
+        # But metadata title strings inside each property schema are removed
+        assert "title" not in compressed["properties"]["dashboard_id"]
+        assert "title" not in compressed["properties"]["title"]
+        assert "title" not in compressed["properties"]["type"]
+
     def test_title_pruning_with_nested_properties(self):
         """Test that nested property structures are handled correctly."""
         schema = {
