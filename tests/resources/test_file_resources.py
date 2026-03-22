@@ -119,3 +119,62 @@ class TestFileResource:
                 await resource.read()
         finally:
             temp_file.chmod(0o644)  # Restore permissions
+
+    async def test_read_utf8_with_encoding(self, tmp_path: Path):
+        """FileResource should read UTF-8 files correctly when encoding is specified."""
+        content = (
+            "Smart quotes: \u201cleft\u201d and apostrophe\u2019s em-dash\u2014here"
+        )
+        file = tmp_path / "utf8_test.md"
+        file.write_text(content, encoding="utf-8")
+
+        resource = FileResource(
+            uri=FileUrl("file:///test/utf8"),
+            path=file,
+            mime_type="text/markdown",
+            encoding="utf-8",
+        )
+        result = await resource.read()
+        assert result.contents[0].content == content
+
+    async def test_read_without_encoding_uses_system_default(self, tmp_path: Path):
+        """FileResource without encoding should use system default (backward compat)."""
+        content = "ASCII-only content is safe everywhere"
+        file = tmp_path / "ascii_test.txt"
+        file.write_text(content)
+
+        resource = FileResource(
+            uri=FileUrl("file:///test/ascii"),
+            path=file,
+        )
+        result = await resource.read()
+        assert result.contents[0].content == content
+
+    async def test_encoding_ignored_for_binary(self, tmp_path: Path):
+        """Encoding field should be ignored when is_binary=True."""
+        data = b"\x00\x01\x02\xff"
+        file = tmp_path / "binary_test.bin"
+        file.write_bytes(data)
+
+        resource = FileResource(
+            uri=FileUrl("file:///test/binary"),
+            path=file,
+            mime_type="application/octet-stream",
+            encoding="utf-8",
+        )
+        result = await resource.read()
+        assert result.contents[0].content == data
+
+    async def test_read_latin1_with_encoding(self, tmp_path: Path):
+        """FileResource should read non-UTF-8 files when correct encoding is specified."""
+        content = "na\u00efve"
+        file = tmp_path / "latin1_test.txt"
+        file.write_text(content, encoding="latin-1")
+
+        resource = FileResource(
+            uri=FileUrl("file:///test/latin1"),
+            path=file,
+            encoding="latin-1",
+        )
+        result = await resource.read()
+        assert result.contents[0].content == content
