@@ -1629,7 +1629,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 verification_token
                             )
 
-                        if not validated:
+                        # Only refresh if the (possibly reloaded) token is
+                        # still expired — a non-expiry failure on a fresh
+                        # token (scope mismatch, revocation) won't be
+                        # helped by refreshing.
+                        if (
+                            not validated
+                            and upstream_token_set.expires_at <= time.time()
+                        ):
                             upstream_token_set = await self._try_transparent_refresh(
                                 upstream_token_set
                             )
@@ -1642,6 +1649,23 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 )
                 except Exception as e:
                     logger.debug("Transparent upstream refresh failed: %s", e)
+                    # In a distributed deployment, another worker may have
+                    # already refreshed and rotated the token, causing our
+                    # stale refresh token to fail. Re-read and re-validate.
+                    try:
+                        reloaded = await self._upstream_token_store.get(
+                            key=upstream_token_set.upstream_token_id
+                        )
+                        if reloaded:
+                            verification_token = self._get_verification_token(reloaded)
+                            if verification_token is not None:
+                                validated = await self._token_validator.verify_token(
+                                    verification_token
+                                )
+                                if validated:
+                                    upstream_token_set = reloaded
+                    except Exception:
+                        pass
 
             if not validated:
                 logger.debug("Upstream token validation failed")

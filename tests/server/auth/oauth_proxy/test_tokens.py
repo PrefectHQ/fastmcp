@@ -806,3 +806,52 @@ class TestTransparentUpstreamRefresh:
         assert result is None
         # Refresh should NOT have been attempted
         mock_oauth_client.refresh_token.assert_not_called()
+
+    async def test_reload_from_storage_after_refresh_failure(self, proxy):
+        """If refresh fails, re-read from storage in case another worker refreshed."""
+        fastmcp_jwt = await self._setup_expired_session(proxy)
+
+        # Simulate: refresh fails (stale refresh token), but another worker
+        # already wrote a fresh upstream token to storage.
+        refreshed_token_set = UpstreamTokenSet(
+            upstream_token_id="upstream-tok-id",
+            access_token="refreshed-upstream-access",
+            refresh_token="new-refresh-tok",
+            refresh_token_expires_at=time.time() + 86400,
+            expires_at=time.time() + 3600,
+            token_type="Bearer",
+            scope="read",
+            client_id="test-client",
+            created_at=time.time(),
+        )
+
+        # The store is read three times:
+        # 1. Initial lookup in load_access_token
+        # 2. Re-read inside the advisory lock
+        # 3. Re-read after refresh failure (recovery path)
+        original_get = proxy._upstream_token_store.get
+        call_count = 0
+
+        async def mock_get(key: str) -> UpstreamTokenSet | None:
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                return await original_get(key)
+            # After refresh failure, return the "other worker's" refreshed token
+            return refreshed_token_set
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            side_effect=Exception("refresh token rotated by another worker")
+        )
+
+        with (
+            patch.object(
+                proxy, "_create_upstream_oauth_client", return_value=mock_oauth_client
+            ),
+            patch.object(proxy._upstream_token_store, "get", side_effect=mock_get),
+        ):
+            result = await proxy.load_access_token(fastmcp_jwt)
+
+        assert result is not None
+        assert result.token == "refreshed-upstream-access"
