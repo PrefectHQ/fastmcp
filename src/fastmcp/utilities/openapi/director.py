@@ -238,18 +238,29 @@ class RequestDirector:
         serialized: dict[str, Any] = {}
         for key, value in query_params.items():
             param_info = param_lookup.get(key)
-            if param_info is not None and isinstance(value, list):
-                # OpenAPI default for form style: explode=true
+            if param_info is not None:
                 explode = param_info.explode if param_info.explode is not None else True
                 if not explode:
-                    if not value:
-                        continue
                     style = param_info.style or "form"
                     delimiter = self._STYLE_DELIMITERS.get(style, ",")
-                    serialized[key] = delimiter.join(
-                        _query_scalar_to_str(v) for v in value
-                    )
-                    continue
+                    if isinstance(value, list):
+                        if not value:
+                            continue
+                        serialized[key] = delimiter.join(
+                            _query_scalar_to_str(v) for v in value
+                        )
+                        continue
+                    elif isinstance(value, dict):
+                        if not value:
+                            continue
+                        # form,explode=false on objects: key,value pairs
+                        # e.g. {"R": 100, "G": 200} → "R,100,G,200"
+                        parts: list[str] = []
+                        for k, v in value.items():
+                            parts.append(_query_scalar_to_str(k))
+                            parts.append(_query_scalar_to_str(v))
+                        serialized[key] = delimiter.join(parts)
+                        continue
             serialized[key] = value
         return serialized
 

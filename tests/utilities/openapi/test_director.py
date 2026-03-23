@@ -621,6 +621,68 @@ class TestQueryParameterSerialization:
         request = director.build(route, {"ids": []}, "https://example.com")
         assert "ids" not in str(request.url)
 
+    def test_explode_false_dict_value(self, director):
+        """style=form, explode=false on objects serializes as key,value pairs."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="color",
+                    location="query",
+                    required=True,
+                    schema={
+                        "type": "object",
+                        "properties": {
+                            "R": {"type": "integer"},
+                            "G": {"type": "integer"},
+                            "B": {"type": "integer"},
+                        },
+                    },
+                    explode=False,
+                    style="form",
+                )
+            ],
+            parameter_map={
+                "color": {"location": "query", "openapi_name": "color"},
+            },
+        )
+
+        request = director.build(
+            route,
+            {"color": {"R": 100, "G": 200, "B": 150}},
+            "https://example.com",
+        )
+        url = str(request.url)
+        assert "color=R" in url
+        assert url.count("color=") == 1
+        # Should contain alternating key,value pairs
+        assert "100" in url and "200" in url and "150" in url
+
+    def test_explode_false_empty_dict_omitted(self, director):
+        """Empty dict with explode=false omits the parameter."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="filter",
+                    location="query",
+                    required=False,
+                    schema={"type": "object"},
+                    explode=False,
+                )
+            ],
+            parameter_map={
+                "filter": {"location": "query", "openapi_name": "filter"},
+            },
+        )
+
+        request = director.build(route, {"filter": {}}, "https://example.com")
+        assert "filter" not in str(request.url)
+
 
 class TestRequestDirectorIntegration:
     """Test RequestDirector with real parsed routes."""
