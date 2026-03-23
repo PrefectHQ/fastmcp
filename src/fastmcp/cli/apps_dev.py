@@ -1028,10 +1028,41 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
                 on_error = ShowToast(Rx("$error"), variant="error")  # type: ignore[arg-type]
 
                 input_mode = f"_mode_{name}"
+                _desc_max_lines = 10
                 with Page(name, value=name), Column(gap=4):
                     if desc:
-                        first_para = desc.split("\n\n", 1)[0]
-                        Muted(first_para)
+                        lines = desc.split("\n")
+                        md_css = "text-sm text-muted-foreground"
+                        if len(lines) <= _desc_max_lines:
+                            Markdown(desc, css_class=md_css)
+                        else:
+                            desc_state = f"_desc_{name}"
+                            short = "\n".join(lines[:_desc_max_lines])
+                            with Pages(name=desc_state, value="short"):
+                                with (
+                                    Page("short", value="short"),
+                                    Column(gap=1, css_class="items-start"),
+                                ):
+                                    Markdown(short, css_class=md_css)
+                                    Button(
+                                        "Show more \u25be",
+                                        variant="link",
+                                        size="xs",
+                                        on_click=SetState(desc_state, "full"),
+                                        css_class="text-muted-foreground p-0 h-auto",
+                                    )
+                                with (
+                                    Page("full", value="full"),
+                                    Column(gap=1, css_class="items-start"),
+                                ):
+                                    Markdown(desc, css_class=md_css)
+                                    Button(
+                                        "Show less \u25b4",
+                                        variant="link",
+                                        size="xs",
+                                        on_click=SetState(desc_state, "short"),
+                                        css_class="text-muted-foreground p-0 h-auto",
+                                    )
 
                     with Pages(name=input_mode, value="form"):
                         with Page("form", value="form"), Column(gap=4):
