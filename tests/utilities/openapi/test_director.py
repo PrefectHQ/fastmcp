@@ -385,6 +385,143 @@ class TestRequestDirector:
         assert body_data == {"prop1": "value1", "prop2": "value2"}
 
 
+class TestQueryParameterSerialization:
+    """Test that query parameters respect OpenAPI explode/style settings."""
+
+    @pytest.fixture
+    def director(self, basic_openapi_30_spec):
+        spec = SchemaPath.from_dict(basic_openapi_30_spec)
+        return RequestDirector(spec)
+
+    def test_explode_true_repeats_keys(self, director):
+        """Default behavior: explode=true sends values=a&values=b."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="values",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=True,
+                )
+            ],
+            parameter_map={
+                "values": {"location": "query", "openapi_name": "values"},
+            },
+        )
+
+        request = director.build(
+            route, {"values": ["hello", "world"]}, "https://example.com"
+        )
+        url = str(request.url)
+        assert "values=hello" in url
+        assert "values=world" in url
+
+    def test_explode_false_comma_joins(self, director):
+        """explode=false sends values=hello,world."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="values",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=False,
+                )
+            ],
+            parameter_map={
+                "values": {"location": "query", "openapi_name": "values"},
+            },
+        )
+
+        request = director.build(
+            route, {"values": ["hello", "world"]}, "https://example.com"
+        )
+        url = str(request.url)
+        assert "values=hello%2Cworld" in url or "values=hello,world" in url
+        # Must NOT have repeated keys
+        assert url.count("values=") == 1
+
+    def test_explode_none_defaults_to_true(self, director):
+        """When explode is unset, OpenAPI default for form style is explode=true."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="tags",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=None,
+                )
+            ],
+            parameter_map={
+                "tags": {"location": "query", "openapi_name": "tags"},
+            },
+        )
+
+        request = director.build(route, {"tags": ["a", "b"]}, "https://example.com")
+        url = str(request.url)
+        assert "tags=a" in url
+        assert "tags=b" in url
+
+    def test_explode_false_with_integers(self, director):
+        """explode=false works with non-string values."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="ids",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "integer"}},
+                    explode=False,
+                )
+            ],
+            parameter_map={
+                "ids": {"location": "query", "openapi_name": "ids"},
+            },
+        )
+
+        request = director.build(route, {"ids": [1, 2, 3]}, "https://example.com")
+        url = str(request.url)
+        assert "ids=1%2C2%2C3" in url or "ids=1,2,3" in url
+        assert url.count("ids=") == 1
+
+    def test_scalar_query_param_unaffected_by_explode(self, director):
+        """Non-list values pass through regardless of explode setting."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="get_item",
+            parameters=[
+                ParameterInfo(
+                    name="name",
+                    location="query",
+                    required=True,
+                    schema={"type": "string"},
+                    explode=False,
+                )
+            ],
+            parameter_map={
+                "name": {"location": "query", "openapi_name": "name"},
+            },
+        )
+
+        request = director.build(route, {"name": "foo"}, "https://example.com")
+        assert "name=foo" in str(request.url)
+
+
 class TestRequestDirectorIntegration:
     """Test RequestDirector with real parsed routes."""
 

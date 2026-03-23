@@ -8,7 +8,7 @@ from jsonschema_path import SchemaPath
 
 from fastmcp.utilities.logging import get_logger
 
-from .models import HTTPRoute
+from .models import HTTPRoute, ParameterInfo
 
 logger = get_logger(__name__)
 
@@ -50,24 +50,27 @@ class RequestDirector:
             f"Unflattened - path: {path_params}, query: {query_params}, headers: {header_params}, body: {body}"
         )
 
-        # Step 2: Build base URL with path parameters
+        # Step 2: Serialize query parameters according to OpenAPI style/explode
+        query_params = self._serialize_query_params(route, query_params)
+
+        # Step 3: Build base URL with path parameters
         url = self._build_url(route.path, path_params, base_url)
 
-        # Step 3: Prepare request data
+        # Step 4: Prepare request data
         method: str = route.method.upper()
         params = query_params if query_params else None
         headers = header_params if header_params else None
         json_body: dict[str, Any] | list[Any] | None = None
         content: str | bytes | None = None
 
-        # Step 4: Handle request body
+        # Step 5: Handle request body
         if body is not None:
             if isinstance(body, dict | list):
                 json_body = body
             else:
                 content = body
 
-        # Step 5: Create httpx.Request
+        # Step 6: Create httpx.Request
         return httpx.Request(
             method=method,
             url=url,
@@ -190,6 +193,38 @@ class RequestDirector:
                 body = body_props
 
         return path_params, query_params, header_params, body
+
+    def _serialize_query_params(
+        self,
+        route: HTTPRoute,
+        query_params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Serialize query parameter values according to their OpenAPI style/explode settings.
+
+        By default (style=form, explode=true), list values are passed through as-is
+        so httpx repeats the key (e.g. values=a&values=b). When explode=false,
+        list values are comma-joined (e.g. values=a,b).
+        """
+        if not query_params:
+            return query_params
+
+        # Build a lookup from openapi_name -> ParameterInfo for query params
+        param_lookup: dict[str, ParameterInfo] = {
+            p.name: p for p in route.parameters if p.location == "query"
+        }
+
+        serialized: dict[str, Any] = {}
+        for key, value in query_params.items():
+            param_info = param_lookup.get(key)
+            if param_info is not None and isinstance(value, list):
+                # OpenAPI default for form style: explode=true
+                explode = param_info.explode if param_info.explode is not None else True
+                if not explode:
+                    serialized[key] = ",".join(str(v) for v in value)
+                    continue
+            serialized[key] = value
+        return serialized
 
     def _build_url(
         self, path_template: str, path_params: dict[str, Any], base_url: str
