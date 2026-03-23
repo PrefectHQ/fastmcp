@@ -13,18 +13,15 @@ from __future__ import annotations
 
 from prefab_ui.actions import ShowToast
 from prefab_ui.actions.mcp import CallTool
-from prefab_ui.app import PrefabApp
+from prefab_ui.app import PrefabApp, set_initial_state
 from prefab_ui.components import (
     Accordion,
     AccordionItem,
     Alert,
-    AreaChart,
     Badge,
-    BarChart,
     Button,
     Card,
     CardContent,
-    ChartSeries,
     Column,
     DataTable,
     DataTableColumn,
@@ -35,7 +32,6 @@ from prefab_ui.components import (
     If,
     Input,
     Muted,
-    PieChart,
     Progress,
     Row,
     Select,
@@ -46,6 +42,8 @@ from prefab_ui.components import (
     Text,
     Textarea,
 )
+from prefab_ui.components.charts import AreaChart, BarChart, ChartSeries, PieChart
+from prefab_ui.rx import ERROR
 
 from fastmcp import FastMCP
 
@@ -313,14 +311,16 @@ def employee_directory() -> PrefabApp:
 @mcp.tool(app=True)
 def contact_form() -> PrefabApp:
     """Show a form to create a new contact, with a live contact list below."""
+    set_initial_state(contacts=list(_contacts))
+
     with Column(gap=6, css_class="p-6") as view:
         Heading("Contacts")
 
-        with ForEach("contacts"):
+        with ForEach("contacts") as item:
             with Row(gap=2, align="center"):
-                Text("{{ name }}", css_class="font-medium")
-                Muted("{{ email }}")
-                Badge("{{ category }}")
+                Text(item.name, css_class="font-medium")
+                Muted(item.email)
+                Badge(item.category)
 
         Separator()
 
@@ -330,7 +330,7 @@ def contact_form() -> PrefabApp:
                 "save_contact",
                 result_key="contacts",
                 on_success=ShowToast("Contact saved!", variant="success"),
-                on_error=ShowToast("{{ $error }}", variant="error"),
+                on_error=ShowToast(ERROR, variant="error"),
             )
         ):
             Input(name="name", label="Full Name", required=True)
@@ -343,7 +343,7 @@ def contact_form() -> PrefabApp:
             Textarea(name="notes", label="Notes", placeholder="Optional notes...")
             Button("Save Contact")
 
-    return PrefabApp(view=view, state={"contacts": list(_contacts)})
+    return PrefabApp(view=view)
 
 
 @mcp.tool
@@ -403,6 +403,8 @@ def system_status() -> PrefabApp:
 @mcp.tool(app=True)
 def feature_flags() -> PrefabApp:
     """Toggle feature flags with live preview."""
+    state = set_initial_state(dark_mode=False, beta_features=False)
+
     with Column(gap=4, css_class="p-6") as view:
         Heading("Feature Flags")
 
@@ -411,16 +413,16 @@ def feature_flags() -> PrefabApp:
 
         Separator()
 
-        with If("{{ dark_mode }}"):
+        with If(state.dark_mode):
             Alert(title="Dark mode enabled", description="UI will use dark theme.")
-        with If("{{ beta_features }}"):
+        with If(state.beta_features):
             Alert(
                 title="Beta features active",
                 description="Experimental features are now visible.",
                 variant="warning",
             )
 
-    return PrefabApp(view=view, state={"dark_mode": False, "beta_features": False})
+    return PrefabApp(view=view)
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +433,8 @@ def feature_flags() -> PrefabApp:
 @mcp.tool(app=True)
 def project_overview() -> PrefabApp:
     """Show project details organized in tabs."""
+    set_initial_state(activity=PROJECT["activity"])
+
     with Column(gap=4, css_class="p-6") as view:
         Heading(PROJECT["name"])
 
@@ -451,12 +455,12 @@ def project_overview() -> PrefabApp:
                 )
 
             with Tab("Activity"):
-                with ForEach("activity"):
+                with ForEach("activity") as item:
                     with Row(gap=2):
-                        Muted("{{ timestamp }}")
-                        Text("{{ message }}")
+                        Muted(item.timestamp)
+                        Text(item.message)
 
-    return PrefabApp(view=view, state={"activity": PROJECT["activity"]})
+    return PrefabApp(view=view)
 
 
 # ---------------------------------------------------------------------------

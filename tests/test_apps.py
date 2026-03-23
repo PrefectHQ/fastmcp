@@ -225,10 +225,16 @@ class TestToolRegistrationWithApp:
         def my_tool() -> str:
             return "hello"
 
+        # App-only tools (visibility=["app"]) are hidden from list_tools
         tools = list(await server.list_tools())
-        assert tools[0].meta is not None
-        assert tools[0].meta["ui"]["resourceUri"] == "ui://foo"
-        assert tools[0].meta["ui"]["visibility"] == ["app"]
+        assert len(tools) == 0
+
+        # But the tool exists on the provider
+        tool = await server._get_tool("my_tool")
+        assert tool is not None
+        assert tool.meta is not None
+        assert tool.meta["ui"]["resourceUri"] == "ui://foo"
+        assert tool.meta["ui"]["visibility"] == ["app"]
 
     async def test_app_merges_with_existing_meta(self):
         server = FastMCP("test")
@@ -250,8 +256,10 @@ class TestToolRegistrationWithApp:
         def my_tool() -> str:
             return "hello"
 
-        tools = list(await server.list_tools())
-        mcp_tool = tools[0].to_mcp_tool()
+        # App-only tools are hidden from list_tools, verify via provider
+        tool = await server._get_tool("my_tool")
+        assert tool is not None
+        mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.meta is not None
         assert mcp_tool.meta["ui"]["resourceUri"] == "ui://app"
         assert mcp_tool.meta["ui"]["visibility"] == ["app"]
@@ -414,7 +422,9 @@ class TestIntegration:
         server = FastMCP("test")
 
         @server.tool(
-            app=AppConfig(resource_uri="ui://app/view.html", visibility=["app"])
+            app=AppConfig(
+                resource_uri="ui://app/view.html", visibility=["app", "model"]
+            )
         )
         async def my_tool() -> dict[str, str]:
             return {"result": "ok"}
@@ -422,11 +432,10 @@ class TestIntegration:
         async with Client(server) as client:
             tools = await client.list_tools()
             assert len(tools) == 1
-            # _meta.ui is preserved — the host decides what to do with it
             meta = tools[0].meta
             assert meta is not None
             assert meta["ui"]["resourceUri"] == "ui://app/view.html"
-            assert meta["ui"]["visibility"] == ["app"]
+            assert meta["ui"]["visibility"] == ["app", "model"]
 
     async def test_resource_with_ui_scheme_roundtrip(self):
         server = FastMCP("test")
@@ -470,7 +479,9 @@ class TestIntegration:
         """Server advertises extension AND tool has app meta."""
         server = FastMCP("test")
 
-        @server.tool(app=AppConfig(resource_uri="ui://dashboard", visibility=["app"]))
+        @server.tool(
+            app=AppConfig(resource_uri="ui://dashboard", visibility=["app", "model"])
+        )
         def dashboard() -> str:
             return "data"
 

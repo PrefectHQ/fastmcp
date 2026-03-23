@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from prefab_ui.app import ResolvedTool
+from prefab_ui.components import Text
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.app import (
@@ -460,11 +461,11 @@ class TestCallToolAppRouting:
         result = await server.call_tool("save", {"name": "alice"}, app_name="contacts")
         assert result.content[0].text == "saved alice"  # type: ignore[union-attr]
 
-    async def test_call_tool_without_app_name(self):
-        """Regular name-based resolution still works."""
+    async def test_call_tool_without_app_name_model_visible(self):
+        """Regular name-based resolution works for model-visible tools."""
         app = FastMCPApp("test")
 
-        @app.tool()
+        @app.tool(model=True)
         def save(name: str) -> str:
             return f"saved {name}"
 
@@ -567,6 +568,107 @@ class TestCallToolAppRouting:
         # App routing: bypasses all transforms
         result = await outer.call_tool("hidden", {"x": "found"}, app_name="deep")
         assert result.content[0].text == "found"  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# App-only tool filtering from server list_tools / get_tool
+# ---------------------------------------------------------------------------
+
+
+class TestAppOnlyToolFiltering:
+    async def test_app_only_tool_hidden_from_list_tools(self):
+        """@app.tool() (visibility=["app"]) should not appear in server.list_tools()."""
+        app = FastMCPApp("crm")
+
+        @app.tool()
+        def save_contact(name: str) -> str:
+            return name
+
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        tools = await server.list_tools()
+        names = [t.name for t in tools]
+        assert "save_contact" not in names
+
+    async def test_model_visible_tool_in_list_tools(self):
+        """@app.tool(model=True) (visibility=["app","model"]) appears in list_tools."""
+        app = FastMCPApp("crm")
+
+        @app.tool(model=True)
+        def query(search: str) -> list[str]:
+            return [search]
+
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        tools = await server.list_tools()
+        names = [t.name for t in tools]
+        assert "query" in names
+
+    async def test_ui_tool_in_list_tools(self):
+        """@app.ui() (visibility=["model"]) appears in list_tools."""
+        app = FastMCPApp("dashboard")
+
+        @app.ui()
+        def show_dashboard() -> str:
+            return "dashboard"
+
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        tools = await server.list_tools()
+        names = [t.name for t in tools]
+        assert "show_dashboard" in names
+
+    async def test_app_only_tool_still_callable_via_app_name(self):
+        """Even though filtered from list_tools, app-only tools are callable via call_tool with app_name."""
+        app = FastMCPApp("contacts")
+
+        @app.tool()
+        def save(name: str) -> str:
+            return f"saved {name}"
+
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        # Verify it's hidden from list_tools
+        tools = await server.list_tools()
+        names = [t.name for t in tools]
+        assert "save" not in names
+
+        # But still callable via app_name routing
+        result = await server.call_tool("save", {"name": "alice"}, app_name="contacts")
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]
+
+    async def test_app_only_tool_hidden_from_get_tool(self):
+        """server.get_tool() returns None for app-only tools."""
+        app = FastMCPApp("crm")
+
+        @app.tool()
+        def save_contact(name: str) -> str:
+            return name
+
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        tool = await server.get_tool("save_contact")
+        assert tool is None
+
+    async def test_app_only_tool_hidden_with_namespace(self):
+        """App-only tools hidden even when accessed through a namespace."""
+        app = FastMCPApp("crm")
+
+        @app.tool()
+        def save(name: str) -> str:
+            return name
+
+        server = FastMCP("Platform")
+        server.add_provider(app, namespace="crm")
+
+        tools = await server.list_tools()
+        names = [t.name for t in tools]
+        assert "crm_save" not in names
 
 
 # ---------------------------------------------------------------------------
@@ -721,3 +823,53 @@ class TestComposition:
         resources = await app._list_resources()
         uris = [str(r.uri) for r in resources]
         assert any("ui://prefab/renderer.html" in uri for uri in uris)
+
+
+# ---------------------------------------------------------------------------
+# Integration: full end-to-end with client, namespacing, and structured content
+# ---------------------------------------------------------------------------
+
+
+class TestAppIntegration:
+    async def test_full_app_lifecycle_through_client(self):
+        """End-to-end: mount an app on a namespaced server, call UI tool
+        through a client (verifying structured_content contains _meta.fastmcp.app),
+        then call the backend tool via server.call_tool with app_name."""
+        app = FastMCPApp("contacts")
+
+        @app.ui()
+        def contact_form() -> Text:
+            return Text(content="Enter contact details")
+
+        @app.tool()
+        def save_contact(name: str, email: str) -> dict[str, str]:
+            return {"name": name, "email": email}
+
+        server = FastMCP("Platform")
+        server.add_provider(app, namespace="crm")
+
+        # The @app.ui() tool should be visible (namespaced) to the client.
+        # The @app.tool() backend tool should NOT appear.
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "crm_contact_form" in tool_names
+            assert "crm_save_contact" not in tool_names
+
+            # Call the UI tool through the client and check structured_content
+            result = await client.call_tool_mcp("crm_contact_form", {})
+            sc = result.structuredContent
+            assert sc is not None
+            assert "_meta" in sc
+            assert sc["_meta"]["fastmcp"]["app"] == "contacts"
+
+        # Call the backend tool via server.call_tool with app_name
+        # (bypasses namespace transforms and visibility filtering)
+        backend_result = await server.call_tool(
+            "save_contact",
+            {"name": "Alice", "email": "alice@example.com"},
+            app_name="contacts",
+        )
+        result_text = backend_result.content[0].text  # type: ignore[union-attr]
+        assert "Alice" in result_text
+        assert "alice@example.com" in result_text

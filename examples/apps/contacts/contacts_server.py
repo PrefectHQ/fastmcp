@@ -18,7 +18,7 @@ from typing import Literal
 
 from prefab_ui.actions import SetState, ShowToast
 from prefab_ui.actions.mcp import CallTool
-from prefab_ui.app import PrefabApp
+from prefab_ui.app import PrefabApp, set_initial_state
 from prefab_ui.components import (
     Badge,
     Button,
@@ -32,7 +32,7 @@ from prefab_ui.components import (
     Separator,
     Text,
 )
-from prefab_ui.rx import RESULT
+from prefab_ui.rx import ERROR, RESULT, STATE
 from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP, FastMCPApp
@@ -103,6 +103,8 @@ def list_contacts() -> list[dict]:
 @app.ui()
 def contact_manager() -> PrefabApp:
     """Open the contact manager. The model calls this to launch the app."""
+    set_initial_state(contacts=list(_contacts))
+
     with Column(gap=6, css_class="p-6") as view:
         Heading("Contacts")
 
@@ -123,7 +125,7 @@ def contact_manager() -> PrefabApp:
                     SetState("contacts", RESULT),
                     ShowToast("Contact saved!", variant="success"),
                 ],
-                on_error=ShowToast("{{ $error }}", variant="error"),
+                on_error=ShowToast(ERROR, variant="error"),
             ),
         )
 
@@ -133,17 +135,14 @@ def contact_manager() -> PrefabApp:
         with Form(
             on_submit=CallTool(
                 search_contacts,
-                arguments={"query": "{{ query }}"},
+                arguments={"query": STATE.query},
                 on_success=SetState("contacts", RESULT),
             )
         ):
             Input(name="query", placeholder="Search by name or email...")
             Button("Search")
 
-    return PrefabApp(
-        view=view,
-        state={"contacts": list(_contacts)},
-    )
+    return PrefabApp(view=view)
 
 
 mcp = FastMCP("Contacts Server", providers=[app])
