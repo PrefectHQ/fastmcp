@@ -40,7 +40,7 @@ from prefab_ui.components import (
     Text,
 )
 from prefab_ui.components.charts import BarChart, ChartSeries, PieChart
-from prefab_ui.rx import RESULT
+from prefab_ui.rx import ERROR, RESULT, STATE
 
 from fastmcp import FastMCP, FastMCPApp
 
@@ -391,8 +391,8 @@ def data_explorer() -> PrefabApp:
                     CallTool(
                         analyze_data,
                         arguments={
-                            "region": "{{ selected_region }}",
-                            "product": "{{ selected_product }}",
+                            "region": STATE.selected_region,
+                            "product": STATE.selected_product,
                         },
                         on_success=[
                             SetState("rows", RESULT.rows),
@@ -404,7 +404,7 @@ def data_explorer() -> PrefabApp:
                         ],
                         on_error=[
                             SetState("loading", False),
-                            ShowToast("{{ $error }}", variant="error"),
+                            ShowToast(ERROR, variant="error"),
                         ],
                     ),
                 ],
@@ -421,8 +421,8 @@ def data_explorer() -> PrefabApp:
                     CallTool(
                         analyze_data,
                         arguments={
-                            "region": "{{ selected_region }}",
-                            "product": "{{ selected_product }}",
+                            "region": STATE.selected_region,
+                            "product": STATE.selected_product,
                         },
                         on_success=[
                             SetState("rows", RESULT.rows),
@@ -434,7 +434,7 @@ def data_explorer() -> PrefabApp:
                         ],
                         on_error=[
                             SetState("loading", False),
-                            ShowToast("{{ $error }}", variant="error"),
+                            ShowToast(ERROR, variant="error"),
                         ],
                     ),
                 ],
@@ -461,7 +461,7 @@ def data_explorer() -> PrefabApp:
                         ],
                         on_error=[
                             SetState("loading", False),
-                            ShowToast("{{ $error }}", variant="error"),
+                            ShowToast(ERROR, variant="error"),
                         ],
                     ),
                 ],
@@ -514,8 +514,8 @@ def data_explorer() -> PrefabApp:
                             )
 
                 with Row(gap=2, css_class="mt-4"):
-                    Badge("Region: {{ selected_region }}")
-                    Badge("Product: {{ selected_product }}")
+                    Badge(f"Region: {STATE.selected_region}")
+                    Badge(f"Product: {STATE.selected_product}")
 
             # ---- Table ----
             with Tab("Table"):

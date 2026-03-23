@@ -18,7 +18,6 @@ from prefab_ui.actions import SetState, ShowToast
 from prefab_ui.actions.mcp import CallTool
 from prefab_ui.app import PrefabApp, set_initial_state
 from prefab_ui.components import (
-    RESULT,
     Badge,
     Button,
     Card,
@@ -31,12 +30,12 @@ from prefab_ui.components import (
     If,
     Muted,
     Row,
-    Rx,
     Separator,
     Tab,
     Tabs,
     Text,
 )
+from prefab_ui.rx import ERROR, RESULT, Rx
 
 from fastmcp import FastMCP, FastMCPApp
 
@@ -258,7 +257,7 @@ def _build_request_card(
                                 ),
                             ],
                             on_error=ShowToast(
-                                "{{ $error }}",
+                                ERROR,
                                 variant="error",
                             ),
                         ),
@@ -277,7 +276,7 @@ def _build_request_card(
                                 ),
                             ],
                             on_error=ShowToast(
-                                "{{ $error }}",
+                                ERROR,
                                 variant="error",
                             ),
                         ),

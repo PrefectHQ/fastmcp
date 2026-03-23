@@ -43,7 +43,7 @@ from prefab_ui.components import (
     Tabs,
     Text,
 )
-from prefab_ui.rx import RESULT, Rx
+from prefab_ui.rx import ERROR, RESULT, STATE, Rx
 from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP, FastMCPApp
@@ -246,7 +246,7 @@ def _build_search_section() -> None:
     with Form(
         on_submit=CallTool(
             search_items,
-            arguments={"query": "{{ query }}"},
+            arguments={"query": STATE.query},
             on_success=SetState("search_results", RESULT),
         )
     ):
@@ -277,7 +277,7 @@ def _build_add_form() -> None:
                 SetState("recent_additions", RESULT),
                 ShowToast("Item added!", variant="success"),
             ],
-            on_error=ShowToast("{{ $error }}", variant="error"),
+            on_error=ShowToast(ERROR, variant="error"),
         ),
     )
 
@@ -292,7 +292,7 @@ def _build_actions_section() -> None:
     with Form(
         on_submit=CallTool(
             filter_by_category,
-            arguments={"category": "{{ selected_category }}"},
+            arguments={"category": STATE.selected_category},
             on_success=SetState("filtered_items", RESULT),
         )
     ):
@@ -322,12 +322,12 @@ def _build_actions_section() -> None:
             variant="outline",
             on_click=CallTool(
                 update_quantity,
-                arguments={"item_id": "{{ adjust_id }}", "delta": -1},
+                arguments={"item_id": STATE.adjust_id, "delta": -1},
                 on_success=[
                     SetState("filtered_items", RESULT),
                     ShowToast("Quantity decreased", variant="default"),
                 ],
-                on_error=ShowToast("{{ $error }}", variant="error"),
+                on_error=ShowToast(ERROR, variant="error"),
             ),
         )
         Button(
@@ -335,24 +335,24 @@ def _build_actions_section() -> None:
             variant="outline",
             on_click=CallTool(
                 update_quantity,
-                arguments={"item_id": "{{ adjust_id }}", "delta": 1},
+                arguments={"item_id": STATE.adjust_id, "delta": 1},
                 on_success=[
                     SetState("filtered_items", RESULT),
                     ShowToast("Quantity increased", variant="default"),
                 ],
-                on_error=ShowToast("{{ $error }}", variant="error"),
+                on_error=ShowToast(ERROR, variant="error"),
             ),
         )
         Button(
             "+ 10",
             on_click=CallTool(
                 update_quantity,
-                arguments={"item_id": "{{ adjust_id }}", "delta": 10},
+                arguments={"item_id": STATE.adjust_id, "delta": 10},
                 on_success=[
                     SetState("filtered_items", RESULT),
                     ShowToast("Restocked +10", variant="success"),
                 ],
-                on_error=ShowToast("{{ $error }}", variant="error"),
+                on_error=ShowToast(ERROR, variant="error"),
             ),
         )
 
@@ -365,12 +365,12 @@ def _build_actions_section() -> None:
     with Form(
         on_submit=CallTool(
             delete_item,
-            arguments={"item_id": "{{ delete_id }}"},
+            arguments={"item_id": STATE.delete_id},
             on_success=[
                 SetState("filtered_items", RESULT),
                 ShowToast("Item deleted", variant="warning"),
             ],
-            on_error=ShowToast("{{ $error }}", variant="error"),
+            on_error=ShowToast(ERROR, variant="error"),
         )
     ):
         Input(name="delete_id", input_type="number", placeholder="Item ID to delete")
