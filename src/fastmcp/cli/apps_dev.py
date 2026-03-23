@@ -959,8 +959,6 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
         from prefab_ui.actions import Fetch, OpenLink, SetState, ShowToast
         from prefab_ui.app import PrefabApp
         from prefab_ui.components import (
-            Accordion,
-            AccordionItem,
             Button,
             Column,
             Heading,
@@ -1030,19 +1028,33 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
 
                 on_error = ShowToast(Rx("$error"), variant="error")  # type: ignore[arg-type]
 
+                _desc_max_lines = 10
                 with Page(name, value=name), Column(gap=4):
                     if desc:
-                        # Show the first paragraph inline; collapse the
-                        # rest into an expandable accordion.
-                        parts = desc.split("\n\n", 1)
+                        lines = desc.split("\n")
                         md_css = "text-sm text-muted-foreground"
-                        Muted(parts[0])
-                        if len(parts) > 1:
-                            with (
-                                Accordion(collapsible=True, css_class=md_css),
-                                AccordionItem(title="Details"),
-                            ):
-                                Markdown(parts[1])
+                        if len(lines) <= _desc_max_lines:
+                            Markdown(desc, css_class=md_css)
+                        else:
+                            desc_state = f"_desc_{name}"
+                            short = "\n".join(lines[:_desc_max_lines])
+                            with Pages(name=desc_state, value="short"):
+                                with Page("short", value="short"):
+                                    Markdown(short, css_class=md_css)
+                                    Button(
+                                        "Show more",
+                                        variant="link",
+                                        size="sm",
+                                        on_click=SetState(desc_state, "full"),
+                                    )
+                                with Page("full", value="full"):
+                                    Markdown(desc, css_class=md_css)
+                                    Button(
+                                        "Show less",
+                                        variant="link",
+                                        size="sm",
+                                        on_click=SetState(desc_state, "short"),
+                                    )
                     with Tabs(variant="line"):
                         with (
                             Tab("Form"),
