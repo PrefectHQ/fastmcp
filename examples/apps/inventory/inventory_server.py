@@ -232,7 +232,7 @@ def _build_inventory_table() -> None:
             DataTableColumn(key="last_updated", header="Updated", sortable=True),
         ],
         rows=list(_inventory),
-        searchable=True,
+        search=True,
         paginated=True,
         page_size=10,
     )

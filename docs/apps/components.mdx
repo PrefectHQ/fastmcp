@@ -15,7 +15,7 @@ This page is a scannable reference for the Prefab components you'll use most oft
 For the full component library — every prop, variant, and advanced pattern — see the [Prefab component reference](https://prefab.prefect.io/docs/components).
 
 <Note>
-All components below are imported from `prefab_ui.components` unless otherwise noted. Charts live in `prefab_ui.components.charts` but are re-exported from `prefab_ui.components` for convenience.
+All components below are imported from `prefab_ui.components` unless otherwise noted. Charts must be imported from `prefab_ui.components.charts`.
 </Note>
 
 ## Layout
@@ -185,7 +185,7 @@ DataTable(
         {"name": "Alice", "role": "Engineer"},
         {"name": "Bob", "role": "Designer"},
     ],
-    searchable=True,
+    search=True,
     paginated=True,
     page_size=15,
 )
@@ -195,12 +195,11 @@ DataTable(
 |------|------|-------------|
 | `columns` | `list[DataTableColumn]` | Column definitions |
 | `rows` | `list[dict]` | Row data |
-| `searchable` | `bool` | Enable full-text search |
-| `sortable` | `bool` | Enable column sorting |
+| `search` | `bool` | Enable full-text search |
 | `paginated` | `bool` | Enable pagination |
 | `page_size` | `int` | Rows per page (default `10`) |
 
-`DataTableColumn` takes `key` (the dict key), `header` (display name), and `sortable` (per-column override).
+`DataTableColumn` takes `key` (the dict key), `header` (display name), and `sortable` (enable sorting on that column).
 
 ### BarChart
 
@@ -316,18 +315,18 @@ A dropdown for choosing from a list of options. Pass a flat list of strings, or 
 ```python
 from prefab_ui.components import Select
 
-Select(
-    name="priority",
-    label="Priority",
-    options=["low", "medium", "high", "critical"],
-)
+with Select(name="priority", label="Priority"):
+    SelectOption("Low", value="low")
+    SelectOption("Medium", value="medium")
+    SelectOption("High", value="high")
 ```
+
+Options are defined as `SelectOption` children, not as a prop.
 
 | Prop | Type | Description |
 |------|------|-------------|
 | `name` | `str` | State/form key |
 | `label` | `str` | Label text |
-| `options` | `list[str]` | Available choices |
 | `placeholder` | `str` | Placeholder text |
 
 ### Textarea
@@ -448,7 +447,7 @@ with Tabs():
 
 | Prop (Tabs) | Type | Description |
 |-------------|------|-------------|
-| `default_value` | `str` | Label of the initially active tab |
+| `value` | `str` | Label of the initially active tab |
 
 ### Accordion / AccordionItem
 
