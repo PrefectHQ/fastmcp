@@ -573,6 +573,31 @@ class TestQueryParameterSerialization:
         assert "ids=1+2+3" in url or "ids=1%202%203" in url
         assert url.count("ids=") == 1
 
+    def test_explode_false_booleans_lowercased(self, director):
+        """Booleans serialize as true/false, not True/False."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="flags",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "boolean"}},
+                    explode=False,
+                )
+            ],
+            parameter_map={
+                "flags": {"location": "query", "openapi_name": "flags"},
+            },
+        )
+
+        request = director.build(route, {"flags": [True, False]}, "https://example.com")
+        url = str(request.url)
+        assert "true" in url and "false" in url
+        assert "True" not in url and "False" not in url
+
 
 class TestRequestDirectorIntegration:
     """Test RequestDirector with real parsed routes."""

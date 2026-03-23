@@ -13,6 +13,17 @@ from .models import HTTPRoute, ParameterInfo
 logger = get_logger(__name__)
 
 
+def _query_scalar_to_str(value: Any) -> str:
+    """Convert a scalar to its query-string representation.
+
+    Booleans are lowercased to match JSON/OpenAPI conventions (true/false)
+    rather than Python's str(True) → "True".
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
 class RequestDirector:
     """Builds httpx.Request objects from HTTPRoute and arguments using openapi-core."""
 
@@ -233,7 +244,9 @@ class RequestDirector:
                 if not explode:
                     style = param_info.style or "form"
                     delimiter = self._STYLE_DELIMITERS.get(style, ",")
-                    serialized[key] = delimiter.join(str(v) for v in value)
+                    serialized[key] = delimiter.join(
+                        _query_scalar_to_str(v) for v in value
+                    )
                     continue
             serialized[key] = value
         return serialized
