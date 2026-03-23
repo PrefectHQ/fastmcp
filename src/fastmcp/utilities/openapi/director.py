@@ -242,6 +242,8 @@ class RequestDirector:
                 # OpenAPI default for form style: explode=true
                 explode = param_info.explode if param_info.explode is not None else True
                 if not explode:
+                    if not value:
+                        continue
                     style = param_info.style or "form"
                     delimiter = self._STYLE_DELIMITERS.get(style, ",")
                     serialized[key] = delimiter.join(

@@ -598,6 +598,29 @@ class TestQueryParameterSerialization:
         assert "true" in url and "false" in url
         assert "True" not in url and "False" not in url
 
+    def test_explode_false_empty_list_omitted(self, director):
+        """Empty list with explode=false omits the parameter entirely."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="ids",
+                    location="query",
+                    required=False,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=False,
+                )
+            ],
+            parameter_map={
+                "ids": {"location": "query", "openapi_name": "ids"},
+            },
+        )
+
+        request = director.build(route, {"ids": []}, "https://example.com")
+        assert "ids" not in str(request.url)
+
 
 class TestRequestDirectorIntegration:
     """Test RequestDirector with real parsed routes."""
