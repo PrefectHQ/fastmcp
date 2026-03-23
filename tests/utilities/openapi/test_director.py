@@ -521,6 +521,58 @@ class TestQueryParameterSerialization:
         request = director.build(route, {"name": "foo"}, "https://example.com")
         assert "name=foo" in str(request.url)
 
+    def test_pipe_delimited_explode_false(self, director):
+        """style=pipeDelimited, explode=false sends ids=1|2|3."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="ids",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=False,
+                    style="pipeDelimited",
+                )
+            ],
+            parameter_map={
+                "ids": {"location": "query", "openapi_name": "ids"},
+            },
+        )
+
+        request = director.build(route, {"ids": ["1", "2", "3"]}, "https://example.com")
+        url = str(request.url)
+        assert "ids=1%7C2%7C3" in url or "ids=1|2|3" in url
+        assert url.count("ids=") == 1
+
+    def test_space_delimited_explode_false(self, director):
+        """style=spaceDelimited, explode=false sends ids=1%202%203."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="ids",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=False,
+                    style="spaceDelimited",
+                )
+            ],
+            parameter_map={
+                "ids": {"location": "query", "openapi_name": "ids"},
+            },
+        )
+
+        request = director.build(route, {"ids": ["1", "2", "3"]}, "https://example.com")
+        url = str(request.url)
+        assert "ids=1+2+3" in url or "ids=1%202%203" in url
+        assert url.count("ids=") == 1
+
 
 class TestRequestDirectorIntegration:
     """Test RequestDirector with real parsed routes."""

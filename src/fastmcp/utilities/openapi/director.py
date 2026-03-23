@@ -1,6 +1,6 @@
 """Request director using openapi-core for stateless HTTP request building."""
 
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import quote, urljoin
 
 import httpx
@@ -194,6 +194,13 @@ class RequestDirector:
 
         return path_params, query_params, header_params, body
 
+    # Delimiter per OpenAPI style when explode=false
+    _STYLE_DELIMITERS: ClassVar[dict[str, str]] = {
+        "form": ",",
+        "spaceDelimited": " ",
+        "pipeDelimited": "|",
+    }
+
     def _serialize_query_params(
         self,
         route: HTTPRoute,
@@ -204,7 +211,10 @@ class RequestDirector:
 
         By default (style=form, explode=true), list values are passed through as-is
         so httpx repeats the key (e.g. values=a&values=b). When explode=false,
-        list values are comma-joined (e.g. values=a,b).
+        list values are joined with the style-appropriate delimiter:
+          - form (default): comma  (values=a,b)
+          - pipeDelimited:  pipe   (values=a|b)
+          - spaceDelimited: space  (values=a%20b)
         """
         if not query_params:
             return query_params
@@ -221,7 +231,9 @@ class RequestDirector:
                 # OpenAPI default for form style: explode=true
                 explode = param_info.explode if param_info.explode is not None else True
                 if not explode:
-                    serialized[key] = ",".join(str(v) for v in value)
+                    style = param_info.style or "form"
+                    delimiter = self._STYLE_DELIMITERS.get(style, ",")
+                    serialized[key] = delimiter.join(str(v) for v in value)
                     continue
             serialized[key] = value
         return serialized
