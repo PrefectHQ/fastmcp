@@ -92,7 +92,7 @@ class RequestDirector:
                     # or application/merge-patch+json need an explicit
                     # Content-Type header since httpx's json= always
                     # sets application/json.
-                    content = _json.dumps(body).encode("utf-8")
+                    content = _json.dumps(body, allow_nan=False).encode("utf-8")
                     headers = dict(headers) if headers else {}
                     headers["Content-Type"] = declared_content_type
                 else:
