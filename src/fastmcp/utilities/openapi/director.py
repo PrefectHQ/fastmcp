@@ -1,5 +1,6 @@
 """Request director using openapi-core for stateless HTTP request building."""
 
+import json as _json
 from typing import Any, ClassVar
 from urllib.parse import quote, urljoin
 
@@ -74,14 +75,31 @@ class RequestDirector:
         json_body: dict[str, Any] | list[Any] | None = None
         content: str | bytes | None = None
 
-        # Step 5: Handle request body
+        # Step 5: Determine the declared content type from the OpenAPI spec
+        declared_content_type: str | None = None
+        if route.request_body and route.request_body.content_schema:
+            declared_content_type = next(iter(route.request_body.content_schema))
+
+        # Step 6: Handle request body
         if body is not None:
             if isinstance(body, dict | list):
-                json_body = body
+                if (
+                    declared_content_type is not None
+                    and declared_content_type != "application/json"
+                ):
+                    # Non-standard JSON-compatible types like
+                    # application/json-patch+json need an explicit
+                    # Content-Type header since httpx's json= always
+                    # sets application/json.
+                    content = _json.dumps(body).encode("utf-8")
+                    headers = dict(headers) if headers else {}
+                    headers["Content-Type"] = declared_content_type
+                else:
+                    json_body = body
             else:
                 content = body
 
-        # Step 6: Create httpx.Request
+        # Step 7: Create httpx.Request
         return httpx.Request(
             method=method,
             url=url,

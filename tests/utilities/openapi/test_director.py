@@ -1,5 +1,6 @@
 """Unit tests for RequestDirector."""
 
+import json
 from urllib.parse import unquote
 
 import pytest
@@ -196,8 +197,6 @@ class TestRequestDirector:
         )  # httpx normalizes headers to lowercase
 
         # Check body
-        import json
-
         assert request.content is not None
         body_data = json.loads(request.content)
         assert body_data["title"] == "Updated Title"
@@ -217,8 +216,6 @@ class TestRequestDirector:
         assert "123" in str(request.url)  # Path ID should be 123
 
         # Check body
-        import json
-
         body_data = json.loads(request.content)
         assert body_data["id"] == 456  # Body ID should be 456
         assert body_data["name"] == "John Doe"
@@ -241,8 +238,6 @@ class TestRequestDirector:
 
         headers = dict(request.headers) if request.headers else {}
         assert "X-Client-Version" not in headers
-
-        import json
 
         body_data = json.loads(request.content)
         assert body_data["title"] == "Required Title"
@@ -311,8 +306,6 @@ class TestRequestDirector:
         assert request.method == "POST"
         assert "123" in str(request.url)
 
-        import json
-
         body_data = json.loads(request.content)
         assert body_data["name"] == "John Doe"
 
@@ -379,10 +372,163 @@ class TestRequestDirector:
 
         assert request.method == "POST"
         # Should wrap in object when multiple properties but schema is not object
-        import json
-
         body_data = json.loads(request.content)
         assert body_data == {"prop1": "value1", "prop2": "value2"}
+
+
+class TestContentTypeHandling:
+    """Test that request Content-Type respects the OpenAPI spec."""
+
+    @pytest.fixture
+    def director(self, basic_openapi_30_spec):
+        spec = SchemaPath.from_dict(basic_openapi_30_spec)
+        return RequestDirector(spec)
+
+    def test_application_json_uses_httpx_json(self, director):
+        """Standard application/json uses httpx's json= parameter."""
+        route = HTTPRoute(
+            path="/items",
+            method="PATCH",
+            operation_id="update_item",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/json": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                    }
+                },
+            ),
+            parameter_map={
+                "name": {"location": "body", "openapi_name": "name"},
+            },
+        )
+
+        request = director.build(route, {"name": "test"}, "https://example.com")
+        assert request.headers["content-type"] == "application/json"
+        assert json.loads(request.content) == {"name": "test"}
+
+    def test_json_patch_content_type_preserved(self, director):
+        """application/json-patch+json is sent as the Content-Type header."""
+        route = HTTPRoute(
+            path="/items/{id}",
+            method="PATCH",
+            operation_id="patch_item",
+            parameters=[
+                ParameterInfo(
+                    name="id",
+                    location="path",
+                    required=True,
+                    schema={"type": "string"},
+                ),
+            ],
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/json-patch+json": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "op": {"type": "string"},
+                                "path": {"type": "string"},
+                                "value": {},
+                            },
+                        },
+                    }
+                },
+            ),
+            parameter_map={
+                "id": {"location": "path", "openapi_name": "id"},
+                "body": {"location": "body", "openapi_name": "body"},
+            },
+        )
+
+        patch_ops = [{"op": "replace", "path": "/name", "value": "new-name"}]
+        request = director.build(
+            route, {"id": "123", "body": patch_ops}, "https://example.com"
+        )
+
+        assert request.headers["content-type"] == "application/json-patch+json"
+        assert json.loads(request.content) == patch_ops
+
+    def test_custom_json_content_type_with_dict_body(self, director):
+        """Any non-standard JSON content type gets the correct header."""
+        route = HTTPRoute(
+            path="/items",
+            method="POST",
+            operation_id="create_item",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/merge-patch+json": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                    }
+                },
+            ),
+            parameter_map={
+                "name": {"location": "body", "openapi_name": "name"},
+            },
+        )
+
+        request = director.build(route, {"name": "test"}, "https://example.com")
+        assert request.headers["content-type"] == "application/merge-patch+json"
+        assert json.loads(request.content) == {"name": "test"}
+
+    def test_custom_content_type_preserves_other_headers(self, director):
+        """Custom content type doesn't clobber other headers from parameters."""
+        route = HTTPRoute(
+            path="/items",
+            method="PATCH",
+            operation_id="patch_item",
+            parameters=[
+                ParameterInfo(
+                    name="X-Request-Id",
+                    location="header",
+                    required=True,
+                    schema={"type": "string"},
+                ),
+            ],
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/json-patch+json": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                    }
+                },
+            ),
+            parameter_map={
+                "X-Request-Id": {
+                    "location": "header",
+                    "openapi_name": "X-Request-Id",
+                },
+                "name": {"location": "body", "openapi_name": "name"},
+            },
+        )
+
+        request = director.build(
+            route,
+            {"X-Request-Id": "abc-123", "name": "test"},
+            "https://example.com",
+        )
+        assert request.headers["content-type"] == "application/json-patch+json"
+        assert request.headers["x-request-id"] == "abc-123"
+
+    def test_no_request_body_info_defaults_to_json(self, director):
+        """When route has no request_body metadata, dict body uses application/json."""
+        route = HTTPRoute(
+            path="/items",
+            method="POST",
+            operation_id="create_item",
+            parameter_map={
+                "name": {"location": "body", "openapi_name": "name"},
+            },
+        )
+
+        request = director.build(route, {"name": "test"}, "https://example.com")
+        assert request.headers["content-type"] == "application/json"
 
 
 class TestQueryParameterSerialization:
