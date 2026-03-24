@@ -346,7 +346,10 @@ class TestGoogleTokenVerifier:
         )
 
         verifier = GoogleTokenVerifier(
-            required_scopes=["openid", "https://www.googleapis.com/auth/userinfo.email"],
+            required_scopes=[
+                "openid",
+                "https://www.googleapis.com/auth/userinfo.email",
+            ],
         )
         result = await verifier.verify_token("token-missing-email-scope")
 
