@@ -8,8 +8,7 @@ Demonstrates the full FastMCPApp stack:
 - Manual form construction with the context-manager pattern
 
 Usage:
-    uv run python contacts_server.py               # HTTP (default)
-    uv run python contacts_server.py --stdio        # stdio for MCP clients
+    uv run python contacts_server.py
 """
 
 from __future__ import annotations

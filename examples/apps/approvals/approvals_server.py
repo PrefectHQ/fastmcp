@@ -8,8 +8,7 @@ Demonstrates a multi-step interactive workflow:
 - Action chaining: approve → update state → show toast
 
 Usage:
-    uv run python approvals_server.py              # HTTP (default)
-    uv run python approvals_server.py --stdio       # stdio for MCP clients
+    uv run python approvals_server.py
 """
 
 from __future__ import annotations

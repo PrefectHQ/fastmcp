@@ -206,7 +206,7 @@ DataTable(
 Renders vertical or horizontal bar charts. Each `ChartSeries` maps a key from your data to a colored bar group. Multiple series produce grouped (or stacked) bars.
 
 ```python
-from prefab_ui.components import BarChart, ChartSeries
+from prefab_ui.components.charts import BarChart, ChartSeries
 
 BarChart(
     data=[
@@ -234,7 +234,7 @@ BarChart(
 Displays proportional data as slices. Set `inner_radius` for a donut chart. Unlike bar/line charts, `PieChart` uses `data_key` for the numeric value and `name_key` for the label — it doesn't use `ChartSeries`.
 
 ```python
-from prefab_ui.components import PieChart
+from prefab_ui.components.charts import PieChart
 
 PieChart(
     data=[
@@ -261,7 +261,7 @@ PieChart(
 Plots data points connected by lines. Shares the same API as `BarChart` — use `series`, `x_axis`, and optionally `curve` to control interpolation.
 
 ```python
-from prefab_ui.components import LineChart, ChartSeries
+from prefab_ui.components.charts import LineChart, ChartSeries
 
 LineChart(
     data=[
@@ -313,7 +313,7 @@ Input(name="search", placeholder="Search...")
 A dropdown for choosing from a list of options. Pass a flat list of strings, or structured `SelectOption` objects for custom labels.
 
 ```python
-from prefab_ui.components import Select
+from prefab_ui.components import Select, SelectOption
 
 with Select(name="priority", label="Priority"):
     SelectOption("Low", value="low")
