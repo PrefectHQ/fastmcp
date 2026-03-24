@@ -530,6 +530,32 @@ class TestContentTypeHandling:
         request = director.build(route, {"name": "test"}, "https://example.com")
         assert request.headers["content-type"] == "application/json"
 
+    def test_non_json_content_type_falls_through(self, director):
+        """Non-JSON types like multipart/form-data don't get JSON-serialized."""
+        route = HTTPRoute(
+            path="/upload",
+            method="POST",
+            operation_id="upload",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "multipart/form-data": {
+                        "type": "object",
+                        "properties": {"file": {"type": "string"}},
+                    }
+                },
+            ),
+            parameter_map={
+                "file": {"location": "body", "openapi_name": "file"},
+            },
+        )
+
+        request = director.build(route, {"file": "data"}, "https://example.com")
+        # Should fall through to httpx's json= path (not manually serialized
+        # with a multipart/form-data header), since the content type isn't
+        # JSON-compatible.
+        assert request.headers["content-type"] == "application/json"
+
 
 class TestQueryParameterSerialization:
     """Test that query parameters respect OpenAPI explode/style settings."""

@@ -86,9 +86,10 @@ class RequestDirector:
                 if (
                     declared_content_type is not None
                     and declared_content_type != "application/json"
+                    and "json" in declared_content_type
                 ):
-                    # Non-standard JSON-compatible types like
-                    # application/json-patch+json need an explicit
+                    # JSON-compatible types like application/json-patch+json
+                    # or application/merge-patch+json need an explicit
                     # Content-Type header since httpx's json= always
                     # sets application/json.
                     content = _json.dumps(body).encode("utf-8")
