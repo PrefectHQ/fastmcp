@@ -725,3 +725,53 @@ class TestAzureOBOIntegration:
 
         dep = _EntraOBOToken(["scope"])
         assert isinstance(dep, Dependency)
+
+
+class TestFindAzureProvider:
+    """Tests for _find_azure_provider helper used by EntraOBOToken."""
+
+    def test_returns_azure_provider_directly(self, memory_storage):
+        """When auth is an AzureProvider, return it directly."""
+        from fastmcp.server.auth.providers.azure import _find_azure_provider
+
+        provider = AzureProvider(
+            tenant_id="test-tenant",
+            client_id="test-client",
+            client_secret="test-secret",
+            client_storage=memory_storage,
+            base_url="https://example.com",
+            required_scopes=["read"],
+        )
+        assert _find_azure_provider(provider) is provider
+
+    def test_unwraps_multiauth_with_azure_server(self, memory_storage):
+        """When auth is a MultiAuth wrapping an AzureProvider, return the inner provider."""
+        from fastmcp.server.auth.auth import MultiAuth
+        from fastmcp.server.auth.providers.azure import _find_azure_provider
+
+        provider = AzureProvider(
+            tenant_id="test-tenant",
+            client_id="test-client",
+            client_secret="test-secret",
+            client_storage=memory_storage,
+            base_url="https://example.com",
+            required_scopes=["read"],
+        )
+        multi = MultiAuth(server=provider)
+        assert _find_azure_provider(multi) is provider
+
+    def test_returns_none_for_non_azure(self):
+        """When auth is not an AzureProvider and not a MultiAuth wrapping one, return None."""
+        from fastmcp.server.auth.providers.azure import _find_azure_provider
+
+        assert _find_azure_provider(object()) is None
+
+    def test_returns_none_for_multiauth_without_azure_server(self):
+        """When MultiAuth has no server or a non-Azure server, return None."""
+        from fastmcp.server.auth.auth import MultiAuth
+        from fastmcp.server.auth.providers.azure import _find_azure_provider
+        from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
+
+        verifier = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
+        multi = MultiAuth(verifiers=[verifier])
+        assert _find_azure_provider(multi) is None

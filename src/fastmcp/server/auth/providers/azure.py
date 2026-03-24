@@ -659,6 +659,19 @@ def _require_azure_identity(feature: str) -> None:
         ) from e
 
 
+def _find_azure_provider(auth: object) -> AzureProvider | None:
+    """Extract an AzureProvider from an auth provider, unwrapping MultiAuth if needed."""
+    if isinstance(auth, AzureProvider):
+        return auth
+
+    from fastmcp.server.auth.auth import MultiAuth
+
+    if isinstance(auth, MultiAuth) and isinstance(auth.server, AzureProvider):
+        return auth.server
+
+    return None
+
+
 class _EntraOBOToken(Dependency[str]):
     """Dependency that performs OBO token exchange for Microsoft Entra.
 
@@ -683,13 +696,14 @@ class _EntraOBOToken(Dependency[str]):
             )
 
         server = get_server()
-        if not isinstance(server.auth, AzureProvider):
+        azure_provider = _find_azure_provider(server.auth)
+        if azure_provider is None:
             raise RuntimeError(
                 "EntraOBOToken requires an AzureProvider as the auth provider. "
                 f"Current provider: {type(server.auth).__name__}"
             )
 
-        credential = await server.auth.get_obo_credential(
+        credential = await azure_provider.get_obo_credential(
             user_assertion=access_token.token,
         )
 
