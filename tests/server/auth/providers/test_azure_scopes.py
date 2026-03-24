@@ -760,11 +760,11 @@ class TestFindAzureProvider:
         multi = MultiAuth(server=provider)
         assert _find_azure_provider(multi) is provider
 
-    def test_returns_none_for_non_azure(self):
-        """When auth is not an AzureProvider and not a MultiAuth wrapping one, return None."""
+    def test_returns_none_for_no_auth(self):
+        """When auth is None, return None."""
         from fastmcp.server.auth.providers.azure import _find_azure_provider
 
-        assert _find_azure_provider(object()) is None
+        assert _find_azure_provider(None) is None
 
     def test_returns_none_for_multiauth_without_azure_server(self):
         """When MultiAuth has no server or a non-Azure server, return None."""

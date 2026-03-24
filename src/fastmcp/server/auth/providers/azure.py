@@ -24,6 +24,8 @@ if TYPE_CHECKING:
     from mcp.server.auth.provider import AuthorizationParams
     from mcp.shared.auth import OAuthClientInformationFull
 
+    from fastmcp.server.auth.auth import AuthProvider
+
 logger = get_logger(__name__)
 
 # Standard OIDC scopes that should never be prefixed with identifier_uri.
@@ -659,7 +661,7 @@ def _require_azure_identity(feature: str) -> None:
         ) from e
 
 
-def _find_azure_provider(auth: object) -> AzureProvider | None:
+def _find_azure_provider(auth: AuthProvider | None) -> AzureProvider | None:
     """Extract an AzureProvider from an auth provider, unwrapping MultiAuth if needed."""
     if isinstance(auth, AzureProvider):
         return auth
