@@ -125,15 +125,15 @@ class ToolResult(BaseModel):
     ) -> (
         list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]] | CallToolResult
     ):
-        # Always return CallToolResult when structured_content exists to maintain
-        # consistent .data field in client (fixes #3596)
-        if self.structured_content is not None:
+        # Return CallToolResult when either meta or structured_content exists
+        # to maintain consistent client behavior (fixes #3596)
+        if self.meta is not None or self.structured_content is not None:
             return CallToolResult(
                 structuredContent=self.structured_content,
                 content=self.content,
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
-        # Only return bare content list when no structured content
+        # Only return bare content when both are None
         return self.content
 
 
