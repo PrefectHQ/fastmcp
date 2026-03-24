@@ -111,6 +111,7 @@ class AzureProvider(OAuthProxy):
         consent_csp_policy: str | None = None,
         base_authority: str = "login.microsoftonline.com",
         http_client: httpx.AsyncClient | None = None,
+        enable_cimd: bool = True,
     ) -> None:
         """Initialize Azure OAuth provider.
 
@@ -163,6 +164,8 @@ class AzureProvider(OAuthProxy):
             http_client: Optional httpx.AsyncClient for connection pooling in JWKS fetches.
                 When provided, the client is reused for JWT key fetches and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per fetch.
+            enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
+                client IDs (default True). Set to False to disable.
         """
         # Parse scopes if provided as string
         parsed_required_scopes = parse_scopes(required_scopes)
@@ -243,6 +246,7 @@ class AzureProvider(OAuthProxy):
             require_authorization_consent=require_authorization_consent,
             consent_csp_policy=consent_csp_policy,
             valid_scopes=parsed_required_scopes,
+            enable_cimd=enable_cimd,
         )
 
         authority_info = ""
