@@ -57,7 +57,7 @@ def team_directory(department: str | None = None) -> Column:
                 DataTableColumn(key="location", header="Location", sortable=True),
             ],
             rows=rows,
-            searchable=True,
+            search=True,
             paginated=True,
         )
     return view
