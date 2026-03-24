@@ -2,6 +2,7 @@
 
 import pytest
 from key_value.aio.stores.memory import MemoryStore
+from pytest_httpx import HTTPXMock
 
 from fastmcp.server.auth.providers.google import (
     GOOGLE_SCOPE_ALIASES,
@@ -231,3 +232,155 @@ class TestGoogleScopeNormalization:
         """Verify the alias map covers the known Google shorthands."""
         assert "email" in GOOGLE_SCOPE_ALIASES
         assert "profile" in GOOGLE_SCOPE_ALIASES
+
+
+class TestGoogleTokenVerifier:
+    """Test GoogleTokenVerifier.verify_token() using the v3 userinfo endpoint."""
+
+    USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+
+    @pytest.mark.anyio
+    async def test_valid_token_openid_only(self, httpx_mock: HTTPXMock):
+        """A token with only openid scope (no email/name/picture) is accepted."""
+        httpx_mock.add_response(
+            url=self.USERINFO_URL,
+            json={"sub": "12345"},
+        )
+
+        verifier = GoogleTokenVerifier()
+        result = await verifier.verify_token("valid-token")
+
+        assert result is not None
+        assert result.client_id == "12345"
+        assert result.scopes == ["openid"]
+        assert result.expires_at is None
+        assert result.claims["sub"] == "12345"
+
+    @pytest.mark.anyio
+    async def test_valid_token_with_email_and_profile(self, httpx_mock: HTTPXMock):
+        """A token with email+profile scope returns all inferred scopes."""
+        httpx_mock.add_response(
+            url=self.USERINFO_URL,
+            json={
+                "sub": "12345",
+                "email": "user@example.com",
+                "email_verified": True,
+                "name": "Test User",
+                "picture": "https://example.com/photo.jpg",
+                "given_name": "Test",
+                "family_name": "User",
+                "locale": "en",
+            },
+        )
+
+        verifier = GoogleTokenVerifier()
+        result = await verifier.verify_token("valid-token")
+
+        assert result is not None
+        assert result.client_id == "12345"
+        assert "openid" in result.scopes
+        assert "email" in result.scopes
+        assert "https://www.googleapis.com/auth/userinfo.email" in result.scopes
+        assert "profile" in result.scopes
+        assert "https://www.googleapis.com/auth/userinfo.profile" in result.scopes
+        assert result.claims["email"] == "user@example.com"
+        assert result.claims["email_verified"] is True
+        assert result.claims["name"] == "Test User"
+        assert result.claims["picture"] == "https://example.com/photo.jpg"
+
+    @pytest.mark.anyio
+    async def test_expired_or_invalid_token_returns_none(self, httpx_mock: HTTPXMock):
+        """HTTP 401 from userinfo endpoint causes verify_token to return None."""
+        httpx_mock.add_response(
+            url=self.USERINFO_URL,
+            status_code=401,
+            json={"error": "invalid_token"},
+        )
+
+        verifier = GoogleTokenVerifier()
+        result = await verifier.verify_token("expired-token")
+
+        assert result is None
+
+    @pytest.mark.anyio
+    async def test_missing_sub_returns_none(self, httpx_mock: HTTPXMock):
+        """A 200 response without 'sub' is rejected."""
+        httpx_mock.add_response(
+            url=self.USERINFO_URL,
+            json={"email": "user@example.com"},
+        )
+
+        verifier = GoogleTokenVerifier()
+        result = await verifier.verify_token("token-without-sub")
+
+        assert result is None
+
+    @pytest.mark.anyio
+    async def test_required_scopes_satisfied(self, httpx_mock: HTTPXMock):
+        """Token with required scopes passes the scope check."""
+        httpx_mock.add_response(
+            url=self.USERINFO_URL,
+            json={
+                "sub": "12345",
+                "email": "user@example.com",
+                "email_verified": True,
+            },
+        )
+
+        verifier = GoogleTokenVerifier(
+            required_scopes=["openid", "email"],
+        )
+        result = await verifier.verify_token("valid-token")
+
+        assert result is not None
+
+    @pytest.mark.anyio
+    async def test_required_scopes_not_satisfied_returns_none(
+        self, httpx_mock: HTTPXMock
+    ):
+        """Token without required scopes is rejected."""
+        # Response has no name/picture, so profile scope is not inferred
+        httpx_mock.add_response(
+            url=self.USERINFO_URL,
+            json={"sub": "12345"},
+        )
+
+        verifier = GoogleTokenVerifier(
+            required_scopes=["openid", "https://www.googleapis.com/auth/userinfo.email"],
+        )
+        result = await verifier.verify_token("token-missing-email-scope")
+
+        assert result is None
+
+    @pytest.mark.anyio
+    async def test_uses_bearer_header_not_query_param(self, httpx_mock: HTTPXMock):
+        """verify_token sends the token as a Bearer header, not a query parameter."""
+        httpx_mock.add_response(
+            url=self.USERINFO_URL,
+            json={"sub": "12345"},
+        )
+
+        verifier = GoogleTokenVerifier()
+        await verifier.verify_token("my-access-token")
+
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 1
+        req = requests[0]
+        assert req.headers["Authorization"] == "Bearer my-access-token"
+        assert "access_token" not in str(req.url)
+
+    @pytest.mark.anyio
+    async def test_calls_v3_userinfo_not_v1_tokeninfo(self, httpx_mock: HTTPXMock):
+        """verify_token calls the v3 userinfo endpoint, not the deprecated v1 tokeninfo."""
+        httpx_mock.add_response(
+            url=self.USERINFO_URL,
+            json={"sub": "12345"},
+        )
+
+        verifier = GoogleTokenVerifier()
+        await verifier.verify_token("valid-token")
+
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 1
+        assert "v3/userinfo" in str(requests[0].url)
+        assert "tokeninfo" not in str(requests[0].url)

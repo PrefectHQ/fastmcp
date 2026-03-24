@@ -22,7 +22,6 @@ Example:
 from __future__ import annotations
 
 import contextlib
-import time
 from typing import Literal
 
 import httpx
@@ -57,8 +56,9 @@ def _normalize_google_scope(scope: str) -> str:
 class GoogleTokenVerifier(TokenVerifier):
     """Token verifier for Google OAuth tokens.
 
-    Google OAuth tokens are opaque (not JWTs), so we verify them
-    by calling Google's tokeninfo API to check if they're valid and get user info.
+    Google OAuth tokens are opaque (not JWTs), so we verify them by calling
+    Google's userinfo endpoint (v3) with a Bearer header. This is more reliable
+    than the deprecated v1 tokeninfo endpoint and requires only one API call.
     """
 
     def __init__(
@@ -87,18 +87,27 @@ class GoogleTokenVerifier(TokenVerifier):
         self._http_client = http_client
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        """Verify Google OAuth token by calling Google's tokeninfo API."""
+        """Verify Google OAuth token using Google's userinfo API (v3).
+
+        Uses GET /oauth2/v3/userinfo with a Bearer header. This is the
+        recommended approach: it validates the token and returns user claims
+        in a single API call, unlike the deprecated v1 tokeninfo endpoint
+        which sometimes returns ``invalid_token`` for valid tokens.
+        """
         try:
             async with (
                 contextlib.nullcontext(self._http_client)
                 if self._http_client is not None
                 else httpx.AsyncClient(timeout=self.timeout_seconds)
             ) as client:
-                # Use Google's tokeninfo endpoint to validate the token
+                # Use Google's v3 userinfo endpoint with Bearer header.
+                # This validates the token and returns user claims in one call.
                 response = await client.get(
-                    "https://www.googleapis.com/oauth2/v1/tokeninfo",
-                    params={"access_token": token},
-                    headers={"User-Agent": "FastMCP-Google-OAuth"},
+                    "https://www.googleapis.com/oauth2/v3/userinfo",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "User-Agent": "FastMCP-Google-OAuth",
+                    },
                 )
 
                 if response.status_code != 200:
@@ -108,19 +117,34 @@ class GoogleTokenVerifier(TokenVerifier):
                     )
                     return None
 
-                token_info = response.json()
+                user_data = response.json()
 
-                # Check if token is expired
-                expires_in = token_info.get("expires_in")
-                if expires_in and int(expires_in) <= 0:
-                    logger.debug("Google token has expired")
+                # sub is required (unique Google user ID, present for any valid token)
+                sub = user_data.get("sub")
+                if not sub:
+                    logger.debug("Google token missing 'sub' claim")
                     return None
 
-                # Extract scopes from token info
-                scope_string = token_info.get("scope", "")
-                token_scopes = [
-                    scope.strip() for scope in scope_string.split(" ") if scope.strip()
-                ]
+                # Infer granted scopes from the fields present in the response.
+                # The v3 userinfo endpoint does not return scope strings directly,
+                # but the fields it returns reflect what the token was granted.
+                # Include both shorthand and full-URI forms so required_scopes
+                # checks work regardless of which form the caller normalised to.
+                token_scopes = ["openid"]
+                if user_data.get("email"):
+                    token_scopes.extend(
+                        [
+                            "email",
+                            "https://www.googleapis.com/auth/userinfo.email",
+                        ]
+                    )
+                if user_data.get("name") or user_data.get("picture"):
+                    token_scopes.extend(
+                        [
+                            "profile",
+                            "https://www.googleapis.com/auth/userinfo.profile",
+                        ]
+                    )
 
                 # Check required scopes
                 if self.required_scopes:
@@ -134,46 +158,23 @@ class GoogleTokenVerifier(TokenVerifier):
                         )
                         return None
 
-                # Get additional user info if we have the right scopes
-                user_data = {}
-                if "openid" in token_scopes or "profile" in token_scopes:
-                    try:
-                        userinfo_response = await client.get(
-                            "https://www.googleapis.com/oauth2/v2/userinfo",
-                            headers={
-                                "Authorization": f"Bearer {token}",
-                                "User-Agent": "FastMCP-Google-OAuth",
-                            },
-                        )
-                        if userinfo_response.status_code == 200:
-                            user_data = userinfo_response.json()
-                    except Exception as e:
-                        logger.debug("Failed to fetch Google user info: %s", e)
-
-                # Calculate expiration time
-                expires_at = None
-                if expires_in:
-                    expires_at = int(time.time() + int(expires_in))
-
-                # Create AccessToken with Google user info
+                # expires_at is not available from the userinfo endpoint.
+                # Expired tokens return HTTP 401, so the check above is sufficient.
                 access_token = AccessToken(
                     token=token,
-                    client_id=token_info.get(
-                        "audience", "unknown"
-                    ),  # Use audience as client_id
+                    client_id=sub,
                     scopes=token_scopes,
-                    expires_at=expires_at,
+                    expires_at=None,
                     claims={
-                        "sub": user_data.get("id")
-                        or token_info.get("user_id", "unknown"),
+                        "sub": sub,
                         "email": user_data.get("email"),
+                        "email_verified": user_data.get("email_verified"),
                         "name": user_data.get("name"),
                         "picture": user_data.get("picture"),
                         "given_name": user_data.get("given_name"),
                         "family_name": user_data.get("family_name"),
                         "locale": user_data.get("locale"),
                         "google_user_data": user_data,
-                        "google_token_info": token_info,
                     },
                 )
                 logger.debug("Google token verified successfully")
