@@ -253,7 +253,7 @@ def test_convert_list_tool_calls_with_image_raises():
 )
 def test_select_model_from_preferences(prefs: Any, expected: str) -> None:
     mock_client = MagicMock(spec=AsyncOpenAI)
-    handler = OpenAISamplingHandler(default_model="fallback-model", client=mock_client)  # type: ignore[arg-type]
+    handler = OpenAISamplingHandler(default_model="fallback-model", client=mock_client)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
     assert handler._select_model_from_preferences(prefs) == expected
 
 
@@ -282,7 +282,7 @@ async def test_handler_passes_max_completion_tokens():
         SamplingMessage(role="user", content=TextContent(type="text", text="hello"))
     ]
     params = CreateMessageRequestParams(messages=messages, maxTokens=300)
-    await handler(messages, params, context=None)  # type: ignore[arg-type]
+    await handler(messages, params, context=None)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     call_kwargs = mock_client.chat.completions.create.call_args
     assert "max_completion_tokens" in call_kwargs.kwargs
@@ -292,7 +292,7 @@ async def test_handler_passes_max_completion_tokens():
 
 async def test_chat_completion_to_create_message_result():
     mock_client = MagicMock(spec=AsyncOpenAI)
-    handler = OpenAISamplingHandler(default_model="fallback-model", client=mock_client)  # type: ignore[arg-type]
+    handler = OpenAISamplingHandler(default_model="fallback-model", client=mock_client)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
     mock_client.chat.completions.create.return_value = ChatCompletion(
         id="123",
         created=123,

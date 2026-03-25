@@ -213,7 +213,7 @@ class FastMCPComponent(FastMCPBaseModel):
             f"Use server.disable(keys=['{self.key}']) instead."
         )
 
-    def copy(self) -> Self:  # type: ignore[override]
+    def copy(self) -> Self:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """Create a copy of the component."""
         return self.model_copy()
 

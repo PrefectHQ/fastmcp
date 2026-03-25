@@ -174,6 +174,7 @@ class WorkOSProvider(OAuthProxy):
         require_authorization_consent: bool | Literal["external"] = True,
         consent_csp_policy: str | None = None,
         http_client: httpx.AsyncClient | None = None,
+        enable_cimd: bool = True,
     ):
         """Initialize WorkOS OAuth provider.
 
@@ -204,6 +205,8 @@ class WorkOSProvider(OAuthProxy):
             http_client: Optional httpx.AsyncClient for connection pooling in token verification.
                 When provided, the client is reused across verify_token calls and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
+            enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
+                client IDs (default True). Set to False to disable.
         """
         # Apply defaults and ensure authkit_domain is a full URL
         authkit_domain_str = authkit_domain
@@ -237,6 +240,7 @@ class WorkOSProvider(OAuthProxy):
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
             consent_csp_policy=consent_csp_policy,
+            enable_cimd=enable_cimd,
         )
 
         logger.debug(

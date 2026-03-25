@@ -464,7 +464,7 @@ def prompt(
                 DeprecationWarning,
                 stacklevel=4,
             )
-            return create_prompt(fn, prompt_name)  # type: ignore[return-value]
+            return create_prompt(fn, prompt_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn, prompt_name)
 
     if inspect.isroutine(name_or_fn):

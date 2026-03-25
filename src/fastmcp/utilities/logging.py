@@ -98,7 +98,7 @@ def configure_logging(
     # Override defaults with user-provided values
     traceback_kwargs.update(rich_kwargs)
 
-    traceback_handler = RichHandler(**traceback_kwargs)  # type: ignore[arg-type]
+    traceback_handler = RichHandler(**traceback_kwargs)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
     traceback_handler.setFormatter(formatter)
 
     traceback_handler.addFilter(lambda record: record.exc_info is not None)

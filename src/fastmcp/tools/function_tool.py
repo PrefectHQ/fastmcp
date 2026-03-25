@@ -456,7 +456,7 @@ def tool(
                 DeprecationWarning,
                 stacklevel=4,
             )
-            return create_tool(fn, tool_name)  # type: ignore[return-value]
+            return create_tool(fn, tool_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn, tool_name)
 
     if inspect.isroutine(name_or_fn):

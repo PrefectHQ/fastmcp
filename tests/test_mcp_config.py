@@ -341,7 +341,7 @@ async def test_multi_client_parallel_calls(tmp_path: Path):
         exceptions = [result for result in results if isinstance(result, Exception)]
         assert len(exceptions) == 0
         assert len(results) == 40
-        assert all(len(result) == 2 for result in results)  # type: ignore[arg-type]
+        assert all(len(result) == 2 for result in results)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
 
 async def _wait_for_process_exit(pid: int, timeout: float = 3.0) -> None:
@@ -682,7 +682,7 @@ async def test_canonical_multi_client_with_transforms(tmp_path: Path):
                 "command": "python",
                 "args": [str(script_path)],
             },
-        }  # type: ignore[reportUnknownArgumentType]
+        }  # type: ignore[reportUnknownArgumentType]  # ty:ignore[invalid-argument-type]
     )
 
     client = Client(config)

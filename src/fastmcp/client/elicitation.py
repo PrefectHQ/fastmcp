@@ -66,7 +66,7 @@ def create_elicitation_callback(
                     f"{result.content!r}"
                 )
             return MCPElicitResult(
-                _meta=result.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+                _meta=result.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
                 action=result.action,
                 content=content,
             )

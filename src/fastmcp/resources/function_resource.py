@@ -338,7 +338,7 @@ def resource(
                 DeprecationWarning,
                 stacklevel=3,
             )
-            return create_resource(fn)  # type: ignore[return-value]
+            return create_resource(fn)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn)
 
     return decorator

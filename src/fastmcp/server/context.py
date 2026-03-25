@@ -432,7 +432,7 @@ class Context:
             delta = current - last
             if delta > 0:
                 await execution.progress.increment(delta)
-            execution._fastmcp_last_progress = current  # type: ignore[attr-defined]
+            execution._fastmcp_last_progress = current  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
             if message is not None:
                 await execution.progress.set_message(message)
@@ -679,7 +679,7 @@ class Context:
             session_id = str(uuid4())
 
         # Cache on session for consistency
-        session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]
+        session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         return session_id
 
     @property
@@ -1181,7 +1181,7 @@ class Context:
         from fastmcp.server.tasks.elicitation import elicit_for_task
 
         return await elicit_for_task(
-            task_id=self._task_id,  # type: ignore[arg-type]
+            task_id=self._task_id,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             session=self._session,
             message=message,
             schema=schema,

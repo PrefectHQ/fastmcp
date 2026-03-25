@@ -194,8 +194,10 @@
                   "apps/overview",
                   "apps/prefab",
                   "apps/interactive-apps",
+                  "apps/components",
                   "apps/patterns",
                   "apps/development",
+                  "apps/architecture",
                   "apps/low-level"
                 ]
               },
@@ -365,6 +367,7 @@
                   "python-sdk/fastmcp-mcp_config",
                   "python-sdk/fastmcp-settings",
                   "python-sdk/fastmcp-telemetry",
+                  "python-sdk/fastmcp-types",
                   {
                     "group": "fastmcp.cli",
                     "pages": [

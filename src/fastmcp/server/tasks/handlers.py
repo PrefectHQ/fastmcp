@@ -163,9 +163,9 @@ async def submit_to_docket(
     # `task_key` is the task result key (e.g., "fastmcp:task:{session}:{task_id}:tool:child_multiply")
     # Resources don't take arguments; tools/prompts/templates always pass arguments (even if None/empty)
     if task_type == "resource":
-        await component.add_to_docket(docket, fn_key=key, task_key=task_key)  # type: ignore[call-arg]
+        await component.add_to_docket(docket, fn_key=key, task_key=task_key)  # type: ignore[call-arg]  # ty:ignore[missing-argument]
     else:
-        await component.add_to_docket(docket, arguments, fn_key=key, task_key=task_key)  # type: ignore[call-arg]
+        await component.add_to_docket(docket, arguments, fn_key=key, task_key=task_key)  # type: ignore[call-arg]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
 
     # Spawn subscription task to send status notifications (SEP-1686 optional feature)
     from fastmcp.server.tasks.subscriptions import subscribe_to_task_updates
@@ -174,7 +174,7 @@ async def submit_to_docket(
     if hasattr(ctx.session, "_subscription_task_group"):
         tg = ctx.session._subscription_task_group
         if tg:
-            tg.start_soon(  # type: ignore[union-attr]
+            tg.start_soon(  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
                 subscribe_to_task_updates,
                 server_task_id,
                 task_key,
@@ -206,7 +206,7 @@ async def submit_to_docket(
                 await stop_subscriber(session_id)
 
             ctx.session._exit_stack.push_async_callback(_cleanup_subscriber)
-            ctx.session._notification_cleanup_registered = True  # type: ignore[attr-defined]
+            ctx.session._notification_cleanup_registered = True  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     except Exception as e:
         # Non-fatal: elicitation will still work via polling fallback
         logger.debug("Failed to start notification subscriber: %s", e)

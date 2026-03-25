@@ -115,7 +115,7 @@ class BM25SearchTransform(BaseSearchTransform):
 
         async def search_tools(
             query: Annotated[str, "Natural language query to search for tools"],
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str | list[dict[str, Any]]:
             """Search for tools using natural language.
 

@@ -270,7 +270,7 @@ class TestConfigValidation:
     def test_missing_source_rejected(self):
         """Test that config without source is rejected."""
         with pytest.raises(ValueError):
-            MCPServerConfig()  # type: ignore[call-arg]
+            MCPServerConfig()  # type: ignore[call-arg]  # ty:ignore[no-matching-overload]
 
     def test_valid_transport_values(self):
         """Test that all valid transport values are accepted."""
