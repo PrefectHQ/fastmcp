@@ -14,6 +14,7 @@ import httpx
 from key_value.aio.protocols import AsyncKeyValue
 
 from fastmcp.dependencies import Dependency
+from fastmcp.server.auth.auth import MultiAuth
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.auth import decode_jwt_payload, parse_scopes
@@ -665,8 +666,6 @@ def _find_azure_provider(auth: AuthProvider | None) -> AzureProvider | None:
     """Extract an AzureProvider from an auth provider, unwrapping MultiAuth if needed."""
     if isinstance(auth, AzureProvider):
         return auth
-
-    from fastmcp.server.auth.auth import MultiAuth
 
     if isinstance(auth, MultiAuth) and isinstance(auth.server, AzureProvider):
         return auth.server
