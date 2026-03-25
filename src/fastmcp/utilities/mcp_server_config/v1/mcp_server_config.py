@@ -192,7 +192,7 @@ class MCPServerConfig(BaseModel):
         """
         if isinstance(v, dict):
             return FileSystemSource(**v)
-        return v  # type: ignore[return-value]
+        return v  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -217,7 +217,7 @@ class MCPServerConfig(BaseModel):
         """
         if isinstance(v, dict):
             return Deployment(**v)
-        return cast(Deployment, v)  # type: ignore[return-value]
+        return cast(Deployment, v)  # type: ignore[return-value]  # ty:ignore[redundant-cast]
 
     @classmethod
     def from_file(cls, file_path: Path) -> MCPServerConfig:

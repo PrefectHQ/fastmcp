@@ -50,7 +50,7 @@ class TestVersionCommand:
         """Test that the version command parses arguments correctly."""
         command, bound, _ = app.parse_args(["version"])
         assert callable(command)
-        assert command.__name__ == "version"  # type: ignore[attr-defined]
+        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         # Default arguments aren't included in bound.arguments
         assert bound.arguments == {}
 
@@ -58,7 +58,7 @@ class TestVersionCommand:
         """Test that the version command parses --copy flag correctly."""
         command, bound, _ = app.parse_args(["version", "--copy"])
         assert callable(command)
-        assert command.__name__ == "version"  # type: ignore[attr-defined]
+        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         assert bound.arguments == {"copy": True}
 
     @patch("fastmcp.cli.cli.pyperclip.copy")

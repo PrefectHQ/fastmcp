@@ -112,7 +112,7 @@ class TestSupabaseProvider:
             SupabaseProvider(
                 project_url="https://abc123.supabase.co",
                 base_url="https://myserver.com",
-                algorithm="HS256",  # type: ignore[arg-type]
+                algorithm="HS256",  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             )
 
     def test_algorithm_default_es256(self):

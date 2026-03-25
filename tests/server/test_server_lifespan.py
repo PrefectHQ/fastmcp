@@ -335,7 +335,7 @@ class TestComposableLifespans:
 
         # Composing with non-Lifespan should raise TypeError with helpful message
         with pytest.raises(TypeError) as exc_info:
-            my_lifespan | regular_lifespan  # type: ignore[operator]
+            my_lifespan | regular_lifespan  # type: ignore[operator]  # ty:ignore[unsupported-operator]
 
         assert "ContextManagerLifespan" in str(exc_info.value)
 

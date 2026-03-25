@@ -921,13 +921,13 @@ def _model_from_schema(tool_name: str, input_schema: dict[str, Any]) -> type[Any
             default = prop["default"]
         else:
             default = None
-            py_type = py_type | None  # type: ignore[assignment]
+            py_type = py_type | None  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
 
         extra: dict[str, Any] = {}
         if prop.get("enum"):
             from typing import Literal
 
-            py_type = Literal[tuple(prop["enum"])]  # type: ignore[assignment]
+            py_type = Literal[tuple(prop["enum"])]  # type: ignore[assignment]  # ty:ignore[invalid-type-form]
 
         # Textarea detection:
         # 1. Explicit format: "textarea" in JSON schema
@@ -1025,7 +1025,7 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
                     "__json_args__": Rx("__json_args__"),
                 }
 
-                on_error = ShowToast(Rx("$error"), variant="error")  # type: ignore[arg-type]
+                on_error = ShowToast(Rx("$error"), variant="error")  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
                 input_mode = f"_mode_{name}"
                 _desc_max_lines = 10
@@ -1662,7 +1662,7 @@ async def run_dev_apps(
         server = uvicorn.Server(config)
         # Suppress uvicorn's own signal handlers — they use signal.signal() which
         # conflicts with asyncio and causes hangs.  We cancel the task instead.
-        server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
+        server.install_signal_handlers = lambda: None  # type: ignore[method-assign]  # ty:ignore[unresolved-attribute]
 
         async def _open_browser() -> None:
             await asyncio.sleep(0.8)

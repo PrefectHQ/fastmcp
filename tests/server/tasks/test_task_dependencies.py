@@ -67,7 +67,7 @@ async def dependency_server():
         return f"Resource via Docket: {docket is not None}"
 
     # Expose for test assertions
-    mcp._injected_values = injected_values  # type: ignore[attr-defined]
+    mcp._injected_values = injected_values  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
     return mcp
 

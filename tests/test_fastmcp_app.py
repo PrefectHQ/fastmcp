@@ -297,7 +297,7 @@ class TestResolveToolRef:
         def my_tool():
             pass
 
-        my_tool.__fastmcp__ = ToolMeta(name="custom_name")  # type: ignore[attr-defined]
+        my_tool.__fastmcp__ = ToolMeta(name="custom_name")  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
         result = _resolve_tool_ref(my_tool)
         assert isinstance(result, ResolvedTool)
@@ -459,7 +459,7 @@ class TestCallToolAppRouting:
         server.add_provider(app)
 
         result = await server.call_tool("save", {"name": "alice"}, app_name="contacts")
-        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_call_tool_without_app_name_model_visible(self):
         """Regular name-based resolution works for model-visible tools."""
@@ -473,7 +473,7 @@ class TestCallToolAppRouting:
         server.add_provider(app)
 
         result = await server.call_tool("save", {"name": "bob"})
-        assert result.content[0].text == "saved bob"  # type: ignore[union-attr]
+        assert result.content[0].text == "saved bob"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_app_name_survives_namespace(self):
         """app_name routing bypasses namespace transforms."""
@@ -489,7 +489,7 @@ class TestCallToolAppRouting:
         result = await server.call_tool(
             "save_contact", {"name": "alice"}, app_name="crm"
         )
-        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_namespaced_name_also_works(self):
         """Namespaced tool name works through normal resolution."""
@@ -503,7 +503,7 @@ class TestCallToolAppRouting:
         server.add_provider(app, namespace="crm")
 
         result = await server.call_tool("crm_save_contact", {"name": "bob"})
-        assert result.content[0].text == "saved bob"  # type: ignore[union-attr]
+        assert result.content[0].text == "saved bob"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_app_name_auth_blocks_unauthorized(self):
         """Auth checks run even when routing via app_name."""
@@ -547,8 +547,8 @@ class TestCallToolAppRouting:
         r1 = await server.call_tool("save", {"name": "alice"}, app_name="contacts")
         r2 = await server.call_tool("save", {"amount": "100"}, app_name="billing")
 
-        assert r1.content[0].text == "contact: alice"  # type: ignore[union-attr]
-        assert r2.content[0].text == "invoice: 100"  # type: ignore[union-attr]
+        assert r1.content[0].text == "contact: alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert r2.content[0].text == "invoice: 100"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_deeply_nested_app(self):
         """App tool is found even through multiple levels of nesting."""
@@ -567,7 +567,7 @@ class TestCallToolAppRouting:
         # Normal resolution: would need "inner_app_hidden"
         # App routing: bypasses all transforms
         result = await outer.call_tool("hidden", {"x": "found"}, app_name="deep")
-        assert result.content[0].text == "found"  # type: ignore[union-attr]
+        assert result.content[0].text == "found"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
 
 # ---------------------------------------------------------------------------
@@ -639,7 +639,7 @@ class TestAppOnlyToolFiltering:
 
         # But still callable via app_name routing
         result = await server.call_tool("save", {"name": "alice"}, app_name="contacts")
-        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_app_only_tool_hidden_from_get_tool(self):
         """server.get_tool() returns None for app-only tools."""
@@ -794,8 +794,8 @@ class TestComposition:
             "create_invoice", {"amount": 100}, app_name="Billing"
         )
 
-        assert r1.content[0].text == "alice"  # type: ignore[union-attr]
-        assert r2.content[0].text == "100"  # type: ignore[union-attr]
+        assert r1.content[0].text == "alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert r2.content[0].text == "100"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_ui_and_tool_on_same_app(self):
         app = FastMCPApp("test")
@@ -870,6 +870,6 @@ class TestAppIntegration:
             {"name": "Alice", "email": "alice@example.com"},
             app_name="contacts",
         )
-        result_text = backend_result.content[0].text  # type: ignore[union-attr]
+        result_text = backend_result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
         assert "Alice" in result_text
         assert "alice@example.com" in result_text

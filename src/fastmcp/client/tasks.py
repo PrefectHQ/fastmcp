@@ -138,7 +138,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
                 result = callback(status)
                 if inspect.isawaitable(result):
                     # Fire and forget async callbacks
-                    asyncio.create_task(result)  # type: ignore[arg-type] # noqa: RUF006
+                    asyncio.create_task(result)  # type: ignore[arg-type] # noqa: RUF006  # ty:ignore[invalid-argument-type]
             except Exception as e:
                 logger.warning(f"Task callback error: {e}", exc_info=True)
 
@@ -379,7 +379,7 @@ class ToolTask(Task["CallToolResult"]):
                     mcp_result = mcp.types.CallToolResult(
                         content=raw_result.content,
                         structuredContent=raw_result.structured_content,
-                        _meta=raw_result.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+                        _meta=raw_result.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
                     )
                     result = await self._client._parse_call_tool_result(
                         self._tool_name, mcp_result, raise_on_error=True

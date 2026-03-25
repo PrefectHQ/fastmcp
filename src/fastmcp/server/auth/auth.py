@@ -324,10 +324,10 @@ class AuthProvider(TokenVerifierProtocol):
         # TODO(ty): remove type ignores when ty supports Starlette Middleware typing
         return [
             Middleware(
-                AuthenticationMiddleware,  # type: ignore[arg-type]
+                AuthenticationMiddleware,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                 backend=BearerAuthBackend(self),
             ),
-            Middleware(AuthContextMiddleware),  # type: ignore[arg-type]
+            Middleware(AuthContextMiddleware),  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
         ]
 
     def _get_resource_url(self, path: str | None = None) -> AnyHttpUrl | None:

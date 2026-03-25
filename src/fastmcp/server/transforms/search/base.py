@@ -229,7 +229,7 @@ class BaseSearchTransform(CatalogTransform):
             arguments: Annotated[
                 dict[str, Any] | None, "Arguments to pass to the tool"
             ] = None,
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> ToolResult:
             """Call a tool by name with the given arguments.
 

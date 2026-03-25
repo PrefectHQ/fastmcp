@@ -172,19 +172,19 @@ class TestFastMCPComponent:
         """Test that tags are deduplicated when passed as a sequence."""
         component = FastMCPComponent(
             name="test",
-            tags=["tag1", "tag2", "tag1", "tag2"],  # type: ignore[arg-type]
+            tags=["tag1", "tag2", "tag1", "tag2"],  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
         )
         assert component.tags == {"tag1", "tag2"}
 
     def test_validation_error_for_invalid_data(self):
         """Test that validation errors are raised for invalid data."""
         with pytest.raises(ValidationError):
-            FastMCPComponent()  # type: ignore[call-arg]
+            FastMCPComponent()  # type: ignore[call-arg]  # ty:ignore[missing-argument]
 
     def test_extra_fields_forbidden(self):
         """Test that extra fields are not allowed."""
         with pytest.raises(ValidationError) as exc_info:
-            FastMCPComponent(name="test", unknown_field="value")  # type: ignore[call-arg]  # Intentionally passing invalid field for test
+            FastMCPComponent(name="test", unknown_field="value")  # type: ignore[call-arg]  # Intentionally passing invalid field for test  # ty:ignore[unknown-argument]
         assert "Extra inputs are not permitted" in str(exc_info.value)
 
 

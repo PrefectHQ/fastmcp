@@ -304,7 +304,7 @@ class TestMountedTaskDependencies:
         received_docket = []
 
         @child.tool(task=True)
-        async def tool_with_docket(docket: CurrentDocket = CurrentDocket()) -> str:  # type: ignore[invalid-type-form]
+        async def tool_with_docket(docket: CurrentDocket = CurrentDocket()) -> str:  # type: ignore[invalid-type-form]  # ty:ignore[invalid-type-form]
             received_docket.append(docket)
             return f"docket available: {docket is not None}"
 
@@ -325,7 +325,7 @@ class TestMountedTaskDependencies:
         received_server = []
 
         @child.tool(task=True)
-        async def tool_with_server(server: CurrentFastMCP = CurrentFastMCP()) -> str:  # type: ignore[invalid-type-form]
+        async def tool_with_server(server: CurrentFastMCP = CurrentFastMCP()) -> str:  # type: ignore[invalid-type-form]  # ty:ignore[invalid-type-form]
             received_server.append(server)
             return f"server name: {server.name}"
 

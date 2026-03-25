@@ -216,7 +216,7 @@ def _lifespan_proxy(
         low_level_server: LowLevelServer[LifespanResultT],
     ) -> AsyncIterator[LifespanResultT]:
         if fastmcp_server._lifespan is default_lifespan:
-            yield {}
+            yield {}  # ty:ignore[invalid-yield]
             return
 
         if not fastmcp_server._lifespan_result_set:
@@ -225,7 +225,7 @@ def _lifespan_proxy(
                 + " Are you running the server in a way that supports lifespans? If so, please file an issue at https://github.com/PrefectHQ/fastmcp/issues."
             )
 
-        yield fastmcp_server._lifespan_result
+        yield fastmcp_server._lifespan_result  # ty:ignore[invalid-yield]
 
     return wrap
 

@@ -332,7 +332,7 @@ async def handle_task_input(
         await redis.lpush(  # type: ignore[invalid-await]  # redis-py union type (sync/async)
             docket.key(response_key),
             json.dumps(response),
-        )
+        )  # ty:ignore[invalid-await]
         # Set TTL on the response list (in case BLPOP doesn't consume it)
         await redis.expire(docket.key(response_key), ELICIT_TTL_SECONDS)
 
