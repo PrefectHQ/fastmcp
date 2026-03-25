@@ -625,7 +625,7 @@ You might expect sticky sessions (session affinity) to solve this, but they don'
 
 For horizontally scaled deployments, enable stateless HTTP mode. In stateless mode, each request creates a fresh transport context, eliminating the need for session affinity entirely.
 
-**Option 1: Via constructor**
+**Option 1: Via `http_app()`**
 
 ```python
 from fastmcp import FastMCP
