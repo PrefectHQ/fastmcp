@@ -1,9 +1,19 @@
-"""Backward-compatible re-exports from fastmcp.apps.config."""
+"""Backward-compatible re-exports from fastmcp.apps.
 
-from fastmcp.apps.config import UI_EXTENSION_ID as UI_EXTENSION_ID
-from fastmcp.apps.config import UI_MIME_TYPE as UI_MIME_TYPE
-from fastmcp.apps.config import AppConfig as AppConfig
-from fastmcp.apps.config import ResourceCSP as ResourceCSP
-from fastmcp.apps.config import ResourcePermissions as ResourcePermissions
-from fastmcp.apps.config import app_config_to_meta_dict as app_config_to_meta_dict
-from fastmcp.apps.config import resolve_ui_mime_type as resolve_ui_mime_type
+.. deprecated:: 3.2.0
+    Import from ``fastmcp.apps`` instead.
+"""
+
+import warnings
+
+
+def __getattr__(name: str) -> object:
+    warnings.warn(
+        f"Importing {name!r} from 'fastmcp.server.apps' is deprecated. "
+        "Use 'from fastmcp.apps import ...' instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    from fastmcp.apps import config as _config
+
+    return getattr(_config, name)
