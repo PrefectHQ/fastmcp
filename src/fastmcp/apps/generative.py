@@ -309,38 +309,36 @@ The code runs in a Pyodide WASM sandbox with full Python support.
 You must import everything you use. Use the `components` tool to
 look up available components and their correct import paths.
 
-Key patterns:
-
-1. Build trees with context managers. Assign the root with `as`:
+IMPORTANT: Always use PrefabApp as the outermost context manager.
+This enables streaming — the UI renders progressively as you write code.
 
 ```python
 from prefab_ui.components import Column, Heading, Text, Row, Badge
 from prefab_ui.app import PrefabApp
 
-with Column(gap=4) as view:
-    Heading("Dashboard")
-    with Row(gap=2):
-        Text("Revenue: $1.2M")
-        Badge("On Track", variant="success")
-
-app = PrefabApp(view=view)
+with PrefabApp() as app:
+    with Column(gap=4, css_class="p-6"):
+        Heading("Dashboard")
+        with Row(gap=2):
+            Text("Revenue: $1.2M")
+            Badge("On Track", variant="success")
 ```
 
-2. For interactive UIs, use stateful components and .rx for
-   reactive bindings:
+For interactive UIs, use stateful components and .rx for reactive bindings:
 
 ```python
 from prefab_ui.components import Column, Slider, Text
-from prefab_ui.app import PrefabApp
+from prefab_ui.app import PrefabApp, set_initial_state
 
-with Column(gap=4) as view:
-    slider = Slider(value=50, min=0, max=100, name="threshold")
-    Text(f"Threshold: {slider.rx}%")
+state = set_initial_state(threshold=50)
 
-app = PrefabApp(view=view, state={"threshold": 50})
+with PrefabApp() as app:
+    with Column(gap=4, css_class="p-6"):
+        slider = Slider(value=50, min=0, max=100, name="threshold")
+        Text(f"Threshold: {slider.rx}%")
 ```
 
-3. Charts are in prefab_ui.components.charts:
+Charts are in prefab_ui.components.charts:
 
 ```python
 from prefab_ui.components.charts import BarChart, ChartSeries
@@ -352,7 +350,7 @@ BarChart(
 )
 ```
 
-4. Data values passed via the `data` parameter are available as
-   global variables in your code. Use Python freely — loops,
-   f-strings, computation, list comprehensions all work.
+Data values passed via the `data` parameter are available as global
+variables in your code. Use Python freely — loops, f-strings,
+computation, list comprehensions all work.
 """
