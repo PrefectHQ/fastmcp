@@ -133,7 +133,7 @@ class CachablePromptResult(FastMCPBaseModel):
     def unwrap(self) -> PromptResult:
         return PromptResult(
             messages=[
-                Message(content=m.content, role=m.role)  # type: ignore[arg-type]
+                Message(content=m.content, role=m.role)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                 for m in self.messages
             ],
             description=self.description,

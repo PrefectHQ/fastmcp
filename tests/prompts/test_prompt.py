@@ -550,12 +550,12 @@ class TestPromptResult:
     def test_promptresult_rejects_single_message(self):
         """Test PromptResult rejects single Message (must be in list)."""
         with pytest.raises(TypeError, match="must be str or list"):
-            PromptResult(Message("Hello"))  # type: ignore[arg-type]
+            PromptResult(Message("Hello"))  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     def test_promptresult_rejects_dict(self):
         """Test PromptResult rejects dict."""
         with pytest.raises(TypeError, match="must be str or list"):
-            PromptResult({"key": "value"})  # type: ignore[arg-type]
+            PromptResult({"key": "value"})  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     def test_promptresult_with_meta(self):
         """Test PromptResult with meta field."""

@@ -65,7 +65,7 @@ async def gather(
     Returns:
         List of results in the same order as input awaitables.
     """
-    results: list[T | BaseException] = [None] * len(awaitables)  # type: ignore[assignment]
+    results: list[T | BaseException] = [None] * len(awaitables)  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
 
     async def run_at(i: int, aw: Awaitable[T]) -> None:
         try:

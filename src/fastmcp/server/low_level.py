@@ -24,7 +24,7 @@ from mcp.shared.message import SessionMessage
 from mcp.shared.session import RequestResponder
 from pydantic import AnyUrl
 
-from fastmcp.server.apps import UI_EXTENSION_ID
+from fastmcp.apps.config import UI_EXTENSION_ID
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -40,7 +40,7 @@ class MiddlewareServerSession(ServerSession):
         super().__init__(*args, **kwargs)
         self._fastmcp_ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)
         # Task group for subscription tasks (set during session run)
-        self._subscription_task_group: anyio.TaskGroup | None = None  # type: ignore[valid-type]
+        self._subscription_task_group: anyio.TaskGroup | None = None  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
         # Minimum logging level requested by the client via logging/setLevel
         self._minimum_logging_level: LoggingLevel | None = None
 
@@ -105,7 +105,7 @@ class MiddlewareServerSession(ServerSession):
                 captured_response = response
                 return await original_respond(response)
 
-            responder.respond = capturing_respond  # type: ignore[method-assign]
+            responder.respond = capturing_respond  # type: ignore[method-assign]  # ty:ignore[invalid-assignment]
 
             async def call_original_handler(
                 ctx: MiddlewareContext,

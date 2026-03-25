@@ -65,7 +65,7 @@ class TestCIMDDocument:
             CIMDDocument(
                 client_id=AnyHttpUrl("https://example.com/client.json"),
                 redirect_uris=["http://localhost:3000/callback"],
-                token_endpoint_auth_method="client_secret_basic",  # type: ignore[arg-type] - testing invalid value
+                token_endpoint_auth_method="client_secret_basic",  # type: ignore[arg-type] - testing invalid value  # ty:ignore[invalid-argument-type]
             )
         # Literal type rejects invalid values before custom validator
         assert "token_endpoint_auth_method" in str(exc_info.value)
@@ -76,7 +76,7 @@ class TestCIMDDocument:
             CIMDDocument(
                 client_id=AnyHttpUrl("https://example.com/client.json"),
                 redirect_uris=["http://localhost:3000/callback"],
-                token_endpoint_auth_method="client_secret_post",  # type: ignore[arg-type] - testing invalid value
+                token_endpoint_auth_method="client_secret_post",  # type: ignore[arg-type] - testing invalid value  # ty:ignore[invalid-argument-type]
             )
         assert "token_endpoint_auth_method" in str(exc_info.value)
 
@@ -86,7 +86,7 @@ class TestCIMDDocument:
             CIMDDocument(
                 client_id=AnyHttpUrl("https://example.com/client.json"),
                 redirect_uris=["http://localhost:3000/callback"],
-                token_endpoint_auth_method="client_secret_jwt",  # type: ignore[arg-type] - testing invalid value
+                token_endpoint_auth_method="client_secret_jwt",  # type: ignore[arg-type] - testing invalid value  # ty:ignore[invalid-argument-type]
             )
         assert "token_endpoint_auth_method" in str(exc_info.value)
 

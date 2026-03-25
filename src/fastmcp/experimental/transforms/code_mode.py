@@ -228,7 +228,7 @@ class Search:
                 int | None,
                 "Maximum number of results to return",
             ] = default_limit,
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str:
             """Search for available tools by query.
 
@@ -291,7 +291,7 @@ class GetSchemas:
                 ToolDetailLevel,
                 "'brief' for names and descriptions, 'detailed' for parameter schemas as markdown, 'full' for complete JSON schemas",
             ] = default_detail,
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str:
             """Get parameter schemas for specific tools.
 
@@ -349,7 +349,7 @@ class GetTags:
                 Literal["brief", "full"],
                 "Level of detail: 'brief' for tag names and counts, 'full' for tools listed under each tag",
             ] = default_detail,
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str:
             """List available tool tags.
 
@@ -414,7 +414,7 @@ class ListTools:
                 ToolDetailLevel,
                 "'brief' for names and descriptions, 'detailed' for parameter schemas as markdown, 'full' for complete JSON schemas",
             ] = default_detail,
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str:
             """List all available tools.
 
@@ -537,7 +537,7 @@ class CodeMode(CatalogTransform):
                     )
                 ),
             ],
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> Any:
             """Execute tool calls using Python code."""
 

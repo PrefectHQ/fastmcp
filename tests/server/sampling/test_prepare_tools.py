@@ -103,7 +103,7 @@ class TestPrepareTools:
         """Test that invalid types raise TypeError."""
 
         with pytest.raises(TypeError, match="Expected SamplingTool, FunctionTool"):
-            prepare_tools(["not a tool"])  # type: ignore[arg-type]
+            prepare_tools(["not a tool"])  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     def test_prepare_tools_empty_list(self):
         """Test that empty list returns None."""

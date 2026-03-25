@@ -362,7 +362,7 @@ async def test_code_mode_custom_discovery_tool_function() -> None:
 
     def list_all(get_catalog: GetToolCatalog) -> Tool:
         async def list_tools(
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str:
             """List all available tools."""
             tools = await get_catalog(ctx)

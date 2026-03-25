@@ -16,7 +16,6 @@ from pydantic.json_schema import SkipJsonSchema
 import fastmcp
 from fastmcp.decorators import resolve_task_config
 from fastmcp.resources.base import Resource, ResourceResult
-from fastmcp.server.apps import resolve_ui_mime_type
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (
     transform_context_annotations,
@@ -27,6 +26,7 @@ from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.mime import resolve_ui_mime_type
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -338,7 +338,7 @@ def resource(
                 DeprecationWarning,
                 stacklevel=3,
             )
-            return create_resource(fn)  # type: ignore[return-value]
+            return create_resource(fn)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn)
 
     return decorator

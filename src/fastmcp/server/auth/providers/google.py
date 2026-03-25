@@ -247,6 +247,7 @@ class GoogleProvider(OAuthProxy):
         consent_csp_policy: str | None = None,
         extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx.AsyncClient | None = None,
+        enable_cimd: bool = True,
     ):
         """Initialize Google OAuth provider.
 
@@ -291,6 +292,8 @@ class GoogleProvider(OAuthProxy):
             http_client: Optional httpx.AsyncClient for connection pooling in token verification.
                 When provided, the client is reused across verify_token calls and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
+            enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
+                client IDs (default True). Set to False to disable.
         """
         # Parse scopes if provided as string
         # Google requires at least one scope - openid is the minimal OIDC scope
@@ -346,6 +349,7 @@ class GoogleProvider(OAuthProxy):
             consent_csp_policy=consent_csp_policy,
             extra_authorize_params=extra_authorize_params_final,
             valid_scopes=valid_scopes_final,
+            enable_cimd=enable_cimd,
         )
 
         logger.debug(

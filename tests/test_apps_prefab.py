@@ -14,8 +14,8 @@ from prefab_ui.components import Column, Heading, Text
 from prefab_ui.components.base import Component
 
 from fastmcp import Client, FastMCP
+from fastmcp.apps import UI_MIME_TYPE, AppConfig
 from fastmcp.resources.types import TextResource
-from fastmcp.server.apps import UI_MIME_TYPE, AppConfig
 from fastmcp.server.providers.local_provider.decorators.tools import (
     PREFAB_RENDERER_URI,
 )

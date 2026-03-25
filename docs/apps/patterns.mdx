@@ -159,7 +159,7 @@ def employee_directory() -> PrefabApp:
                 DataTableColumn(key="location", header="Office", sortable=True),
             ],
             rows=employees,
-            searchable=True,
+            search=True,
             paginated=True,
             page_size=15,
         )

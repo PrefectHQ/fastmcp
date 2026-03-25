@@ -227,7 +227,7 @@ def create_function_without_params(
     new_func.__module__ = fn.__module__
     new_func.__qualname__ = getattr(fn, "__qualname__", fn.__name__)  # ty: ignore[unresolved-attribute]
     new_func.__annotations__ = new_annotations
-    new_func.__signature__ = new_sig  # type: ignore[attr-defined]
+    new_func.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
     if inspect.ismethod(fn):
         return types.MethodType(new_func, fn.__self__)

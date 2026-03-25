@@ -190,7 +190,7 @@ class PromptResult(pydantic.BaseModel):
         return GetPromptResult(
             description=self.description,
             messages=mcp_messages,
-            _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+            _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
         )
 
 
@@ -228,7 +228,7 @@ class Prompt(FastMCPComponent):
             icons=overrides.get("icons", self.icons),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta()
-            ),
+            ),  # ty:ignore[unknown-argument]
         )
 
     @classmethod
@@ -385,7 +385,7 @@ class Prompt(FastMCPComponent):
         fn_key: str | None = None,
         task_key: str | None = None,
         **kwargs: Any,
-    ) -> Execution:
+    ) -> Execution:  # ty:ignore[invalid-method-override]
         """Schedule this prompt for background execution via docket.
 
         Args:

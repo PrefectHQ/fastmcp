@@ -129,7 +129,7 @@ class ToolResult(BaseModel):
             return CallToolResult(
                 structuredContent=self.structured_content,
                 content=self.content,
-                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
             )
         if self.structured_content is None:
             return self.content
@@ -201,7 +201,7 @@ class Tool(FastMCPComponent):
             execution=overrides.get("execution", self.execution),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta()
-            ),
+            ),  # ty:ignore[unknown-argument]
         )
 
     @classmethod
@@ -376,7 +376,7 @@ class Tool(FastMCPComponent):
         fn_key: str | None = None,
         task_key: str | None = None,
         **kwargs: Any,
-    ) -> Execution:
+    ) -> Execution:  # ty:ignore[invalid-method-override]
         """Schedule this tool for background execution via docket.
 
         Args:
@@ -491,7 +491,7 @@ _PREFAB_TEXT_FALLBACK = "[Rendered Prefab UI]"
 def _get_tool_resolver() -> Callable[..., str] | None:
     """Get the FastMCPApp callable resolver, if available."""
     try:
-        from fastmcp.server.app import _resolve_tool_ref
+        from fastmcp.apps.app import _resolve_tool_ref
 
         return _resolve_tool_ref
     except ImportError:

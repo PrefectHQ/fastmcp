@@ -211,13 +211,13 @@ class TestResourceResult:
     def test_init_from_dict_raises_type_error(self):
         """Dict input raises TypeError - must use ResourceContent for serialization."""
         with pytest.raises(TypeError, match="must be str, bytes, or list"):
-            ResourceResult({"page": 1, "total": 100})  # type: ignore[arg-type]
+            ResourceResult({"page": 1, "total": 100})  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     def test_init_from_single_resource_content_raises_type_error(self):
         """Single ResourceContent raises TypeError - must be in a list."""
         content = ResourceContent(content="test", mime_type="text/html")
         with pytest.raises(TypeError, match="must be str, bytes, or list"):
-            ResourceResult(content)  # type: ignore[arg-type]
+            ResourceResult(content)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     def test_init_from_list_of_resource_content(self):
         """List of ResourceContent is used directly."""
@@ -233,7 +233,7 @@ class TestResourceResult:
     def test_init_from_mixed_list_raises_type_error(self):
         """Mixed list items raise TypeError - all items must be ResourceContent."""
         with pytest.raises(TypeError, match=r"contents\[0\] must be ResourceContent"):
-            ResourceResult(["text", b"bytes", {"key": "value"}])  # type: ignore[arg-type]
+            ResourceResult(["text", b"bytes", {"key": "value"}])  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     def test_init_preserves_meta(self):
         """Meta is preserved on ResourceResult."""

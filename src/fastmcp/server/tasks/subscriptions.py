@@ -157,7 +157,7 @@ async def _send_status_notification(
 
     # Send notification (don't let failures break the subscription)
     with suppress(Exception):
-        await session.send_notification(notification)  # type: ignore[arg-type]
+        await session.send_notification(notification)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
 
 async def _send_progress_notification(
@@ -219,4 +219,4 @@ async def _send_progress_notification(
     )
 
     with suppress(Exception):
-        await session.send_notification(notification)  # type: ignore[arg-type]
+        await session.send_notification(notification)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]

@@ -401,7 +401,7 @@ class OpenAISamplingHandler:
     ) -> ChatModel:
         for model_option in self._iter_models_from_preferences(model_preferences):
             if model_option in get_args(ChatModel):
-                chosen_model: ChatModel = model_option  # type: ignore[assignment]
+                chosen_model: ChatModel = model_option  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
                 return chosen_model
 
         return self.default_model
@@ -480,18 +480,18 @@ class OpenAISamplingHandler:
                 func = tool_call.function
                 # Parse the arguments JSON string
                 try:
-                    arguments = json.loads(func.arguments)  # type: ignore[union-attr]
+                    arguments = json.loads(func.arguments)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
                 except json.JSONDecodeError as e:
                     raise ValueError(
                         f"Invalid JSON in tool arguments for "
-                        f"'{func.name}': {func.arguments}"  # type: ignore[union-attr]
+                        f"'{func.name}': {func.arguments}"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
                     ) from e
 
                 content.append(
                     ToolUseContent(
                         type="tool_use",
                         id=tool_call.id,
-                        name=func.name,  # type: ignore[union-attr]
+                        name=func.name,  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
                         input=arguments,
                     )
                 )
@@ -501,7 +501,7 @@ class OpenAISamplingHandler:
             raise ValueError("No content in response from completion")
 
         return CreateMessageResultWithTools(
-            content=content,  # type: ignore[arg-type]
+            content=content,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             role="assistant",
             model=chat_completion.model,
             stopReason=stop_reason,

@@ -41,6 +41,11 @@ from typing_extensions import Self
 
 import fastmcp
 import fastmcp.server
+from fastmcp.apps.config import (
+    AppConfig,
+    app_config_to_meta_dict,
+    resolve_ui_mime_type,
+)
 from fastmcp.exceptions import (
     AuthorizationError,
     FastMCPError,
@@ -56,11 +61,6 @@ from fastmcp.prompts.base import PromptResult
 from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.apps import (
-    AppConfig,
-    app_config_to_meta_dict,
-    resolve_ui_mime_type,
-)
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
@@ -167,6 +167,32 @@ def _get_auth_context() -> tuple[bool, Any]:
     return (False, get_access_token())
 
 
+def _is_model_visible(tool: Tool) -> bool:
+    """Check whether a tool should be visible to the model.
+
+    Tools registered via ``@app.tool()`` (without ``model=True``) have
+    ``meta["ui"]["visibility"] == ["app"]`` — they are callable by app UIs
+    but should not appear in the model's tool list.
+
+    Returns True (visible) when:
+    - The tool has no ``meta.ui.visibility`` (normal tools).
+    - ``"model"`` is in the visibility list (e.g. ``["model"]`` or ``["app", "model"]``).
+
+    Returns False when the visibility list exists and does not contain ``"model"``
+    (e.g. ``["app"]``).
+    """
+    meta = tool.meta
+    if not meta:
+        return True
+    ui = meta.get("ui")
+    if not isinstance(ui, dict):
+        return True
+    visibility = ui.get("visibility")
+    if not isinstance(visibility, list):
+        return True
+    return "model" in visibility
+
+
 @asynccontextmanager
 async def default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]:
     """Default lifespan context manager that does nothing.
@@ -190,7 +216,7 @@ def _lifespan_proxy(
         low_level_server: LowLevelServer[LifespanResultT],
     ) -> AsyncIterator[LifespanResultT]:
         if fastmcp_server._lifespan is default_lifespan:
-            yield {}
+            yield {}  # ty:ignore[invalid-yield]
             return
 
         if not fastmcp_server._lifespan_result_set:
@@ -199,7 +225,7 @@ def _lifespan_proxy(
                 + " Are you running the server in a way that supports lifespans? If so, please file an issue at https://github.com/PrefectHQ/fastmcp/issues."
             )
 
-        yield fastmcp_server._lifespan_result
+        yield fastmcp_server._lifespan_result  # ty:ignore[invalid-yield]
 
     return wrap
 
@@ -537,9 +563,10 @@ class FastMCP(
                 )
 
             # Get all tools, apply session transforms, then filter enabled
+            # and model-visible (app-only tools are hidden from the model).
             tools = list(await super().list_tools())
             tools = await apply_session_transforms(tools)
-            tools = [t for t in tools if is_enabled(t)]
+            tools = [t for t in tools if is_enabled(t) and _is_model_visible(t)]
 
             skip_auth, token = _get_auth_context()
             authorized: list[Tool] = []
@@ -610,17 +637,18 @@ class FastMCP(
 
         # Apply session transforms to single item
         tools = await apply_session_transforms([tool])
-        if tools and is_enabled(tools[0]):
+        if tools and is_enabled(tools[0]) and _is_model_visible(tools[0]):
             return tools[0]
 
-        # The highest version is disabled. If an explicit version was requested,
-        # respect the disable. Otherwise fall back to the next-highest enabled version.
+        # The highest version is disabled (or app-only). If an explicit version
+        # was requested, respect that. Otherwise fall back to the next-highest
+        # enabled, model-visible version.
         if version is not None:
             return None
 
         all_tools = [t for t in await super().list_tools() if t.name == name]
         all_tools = list(await apply_session_transforms(all_tools))
-        enabled = [t for t in all_tools if is_enabled(t)]
+        enabled = [t for t in all_tools if is_enabled(t) and _is_model_visible(t)]
 
         skip_auth, token = _get_auth_context()
         authorized: list[Tool] = []
