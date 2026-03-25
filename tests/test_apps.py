@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from fastmcp import Client, FastMCP
-from fastmcp.server.apps import (
+from fastmcp.apps import (
     UI_EXTENSION_ID,
     UI_MIME_TYPE,
     AppConfig,

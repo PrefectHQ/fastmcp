@@ -587,7 +587,7 @@ class Context:
 
         Example::
 
-            from fastmcp.server.apps import UI_EXTENSION_ID
+            from fastmcp.apps.config import UI_EXTENSION_ID
 
             @mcp.tool
             async def my_tool(ctx: Context) -> str:

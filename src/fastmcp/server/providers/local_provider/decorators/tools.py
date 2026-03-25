@@ -76,13 +76,13 @@ def _ensure_prefab_renderer(provider: LocalProvider) -> None:
     """Lazily register the shared prefab renderer as a ui:// resource."""
     from prefab_ui.renderer import get_renderer_csp, get_renderer_html
 
-    from fastmcp.resources.types import TextResource
-    from fastmcp.server.apps import (
+    from fastmcp.apps.config import (
         UI_MIME_TYPE,
         AppConfig,
         ResourceCSP,
         app_config_to_meta_dict,
     )
+    from fastmcp.resources.types import TextResource
 
     renderer_key = f"resource:{PREFAB_RENDERER_URI}@"
     if renderer_key in provider._components:
@@ -109,7 +109,7 @@ def _expand_prefab_ui_meta(tool: Tool) -> None:
     """Expand meta["ui"] = True into the full AppConfig dict for a prefab tool."""
     from prefab_ui.renderer import get_renderer_csp
 
-    from fastmcp.server.apps import AppConfig, ResourceCSP, app_config_to_meta_dict
+    from fastmcp.apps.config import AppConfig, ResourceCSP, app_config_to_meta_dict
 
     csp = get_renderer_csp()
     app_config = AppConfig(
@@ -169,7 +169,7 @@ class ToolDecoratorMixin:
                 # Merge ToolMeta.app into the meta dict
                 tool_meta = fmeta.meta
                 if fmeta.app is not None:
-                    from fastmcp.server.apps import app_config_to_meta_dict
+                    from fastmcp.apps.config import app_config_to_meta_dict
 
                     tool_meta = dict(tool_meta) if tool_meta else {}
                     if fmeta.app is True:

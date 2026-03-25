@@ -10,7 +10,7 @@ from fastmcp.utilities.logging import configure_logging as _configure_logging
 
 if TYPE_CHECKING:
     from fastmcp.client import Client as Client
-    from fastmcp.server.app import FastMCPApp as FastMCPApp
+    from fastmcp.apps.app import FastMCPApp as FastMCPApp
 
 settings = Settings()
 if settings.log_enabled:
@@ -42,7 +42,7 @@ def __getattr__(name: str) -> object:
 
         return Client
     if name == "FastMCPApp":
-        from fastmcp.server.app import FastMCPApp
+        from fastmcp.apps.app import FastMCPApp
 
         return FastMCPApp
     if name == "client":

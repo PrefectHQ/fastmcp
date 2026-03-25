@@ -491,7 +491,7 @@ _PREFAB_TEXT_FALLBACK = "[Rendered Prefab UI]"
 def _get_tool_resolver() -> Callable[..., str] | None:
     """Get the FastMCPApp callable resolver, if available."""
     try:
-        from fastmcp.server.app import _resolve_tool_ref
+        from fastmcp.apps.app import _resolve_tool_ref
 
         return _resolve_tool_ref
     except ImportError:
