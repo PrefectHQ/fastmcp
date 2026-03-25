@@ -421,16 +421,26 @@ class TestRateLimitingMiddlewareIntegration:
 
     async def test_global_rate_limiting(self, rate_limit_server):
         """Test global rate limiting across all clients."""
-        rate_limit_server.add_middleware(
-            RateLimitingMiddleware(
-                max_requests_per_second=6.0,
-                burst_capacity=5,  # 1 init + 2 list_tools + 2 calls before limit
-                global_limit=True,  # Accounting for initialization and list_tools calls
-            )
+        middleware = RateLimitingMiddleware(
+            max_requests_per_second=0.001,  # Near-zero refill so elapsed time doesn't interfere
+            burst_capacity=5,
+            global_limit=True,
         )
+        rate_limit_server.add_middleware(middleware)
 
         async with Client(rate_limit_server) as client:
-            # Use up the global capacity
+            # Reset to a known value after init, so the test does not depend on how
+            # many protocol messages the initialization sequence consumes.  The number
+            # varies across Python versions due to asyncio scheduler differences; on
+            # Python 3.13 the init phase consumes fewer tokens than on 3.10, causing
+            # the original burst_capacity=5 assumption to break.
+            #
+            # With 4 tokens: the first call_tool consumes 3 (includes list_tools
+            # pre/post-validation on the first call), leaving 1.  The second consumes
+            # 1 (cached), leaving 0.  The third raises ToolError.
+            middleware.global_limiter.tokens = 4
+
+            # Use up the remaining capacity
             await client.call_tool("quick_action", {"message": "1"})
             await client.call_tool("quick_action", {"message": "2"})
 
