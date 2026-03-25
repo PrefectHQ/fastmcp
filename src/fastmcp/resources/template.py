@@ -24,7 +24,6 @@ from pydantic import (
 )
 
 from fastmcp.resources.base import Resource, ResourceResult
-from fastmcp.server.apps import resolve_ui_mime_type
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (
     transform_context_annotations,
@@ -33,6 +32,7 @@ from fastmcp.server.dependencies import (
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
+from fastmcp.utilities.mime import resolve_ui_mime_type
 from fastmcp.utilities.types import get_cached_typeadapter
 
 

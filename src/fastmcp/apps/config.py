@@ -11,8 +11,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from fastmcp.utilities.mime import UI_MIME_TYPE as UI_MIME_TYPE
+from fastmcp.utilities.mime import resolve_ui_mime_type as resolve_ui_mime_type
+
 UI_EXTENSION_ID = "io.modelcontextprotocol/ui"
-UI_MIME_TYPE = "text/html;profile=mcp-app"
 
 
 class ResourceCSP(BaseModel):
@@ -117,26 +119,3 @@ def app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]:
     if isinstance(app, AppConfig):
         return app.model_dump(by_alias=True, exclude_none=True)
     return app
-
-
-def resolve_ui_mime_type(uri: str, explicit_mime_type: str | None) -> str | None:
-    """Return the appropriate MIME type for a resource URI.
-
-    For ``ui://`` scheme resources, defaults to ``UI_MIME_TYPE`` when no
-    explicit MIME type is provided. This ensures UI resources are correctly
-    identified regardless of how they're registered (via FastMCP.resource,
-    the standalone @resource decorator, or resource templates).
-
-    Args:
-        uri: The resource URI string
-        explicit_mime_type: The MIME type explicitly provided by the user
-
-    Returns:
-        The resolved MIME type (explicit value, UI default, or None)
-    """
-    if explicit_mime_type is not None:
-        return explicit_mime_type
-    # Case-insensitive scheme check per RFC 3986
-    if uri.lower().startswith("ui://"):
-        return UI_MIME_TYPE
-    return None

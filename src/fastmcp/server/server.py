@@ -41,6 +41,11 @@ from typing_extensions import Self
 
 import fastmcp
 import fastmcp.server
+from fastmcp.apps.config import (
+    AppConfig,
+    app_config_to_meta_dict,
+    resolve_ui_mime_type,
+)
 from fastmcp.exceptions import (
     AuthorizationError,
     FastMCPError,
@@ -56,11 +61,6 @@ from fastmcp.prompts.base import PromptResult
 from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.apps import (
-    AppConfig,
-    app_config_to_meta_dict,
-    resolve_ui_mime_type,
-)
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer

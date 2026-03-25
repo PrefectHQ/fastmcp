@@ -18,7 +18,7 @@ from prefab_ui.app import ResolvedTool
 from prefab_ui.components import Text
 
 from fastmcp import Client, FastMCP
-from fastmcp.server.app import (
+from fastmcp.apps.app import (
     FastMCPApp,
     _resolve_tool_ref,
 )

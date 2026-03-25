@@ -24,7 +24,7 @@ from mcp.shared.message import SessionMessage
 from mcp.shared.session import RequestResponder
 from pydantic import AnyUrl
 
-from fastmcp.server.apps import UI_EXTENSION_ID
+from fastmcp.apps.config import UI_EXTENSION_ID
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
