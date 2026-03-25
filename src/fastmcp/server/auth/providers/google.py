@@ -22,6 +22,7 @@ Example:
 from __future__ import annotations
 
 import contextlib
+import time
 from typing import Literal
 
 import httpx
@@ -57,8 +58,10 @@ class GoogleTokenVerifier(TokenVerifier):
     """Token verifier for Google OAuth tokens.
 
     Google OAuth tokens are opaque (not JWTs), so we verify them by calling
-    Google's userinfo endpoint (v3) with a Bearer header. This is more reliable
-    than the deprecated v1 tokeninfo endpoint and requires only one API call.
+    Google's tokeninfo endpoint with the access token as a query parameter.
+    This returns the OAuth app ID (``aud``), granted scopes, and expiry time.
+    User profile data (name, picture, etc.) is fetched separately from the
+    v2 userinfo endpoint when the token is valid.
     """
 
     def __init__(
@@ -87,12 +90,12 @@ class GoogleTokenVerifier(TokenVerifier):
         self._http_client = http_client
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        """Verify Google OAuth token using Google's userinfo API (v3).
+        """Verify a Google OAuth token using the tokeninfo endpoint.
 
-        Uses GET /oauth2/v3/userinfo with a Bearer header. This is the
-        recommended approach: it validates the token and returns user claims
-        in a single API call, unlike the deprecated v1 tokeninfo endpoint
-        which sometimes returns ``invalid_token`` for valid tokens.
+        Calls ``https://oauth2.googleapis.com/tokeninfo?access_token=TOKEN``
+        to validate the token and retrieve the OAuth app ID (``aud``), granted
+        scopes, and expiry time.  On success, fetches user profile data from
+        the v2 userinfo endpoint to populate name, picture, and locale claims.
         """
         try:
             async with (
@@ -100,14 +103,12 @@ class GoogleTokenVerifier(TokenVerifier):
                 if self._http_client is not None
                 else httpx.AsyncClient(timeout=self.timeout_seconds)
             ) as client:
-                # Use Google's v3 userinfo endpoint with Bearer header.
-                # This validates the token and returns user claims in one call.
+                # Step 1: Verify token via tokeninfo endpoint.
+                # Returns aud (OAuth app ID), scope (space-separated), expires_in, sub, email.
                 response = await client.get(
-                    "https://www.googleapis.com/oauth2/v3/userinfo",
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "User-Agent": "FastMCP-Google-OAuth",
-                    },
+                    "https://oauth2.googleapis.com/tokeninfo",
+                    params={"access_token": token},
+                    headers={"User-Agent": "FastMCP-Google-OAuth"},
                 )
 
                 if response.status_code != 200:
@@ -117,34 +118,23 @@ class GoogleTokenVerifier(TokenVerifier):
                     )
                     return None
 
-                user_data = response.json()
+                token_data = response.json()
 
-                # sub is required (unique Google user ID, present for any valid token)
-                sub = user_data.get("sub")
-                if not sub:
-                    logger.debug("Google token missing 'sub' claim")
+                # aud is the OAuth app ID (client_id / audience)
+                aud = token_data.get("aud")
+                if not aud:
+                    logger.debug("Google tokeninfo missing 'aud' claim")
                     return None
 
-                # Infer granted scopes from the fields present in the response.
-                # The v3 userinfo endpoint does not return scope strings directly,
-                # but the fields it returns reflect what the token was granted.
-                # Include both shorthand and full-URI forms so required_scopes
-                # checks work regardless of which form the caller normalised to.
-                token_scopes = ["openid"]
-                if user_data.get("email"):
-                    token_scopes.extend(
-                        [
-                            "email",
-                            "https://www.googleapis.com/auth/userinfo.email",
-                        ]
-                    )
-                if user_data.get("name") or user_data.get("picture"):
-                    token_scopes.extend(
-                        [
-                            "profile",
-                            "https://www.googleapis.com/auth/userinfo.profile",
-                        ]
-                    )
+                # sub is required (unique Google user ID)
+                sub = token_data.get("sub")
+                if not sub:
+                    logger.debug("Google tokeninfo missing 'sub' claim")
+                    return None
+
+                # Parse scopes directly from the tokeninfo response (space-separated)
+                scope_str = token_data.get("scope", "")
+                token_scopes = scope_str.split() if scope_str else []
 
                 # Check required scopes
                 if self.required_scopes:
@@ -158,23 +148,46 @@ class GoogleTokenVerifier(TokenVerifier):
                         )
                         return None
 
-                # expires_at is not available from the userinfo endpoint.
-                # Expired tokens return HTTP 401, so the check above is sufficient.
+                # Compute expiry from expires_in (seconds until expiry)
+                expires_at: int | None = None
+                expires_in = token_data.get("expires_in")
+                if expires_in is not None:
+                    with contextlib.suppress(ValueError, TypeError):
+                        expires_at = int(time.time()) + int(expires_in)
+
+                # Step 2: Fetch user profile from v2 userinfo endpoint.
+                # tokeninfo provides auth data; userinfo provides name, picture, locale.
+                user_data: dict = {}
+                try:
+                    userinfo_response = await client.get(
+                        "https://www.googleapis.com/oauth2/v2/userinfo",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "User-Agent": "FastMCP-Google-OAuth",
+                        },
+                    )
+                    if userinfo_response.status_code == 200:
+                        user_data = userinfo_response.json()
+                except Exception as e:
+                    logger.debug("Failed to fetch Google user profile: %s", e)
+
                 access_token = AccessToken(
                     token=token,
-                    client_id=sub,
+                    client_id=aud,
                     scopes=token_scopes,
-                    expires_at=None,
+                    expires_at=expires_at,
                     claims={
                         "sub": sub,
-                        "email": user_data.get("email"),
-                        "email_verified": user_data.get("email_verified"),
+                        "aud": aud,
+                        "email": token_data.get("email") or user_data.get("email"),
+                        "email_verified": token_data.get("email_verified")
+                        or user_data.get("verified_email"),
                         "name": user_data.get("name"),
                         "picture": user_data.get("picture"),
                         "given_name": user_data.get("given_name"),
                         "family_name": user_data.get("family_name"),
                         "locale": user_data.get("locale"),
-                        "google_user_data": user_data,
+                        "google_user_data": user_data or None,
                     },
                 )
                 logger.debug("Google token verified successfully")
