@@ -96,7 +96,7 @@ def _ensure_prefab_renderer(provider: LocalProvider) -> None:
         )
     )
     resource = TextResource(
-        uri=PREFAB_RENDERER_URI,  # type: ignore[arg-type]  # AnyUrl accepts ui:// scheme at runtime
+        uri=PREFAB_RENDERER_URI,  # type: ignore[arg-type]  # AnyUrl accepts ui:// scheme at runtime  # ty:ignore[invalid-argument-type]
         name="Prefab Renderer",
         text=get_renderer_html(),
         mime_type=UI_MIME_TYPE,
@@ -400,7 +400,7 @@ class ToolDecoratorMixin:
                     enabled=enabled,
                 )
                 target = fn.__func__ if hasattr(fn, "__func__") else fn
-                target.__fastmcp__ = metadata  # type: ignore[attr-defined]
+                target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
                 tool_obj = self.add_tool(fn)
                 return fn
 

@@ -276,7 +276,7 @@ class ResourceTemplate(FastMCPComponent):
             annotations=overrides.get("annotations", self.annotations),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta()
-            ),
+            ),  # ty:ignore[unknown-argument]
         )
 
     @classmethod
@@ -312,7 +312,7 @@ class ResourceTemplate(FastMCPComponent):
         fn_key: str | None = None,
         task_key: str | None = None,
         **kwargs: Any,
-    ) -> Execution:
+    ) -> Execution:  # ty:ignore[invalid-method-override]
         """Schedule this template for background execution via docket.
 
         Args:

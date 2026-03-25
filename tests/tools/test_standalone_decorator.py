@@ -115,7 +115,7 @@ class TestToolDecorator:
         """@tool should raise if both positional and keyword name are given."""
         with pytest.raises(TypeError, match="Cannot specify.*both.*argument.*keyword"):
 
-            @tool("name1", name="name2")  # type: ignore[call-overload]
+            @tool("name1", name="name2")  # type: ignore[call-overload]  # ty:ignore[invalid-argument-type]
             def my_tool() -> str:
                 return "hello"
 

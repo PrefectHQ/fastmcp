@@ -169,7 +169,7 @@ class StreamableHttpTransport(ClientTransport):
             http_client = self.httpx_client_factory(
                 headers=headers,
                 auth=self.auth,
-                follow_redirects=True,  # type: ignore[call-arg]
+                follow_redirects=True,  # type: ignore[call-arg]  # ty:ignore[unknown-argument]
                 **({"timeout": timeout} if timeout else {}),
             )
         elif verify_factory is not None:

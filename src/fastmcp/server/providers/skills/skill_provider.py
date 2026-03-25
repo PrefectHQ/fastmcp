@@ -103,7 +103,7 @@ class SkillFileTemplate(ResourceTemplate):
         uri: str,
         params: dict[str, Any],
         task_meta: Any = None,
-    ) -> ResourceResult:
+    ) -> ResourceResult:  # ty:ignore[invalid-method-override]
         """Server entry point - read file directly without creating ephemeral resource.
 
         Note: task_meta is ignored - this template doesn't support background tasks.

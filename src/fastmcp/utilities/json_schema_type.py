@@ -177,7 +177,7 @@ def json_schema_to_type(
                 # Handle typed dictionaries like dict[str, str]
                 value_type = _schema_to_type(additional_props, schemas=schema)
                 # value_type might be ForwardRef or type - cast to Any for dynamic type construction
-                return cast(type[Any], dict[str, value_type])  # type: ignore[valid-type]
+                return cast(type[Any], dict[str, value_type])  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
         # If no properties and no additionalProperties, default to dict[str, Any] for safety
         elif not schema.get("properties") and not schema.get("additionalProperties"):
             return dict[str, Any]
@@ -189,7 +189,7 @@ def json_schema_to_type(
     elif name:
         raise ValueError(f"Can not apply name to non-object schema: {name}")
     result = _schema_to_type(schema, schemas=schema)
-    return result  # type: ignore[return-value]
+    return result  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
 
 def _hash_schema(schema: Mapping[str, Any]) -> str:
@@ -250,13 +250,13 @@ def _create_numeric_type(
         if v is not None
     }
 
-    return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]
+    return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
 
 
 def _create_enum(name: str, values: list[Any]) -> type:
     """Create enum type from list of values."""
     # Always return Literal for enum fields to preserve the literal nature
-    return Literal[tuple(values)]  # type: ignore[return-value]
+    return Literal[tuple(values)]  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
 
 
 def _create_array_type(
@@ -268,7 +268,7 @@ def _create_array_type(
         # Handle positional item schemas
         item_types = [_schema_to_type(s, schemas) for s in items]
         combined = Union[tuple(item_types)]  # noqa: UP007
-        base = list[combined]  # type: ignore[valid-type]
+        base = list[combined]  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
     else:
         # Handle single item schema
         item_type = _schema_to_type(items, schemas)
@@ -284,7 +284,7 @@ def _create_array_type(
         if v is not None
     }
 
-    return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]
+    return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
 
 
 def _return_Any() -> Any:
@@ -461,7 +461,7 @@ def _create_pydantic_model(
     if cache_key in _classes:
         existing = _classes[cache_key]
         if existing is None:
-            return ForwardRef(sanitized_name)  # type: ignore[return-value]
+            return ForwardRef(sanitized_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return existing
 
     # Place placeholder for recursive references
@@ -485,7 +485,7 @@ def _create_pydantic_model(
         elif prop_name in required:
             annotations[prop_name] = field_type
         else:
-            annotations[prop_name] = Union[field_type, type(None)]  # type: ignore[misc]  # noqa: UP007
+            annotations[prop_name] = Union[field_type, type(None)]  # type: ignore[misc]  # noqa: UP007  # ty:ignore[invalid-type-form]
             defaults[prop_name] = None
 
     # Create Pydantic model class
@@ -521,7 +521,7 @@ def _create_dataclass(
     if cache_key in _classes:
         existing = _classes[cache_key]
         if existing is None:
-            return ForwardRef(sanitized_name)  # type: ignore[return-value]
+            return ForwardRef(sanitized_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return existing
 
     # Place placeholder for recursive references
@@ -530,7 +530,7 @@ def _create_dataclass(
     if "$ref" in schema:
         ref = schema["$ref"]
         if ref == "#":
-            return ForwardRef(sanitized_name)  # type: ignore[return-value]
+            return ForwardRef(sanitized_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         schema = _resolve_ref(ref, schemas or {})
 
     properties = schema.get("properties", {})
@@ -568,7 +568,7 @@ def _create_dataclass(
         if is_required or default_val is not MISSING:
             fields.append((field_name, field_type, field_def))
         else:
-            fields.append((field_name, Union[field_type, type(None)], field_def))  # type: ignore[misc]  # noqa: UP007
+            fields.append((field_name, Union[field_type, type(None)], field_def))  # type: ignore[misc]  # noqa: UP007  # ty:ignore[invalid-type-form]
 
     cls = make_dataclass(sanitized_name, fields, kw_only=True)
 
@@ -580,7 +580,7 @@ def _create_dataclass(
             return _merge_defaults(data, original_schema)
         return data
 
-    cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]
+    cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
     # Store completed class
     _classes[cache_key] = cls

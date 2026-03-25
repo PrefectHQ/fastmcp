@@ -367,6 +367,7 @@
                   "python-sdk/fastmcp-mcp_config",
                   "python-sdk/fastmcp-settings",
                   "python-sdk/fastmcp-telemetry",
+                  "python-sdk/fastmcp-types",
                   {
                     "group": "fastmcp.cli",
                     "pages": [

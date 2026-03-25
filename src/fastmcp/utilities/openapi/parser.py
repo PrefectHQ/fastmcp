@@ -763,7 +763,7 @@ class OpenAPIParser(
                         # Create initial route without pre-calculated fields
                         route = HTTPRoute(
                             path=path_str,
-                            method=method_upper,  # type: ignore[arg-type]  # Known valid HTTP method
+                            method=method_upper,  # type: ignore[arg-type]  # Known valid HTTP method  # ty:ignore[invalid-argument-type]
                             operation_id=getattr(operation, "operationId", None),
                             summary=getattr(operation, "summary", None),
                             description=getattr(operation, "description", None),

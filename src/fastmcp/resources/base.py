@@ -105,14 +105,14 @@ class ResourceContent(pydantic.BaseModel):
                 uri=AnyUrl(uri) if isinstance(uri, str) else uri,
                 text=self.content,
                 mimeType=self.mime_type or "text/plain",
-                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
             )
         else:
             return mcp.types.BlobResourceContents(
                 uri=AnyUrl(uri) if isinstance(uri, str) else uri,
                 blob=base64.b64encode(self.content).decode(),
                 mimeType=self.mime_type or "application/octet-stream",
-                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
             )
 
 
@@ -203,7 +203,7 @@ class ResourceResult(pydantic.BaseModel):
         mcp_contents = [item.to_mcp_resource_contents(uri) for item in self.contents]
         return mcp.types.ReadResourceResult(
             contents=mcp_contents,
-            _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+            _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
         )
 
 
@@ -387,7 +387,7 @@ class Resource(FastMCPComponent):
             annotations=overrides.get("annotations", self.annotations),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta()
-            ),
+            ),  # ty:ignore[unknown-argument]
         )
 
     def __repr__(self) -> str:
@@ -412,7 +412,7 @@ class Resource(FastMCPComponent):
         fn_key: str | None = None,
         task_key: str | None = None,
         **kwargs: Any,
-    ) -> Execution:
+    ) -> Execution:  # ty:ignore[invalid-method-override]
         """Schedule this resource for background execution via docket.
 
         Args:

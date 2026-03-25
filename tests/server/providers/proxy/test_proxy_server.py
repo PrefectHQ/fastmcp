@@ -826,13 +826,13 @@ class TestProxyProviderCache:
             lambda: ProxyClient(FastMCPTransport(fastmcp_server)),
         )
         await provider._list_tools()
-        first_ts = provider._tools_cache.timestamp  # type: ignore[union-attr]
+        first_ts = provider._tools_cache.timestamp  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
         # Tiny sleep so monotonic clock advances
         time.sleep(0.05)
 
         await provider._list_tools()
-        assert provider._tools_cache.timestamp > first_ts  # type: ignore[union-attr]
+        assert provider._tools_cache.timestamp > first_ts  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_cache_ttl_zero_disables_caching(self, fastmcp_server):
         """With cache_ttl=0, every _get_tool call should re-fetch."""
@@ -884,4 +884,4 @@ class TestProxyProviderCache:
         ) as mock_list:
             result = await proxy.call_tool("greet", {"name": "Alice"})
             mock_list.assert_not_called()
-        assert result.content[0].text == "Hello, Alice!"  # type: ignore[union-attr]
+        assert result.content[0].text == "Hello, Alice!"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]

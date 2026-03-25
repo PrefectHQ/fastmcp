@@ -265,7 +265,7 @@ class MockTokenVerifier(TokenVerifier):
         self.required_scopes = required_scopes or ["read", "write"]
         self.verify_called = False
 
-    async def verify_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
+    async def verify_token(self, token: str) -> AccessToken | None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """Mock token verification."""
         self.verify_called = True
         return AccessToken(

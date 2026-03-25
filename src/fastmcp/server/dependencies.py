@@ -218,7 +218,7 @@ def require_docket(feature: str) -> None:
 try:
     from docket.dependencies import Progress as DocketProgress
 except ImportError:
-    DocketProgress = None  # type: ignore[assignment]
+    DocketProgress = None  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
 
 
 # --- Context utilities ---
@@ -336,10 +336,10 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
         # Insert 'self' at the beginning of our new params
         self_param = next(iter(func_sig.parameters.values()))  # Should be 'self'
         new_sig = func_sig.replace(parameters=[self_param, *new_params])
-        fn.__func__.__signature__ = new_sig  # type: ignore[union-attr]
+        fn.__func__.__signature__ = new_sig  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
     else:
         new_sig = sig.replace(parameters=new_params)
-        fn.__signature__ = new_sig  # type: ignore[attr-defined]
+        fn.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[invalid-assignment]
 
     # Clear caches that may have cached the old signature
     # This ensures get_dependency_parameters and without_injected_parameters
@@ -606,7 +606,7 @@ def without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]:
     except Exception:
         resolved_hints = getattr(fn, "__annotations__", {})
 
-    wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
+    wrapper.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     wrapper.__annotations__ = {
         k: v for k, v in resolved_hints.items() if k not in exclude and k != "return"
     }
