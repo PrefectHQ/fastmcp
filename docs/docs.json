@@ -369,6 +369,14 @@
                   "python-sdk/fastmcp-telemetry",
                   "python-sdk/fastmcp-types",
                   {
+                    "group": "fastmcp.apps",
+                    "pages": [
+                      "python-sdk/fastmcp-apps-__init__",
+                      "python-sdk/fastmcp-apps-app",
+                      "python-sdk/fastmcp-apps-config"
+                    ]
+                  },
+                  {
                     "group": "fastmcp.cli",
                     "pages": [
                       "python-sdk/fastmcp-cli-__init__",
@@ -742,6 +750,7 @@
                           }
                         ]
                       },
+                      "python-sdk/fastmcp-utilities-mime",
                       {
                         "group": "openapi",
                         "pages": [
