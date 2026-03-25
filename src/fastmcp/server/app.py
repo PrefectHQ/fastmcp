@@ -6,14 +6,13 @@
 
 import warnings
 
+from fastmcp.apps.app import FastMCPApp as FastMCPApp
+from fastmcp.apps.app import _dispatch_decorator as _dispatch_decorator
+from fastmcp.apps.app import _resolve_tool_ref as _resolve_tool_ref
 
-def __getattr__(name: str) -> object:
-    warnings.warn(
-        f"Importing {name!r} from 'fastmcp.server.app' is deprecated. "
-        "Use 'fastmcp.apps.app' or 'from fastmcp import FastMCPApp' instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    from fastmcp.apps import app as _app
-
-    return getattr(_app, name)
+warnings.warn(
+    "'fastmcp.server.app' is deprecated. "
+    "Use 'fastmcp.apps.app' or 'from fastmcp import FastMCPApp' instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
