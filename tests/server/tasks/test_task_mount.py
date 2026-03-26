@@ -473,6 +473,35 @@ class TestMountedTaskList:
             assert child_task.task_id in task_ids
 
 
+class TestMountedTaskMetadata:
+    """Test task metadata exposure for mounted tools."""
+
+    async def test_mounted_tool_list_preserves_task_support_metadata(self):
+        """Mounted tools should preserve execution.taskSupport in tools/list."""
+        child = FastMCP("child")
+
+        @child.tool(task=True)
+        async def foo() -> dict[str, bool]:
+            return {"ok": True}
+
+        parent = FastMCP("parent")
+        parent.mount(child)
+
+        child_tools = await child.list_tools()
+        parent_tools = await parent.list_tools()
+
+        child_tool = next(t for t in child_tools if t.name == "foo")
+        parent_tool = next(t for t in parent_tools if t.name == "foo")
+
+        child_mcp_tool = child_tool.to_mcp_tool(name=child_tool.name)
+        parent_mcp_tool = parent_tool.to_mcp_tool(name=parent_tool.name)
+
+        assert child_mcp_tool.execution is not None
+        assert parent_mcp_tool.execution is not None
+        assert child_mcp_tool.execution.taskSupport == "optional"
+        assert parent_mcp_tool.execution.taskSupport == "optional"
+
+
 class TestMountedTaskConfigModes:
     """Test TaskConfig mode enforcement for mounted tools."""
 

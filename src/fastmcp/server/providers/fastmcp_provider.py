@@ -104,6 +104,7 @@ class FastMCPProviderTool(Tool):
             tags=tool.tags,
             annotations=tool.annotations,
             task_config=tool.task_config,
+            execution=tool.execution,
             meta=tool.get_meta(),
             title=tool.title,
             icons=tool.icons,
@@ -180,6 +181,17 @@ class FastMCPProviderTool(Tool):
                 "Unexpected CreateTaskResult from call_tool without task_meta"
             )
         return result
+
+    def to_mcp_tool(self, **overrides: Any) -> mcp.types.Tool:
+        """Preserve child tool execution metadata when exposed through mounts."""
+        mcp_tool = super().to_mcp_tool(**overrides)
+
+        if self.task_config.supports_tasks() and "execution" not in overrides:
+            mcp_tool.execution = self.execution or mcp.types.ToolExecution(
+                taskSupport=self.task_config.mode
+            )
+
+        return mcp_tool
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
