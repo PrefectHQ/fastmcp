@@ -306,7 +306,9 @@ class FunctionTool(Tool):
         """
         if not self.task_config.supports_tasks():
             return
-        docket.register(self.fn, names=[self.key])
+        from fastmcp.server.dependencies import _wrap_task_execution
+
+        docket.register(_wrap_task_execution(self.fn), names=[self.key])
 
     async def add_to_docket(
         self,

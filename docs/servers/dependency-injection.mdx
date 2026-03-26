@@ -160,14 +160,20 @@ def get_client_ip() -> str:
 ```
 
 <Note>
-Both raise `RuntimeError` when called outside an HTTP context (e.g., STDIO transport). Use HTTP Headers if you need graceful fallback.
+Both raise `RuntimeError` when called outside an HTTP context (e.g., STDIO transport).
+For background tasks created from an HTTP request, FastMCP restores a minimal request
+backed by the originating request's snapshotted headers. Use HTTP Headers if you need
+graceful fallback.
 </Note>
 
 ### HTTP Headers
 
 <VersionBadge version="2.2.11" />
 
-Access HTTP headers with graceful fallback—returns an empty dictionary when no HTTP request is available, making it safe for code that might run over any transport.
+Access HTTP headers with graceful fallback. When a background task originates from an
+HTTP request, FastMCP restores the originating headers inside the worker. When no HTTP
+request is available, this returns an empty dictionary, making it safe for code that
+might run over any transport.
 
 **Dependency injection:** Use `CurrentHeaders()`:
 
