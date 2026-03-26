@@ -1305,7 +1305,7 @@ def _wrap_task_execution(fn: Callable[..., Any]) -> Callable[..., Any]:
     wrapper.__doc__ = getattr(fn, "__doc__", None)
     wrapper.__module__ = fn.__module__
     wrapper.__qualname__ = getattr(fn, "__qualname__", wrapper.__qualname__)
-    wrapper._fastmcp_task_execution_wrapped = True  # type: ignore[attr-defined]
+    wrapper._fastmcp_task_execution_wrapped = True  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     return wrapper
 
 
