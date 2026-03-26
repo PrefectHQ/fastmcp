@@ -142,11 +142,20 @@ class StdioTransport(ClientTransport):
         self._ready_event = anyio.Event()
 
     def _is_session_dead(self) -> bool:
-        """Check if the session's underlying streams have been closed."""
+        """Check if the session's underlying streams have been closed.
+
+        Checks both the write stream (stdin to subprocess) and the read
+        stream (stdout from subprocess).  On some platforms the write-side
+        pipe lingers after the process exits, so the read-side check
+        (which reflects stdout_reader detecting the dead process) is the
+        more reliable signal.
+        """
         if self._session is None:
             return False
         try:
-            return self._session._write_stream.statistics().open_send_streams == 0
+            if self._session._write_stream.statistics().open_send_streams == 0:
+                return True
+            return self._session._read_stream.statistics().open_send_streams == 0
         except AttributeError:
             return False
 

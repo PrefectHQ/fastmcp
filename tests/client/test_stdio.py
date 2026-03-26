@@ -256,8 +256,14 @@ class TestKeepAlive:
                 pass
 
 
+@pytest.mark.timeout(15)
 class TestSubprocessCrashRecovery:
     """Test that StdioTransport recovers after the subprocess crashes."""
+
+    # Use a short init_timeout so tests fail fast instead of hanging if
+    # stream-based dead-session detection is slow (e.g. on Windows where
+    # pipe cleanup can lag after process termination).
+    INIT_TIMEOUT = 3
 
     @pytest.fixture
     def stdio_script(self, tmp_path):
@@ -282,7 +288,7 @@ class TestSubprocessCrashRecovery:
     async def test_keep_alive_recovers_after_subprocess_crash(self, stdio_script):
         """When keep_alive=True and the subprocess dies, the next connection should start a fresh subprocess."""
         transport = PythonStdioTransport(script_path=stdio_script)
-        client = Client(transport=transport)
+        client = Client(transport=transport, init_timeout=self.INIT_TIMEOUT)
         assert transport.keep_alive is True
 
         # First connection: get the PID of the subprocess
@@ -309,7 +315,8 @@ class TestSubprocessCrashRecovery:
     async def test_keep_alive_false_recovers_after_subprocess_crash(self, stdio_script):
         """When keep_alive=False, crash recovery works because disconnect() is always called."""
         client = Client(
-            transport=PythonStdioTransport(script_path=stdio_script, keep_alive=False)
+            transport=PythonStdioTransport(script_path=stdio_script, keep_alive=False),
+            init_timeout=self.INIT_TIMEOUT,
         )
 
         async with client:
@@ -329,7 +336,10 @@ class TestSubprocessCrashRecovery:
 
     async def test_multiple_consecutive_crashes(self, stdio_script):
         """Recovery works across multiple crash/reconnect cycles."""
-        client = Client(transport=PythonStdioTransport(script_path=stdio_script))
+        client = Client(
+            transport=PythonStdioTransport(script_path=stdio_script),
+            init_timeout=self.INIT_TIMEOUT,
+        )
         pids: list[int] = []
 
         for _ in range(3):
@@ -351,7 +361,10 @@ class TestSubprocessCrashRecovery:
 
     async def test_crash_during_active_context(self, stdio_script):
         """When subprocess dies while the client context is open, recovery works on the next attempt."""
-        client = Client(transport=PythonStdioTransport(script_path=stdio_script))
+        client = Client(
+            transport=PythonStdioTransport(script_path=stdio_script),
+            init_timeout=self.INIT_TIMEOUT,
+        )
         pid1: int = 0
 
         with pytest.raises(Exception):
@@ -377,7 +390,8 @@ class TestSubprocessCrashRecovery:
         from fastmcp.server import create_proxy
 
         backend_client = Client(
-            transport=PythonStdioTransport(script_path=stdio_script)
+            transport=PythonStdioTransport(script_path=stdio_script),
+            init_timeout=self.INIT_TIMEOUT,
         )
         proxy = create_proxy(target=backend_client, name="test-proxy")
 
@@ -403,7 +417,8 @@ class TestSubprocessCrashRecovery:
         from fastmcp.server import create_proxy
 
         backend_client = Client(
-            transport=PythonStdioTransport(script_path=stdio_script)
+            transport=PythonStdioTransport(script_path=stdio_script),
+            init_timeout=self.INIT_TIMEOUT,
         )
         proxy = create_proxy(target=backend_client, name="test-proxy")
 
@@ -452,7 +467,10 @@ class TestSubprocessCrashRecovery:
         ''')
         )
 
-        client = Client(transport=PythonStdioTransport(script_path=script))
+        client = Client(
+            transport=PythonStdioTransport(script_path=script),
+            init_timeout=self.INIT_TIMEOUT,
+        )
 
         async with client:
             result1 = await client.call_tool("pid_then_exit")
@@ -479,7 +497,10 @@ class TestSubprocessCrashRecovery:
         """)
         )
 
-        client = Client(transport=PythonStdioTransport(script_path=crash_script))
+        client = Client(
+            transport=PythonStdioTransport(script_path=crash_script),
+            init_timeout=self.INIT_TIMEOUT,
+        )
 
         with pytest.raises(Exception):
             async with client:
