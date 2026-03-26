@@ -14,7 +14,12 @@ import mcp.types
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
-from fastmcp.server.dependencies import _current_docket, get_access_token, get_context
+from fastmcp.server.dependencies import (
+    _current_docket,
+    get_access_token,
+    get_context,
+    register_task_server,
+)
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.tasks.keys import build_task_key
 from fastmcp.utilities.logging import get_logger
@@ -130,6 +135,12 @@ async def submit_to_docket(
         from fastmcp.server.dependencies import register_task_session
 
         register_task_session(session_id, ctx.session)
+
+    # Register the server that owns this task so background workers reconstruct
+    # the correct Context. ctx.fastmcp is the child server when the task is
+    # submitted from a mounted server's call_tool(), not the root server.
+    if ctx.fastmcp is not None:
+        register_task_server(session_id, server_task_id, ctx.fastmcp)
 
     # Send an initial tasks/status notification before queueing.
     # This guarantees clients can observe task creation immediately.

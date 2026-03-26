@@ -15,6 +15,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.prompts.base import PromptResult
 from fastmcp.resources.base import ResourceResult
+from fastmcp.server.context import Context
 from fastmcp.server.dependencies import CurrentDocket, CurrentFastMCP
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.tasks import TaskConfig
@@ -320,7 +321,7 @@ class TestMountedTaskDependencies:
             assert received_docket[0] is not None
 
     async def test_mounted_task_receives_server_dependency(self):
-        """Mounted tool task receives CurrentFastMCP dependency."""
+        """Mounted tool task receives the child server via CurrentFastMCP dependency."""
         child = FastMCP("server-dep-child")
         received_server = []
 
@@ -334,12 +335,32 @@ class TestMountedTaskDependencies:
 
         async with Client(parent) as client:
             task = await client.call_tool("child_tool_with_server", {}, task=True)
-            await task.result()
+            result = await task.result()
 
-            # The server should be the child server since that's where the tool is defined
+            assert "server name: server-dep-child" in str(result)
             assert len(received_server) == 1
-            # Note: It might be parent or child depending on implementation
-            assert received_server[0] is not None
+            assert received_server[0] is child
+
+    async def test_mounted_task_context_fastmcp_is_child(self):
+        """ctx.fastmcp in a mounted background task is the child server, not the parent."""
+        child = FastMCP("ctx-child")
+        received = []
+
+        @child.tool(task=True)
+        async def whoami_ctx(ctx: Context) -> str:  # type: ignore[name-defined]
+            received.append(ctx.fastmcp)
+            return f"context server: {ctx.fastmcp.name}"
+
+        parent = FastMCP("ctx-parent")
+        parent.mount(child, namespace="child")
+
+        async with Client(parent) as client:
+            task = await client.call_tool("child_whoami_ctx", {}, task=True)
+            result = await task.result()
+
+            assert "context server: ctx-child" in str(result)
+            assert len(received) == 1
+            assert received[0] is child
 
 
 class TestMultipleMounts:

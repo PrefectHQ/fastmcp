@@ -70,8 +70,10 @@ __all__ = [
     "get_http_request",
     "get_server",
     "get_task_context",
+    "get_task_server",
     "get_task_session",
     "is_docket_available",
+    "register_task_server",
     "register_task_session",
     "require_docket",
     "resolve_dependencies",
@@ -135,6 +137,10 @@ def get_task_context() -> TaskContextInfo | None:
 
 _task_sessions: dict[str, weakref.ref[ServerSession]] = {}
 
+# --- Server registry for background task Context ---
+
+_task_servers: dict[str, weakref.ref[FastMCP]] = {}
+
 
 def register_task_session(session_id: str, session: ServerSession) -> None:
     """Register a session for Context access in background tasks.
@@ -167,6 +173,44 @@ def get_task_session(session_id: str) -> ServerSession | None:
         # Session was garbage collected, clean up entry
         _task_sessions.pop(session_id, None)
     return session
+
+
+def register_task_server(session_id: str, task_id: str, server: FastMCP) -> None:
+    """Register a server for Context access in background tasks.
+
+    Called automatically when a task is submitted to Docket. Captures the
+    server that owns the task (which may be a mounted child server), so that
+    background task workers can reconstruct the correct Context instead of
+    falling back to the root server set by the lifespan ContextVar.
+
+    The server is stored as a weakref so it doesn't prevent garbage collection.
+
+    Args:
+        session_id: The session identifier
+        task_id: The server-generated task ID (UUID)
+        server: The FastMCP server instance that owns the task
+    """
+    _task_servers[f"{session_id}:{task_id}"] = weakref.ref(server)
+
+
+def get_task_server(session_id: str, task_id: str) -> FastMCP | None:
+    """Get the server registered for a background task if still alive.
+
+    Args:
+        session_id: The session identifier
+        task_id: The server-generated task ID (UUID)
+
+    Returns:
+        The FastMCP server if found and alive, None otherwise
+    """
+    key = f"{session_id}:{task_id}"
+    ref = _task_servers.get(key)
+    if ref is None:
+        return None
+    server = ref()
+    if server is None:
+        _task_servers.pop(key, None)
+    return server
 
 
 # --- ContextVars ---
@@ -825,8 +869,12 @@ class _CurrentContext(Dependency["Context"]):
         if task_info is not None:
             # Get session from registry (registered when task was submitted)
             session = get_task_session(task_info.session_id)
-            # Get server from ContextVar
-            server = get_server()
+            # Get server: prefer the task-specific registration which captures the
+            # child server that owns the task. Fall back to the ContextVar which
+            # is set by the lifespan and points to the root server.
+            server = (
+                get_task_server(task_info.session_id, task_info.task_id) or get_server()
+            )
             origin_request_id = await _restore_task_origin_request_id(
                 task_info.session_id, task_info.task_id
             )
@@ -1037,6 +1085,15 @@ class _CurrentFastMCP(Dependency["FastMCP"]):
     """Async context manager for FastMCP server dependency."""
 
     async def __aenter__(self) -> FastMCP:
+        # In background task context, check the task-specific server registry first.
+        # This preserves the child server identity when a mounted child tool runs
+        # as a background task, instead of returning the root server from lifespan.
+        task_info = get_task_context()
+        if task_info is not None:
+            task_server = get_task_server(task_info.session_id, task_info.task_id)
+            if task_server is not None:
+                return task_server
+
         server_ref = _current_server.get()
         if server_ref is None:
             raise RuntimeError("No FastMCP server instance in context")
