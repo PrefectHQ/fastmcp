@@ -145,19 +145,18 @@ class PrefabAppConfig(AppConfig):
 
         if renderer_csp:
             user_csp = self.csp or ResourceCSP()
-            merged = ResourceCSP(
-                connect_domains=_merge_domains(
-                    renderer_csp.get("connect_domains"),
-                    user_csp.connect_domains,
-                ),
-                resource_domains=_merge_domains(
-                    renderer_csp.get("resource_domains"),
-                    user_csp.resource_domains,
-                ),
-                frame_domains=user_csp.frame_domains,
-                base_uri_domains=user_csp.base_uri_domains,
+            # Start from the user's CSP (preserves model_extra for
+            # forward-compat directives), then merge renderer domains.
+            merged_data = user_csp.model_dump(exclude_none=True)
+            merged_data["connect_domains"] = _merge_domains(
+                renderer_csp.get("connect_domains"),
+                user_csp.connect_domains,
             )
-            self.csp = merged
+            merged_data["resource_domains"] = _merge_domains(
+                renderer_csp.get("resource_domains"),
+                user_csp.resource_domains,
+            )
+            self.csp = ResourceCSP(**merged_data)
 
 
 def _merge_domains(base: list[str] | None, extra: list[str] | None) -> list[str] | None:
