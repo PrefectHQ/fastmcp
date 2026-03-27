@@ -1634,13 +1634,25 @@ async def run_dev_apps(
         import socket
 
         for port, label in [(mcp_port, "MCP server"), (dev_port, "dev UI")]:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                if s.connect_ex(("localhost", port)) == 0:
-                    logger.error(
-                        f"Port {port} ({label}) is already in use. "
-                        f"Try --mcp-port or --dev-port to use different ports."
-                    )
-                    sys.exit(1)
+            in_use = False
+            for family in (socket.AF_INET, socket.AF_INET6):
+                with socket.socket(family, socket.SOCK_STREAM) as s:
+                    if (
+                        s.connect_ex(
+                            ("127.0.0.1", port)
+                            if family == socket.AF_INET
+                            else ("::1", port, 0, 0)
+                        )
+                        == 0
+                    ):
+                        in_use = True
+                        break
+            if in_use:
+                logger.error(
+                    f"Port {port} ({label}) is already in use. "
+                    f"Try --mcp-port or --dev-port to use different ports."
+                )
+                sys.exit(1)
 
         logger.info(f"Starting user server on port {mcp_port}…")
         logger.info("Fetching app-bridge.js from npm…")
