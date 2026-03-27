@@ -52,6 +52,8 @@ When modifying MCP functionality, changes typically need to be applied across al
 
 ## Development Rules
 
+**Read `CONTRIBUTING.md` before opening issues or PRs.** It describes when PRs are appropriate, what we expect from enhancement proposals, and what we'll close without review.
+
 ### Git & CI
 
 - Prek hooks are required (run automatically on commits)
