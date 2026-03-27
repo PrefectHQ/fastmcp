@@ -190,7 +190,7 @@ class Tool(FastMCPComponent):
         elif self.annotations and self.annotations.title:
             title = self.annotations.title
 
-        return MCPTool(
+        mcp_tool = MCPTool(
             name=overrides.get("name", self.name),
             title=overrides.get("title", title),
             description=overrides.get("description", self.description),
@@ -203,6 +203,13 @@ class Tool(FastMCPComponent):
                 "_meta", self.get_meta()
             ),  # ty:ignore[unknown-argument]
         )
+
+        if self.task_config.supports_tasks() and "execution" not in overrides:
+            mcp_tool.execution = self.execution or ToolExecution(
+                taskSupport=self.task_config.mode
+            )
+
+        return mcp_tool
 
     @classmethod
     def from_function(

@@ -20,7 +20,7 @@ from typing import (
 import anyio
 import mcp.types
 from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, Icon, ToolAnnotations, ToolExecution
+from mcp.types import ErrorData, Icon, ToolAnnotations
 from pydantic import Field
 from pydantic.json_schema import SkipJsonSchema
 
@@ -90,24 +90,6 @@ class ToolMeta:
 class FunctionTool(Tool):
     fn: SkipJsonSchema[Callable[..., Any]]
     return_type: Annotated[SkipJsonSchema[Any], Field(exclude=True)] = None
-
-    def to_mcp_tool(
-        self,
-        **overrides: Any,
-    ) -> mcp.types.Tool:
-        """Convert the FastMCP tool to an MCP tool.
-
-        Extends the base implementation to add task execution mode if enabled.
-        """
-        # Get base MCP tool from parent
-        mcp_tool = super().to_mcp_tool(**overrides)
-
-        # Add task execution mode per SEP-1686
-        # Only set execution if not overridden and task execution is supported
-        if self.task_config.supports_tasks() and "execution" not in overrides:
-            mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
-
-        return mcp_tool
 
     @classmethod
     def from_function(
