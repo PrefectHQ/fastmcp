@@ -788,6 +788,38 @@ class Context:
         """
         await self.session.send_notification(mcp.types.ServerNotification(notification))
 
+    async def notify_resource_updated(self, uri: str) -> None:
+        """Notify all subscribed clients that a resource has been updated.
+
+        Sends ``notifications/resources/updated`` to every session that has
+        previously called ``resources/subscribe`` for *uri*.  Sessions that
+        have since disconnected are silently skipped.
+
+        Args:
+            uri: The resource URI that has changed.
+
+        Example:
+            ```python
+            @server.tool
+            async def update_config(new_value: str, ctx: Context) -> str:
+                # … persist the change …
+                await ctx.notify_resource_updated("config://app/settings")
+                return "updated"
+            ```
+        """
+        import contextlib
+
+        from pydantic import AnyUrl as _AnyUrl
+
+        from fastmcp.server.subscriptions import get_registry
+
+        registry = get_registry()
+        subscribers = registry.get_subscribers(uri)
+        anyurl = _AnyUrl(uri)
+        for session in subscribers:
+            with contextlib.suppress(Exception):
+                await session.send_resource_updated(anyurl)
+
     async def close_sse_stream(self) -> None:
         """Close the current response stream to trigger client reconnection.
 

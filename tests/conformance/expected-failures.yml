@@ -1,6 +1,4 @@
 server:
   - completion-complete
   - server-sse-polling
-  - resources-subscribe
-  - resources-unsubscribe
   - dns-rebinding-protection

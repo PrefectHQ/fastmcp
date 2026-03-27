@@ -13,6 +13,7 @@ from mcp.server.lowlevel.server import (
     LifespanResultT,
     NotificationOptions,
     RequestT,
+    request_ctx,
 )
 from mcp.server.lowlevel.server import (
     Server as _Server,
@@ -165,6 +166,9 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
             tools_changed=True,
         )
 
+        # Register resource subscribe/unsubscribe handlers
+        self._register_subscription_handlers()
+
     @property
     def fastmcp(self) -> FastMCP:
         """Get the FastMCP instance."""
@@ -172,6 +176,26 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         if fastmcp is None:
             raise RuntimeError("FastMCP instance is no longer available")
         return fastmcp
+
+    def _register_subscription_handlers(self) -> None:
+        """Register MCP protocol handlers for resources/subscribe and resources/unsubscribe."""
+        from fastmcp.server.subscriptions import get_registry
+
+        @self.subscribe_resource()
+        async def handle_subscribe(uri: AnyUrl) -> None:
+            ctx = request_ctx.get(None)
+            if ctx is None:
+                return
+            session = ctx.session
+            await get_registry().subscribe(str(uri), session)
+
+        @self.unsubscribe_resource()
+        async def handle_unsubscribe(uri: AnyUrl) -> None:
+            ctx = request_ctx.get(None)
+            if ctx is None:
+                return
+            session = ctx.session
+            await get_registry().unsubscribe(str(uri), session)
 
     def create_initialization_options(
         self,
@@ -207,6 +231,13 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
             notification_options,
             experimental_capabilities or {},
         )
+
+        # Advertise resource subscription support (MCP spec: resources/subscribe)
+        # The MCP SDK hardcodes subscribe=False; we override it here.
+        if capabilities.resources is not None:
+            capabilities.resources.subscribe = True
+        else:
+            capabilities.resources = mcp.types.ResourcesCapability(subscribe=True)
 
         # Set tasks as a first-class field (not experimental) per SEP-1686
         capabilities.tasks = get_task_capabilities()
@@ -245,18 +276,24 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
                 )
             )
 
-            async with anyio.create_task_group() as tg:
-                # Store task group on session for subscription tasks (SEP-1686)
-                session._subscription_task_group = tg
+            try:
+                async with anyio.create_task_group() as tg:
+                    # Store task group on session for subscription tasks (SEP-1686)
+                    session._subscription_task_group = tg
 
-                async for message in session.incoming_messages:
-                    tg.start_soon(
-                        self._handle_message,
-                        message,
-                        session,
-                        lifespan_context,
-                        raise_exceptions,
-                    )
+                    async for message in session.incoming_messages:
+                        tg.start_soon(
+                            self._handle_message,
+                            message,
+                            session,
+                            lifespan_context,
+                            raise_exceptions,
+                        )
+            finally:
+                # Clean up resource subscriptions for this session on disconnect
+                from fastmcp.server.subscriptions import get_registry
+
+                await get_registry().remove_session(session)
 
     def read_resource(
         self,
