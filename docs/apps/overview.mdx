@@ -10,9 +10,11 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.0.0" />
 
-MCP Apps let tools return interactive UIs — charts, sortable tables, forms, dashboards — rendered in a sandboxed iframe inside the host client's conversation.
+MCP tools normally return text. That works for answers, but not for data the user wants to *explore* — a revenue chart they can hover over, a sortable employee directory, a form that submits structured input. MCP Apps let your tools return interactive UIs rendered right inside the conversation.
 
-FastMCP implements the [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) and gives you two ways to build interactive UIs with [Prefab](https://prefab.prefect.io), depending on how much server-side interaction you need.
+{/* TODO: screenshot of a Prefab app rendering in Claude Desktop */}
+
+FastMCP builds on the [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) with [Prefab](https://prefab.prefect.io), a Python component library that compiles to interactive UIs. You write Python; the user sees charts, tables, forms, and dashboards.
 
 <Note>
 The examples throughout the Apps docs require the `apps` extra:
@@ -28,7 +30,7 @@ This installs [Prefab UI](https://prefab.prefect.io), the component library used
 
 <VersionBadge version="3.1.0" />
 
-The quickest way to give a tool a visual UI. You return a [Prefab](https://prefab.prefect.io) component or `PrefabApp` from an otherwise standard MCP tool, and when the host calls it, the app is rendered instead of plain text:
+The quickest way to give a tool a visual UI. Add `app=True` to any tool and return a Prefab component — when the host calls it, the user sees an interactive UI instead of a JSON blob:
 
 ```python
 from prefab_ui.app import PrefabApp
@@ -60,7 +62,7 @@ def revenue_chart(year: int) -> PrefabApp:
     return PrefabApp(view=view)
 ```
 
-Prefab apps aren't limited to static displays. Prefab's state system and client-side actions (toggles, tabs, conditionals) all work. You can even call other tools from the UI using `CallTool` with string names. There's no hard wall on what a Prefab app can do.
+Prefab apps aren't limited to static displays. Prefab's state system and client-side actions (toggles, tabs, conditionals) all work. You can even call other tools from the UI using `CallTool`. There's no hard wall on what a Prefab app can do.
 
 See [Prefab Apps](/apps/prefab) for the full guide.
 
@@ -75,7 +77,7 @@ When your app has a lot of server-side interaction — forms that save data, sea
 - **`@app.ui()`** — entry-point tools the model calls to open the app
 - **`@app.tool()`** — backend tools the UI calls via `CallTool`
 
-Backend tools get stable global identifiers that survive namespacing, visibility is managed automatically (the model sees entry points, the UI sees backends), and `CallTool` accepts function references instead of string names:
+Backend tools get stable identifiers that survive namespacing, visibility is managed automatically (the model sees entry points, the UI sees backends), and `CallTool` accepts tool names that resolve correctly regardless of how servers are composed:
 
 ```python
 from prefab_ui.actions import SetState, ShowToast
@@ -130,20 +132,6 @@ You *can* build server-interactive UIs without `FastMCPApp` — it's all the sam
 
 See [FastMCPApp](/apps/interactive-apps) for the full guide.
 
-## Which Approach?
-
-| Scenario | Approach |
-| -------- | -------- |
-| Visual output — charts, tables, status dashboards | [Prefab app](/apps/prefab) — `@mcp.tool(app=True)` |
-| Client-side interactivity — toggles, tabs, conditionals | [Prefab app](/apps/prefab) — state + `Rx()` |
-| Light server interaction — one or two tool calls | [Prefab app](/apps/prefab) — `CallTool("tool_name")` |
-| Heavy server interaction — forms, CRUD, search, multi-step | [FastMCPApp](/apps/interactive-apps) — managed tool binding |
-| Composed servers — apps mounted under namespaces | [FastMCPApp](/apps/interactive-apps) — stable global keys |
-| LLM-generated UIs — bespoke visualizations per request | [Generative UI](/apps/generative) — `GenerativeUI` provider |
-| Custom rendering — maps, 3D, specific JS frameworks | [Custom HTML](/apps/low-level) — raw MCP Apps extension |
-
-The boundary isn't sharp. Start with a Prefab app; graduate to `FastMCPApp` when the tool-management complexity justifies it.
-
 ## Generative UI
 
 <VersionBadge version="3.2.0" />
@@ -160,9 +148,23 @@ mcp.add_provider(GenerativeUI())
 
 See [Generative UI](/apps/generative) for the full guide.
 
+## Which Approach?
+
+| Scenario | Approach |
+| -------- | -------- |
+| Visual output — charts, tables, status dashboards | [Prefab app](/apps/prefab) — `@mcp.tool(app=True)` |
+| Client-side interactivity — toggles, tabs, conditionals | [Prefab app](/apps/prefab) — state + `Rx()` |
+| Light server interaction — one or two tool calls | [Prefab app](/apps/prefab) — `CallTool("tool_name")` |
+| Heavy server interaction — forms, CRUD, search, multi-step | [FastMCPApp](/apps/interactive-apps) — managed tool binding |
+| Composed servers — apps mounted under namespaces | [FastMCPApp](/apps/interactive-apps) — stable routing |
+| LLM-generated UIs — bespoke visualizations per request | [Generative UI](/apps/generative) — `GenerativeUI` provider |
+| Custom rendering — maps, 3D, specific JS frameworks | [Custom HTML](/apps/low-level) — raw MCP Apps extension |
+
+The boundary isn't sharp. Start with a Prefab app; graduate to `FastMCPApp` when the tool-management complexity justifies it.
+
 ## Custom HTML Apps
 
-Both approaches above use [Prefab UI](https://prefab.prefect.io) to build UIs in pure Python. If you need full control — your own HTML, CSS, JavaScript, a specific framework — you can use the [MCP Apps extension directly](/apps/low-level). You write the HTML yourself and communicate with the host via the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) SDK.
+All the approaches above use [Prefab UI](https://prefab.prefect.io) to build UIs in pure Python. If you need full control — your own HTML, CSS, JavaScript, a specific framework — you can use the [MCP Apps extension directly](/apps/low-level). You write the HTML yourself and communicate with the host via the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) SDK.
 
 ## Previewing Apps Locally
 

@@ -194,12 +194,19 @@
                   "apps/overview",
                   "apps/prefab",
                   "apps/interactive-apps",
-                  "apps/components",
-                  "apps/patterns",
                   "apps/generative",
                   "apps/development",
-                  "apps/architecture",
-                  "apps/low-level"
+                  {
+                    "collapsed": true,
+                    "group": "Reference",
+                    "icon": "book",
+                    "pages": [
+                      "apps/components",
+                      "apps/patterns",
+                      "apps/architecture",
+                      "apps/low-level"
+                    ]
+                  }
                 ]
               },
               {

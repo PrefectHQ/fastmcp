@@ -14,7 +14,9 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 [Prefab](https://prefab.prefect.io) is in early, active development — its API changes frequently and breaking changes can occur with any release. Always pin `prefab-ui` to a specific version in your dependencies (see below).
 </Tip>
 
-The fastest way to give a tool a visual UI: return a [Prefab](https://prefab.prefect.io) component or `PrefabApp` from an otherwise standard MCP tool. FastMCP registers the rendering engine, wires the protocol metadata, and delivers the component tree to the host. You write Python; the user sees an interactive UI.
+When a tool returns text, the LLM reads it and relays the information. But some data is better *seen* — a chart communicates trend at a glance, a sortable table lets the user explore without re-prompting, a dashboard with badges and progress bars gives immediate status.
+
+Prefab apps transform your tools from text-returning functions into visual experiences. Add `app=True` to a tool, return a [Prefab](https://prefab.prefect.io) component, and the host renders an interactive UI instead of text. FastMCP handles the rendering engine, protocol metadata, and delivery. You write Python; the user sees charts, tables, and dashboards.
 
 This works for everything from static charts to reactive dashboards with client-side state. When your app has heavy server-side interaction — multiple backend tools, forms, search, CRUD — consider [FastMCPApp](/apps/interactive-apps), which manages tool binding, visibility, and composition safety for you.
 
