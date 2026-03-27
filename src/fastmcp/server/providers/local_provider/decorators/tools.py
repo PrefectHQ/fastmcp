@@ -140,7 +140,10 @@ def _maybe_apply_prefab_ui(provider: LocalProvider, tool: Tool) -> None:
         # Inference: return type is a prefab type, auto-wire
         _ensure_prefab_renderer(provider)
         _expand_prefab_ui_meta(tool)
-    # If ui is a dict, it's already manually configured — leave it alone
+    elif isinstance(ui, dict) and ui.get("resourceUri") == PREFAB_RENDERER_URI:
+        # PrefabAppConfig or manual config pointing to the Prefab renderer —
+        # ensure the renderer resource is registered (CSP already set by caller)
+        _ensure_prefab_renderer(provider)
 
 
 class ToolDecoratorMixin:

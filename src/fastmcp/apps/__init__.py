@@ -9,6 +9,7 @@ This package contains the app-related components:
 
 from fastmcp.apps.app import FastMCPApp as FastMCPApp
 from fastmcp.apps.config import AppConfig as AppConfig
+from fastmcp.apps.config import PrefabAppConfig as PrefabAppConfig
 from fastmcp.apps.config import ResourceCSP as ResourceCSP
 from fastmcp.apps.config import ResourcePermissions as ResourcePermissions
 from fastmcp.apps.config import UI_EXTENSION_ID as UI_EXTENSION_ID

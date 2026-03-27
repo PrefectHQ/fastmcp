@@ -114,6 +114,63 @@ class AppConfig(BaseModel):
     model_config = {"populate_by_name": True, "extra": "allow"}
 
 
+class PrefabAppConfig(AppConfig):
+    """App configuration for Prefab tools with sensible defaults.
+
+    Like ``app=True`` but customizable. Auto-wires the Prefab renderer
+    URI and merges the renderer's CSP with any additional domains you
+    specify.  The renderer resource is registered automatically.
+
+    Example::
+
+        @mcp.tool(app=PrefabAppConfig())  # same as app=True
+
+        @mcp.tool(app=PrefabAppConfig(
+            csp=ResourceCSP(frame_domains=["https://example.com"]),
+        ))
+    """
+
+    def model_post_init(self, __context: Any) -> None:
+        # Set the renderer URI if not explicitly overridden
+        if self.resource_uri is None:
+            self.resource_uri = "ui://prefab/renderer.html"
+
+        # Merge renderer CSP with user-provided CSP
+        try:
+            from prefab_ui.renderer import get_renderer_csp
+
+            renderer_csp = get_renderer_csp()
+        except ImportError:
+            renderer_csp = {}
+
+        if renderer_csp:
+            user_csp = self.csp or ResourceCSP()
+            merged = ResourceCSP(
+                connect_domains=_merge_domains(
+                    renderer_csp.get("connect_domains"),
+                    user_csp.connect_domains,
+                ),
+                resource_domains=_merge_domains(
+                    renderer_csp.get("resource_domains"),
+                    user_csp.resource_domains,
+                ),
+                frame_domains=user_csp.frame_domains,
+                base_uri_domains=user_csp.base_uri_domains,
+            )
+            self.csp = merged
+
+
+def _merge_domains(base: list[str] | None, extra: list[str] | None) -> list[str] | None:
+    """Merge two domain lists, deduplicating."""
+    if base is None and extra is None:
+        return None
+    combined = list(base or [])
+    for d in extra or []:
+        if d not in combined:
+            combined.append(d)
+    return combined or None
+
+
 def app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]:
     """Convert an AppConfig or dict to the wire-format dict for ``meta["ui"]``."""
     if isinstance(app, AppConfig):
