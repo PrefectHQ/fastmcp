@@ -302,9 +302,7 @@ class ResourceTemplate(FastMCPComponent):
         """Register this template with docket for background execution."""
         if not self.task_config.supports_tasks():
             return
-        from fastmcp.server.dependencies import _wrap_task_execution
-
-        docket.register(_wrap_task_execution(self.read), names=[self.key])
+        docket.register(self.read, names=[self.key])
 
     async def add_to_docket(  # type: ignore[override]
         self,
@@ -448,9 +446,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         """
         if not self.task_config.supports_tasks():
             return
-        from fastmcp.server.dependencies import _wrap_task_execution
-
-        docket.register(_wrap_task_execution(self.fn), names=[self.key])
+        docket.register(self.fn, names=[self.key])
 
     async def add_to_docket(
         self,

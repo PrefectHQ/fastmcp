@@ -234,9 +234,7 @@ class FunctionResource(Resource):
         """
         if not self.task_config.supports_tasks():
             return
-        from fastmcp.server.dependencies import _wrap_task_execution
-
-        docket.register(_wrap_task_execution(self.fn), names=[self.key])
+        docket.register(self.fn, names=[self.key])
 
 
 def resource(

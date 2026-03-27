@@ -366,9 +366,7 @@ class Tool(FastMCPComponent):
         """Register this tool with docket for background execution."""
         if not self.task_config.supports_tasks():
             return
-        from fastmcp.server.dependencies import _wrap_task_execution
-
-        docket.register(_wrap_task_execution(self.run), names=[self.key])
+        docket.register(self.run, names=[self.key])
 
     async def add_to_docket(  # type: ignore[override]
         self,
