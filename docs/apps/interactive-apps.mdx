@@ -283,7 +283,7 @@ Forms are the most common way to collect input and send it to the server. When a
 Build forms with individual input components:
 
 ```python
-from prefab_ui.components import Form, Input, Select, Textarea, Button
+from prefab_ui.components import Form, Input, Select, SelectOption, Textarea, Button
 from prefab_ui.actions.mcp import CallTool
 from prefab_ui.actions import ShowToast
 
@@ -294,11 +294,11 @@ with Form(
     )
 ):
     Input(name="title", label="Title", required=True)
-    Select(
-        name="priority",
-        label="Priority",
-        options=["low", "medium", "high", "critical"],
-    )
+    with Select(name="priority", label="Priority"):
+        SelectOption("Low", value="low")
+        SelectOption("Medium", value="medium")
+        SelectOption("High", value="high")
+        SelectOption("Critical", value="critical")
     Textarea(name="description", label="Description")
     Button("Create Ticket")
 ```
@@ -433,7 +433,7 @@ from prefab_ui.components import (
     Badge, Button, Column, ForEach, Form,
     Heading, Input, Muted, Row, Separator, Text,
 )
-from prefab_ui.rx import RESULT
+from prefab_ui.rx import RESULT, Rx
 from pydantic import BaseModel, Field
 from fastmcp import FastMCP, FastMCPApp
 
@@ -512,7 +512,7 @@ def contact_manager() -> PrefabApp:
         with Form(
             on_submit=CallTool(
                 "search_contacts",
-                arguments={"query": "{{ query }}"},
+                arguments={"query": Rx("query")},
                 on_success=SetState("contacts", RESULT),
             )
         ):
