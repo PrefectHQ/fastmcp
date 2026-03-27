@@ -1630,6 +1630,18 @@ async def run_dev_apps(
     async def _body() -> None:
         nonlocal user_proc
 
+        # Check ports before starting anything
+        import socket
+
+        for port, label in [(mcp_port, "MCP server"), (dev_port, "dev UI")]:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(("localhost", port)) == 0:
+                    logger.error(
+                        f"Port {port} ({label}) is already in use. "
+                        f"Try --mcp-port or --dev-port to use different ports."
+                    )
+                    sys.exit(1)
+
         logger.info(f"Starting user server on port {mcp_port}…")
         logger.info("Fetching app-bridge.js from npm…")
 
