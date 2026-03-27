@@ -18,8 +18,8 @@ Usage::
         return Column(...)
 
     @app.tool()
-    def save_contact(name: str, email: str) -> dict:
-        return {"name": name, "email": email}
+    def save_contact(name: str, email: str) -> str:
+        return name
 
     server = FastMCP("Platform")
     server.add_provider(app)
