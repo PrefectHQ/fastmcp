@@ -1,0 +1,64 @@
+---
+title: config
+sidebarTitle: config
+---
+
+# `fastmcp.apps.config`
+
+
+MCP Apps support — extension negotiation and typed UI metadata models.
+
+Provides constants and Pydantic models for the MCP Apps extension
+(io.modelcontextprotocol/ui), enabling tools and resources to carry
+UI metadata for clients that support interactive app rendering.
+
+
+## Functions
+
+### `app_config_to_meta_dict` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/config.py#L117" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]
+```
+
+
+Convert an AppConfig or dict to the wire-format dict for ``meta["ui"]``.
+
+
+## Classes
+
+### `ResourceCSP` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/config.py#L20" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Content Security Policy for MCP App resources.
+
+Declares which external origins the app is allowed to connect to or
+load resources from.  Hosts use these declarations to build the
+``Content-Security-Policy`` header for the sandboxed iframe.
+
+
+### `ResourcePermissions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/config.py#L52" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Iframe sandbox permissions for MCP App resources.
+
+Each field, when set (typically to ``{}``), requests that the host
+grant the corresponding Permission Policy feature to the sandboxed
+iframe.  Hosts MAY honour these; apps should use JS feature detection
+as a fallback.
+
+
+### `AppConfig` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/config.py#L79" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Configuration for MCP App tools and resources.
+
+Controls how a tool or resource participates in the MCP Apps extension.
+On tools, ``resource_uri`` and ``visibility`` specify which UI resource
+to render and where the tool appears.  On resources, those fields must
+be left unset (the resource itself is the UI).
+
+All fields use ``exclude_none`` serialization so only explicitly-set
+values appear on the wire.  Aliases match the MCP Apps wire format
+(camelCase).
+

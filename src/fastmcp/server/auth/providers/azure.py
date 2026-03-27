@@ -14,6 +14,7 @@ import httpx
 from key_value.aio.protocols import AsyncKeyValue
 
 from fastmcp.dependencies import Dependency
+from fastmcp.server.auth.auth import MultiAuth
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.auth import decode_jwt_payload, parse_scopes
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
     from azure.identity.aio import OnBehalfOfCredential
     from mcp.server.auth.provider import AuthorizationParams
     from mcp.shared.auth import OAuthClientInformationFull
+
+    from fastmcp.server.auth.auth import AuthProvider
 
 logger = get_logger(__name__)
 
@@ -663,6 +666,17 @@ def _require_azure_identity(feature: str) -> None:
         ) from e
 
 
+def _find_azure_provider(auth: AuthProvider | None) -> AzureProvider | None:
+    """Extract an AzureProvider from an auth provider, unwrapping MultiAuth if needed."""
+    if isinstance(auth, AzureProvider):
+        return auth
+
+    if isinstance(auth, MultiAuth) and isinstance(auth.server, AzureProvider):
+        return auth.server
+
+    return None
+
+
 class _EntraOBOToken(Dependency[str]):
     """Dependency that performs OBO token exchange for Microsoft Entra.
 
@@ -687,13 +701,14 @@ class _EntraOBOToken(Dependency[str]):
             )
 
         server = get_server()
-        if not isinstance(server.auth, AzureProvider):
+        azure_provider = _find_azure_provider(server.auth)
+        if azure_provider is None:
             raise RuntimeError(
                 "EntraOBOToken requires an AzureProvider as the auth provider. "
                 f"Current provider: {type(server.auth).__name__}"
             )
 
-        credential = await server.auth.get_obo_credential(
+        credential = await azure_provider.get_obo_credential(
             user_assertion=access_token.token,
         )
 

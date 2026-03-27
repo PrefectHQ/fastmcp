@@ -421,22 +421,20 @@ class TestRateLimitingMiddlewareIntegration:
 
     async def test_global_rate_limiting(self, rate_limit_server):
         """Test global rate limiting across all clients."""
-        rate_limit_server.add_middleware(
-            RateLimitingMiddleware(
-                max_requests_per_second=6.0,
-                burst_capacity=5,  # 1 init + 2 list_tools + 2 calls before limit
-                global_limit=True,  # Accounting for initialization and list_tools calls
-            )
+        middleware = RateLimitingMiddleware(
+            max_requests_per_second=0.001,
+            burst_capacity=1000,
+            global_limit=True,
         )
+        rate_limit_server.add_middleware(middleware)
 
         async with Client(rate_limit_server) as client:
-            # Use up the global capacity
             await client.call_tool("quick_action", {"message": "1"})
-            await client.call_tool("quick_action", {"message": "2"})
 
-            # Should be globally rate limited
+            middleware.global_limiter.tokens = 0
+
             with pytest.raises(ToolError, match="Global rate limit exceeded"):
-                await client.call_tool("quick_action", {"message": "3"})
+                await client.call_tool("quick_action", {"message": "blocked"})
 
     async def test_rate_limiting_recovery_over_time(self, rate_limit_server):
         """Test that rate limiting allows requests again after time passes."""

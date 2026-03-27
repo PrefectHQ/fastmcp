@@ -1,5 +1,6 @@
 """Tests for filesystem discovery module."""
 
+import sys
 from pathlib import Path
 
 from fastmcp.prompts.base import Prompt
@@ -485,3 +486,101 @@ def my_tool(x: str) -> str:
         assert components[0].version is None
         meta = components[0].get_meta()
         assert "version" not in meta["fastmcp"]
+
+
+class TestImportMachineryFixes:
+    """Tests for import machinery correctness: sys.path cleanup, sys.modules safety, package root boundary."""
+
+    def test_syspath_not_polluted_after_import(self, tmp_path: Path):
+        """sys.path should not contain the file's parent after import_module_from_file returns."""
+        (tmp_path / "mymod.py").write_text("VALUE = 1")
+        path_before = list(sys.path)
+        import_module_from_file(tmp_path / "mymod.py")
+        assert sys.path == path_before
+
+    def test_syspath_not_polluted_after_package_import(self, tmp_path: Path):
+        """sys.path should not contain the package root's parent after a package import."""
+        pkg = tmp_path / "mypkg_syspath"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        (pkg / "mod.py").write_text("VALUE = 2")
+        path_before = list(sys.path)
+        import_module_from_file(pkg / "mod.py", provider_root=tmp_path)
+        assert sys.path == path_before
+
+    def test_stdlib_not_shadowed_by_same_named_file(self, tmp_path: Path):
+        """A provider file named json.py must not overwrite sys.modules['json']."""
+        import json as stdlib_json
+
+        saved = sys.modules["json"]
+        try:
+            (tmp_path / "json.py").write_text(
+                "from fastmcp.tools import tool\n@tool\ndef parse(): return 'provider'"
+            )
+            import_module_from_file(tmp_path / "json.py")
+            assert sys.modules.get("json") is stdlib_json
+        finally:
+            sys.modules["json"] = saved
+
+    def test_same_stem_files_get_independent_modules(self, tmp_path: Path):
+        """Two files with the same stem in different directories must not collide in sys.modules.
+
+        The first-imported file keeps the bare stem key; the second gets a private key.
+        Both modules must be independently accessible with correct content.
+        """
+        dir_a = tmp_path / "a"
+        dir_b = tmp_path / "b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        (dir_a / "helpers.py").write_text("ORIGIN = 'a'")
+        (dir_b / "helpers.py").write_text("ORIGIN = 'b'")
+
+        mod_a = import_module_from_file(dir_a / "helpers.py")
+        mod_b = import_module_from_file(dir_b / "helpers.py")
+
+        assert mod_a.ORIGIN == "a"
+        assert mod_b.ORIGIN == "b"
+        # The first module retains the bare stem key; the second uses a private key.
+        # They must be distinct objects — the second import must not have clobbered the first.
+        assert mod_a is not mod_b
+        assert sys.modules.get("helpers") is not mod_b
+
+    def test_package_root_bounded_by_provider_root(self, tmp_path: Path):
+        """When the provider root is nested inside a larger package, import_module_from_file
+        with provider_root must not escape into ancestor packages.
+
+        The generated module name should be relative to the provider root (e.g. "myprovider.tools"),
+        not to an ancestor package (e.g. "myproject.myprovider.tools"), and tmp_path (the
+        ancestor's parent) must not be added to sys.path.
+        """
+        # Use a name that won't collide with any installed package
+        project = tmp_path / "myproject"
+        project.mkdir()
+        (project / "__init__.py").write_text("")
+        provider = project / "myprovider"
+        provider.mkdir()
+        (provider / "__init__.py").write_text("")
+        (provider / "tools.py").write_text("VALUE = 42")
+
+        path_before = set(sys.path)
+        mod = import_module_from_file(provider / "tools.py", provider_root=provider)
+        path_after = set(sys.path)
+
+        # Module was correctly imported
+        assert mod.VALUE == 42
+        # sys.path should not contain tmp_path (the ancestor's grandparent);
+        # that would only happen if the package root escaped past the provider boundary
+        assert str(tmp_path) not in (path_after - path_before)
+        # The module name is bounded to the provider root, not "myproject.myprovider.tools"
+        assert mod.__name__ == "myprovider.tools"
+
+    def test_non_package_reload_returns_updated_content(self, tmp_path: Path):
+        """Re-importing a non-package file should reflect file changes (exec_module path)."""
+        f = tmp_path / "reloadable_np.py"
+        f.write_text("VALUE = 'original'")
+        mod = import_module_from_file(f)
+        assert mod.VALUE == "original"
+
+        f.write_text("VALUE = 'updated'")
+        mod2 = import_module_from_file(f)
+        assert mod2.VALUE == "updated"
