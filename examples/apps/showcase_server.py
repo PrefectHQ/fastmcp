@@ -1,3 +1,4 @@
+# ruff: noqa: F405
 """Component showcase — demonstrates the breadth of Prefab UI components.
 
 Usage:
@@ -6,8 +7,8 @@ Usage:
 
 from prefab_ui.actions import SetState, ShowToast
 from prefab_ui.app import PrefabApp
-from prefab_ui.components import *  # noqa: F403
-from prefab_ui.components.charts import *  # noqa: F403
+from prefab_ui.components import *  # noqa: F403, F405
+from prefab_ui.components.charts import *  # noqa: F403, F405
 from prefab_ui.components.control_flow import Else, If
 
 from fastmcp import FastMCP

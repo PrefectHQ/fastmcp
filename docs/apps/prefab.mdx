@@ -285,10 +285,18 @@ Changes are instant — switching the dropdown re-evaluates the conditions in th
 By default, Prefab sends `"[Rendered Prefab UI]"` as the text content for the LLM. If the model needs to reason about the data, wrap your return in a `ToolResult` with a meaningful summary:
 
 ```python
+from prefab_ui.app import PrefabApp
+from prefab_ui.components import Column, Heading
+from prefab_ui.components.charts import BarChart, ChartSeries
+from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
+
+mcp = FastMCP("Sales")
+
 
 @mcp.tool(app=True)
 def sales_overview(year: int) -> ToolResult:
+    """Show sales data visually and summarize for the model."""
     data = get_sales_data(year)
     total = sum(row["revenue"] for row in data)
 
