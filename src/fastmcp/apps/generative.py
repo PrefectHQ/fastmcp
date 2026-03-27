@@ -100,7 +100,6 @@ class GenerativeUI(Provider):
         """Lazily register tools and resources on first access."""
         if self._setup_done:
             return
-        self._setup_done = True
 
         csp = _build_csp()
         app_config = AppConfig(resource_uri=_gen.RESOURCE_URI, csp=csp)
@@ -158,6 +157,8 @@ class GenerativeUI(Provider):
             meta={"ui": app_config_to_meta_dict(resource_config)},
         )
         self._local._add_component(resource)
+
+        self._setup_done = True
 
     # ------------------------------------------------------------------
     # Provider interface
