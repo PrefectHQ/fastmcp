@@ -1,7 +1,7 @@
 ---
-title: Prefab Apps
-sidebarTitle: Prefab Apps
-description: Build interactive tool UIs in pure Python — charts, tables, dashboards, forms, and reactive displays.
+title: Prefab UI
+sidebarTitle: Prefab UI
+description: The component library behind FastMCP apps — charts, tables, dashboards, forms, and reactive displays.
 icon: palette
 tag: NEW
 ---
@@ -14,11 +14,11 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 [Prefab](https://prefab.prefect.io) is in early, active development — its API changes frequently and breaking changes can occur with any release. Always pin `prefab-ui` to a specific version in your dependencies (see below).
 </Tip>
 
-When a tool returns text, the LLM reads it and relays the information. But some data is better *seen* — a chart communicates trend at a glance, a sortable table lets the user explore without re-prompting, a dashboard with badges and progress bars gives immediate status.
+[Prefab UI](https://prefab.prefect.io) is the component library behind all FastMCP app features. You describe layouts, charts, tables, and forms in Python, and Prefab compiles them to interactive UIs that render in the host's conversation.
 
-Prefab apps transform your tools from text-returning functions into visual experiences. Add `app=True` to a tool, return a [Prefab](https://prefab.prefect.io) component, and the host renders an interactive UI instead of text. FastMCP handles the rendering engine, protocol metadata, and delivery. You write Python; the user sees charts, tables, and dashboards.
+The simplest way to use it: add `app=True` to a tool and return Prefab components. The host renders an interactive UI instead of text. This works for everything from static charts to reactive dashboards with client-side state — no server round-trips needed.
 
-This works for everything from static charts to reactive dashboards with client-side state. When your app has heavy server-side interaction — multiple backend tools, forms, search, CRUD — consider [FastMCPApp](/apps/interactive-apps), which manages tool binding, visibility, and composition safety for you.
+For apps that need server interaction (forms, search, CRUD), see [FastMCPApp](/apps/interactive-apps) which adds managed tool binding on top of Prefab UI. For LLM-generated UIs, see [Generative UI](/apps/generative).
 
 ## Getting Started
 
@@ -258,17 +258,16 @@ def team_list() -> PrefabApp:
 
 ```python
 from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Select, If, Elif, Else, Text
+from prefab_ui.components import Column, Select, SelectOption, If, Elif, Else, Text
 from prefab_ui.rx import Rx
 
 tier = Rx("tier")
 
 with Column(gap=4) as view:
-    Select(
-        name="tier",
-        label="Plan",
-        options=["free", "pro", "enterprise"],
-    )
+    with Select(name="tier", label="Plan"):
+        SelectOption("Free", value="free")
+        SelectOption("Pro", value="pro")
+        SelectOption("Enterprise", value="enterprise")
     with If(tier == "enterprise"):
         Text("Full access to all features")
     with Elif(tier == "pro"):
@@ -281,51 +280,15 @@ with Column(gap=4) as view:
 
 Changes are instant — switching the dropdown re-evaluates the conditions in the browser.
 
-## What You Return
+## Giving the LLM Context
 
-### Components
-
-The simplest approach. Return a component directly and FastMCP wraps it in a `PrefabApp` automatically:
+By default, Prefab sends `"[Rendered Prefab UI]"` as the text content for the LLM. If the model needs to reason about the data, wrap your return in a `ToolResult` with a meaningful summary:
 
 ```python
-@mcp.tool(app=True)
-def status() -> Column:
-    with Column(gap=2) as view:
-        Heading("All Systems Operational")
-        Badge("Healthy", variant="success")
-    return view
-```
-
-### PrefabApp
-
-When you need initial state or other configuration, return a `PrefabApp` explicitly with a `state` dict:
-
-```python
-@mcp.tool(app=True)
-def dashboard() -> PrefabApp:
-    # ... build view ...
-    return PrefabApp(view=view, state={"tab": "overview"})
-```
-
-### ToolResult
-
-Every tool result has two audiences: the renderer (which displays the UI) and the LLM (which reads text content to understand what happened). By default, Prefab sends `"[Rendered Prefab UI]"` as the text — which tells the LLM nothing useful.
-
-If the model needs to reason about the data — reference it in conversation, summarize it, decide what to do next — wrap your return in a `ToolResult`:
-
-```python
-from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Heading
-from prefab_ui.components.charts import BarChart, ChartSeries
-from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
-
-mcp = FastMCP("Sales")
-
 
 @mcp.tool(app=True)
 def sales_overview(year: int) -> ToolResult:
-    """Show sales data visually and summarize for the model."""
     data = get_sales_data(year)
     total = sum(row["revenue"] for row in data)
 
@@ -339,35 +302,12 @@ def sales_overview(year: int) -> ToolResult:
     )
 ```
 
-The user sees the chart. The LLM sees the summary string and can reason about it.
+The user sees the chart. The LLM sees the summary string.
 
-## Type Inference
+## Advanced
 
-If your tool's return type annotation is a Prefab type — `PrefabApp`, `Component`, or unions/optionals containing them — FastMCP detects this and enables app rendering automatically:
-
-```python
-@mcp.tool
-def greet(name: str) -> PrefabApp:
-    return PrefabApp(view=Heading(f"Hello, {name}!"))
-```
-
-This is equivalent to `@mcp.tool(app=True)`. Explicit `app=True` is recommended for clarity, and required when the return type doesn't reveal a Prefab type (e.g., `-> ToolResult`).
-
-## How It Works
-
-When a tool returns a Prefab component or `PrefabApp`, three things happen behind the scenes:
-
-A **shared renderer** is registered as a `ui://prefab/renderer.html` resource. This is a JavaScript rendering engine that interprets Prefab's JSON component protocol. The host fetches it once and reuses it for all Prefab tools on the server.
-
-The **tool metadata** is wired so the host knows to load the renderer iframe when displaying the result. This includes Content Security Policy headers that the renderer needs for its dependencies.
-
-The **component tree** is serialized as `structuredContent` on the tool result. The renderer receives this JSON and renders the UI.
-
-None of this requires configuration. The `app=True` flag (or type inference) is the only thing you need.
-
-## Customizing CSP
-
-`app=True` auto-wires the Prefab renderer with default CSP settings. If your app loads external resources — embedding iframes, fetching from APIs, loading scripts — use `PrefabAppConfig` to add the required domains while keeping all the auto-wiring:
+<Accordion title="Customizing CSP">
+`app=True` auto-wires the Prefab renderer with default CSP settings. If your app loads external resources — embedding iframes, fetching from APIs, loading scripts — use `PrefabAppConfig` to add the required domains:
 
 ```python
 from fastmcp.apps import PrefabAppConfig, ResourceCSP
@@ -380,10 +320,22 @@ def dashboard_with_embed() -> PrefabApp:
 ```
 
 `PrefabAppConfig()` with no arguments is equivalent to `app=True`. It auto-sets the renderer URI and merges the renderer's CSP with any additional domains you provide.
+</Accordion>
 
-## Mixing with Custom HTML
+<Accordion title="Type inference">
+If your return type annotation is a Prefab type — `PrefabApp`, `Component`, or unions containing them — FastMCP enables app rendering automatically, even without `app=True`:
 
-Prefab tools and [custom HTML tools](/apps/low-level) coexist in the same server. Prefab tools share a single renderer resource; custom tools point to their own:
+```python
+@mcp.tool
+def greet(name: str) -> PrefabApp:
+    return PrefabApp(view=Heading(f"Hello, {name}!"))
+```
+
+Explicit `app=True` is recommended for clarity.
+</Accordion>
+
+<Accordion title="Mixing with custom HTML">
+Prefab tools and [custom HTML tools](/apps/low-level) coexist on the same server:
 
 ```python
 from fastmcp.apps import AppConfig
@@ -396,6 +348,7 @@ def team_directory() -> PrefabApp:
 def map_view() -> str:
     ...
 ```
+</Accordion>
 
 ## Next Steps
 
