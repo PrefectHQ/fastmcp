@@ -417,8 +417,8 @@ _LOG_PANEL_HTML = """\
   }
   #mcp-log-panel.hidden { display: none; }
   #app-frame {
-    width: calc(100% - 360px) !important; height: 100% !important;
-    margin-left: 360px !important;
+    width: 100% !important; height: 100% !important;
+    margin-left: 0 !important;
   }
   #mcp-log-resize {
     position: absolute; right: -3px; top: 0; bottom: 0; width: 6px;
@@ -509,7 +509,7 @@ _LOG_PANEL_HTML = """\
     background: #181825; color: #cdd6f4; border: 1px solid #45475a;
     padding: 6px 12px; border-radius: 6px; cursor: pointer;
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-    font-size: 11px; display: none;
+    font-size: 11px; display: block;
   }
   #mcp-log-open:hover { background: #313244; }
   #mcp-log-filters {
@@ -555,7 +555,7 @@ _LOG_PANEL_HTML = """\
   .log-level-alert { background: rgba(243, 139, 168, 0.25); color: #f38ba8; }
   .log-level-emergency { background: rgba(243, 139, 168, 0.3); color: #f38ba8; }
 </style>
-<div id="mcp-log-panel">
+<div id="mcp-log-panel" class="hidden">
   <div id="mcp-log-resize"></div>
   <div id="mcp-log-header">
     <div id="mcp-log-brand">

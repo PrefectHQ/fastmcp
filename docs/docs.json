@@ -198,7 +198,6 @@
                     "group": "Reference",
                     "icon": "book",
                     "pages": [
-                      "apps/components",
                       "apps/patterns",
                       "apps/architecture",
                       "apps/low-level"
