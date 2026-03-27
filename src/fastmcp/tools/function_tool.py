@@ -18,7 +18,6 @@ from typing import (
 )
 
 import anyio
-import mcp.types
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, Icon, ToolAnnotations
 from pydantic import Field

@@ -204,10 +204,12 @@ class Tool(FastMCPComponent):
             ),  # ty:ignore[unknown-argument]
         )
 
-        if self.task_config.supports_tasks() and "execution" not in overrides:
-            mcp_tool.execution = self.execution or ToolExecution(
-                taskSupport=self.task_config.mode
-            )
+        if (
+            self.task_config.supports_tasks()
+            and "execution" not in overrides
+            and not self.execution
+        ):
+            mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
 
         return mcp_tool
 
