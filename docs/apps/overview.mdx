@@ -12,7 +12,9 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 MCP tools normally return text. That works for answers, but not for data the user wants to *explore* — a revenue chart they can hover over, a sortable employee directory, a form that submits structured input. MCP Apps let your tools return interactive UIs rendered right inside the conversation.
 
-{/* TODO: screenshot of a Prefab app rendering in Claude Desktop */}
+<Frame>
+  <img src="/apps/images/app-overview.png" alt="A Prefab app showing a team directory with a donut chart, bar chart, and sortable table" />
+</Frame>
 
 FastMCP builds on the [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) with [Prefab](https://prefab.prefect.io), a Python component library that compiles to interactive UIs. You write Python; the user sees charts, tables, forms, and dashboards.
 

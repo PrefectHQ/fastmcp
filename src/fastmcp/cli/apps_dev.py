@@ -372,6 +372,8 @@ _HOST_HTML_TEMPLATE = """\
         await bridge.sendToolResult(result);
         status.style.display = "none";
         iframe.style.display = "block";
+        // Prevent horizontal scrollbar when vertical scrollbar appears
+        try {{ iframe.contentDocument.documentElement.style.overflowX = "hidden"; }} catch(e) {{}}
       }};
 
       // Start listening before the iframe loads
