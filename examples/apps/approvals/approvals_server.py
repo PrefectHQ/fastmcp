@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from prefab_ui.actions import SetState, ShowToast
 from prefab_ui.actions.mcp import CallTool
-from prefab_ui.app import PrefabApp, set_initial_state
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Badge,
     Button,
@@ -285,15 +285,9 @@ def _build_request_card(
 @app.ui()
 def approval_dashboard() -> PrefabApp:
     """Open the approval dashboard. The model calls this to launch the app."""
-    state = set_initial_state(
-        pending_requests=_by_status("pending"),
-        approved_requests=_by_status("approved"),
-        rejected_requests=_by_status("rejected"),
-    )
-
-    pending_count = state.pending_requests.length()
-    approved_count = state.approved_requests.length()
-    rejected_count = state.rejected_requests.length()
+    pending_count = Rx("pending_requests").length()
+    approved_count = Rx("approved_requests").length()
+    rejected_count = Rx("rejected_requests").length()
 
     with Column(gap=6, css_class="p-6") as view:
         with Row(gap=3, align="center"):
@@ -323,7 +317,14 @@ def approval_dashboard() -> PrefabApp:
                 with If(~rejected_count):
                     Muted("No rejected requests.")
 
-    return PrefabApp(view=view)
+    return PrefabApp(
+        view=view,
+        state={
+            "pending_requests": _by_status("pending"),
+            "approved_requests": _by_status("approved"),
+            "rejected_requests": _by_status("rejected"),
+        },
+    )
 
 
 mcp = FastMCP("Approvals Server", providers=[app])

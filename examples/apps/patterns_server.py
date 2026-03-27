@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from prefab_ui.actions import ShowToast
 from prefab_ui.actions.mcp import CallTool
-from prefab_ui.app import PrefabApp, set_initial_state
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Accordion,
     AccordionItem,
@@ -43,7 +43,7 @@ from prefab_ui.components import (
     Textarea,
 )
 from prefab_ui.components.charts import AreaChart, BarChart, ChartSeries, PieChart
-from prefab_ui.rx import ERROR
+from prefab_ui.rx import ERROR, Rx
 
 from fastmcp import FastMCP
 
@@ -311,8 +311,6 @@ def employee_directory() -> PrefabApp:
 @mcp.tool(app=True)
 def contact_form() -> PrefabApp:
     """Show a form to create a new contact, with a live contact list below."""
-    set_initial_state(contacts=list(_contacts))
-
     with Column(gap=6, css_class="p-6") as view:
         Heading("Contacts")
 
@@ -343,7 +341,7 @@ def contact_form() -> PrefabApp:
             Textarea(name="notes", label="Notes", placeholder="Optional notes...")
             Button("Save Contact")
 
-    return PrefabApp(view=view)
+    return PrefabApp(view=view, state={"contacts": list(_contacts)})
 
 
 @mcp.tool
@@ -403,8 +401,6 @@ def system_status() -> PrefabApp:
 @mcp.tool(app=True)
 def feature_flags() -> PrefabApp:
     """Toggle feature flags with live preview."""
-    state = set_initial_state(dark_mode=False, beta_features=False)
-
     with Column(gap=4, css_class="p-6") as view:
         Heading("Feature Flags")
 
@@ -413,16 +409,16 @@ def feature_flags() -> PrefabApp:
 
         Separator()
 
-        with If(state.dark_mode):
+        with If(Rx("dark_mode")):
             Alert(title="Dark mode enabled", description="UI will use dark theme.")
-        with If(state.beta_features):
+        with If(Rx("beta_features")):
             Alert(
                 title="Beta features active",
                 description="Experimental features are now visible.",
                 variant="warning",
             )
 
-    return PrefabApp(view=view)
+    return PrefabApp(view=view, state={"dark_mode": False, "beta_features": False})
 
 
 # ---------------------------------------------------------------------------
@@ -433,8 +429,6 @@ def feature_flags() -> PrefabApp:
 @mcp.tool(app=True)
 def project_overview() -> PrefabApp:
     """Show project details organized in tabs."""
-    set_initial_state(activity=PROJECT["activity"])
-
     with Column(gap=4, css_class="p-6") as view:
         Heading(PROJECT["name"])
 
@@ -460,7 +454,7 @@ def project_overview() -> PrefabApp:
                         Muted(item.timestamp)
                         Text(item.message)
 
-    return PrefabApp(view=view)
+    return PrefabApp(view=view, state={"activity": PROJECT["activity"]})
 
 
 # ---------------------------------------------------------------------------

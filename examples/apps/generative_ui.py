@@ -1,8 +1,8 @@
 """Generative UI — let the LLM build custom Prefab UIs on the fly.
 
 The GenerativeUI provider registers two tools:
-- generate_ui: the LLM writes Prefab Python code, it runs in a sandbox, the result renders
-- components: the LLM searches the Prefab component library to discover what's available
+- generate_prefab_ui: the LLM writes Prefab Python code, it runs in a sandbox, the result renders
+- search_prefab_components: the LLM searches the Prefab component library
 
 The generative renderer supports streaming: as the LLM writes code into
 the `code` argument, the host forwards partial arguments to the app via
@@ -15,7 +15,7 @@ Usage:
 from fastmcp import FastMCP
 from fastmcp.apps.generative import GenerativeUI
 
-mcp = FastMCP("Generative UI")
+mcp = FastMCP("Prefab Studio")
 mcp.add_provider(GenerativeUI())
 
 if __name__ == "__main__":

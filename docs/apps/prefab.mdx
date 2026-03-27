@@ -106,11 +106,12 @@ Display tools can be interactive without calling the server. The key is **state*
 
 ### Declaring State
 
-Use `set_initial_state()` to declare state and get a typed proxy for referencing it:
+Pass a `state` dict to `PrefabApp` to declare initial state, then use `Rx("key")` to create reactive references:
 
 ```python
-from prefab_ui.app import PrefabApp, set_initial_state
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import Column, Heading, Switch, Alert, If
+from prefab_ui.rx import Rx
 from fastmcp import FastMCP
 
 mcp = FastMCP("Flags")
@@ -119,32 +120,30 @@ mcp = FastMCP("Flags")
 @mcp.tool(app=True)
 def feature_flags() -> PrefabApp:
     """Toggle feature flags with live preview."""
-    state = set_initial_state(dark_mode=False, beta=False)
-
     with Column(gap=4, css_class="p-6") as view:
         Heading("Feature Flags")
         Switch(name="dark_mode", label="Dark Mode")
         Switch(name="beta", label="Beta Features")
 
-        with If(state.dark_mode):
+        with If(Rx("dark_mode")):
             Alert(title="Dark mode enabled")
-        with If(state.beta):
+        with If(Rx("beta")):
             Alert(title="Beta features active", variant="warning")
 
-    return PrefabApp(view=view)
+    return PrefabApp(view=view, state={"dark_mode": False, "beta": False})
 ```
 
 Three things to notice here:
 
-`set_initial_state()` declares the keys and their starting values, and returns a proxy object. Accessing `state.dark_mode` gives you a reactive reference (an `Rx` object) that compiles to `{{ dark_mode }}` in the wire protocol. A typo like `state.drk_mode` raises an `AttributeError` immediately.
+The `state` dict on `PrefabApp` declares the keys and their starting values. `Rx("dark_mode")` creates a reactive reference that compiles to `{{ dark_mode }}` in the wire protocol.
 
-Interactive components with a `name` prop automatically bind to state. The `Switch(name="dark_mode")` syncs its on/off value to `state["dark_mode"]` on every toggle — no event wiring needed.
+Interactive components with a `name` prop automatically bind to state. The `Switch(name="dark_mode")` syncs its on/off value to the `dark_mode` state key on every toggle — no event wiring needed.
 
-`If(state.dark_mode)` shows its children only when the state key is truthy. When the switch flips, the condition re-evaluates instantly in the browser.
+`If(Rx("dark_mode"))` shows its children only when the state key is truthy. When the switch flips, the condition re-evaluates instantly in the browser.
 
 ### Reactive References with Rx
 
-The `Rx` class is how you reference state in component props. When you write `state.dark_mode`, you get an `Rx("dark_mode")` object. You can also create them directly:
+The `Rx` class is how you reference state in component props:
 
 ```python
 from prefab_ui.rx import Rx
@@ -155,8 +154,9 @@ count = Rx("count")
 Rx objects support arithmetic, comparisons, and formatting — they compile to expressions the renderer evaluates at render time:
 
 ```python
-from prefab_ui.app import PrefabApp, set_initial_state
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import Column, Text, Slider
+from prefab_ui.rx import Rx
 from fastmcp import FastMCP
 
 mcp = FastMCP("Calculator")
@@ -165,10 +165,11 @@ mcp = FastMCP("Calculator")
 @mcp.tool(app=True)
 def tip_calculator() -> PrefabApp:
     """Calculate tip with a slider."""
-    state = set_initial_state(bill=50.00, tip_pct=18)
+    tip_pct = Rx("tip_pct")
+    bill = Rx("bill")
 
-    tip_amount = state.tip_pct / 100 * state.bill
-    total = state.bill + tip_amount
+    tip_amount = tip_pct / 100 * bill
+    total = bill + tip_amount
 
     with Column(gap=4, css_class="p-6") as view:
         Slider(name="bill", label="Bill Amount", min=0, max=500, step=0.5)
@@ -176,23 +177,27 @@ def tip_calculator() -> PrefabApp:
         Text(f"Tip: {tip_amount.currency()}")
         Text(f"Total: {total.currency()}")
 
-    return PrefabApp(view=view)
+    return PrefabApp(view=view, state={"bill": 50.00, "tip_pct": 18})
 ```
 
-`state.tip_pct / 100 * state.bill` builds a compound expression — it doesn't do the math in Python. The renderer evaluates it live as the sliders move. The `.currency()` pipe formats the result as currency.
+`Rx("tip_pct") / 100 * Rx("bill")` builds a compound expression — it doesn't do the math in Python. The renderer evaluates it live as the sliders move. The `.currency()` pipe formats the result as currency.
 
 #### Pipes
 
 Rx objects support formatting pipes that transform values at render time:
 
 ```python
-state = set_initial_state(price=42.50, ratio=0.85, name="alice")
+from prefab_ui.rx import Rx
 
-state.price.currency()        # $42.50
-state.price.currency("EUR")   # EUR format
-state.ratio.percent()         # 85%
-state.name.upper()            # ALICE
-state.name.truncate(10)       # alice (or truncated if longer)
+price = Rx("price")
+ratio = Rx("ratio")
+name = Rx("name")
+
+price.currency()        # $42.50
+price.currency("EUR")   # EUR format
+ratio.percent()         # 85%
+name.upper()            # ALICE
+name.truncate(10)       # alice (or truncated if longer)
 ```
 
 Number pipes include `currency`, `percent`, `number`, `compact`, `round`, and `abs`. String pipes include `upper`, `lower`, and `truncate`. See the [Prefab expression docs](https://prefab.prefect.io/docs/concepts/expressions) for the full list.
@@ -202,11 +207,13 @@ Number pipes include `currency`, `percent`, `number`, `compact`, `round`, and `a
 The `.then()` method creates ternary expressions:
 
 ```python
-state = set_initial_state(connected=True)
+from prefab_ui.rx import Rx
+
+connected = Rx("connected")
 
 Badge(
-    state.connected.then("Online", "Offline"),
-    variant=state.connected.then("success", "destructive"),
+    connected.then("Online", "Offline"),
+    variant=connected.then("success", "destructive"),
 )
 ```
 
@@ -215,7 +222,7 @@ Badge(
 Python `for` loops generate static content at build time. When you need to iterate over state that can change — a list that grows, items that get filtered — use `ForEach`:
 
 ```python
-from prefab_ui.app import PrefabApp, set_initial_state
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import Column, Heading, ForEach, Row, Text, Badge
 from fastmcp import FastMCP
 
@@ -247,10 +254,11 @@ def team_list() -> PrefabApp:
 `If`, `Elif`, and `Else` control what's visible based on state:
 
 ```python
-from prefab_ui.app import PrefabApp, set_initial_state
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import Column, Select, If, Elif, Else, Text
+from prefab_ui.rx import Rx
 
-state = set_initial_state(tier="free")
+tier = Rx("tier")
 
 with Column(gap=4) as view:
     Select(
@@ -258,12 +266,14 @@ with Column(gap=4) as view:
         label="Plan",
         options=["free", "pro", "enterprise"],
     )
-    with If(state.tier == "enterprise"):
+    with If(tier == "enterprise"):
         Text("Full access to all features")
-    with Elif(state.tier == "pro"):
+    with Elif(tier == "pro"):
         Text("Advanced features unlocked")
     with Else():
         Text("Basic features only")
+
+# Pass state={"tier": "free"} to PrefabApp when returning
 ```
 
 Changes are instant — switching the dropdown re-evaluates the conditions in the browser.
@@ -285,20 +295,13 @@ def status() -> Column:
 
 ### PrefabApp
 
-When you need initial state or other configuration, return a `PrefabApp` explicitly. If you've called `set_initial_state()` during the tool, PrefabApp picks up that state automatically:
+When you need initial state or other configuration, return a `PrefabApp` explicitly with a `state` dict:
 
 ```python
 @mcp.tool(app=True)
 def dashboard() -> PrefabApp:
-    state = set_initial_state(tab="overview")
     # ... build view ...
-    return PrefabApp(view=view)
-```
-
-You can also pass state directly:
-
-```python
-return PrefabApp(view=view, state={"tab": "overview"})
+    return PrefabApp(view=view, state={"tab": "overview"})
 ```
 
 ### ToolResult

@@ -224,8 +224,9 @@ These patterns use state and `Rx()` for client-side interactivity — no server 
 ### Feature Toggles
 
 ```python
-from prefab_ui.app import PrefabApp, set_initial_state
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import Column, Heading, Switch, Alert, If, Separator
+from prefab_ui.rx import Rx
 from fastmcp import FastMCP
 
 mcp = FastMCP("Flags")
@@ -234,23 +235,21 @@ mcp = FastMCP("Flags")
 @mcp.tool(app=True)
 def feature_flags() -> PrefabApp:
     """Toggle feature flags with live preview."""
-    state = set_initial_state(dark_mode=False, beta=False)
-
     with Column(gap=4, css_class="p-6") as view:
         Heading("Feature Flags")
         Switch(name="dark_mode", label="Dark Mode")
         Switch(name="beta", label="Beta Features")
         Separator()
-        with If(state.dark_mode):
+        with If(Rx("dark_mode")):
             Alert(title="Dark mode enabled", description="UI will use dark theme.")
-        with If(state.beta):
+        with If(Rx("beta")):
             Alert(
                 title="Beta features active",
                 description="Experimental features are now visible.",
                 variant="warning",
             )
 
-    return PrefabApp(view=view)
+    return PrefabApp(view=view, state={"dark_mode": False, "beta": False})
 ```
 
 ### Tabs

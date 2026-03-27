@@ -489,18 +489,18 @@ with Dialog(title="Confirm Delete"):
 Multi-page navigation within a single app. `Pages` renders one `Page` at a time, controlled by state. Useful for multi-step workflows and wizards.
 
 ```python
-from prefab_ui.app import set_initial_state
 from prefab_ui.components import Pages, Page, Text, Button
 from prefab_ui.actions import SetState
+from prefab_ui.rx import Rx
 
-state = set_initial_state(page="welcome")
-
-with Pages(active_page=state.page):
+with Pages(active_page=Rx("page")):
     with Page("welcome"):
         Text("Welcome!")
         Button("Next", on_click=SetState("page", "setup"))
     with Page("setup"):
         Text("Configure your settings")
+
+# Pass state={"page": "welcome"} to PrefabApp when returning
 ```
 
 | Prop (Pages) | Type | Description |
@@ -516,18 +516,20 @@ Control flow components conditionally show or iterate over children based on rea
 Conditionally render content based on state values. `If` evaluates an `Rx` expression; `Elif` and `Else` follow the same pattern as Python's branching.
 
 ```python
-from prefab_ui.app import set_initial_state
 from prefab_ui.components import If, Elif, Else, Text, Select
+from prefab_ui.rx import Rx
 
-state = set_initial_state(role="viewer")
+role = Rx("role")
 
 Select(name="role", options=["viewer", "editor", "admin"])
-with If(state.role == "admin"):
+with If(role == "admin"):
     Text("Full access")
-with Elif(state.role == "editor"):
+with Elif(role == "editor"):
     Text("Edit access")
 with Else():
     Text("Read-only access")
+
+# Pass state={"role": "viewer"} to PrefabApp when returning
 ```
 
 ### ForEach

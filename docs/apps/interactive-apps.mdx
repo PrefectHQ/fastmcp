@@ -244,17 +244,16 @@ Button(
 A common pattern: show a loading indicator while a server call is in flight.
 
 ```python
-from prefab_ui.app import set_initial_state
 from prefab_ui.actions import SetState, ShowToast
 from prefab_ui.actions.mcp import CallTool
 from prefab_ui.components import Button
-from prefab_ui.rx import RESULT
+from prefab_ui.rx import RESULT, Rx
 
-state = set_initial_state(saving=False)
+saving = Rx("saving")
 
 Button(
-    state.saving.then("Saving...", "Save"),
-    disabled=state.saving,
+    saving.then("Saving...", "Save"),
+    disabled=saving,
     on_click=[
         SetState("saving", True),
         CallTool(
@@ -271,6 +270,8 @@ Button(
         ),
     ],
 )
+
+# Pass state={"saving": False} to PrefabApp when returning
 ```
 
 ## Forms
