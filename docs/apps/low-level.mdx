@@ -27,7 +27,7 @@ The tool declares which resource to use via `AppConfig`. When the host calls the
 import json
 
 from fastmcp import FastMCP
-from fastmcp.server.apps import AppConfig, ResourceCSP
+from fastmcp.apps import AppConfig, ResourceCSP
 
 mcp = FastMCP("My App Server")
 
@@ -47,7 +47,7 @@ def chart_view() -> str:
 `AppConfig` controls how a tool or resource participates in the Apps extension. Import it from `fastmcp.server.apps`:
 
 ```python
-from fastmcp.server.apps import AppConfig
+from fastmcp.apps import AppConfig
 ```
 
 On **tools**, you'll typically set `resource_uri` to point to the UI resource:
@@ -158,7 +158,7 @@ Apps run in sandboxed iframes with a deny-by-default Content Security Policy. By
 If your app needs to load external resources (CDN scripts, API calls, embedded iframes), declare the allowed domains with `ResourceCSP`:
 
 ```python
-from fastmcp.server.apps import AppConfig, ResourceCSP
+from fastmcp.apps import AppConfig, ResourceCSP
 
 @mcp.resource(
     "ui://my-app/view.html",
@@ -185,7 +185,7 @@ def my_view() -> str:
 If your app needs browser capabilities like camera or clipboard access, request them via `ResourcePermissions`:
 
 ```python
-from fastmcp.server.apps import AppConfig, ResourcePermissions
+from fastmcp.apps import AppConfig, ResourcePermissions
 
 @mcp.resource(
     "ui://my-app/view.html",
@@ -214,7 +214,7 @@ import qrcode
 from mcp import types
 
 from fastmcp import FastMCP
-from fastmcp.server.apps import AppConfig, ResourceCSP
+from fastmcp.apps import AppConfig, ResourceCSP
 from fastmcp.tools import ToolResult
 
 mcp = FastMCP("QR Code Server")
@@ -290,7 +290,7 @@ Not all hosts support the Apps extension. You can check at runtime using the too
 
 ```python
 from fastmcp import Context
-from fastmcp.server.apps import AppConfig, UI_EXTENSION_ID
+from fastmcp.apps import AppConfig, UI_EXTENSION_ID
 
 @mcp.tool(app=AppConfig(resource_uri="ui://my-app/view.html"))
 async def my_tool(ctx: Context) -> str:

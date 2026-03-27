@@ -24,7 +24,8 @@ Here's a tool that returns a bar chart:
 
 ```python
 from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Heading, BarChart, ChartSeries
+from prefab_ui.components import Column, Heading
+from prefab_ui.components.charts import BarChart, ChartSeries
 from fastmcp import FastMCP
 
 mcp = FastMCP("Dashboard")
@@ -312,7 +313,8 @@ If the model needs to reason about the data — reference it in conversation, su
 
 ```python
 from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Heading, BarChart, ChartSeries
+from prefab_ui.components import Column, Heading
+from prefab_ui.components.charts import BarChart, ChartSeries
 from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
 
@@ -361,12 +363,28 @@ The **component tree** is serialized as `structuredContent` on the tool result. 
 
 None of this requires configuration. The `app=True` flag (or type inference) is the only thing you need.
 
+## Customizing CSP
+
+`app=True` auto-wires the Prefab renderer with default CSP settings. If your app loads external resources — embedding iframes, fetching from APIs, loading scripts — use `PrefabAppConfig` to add the required domains while keeping all the auto-wiring:
+
+```python
+from fastmcp.apps import PrefabAppConfig, ResourceCSP
+
+@mcp.tool(app=PrefabAppConfig(
+    csp=ResourceCSP(frame_domains=["https://example.com"]),
+))
+def dashboard_with_embed() -> PrefabApp:
+    ...
+```
+
+`PrefabAppConfig()` with no arguments is equivalent to `app=True`. It auto-sets the renderer URI and merges the renderer's CSP with any additional domains you provide.
+
 ## Mixing with Custom HTML
 
 Prefab tools and [custom HTML tools](/apps/low-level) coexist in the same server. Prefab tools share a single renderer resource; custom tools point to their own:
 
 ```python
-from fastmcp.server.apps import AppConfig
+from fastmcp.apps import AppConfig
 
 @mcp.tool(app=True)
 def team_directory() -> PrefabApp:

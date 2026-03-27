@@ -32,7 +32,8 @@ The quickest way to give a tool a visual UI. You return a [Prefab](https://prefa
 
 ```python
 from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Heading, BarChart, ChartSeries
+from prefab_ui.components import Column, Heading
+from prefab_ui.components.charts import BarChart, ChartSeries
 from fastmcp import FastMCP
 
 mcp = FastMCP("Dashboard")
@@ -138,9 +139,26 @@ See [FastMCPApp](/apps/interactive-apps) for the full guide.
 | Light server interaction — one or two tool calls | [Prefab app](/apps/prefab) — `CallTool("tool_name")` |
 | Heavy server interaction — forms, CRUD, search, multi-step | [FastMCPApp](/apps/interactive-apps) — managed tool binding |
 | Composed servers — apps mounted under namespaces | [FastMCPApp](/apps/interactive-apps) — stable global keys |
+| LLM-generated UIs — bespoke visualizations per request | [Generative UI](/apps/generative) — `GenerativeUI` provider |
 | Custom rendering — maps, 3D, specific JS frameworks | [Custom HTML](/apps/low-level) — raw MCP Apps extension |
 
 The boundary isn't sharp. Start with a Prefab app; graduate to `FastMCPApp` when the tool-management complexity justifies it.
+
+## Generative UI
+
+<VersionBadge version="3.2.0" />
+
+Instead of pre-building a UI, the LLM can write one from scratch. The `GenerativeUI` provider registers tools that let the model write Prefab Python code, execute it in a sandbox, and render the result — with streaming so the user watches the UI build up in real time.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.apps.generative import GenerativeUI
+
+mcp = FastMCP("Prefab Studio")
+mcp.add_provider(GenerativeUI())
+```
+
+See [Generative UI](/apps/generative) for the full guide.
 
 ## Custom HTML Apps
 

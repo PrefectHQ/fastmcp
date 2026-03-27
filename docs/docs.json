@@ -196,6 +196,7 @@
                   "apps/interactive-apps",
                   "apps/components",
                   "apps/patterns",
+                  "apps/generative",
                   "apps/development",
                   "apps/architecture",
                   "apps/low-level"
