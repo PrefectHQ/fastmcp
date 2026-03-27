@@ -25,6 +25,7 @@ from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import without_injected_parameters
 from fastmcp.server.tasks.config import TaskConfig
@@ -174,7 +175,7 @@ class FunctionTool(Tool):
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         if metadata.exclude_args and fastmcp.settings.deprecation_warnings:
@@ -182,7 +183,7 @@ class FunctionTool(Tool):
                 "The `exclude_args` parameter is deprecated as of FastMCP 2.14. "
                 "Use dependency injection with `Depends()` instead for better lifecycle management. "
                 "See https://gofastmcp.com/servers/dependency-injection#using-depends for examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
 
@@ -434,7 +435,7 @@ def tool(
             warnings.warn(
                 "decorator_mode='object' is deprecated and will be removed in a future version. "
                 "Decorators now return the original function with metadata attached.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=4,
             )
             return create_tool(fn, tool_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]

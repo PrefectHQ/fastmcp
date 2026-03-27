@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import warnings
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
+
 warnings.warn(
     "fastmcp.server.openapi.components is deprecated. "
     "Import from fastmcp.server.providers.openapi instead.",
-    DeprecationWarning,
+    FastMCPDeprecationWarning,
     stacklevel=2,
 )
 

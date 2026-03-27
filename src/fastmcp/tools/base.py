@@ -26,6 +26,7 @@ from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
@@ -589,7 +590,7 @@ def __getattr__(name: str) -> Any:
             warnings.warn(
                 f"Importing {name} from fastmcp.tools.tool is deprecated. "
                 f"Import from fastmcp.tools.function_tool instead.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         from fastmcp.tools import function_tool

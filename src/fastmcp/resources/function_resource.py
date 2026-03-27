@@ -15,6 +15,7 @@ from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (
@@ -335,7 +336,7 @@ def resource(
             warnings.warn(
                 "decorator_mode='object' is deprecated and will be removed in a future version. "
                 "Decorators now return the original function with metadata attached.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=3,
             )
             return create_resource(fn)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]

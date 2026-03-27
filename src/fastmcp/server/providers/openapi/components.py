@@ -13,6 +13,7 @@ from mcp.types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
 import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.resources import (
     Resource,
     ResourceContent,
@@ -157,7 +158,7 @@ class OpenAPITool(Tool):
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         super().__init__(

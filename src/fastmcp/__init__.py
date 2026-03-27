@@ -19,16 +19,15 @@ if settings.log_enabled:
         enable_rich_tracebacks=settings.enable_rich_tracebacks,
     )
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.server import FastMCP
 from fastmcp.server.context import Context
 import fastmcp.server
 
 __version__ = _version("fastmcp")
 
-
-# ensure deprecation warnings are displayed by default
 if settings.deprecation_warnings:
-    warnings.simplefilter("default", DeprecationWarning)
+    warnings.simplefilter("default", FastMCPDeprecationWarning)
 
 
 # --- Lazy imports for performance (see #3292) ---
@@ -55,5 +54,6 @@ __all__ = [
     "Context",
     "FastMCP",
     "FastMCPApp",
+    "FastMCPDeprecationWarning",
     "settings",
 ]

@@ -27,6 +27,7 @@ import mcp.types
 from mcp.types import AnyFunction, ToolAnnotations
 
 import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import Tool
@@ -319,7 +320,7 @@ class ToolDecoratorMixin:
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         if isinstance(annotations, dict):

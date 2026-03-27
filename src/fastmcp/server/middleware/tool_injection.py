@@ -11,6 +11,7 @@ from pydantic import AnyUrl
 from typing_extensions import override
 
 import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.resources.base import ResourceResult
 from fastmcp.server.context import Context
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
@@ -91,7 +92,7 @@ class PromptToolMiddleware(ToolInjectionMiddleware):
             warnings.warn(
                 "PromptToolMiddleware is deprecated. Use the PromptsAsTools transform instead: "
                 "from fastmcp.server.transforms import PromptsAsTools",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         tools: list[Tool] = [list_prompts_tool, get_prompt_tool]
@@ -133,7 +134,7 @@ class ResourceToolMiddleware(ToolInjectionMiddleware):
             warnings.warn(
                 "ResourceToolMiddleware is deprecated. Use the ResourcesAsTools transform instead: "
                 "from fastmcp.server.transforms import ResourcesAsTools",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         tools: list[Tool] = [list_resources_tool, read_resource_tool]
