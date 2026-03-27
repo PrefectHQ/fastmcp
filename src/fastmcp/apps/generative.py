@@ -151,7 +151,7 @@ class GenerativeUI(Provider):
 
         resource_config = AppConfig(csp=csp)
         resource = TextResource(
-            uri=_gen.RESOURCE_URI,  # type: ignore[arg-type]
+            uri=_gen.RESOURCE_URI,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             name="Prefab Generative Renderer",
             text=get_generative_renderer_html(),
             mime_type=UI_MIME_TYPE,
