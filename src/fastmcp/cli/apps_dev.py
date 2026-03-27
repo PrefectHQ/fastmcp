@@ -1635,18 +1635,17 @@ async def run_dev_apps(
 
         for port, label in [(mcp_port, "MCP server"), (dev_port, "dev UI")]:
             in_use = False
-            for family in (socket.AF_INET, socket.AF_INET6):
-                with socket.socket(family, socket.SOCK_STREAM) as s:
-                    if (
-                        s.connect_ex(
-                            ("127.0.0.1", port)
-                            if family == socket.AF_INET
-                            else ("::1", port, 0, 0)
-                        )
-                        == 0
-                    ):
-                        in_use = True
-                        break
+            for family, addr in (
+                (socket.AF_INET, ("127.0.0.1", port)),
+                (socket.AF_INET6, ("::1", port, 0, 0)),
+            ):
+                try:
+                    with socket.socket(family, socket.SOCK_STREAM) as s:
+                        if s.connect_ex(addr) == 0:
+                            in_use = True
+                            break
+                except OSError:
+                    continue
             if in_use:
                 logger.error(
                     f"Port {port} ({label}) is already in use. "
