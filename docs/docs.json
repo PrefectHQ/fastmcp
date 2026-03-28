@@ -159,19 +159,26 @@
                   },
                   {
                     "collapsed": true,
-                    "group": "Authentication",
-                    "icon": "key",
+                    "group": "Auth",
+                    "icon": "shield-check",
                     "pages": [
-                      "servers/auth/authentication",
-                      "servers/auth/token-verification",
-                      "servers/auth/remote-oauth",
-                      "servers/auth/oauth-proxy",
-                      "servers/auth/oidc-proxy",
-                      "servers/auth/full-oauth-server",
-                      "servers/auth/multi-auth"
+                      {
+                        "collapsed": true,
+                        "group": "Authentication",
+                        "icon": "key",
+                        "pages": [
+                          "servers/auth/authentication",
+                          "servers/auth/token-verification",
+                          "servers/auth/remote-oauth",
+                          "servers/auth/oauth-proxy",
+                          "servers/auth/oidc-proxy",
+                          "servers/auth/full-oauth-server",
+                          "servers/auth/multi-auth"
+                        ]
+                      },
+                      "servers/authorization"
                     ]
                   },
-                  "servers/authorization",
                   {
                     "collapsed": true,
                     "group": "Deployment",
@@ -189,10 +196,18 @@
                 "group": "Apps",
                 "pages": [
                   "apps/overview",
-                  "apps/prefab",
-                  "apps/interactive-apps",
-                  "apps/generative",
-                  "apps/development",
+                  {
+                    "collapsed": true,
+                    "group": "Building Apps",
+                    "icon": "hammer",
+                    "pages": [
+                      "apps/prefab",
+                      "apps/interactive-apps",
+                      "apps/generative",
+                      "apps/patterns"
+                    ],
+                    "tag": "NEW"
+                  },
                   {
                     "collapsed": true,
                     "group": "Providers",
@@ -205,10 +220,10 @@
                   },
                   {
                     "collapsed": true,
-                    "group": "Reference",
-                    "icon": "book",
+                    "group": "Advanced",
+                    "icon": "gear",
                     "pages": [
-                      "apps/patterns",
+                      "apps/development",
                       "apps/architecture",
                       "apps/low-level"
                     ],
