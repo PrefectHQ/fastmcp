@@ -197,6 +197,47 @@ class TestDereferenceRefs:
         assert country["default"] == "US"
         assert "$defs" not in result
 
+    def test_strips_discriminator_mapping_after_inlining(self):
+        """Discriminator.mapping refs dangle after $defs are inlined (#3679)."""
+        schema = {
+            "$defs": {
+                "IdentifyPerson": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"const": "identify", "type": "string"},
+                        "name": {"type": "string"},
+                    },
+                    "required": ["action", "name"],
+                },
+                "PersonDelete": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"const": "delete", "type": "string"},
+                    },
+                    "required": ["action"],
+                },
+            },
+            "anyOf": [
+                {"$ref": "#/$defs/IdentifyPerson"},
+                {"$ref": "#/$defs/PersonDelete"},
+            ],
+            "discriminator": {
+                "mapping": {
+                    "identify": "#/$defs/IdentifyPerson",
+                    "delete": "#/$defs/PersonDelete",
+                },
+                "propertyName": "action",
+            },
+        }
+        result = dereference_refs(schema)
+
+        assert "$defs" not in result
+        assert "discriminator" not in result
+        # The anyOf variants should be inlined with their const values intact
+        assert len(result["anyOf"]) == 2
+        actions = {v["properties"]["action"]["const"] for v in result["anyOf"]}
+        assert actions == {"identify", "delete"}
+
 
 class TestCompressSchema:
     """Tests for the compress_schema function."""
