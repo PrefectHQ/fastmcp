@@ -312,7 +312,7 @@ class ResourceTemplate(FastMCPComponent):
         fn_key: str | None = None,
         task_key: str | None = None,
         **kwargs: Any,
-    ) -> Execution:  # ty:ignore[invalid-method-override]
+    ) -> Execution:
         """Schedule this template for background execution via docket.
 
         Args:
