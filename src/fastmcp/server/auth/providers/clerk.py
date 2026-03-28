@@ -153,7 +153,9 @@ class ClerkTokenVerifier(TokenVerifier):
                         scope_str = introspect_data.get("scope", "")
                         token_scopes = scope_str.split() if scope_str else []
 
-                        aud = introspect_data.get("aud") or introspect_data.get("client_id")
+                        aud = introspect_data.get("aud") or introspect_data.get(
+                            "client_id"
+                        )
 
                         exp = introspect_data.get("exp")
                         if exp is not None:
@@ -329,7 +331,9 @@ class ClerkProvider(OAuthProxy):
             http_client=http_client,
         )
 
-        extra_authorize_params_final = dict(extra_authorize_params) if extra_authorize_params else {}
+        extra_authorize_params_final = (
+            dict(extra_authorize_params) if extra_authorize_params else {}
+        )
 
         super().__init__(
             upstream_authorization_endpoint=f"https://{domain}/oauth/authorize",
