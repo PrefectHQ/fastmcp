@@ -226,6 +226,13 @@ class FileUpload(FastMCPApp):
         @self.tool()
         def store_files(files: list[dict]) -> list[dict]:
             """Store uploaded files. Receives file objects with name, size, type, data (base64)."""
+            for f in files:
+                if f.get("size", 0) > provider._max_file_size:
+                    raise ValueError(
+                        f"File {f.get('name', '?')!r} exceeds max size "
+                        f"({_format_size(f['size'])} > "
+                        f"{_format_size(provider._max_file_size)})"
+                    )
             return provider.on_store(files)
 
         @self.tool(model=True)

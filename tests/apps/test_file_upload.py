@@ -116,6 +116,13 @@ class TestFileUploadProvider:
         assert "read_file" in tool_names
         assert "store_files" not in tool_names
 
+    async def test_max_file_size_enforced_server_side(self):
+        server = FastMCP("test", providers=[FileUpload(max_file_size=100)])
+        big_file = _make_file(content="x" * 200)
+
+        with pytest.raises(Exception, match="exceeds max size"):
+            await server.call_tool("Files___store_files", {"files": [big_file]})
+
 
 class TestFileUploadSubclass:
     async def test_custom_storage(self):
