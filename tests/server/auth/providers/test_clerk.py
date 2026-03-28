@@ -39,8 +39,7 @@ class TestClerkProvider:
         assert provider._upstream_client_id == "clerk-client-id"
         assert provider._upstream_client_secret is not None
         assert (
-            provider._upstream_client_secret.get_secret_value()
-            == "clerk-client-secret"
+            provider._upstream_client_secret.get_secret_value() == "clerk-client-secret"
         )
         assert str(provider.base_url) == "https://myserver.com/"
 
@@ -73,8 +72,7 @@ class TestClerkProvider:
             == f"https://{CLERK_DOMAIN}/oauth/authorize"
         )
         assert (
-            provider._upstream_token_endpoint
-            == f"https://{CLERK_DOMAIN}/oauth/token"
+            provider._upstream_token_endpoint == f"https://{CLERK_DOMAIN}/oauth/token"
         )
         assert provider._upstream_revocation_endpoint is None
 
@@ -378,9 +376,7 @@ class TestClerkTokenVerifier:
         userinfo_req = requests[0]
         assert userinfo_req.headers["Authorization"] == "Bearer my-access-token"
 
-    async def test_introspection_sends_client_credentials(
-        self, httpx_mock: HTTPXMock
-    ):
+    async def test_introspection_sends_client_credentials(self, httpx_mock: HTTPXMock):
         """Introspection request includes client_id and client_secret in the body."""
         httpx_mock.add_response(
             url=_USERINFO_RE,
@@ -439,9 +435,7 @@ class TestClerkTokenVerifier:
         assert result is not None
         assert result.client_id == "user_abc123"
 
-    async def test_aud_from_introspection_client_id_field(
-        self, httpx_mock: HTTPXMock
-    ):
+    async def test_aud_from_introspection_client_id_field(self, httpx_mock: HTTPXMock):
         """When introspection returns client_id but not aud, client_id is used."""
         httpx_mock.add_response(
             url=_USERINFO_RE,
