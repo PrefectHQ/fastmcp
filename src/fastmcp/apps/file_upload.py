@@ -17,15 +17,15 @@ Usage::
 For custom persistence, override the storage methods::
 
     class S3Upload(FileUpload):
-        def on_store(self, files: list[dict]) -> list[dict]:
+        def on_store(self, files, ctx):
             # write to S3, return summaries
             ...
 
-        def on_list(self) -> list[dict]:
+        def on_list(self, ctx):
             # list from S3
             ...
 
-        def on_read(self, name: str) -> dict:
+        def on_read(self, name, ctx):
             # read from S3
             ...
 """
