@@ -12,6 +12,7 @@ import inspect
 import json
 import logging
 import weakref
+from collections import OrderedDict
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from contextvars import ContextVar, Token
@@ -73,6 +74,7 @@ __all__ = [
     "get_task_context",
     "get_task_session",
     "is_docket_available",
+    "register_task_server",
     "register_task_session",
     "require_docket",
     "resolve_dependencies",
@@ -175,6 +177,32 @@ def get_task_session(session_id: str) -> ServerSession | None:
 _current_server: ContextVar[weakref.ref[FastMCP] | None] = ContextVar(
     "server", default=None
 )
+
+# --- Background task server map ---
+# Maps task_id → server weakref so background workers can resolve the correct
+# server for mounted-child tasks. Follows the same pattern as _task_sessions.
+# Populated in submit_to_docket() where the child server is in context;
+# consulted in get_server() when running inside a Docket worker.
+
+_task_server_map: OrderedDict[str, weakref.ref[FastMCP]] = OrderedDict()
+_TASK_SERVER_MAP_MAX_SIZE = 10_000
+
+
+def register_task_server(task_id: str, server: FastMCP) -> None:
+    """Register the server for a background task.
+
+    Called at task-submission time (inside the child server's call_tool
+    context) so that background workers can resolve CurrentFastMCP() and
+    ctx.fastmcp to the child server for mounted tasks.
+
+    The map is bounded to avoid unbounded growth in long-lived servers.
+    Evicted entries fall back to the ContextVar (parent server).
+    """
+    _task_server_map[task_id] = weakref.ref(server)
+    while len(_task_server_map) > _TASK_SERVER_MAP_MAX_SIZE:
+        _task_server_map.popitem(last=False)
+
+
 _current_docket: ContextVar[Docket | None] = ContextVar("docket", default=None)
 _current_worker: ContextVar[Worker | None] = ContextVar("worker", default=None)
 _task_access_token: ContextVar[AccessToken | None] = ContextVar(
@@ -382,12 +410,28 @@ def get_context() -> Context:
 def get_server() -> FastMCP:
     """Get the current FastMCP server instance directly.
 
+    In a background-task worker, checks the task-server map first so that
+    mounted-child tasks resolve to the child server (not the parent that
+    started the worker).
+
     Returns:
         The active FastMCP server
 
     Raises:
         RuntimeError: If no server in context
     """
+    # In a task context, prefer the task-specific server mapping.
+    # This handles mounted-child tasks where _current_server is the parent.
+    task_info = get_task_context()
+    if task_info is not None:
+        ref = _task_server_map.get(task_info.task_id)
+        if ref is not None:
+            server = ref()
+            if server is not None:
+                return server
+            # Server was garbage collected, clean up
+            _task_server_map.pop(task_info.task_id, None)
+
     server_ref = _current_server.get()
     if server_ref is None:
         raise RuntimeError("No FastMCP server instance in context")
@@ -1098,13 +1142,7 @@ class _CurrentFastMCP(Dependency["FastMCP"]):
     """Async context manager for FastMCP server dependency."""
 
     async def __aenter__(self) -> FastMCP:
-        server_ref = _current_server.get()
-        if server_ref is None:
-            raise RuntimeError("No FastMCP server instance in context")
-        server = server_ref()
-        if server is None:
-            raise RuntimeError("FastMCP server instance is no longer available")
-        return server
+        return get_server()
 
     async def __aexit__(
         self,

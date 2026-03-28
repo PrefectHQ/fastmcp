@@ -27,6 +27,7 @@ import mcp.types
 from mcp.types import AnyFunction, ToolAnnotations
 
 import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import Tool
@@ -140,7 +141,10 @@ def _maybe_apply_prefab_ui(provider: LocalProvider, tool: Tool) -> None:
         # Inference: return type is a prefab type, auto-wire
         _ensure_prefab_renderer(provider)
         _expand_prefab_ui_meta(tool)
-    # If ui is a dict, it's already manually configured — leave it alone
+    elif isinstance(ui, dict) and ui.get("resourceUri") == PREFAB_RENDERER_URI:
+        # PrefabAppConfig or manual config pointing to the Prefab renderer —
+        # ensure the renderer resource is registered (CSP already set by caller)
+        _ensure_prefab_renderer(provider)
 
 
 class ToolDecoratorMixin:
@@ -319,7 +323,7 @@ class ToolDecoratorMixin:
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         if isinstance(annotations, dict):

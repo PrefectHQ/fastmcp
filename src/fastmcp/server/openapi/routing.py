@@ -8,6 +8,8 @@
 
 import warnings
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
+
 # Backwards compatibility - export everything that was previously public
 __all__ = [
     "DEFAULT_ROUTE_MAPPINGS",
@@ -21,7 +23,7 @@ __all__ = [
 warnings.warn(
     "fastmcp.server.openapi.routing is deprecated. "
     "Import from fastmcp.server.providers.openapi instead.",
-    DeprecationWarning,
+    FastMCPDeprecationWarning,
     stacklevel=2,
 )
 

@@ -7,7 +7,7 @@ Demonstrates the full FastMCPApp stack:
 - BarChart and PieChart for data visualization
 - Metric cards for summary statistics
 - Select-driven filtering with CallTool
-- State management with set_initial_state() and Rx()
+- State management with PrefabApp state dict and Rx()
 
 Usage:
     uv run python explorer_server.py               # HTTP (default)
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from prefab_ui.actions import SetState, ShowToast
 from prefab_ui.actions.mcp import CallTool
-from prefab_ui.app import PrefabApp, set_initial_state
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Badge,
     Button,
@@ -40,7 +40,7 @@ from prefab_ui.components import (
     Text,
 )
 from prefab_ui.components.charts import BarChart, ChartSeries, PieChart
-from prefab_ui.rx import ERROR, RESULT, STATE
+from prefab_ui.rx import ERROR, RESULT, STATE, Rx
 
 from fastmcp import FastMCP, FastMCPApp
 
@@ -362,15 +362,6 @@ def data_explorer() -> PrefabApp:
     """Open the data explorer. Browse, filter, and visualize sales data."""
 
     initial = analyze_data()
-    state = set_initial_state(
-        rows=initial["rows"],
-        summary=initial["summary"],
-        by_region=initial["by_region"],
-        by_product=initial["by_product"],
-        selected_region="All",
-        selected_product="All",
-        loading=False,
-    )
 
     with Column(gap=6, css_class="p-6") as view:
         Heading("Sales Data Explorer")
@@ -443,8 +434,8 @@ def data_explorer() -> PrefabApp:
                     SelectOption(value=product, label=product)
 
             Button(
-                state.loading.then("Loading...", "Reset"),
-                disabled=state.loading,
+                Rx("loading").then("Loading...", "Reset"),
+                disabled=Rx("loading"),
                 on_click=[
                     SetState("selected_region", "All"),
                     SetState("selected_product", "All"),
@@ -478,19 +469,19 @@ def data_explorer() -> PrefabApp:
                         with CardContent():
                             Metric(
                                 label="Total Revenue",
-                                value=state.summary.total_amount,
+                                value=Rx("summary.total_amount"),
                             )
                     with Card():
                         with CardContent():
                             Metric(
                                 label="Average Sale",
-                                value=state.summary.avg_amount,
+                                value=Rx("summary.avg_amount"),
                             )
                     with Card():
                         with CardContent():
                             Metric(
                                 label="Total Quantity",
-                                value=state.summary.total_quantity,
+                                value=Rx("summary.total_quantity"),
                             )
 
                 with Grid(columns=3, gap=4, css_class="mt-4"):
@@ -498,19 +489,19 @@ def data_explorer() -> PrefabApp:
                         with CardContent():
                             Metric(
                                 label="Transactions",
-                                value=state.summary.count,
+                                value=Rx("summary.count"),
                             )
                     with Card():
                         with CardContent():
                             Metric(
                                 label="Min Sale",
-                                value=state.summary.min_amount,
+                                value=Rx("summary.min_amount"),
                             )
                     with Card():
                         with CardContent():
                             Metric(
                                 label="Max Sale",
-                                value=state.summary.max_amount,
+                                value=Rx("summary.max_amount"),
                             )
 
                 with Row(gap=2, css_class="mt-4"):
@@ -541,7 +532,7 @@ def data_explorer() -> PrefabApp:
                     with Column(gap=2):
                         Heading("Revenue by Region", level=3)
                         BarChart(
-                            data=state.by_region,
+                            data=Rx("by_region"),
                             series=[ChartSeries(data_key="amount", label="Revenue")],
                             x_axis="region",
                             show_legend=True,
@@ -550,7 +541,7 @@ def data_explorer() -> PrefabApp:
                     with Column(gap=2):
                         Heading("Revenue by Product", level=3)
                         BarChart(
-                            data=state.by_product,
+                            data=Rx("by_product"),
                             series=[ChartSeries(data_key="amount", label="Revenue")],
                             x_axis="product",
                             show_legend=True,
@@ -562,7 +553,7 @@ def data_explorer() -> PrefabApp:
                     with Column(gap=2):
                         Heading("Region Breakdown", level=3)
                         PieChart(
-                            data=state.by_region,
+                            data=Rx("by_region"),
                             data_key="amount",
                             name_key="region",
                             show_legend=True,
@@ -572,14 +563,25 @@ def data_explorer() -> PrefabApp:
                     with Column(gap=2):
                         Heading("Product Breakdown", level=3)
                         PieChart(
-                            data=state.by_product,
+                            data=Rx("by_product"),
                             data_key="amount",
                             name_key="product",
                             show_legend=True,
                             inner_radius=60,
                         )
 
-    return PrefabApp(view=view)
+    return PrefabApp(
+        view=view,
+        state={
+            "rows": initial["rows"],
+            "summary": initial["summary"],
+            "by_region": initial["by_region"],
+            "by_product": initial["by_product"],
+            "selected_region": "All",
+            "selected_product": "All",
+            "loading": False,
+        },
+    )
 
 
 mcp = FastMCP("Data Explorer", providers=[app])

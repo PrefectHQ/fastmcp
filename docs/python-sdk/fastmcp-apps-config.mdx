@@ -15,7 +15,7 @@ UI metadata for clients that support interactive app rendering.
 
 ## Functions
 
-### `app_config_to_meta_dict` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/config.py#L117" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `app_config_to_meta_dict` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/config.py#L173" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]
@@ -62,3 +62,29 @@ All fields use ``exclude_none`` serialization so only explicitly-set
 values appear on the wire.  Aliases match the MCP Apps wire format
 (camelCase).
 
+
+### `PrefabAppConfig` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/config.py#L117" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+App configuration for Prefab tools with sensible defaults.
+
+Like ``app=True`` but customizable. Auto-wires the Prefab renderer
+URI and merges the renderer's CSP with any additional domains you
+specify.  The renderer resource is registered automatically.
+
+Example::
+
+    @mcp.tool(app=PrefabAppConfig())  # same as app=True
+
+    @mcp.tool(app=PrefabAppConfig(
+        csp=ResourceCSP(frame_domains=["https://example.com"]),
+    ))
+
+
+**Methods:**
+
+#### `model_post_init` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/config.py#L133" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+model_post_init(self, __context: Any) -> None
+```

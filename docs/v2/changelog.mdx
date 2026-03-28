@@ -4,6 +4,22 @@ icon: "list-check"
 rss: true
 ---
 
+<Update label="v2.14.6" description="2026-03-27">
+
+**[v2.14.6: $Ref Dead Redemption](https://github.com/PrefectHQ/fastmcp/releases/tag/v2.14.6)**
+
+v2.14.4 backported `dereference_refs()` but never wired it into the tool schema pipeline — `$ref` and `$defs` were still sent to MCP clients. Now fixed: `compress_schema()` dereferences at both tool schema creation sites, so schemas are fully inlined before reaching clients.
+
+## What's Changed
+### Fixes 🐞
+* Updated deprecation URL for V2 by [@SrzStephen](https://github.com/SrzStephen) in [#3109](https://github.com/PrefectHQ/fastmcp/pull/3109)
+* Use MemoryStore for OAuth proxy tests by [@SrzStephen](https://github.com/SrzStephen) in [#3111](https://github.com/PrefectHQ/fastmcp/pull/3111)
+* fix: wire up dereference_refs() in tool schema pipeline by [@jlowin](https://github.com/jlowin) in [#3170](https://github.com/PrefectHQ/fastmcp/pull/3170)
+
+**Full Changelog**: [v2.14.5...v2.14.6](https://github.com/PrefectHQ/fastmcp/compare/v2.14.5...v2.14.6)
+
+</Update>
+
 <Update label="v2.14.5" description="2026-02-03">
 
 **[v2.14.5: Sealed Docket](https://github.com/PrefectHQ/fastmcp/releases/tag/v2.14.5)**

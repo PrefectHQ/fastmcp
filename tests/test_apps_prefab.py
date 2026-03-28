@@ -39,9 +39,13 @@ class TestConvertResult:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "[Rendered Prefab UI]"
         assert result.structured_content is not None
-        assert result.structured_content["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == "0.2"
         assert result.structured_content["state"] == {"name": "Alice"}
-        assert result.structured_content["view"]["type"] == "Column"
+        # PrefabApp wraps view in a pf-app-root Div
+        root = result.structured_content["view"]
+        assert root["type"] == "Div"
+        assert root["cssClass"] == "pf-app-root"
+        assert root["children"][0]["type"] == "Column"
 
     def test_bare_component(self):
         heading = Heading("World")
@@ -51,8 +55,9 @@ class TestConvertResult:
 
         assert isinstance(result, ToolResult)
         assert result.structured_content is not None
-        assert result.structured_content["version"] == "0.2"
-        assert result.structured_content["view"]["type"] == "Heading"
+        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["view"]["type"] == "Div"
+        assert result.structured_content["view"]["children"][0]["type"] == "Heading"
 
     def test_tool_result_with_prefab_structured_content(self):
         """ToolResult with PrefabApp as structured_content preserves custom text."""
@@ -66,8 +71,9 @@ class TestConvertResult:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "Custom fallback text"
         assert result.structured_content is not None
-        assert result.structured_content["version"] == "0.2"
-        assert result.structured_content["view"]["type"] == "Heading"
+        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["view"]["type"] == "Div"
+        assert result.structured_content["view"]["children"][0]["type"] == "Heading"
 
     def test_tool_result_with_component_structured_content(self):
         """ToolResult with bare Component as structured_content."""
@@ -79,8 +85,9 @@ class TestConvertResult:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "My text"
         assert result.structured_content is not None
-        assert result.structured_content["version"] == "0.2"
-        assert result.structured_content["view"]["type"] == "Heading"
+        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["view"]["type"] == "Div"
+        assert result.structured_content["view"]["children"][0]["type"] == "Heading"
 
     def test_tool_result_passthrough(self):
         """ToolResult without prefab structured_content passes through unchanged."""
@@ -378,7 +385,7 @@ class TestIntegration:
             result = await client.call_tool("greet", {"name": "Alice"})
 
         assert result.structured_content is not None
-        assert result.structured_content["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == "0.2"
         assert result.structured_content["state"] == {"name": "Alice"}
 
     async def test_tool_call_with_custom_text(self):
@@ -399,7 +406,7 @@ class TestIntegration:
             "Greeting for Alice" in c.text for c in result.content if hasattr(c, "text")
         )
         assert result.structured_content is not None
-        assert result.structured_content["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == "0.2"
 
     async def test_tools_list_includes_app_meta(self):
         mcp = FastMCP("test")

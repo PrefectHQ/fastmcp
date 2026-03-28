@@ -6,7 +6,7 @@ Demonstrates the full FastMCPApp stack:
 - DataTable with sortable columns and built-in search
 - Form.from_model() for auto-generated Pydantic model forms
 - Tabs, Select filtering, ForEach results, and Toast notifications
-- State management with set_initial_state() and Rx()
+- State management with PrefabApp state dict and Rx()
 
 Usage:
     uv run python inventory_server.py               # HTTP (default)
@@ -20,7 +20,7 @@ from typing import Literal
 
 from prefab_ui.actions import SetState, ShowToast
 from prefab_ui.actions.mcp import CallTool
-from prefab_ui.app import PrefabApp, set_initial_state
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Badge,
     Button,
@@ -385,16 +385,6 @@ def _build_actions_section() -> None:
 @app.ui()
 def inventory_manager() -> PrefabApp:
     """Open the inventory manager. The model calls this to launch the app."""
-    set_initial_state(
-        search_results=[],
-        filtered_items=list(_inventory),
-        recent_additions=[],
-        selected_category="All",
-        adjust_id="",
-        delete_id="",
-        query="",
-    )
-
     with Column(gap=6, css_class="p-6") as view:
         with Row(gap=3, align="center"):
             Heading("Inventory Tracker")
@@ -431,7 +421,18 @@ def inventory_manager() -> PrefabApp:
             with Tab("Actions"):
                 _build_actions_section()
 
-    return PrefabApp(view=view)
+    return PrefabApp(
+        view=view,
+        state={
+            "search_results": [],
+            "filtered_items": list(_inventory),
+            "recent_additions": [],
+            "selected_category": "All",
+            "adjust_id": "",
+            "delete_id": "",
+            "query": "",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

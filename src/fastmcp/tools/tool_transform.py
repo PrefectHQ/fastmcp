@@ -16,6 +16,7 @@ from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.tools.base import Tool, ToolResult, _convert_to_content
 from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.utilities.components import _convert_set_default_none
@@ -459,7 +460,7 @@ class TransformedTool(Tool):
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         transform_args = transform_args or {}

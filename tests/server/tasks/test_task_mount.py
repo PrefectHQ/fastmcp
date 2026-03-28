@@ -336,10 +336,80 @@ class TestMountedTaskDependencies:
             task = await client.call_tool("child_tool_with_server", {}, task=True)
             await task.result()
 
-            # The server should be the child server since that's where the tool is defined
             assert len(received_server) == 1
-            # Note: It might be parent or child depending on implementation
-            assert received_server[0] is not None
+            assert received_server[0].name == "server-dep-child"
+
+
+class TestMountedTaskServerContext:
+    """Test that background tasks on mounted servers resolve to the child server (#3571)."""
+
+    async def test_current_fastmcp_resolves_to_child_server(self):
+        """CurrentFastMCP() inside a mounted background task returns the child server."""
+        child = FastMCP("child")
+        received_server: list[FastMCP] = []
+
+        @child.tool(task=True)
+        async def whoami(server: CurrentFastMCP = CurrentFastMCP()) -> str:  # type: ignore[invalid-type-form]  # ty:ignore[invalid-type-form]
+            received_server.append(server)
+            return f"server name: {server.name}"
+
+        parent = FastMCP("parent")
+        parent.mount(child, namespace="child")
+
+        async with Client(parent) as client:
+            task = await client.call_tool("child_whoami", {}, task=True)
+            result = await task.result()
+
+        assert len(received_server) == 1
+        assert received_server[0].name == "child"
+        assert "server name: child" in str(result)
+
+    async def test_context_fastmcp_resolves_to_child_server(self):
+        """ctx.fastmcp inside a mounted background task returns the child server."""
+        from fastmcp import Context
+
+        child = FastMCP("child")
+        received_server: list[FastMCP] = []
+
+        @child.tool(task=True)
+        async def whoami_ctx(ctx: Context) -> str:
+            received_server.append(ctx.fastmcp)
+            return f"context server: {ctx.fastmcp.name}"
+
+        parent = FastMCP("parent")
+        parent.mount(child, namespace="child")
+
+        async with Client(parent) as client:
+            task = await client.call_tool("child_whoami_ctx", {}, task=True)
+            result = await task.result()
+
+        assert len(received_server) == 1
+        assert received_server[0].name == "child"
+        assert "context server: child" in str(result)
+
+    async def test_nested_mount_resolves_to_innermost_server(self):
+        """Doubly-nested mounts resolve to the innermost child server."""
+        grandchild = FastMCP("grandchild")
+        received_server: list[FastMCP] = []
+
+        @grandchild.tool(task=True)
+        async def deep_whoami(server: CurrentFastMCP = CurrentFastMCP()) -> str:  # type: ignore[invalid-type-form]  # ty:ignore[invalid-type-form]
+            received_server.append(server)
+            return f"server name: {server.name}"
+
+        child = FastMCP("child")
+        child.mount(grandchild, namespace="gc")
+
+        parent = FastMCP("parent")
+        parent.mount(child, namespace="child")
+
+        async with Client(parent) as client:
+            task = await client.call_tool("child_gc_deep_whoami", {}, task=True)
+            result = await task.result()
+
+        assert len(received_server) == 1
+        assert received_server[0].name == "grandchild"
+        assert "server name: grandchild" in str(result)
 
 
 class TestMultipleMounts:
@@ -471,6 +541,35 @@ class TestMountedTaskList:
             task_ids = [t["taskId"] for t in tasks_response["tasks"]]
             assert parent_task.task_id in task_ids
             assert child_task.task_id in task_ids
+
+
+class TestMountedTaskMetadata:
+    """Test task metadata exposure for mounted tools."""
+
+    async def test_mounted_tool_list_preserves_task_support_metadata(self):
+        """Mounted tools should preserve execution.taskSupport in tools/list."""
+        child = FastMCP("child")
+
+        @child.tool(task=True)
+        async def foo() -> dict[str, bool]:
+            return {"ok": True}
+
+        parent = FastMCP("parent")
+        parent.mount(child)
+
+        child_tools = await child.list_tools()
+        parent_tools = await parent.list_tools()
+
+        child_tool = next(t for t in child_tools if t.name == "foo")
+        parent_tool = next(t for t in parent_tools if t.name == "foo")
+
+        child_mcp_tool = child_tool.to_mcp_tool(name=child_tool.name)
+        parent_mcp_tool = parent_tool.to_mcp_tool(name=parent_tool.name)
+
+        assert child_mcp_tool.execution is not None
+        assert parent_mcp_tool.execution is not None
+        assert child_mcp_tool.execution.taskSupport == "optional"
+        assert parent_mcp_tool.execution.taskSupport == "optional"
 
 
 class TestMountedTaskConfigModes:

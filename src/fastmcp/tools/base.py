@@ -26,6 +26,7 @@ from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
@@ -190,7 +191,7 @@ class Tool(FastMCPComponent):
         elif self.annotations and self.annotations.title:
             title = self.annotations.title
 
-        return MCPTool(
+        mcp_tool = MCPTool(
             name=overrides.get("name", self.name),
             title=overrides.get("title", title),
             description=overrides.get("description", self.description),
@@ -203,6 +204,15 @@ class Tool(FastMCPComponent):
                 "_meta", self.get_meta()
             ),  # ty:ignore[unknown-argument]
         )
+
+        if (
+            self.task_config.supports_tasks()
+            and "execution" not in overrides
+            and not self.execution
+        ):
+            mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
+
+        return mcp_tool
 
     @classmethod
     def from_function(
@@ -580,7 +590,7 @@ def __getattr__(name: str) -> Any:
             warnings.warn(
                 f"Importing {name} from fastmcp.tools.tool is deprecated. "
                 f"Import from fastmcp.tools.function_tool instead.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         from fastmcp.tools import function_tool

@@ -104,6 +104,7 @@ class FastMCPProviderTool(Tool):
             tags=tool.tags,
             annotations=tool.annotations,
             task_config=tool.task_config,
+            execution=tool.execution,
             meta=tool.get_meta(),
             title=tool.title,
             icons=tool.icons,

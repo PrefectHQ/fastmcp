@@ -48,6 +48,7 @@ from fastmcp.apps.config import (
 )
 from fastmcp.exceptions import (
     AuthorizationError,
+    FastMCPDeprecationWarning,
     FastMCPError,
     NotFoundError,
     PromptError,
@@ -521,7 +522,7 @@ class FastMCP(
             warnings.warn(
                 "add_tool_transformation is deprecated. Use "
                 "server.add_transform(ToolTransform({tool_name: config})) instead.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         self.add_transform(ToolTransform({tool_name: transformation}))
@@ -537,7 +538,7 @@ class FastMCP(
                 "remove_tool_transformation is deprecated and has no effect. "
                 "Transforms are immutable once added. Use server.disable(keys=[...]) "
                 "to hide tools instead.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
 
@@ -1460,7 +1461,7 @@ class FastMCP(
             warnings.warn(
                 "remove_tool() is deprecated. Use "
                 "mcp.local_provider.remove_tool(name) instead.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         try:
@@ -1955,7 +1956,7 @@ class FastMCP(
         if prefix is not None:
             warnings.warn(
                 "The 'prefix' parameter is deprecated, use 'namespace' instead",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
             if namespace is None:
@@ -1968,7 +1969,7 @@ class FastMCP(
                 "as_proxy is deprecated and will be removed in a future version. "
                 "Mounted servers now always have their lifespan and middleware invoked. "
                 "To create a proxy server, use create_proxy() explicitly.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
             # Still honor the flag for backward compatibility
@@ -2037,7 +2038,7 @@ class FastMCP(
 
         warnings.warn(
             "import_server is deprecated, use mount() instead",
-            DeprecationWarning,
+            FastMCPDeprecationWarning,
             stacklevel=2,
         )
 
@@ -2229,7 +2230,7 @@ class FastMCP(
             warnings.warn(
                 "FastMCP.as_proxy() is deprecated. Use create_proxy() from "
                 "fastmcp.server instead: `from fastmcp.server import create_proxy`",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         # Call the module-level create_proxy function directly

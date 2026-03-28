@@ -3,7 +3,7 @@ description: "Run pytest with appropriate flags for the test type and platform"
 
 inputs:
   test-type:
-    description: "Type of tests to run: unit, integration, or client_process"
+    description: "Type of tests to run: unit, integration, client_process, or conformance"
     required: false
     default: "unit"
 
@@ -23,8 +23,13 @@ runs:
           TIMEOUT="5"
           MAX_PROCS="0"
           EXTRA_FLAGS="-x"
+        elif [ "${{ inputs.test-type }}" == "conformance" ]; then
+          MARKER="conformance"
+          TIMEOUT="120"
+          MAX_PROCS="0"
+          EXTRA_FLAGS="-x"
         else
-          MARKER="not integration and not client_process"
+          MARKER="not integration and not client_process and not conformance"
           TIMEOUT="5"
           MAX_PROCS="4"
           EXTRA_FLAGS=""

@@ -561,3 +561,64 @@ class TestIntegration:
             assert content_item.meta["ui"]["csp"]["resourceDomains"] == [
                 "https://unpkg.com"
             ]
+
+
+# ---------------------------------------------------------------------------
+# PrefabAppConfig
+# ---------------------------------------------------------------------------
+
+
+class TestPrefabAppConfig:
+    def test_default_sets_renderer_uri(self):
+        from fastmcp.apps import PrefabAppConfig
+
+        config = PrefabAppConfig()
+        assert config.resource_uri == "ui://prefab/renderer.html"
+
+    def test_merges_renderer_csp_with_user_csp(self):
+        from fastmcp.apps import PrefabAppConfig
+
+        config = PrefabAppConfig(
+            csp=ResourceCSP(frame_domains=["https://example.com"]),
+        )
+        assert config.resource_uri == "ui://prefab/renderer.html"
+        assert config.csp is not None
+        assert config.csp.frame_domains == ["https://example.com"]
+
+    async def test_auto_registers_renderer_resource(self):
+        from fastmcp.apps import PrefabAppConfig
+
+        server = FastMCP("test")
+
+        @server.tool(app=PrefabAppConfig())
+        def my_tool() -> str:
+            return "hello"
+
+        resources = list(await server.list_resources())
+        uris = [str(r.uri) for r in resources]
+        assert any("ui://prefab/renderer.html" in u for u in uris)
+
+    async def test_equivalent_to_app_true(self):
+        """PrefabAppConfig() should produce the same tool metadata as app=True."""
+        from fastmcp.apps import PrefabAppConfig
+
+        server1 = FastMCP("test1")
+        server2 = FastMCP("test2")
+
+        @server1.tool(app=True)
+        def tool_a() -> str:
+            return "a"
+
+        @server2.tool(app=PrefabAppConfig())
+        def tool_b() -> str:
+            return "b"
+
+        tools1 = list(await server1.list_tools())
+        tools2 = list(await server2.list_tools())
+
+        assert tools1[0].meta is not None
+        ui1 = tools1[0].meta.get("ui", {})
+        assert tools2[0].meta is not None
+        ui2 = tools2[0].meta.get("ui", {})
+
+        assert ui1.get("resourceUri") == ui2.get("resourceUri")

@@ -17,7 +17,7 @@ from typing import Literal
 
 from prefab_ui.actions import SetState, ShowToast
 from prefab_ui.actions.mcp import CallTool
-from prefab_ui.app import PrefabApp, set_initial_state
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Badge,
     Button,
@@ -102,8 +102,6 @@ def list_contacts() -> list[dict]:
 @app.ui()
 def contact_manager() -> PrefabApp:
     """Open the contact manager. The model calls this to launch the app."""
-    set_initial_state(contacts=list(_contacts))
-
     with Column(gap=6, css_class="p-6") as view:
         Heading("Contacts")
 
@@ -141,7 +139,7 @@ def contact_manager() -> PrefabApp:
             Input(name="query", placeholder="Search by name or email...")
             Button("Search")
 
-    return PrefabApp(view=view)
+    return PrefabApp(view=view, state={"contacts": list(_contacts)})
 
 
 mcp = FastMCP("Contacts Server", providers=[app])
