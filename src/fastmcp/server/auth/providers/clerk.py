@@ -12,7 +12,7 @@ returns user profile data in a single request.
 Example:
     ```python
     from fastmcp import FastMCP
-    from mcp_server.lib.clerk_auth_provider import ClerkProvider
+    from fastmcp.server.auth.providers.clerk import ClerkProvider
 
     auth = ClerkProvider(
         domain="saving-primate-16.clerk.accounts.dev",
@@ -236,7 +236,7 @@ class ClerkProvider(OAuthProxy):
     Example:
         ```python
         from fastmcp import FastMCP
-        from mcp_server.lib.clerk_auth_provider import ClerkProvider
+        from fastmcp.server.auth.providers.clerk import ClerkProvider
 
         auth = ClerkProvider(
             domain="saving-primate-16.clerk.accounts.dev",
