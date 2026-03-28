@@ -88,8 +88,10 @@ def _strip_discriminator(obj: Any) -> Any:
     """
     if isinstance(obj, dict):
         skip = "discriminator" in obj and ("anyOf" in obj or "oneOf" in obj)
+        # Keys that hold instance data, not sub-schemas — don't recurse.
+        _DATA_KEYS = {"default", "const", "examples", "enum"}
         return {
-            k: _strip_discriminator(v)
+            k: (v if k in _DATA_KEYS else _strip_discriminator(v))
             for k, v in obj.items()
             if not (k == "discriminator" and skip)
         }
