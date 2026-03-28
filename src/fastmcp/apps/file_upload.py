@@ -99,10 +99,24 @@ class FileUpload(FastMCPApp):
     Override ``on_store``, ``on_list``, and ``on_read`` for custom
     persistence (filesystem, S3, database, etc.).
 
+    **Session scoping:** The default storage uses ``ctx.session_id`` to
+    isolate files by session. This works with stdio, SSE, and stateful
+    HTTP transports. In **stateless HTTP** mode, each request creates a
+    new session, so files won't persist across requests. For stateless
+    deployments, override ``_get_session_id`` to return a stable
+    identifier — for example, a user ID from an auth token::
+
+        from fastmcp.server.dependencies import get_context
+
+        class AuthScopedUpload(FileUpload):
+            def _get_session_id(self) -> str:
+                token = get_context().access_token
+                return token["sub"]
+
     Example::
 
         from fastmcp import FastMCP
-        from fastmcp.apps import FileUpload
+        from fastmcp.apps.file_upload import FileUpload
 
         mcp = FastMCP("My Server")
         mcp.add_provider(FileUpload())
@@ -130,13 +144,17 @@ class FileUpload(FastMCPApp):
     # ------------------------------------------------------------------
 
     def _get_session_id(self) -> str:
+        """Return the key used to partition file storage.
+
+        Defaults to ``ctx.session_id``, which is stable for stdio, SSE,
+        and stateful HTTP. Override this for stateless HTTP or to scope
+        files by user, tenant, or any other dimension.
+        """
         try:
             from fastmcp.server.dependencies import get_context
 
             return get_context().session_id
         except RuntimeError:
-            # No active session (e.g. direct call_tool in tests).
-            # Fall back to a shared namespace.
             return "__default__"
 
     def on_store(self, files: list[dict[str, Any]]) -> list[dict[str, Any]]:
