@@ -130,7 +130,7 @@ class TestFileUploadSubclass:
         stored: dict[str, dict] = {}
 
         class MemoryUpload(FileUpload):
-            def on_store(self, files: list[dict]) -> list[dict]:
+            def on_store(self, files: list[dict], ctx) -> list[dict]:
                 for f in files:
                     stored[f["name"]] = f
                 return [
@@ -144,7 +144,7 @@ class TestFileUploadSubclass:
                     for f in files
                 ]
 
-            def on_list(self) -> list[dict]:
+            def on_list(self, ctx) -> list[dict]:
                 return [
                     {
                         "name": f["name"],
@@ -156,7 +156,7 @@ class TestFileUploadSubclass:
                     for f in stored.values()
                 ]
 
-            def on_read(self, name: str) -> dict:
+            def on_read(self, name: str, ctx) -> dict:
                 if name not in stored:
                     raise ValueError(f"Not found: {name}")
                 f = stored[name]

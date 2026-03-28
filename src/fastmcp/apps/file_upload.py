@@ -64,6 +64,7 @@ from datetime import datetime
 from typing import Any
 
 from fastmcp.apps.app import FastMCPApp
+from fastmcp.server.context import Context
 
 _TEXT_EXTENSIONS = frozenset(
     (".csv", ".json", ".txt", ".md", ".py", ".yaml", ".yml", ".toml")
@@ -97,21 +98,21 @@ class FileUpload(FastMCPApp):
 
     Files are scoped by MCP session and stored in memory by default.
     Override ``on_store``, ``on_list``, and ``on_read`` for custom
-    persistence (filesystem, S3, database, etc.).
+    persistence (filesystem, S3, database, etc.). Each method receives
+    the current ``Context``, giving access to session ID, auth tokens,
+    and request metadata for partitioning and authorization.
 
     **Session scoping:** The default storage uses ``ctx.session_id`` to
     isolate files by session. This works with stdio, SSE, and stateful
     HTTP transports. In **stateless HTTP** mode, each request creates a
     new session, so files won't persist across requests. For stateless
-    deployments, override ``_get_session_id`` to return a stable
-    identifier — for example, a user ID from an auth token::
+    deployments, override the storage methods to partition by a stable
+    identifier from the auth context::
 
-        from fastmcp.server.dependencies import get_context
-
-        class AuthScopedUpload(FileUpload):
-            def _get_session_id(self) -> str:
-                token = get_context().access_token
-                return token["sub"]
+        class UserScopedUpload(FileUpload):
+            def on_store(self, files, ctx):
+                user_id = ctx.access_token["sub"]
+                ...
 
     Example::
 
@@ -127,9 +128,19 @@ class FileUpload(FastMCPApp):
         name: str = "Files",
         *,
         max_file_size: int = 10 * 1024 * 1024,
+        title: str = "File Upload",
+        description: str = (
+            "Drop files to upload them to the server. "
+            "The model can then read and analyze them "
+            "without using the context window."
+        ),
+        drop_label: str = "Drop files here",
     ) -> None:
         super().__init__(name)
         self._max_file_size = max_file_size
+        self._title = title
+        self._description = description
+        self._drop_label = drop_label
 
         # Default in-memory store, keyed by session_id
         self._store: dict[str, dict[str, dict[str, Any]]] = {}
@@ -143,35 +154,46 @@ class FileUpload(FastMCPApp):
     # Storage interface — override these for custom persistence
     # ------------------------------------------------------------------
 
-    def _get_session_id(self) -> str:
+    def _get_scope_key(self, ctx: Context) -> str:
         """Return the key used to partition file storage.
 
         Defaults to ``ctx.session_id``, which is stable for stdio, SSE,
-        and stateful HTTP. Override this for stateless HTTP or to scope
-        files by user, tenant, or any other dimension.
+        and stateful HTTP. The default ``on_store``/``on_list``/``on_read``
+        implementations call this to partition the in-memory store.
+
+        Override to scope by user, tenant, or any other dimension::
+
+            def _get_scope_key(self, ctx):
+                return ctx.access_token["sub"]
         """
         try:
-            from fastmcp.server.dependencies import get_context
-
-            return get_context().session_id
+            return ctx.session_id
         except RuntimeError:
             return "__default__"
 
-    def on_store(self, files: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def on_store(
+        self,
+        files: list[dict[str, Any]],
+        ctx: Context,
+    ) -> list[dict[str, Any]]:
         """Store uploaded files and return summaries.
 
-        Each file dict contains ``name``, ``size``, ``type``, and
-        ``data`` (base64-encoded content).
+        Args:
+            files: List of file dicts, each with ``name``, ``size``,
+                ``type``, and ``data`` (base64-encoded content).
+            ctx: The current request context. Use for session ID,
+                auth tokens, or any metadata needed for partitioning.
 
         Override this method for custom persistence. The default
-        implementation stores files in memory, scoped by MCP session.
+        implementation stores files in memory, scoped by
+        ``_get_scope_key(ctx)``.
 
         Returns:
             List of file summary dicts (``name``, ``type``, ``size``,
             ``size_display``, ``uploaded_at``).
         """
-        session_id = self._get_session_id()
-        session_files = self._store.setdefault(session_id, {})
+        scope = self._get_scope_key(ctx)
+        session_files = self._store.setdefault(scope, {})
         for f in files:
             session_files[f["name"]] = {
                 "name": f["name"],
@@ -182,24 +204,31 @@ class FileUpload(FastMCPApp):
             }
         return [_make_summary(e) for e in session_files.values()]
 
-    def on_list(self) -> list[dict[str, Any]]:
+    def on_list(self, ctx: Context) -> list[dict[str, Any]]:
         """List all stored files.
 
+        Args:
+            ctx: The current request context.
+
         Override this method for custom persistence. The default
-        implementation returns files from the current session.
+        implementation returns files from the current scope.
 
         Returns:
             List of file summary dicts.
         """
-        session_id = self._get_session_id()
-        session_files = self._store.get(session_id, {})
+        scope = self._get_scope_key(ctx)
+        session_files = self._store.get(scope, {})
         return [_make_summary(e) for e in session_files.values()]
 
-    def on_read(self, name: str) -> dict[str, Any]:
+    def on_read(self, name: str, ctx: Context) -> dict[str, Any]:
         """Read a file's contents by name.
 
+        Args:
+            name: The filename to read.
+            ctx: The current request context.
+
         Override this method for custom persistence. The default
-        implementation reads from the current session's in-memory store.
+        implementation reads from the current scope's in-memory store.
         Text files are decoded from base64; binary files return a
         truncated base64 preview.
 
@@ -210,8 +239,8 @@ class FileUpload(FastMCPApp):
         Raises:
             ValueError: If the file is not found.
         """
-        session_id = self._get_session_id()
-        session_files = self._store.get(session_id, {})
+        scope = self._get_scope_key(ctx)
+        session_files = self._store.get(scope, {})
         if name not in session_files:
             available = list(session_files.keys())
             raise ValueError(f"File {name!r} not found. Available: {available}")
@@ -242,7 +271,7 @@ class FileUpload(FastMCPApp):
         provider = self
 
         @self.tool()
-        def store_files(files: list[dict]) -> list[dict]:
+        def store_files(files: list[dict], ctx: Context) -> list[dict]:
             """Store uploaded files. Receives file objects with name, size, type, data (base64)."""
             for f in files:
                 if f.get("size", 0) > provider._max_file_size:
@@ -251,24 +280,24 @@ class FileUpload(FastMCPApp):
                         f"({_format_size(f['size'])} > "
                         f"{_format_size(provider._max_file_size)})"
                     )
-            return provider.on_store(files)
+            return provider.on_store(files, ctx)
 
         @self.tool(model=True)
-        def list_files() -> list[dict]:
+        def list_files(ctx: Context) -> list[dict]:
             """List all uploaded files with metadata."""
-            return provider.on_list()
+            return provider.on_list(ctx)
 
         @self.tool(model=True)
-        def read_file(name: str) -> dict:
+        def read_file(name: str, ctx: Context) -> dict:
             """Read an uploaded file's contents by name."""
-            return provider.on_read(name)
+            return provider.on_read(name, ctx)
 
         @self.ui()
-        def file_manager() -> PrefabApp:
+        def file_manager(ctx: Context) -> PrefabApp:
             """Upload and manage files. Drop files here to send them to the server."""
             with Card(css_class="max-w-2xl mx-auto") as view:
                 with CardHeader(), Row(gap=2, align="center"):
-                    H3("File Upload")
+                    H3(provider._title)
                     with If(STATE.stored.length()):
                         Badge(
                             STATE.stored.length(),  # ty:ignore[invalid-argument-type]
@@ -276,16 +305,12 @@ class FileUpload(FastMCPApp):
                         )
 
                 with CardContent(), Column(gap=4):
-                    Muted(
-                        "Drop files to upload them to the server. "
-                        "The model can then read and analyze them "
-                        "without using the context window."
-                    )
+                    Muted(provider._description)
 
                     DropZone(
                         name="pending",
                         icon="inbox",
-                        label="Drop files here",
+                        label=provider._drop_label,
                         description=(
                             "Any file type, up to "
                             f"{_format_size(provider._max_file_size)}"
@@ -363,6 +388,6 @@ class FileUpload(FastMCPApp):
                 view=view,
                 state={
                     "pending": [],
-                    "stored": provider.on_list(),
+                    "stored": provider.on_list(ctx),
                 },
             )

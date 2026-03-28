@@ -35,71 +35,87 @@ The LLM sees `file_manager`, `list_files`, and `read_file`. It calls `file_manag
 
 ```python
 FileUpload(
-    name="Files",           # App name (used in tool routing)
-    max_file_size=10*1024*1024,  # 10 MB default, enforced server-side
+    name="Files",                    # App name (used in tool routing)
+    max_file_size=10 * 1024 * 1024,  # 10 MB default, enforced server-side
+    title="File Upload",             # Heading shown in the UI
+    description="Drop files to...",  # Description text below the heading
+    drop_label="Drop files here",    # Label inside the drop zone
 )
 ```
 
 The `max_file_size` limit is enforced both in the UI (the DropZone rejects oversized files) and on the server (the `store_files` tool validates before calling `on_store`).
 
-## Session Scoping
+## Storage Scoping
 
-By default, files are stored in memory and scoped by MCP session. Each session gets its own isolated file store — files uploaded in one conversation aren't visible in another.
+By default, files are stored in memory and scoped by MCP session ID. Each session gets its own isolated file store — files uploaded in one conversation aren't visible in another.
 
-This works with **stdio**, **SSE**, and **stateful HTTP** transports, where sessions persist across requests. In **stateless HTTP** mode, each request creates a new session, so files won't persist across requests.
+This works with **stdio**, **SSE**, and **stateful HTTP** transports, where sessions persist across requests. In **stateless HTTP** mode, each request creates a new session, so the default scoping won't work.
 
-For stateless deployments, override `_get_session_id` to return a stable identifier from your auth context:
+For stateless deployments, override `_get_scope_key` to return a stable identifier. For example, to scope files by authenticated user:
 
 ```python
-from fastmcp.server.dependencies import get_context
 from fastmcp.apps.file_upload import FileUpload
 
-class AuthScopedUpload(FileUpload):
-    def _get_session_id(self) -> str:
-        token = get_context().access_token
-        return token["sub"]
+class UserScopedUpload(FileUpload):
+    def _get_scope_key(self, ctx):
+        return ctx.access_token["sub"]
+```
+
+For process-wide shared storage (all users see all files):
+
+```python
+class SharedUpload(FileUpload):
+    def _get_scope_key(self, ctx):
+        return "__shared__"
 ```
 
 ## Custom Storage
 
-The default implementation stores files in memory for the lifetime of the server process. For persistent storage, subclass `FileUpload` and override three methods:
+The default implementation stores files in memory for the lifetime of the server process. For persistent storage, subclass `FileUpload` and override three methods. Each receives the current `Context`, giving you access to session IDs, auth tokens, and request metadata for partitioning and authorization.
 
 ```python
+import base64
+
 from fastmcp.apps.file_upload import FileUpload
 
 class S3Upload(FileUpload):
-    def on_store(self, files: list[dict]) -> list[dict]:
-        """Store files and return summaries."""
+    def on_store(self, files, ctx):
+        user_id = ctx.access_token["sub"]
         for f in files:
             s3.put_object(
                 Bucket="uploads",
-                Key=f["name"],
+                Key=f"{user_id}/{f['name']}",
                 Body=base64.b64decode(f["data"]),
             )
-        return self.on_list()
+        return self.on_list(ctx)
 
-    def on_list(self) -> list[dict]:
-        """List all stored files."""
-        objects = s3.list_objects(Bucket="uploads")
+    def on_list(self, ctx):
+        user_id = ctx.access_token["sub"]
+        objects = s3.list_objects(Bucket="uploads", Prefix=f"{user_id}/")
         return [
-            {"name": obj["Key"], "type": "application/octet-stream",
-             "size": obj["Size"], "size_display": "...",
-             "uploaded_at": obj["LastModified"].isoformat()}
+            {
+                "name": obj["Key"].split("/", 1)[1],
+                "type": "application/octet-stream",
+                "size": obj["Size"],
+                "size_display": f"{obj['Size']} B",
+                "uploaded_at": obj["LastModified"].isoformat(),
+            }
             for obj in objects.get("Contents", [])
         ]
 
-    def on_read(self, name: str) -> dict:
-        """Read a file by name."""
-        obj = s3.get_object(Bucket="uploads", Key=name)
+    def on_read(self, name, ctx):
+        user_id = ctx.access_token["sub"]
+        obj = s3.get_object(Bucket="uploads", Key=f"{user_id}/{name}")
+        content = obj["Body"].read()
         return {
             "name": name,
             "size": obj["ContentLength"],
             "type": obj["ContentType"],
             "uploaded_at": obj["LastModified"].isoformat(),
-            "content_base64": base64.b64encode(
-                obj["Body"].read()
-            ).decode()[:200] + "...",
+            "content": content.decode("utf-8"),
         }
 ```
 
 Each file dict passed to `on_store` contains `name`, `size`, `type`, and `data` (base64-encoded content). The return value from `on_store` and `on_list` should be a list of summary dicts with `name`, `type`, `size`, `size_display`, and `uploaded_at` fields — these populate the file list in the UI.
+
+`on_read` returns a dict with file metadata and either `content` (decoded text) or `content_base64` (a base64 preview for binary files).
