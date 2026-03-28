@@ -74,17 +74,24 @@ def _strip_remote_refs(obj: Any) -> Any:
 
 
 def _strip_discriminator(obj: Any) -> Any:
-    """Recursively remove ``discriminator`` keys from a schema.
+    """Recursively remove OpenAPI ``discriminator`` keys from a schema.
 
     Pydantic emits ``discriminator.mapping`` with values like
     ``#/$defs/ClassName``.  After ``$defs`` are inlined and removed by
     ``dereference_refs``, those mapping entries dangle.  The keyword is an
     OpenAPI extension — the ``anyOf`` variants already carry ``const`` on
     the discriminant field, so the mapping is redundant.
+
+    Only strips ``discriminator`` when it appears alongside ``anyOf`` or
+    ``oneOf``, which is where the OpenAPI keyword lives.  A property
+    *named* ``discriminator`` (inside ``properties``) is left alone.
     """
     if isinstance(obj, dict):
+        skip = "discriminator" in obj and ("anyOf" in obj or "oneOf" in obj)
         return {
-            k: _strip_discriminator(v) for k, v in obj.items() if k != "discriminator"
+            k: _strip_discriminator(v)
+            for k, v in obj.items()
+            if not (k == "discriminator" and skip)
         }
     if isinstance(obj, list):
         return [_strip_discriminator(item) for item in obj]

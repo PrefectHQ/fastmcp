@@ -238,6 +238,26 @@ class TestDereferenceRefs:
         actions = {v["properties"]["action"]["const"] for v in result["anyOf"]}
         assert actions == {"identify", "delete"}
 
+    def test_preserves_property_named_discriminator(self):
+        """A field *named* 'discriminator' inside properties must survive."""
+        schema = {
+            "$defs": {
+                "Inner": {
+                    "type": "object",
+                    "properties": {
+                        "discriminator": {"type": "string"},
+                    },
+                },
+            },
+            "properties": {
+                "item": {"$ref": "#/$defs/Inner"},
+            },
+        }
+        result = dereference_refs(schema)
+
+        assert "$defs" not in result
+        assert "discriminator" in result["properties"]["item"]["properties"]
+
 
 class TestCompressSchema:
     """Tests for the compress_schema function."""
