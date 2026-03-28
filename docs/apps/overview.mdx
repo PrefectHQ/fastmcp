@@ -148,7 +148,7 @@ mcp = FastMCP("Prefab Studio")
 mcp.add_provider(GenerativeUI())
 ```
 
-See [Generative UI](/apps/generative) for the full guide.
+See [Generative UI](/apps/generative) for the full guide, or the [provider reference](/apps/providers/generative) for configuration options.
 
 ## Which Approach?
 
@@ -159,6 +159,8 @@ When your UI needs multiple backend tools with managed visibility and compositio
 When you want the LLM to design the UI at runtime, use **[Generative UI](/apps/generative)**.
 
 When you need your own HTML/JS (maps, 3D, video), use **[Custom HTML](/apps/low-level)**.
+
+FastMCP also includes ready-made **[app providers](/apps/providers/generative)** that add common capabilities with a single `add_provider()` call.
 
 ## Custom HTML Apps
 

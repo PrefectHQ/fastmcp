@@ -195,6 +195,16 @@
                   "apps/development",
                   {
                     "collapsed": true,
+                    "group": "Providers",
+                    "icon": "layer-group",
+                    "pages": [
+                      "apps/providers/file-upload",
+                      "apps/providers/generative"
+                    ],
+                    "tag": "NEW"
+                  },
+                  {
+                    "collapsed": true,
                     "group": "Reference",
                     "icon": "book",
                     "pages": [

@@ -1,0 +1,105 @@
+---
+title: File Upload
+sidebarTitle: File Upload
+description: Drag-and-drop file upload for any MCP server
+icon: upload
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.2.0" />
+
+`FileUpload` adds drag-and-drop file upload to any server. Users upload files through an interactive UI, bypassing the LLM context window entirely. The LLM can then list and read uploaded files through model-visible tools.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.apps.file_upload import FileUpload
+
+mcp = FastMCP("My Server")
+mcp.add_provider(FileUpload())
+```
+
+This registers four tools:
+
+| Tool | Visibility | Purpose |
+|------|-----------|---------|
+| `file_manager` | Model | Opens the drag-and-drop upload UI |
+| `store_files` | App only | Called by the UI when the user clicks Upload |
+| `list_files` | Model | Returns metadata for all uploaded files |
+| `read_file` | Model | Returns a file's contents by name |
+
+The LLM sees `file_manager`, `list_files`, and `read_file`. It calls `file_manager` to show the upload interface, then uses `list_files` and `read_file` to work with whatever the user uploaded. `store_files` is app-only — the UI calls it directly through the `___` routing mechanism and the LLM never needs to know about it.
+
+## Configuration
+
+```python
+FileUpload(
+    name="Files",           # App name (used in tool routing)
+    max_file_size=10*1024*1024,  # 10 MB default, enforced server-side
+)
+```
+
+The `max_file_size` limit is enforced both in the UI (the DropZone rejects oversized files) and on the server (the `store_files` tool validates before calling `on_store`).
+
+## Session Scoping
+
+By default, files are stored in memory and scoped by MCP session. Each session gets its own isolated file store — files uploaded in one conversation aren't visible in another.
+
+This works with **stdio**, **SSE**, and **stateful HTTP** transports, where sessions persist across requests. In **stateless HTTP** mode, each request creates a new session, so files won't persist across requests.
+
+For stateless deployments, override `_get_session_id` to return a stable identifier from your auth context:
+
+```python
+from fastmcp.server.dependencies import get_context
+from fastmcp.apps.file_upload import FileUpload
+
+class AuthScopedUpload(FileUpload):
+    def _get_session_id(self) -> str:
+        token = get_context().access_token
+        return token["sub"]
+```
+
+## Custom Storage
+
+The default implementation stores files in memory for the lifetime of the server process. For persistent storage, subclass `FileUpload` and override three methods:
+
+```python
+from fastmcp.apps.file_upload import FileUpload
+
+class S3Upload(FileUpload):
+    def on_store(self, files: list[dict]) -> list[dict]:
+        """Store files and return summaries."""
+        for f in files:
+            s3.put_object(
+                Bucket="uploads",
+                Key=f["name"],
+                Body=base64.b64decode(f["data"]),
+            )
+        return self.on_list()
+
+    def on_list(self) -> list[dict]:
+        """List all stored files."""
+        objects = s3.list_objects(Bucket="uploads")
+        return [
+            {"name": obj["Key"], "type": "application/octet-stream",
+             "size": obj["Size"], "size_display": "...",
+             "uploaded_at": obj["LastModified"].isoformat()}
+            for obj in objects.get("Contents", [])
+        ]
+
+    def on_read(self, name: str) -> dict:
+        """Read a file by name."""
+        obj = s3.get_object(Bucket="uploads", Key=name)
+        return {
+            "name": name,
+            "size": obj["ContentLength"],
+            "type": obj["ContentType"],
+            "uploaded_at": obj["LastModified"].isoformat(),
+            "content_base64": base64.b64encode(
+                obj["Body"].read()
+            ).decode()[:200] + "...",
+        }
+```
+
+Each file dict passed to `on_store` contains `name`, `size`, `type`, and `data` (base64-encoded content). The return value from `on_store` and `on_list` should be a list of summary dicts with `name`, `type`, `size`, `size_display`, and `uploaded_at` fields — these populate the file list in the UI.
