@@ -112,7 +112,7 @@ class Approval(FastMCPApp):
                 with CardFooter():
                     with If(STATE.decided):
                         Muted("Response sent.")
-                    with If(STATE.decided, negate=True):  # noqa: SIM117
+                    with If(~STATE.decided):  # noqa: SIM117
                         with Row(gap=2, css_class="w-full justify-end"):
                             Button(
                                 provider._reject_text,
