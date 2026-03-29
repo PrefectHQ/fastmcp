@@ -1,0 +1,72 @@
+---
+title: Choice
+sidebarTitle: Choice
+description: Present clickable options instead of free-text responses
+icon: list-check
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.2.0" />
+
+`Choice` lets the LLM present a set of options as clickable buttons instead of asking the user to type a response. The selection flows back into the conversation as a message, giving the LLM clean structured input.
+
+<Frame>
+  <img src="/apps/images/app-choice.png" alt="The Choice provider shown in Goose, with four lunch options as clickable buttons" />
+</Frame>
+
+```python
+from fastmcp import FastMCP
+from fastmcp.apps.choice import Choice
+
+mcp = FastMCP("My Server")
+mcp.add_provider(Choice())
+```
+
+This registers a single tool:
+
+| Tool | Visibility | Purpose |
+|------|-----------|---------|
+| `choose` | Model | Shows a card with clickable options, sends the selection back as a message |
+
+The LLM calls `choose` with a prompt and a list of options. The user sees a card with one button per option. Clicking one sends a message back into the conversation:
+
+```
+"Which deployment strategy?" — I selected: Blue-green
+```
+
+<Note>
+Like [Approval](/apps/providers/approval), this is an advisory interaction — the conversation isn't blocked while the card is open. The tool description instructs the LLM to wait for the "I selected:" response before proceeding.
+</Note>
+
+## Configuration
+
+The constructor sets defaults; the LLM can override `title` per-call.
+
+```python
+Choice(
+    name="Choice",             # App name
+    title="Choose an Option",  # Default card heading
+    variant="outline",         # Button style for all options
+)
+```
+
+The LLM provides the options per-call:
+
+```python
+choose(
+    prompt="What should we have for lunch?",
+    options=["Pizza", "Tacos", "Ramen", "Salad"],
+    title="The Important Questions",
+)
+```
+
+## How It Works
+
+Each option renders as a full-width button in a vertical stack. When the user clicks one:
+
+1. `SendMessage` pushes the selection into the conversation as a user message
+2. `SetState("decided", True)` replaces the buttons with "Response sent."
+
+The tool description instructs the LLM to stop and wait for the "I selected:" message before proceeding with whatever the user chose.
