@@ -56,7 +56,7 @@ anthropic = ["anthropic>=0.48.0"]
 apps = ["prefab-ui>=0.15.0"]
 # PyJWT floor: transitive via msal; CVE-2026-32597 affects <= 2.11.0
 azure = ["azure-identity>=1.16.0", "PyJWT>=2.12.0"]
-code-mode = ["pydantic-monty==0.0.8"]
+code-mode = ["pydantic-monty==0.0.9"]
 gemini = ["google-genai>=1.18.0"]
 openai = ["openai>=1.102.0"]
 tasks = ["pydocket>=0.18.0"]
