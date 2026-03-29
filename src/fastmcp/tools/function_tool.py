@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import warnings
 from collections.abc import Callable
@@ -27,7 +28,12 @@ import fastmcp
 from fastmcp.decorators import resolve_task_config
 from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
-from fastmcp.server.dependencies import without_injected_parameters
+from fastmcp.server.dependencies import (
+    _restore_task_http_headers,
+    _task_http_headers,
+    get_task_context,
+    without_injected_parameters,
+)
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import (
     Tool,
@@ -284,11 +290,13 @@ class FunctionTool(Tool):
         """Register this tool with docket for background execution.
 
         FunctionTool registers the underlying function, which has the user's
-        Depends parameters for docket to resolve.
+        Depends parameters for docket to resolve. The function is wrapped to
+        eagerly restore HTTP headers from Redis so that get_http_request()
+        works even without explicit dependency injection.
         """
         if not self.task_config.supports_tasks():
             return
-        docket.register(self.fn, names=[self.key])
+        docket.register(_wrap_for_task_http_headers(self.fn), names=[self.key])
 
     async def add_to_docket(
         self,
@@ -314,6 +322,34 @@ class FunctionTool(Tool):
         if task_key:
             kwargs["key"] = task_key
         return await docket.add(lookup_key, **kwargs)(**arguments)
+
+
+def _wrap_for_task_http_headers(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap a function to restore HTTP headers in background task workers.
+
+    Uses functools.wraps so docket sees the original signature for dependency
+    resolution while the wrapper eagerly populates _task_http_headers before
+    the user's function runs.
+    """
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        task_info = get_task_context()
+        token = None
+        if task_info is not None and _task_http_headers.get() is None:
+            token = await _restore_task_http_headers(
+                task_info.session_id, task_info.task_id
+            )
+        try:
+            result = fn(*args, **kwargs)
+            if inspect.isawaitable(result):
+                result = await result
+            return result
+        finally:
+            if token is not None:
+                _task_http_headers.reset(token)
+
+    return wrapper
 
 
 @overload

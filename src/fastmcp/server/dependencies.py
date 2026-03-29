@@ -916,6 +916,7 @@ class _CurrentContext(Dependency["Context"]):
 
     _context: Context | None = None
     _access_token_cv_token: Token[AccessToken | None] | None = None
+    _http_headers_cv_token: Token[dict[str, str] | None] | None = None
 
     async def __aenter__(self) -> Context:
         from fastmcp.server.context import Context, _current_context
@@ -950,6 +951,11 @@ class _CurrentContext(Dependency["Context"]):
                 task_info.session_id, task_info.task_id
             )
 
+            # Restore HTTP headers snapshot from Redis (#3631)
+            self._http_headers_cv_token = await _restore_task_http_headers(
+                task_info.session_id, task_info.task_id
+            )
+
             return self._context
 
         # Neither foreground nor background context available
@@ -970,6 +976,10 @@ class _CurrentContext(Dependency["Context"]):
         if self._access_token_cv_token is not None:
             _task_access_token.reset(self._access_token_cv_token)
             self._access_token_cv_token = None
+        # Clean up HTTP headers ContextVar
+        if self._http_headers_cv_token is not None:
+            _task_http_headers.reset(self._http_headers_cv_token)
+            self._http_headers_cv_token = None
         # Clean up if we created a context for background task
         if self._context is not None:
             await self._context.__aexit__(exc_type, exc_value, traceback)

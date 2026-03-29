@@ -386,7 +386,7 @@ class Tool(FastMCPComponent):
         fn_key: str | None = None,
         task_key: str | None = None,
         **kwargs: Any,
-    ) -> Execution:  # ty:ignore[invalid-method-override]
+    ) -> Execution:
         """Schedule this tool for background execution via docket.
 
         Args:

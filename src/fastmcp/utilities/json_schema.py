@@ -73,6 +73,33 @@ def _strip_remote_refs(obj: Any) -> Any:
     return obj
 
 
+def _strip_discriminator(obj: Any) -> Any:
+    """Recursively remove OpenAPI ``discriminator`` keys from a schema.
+
+    Pydantic emits ``discriminator.mapping`` with values like
+    ``#/$defs/ClassName``.  After ``$defs`` are inlined and removed by
+    ``dereference_refs``, those mapping entries dangle.  The keyword is an
+    OpenAPI extension — the ``anyOf`` variants already carry ``const`` on
+    the discriminant field, so the mapping is redundant.
+
+    Only strips ``discriminator`` when it appears alongside ``anyOf`` or
+    ``oneOf``, which is where the OpenAPI keyword lives.  A property
+    *named* ``discriminator`` (inside ``properties``) is left alone.
+    """
+    if isinstance(obj, dict):
+        skip = "discriminator" in obj and ("anyOf" in obj or "oneOf" in obj)
+        # Keys that hold instance data, not sub-schemas — don't recurse.
+        _DATA_KEYS = {"default", "const", "examples", "enum"}
+        return {
+            k: (v if k in _DATA_KEYS else _strip_discriminator(v))
+            for k, v in obj.items()
+            if not (k == "discriminator" and skip)
+        }
+    if isinstance(obj, list):
+        return [_strip_discriminator(item) for item in obj]
+    return obj
+
+
 def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     """Resolve all $ref references in a JSON schema by inlining definitions.
 
@@ -134,6 +161,13 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         # Remove $defs since all references have been resolved
         if "$defs" in dereferenced:
             dereferenced = {k: v for k, v in dereferenced.items() if k != "$defs"}
+
+        # Strip `discriminator` keys — they contain `mapping` values that
+        # point at `#/$defs/...` entries we just removed.  `discriminator`
+        # is an OpenAPI extension; after inlining, the `anyOf` variants
+        # already carry `const` on the discriminant field, making the
+        # mapping redundant.
+        dereferenced = _strip_discriminator(dereferenced)
 
         return dereferenced
 

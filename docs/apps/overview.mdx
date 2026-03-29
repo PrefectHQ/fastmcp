@@ -25,10 +25,34 @@ The examples throughout the Apps docs require the `apps` extra:
 pip install "fastmcp[apps]"
 ```
 
-This installs [Prefab UI](https://prefab.prefect.io), the component library used to build app UIs. Pin `prefab-ui` to a specific version in production — it's in early development and its API changes frequently.
+This installs [Prefab UI](https://prefab.prefect.io), the component library used to build app UIs.
 </Note>
 
-## Prefab Apps
+<Warning>
+FastMCP pins a **minimum** version of `prefab-ui` for compatibility but intentionally does **not** pin an upper bound. Prefab is a rapidly evolving library with frequent breaking changes. If you are deploying to production, you **must** pin `prefab-ui` to a specific version in your own dependencies:
+
+```
+prefab-ui==0.15.0
+```
+
+Without a pin, a `pip install --upgrade` or fresh deploy could pull a newer Prefab version that changes component APIs, breaking your app. FastMCP's minimum ensures baseline compatibility; your pin ensures stability.
+</Warning>
+
+## Which Approach?
+
+Most apps start with **[Prefab Apps](/apps/prefab)** — add `app=True` to a tool and return components. That covers charts, tables, dashboards, and client-side interactivity.
+
+When your UI needs multiple backend tools with managed visibility and composition safety, use **[FastMCPApp](/apps/interactive-apps)**.
+
+When you want the LLM to design the UI at runtime, use **[Generative UI](/apps/generative)**.
+
+When you need your own HTML/JS (maps, 3D, video), use **[Custom HTML](/apps/low-level)**.
+
+FastMCP also includes ready-made **[app providers](/apps/providers/approval)** that add common capabilities with a single `add_provider()` call.
+
+## Building Apps
+
+### Prefab Apps
 
 <VersionBadge version="3.1.0" />
 
@@ -68,7 +92,7 @@ Prefab apps aren't limited to static displays. Prefab's state system and client-
 
 See [Prefab Apps](/apps/prefab) for the full guide.
 
-## FastMCPApp
+### FastMCPApp
 
 <VersionBadge version="3.2.0" />
 
@@ -134,7 +158,7 @@ You *can* build server-interactive UIs without `FastMCPApp` — it's all the sam
 
 See [FastMCPApp](/apps/interactive-apps) for the full guide.
 
-## Generative UI
+### Generative UI
 
 <VersionBadge version="3.2.0" />
 
@@ -148,19 +172,9 @@ mcp = FastMCP("Prefab Studio")
 mcp.add_provider(GenerativeUI())
 ```
 
-See [Generative UI](/apps/generative) for the full guide.
+See [Generative UI](/apps/generative) for the full guide, or the [provider reference](/apps/providers/generative) for configuration options.
 
-## Which Approach?
-
-Most apps start with **[Prefab Apps](/apps/prefab)** — add `app=True` to a tool and return components. That covers charts, tables, dashboards, and client-side interactivity.
-
-When your UI needs multiple backend tools with managed visibility and composition safety, use **[FastMCPApp](/apps/interactive-apps)**.
-
-When you want the LLM to design the UI at runtime, use **[Generative UI](/apps/generative)**.
-
-When you need your own HTML/JS (maps, 3D, video), use **[Custom HTML](/apps/low-level)**.
-
-## Custom HTML Apps
+### Custom HTML
 
 All the approaches above use [Prefab UI](https://prefab.prefect.io) to build UIs in pure Python. If you need full control — your own HTML, CSS, JavaScript, a specific framework — you can use the [MCP Apps extension directly](/apps/low-level). You write the HTML yourself and communicate with the host via the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) SDK.
 

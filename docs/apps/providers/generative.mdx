@@ -1,0 +1,49 @@
+---
+title: Generative UI
+sidebarTitle: Generative UI
+description: Let the LLM generate custom UIs at runtime
+icon: wand-magic-sparkles
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.2.0" />
+
+`GenerativeUI` lets the LLM write Prefab Python code at runtime and render it as a streaming interactive UI. Instead of calling pre-built tools with fixed interfaces, the model creates tailored visualizations for whatever data it's working with.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.apps.generative import GenerativeUI
+
+mcp = FastMCP("My Server")
+mcp.add_provider(GenerativeUI())
+```
+
+This registers:
+
+| Component | Type | Purpose |
+|-----------|------|---------|
+| `generate_prefab_ui` | Tool | Accepts Python code, executes in Pyodide sandbox, renders result |
+| `search_prefab_components` | Tool | Lets the LLM discover available Prefab components |
+| Generative renderer | Resource | `ui://` resource with browser-side Pyodide for streaming |
+
+The LLM writes real Python — loops, f-strings, computation — using Prefab's component library (charts, tables, forms, cards, layout primitives). As the model generates tokens, the host streams partial code to the renderer via `ontoolinputpartial`, so the user watches the UI build up in real time.
+
+## Configuration
+
+```python
+GenerativeUI(
+    tool_name="generate_prefab_ui",                # Rename the generation tool
+    components_tool_name="search_prefab_components",  # Rename the search tool
+    include_components_tool=True,                   # Set False to omit the search tool
+)
+```
+
+## Requirements
+
+Requires `fastmcp[apps]` (installs `prefab-ui`). The Pyodide sandbox for server-side validation requires Deno, which installs automatically on first use. The streaming renderer loads Pyodide from CDN in the browser — CSP is configured automatically by the provider.
+
+## Learn More
+
+See the full **[Generative UI guide](/apps/generative)** for details on how streaming works, what the LLM writes, how to pass data, and the component search tool.

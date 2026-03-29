@@ -55,10 +55,9 @@ async def test_sse_app_with_custom_middleware():
     server = FastMCP(name="TestServer")
 
     # Create custom middleware
-    # TODO(ty): remove when Starlette Middleware typing is supported
     custom_middleware = [
         Middleware(
-            HeaderMiddleware,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            HeaderMiddleware,  # type: ignore[arg-type]
             header_name="X-Custom-Header",
             header_value="test-value",
         )
@@ -88,10 +87,9 @@ async def test_streamable_http_app_with_custom_middleware():
     server = FastMCP(name="TestServer")
 
     # Create custom middleware
-    # TODO(ty): remove when Starlette Middleware typing is supported
     custom_middleware = [
         Middleware(
-            HeaderMiddleware,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            HeaderMiddleware,  # type: ignore[arg-type]
             header_name="X-Custom-Header",
             header_value="test-value",
         )
@@ -121,10 +119,9 @@ async def test_create_sse_app_with_custom_middleware():
     server = FastMCP(name="TestServer")
 
     # Create custom middleware
-    # TODO(ty): remove when Starlette Middleware typing is supported
     custom_middleware = [
         Middleware(
-            RequestModifierMiddleware,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            RequestModifierMiddleware,  # type: ignore[arg-type]
             key="modified_by",
             value="middleware",
         )
@@ -161,10 +158,9 @@ async def test_create_streamable_http_app_with_custom_middleware():
     server = FastMCP(name="TestServer")
 
     # Create custom middleware
-    # TODO(ty): remove when Starlette Middleware typing is supported
     custom_middleware = [
         Middleware(
-            RequestModifierMiddleware,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            RequestModifierMiddleware,  # type: ignore[arg-type]
             key="modified_by",
             value="middleware",
         )
@@ -200,15 +196,14 @@ async def test_multiple_middleware_ordering():
     server = FastMCP(name="TestServer")
 
     # Create multiple middleware
-    # TODO(ty): remove when Starlette Middleware typing is supported
     custom_middleware = [
         Middleware(
-            HeaderMiddleware,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            HeaderMiddleware,  # type: ignore[arg-type]
             header_name="X-First-Header",
             header_value="first",
         ),
         Middleware(
-            HeaderMiddleware,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            HeaderMiddleware,  # type: ignore[arg-type]
             header_name="X-Second-Header",
             header_value="second",
         ),
