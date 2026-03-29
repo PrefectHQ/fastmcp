@@ -216,6 +216,7 @@
                       "apps/providers/approval",
                       "apps/providers/choice",
                       "apps/providers/file-upload",
+                      "apps/providers/form",
                       "apps/providers/generative"
                     ],
                     "tag": "NEW"

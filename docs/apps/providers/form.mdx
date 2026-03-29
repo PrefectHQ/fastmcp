@@ -1,0 +1,103 @@
+---
+title: Form Input
+sidebarTitle: Form Input
+description: Collect structured data from users via Pydantic models
+icon: rectangle-list
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.2.0" />
+
+`FormInput` generates a validated form from a Pydantic model. The user fills it out, and the submission is validated against the model before being returned. Structured elicitation that can't be hallucinated.
+
+<Frame>
+  <img src="/apps/images/app-form.png" alt="The FormInput provider shown in Goose, with a bug report form" />
+</Frame>
+
+```python
+from pydantic import BaseModel, Field
+from fastmcp import FastMCP
+from fastmcp.apps.form import FormInput
+
+class BugReport(BaseModel):
+    title: str = Field(description="Brief summary")
+    severity: Literal["low", "medium", "high", "critical"]
+    description: str = Field(
+        description="Detailed description",
+        json_schema_extra={"ui": {"type": "textarea"}},
+    )
+
+mcp = FastMCP("My Server")
+mcp.add_provider(FormInput(model=BugReport))
+```
+
+This registers two tools:
+
+| Tool | Visibility | Purpose |
+|------|-----------|---------|
+| `collect_bugreport` | Model | Opens the form UI |
+| `submit_form` | App only | Validates and processes the submission |
+
+The tool name is derived from the model: `collect_{ModelName.lower()}`. The LLM calls it with a prompt explaining what it needs, and the user gets a form with fields matching the model.
+
+## Field Mapping
+
+`FormInput` uses Prefab's `Form.from_model()`, which maps Pydantic types to form components:
+
+| Python type | Form component |
+|------------|---------------|
+| `str` | Text input |
+| `int`, `float` | Number input |
+| `bool` | Checkbox |
+| `datetime.date` | Date picker |
+| `Literal[...]` | Select dropdown |
+| `SecretStr` | Password input |
+
+Use `Field()` metadata to control labels (`title`), placeholders (`description`), and validation (`min_length`, `max_length`, `ge`, `le`). Use `json_schema_extra={"ui": {"type": "textarea"}}` for multiline text.
+
+## Callback
+
+By default, the validated model is returned as JSON. Provide an `on_submit` callback to process the data server-side:
+
+```python
+def save_report(report: BugReport) -> str:
+    db.insert(report.model_dump())
+    return f"Bug #{db.last_id} filed: {report.title}"
+
+mcp.add_provider(FormInput(model=BugReport, on_submit=save_report))
+```
+
+The callback receives a validated model instance and returns a string that becomes the tool result.
+
+## Configuration
+
+```python
+FormInput(
+    model=BugReport,             # Required: the Pydantic model
+    name="BugTracker",           # App name (default: model name)
+    title="File a Bug",          # Card heading (default: model name)
+    tool_name="file_bug",        # Tool name (default: collect_{model})
+    submit_text="Submit Report", # Button label (default: "Submit")
+    on_submit=save_report,       # Optional callback
+    send_message=True,           # Push result as a chat message
+)
+```
+
+Set `send_message=True` to push the result back into the conversation via `SendMessage`, triggering the LLM's next turn. Without it, the result is just the tool return value.
+
+## Multiple Forms
+
+Add multiple providers for different models — each gets its own tool:
+
+```python
+mcp = FastMCP(
+    "My Server",
+    providers=[
+        FormInput(model=ShippingAddress),
+        FormInput(model=BugReport),
+        FormInput(model=ContactInfo),
+    ],
+)
+```
