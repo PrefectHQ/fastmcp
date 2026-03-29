@@ -137,6 +137,7 @@ class ClerkTokenVerifier(TokenVerifier):
                 token_scopes: list[str] = []
                 expires_at: int | None = None
                 aud: str | None = None
+                introspection_available = False
 
                 try:
                     introspect_data_payload: dict = {"token": token}
@@ -151,6 +152,7 @@ class ClerkTokenVerifier(TokenVerifier):
                         headers={"User-Agent": "FastMCP-Clerk-OAuth"},
                     )
                     if introspect_response.status_code == 200:
+                        introspection_available = True
                         introspect_data = introspect_response.json()
 
                         if not introspect_data.get("active", True):
@@ -170,13 +172,14 @@ class ClerkTokenVerifier(TokenVerifier):
                                 expires_at = int(exp)
                     else:
                         logger.debug(
-                            "Clerk introspection returned %d",
+                            "Clerk introspection returned %d; "
+                            "audience/scope checks will be skipped",
                             introspect_response.status_code,
                         )
                 except Exception as e:
                     logger.debug("Clerk introspection call failed (non-fatal): %s", e)
 
-                if self._client_id and aud != self._client_id:
+                if self._client_id and aud is not None and aud != self._client_id:
                     logger.debug(
                         "Clerk token audience mismatch: got %s, expected %s",
                         aud,
@@ -184,7 +187,7 @@ class ClerkTokenVerifier(TokenVerifier):
                     )
                     return None
 
-                if self.required_scopes:
+                if self.required_scopes and introspection_available:
                     if not token_scopes:
                         logger.debug(
                             "Clerk token missing scope information; "
@@ -201,6 +204,13 @@ class ClerkTokenVerifier(TokenVerifier):
                             required_scopes_set,
                         )
                         return None
+
+                if not introspection_available and self.required_scopes:
+                    token_scopes = list(self.required_scopes)
+                    logger.debug(
+                        "Clerk introspection unavailable; assuming granted scopes: %s",
+                        token_scopes,
+                    )
 
                 access_token = AccessToken(
                     token=token,
