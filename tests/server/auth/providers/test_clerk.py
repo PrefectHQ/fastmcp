@@ -198,7 +198,7 @@ class TestClerkProvider:
 
 
 class TestClerkTokenVerifier:
-    """Test ClerkTokenVerifier.verify_token() using userinfo + introspection."""
+    """Test ClerkTokenVerifier.verify_token() using introspection + userinfo."""
 
     async def test_valid_token_basic(self, httpx_mock: HTTPXMock):
         """A valid token returns an AccessToken with user claims from userinfo."""
@@ -247,11 +247,10 @@ class TestClerkTokenVerifier:
         assert result.claims["aud"] == "clerk-client-id"
 
     async def test_invalid_token_returns_none(self, httpx_mock: HTTPXMock):
-        """HTTP 401 from userinfo endpoint causes verify_token to return None."""
+        """Token marked inactive by introspection is rejected."""
         httpx_mock.add_response(
-            url=_USERINFO_RE,
-            status_code=401,
-            json={"error": "invalid_token"},
+            url=_INTROSPECTION_RE,
+            json={"active": False},
         )
 
         verifier = ClerkTokenVerifier(domain=CLERK_DOMAIN)
@@ -260,7 +259,11 @@ class TestClerkTokenVerifier:
         assert result is None
 
     async def test_missing_sub_returns_none(self, httpx_mock: HTTPXMock):
-        """A 200 response from userinfo without 'sub' is rejected."""
+        """Token with no 'sub' in introspection or userinfo is rejected."""
+        httpx_mock.add_response(
+            url=_INTROSPECTION_RE,
+            json={"active": True},
+        )
         httpx_mock.add_response(
             url=_USERINFO_RE,
             json={"email": "user@example.com"},
@@ -274,11 +277,7 @@ class TestClerkTokenVerifier:
     async def test_introspection_inactive_token_returns_none(
         self, httpx_mock: HTTPXMock
     ):
-        """Token marked inactive by introspection is rejected."""
-        httpx_mock.add_response(
-            url=_USERINFO_RE,
-            json={"sub": "user_abc123", "email": "user@example.com"},
-        )
+        """Token marked inactive by introspection is rejected before userinfo."""
         httpx_mock.add_response(
             url=_INTROSPECTION_RE,
             json={"active": False},
@@ -293,14 +292,28 @@ class TestClerkTokenVerifier:
 
         assert result is None
 
+    async def test_introspection_missing_active_field_returns_none(
+        self, httpx_mock: HTTPXMock
+    ):
+        """RFC 7662 requires the 'active' field; a missing field is malformed and rejected."""
+        httpx_mock.add_response(
+            url=_INTROSPECTION_RE,
+            json={"scope": "openid email profile", "aud": "clerk-client-id"},
+        )
+
+        verifier = ClerkTokenVerifier(
+            domain=CLERK_DOMAIN,
+            client_id="clerk-client-id",
+            client_secret="clerk-client-secret",
+        )
+        result = await verifier.verify_token("token-malformed-response")
+
+        assert result is None
+
     async def test_introspection_failure_rejects_when_scopes_required(
         self, httpx_mock: HTTPXMock
     ):
-        """When introspection fails and required_scopes are set, token is rejected."""
-        httpx_mock.add_response(
-            url=_USERINFO_RE,
-            json={"sub": "user_abc123", "email": "user@example.com"},
-        )
+        """When introspection fails (non-200), token is rejected regardless of scopes."""
         httpx_mock.add_response(
             url=_INTROSPECTION_RE,
             status_code=500,
@@ -318,10 +331,6 @@ class TestClerkTokenVerifier:
     async def test_empty_scopes_rejects_when_required(self, httpx_mock: HTTPXMock):
         """When introspection returns no scopes and required_scopes are set, token is rejected."""
         httpx_mock.add_response(
-            url=_USERINFO_RE,
-            json={"sub": "user_abc123"},
-        )
-        httpx_mock.add_response(
             url=_INTROSPECTION_RE,
             json={"active": True, "scope": ""},
         )
@@ -337,11 +346,7 @@ class TestClerkTokenVerifier:
     async def test_required_scopes_not_satisfied_returns_none(
         self, httpx_mock: HTTPXMock
     ):
-        """Token without required scopes is rejected."""
-        httpx_mock.add_response(
-            url=_USERINFO_RE,
-            json={"sub": "user_abc123"},
-        )
+        """Token without required scopes is rejected before userinfo."""
         httpx_mock.add_response(
             url=_INTROSPECTION_RE,
             json={"active": True, "scope": "openid"},
@@ -358,30 +363,30 @@ class TestClerkTokenVerifier:
     async def test_uses_bearer_header_for_userinfo(self, httpx_mock: HTTPXMock):
         """verify_token sends the token as a Bearer header to userinfo."""
         httpx_mock.add_response(
-            url=_USERINFO_RE,
-            json={"sub": "user_abc123"},
+            url=_INTROSPECTION_RE,
+            json={"active": True, "scope": "openid", "sub": "user_abc123"},
         )
         httpx_mock.add_response(
-            url=_INTROSPECTION_RE,
-            json={"active": True, "scope": "openid"},
+            url=_USERINFO_RE,
+            json={"sub": "user_abc123"},
         )
 
         verifier = ClerkTokenVerifier(domain=CLERK_DOMAIN)
         await verifier.verify_token("my-access-token")
 
         requests = httpx_mock.get_requests()
-        userinfo_req = requests[0]
+        userinfo_req = requests[1]
         assert userinfo_req.headers["Authorization"] == "Bearer my-access-token"
 
     async def test_introspection_sends_client_credentials(self, httpx_mock: HTTPXMock):
         """Introspection request sends credentials via HTTP Basic Auth when both are set."""
         httpx_mock.add_response(
-            url=_USERINFO_RE,
-            json={"sub": "user_abc123"},
-        )
-        httpx_mock.add_response(
             url=_INTROSPECTION_RE,
             json={"active": True, "scope": "openid", "aud": "clerk-client-id"},
+        )
+        httpx_mock.add_response(
+            url=_USERINFO_RE,
+            json={"sub": "user_abc123"},
         )
 
         verifier = ClerkTokenVerifier(
@@ -392,7 +397,7 @@ class TestClerkTokenVerifier:
         await verifier.verify_token("my-access-token")
 
         requests = httpx_mock.get_requests()
-        introspect_req = requests[1]
+        introspect_req = requests[0]
         body = introspect_req.content.decode()
         assert "token=my-access-token" in body
         assert introspect_req.headers.get("Authorization", "").startswith("Basic ")
@@ -489,10 +494,10 @@ class TestClerkTokenVerifier:
         assert result.claims["clerk_user_data"] == user_data
 
     async def test_network_error_returns_none(self, httpx_mock: HTTPXMock):
-        """Network errors during verification return None instead of raising."""
+        """Network errors during introspection return None instead of raising."""
         httpx_mock.add_exception(
             httpx.ConnectError("Connection refused"),
-            url=_USERINFO_RE,
+            url=_INTROSPECTION_RE,
         )
 
         verifier = ClerkTokenVerifier(domain=CLERK_DOMAIN)
@@ -500,14 +505,10 @@ class TestClerkTokenVerifier:
 
         assert result is None
 
-    async def test_introspection_failure_accepts_without_required_scopes(
+    async def test_introspection_failure_rejects_without_required_scopes(
         self, httpx_mock: HTTPXMock
     ):
-        """When introspection fails but no required_scopes, token is still accepted."""
-        httpx_mock.add_response(
-            url=_USERINFO_RE,
-            json={"sub": "user_abc123", "email": "user@example.com"},
-        )
+        """Introspection failure (non-200) rejects the token even without required_scopes."""
         httpx_mock.add_response(
             url=_INTROSPECTION_RE,
             status_code=500,
@@ -517,15 +518,10 @@ class TestClerkTokenVerifier:
         verifier = ClerkTokenVerifier(domain=CLERK_DOMAIN)
         result = await verifier.verify_token("valid-token")
 
-        assert result is not None
-        assert result.claims["sub"] == "user_abc123"
+        assert result is None
 
     async def test_audience_mismatch_returns_none(self, httpx_mock: HTTPXMock):
-        """Token with wrong audience is rejected when client_id is configured."""
-        httpx_mock.add_response(
-            url=_USERINFO_RE,
-            json={"sub": "user_abc123"},
-        )
+        """Token with wrong audience is rejected before userinfo is called."""
         httpx_mock.add_response(
             url=_INTROSPECTION_RE,
             json={"active": True, "scope": "openid", "aud": "wrong-client-id"},
@@ -543,11 +539,7 @@ class TestClerkTokenVerifier:
     async def test_audience_missing_returns_none_when_client_id_set(
         self, httpx_mock: HTTPXMock
     ):
-        """Token without audience is rejected when client_id is configured."""
-        httpx_mock.add_response(
-            url=_USERINFO_RE,
-            json={"sub": "user_abc123"},
-        )
+        """Token without audience is rejected before userinfo is called."""
         httpx_mock.add_response(
             url=_INTROSPECTION_RE,
             json={"active": True, "scope": "openid"},

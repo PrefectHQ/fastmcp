@@ -6,8 +6,9 @@ of Clerk's OAuth/OIDC flow, token validation, and user management.
 
 Clerk uses standard OIDC endpoints derived from the instance domain
 (e.g., ``https://<instance>.clerk.accounts.dev``). Token verification is
-performed via the userinfo endpoint which validates the access token and
-returns user profile data in a single request.
+performed via the introspection endpoint (RFC 7662) for security-critical
+checks (active status, audience, scopes), followed by the userinfo endpoint
+for profile enrichment. Userinfo failure is non-fatal.
 
 Example:
     ```python
@@ -46,16 +47,16 @@ logger = get_logger(__name__)
 class ClerkTokenVerifier(TokenVerifier):
     """Token verifier for Clerk OAuth tokens.
 
-    Clerk issues standard OIDC tokens. Verification is done by calling
-    Clerk's userinfo endpoint with the access token as a Bearer token.
-    A successful response confirms the token is valid and returns the
-    user's profile claims (sub, email, name, picture, etc.).
+    Clerk issues standard OIDC tokens. Verification uses the introspection
+    endpoint (RFC 7662) as the primary security gate — it confirms the token
+    is active and provides metadata (scopes, expiry, audience). The userinfo
+    endpoint is called second for profile enrichment (name, email, picture)
+    and its failure is non-fatal.
 
-    The introspection endpoint provides token metadata (scopes, expiry,
-    audience). When a ``client_id`` is configured, the audience from
-    introspection is validated against it. When ``required_scopes`` are
-    configured, introspection must return the token's scopes — the
-    verifier will not assume scopes when introspection is unavailable.
+    When a ``client_id`` is configured, the audience from introspection is
+    validated against it. When ``required_scopes`` are configured,
+    introspection must return the token's scopes — the verifier will not
+    assume scopes when introspection is unavailable.
     """
 
     def __init__(
@@ -91,11 +92,12 @@ class ClerkTokenVerifier(TokenVerifier):
         self._introspection_url = f"https://{self.domain}/oauth/token_info"
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        """Verify a Clerk OAuth token using the userinfo endpoint.
+        """Verify a Clerk OAuth token via introspection and userinfo.
 
-        Calls the userinfo endpoint with the access token as a Bearer token
-        to validate it and retrieve user claims. On success, also calls the
-        introspection endpoint to get token metadata (scopes, expiry, audience).
+        Calls the introspection endpoint first to validate the token and
+        retrieve auth metadata (active status, scopes, expiry, audience).
+        If the token passes security checks, the userinfo endpoint is called
+        for profile enrichment. Userinfo failure is non-fatal.
 
         When a ``client_id`` is configured, the token's audience must match it.
         When ``required_scopes`` are configured, introspection must confirm
@@ -107,82 +109,54 @@ class ClerkTokenVerifier(TokenVerifier):
                 if self._http_client is not None
                 else httpx.AsyncClient(timeout=self.timeout_seconds)
             ) as client:
-                auth_headers = {
-                    "Authorization": f"Bearer {token}",
-                    "User-Agent": "FastMCP-Clerk-OAuth",
+                # Step 1: Validate token via introspection (RFC 7662).
+                # Security-critical checks (active, audience, scopes) come first.
+                introspect_data_payload: dict = {"token": token}
+                introspect_kwargs: dict = {
+                    "data": introspect_data_payload,
+                    "headers": {"User-Agent": "FastMCP-Clerk-OAuth"},
                 }
 
-                # Step 1: Validate token and get user profile via userinfo endpoint
-                userinfo_response = await client.get(
-                    self._userinfo_url,
-                    headers=auth_headers,
+                if self._client_id and self._client_secret:
+                    introspect_kwargs["auth"] = (
+                        self._client_id,
+                        self._client_secret,
+                    )
+                elif self._client_id:
+                    introspect_data_payload["client_id"] = self._client_id
+
+                introspect_response = await client.post(
+                    self._introspection_url,
+                    **introspect_kwargs,
                 )
 
-                if userinfo_response.status_code != 200:
+                if introspect_response.status_code != 200:
                     logger.debug(
-                        "Clerk token verification failed: %d",
-                        userinfo_response.status_code,
+                        "Clerk introspection failed: %d",
+                        introspect_response.status_code,
                     )
                     return None
 
-                user_data = userinfo_response.json()
+                introspect_data = introspect_response.json()
 
-                sub = user_data.get("sub")
-                if not sub:
-                    logger.debug("Clerk userinfo missing 'sub' claim")
+                # RFC 7662 requires the 'active' field in the response.
+                # A missing field indicates a malformed response — reject.
+                if "active" not in introspect_data or not introspect_data["active"]:
+                    logger.debug(
+                        "Clerk introspection: token inactive or missing 'active' field"
+                    )
                     return None
 
-                # Step 2: Get token metadata via introspection endpoint (RFC 7662).
-                # Clerk requires client authentication for introspection.
-                token_scopes: list[str] = []
+                scope_str = introspect_data.get("scope", "")
+                token_scopes = scope_str.split() if scope_str else []
+
+                aud = introspect_data.get("aud") or introspect_data.get("client_id")
+
                 expires_at: int | None = None
-                aud: str | None = None
-
-                try:
-                    introspect_data_payload: dict = {"token": token}
-                    introspect_kwargs: dict = {
-                        "data": introspect_data_payload,
-                        "headers": {"User-Agent": "FastMCP-Clerk-OAuth"},
-                    }
-
-                    if self._client_id and self._client_secret:
-                        introspect_kwargs["auth"] = (
-                            self._client_id,
-                            self._client_secret,
-                        )
-                    elif self._client_id:
-                        introspect_data_payload["client_id"] = self._client_id
-
-                    introspect_response = await client.post(
-                        self._introspection_url,
-                        **introspect_kwargs,
-                    )
-
-                    if introspect_response.status_code == 200:
-                        introspect_data = introspect_response.json()
-
-                        if not introspect_data.get("active", True):
-                            logger.debug("Clerk introspection reports token inactive")
-                            return None
-
-                        scope_str = introspect_data.get("scope", "")
-                        token_scopes = scope_str.split() if scope_str else []
-
-                        aud = introspect_data.get("aud") or introspect_data.get(
-                            "client_id"
-                        )
-
-                        exp = introspect_data.get("exp")
-                        if exp is not None:
-                            with contextlib.suppress(ValueError, TypeError):
-                                expires_at = int(exp)
-                    else:
-                        logger.debug(
-                            "Clerk introspection returned %d",
-                            introspect_response.status_code,
-                        )
-                except Exception as e:
-                    logger.debug("Clerk introspection call failed (non-fatal): %s", e)
+                exp = introspect_data.get("exp")
+                if exp is not None:
+                    with contextlib.suppress(ValueError, TypeError):
+                        expires_at = int(exp)
 
                 if self._client_id and aud != self._client_id:
                     logger.debug(
@@ -209,6 +183,29 @@ class ClerkTokenVerifier(TokenVerifier):
                             required_scopes_set,
                         )
                         return None
+
+                # Step 2: Fetch user profile via userinfo.
+                # Enriches the token with profile data (name, email, picture).
+                sub = introspect_data.get("sub")
+                user_data: dict = {}
+                try:
+                    userinfo_response = await client.get(
+                        self._userinfo_url,
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "User-Agent": "FastMCP-Clerk-OAuth",
+                        },
+                    )
+                    if userinfo_response.status_code == 200:
+                        user_data = userinfo_response.json()
+                        if not sub:
+                            sub = user_data.get("sub")
+                except Exception as e:
+                    logger.debug("Clerk userinfo call failed: %s", e)
+
+                if not sub:
+                    logger.debug("Clerk token missing 'sub' claim")
+                    return None
 
                 access_token = AccessToken(
                     token=token,
