@@ -597,6 +597,33 @@ _LOG_PANEL_HTML = """\
   var countEl = document.getElementById("mcp-log-count");
   var openBtn = document.getElementById("mcp-log-open");
   var resizeHandle = document.getElementById("mcp-log-resize");
+  var allFilterKeys = ["tools", "notifications", "bridge", "errors"];
+
+  function syncURL() {
+    var params = new URLSearchParams(window.location.search);
+    if (!panel.classList.contains("hidden")) {
+      params.set("log", "open");
+    } else {
+      params.delete("log");
+    }
+    var on = [];
+    for (var i = 0; i < allFilterKeys.length; i++) {
+      if (activeFilters[allFilterKeys[i]]) on.push(allFilterKeys[i]);
+    }
+    if (on.length === allFilterKeys.length) {
+      params.delete("filters");
+    } else {
+      params.set("filters", on.join(","));
+    }
+    if (minLevel === 0) {
+      params.delete("level");
+    } else {
+      params.set("level", levelOrder[minLevel]);
+    }
+    var qs = params.toString();
+    var url = window.location.pathname + (qs ? "?" + qs : "");
+    history.replaceState(null, "", url);
+  }
 
   function setFrameLayout(w) {
     var frame = document.getElementById("app-frame");
@@ -609,12 +636,15 @@ _LOG_PANEL_HTML = """\
     panel.classList.add("hidden");
     openBtn.style.display = "block";
     setFrameLayout("100%");
+    syncURL();
   });
 
   openBtn.addEventListener("click", function() {
     panel.classList.remove("hidden");
     openBtn.style.display = "none";
     setFrameLayout("calc(100% - " + panelWidth + "px)");
+    entries.scrollTop = entries.scrollHeight;
+    syncURL();
   });
 
   resizeHandle.addEventListener("mousedown", function(e) {
@@ -652,6 +682,34 @@ _LOG_PANEL_HTML = """\
   var levelOrder = ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"];
   var minLevel = 0;
 
+  // Restore state from URL params
+  (function restoreURL() {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get("log") === "open") {
+      panel.classList.remove("hidden");
+      openBtn.style.display = "none";
+      setFrameLayout("calc(100% - " + panelWidth + "px)");
+    }
+    var fp = params.get("filters");
+    if (fp !== null) {
+      var on = fp ? fp.split(",") : [];
+      for (var i = 0; i < allFilterKeys.length; i++) {
+        var k = allFilterKeys[i];
+        activeFilters[k] = on.indexOf(k) !== -1;
+        var btn = document.querySelector("[data-filter='" + k + "']");
+        if (btn) btn.classList.toggle("active", activeFilters[k]);
+      }
+    }
+    var lp = params.get("level");
+    if (lp) {
+      var idx = levelOrder.indexOf(lp);
+      if (idx >= 0) {
+        minLevel = idx;
+        document.getElementById("mcp-log-level-select").value = lp;
+      }
+    }
+  })();
+
   document.getElementById("mcp-log-filters").addEventListener("click", function(e) {
     var btn = e.target.closest("[data-filter]");
     if (!btn) return;
@@ -659,11 +717,13 @@ _LOG_PANEL_HTML = """\
     activeFilters[f] = !activeFilters[f];
     btn.classList.toggle("active", activeFilters[f]);
     applyFilters();
+    syncURL();
   });
 
   document.getElementById("mcp-log-level-select").addEventListener("change", function(e) {
     minLevel = levelOrder.indexOf(e.target.value);
     applyFilters();
+    syncURL();
   });
 
   function shouldShow(el) {
@@ -799,6 +859,7 @@ _LOG_PANEL_HTML = """\
   }
 
   var polling = false;
+  var firstPoll = true;
   function poll() {
     if (polling) return;
     polling = true;
@@ -809,14 +870,16 @@ _LOG_PANEL_HTML = """\
         lastId = data[data.length - 1].id;
         totalCount += data.length;
         countEl.textContent = String(totalCount);
-        var atBottom = entries.scrollHeight - entries.scrollTop - entries.clientHeight < 40;
+        var panelVisible = !panel.classList.contains("hidden");
+        var atBottom = !panelVisible || entries.scrollHeight - entries.scrollTop - entries.clientHeight < 40;
         for (var i = 0; i < data.length; i++) {
           var el = renderEntry(data[i]);
           el.classList.add("new");
           if (!shouldShow(el)) el.style.display = "none";
           entries.appendChild(el);
         }
-        if (atBottom) entries.scrollTop = entries.scrollHeight;
+        if (atBottom || (firstPoll && panelVisible)) entries.scrollTop = entries.scrollHeight;
+        firstPoll = false;
       })
       .catch(function() {})
       .finally(function() { polling = false; });
