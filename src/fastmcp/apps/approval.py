@@ -84,10 +84,10 @@ class Approval(FastMCPApp):
         approve_text: str = "Approve",
         reject_text: str = "Reject",
         approve_variant: Literal[
-            "default", "destructive", "success", "warning", "info"
+            "default", "destructive", "success", "info"
         ] = "default",
         reject_variant: Literal[
-            "default", "outline", "destructive", "success", "warning", "info"
+            "default", "outline", "destructive", "success", "info"
         ] = "outline",
     ) -> None:
         super().__init__(name)
@@ -148,8 +148,9 @@ class Approval(FastMCPApp):
                 approve_text: Label for the approve button (default: "Approve").
                 reject_text: Label for the reject button (default: "Reject").
                 approve_variant: Button style — "default", "destructive",
-                    "success", "warning", or "info".
-                reject_variant: Button style for the reject button (same options).
+                    "success", or "info".
+                reject_variant: Button style for the reject button
+                    (same options plus "outline").
             """
             _title = title or provider._title
             _approve = approve_text or provider._approve_text
