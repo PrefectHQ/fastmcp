@@ -406,7 +406,11 @@
                     "pages": [
                       "python-sdk/fastmcp-apps-__init__",
                       "python-sdk/fastmcp-apps-app",
+                      "python-sdk/fastmcp-apps-approval",
+                      "python-sdk/fastmcp-apps-choice",
                       "python-sdk/fastmcp-apps-config",
+                      "python-sdk/fastmcp-apps-file_upload",
+                      "python-sdk/fastmcp-apps-form",
                       "python-sdk/fastmcp-apps-generative"
                     ]
                   },
