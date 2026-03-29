@@ -140,18 +140,22 @@ class ClerkTokenVerifier(TokenVerifier):
 
                 try:
                     introspect_data_payload: dict = {"token": token}
+                    introspect_kwargs: dict = {
+                        "data": introspect_data_payload,
+                        "headers": {"User-Agent": "FastMCP-Clerk-OAuth"},
+                    }
 
-                    introspect_auth = None
                     if self._client_id and self._client_secret:
-                        introspect_auth = (self._client_id, self._client_secret)
+                        introspect_kwargs["auth"] = (
+                            self._client_id,
+                            self._client_secret,
+                        )
                     elif self._client_id:
                         introspect_data_payload["client_id"] = self._client_id
 
                     introspect_response = await client.post(
                         self._introspection_url,
-                        data=introspect_data_payload,
-                        headers={"User-Agent": "FastMCP-Clerk-OAuth"},
-                        auth=introspect_auth,
+                        **introspect_kwargs,
                     )
 
                     if introspect_response.status_code == 200:
