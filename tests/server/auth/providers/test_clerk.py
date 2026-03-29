@@ -374,7 +374,7 @@ class TestClerkTokenVerifier:
         assert userinfo_req.headers["Authorization"] == "Bearer my-access-token"
 
     async def test_introspection_sends_client_credentials(self, httpx_mock: HTTPXMock):
-        """Introspection request includes client_id and client_secret in the body."""
+        """Introspection request sends credentials via HTTP Basic Auth when both are set."""
         httpx_mock.add_response(
             url=_USERINFO_RE,
             json={"sub": "user_abc123"},
@@ -394,9 +394,8 @@ class TestClerkTokenVerifier:
         requests = httpx_mock.get_requests()
         introspect_req = requests[1]
         body = introspect_req.content.decode()
-        assert "client_id=clerk-client-id" in body
-        assert "client_secret=clerk-client-secret" in body
         assert "token=my-access-token" in body
+        assert introspect_req.headers.get("Authorization", "").startswith("Basic ")
 
     async def test_expires_at_from_introspection(self, httpx_mock: HTTPXMock):
         """expires_at is set from the 'exp' claim in the introspection response."""
