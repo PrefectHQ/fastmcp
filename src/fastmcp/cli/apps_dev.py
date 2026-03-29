@@ -1698,7 +1698,10 @@ async def run_dev_apps(
         # Check ports before starting anything
         import socket
 
-        for port, label in [(mcp_port, "MCP server"), (dev_port, "dev UI")]:
+        for port, label, flag in [
+            (mcp_port, "MCP server", "--mcp-port"),
+            (dev_port, "dev UI", "--dev-port"),
+        ]:
             in_use = False
             for family, addr in (
                 (socket.AF_INET, ("127.0.0.1", port)),
@@ -1714,7 +1717,7 @@ async def run_dev_apps(
             if in_use:
                 logger.error(
                     f"Port {port} ({label}) is already in use. "
-                    f"Try --mcp-port or --dev-port to use different ports."
+                    f"Try {flag} to use a different port."
                 )
                 sys.exit(1)
 
