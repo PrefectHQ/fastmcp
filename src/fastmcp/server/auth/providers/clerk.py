@@ -51,8 +51,11 @@ class ClerkTokenVerifier(TokenVerifier):
     A successful response confirms the token is valid and returns the
     user's profile claims (sub, email, name, picture, etc.).
 
-    For additional token metadata (scopes, expiry), the introspection
-    endpoint is called when available.
+    The introspection endpoint provides token metadata (scopes, expiry,
+    audience). When a ``client_id`` is configured, the audience from
+    introspection is validated against it. When ``required_scopes`` are
+    configured, introspection must return the token's scopes — the
+    verifier will not assume scopes when introspection is unavailable.
     """
 
     def __init__(
@@ -93,6 +96,10 @@ class ClerkTokenVerifier(TokenVerifier):
         Calls the userinfo endpoint with the access token as a Bearer token
         to validate it and retrieve user claims. On success, also calls the
         introspection endpoint to get token metadata (scopes, expiry, audience).
+
+        When a ``client_id`` is configured, the token's audience must match it.
+        When ``required_scopes`` are configured, introspection must confirm
+        them; tokens are rejected if scope information is unavailable.
         """
         try:
             async with (
@@ -163,19 +170,28 @@ class ClerkTokenVerifier(TokenVerifier):
                                 expires_at = int(exp)
                     else:
                         logger.debug(
-                            "Clerk introspection returned %d, falling back to required_scopes",
+                            "Clerk introspection returned %d",
                             introspect_response.status_code,
                         )
                 except Exception as e:
                     logger.debug("Clerk introspection call failed (non-fatal): %s", e)
 
-                # If introspection didn't return scopes, fall back to required_scopes.
-                # The userinfo call already proved the token is valid, and the OAuth
-                # flow issued the token with these scopes — safe to trust them.
-                if not token_scopes and self.required_scopes:
-                    token_scopes = list(self.required_scopes)
+                if self._client_id and aud != self._client_id:
+                    logger.debug(
+                        "Clerk token audience mismatch: got %s, expected %s",
+                        aud,
+                        self._client_id,
+                    )
+                    return None
 
-                if self.required_scopes and token_scopes:
+                if self.required_scopes:
+                    if not token_scopes:
+                        logger.debug(
+                            "Clerk token missing scope information; "
+                            "cannot verify required scopes %s",
+                            self.required_scopes,
+                        )
+                        return None
                     token_scopes_set = set(token_scopes)
                     required_scopes_set = set(self.required_scopes)
                     if not required_scopes_set.issubset(token_scopes_set):

@@ -293,10 +293,10 @@ class TestClerkTokenVerifier:
 
         assert result is None
 
-    async def test_introspection_failure_falls_back_gracefully(
+    async def test_introspection_failure_rejects_when_scopes_required(
         self, httpx_mock: HTTPXMock
     ):
-        """When introspection fails, verification still succeeds using userinfo."""
+        """When introspection fails and required_scopes are set, token is rejected."""
         httpx_mock.add_response(
             url=_USERINFO_RE,
             json={"sub": "user_abc123", "email": "user@example.com"},
@@ -313,12 +313,10 @@ class TestClerkTokenVerifier:
         )
         result = await verifier.verify_token("valid-token")
 
-        assert result is not None
-        assert result.claims["sub"] == "user_abc123"
-        assert result.scopes == ["openid", "email"]
+        assert result is None
 
-    async def test_scopes_fall_back_to_required_scopes(self, httpx_mock: HTTPXMock):
-        """When introspection returns no scopes, required_scopes are used as fallback."""
+    async def test_empty_scopes_rejects_when_required(self, httpx_mock: HTTPXMock):
+        """When introspection returns no scopes and required_scopes are set, token is rejected."""
         httpx_mock.add_response(
             url=_USERINFO_RE,
             json={"sub": "user_abc123"},
@@ -334,8 +332,7 @@ class TestClerkTokenVerifier:
         )
         result = await verifier.verify_token("valid-token")
 
-        assert result is not None
-        assert set(result.scopes) == {"openid", "email", "profile"}
+        assert result is None
 
     async def test_required_scopes_not_satisfied_returns_none(
         self, httpx_mock: HTTPXMock
@@ -384,7 +381,7 @@ class TestClerkTokenVerifier:
         )
         httpx_mock.add_response(
             url=_INTROSPECTION_RE,
-            json={"active": True, "scope": "openid"},
+            json={"active": True, "scope": "openid", "aud": "clerk-client-id"},
         )
 
         verifier = ClerkTokenVerifier(
@@ -503,3 +500,82 @@ class TestClerkTokenVerifier:
         result = await verifier.verify_token("valid-token")
 
         assert result is None
+
+    async def test_introspection_failure_accepts_without_required_scopes(
+        self, httpx_mock: HTTPXMock
+    ):
+        """When introspection fails but no required_scopes, token is still accepted."""
+        httpx_mock.add_response(
+            url=_USERINFO_RE,
+            json={"sub": "user_abc123", "email": "user@example.com"},
+        )
+        httpx_mock.add_response(
+            url=_INTROSPECTION_RE,
+            status_code=500,
+            json={"error": "internal_server_error"},
+        )
+
+        verifier = ClerkTokenVerifier(domain=CLERK_DOMAIN)
+        result = await verifier.verify_token("valid-token")
+
+        assert result is not None
+        assert result.claims["sub"] == "user_abc123"
+
+    async def test_audience_mismatch_returns_none(self, httpx_mock: HTTPXMock):
+        """Token with wrong audience is rejected when client_id is configured."""
+        httpx_mock.add_response(
+            url=_USERINFO_RE,
+            json={"sub": "user_abc123"},
+        )
+        httpx_mock.add_response(
+            url=_INTROSPECTION_RE,
+            json={"active": True, "scope": "openid", "aud": "wrong-client-id"},
+        )
+
+        verifier = ClerkTokenVerifier(
+            domain=CLERK_DOMAIN,
+            client_id="my-client-id",
+            client_secret="my-client-secret",
+        )
+        result = await verifier.verify_token("valid-token")
+
+        assert result is None
+
+    async def test_audience_missing_returns_none_when_client_id_set(
+        self, httpx_mock: HTTPXMock
+    ):
+        """Token without audience is rejected when client_id is configured."""
+        httpx_mock.add_response(
+            url=_USERINFO_RE,
+            json={"sub": "user_abc123"},
+        )
+        httpx_mock.add_response(
+            url=_INTROSPECTION_RE,
+            json={"active": True, "scope": "openid"},
+        )
+
+        verifier = ClerkTokenVerifier(
+            domain=CLERK_DOMAIN,
+            client_id="my-client-id",
+            client_secret="my-client-secret",
+        )
+        result = await verifier.verify_token("valid-token")
+
+        assert result is None
+
+    async def test_audience_not_checked_without_client_id(self, httpx_mock: HTTPXMock):
+        """Without client_id configured, any audience is accepted."""
+        httpx_mock.add_response(
+            url=_USERINFO_RE,
+            json={"sub": "user_abc123"},
+        )
+        httpx_mock.add_response(
+            url=_INTROSPECTION_RE,
+            json={"active": True, "scope": "openid", "aud": "some-other-id"},
+        )
+
+        verifier = ClerkTokenVerifier(domain=CLERK_DOMAIN)
+        result = await verifier.verify_token("valid-token")
+
+        assert result is not None
+        assert result.claims["aud"] == "some-other-id"
