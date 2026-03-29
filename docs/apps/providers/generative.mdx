@@ -40,10 +40,35 @@ GenerativeUI(
 )
 ```
 
+## What the LLM Sees
+
+The tool description includes code examples that teach the LLM the Prefab patterns. The LLM calls `generate_prefab_ui` with a `code` argument containing Prefab Python, and optionally a `data` argument to pass in real data from the conversation:
+
+```python
+# The LLM generates something like:
+generate_prefab_ui(
+    code="""
+from prefab_ui.components import Column, Heading
+from prefab_ui.components.charts import BarChart, ChartSeries
+from prefab_ui.app import PrefabApp
+
+with PrefabApp() as app:
+    with Column(gap=4):
+        Heading("Revenue")
+        BarChart(data=data, series=[ChartSeries(data_key="revenue")], x_axis="quarter")
+""",
+    data={"data": [{"quarter": "Q1", "revenue": 42000}, ...]}
+)
+```
+
+The component search tool lets the LLM discover what's available before writing code — `search_prefab_components("Chart")` returns matching components with import paths.
+
 ## Requirements
 
-Requires `fastmcp[apps]` (installs `prefab-ui`). The Pyodide sandbox for server-side validation requires Deno, which installs automatically on first use. The streaming renderer loads Pyodide from CDN in the browser — CSP is configured automatically by the provider.
+Requires `fastmcp[apps]` (installs `prefab-ui`). The Pyodide sandbox for server-side validation requires Deno, which installs automatically on first use. The streaming renderer loads Pyodide from CDN in the browser — CSP is configured automatically.
+
+The sandbox includes the Python standard library and Prefab. External packages (NumPy, pandas, etc.) are not available.
 
 ## Learn More
 
-See the full **[Generative UI guide](/apps/generative)** for details on how streaming works, what the LLM writes, how to pass data, and the component search tool.
+The full **[Generative UI guide](/apps/generative)** covers the streaming mechanics in detail, how to pass data, the component search tool, and sandbox limitations.

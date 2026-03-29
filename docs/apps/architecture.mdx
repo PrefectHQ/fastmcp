@@ -10,7 +10,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.2.0" />
 
-This page explains the internal architecture of Prefab apps — how your Python code becomes an interactive UI inside a host client's conversation. If you're building [custom HTML apps](/apps/low-level), the pipeline is simpler and covered on that page. You don't need to understand any of this to build Prefab apps, but the mental model is useful when you're debugging, extending, or contributing.
+This page explains how Prefab apps work under the hood — how your Python code becomes an interactive UI inside a host client's conversation. You don't need any of this to build apps, but the mental model is useful when something isn't rendering the way you expect, when tool calls from the UI aren't reaching your server, or when you're building [custom HTML apps](/apps/low-level) and need to understand the protocol directly.
 
 ## The Pipeline
 
