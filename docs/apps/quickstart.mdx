@@ -12,7 +12,11 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 MCP tools normally return text. FastMCP apps return interactive UIs rendered directly in the conversation: charts, tables, forms, dashboards. The easiest way to build one is with [Prefab UI](https://prefab.prefect.io), a Python component library designed for exactly this. You describe the UI in Python; Prefab compiles it to something the host can render.
 
-This tutorial builds a working app from scratch.
+This tutorial builds a working app from scratch. Here's what you'll have in about a minute:
+
+<Frame>
+  <img src="/apps/images/app-quickstart.png" alt="A team directory app with a pie chart and sortable data table, rendered inside a conversation in Goose" />
+</Frame>
 
 ## Setup
 
@@ -28,9 +32,12 @@ When your tool has something to *show* (a table of results, a chart, a status da
 
 Create `server.py`:
 
-```python
+```python server.py expandable
+from collections import Counter
+
 from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Heading, DataTable, DataTableColumn
+from prefab_ui.components import Column, Grid, Heading, DataTable, DataTableColumn
+from prefab_ui.components.charts import PieChart
 from fastmcp import FastMCP
 
 mcp = FastMCP("My First App")
@@ -45,20 +52,34 @@ def team_directory() -> PrefabApp:
         {"name": "Carol Johnson", "role": "Senior Engineer", "office": "London"},
         {"name": "David Kim", "role": "Product Manager", "office": "San Francisco"},
         {"name": "Eva Mueller", "role": "Engineer", "office": "Berlin"},
+        {"name": "Frank Lee", "role": "Data Scientist", "office": "San Francisco"},
+        {"name": "Grace Park", "role": "Engineering Manager", "office": "New York"},
+    ]
+
+    office_counts = [
+        {"office": office, "count": count}
+        for office, count in Counter(m["office"] for m in members).items()
     ]
 
     with PrefabApp() as app:
         with Column(gap=4, css_class="p-6"):
             Heading("Team Directory")
-            DataTable(
-                columns=[
-                    DataTableColumn(key="name", header="Name", sortable=True),
-                    DataTableColumn(key="role", header="Role", sortable=True),
-                    DataTableColumn(key="office", header="Office", sortable=True),
-                ],
-                rows=members,
-                search=True,
-            )
+            with Grid(columns=[1, 2], gap=4):
+                PieChart(
+                    data=office_counts,
+                    data_key="count",
+                    name_key="office",
+                    show_legend=True,
+                )
+                DataTable(
+                    columns=[
+                        DataTableColumn(key="name", header="Name", sortable=True),
+                        DataTableColumn(key="role", header="Role", sortable=True),
+                        DataTableColumn(key="office", header="Office", sortable=True),
+                    ],
+                    rows=members,
+                    search=True,
+                )
 
     return app
 ```
@@ -77,56 +98,63 @@ fastmcp dev apps server.py
 
 This opens `http://localhost:8080` where you can pick a tool and see the rendered UI. Try sorting the table columns and typing in the search box.
 
+## Making It Interactive
+
+The table above is a static snapshot that renders once from the data your Python code provides. But Prefab apps can also respond to user interaction in real time, without any server round-trips.
+
+The key concept is **state**: a client-side key-value store that components read from and write to. When the user interacts with a component, it updates state. Other components that reference that state re-render instantly. See the [Prefab state docs](https://prefab.prefect.io/docs/concepts/state) for the full guide.
+
+Here's the same directory, but now clicking a row shows that person's details in a card:
+
 <Frame>
-  <img src="/apps/images/dev-app.png" alt="The dev UI showing a rendered Prefab app" />
+  <img src="/apps/images/app-quickstart-dev-2.png" alt="The team directory with a detail card showing after clicking Bob Martinez" />
 </Frame>
 
-## Making It Reactive
+```python expandable server.py
+from collections import Counter
 
-The table above is a static snapshot that renders once from the data your Python code provides. But Prefab apps can also respond to user input in real time, without any server round-trips.
-
-The key concept is **state**: a client-side key-value store. Components can read from state (to decide what to display) and write to state (when the user interacts). Because state lives in the browser, updates are instant. See the [Prefab reactivity docs](https://prefab.prefect.io/docs/concepts/expressions) for the full expression language.
-
-Here's the same directory with a dropdown filter:
-
-```python
+from prefab_ui.actions import SetState
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
-    Column, Heading, Muted, DataTable, DataTableColumn,
-    Row, Select, SelectOption, Badge,
+    Card, CardContent, CardHeader, Column, Grid, H3, Heading, Muted,
+    Row, DataTable, DataTableColumn, Badge, Small, Text,
 )
-from prefab_ui.components.control_flow import If, Else
-from prefab_ui.rx import Rx
+from prefab_ui.components.charts import PieChart
+from prefab_ui.components.control_flow import If
+from prefab_ui.rx import Rx, STATE
 from fastmcp import FastMCP
 
 mcp = FastMCP("My First App")
 
 MEMBERS = [
-    {"name": "Alice Chen", "role": "Staff Engineer", "office": "San Francisco"},
-    {"name": "Bob Martinez", "role": "Lead Designer", "office": "New York"},
-    {"name": "Carol Johnson", "role": "Senior Engineer", "office": "London"},
-    {"name": "David Kim", "role": "Product Manager", "office": "San Francisco"},
-    {"name": "Eva Mueller", "role": "Engineer", "office": "Berlin"},
+    {"name": "Alice Chen", "role": "Staff Engineer", "office": "San Francisco", "email": "alice@company.com", "projects": 3},
+    {"name": "Bob Martinez", "role": "Lead Designer", "office": "New York", "email": "bob@company.com", "projects": 5},
+    {"name": "Carol Johnson", "role": "Senior Engineer", "office": "London", "email": "carol@company.com", "projects": 2},
+    {"name": "David Kim", "role": "Product Manager", "office": "San Francisco", "email": "david@company.com", "projects": 7},
+    {"name": "Eva Mueller", "role": "Engineer", "office": "Berlin", "email": "eva@company.com", "projects": 1},
+    {"name": "Frank Lee", "role": "Data Scientist", "office": "San Francisco", "email": "frank@company.com", "projects": 4},
+    {"name": "Grace Park", "role": "Engineering Manager", "office": "New York", "email": "grace@company.com", "projects": 6},
 ]
 
-OFFICES = sorted({m["office"] for m in MEMBERS})
+OFFICE_COUNTS = [
+    {"office": office, "count": count}
+    for office, count in Counter(m["office"] for m in MEMBERS).items()
+]
 
 
 @mcp.tool(app=True)
 def team_directory() -> PrefabApp:
-    """Browse the team directory with office filtering."""
-    with PrefabApp(state={"office": "all"}) as app:
+    """Browse the team directory."""
+    with PrefabApp(state={"selected": None}) as app:
         with Column(gap=4, css_class="p-6"):
-            with Row(gap=2, align="center"):
-                Heading("Team Directory")
-                Badge(f"{len(MEMBERS)} people", variant="secondary")
-
-            with Select(name="office", label="Filter by Office"):
-                SelectOption("All Offices", value="all")
-                for office in OFFICES:
-                    SelectOption(office, value=office)
-
-            with If(Rx("office") == "all"):
+            Heading("Team Directory")
+            with Grid(columns=[1, 2], gap=4):
+                PieChart(
+                    data=OFFICE_COUNTS,
+                    data_key="count",
+                    name_key="office",
+                    show_legend=True,
+                )
                 DataTable(
                     columns=[
                         DataTableColumn(key="name", header="Name", sortable=True),
@@ -135,30 +163,39 @@ def team_directory() -> PrefabApp:
                     ],
                     rows=MEMBERS,
                     search=True,
+                    on_row_click=SetState("selected", Rx("$event")),
                 )
-            with Else():
-                DataTable(
-                    columns=[
-                        DataTableColumn(key="name", header="Name", sortable=True),
-                        DataTableColumn(key="role", header="Role", sortable=True),
-                    ],
-                    rows=[m for m in MEMBERS if m["office"] == "San Francisco"],
-                    search=True,
-                )
-                Muted("Client-side filtering. The full dataset is in the browser.")
+
+            with If(STATE.selected):
+                with Card():
+                    with CardHeader():
+                        with Row(gap=2, align="center"):
+                            H3(Rx("selected.name"))
+                            Badge(Rx("selected.office"))
+                    with CardContent():
+                        with Grid(columns=3, gap=4):
+                            with Column(gap=0):
+                                Small("Role")
+                                Text(Rx("selected.role"))
+                            with Column(gap=0):
+                                Small("Email")
+                                Text(Rx("selected.email"))
+                            with Column(gap=0):
+                                Small("Active Projects")
+                                Text(Rx("selected.projects"))
 
     return app
 ```
 
 Three new ideas here:
 
-**`Rx("office")`** creates a reactive reference to the `office` key in state. It doesn't hold a Python value. It compiles to a browser-side expression that evaluates live as state changes.
+**`SetState` + `on_row_click`** is the interaction. When the user clicks a table row, `SetState("selected", Rx("$event"))` writes the clicked row's data into the `selected` state key. `$event` is a special variable that contains the event payload (in this case, the row dict).
 
-**`Select(name="office")`** binds the dropdown to the `office` state key. Every time the user picks a new option, `office` updates instantly in the browser.
+**`Rx("selected.name")`** reads from state reactively. It doesn't hold a Python value. It compiles to a browser-side expression that re-evaluates live whenever `selected` changes. So `Text(Rx("selected.name"))` always shows the name of whoever was last clicked.
 
-**`If` / `Else`** conditionally renders components based on a reactive expression. When `office` is `"all"`, the full table with an office column shows. Otherwise, the table shows only the matching rows. The switch is instant because it's all client-side.
+**`If(STATE.selected)`** conditionally renders the detail card only when something has been selected. Before any click, `selected` is `None` and the card is hidden.
 
-The `state` dict on `PrefabApp` sets initial values when the app loads. Run `fastmcp dev apps server.py` again and try the dropdown.
+The `state` dict on `PrefabApp` sets initial values when the app loads. Run `fastmcp dev apps server.py` again and try clicking a row.
 
 ## Next Steps
 
