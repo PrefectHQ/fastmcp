@@ -112,26 +112,24 @@ class Approval(FastMCPApp):
                 with CardFooter():
                     with If(STATE.decided):
                         Muted("Response sent.")
-                    with (
-                        Row(gap=2, css_class="w-full justify-end"),
-                        If(STATE.decided, negate=True),
-                    ):
-                        Button(
-                            provider._reject_text,
-                            variant=provider._reject_variant,
-                            on_click=[
-                                SendMessage(f"Rejected: {summary}"),
-                                SetState("decided", True),
-                            ],
-                        )
-                        Button(
-                            provider._approve_text,
-                            variant=provider._approve_variant,
-                            on_click=[
-                                SendMessage(f"Approved: {summary}"),
-                                SetState("decided", True),
-                            ],
-                        )
+                    with If(STATE.decided, negate=True):  # noqa: SIM117
+                        with Row(gap=2, css_class="w-full justify-end"):
+                            Button(
+                                provider._reject_text,
+                                variant=provider._reject_variant,
+                                on_click=[
+                                    SendMessage(f"Rejected: {summary}"),
+                                    SetState("decided", True),
+                                ],
+                            )
+                            Button(
+                                provider._approve_text,
+                                variant=provider._approve_variant,
+                                on_click=[
+                                    SendMessage(f"Approved: {summary}"),
+                                    SetState("decided", True),
+                                ],
+                            )
 
             return PrefabApp(
                 view=view,
