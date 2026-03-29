@@ -196,6 +196,7 @@
                 "group": "Apps",
                 "pages": [
                   "apps/overview",
+                  "apps/quickstart",
                   {
                     "collapsed": true,
                     "group": "Building Apps",

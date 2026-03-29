@@ -1,0 +1,148 @@
+---
+title: Quickstart
+sidebarTitle: Quickstart
+description: Build your first MCP app in 5 minutes.
+icon: rocket
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.2.0" />
+
+This tutorial walks you through building a tool that returns an interactive UI instead of text. By the end, you'll have a working app you can preview in your browser.
+
+## Install
+
+MCP Apps use [Prefab UI](https://prefab.prefect.io) for components. Install it with the `apps` extra:
+
+```bash
+pip install "fastmcp[apps]"
+```
+
+## Your First App
+
+A regular MCP tool returns text. An app tool returns a UI. The only difference is `app=True` and a Prefab component as the return value.
+
+Create a file called `server.py` with a tool that renders a sortable, searchable data table:
+
+```python
+from prefab_ui.app import PrefabApp
+from prefab_ui.components import Column, Heading, DataTable, DataTableColumn
+from fastmcp import FastMCP
+
+mcp = FastMCP("My First App")
+
+
+@mcp.tool(app=True)
+def team_directory() -> PrefabApp:
+    """Browse the team directory."""
+    members = [
+        {"name": "Alice Chen", "role": "Staff Engineer", "office": "San Francisco"},
+        {"name": "Bob Martinez", "role": "Lead Designer", "office": "New York"},
+        {"name": "Carol Johnson", "role": "Senior Engineer", "office": "London"},
+        {"name": "David Kim", "role": "Product Manager", "office": "San Francisco"},
+        {"name": "Eva Mueller", "role": "Engineer", "office": "Berlin"},
+    ]
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Team Directory")
+        DataTable(
+            columns=[
+                DataTableColumn(key="name", header="Name", sortable=True),
+                DataTableColumn(key="role", header="Role", sortable=True),
+                DataTableColumn(key="office", header="Office", sortable=True),
+            ],
+            rows=members,
+            search=True,
+        )
+
+    return PrefabApp(view=view)
+```
+
+That's a full MCP server with one app tool. The `DataTable` component gives you column sorting and full-text search out of the box — no JavaScript, no frontend build step.
+
+## Preview It
+
+FastMCP includes a dev server that renders your app tools in a browser:
+
+```bash
+fastmcp dev apps server.py
+```
+
+This opens `http://localhost:8080` with a list of your app tools. Click **team_directory**, and you'll see the rendered table. Try sorting columns and searching — it all works client-side.
+
+<Frame>
+  <img src="/apps/images/dev-app.png" alt="The dev UI showing a rendered Prefab app" />
+</Frame>
+
+## Add Interactivity
+
+Static displays are useful, but Prefab apps can also react to user input without any server round-trips. The key is **state** — a client-side key-value store that components read from and write to.
+
+Replace your `server.py` with a version that lets the user filter the table by office:
+
+```python
+from prefab_ui.app import PrefabApp
+from prefab_ui.components import (
+    Column, Heading, DataTable, DataTableColumn,
+    Select, SelectOption, If, Else, Text,
+)
+from prefab_ui.rx import Rx
+from fastmcp import FastMCP
+
+mcp = FastMCP("My First App")
+
+MEMBERS = [
+    {"name": "Alice Chen", "role": "Staff Engineer", "office": "San Francisco"},
+    {"name": "Bob Martinez", "role": "Lead Designer", "office": "New York"},
+    {"name": "Carol Johnson", "role": "Senior Engineer", "office": "London"},
+    {"name": "David Kim", "role": "Product Manager", "office": "San Francisco"},
+    {"name": "Eva Mueller", "role": "Engineer", "office": "Berlin"},
+]
+
+
+@mcp.tool(app=True)
+def team_directory() -> PrefabApp:
+    """Browse the team directory with office filtering."""
+    selected = Rx("selected_office")
+
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Team Directory")
+
+        with Select(name="selected_office", label="Filter by Office"):
+            SelectOption("All Offices", value="all")
+            SelectOption("San Francisco", value="San Francisco")
+            SelectOption("New York", value="New York")
+            SelectOption("London", value="London")
+            SelectOption("Berlin", value="Berlin")
+
+        with If(selected == "all"):
+            DataTable(
+                columns=[
+                    DataTableColumn(key="name", header="Name", sortable=True),
+                    DataTableColumn(key="role", header="Role", sortable=True),
+                    DataTableColumn(key="office", header="Office", sortable=True),
+                ],
+                rows=MEMBERS,
+                search=True,
+            )
+        with Else():
+            Text(selected.then(f"Showing results for: {selected}", ""))
+
+    return PrefabApp(view=view, state={"selected_office": "all"})
+```
+
+Three things changed:
+
+`Rx("selected_office")` creates a reactive reference — it doesn't hold a value in Python, it compiles to an expression the browser evaluates live. `Select(name="selected_office")` automatically syncs its value to the `selected_office` state key on every change. `If(selected == "all")` conditionally shows the full table, while the `Else` branch shows a filtered message. All of this runs instantly in the browser.
+
+The `state` dict on `PrefabApp` sets the initial values. Run `fastmcp dev apps server.py` again and try switching the dropdown.
+
+## Next Steps
+
+You've built a tool that renders an interactive UI. From here:
+
+- **[Prefab UI](/apps/prefab)** covers the full component library — charts, forms, badges, progress bars, conditional rendering, and the reactive state system in depth.
+- **[FastMCPApp](/apps/interactive-apps)** is the next step when your UI needs to call backend tools — forms that save data, search that queries a database, multi-step workflows.
+- **[App Providers](/apps/providers/approval)** are ready-made apps you can add to any server with a single `add_provider()` call — approval flows, file uploads, form builders, and more.
