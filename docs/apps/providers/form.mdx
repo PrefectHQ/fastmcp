@@ -40,7 +40,7 @@ This registers two tools:
 | `collect_bugreport` | Model | Opens the form UI |
 | `submit_form` | App only | Validates and processes the submission |
 
-The tool name is derived from the model: `collect_{ModelName.lower()}`. The LLM calls it with a prompt explaining what it needs, and the user gets a form with fields matching the model.
+The tool name is derived from the model class name, lowercased: `collect_{modelname}`. So `BugReport` becomes `collect_bugreport`, `ShippingAddress` becomes `collect_shippingaddress`. Use `tool_name` to override if needed. The LLM calls it with a prompt explaining what it needs, and the user gets a form with fields matching the model.
 
 ## Field Mapping
 

@@ -53,7 +53,11 @@ The `max_file_size` limit is enforced both in the UI (the DropZone rejects overs
 
 By default, files are stored in memory and scoped by MCP session ID. Each session gets its own isolated file store — files uploaded in one conversation aren't visible in another.
 
-This works with **stdio**, **SSE**, and **stateful HTTP** transports, where sessions persist across requests. In **stateless HTTP** mode, each request creates a new session, so the default scoping won't work.
+This works with **stdio**, **SSE**, and **stateful HTTP** transports, where sessions persist across requests.
+
+<Warning>
+In **stateless HTTP** mode, each request creates a new session object with a new ID. Files stored during one request (e.g. the UI upload) will be invisible to the next request (e.g. the LLM calling `list_files`). You **must** override `_get_scope_key` to use a stable identifier like a user ID from your auth token.
+</Warning>
 
 For stateless deployments, override `_get_scope_key` to return a stable identifier. For example, to scope files by authenticated user:
 

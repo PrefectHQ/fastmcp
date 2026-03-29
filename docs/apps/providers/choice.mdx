@@ -37,7 +37,7 @@ The LLM calls `choose` with a prompt and a list of options. The user sees a card
 ```
 
 <Note>
-Like [Approval](/apps/providers/approval), this is an advisory interaction — the conversation isn't blocked while the card is open. The tool description instructs the LLM to wait for the "I selected:" response before proceeding.
+This is an advisory interaction, not an enforcement mechanism. The conversation isn't blocked while the card is open — the user can keep typing, and the LLM could proceed without waiting. The tool description instructs the LLM to stop and wait for the "I selected:" response, but for hard enforcement, implement selection logic server-side.
 </Note>
 
 ## Configuration
