@@ -17,6 +17,15 @@ def fastmcp_server():
 
 class TestClientRoots:
     @pytest.mark.asyncio
+    async def test_set_roots_before_connect(self, fastmcp_server: FastMCP):
+        """set_roots called before connect should apply when the session starts."""
+        client = Client(fastmcp_server, roots=["file://a"])
+        client.set_roots(["file://b", "file://c"])
+        async with client:
+            result = await client.call_tool("list_roots", {})
+            assert result.data == ["file://b/", "file://c/"]
+
+    @pytest.mark.asyncio
     async def test_set_roots_updates_connected_session(self, fastmcp_server: FastMCP):
         """
         set_roots should update the live session's roots callback if called at runtime.

@@ -386,13 +386,14 @@ class Client(
         """Set the roots for the client. This does not automatically call `send_roots_list_changed`.
         Also updates the live session's _list_roots_callback if connected."""
         self._session_kwargs["list_roots_callback"] = create_roots_callback(roots)
-        # Update live session if connected
-        if (
-            hasattr(self, "_session_state")
-            and getattr(self._session_state, "session", None) is not None
-        ):
-            session = getattr(self._session_state, "session", None)
-            if session is not None and hasattr(session, "_list_roots_callback"):
+        # Update live session if connected.
+        # Note: _session_state may not exist yet when called from __init__.
+        if hasattr(self, "_session_state"):
+            session = self._session_state.session
+            if session is not None:
+                # Access private MCP SDK attribute directly. This is fragile
+                # but necessary — ClientSession has no public API for updating
+                # the roots callback after initialization.
                 session._list_roots_callback = self._session_kwargs[
                     "list_roots_callback"
                 ]
@@ -403,6 +404,8 @@ class Client(
         sampling_capabilities: mcp.types.SamplingCapability | None = None,
     ) -> None:
         """Set the sampling callback for the client."""
+        # TODO(#3715): Also update the live session's _sampling_callback
+        # when connected, matching the pattern in set_roots. See follow-up issue.
         self._session_kwargs["sampling_callback"] = create_sampling_callback(
             sampling_callback
         )
@@ -416,6 +419,8 @@ class Client(
         self, elicitation_callback: ElicitationHandler
     ) -> None:
         """Set the elicitation callback for the client."""
+        # TODO(#3715): Also update the live session's _elicitation_callback
+        # when connected, matching the pattern in set_roots. See follow-up issue.
         self._session_kwargs["elicitation_callback"] = create_elicitation_callback(
             elicitation_callback
         )
