@@ -33,7 +33,7 @@ This registers four tools:
 | `list_files` | Model | Returns metadata for all uploaded files |
 | `read_file` | Model | Returns a file's contents by name |
 
-The LLM sees `file_manager`, `list_files`, and `read_file`. It calls `file_manager` to show the upload interface, then uses `list_files` and `read_file` to work with whatever the user uploaded. `store_files` is app-only — the UI calls it directly through the `___` routing mechanism and the LLM never needs to know about it.
+The LLM sees `file_manager`, `list_files`, and `read_file`. It calls `file_manager` to show the upload interface, then uses `list_files` and `read_file` to work with whatever the user uploaded. `store_files` is app-only — the UI calls it directly and the LLM never needs to know about it.
 
 ## Configuration
 

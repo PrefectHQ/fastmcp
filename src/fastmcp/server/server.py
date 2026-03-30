@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import secrets
 import warnings
@@ -99,6 +100,19 @@ if TYPE_CHECKING:
     from fastmcp.server.providers.proxy import FastMCPProxy
 
 logger = get_logger(__name__)
+
+
+# The MCP SDK warns "Tool X not listed, no validation will be performed"
+# for every call to app-only tools (hidden from list_tools by design).
+# This fires even when validate_input=False. Suppress it.
+class _SuppressUnlistedToolWarning(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "not listed, no validation" not in record.getMessage()
+
+
+logging.getLogger("mcp.server.lowlevel.server").addFilter(
+    _SuppressUnlistedToolWarning()
+)
 
 F = TypeVar("F", bound=Callable[..., Any])
 
