@@ -878,7 +878,7 @@ requires-dist = [
     { name = "opentelemetry-api", specifier = ">=1.20.0" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "platformdirs", specifier = ">=4.0.0" },
-    { name = "prefab-ui", marker = "extra == 'apps'", specifier = ">=0.17.0" },
+    { name = "prefab-ui", marker = "extra == 'apps'", specifier = ">=0.18.0" },
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], specifier = ">=0.4.4,<0.5.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pydantic-monty", marker = "extra == 'code-mode'", specifier = "==0.0.8" },
@@ -1811,16 +1811,16 @@ wheels = [
 
 [[package]]
 name = "prefab-ui"
-version = "0.17.0"
+version = "0.18.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cyclopts" },
     { name = "pydantic" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/87/63/e974f66befb851801dbf80e747a787efa59fb7d335ed3fb2e0d0d6f39b0e/prefab_ui-0.17.0.tar.gz", hash = "sha256:c3b2e9706349d013966d317abfa08a82b128f6ecddc8490e8bba73b3a6e3d16c", size = 3993324, upload-time = "2026-03-29T22:35:41.489Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2f/a3/25fe72b9887d9c2daa0ec5e79a7971a67aad31a6f71d634e23da662343ad/prefab_ui-0.18.0.tar.gz", hash = "sha256:f72e241f52f4720baac670f8527c773e1c1f4b558bce4f77097441eecbb51b9e", size = 3998186, upload-time = "2026-03-30T01:13:33.419Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/36/994783fc52dfaef0123d740cefcbbc2cdd201389b5ae60e3d33110e34042/prefab_ui-0.17.0-py3-none-any.whl", hash = "sha256:9f6a5d8b659acceb2b9da7e3cf1df8a207e5ab87df4f13cd580915443c6816cc", size = 1823254, upload-time = "2026-03-29T22:35:42.953Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/dd/28be02a264c59d64086122c8b0f9fa99fc52e040682358e5e08219846961/prefab_ui-0.18.0-py3-none-any.whl", hash = "sha256:c9d01bd423b0d5bf103d9a0e6cfac135bd973d416297c32a5bbccc182161cace", size = 1824803, upload-time = "2026-03-30T01:13:31.243Z" },
 ]
 
 [[package]]
@@ -2894,8 +2894,8 @@ name = "taskgroup"
 version = "0.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+    { name = "exceptiongroup" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f0/8d/e218e0160cc1b692e6e0e5ba34e8865dbb171efeb5fc9a704544b3020605/taskgroup-0.2.2.tar.gz", hash = "sha256:078483ac3e78f2e3f973e2edbf6941374fbea81b9c5d0a96f51d297717f4752d", size = 11504, upload-time = "2025-01-03T09:24:13.761Z" }
 wheels = [
