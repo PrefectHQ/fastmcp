@@ -576,6 +576,7 @@
                               "python-sdk/fastmcp-server-auth-providers-auth0",
                               "python-sdk/fastmcp-server-auth-providers-aws",
                               "python-sdk/fastmcp-server-auth-providers-azure",
+                              "python-sdk/fastmcp-server-auth-providers-clerk",
                               "python-sdk/fastmcp-server-auth-providers-debug",
                               "python-sdk/fastmcp-server-auth-providers-descope",
                               "python-sdk/fastmcp-server-auth-providers-discord",
