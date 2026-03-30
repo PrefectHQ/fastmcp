@@ -16,22 +16,22 @@ def fastmcp_server():
 
 
 class TestClientRoots:
-        @pytest.mark.asyncio
-        async def test_set_roots_updates_connected_session(self, fastmcp_server: FastMCP):
-            """
-            set_roots should update the live session's roots callback if called at runtime.
-            """
-            initial_roots = ["file://a"]
-            new_roots = ["file://b", "file://c"]
-            async with Client(fastmcp_server, roots=initial_roots) as client:
-                # Confirm initial roots
-                result = await client.call_tool("list_roots", {})
-                assert result.data == ["file://a"]
-                # Update roots at runtime
-                client.set_roots(new_roots)
-                # Confirm new roots are reflected
-                result2 = await client.call_tool("list_roots", {})
-                assert result2.data == ["file://b", "file://c"]
+    @pytest.mark.asyncio
+    async def test_set_roots_updates_connected_session(self, fastmcp_server: FastMCP):
+        """
+        set_roots should update the live session's roots callback if called at runtime.
+        """
+        initial_roots = ["file://a"]
+        new_roots = ["file://b", "file://c"]
+        async with Client(fastmcp_server, roots=initial_roots) as client:
+            # Confirm initial roots
+            result = await client.call_tool("list_roots", {})
+            assert result.data == ["file://a/"]
+            # Update roots at runtime
+            client.set_roots(new_roots)
+            # Confirm new roots are reflected
+            result2 = await client.call_tool("list_roots", {})
+            assert result2.data == ["file://b/", "file://c/"]
     @pytest.mark.parametrize("roots", [["x"], ["x", "y"]])
     async def test_invalid_roots(self, fastmcp_server: FastMCP, roots: list[str]):
         """
