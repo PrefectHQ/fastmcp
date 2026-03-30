@@ -12,35 +12,37 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 Every example below is a working FastMCP server you can run with `fastmcp dev apps` or connect to from any MCP host. The source is in `examples/apps/` in the repository.
 
-<CardGroup cols={2}>
-  <Card title="Sales Dashboard" img="/apps/images/app-example-sales-dashboard.png">
-    Metric cards, stacked area chart, donut pie chart, and a sortable deal table. Pure Prefab, single tool.
-  </Card>
-  <Card title="System Monitor" img="/apps/images/app-example-system-dashboard.png">
-    Live CPU, memory, and disk from your machine. Auto-refreshes with configurable interval. Uses FastMCPApp with SetInterval.
-  </Card>
-  <Card title="Quiz" img="/apps/images/app-example-quiz.png">
-    The LLM generates questions, the user answers via buttons, score tracks across questions. Multi-turn state with FastMCPApp.
-  </Card>
-  <Card title="Interactive Map" img="/apps/images/app-example-map.png">
-    Geocodes addresses via OpenStreetMap and renders an interactive Leaflet map. Shows that Prefab apps can embed arbitrary web content.
-  </Card>
-  <Card title="File Upload" img="/apps/images/app-file-upload.png" href="/apps/providers/file-upload">
-    Drag-and-drop file upload with session-scoped storage. Built-in provider.
-  </Card>
-  <Card title="Approval" img="/apps/images/app-approval.png" href="/apps/providers/approval">
-    Human-in-the-loop confirmation gate. The LLM presents an action, the user approves or rejects. Built-in provider.
-  </Card>
-  <Card title="Choice" img="/apps/images/app-choice.png" href="/apps/providers/choice">
-    Present clickable options instead of free-text responses. Built-in provider.
-  </Card>
-  <Card title="Form Input" img="/apps/images/app-form.png" href="/apps/providers/form">
-    Generate a validated form from a Pydantic model. Built-in provider.
-  </Card>
-  <Card title="Generative UI" img="/apps/images/app-showcase.png" href="/apps/generative">
-    The LLM writes Prefab code at runtime and renders it as a streaming UI. Tailored visualizations for any data.
-  </Card>
-</CardGroup>
+<Columns cols={2}>
+  <Tile href="#sales-dashboard" title="Sales Dashboard" description="Metrics, charts, and deal pipeline">
+    <div style={{overflow: "hidden", width: "100%"}}>
+      <img src="/apps/images/app-example-sales-dashboard.png" />
+    </div>
+  </Tile>
+  <Tile href="#system-monitor" title="System Monitor" description="Live CPU, memory, disk with auto-refresh">
+    <img src="/apps/images/app-example-system-dashboard.png" />
+  </Tile>
+  <Tile href="#quiz" title="Quiz" description="LLM-generated trivia with scoring">
+    <img src="/apps/images/app-example-quiz.png" />
+  </Tile>
+  <Tile href="#interactive-map" title="Interactive Map" description="Geocoded addresses on Leaflet">
+    <img src="/apps/images/app-example-map.png" />
+  </Tile>
+  <Tile href="/apps/providers/file-upload" title="File Upload" description="Drag-and-drop upload provider">
+    <img src="/apps/images/app-file-upload.png" />
+  </Tile>
+  <Tile href="/apps/providers/approval" title="Approval" description="Human-in-the-loop confirmation">
+    <img src="/apps/images/app-approval.png" />
+  </Tile>
+  <Tile href="/apps/providers/choice" title="Choice" description="Clickable option selection">
+    <img src="/apps/images/app-choice.png" />
+  </Tile>
+  <Tile href="/apps/providers/form" title="Form Input" description="Pydantic model forms">
+    <img src="/apps/images/app-form.png" />
+  </Tile>
+  <Tile href="/apps/generative" title="Generative UI" description="LLM writes the UI at runtime">
+    <img src="/apps/images/app-showcase.png" />
+  </Tile>
+</Columns>
 
 ## Running Examples
 
@@ -88,15 +90,6 @@ Accepts addresses or place names, geocodes them via OpenStreetMap Nominatim (fre
 fastmcp dev apps examples/apps/map/map_server.py
 ```
 
-### Generative UI
-
-The LLM writes Prefab Python code at runtime and the result renders as a streaming interactive UI. Instead of pre-building tools with fixed interfaces, the model creates tailored visualizations for whatever data it's working with. See the [Generative UI guide](/apps/generative) for details.
-
-```python
-from fastmcp.apps.generative import GenerativeUI
-mcp.add_provider(GenerativeUI())
-```
-
 ## Built-in Providers
 
 These are ready-made capabilities you add with a single `add_provider()` call.
@@ -135,4 +128,13 @@ Generate a validated form from a Pydantic model. Submission is validated against
 ```python
 from fastmcp.apps.form import FormInput
 mcp.add_provider(FormInput(model=MyModel))
+```
+
+### [Generative UI](/apps/providers/generative)
+
+The LLM writes Prefab Python code at runtime and the result renders as a streaming interactive UI. Tailored visualizations for any data. See the [full guide](/apps/generative) for details.
+
+```python
+from fastmcp.apps.generative import GenerativeUI
+mcp.add_provider(GenerativeUI())
 ```
