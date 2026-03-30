@@ -228,11 +228,7 @@ class FunctionResource(Resource):
         return result
 
     def register_with_docket(self, docket: Docket) -> None:
-        """Register this resource with docket for background execution.
-
-        self.fn is already wrapped by without_injected_parameters at creation
-        time, so DI params are hidden and FastMCP resolves them internally.
-        """
+        """Register this resource with docket for background execution."""
         if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])
