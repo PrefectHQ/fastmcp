@@ -276,9 +276,26 @@ class TaskContextSnapshot:
             await redis.set(key, self.to_json(), ex=ttl_seconds)
 
 
-_task_snapshot: ContextVar[TaskContextSnapshot | None] = ContextVar(
+# Cache keyed by task_id so stale entries from previous tasks in the same
+# asyncio context are automatically ignored (Docket workers may reuse contexts).
+_task_snapshot: ContextVar[tuple[str, TaskContextSnapshot] | None] = ContextVar(
     "task_snapshot", default=None
 )
+
+
+def _set_cached_snapshot(task_id: str, snapshot: TaskContextSnapshot) -> None:
+    """Cache a snapshot keyed by task_id."""
+    _task_snapshot.set((task_id, snapshot))
+
+
+def _get_cached_snapshot(task_id: str) -> TaskContextSnapshot | None:
+    """Get cached snapshot if it belongs to this task."""
+    cached = _task_snapshot.get()
+    if cached is not None:
+        cached_task_id, snapshot = cached
+        if cached_task_id == task_id:
+            return snapshot
+    return None
 
 
 def _redis_key(session_id: str, task_id: str) -> str:
@@ -289,13 +306,13 @@ def _redis_key(session_id: str, task_id: str) -> str:
 async def _load_task_snapshot_async(
     session_id: str, task_id: str
 ) -> TaskContextSnapshot | None:
-    """Load task context snapshot from Redis (async) and set the ContextVar.
+    """Load task context snapshot from Redis (async) and cache it.
 
-    Idempotent — returns the cached value if already loaded.
+    Idempotent — returns the cached value if already loaded for this task.
     """
-    existing = _task_snapshot.get()
-    if existing is not None:
-        return existing
+    cached = _get_cached_snapshot(task_id)
+    if cached is not None:
+        return cached
 
     try:
         docket = get_server()._docket
@@ -312,7 +329,7 @@ async def _load_task_snapshot_async(
         if raw is None:
             return None
         snapshot = TaskContextSnapshot.from_json(raw)
-        _task_snapshot.set(snapshot)
+        _set_cached_snapshot(task_id, snapshot)
         return snapshot
     except (OSError, json.JSONDecodeError, KeyError, ValueError):
         _logger.warning(
@@ -328,16 +345,16 @@ def _get_task_snapshot_sync() -> TaskContextSnapshot | None:
     """Get the task snapshot using only sync operations.
 
     Fallback chain:
-    1. ContextVar (set by async deps like _CurrentContext)
+    1. ContextVar cache (keyed by task_id, set by async or sync loaders)
     2. Sync Redis GET (works for both memory:// and real Redis)
     """
-    snapshot = _task_snapshot.get()
-    if snapshot is not None:
-        return snapshot
-
     task_info = get_task_context()
     if task_info is None:
         return None
+
+    cached = _get_cached_snapshot(task_info.task_id)
+    if cached is not None:
+        return cached
 
     return _load_task_snapshot_sync(task_info.session_id, task_info.task_id)
 
@@ -366,7 +383,7 @@ def _load_task_snapshot_sync(
         if raw is None:
             return None
         snapshot = TaskContextSnapshot.from_json(raw)
-        _task_snapshot.set(snapshot)
+        _set_cached_snapshot(task_id, snapshot)
         return snapshot
     except (OSError, json.JSONDecodeError, KeyError, ValueError, ImportError):
         _logger.warning(

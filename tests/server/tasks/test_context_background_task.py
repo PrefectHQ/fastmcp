@@ -24,8 +24,9 @@ from fastmcp.dependencies import CurrentDocket
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import (
+    TaskContextInfo,
     TaskContextSnapshot,
-    _task_snapshot,
+    _set_cached_snapshot,
     get_access_token,
 )
 from fastmcp.server.elicitation import (
@@ -424,12 +425,15 @@ class TestAccessTokenInBackgroundTasks:
             scopes=["read"],
             expires_at=int(datetime.now(timezone.utc).timestamp()) - 3600,
         )
-        _task_snapshot.set(
-            TaskContextSnapshot(
-                access_token_json=expired.model_dump_json(),
-            )
+        _set_cached_snapshot(
+            "test-task",
+            TaskContextSnapshot(access_token_json=expired.model_dump_json()),
         )
-        assert get_access_token() is None
+        fake_ctx = TaskContextInfo(task_id="test-task", session_id="s")
+        with patch(
+            "fastmcp.server.dependencies.get_task_context", return_value=fake_ctx
+        ):
+            assert get_access_token() is None
 
     async def test_valid_token_with_future_expiry(self):
         """get_access_token() returns token when expiry is in the future."""
@@ -439,14 +443,17 @@ class TestAccessTokenInBackgroundTasks:
             scopes=["read"],
             expires_at=int(datetime.now(timezone.utc).timestamp()) + 3600,
         )
-        _task_snapshot.set(
-            TaskContextSnapshot(
-                access_token_json=valid.model_dump_json(),
-            )
+        _set_cached_snapshot(
+            "test-task",
+            TaskContextSnapshot(access_token_json=valid.model_dump_json()),
         )
-        result = get_access_token()
-        assert result is not None
-        assert result.token == "valid-jwt"
+        fake_ctx = TaskContextInfo(task_id="test-task", session_id="s")
+        with patch(
+            "fastmcp.server.dependencies.get_task_context", return_value=fake_ctx
+        ):
+            result = get_access_token()
+            assert result is not None
+            assert result.token == "valid-jwt"
 
     async def test_token_without_expiry_always_valid(self):
         """get_access_token() returns token when no expires_at is set."""
@@ -455,14 +462,17 @@ class TestAccessTokenInBackgroundTasks:
             client_id="test-client",
             scopes=["read"],
         )
-        _task_snapshot.set(
-            TaskContextSnapshot(
-                access_token_json=no_expiry.model_dump_json(),
-            )
+        _set_cached_snapshot(
+            "test-task",
+            TaskContextSnapshot(access_token_json=no_expiry.model_dump_json()),
         )
-        result = get_access_token()
-        assert result is not None
-        assert result.token == "eternal-jwt"
+        fake_ctx = TaskContextInfo(task_id="test-task", session_id="s")
+        with patch(
+            "fastmcp.server.dependencies.get_task_context", return_value=fake_ctx
+        ):
+            result = get_access_token()
+            assert result is not None
+            assert result.token == "eternal-jwt"
 
 
 class TestLifespanContextInBackgroundTasks:
