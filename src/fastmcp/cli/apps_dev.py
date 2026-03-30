@@ -1440,7 +1440,12 @@ def _make_dev_app(
             for k, v in data.items():
                 if isinstance(v, str):
                     stripped = v.strip()
-                    if stripped and stripped[0] in ("{", "["):
+                    # Skip empty strings — the form sends them for
+                    # unfilled optional fields, but they'll fail
+                    # validation against non-string types.
+                    if not stripped:
+                        continue
+                    if stripped[0] in ("{", "["):
                         try:
                             parsed = json.loads(stripped)
                             if isinstance(parsed, (dict, list)):
