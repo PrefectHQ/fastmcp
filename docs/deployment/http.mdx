@@ -115,6 +115,10 @@ async def health_check(request):
 
 This health endpoint will be available at `http://localhost:8000/health` and can be used by load balancers, monitoring systems, or deployment platforms to verify your server is running.
 
+<Note>
+Custom routes are never protected by the server's authentication middleware, even when an `AuthProvider` is configured. This is by design — the primary use case for custom routes is unauthenticated operational endpoints like health checks and readiness probes. If you need authenticated HTTP endpoints alongside your MCP server, [mount it in a FastAPI app](/integrations/fastapi) and use FastAPI's `Depends()` for auth on your routes.
+</Note>
+
 ### Custom Middleware
 
 
