@@ -335,8 +335,8 @@ class FunctionPrompt(Prompt):
     def register_with_docket(self, docket: Docket) -> None:
         """Register this prompt with docket for background execution.
 
-        FunctionPrompt registers the underlying function, which has the user's
-        Depends parameters for docket to resolve.
+        FunctionPrompt registers its wrapped function which handles all DI
+        resolution internally (same as tools, resources, and templates).
         """
         if not self.task_config.supports_tasks():
             return

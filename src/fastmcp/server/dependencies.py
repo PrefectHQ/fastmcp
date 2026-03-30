@@ -15,7 +15,7 @@ import weakref
 from collections import OrderedDict
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
-from contextvars import ContextVar, Token
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -65,6 +65,7 @@ __all__ = [
     "CurrentWorker",
     "Progress",
     "TaskContextInfo",
+    "TaskContextSnapshot",
     "TokenClaim",
     "get_access_token",
     "get_context",
@@ -76,8 +77,11 @@ __all__ = [
     "is_docket_available",
     "register_task_server",
     "register_task_session",
+    "register_task_snapshot",
     "require_docket",
     "resolve_dependencies",
+    "save_task_snapshot",
+    "snapshot_task_context",
     "transform_context_annotations",
     "without_injected_parameters",
 ]
@@ -205,12 +209,195 @@ def register_task_server(task_id: str, server: FastMCP) -> None:
 
 _current_docket: ContextVar[Docket | None] = ContextVar("docket", default=None)
 _current_worker: ContextVar[Worker | None] = ContextVar("worker", default=None)
-_task_access_token: ContextVar[AccessToken | None] = ContextVar(
-    "task_access_token", default=None
+
+
+# --- Unified task context snapshot ---
+
+
+@dataclass(frozen=True, slots=True)
+class TaskContextSnapshot:
+    """All context data snapshotted at task-submission time.
+
+    Stored as a single Redis key per task, restored once in the worker.
+    """
+
+    access_token_json: str | None = None
+    http_headers: dict[str, str] | None = None
+    origin_request_id: str | None = None
+
+
+_task_snapshot: ContextVar[TaskContextSnapshot | None] = ContextVar(
+    "task_snapshot", default=None
 )
-_task_http_headers: ContextVar[dict[str, str] | None] = ContextVar(
-    "task_http_headers", default=None
-)
+
+
+def snapshot_task_context() -> TaskContextSnapshot:
+    """Capture current context for background task execution."""
+    access_token = get_access_token()
+    ctx = get_context()
+    request_context = ctx.request_context
+    origin_request_id = (
+        str(request_context.request_id) if request_context is not None else None
+    )
+    return TaskContextSnapshot(
+        access_token_json=access_token.model_dump_json() if access_token else None,
+        http_headers=get_http_headers(include_all=True) or None,
+        origin_request_id=origin_request_id,
+    )
+
+
+async def save_task_snapshot(
+    docket: Docket,
+    session_id: str,
+    task_id: str,
+    snapshot: TaskContextSnapshot,
+    ttl_seconds: int,
+) -> None:
+    """Store a task context snapshot as a single Redis key."""
+    key = docket.key(f"fastmcp:task:{session_id}:{task_id}:snapshot")
+    data = json.dumps(
+        {
+            "access_token_json": snapshot.access_token_json,
+            "http_headers": snapshot.http_headers,
+            "origin_request_id": snapshot.origin_request_id,
+        }
+    )
+    async with docket.redis() as redis:
+        await redis.set(key, data, ex=ttl_seconds)
+
+
+async def load_task_snapshot(
+    session_id: str, task_id: str
+) -> TaskContextSnapshot | None:
+    """Load task context snapshot from Redis and set the ContextVar.
+
+    Returns the snapshot, or None if not found. Idempotent — if already
+    loaded, returns the cached value from the ContextVar.
+    """
+    existing = _task_snapshot.get()
+    if existing is not None:
+        return existing
+
+    try:
+        docket = get_server()._docket
+    except RuntimeError:
+        docket = None
+    if docket is None:
+        docket = _current_docket.get()
+    if docket is None:
+        return None
+
+    key = docket.key(f"fastmcp:task:{session_id}:{task_id}:snapshot")
+    try:
+        async with docket.redis() as redis:
+            raw = await redis.get(key)
+        if raw is None:
+            return None
+        if isinstance(raw, bytes):
+            raw = raw.decode()
+        parsed = json.loads(raw)
+        headers = parsed.get("http_headers")
+        if isinstance(headers, dict):
+            headers = {str(k).lower(): str(v) for k, v in headers.items()}
+        snapshot = TaskContextSnapshot(
+            access_token_json=parsed.get("access_token_json"),
+            http_headers=headers,
+            origin_request_id=parsed.get("origin_request_id"),
+        )
+        _task_snapshot.set(snapshot)
+        return snapshot
+    except Exception:
+        _logger.warning(
+            "Failed to load task snapshot for %s:%s",
+            session_id,
+            task_id,
+            exc_info=True,
+        )
+        return None
+
+
+# --- In-memory snapshot dict for sync access ---
+# Same bounded-dict pattern as _task_server_map. Populated at submission time
+# (same process), consulted by sync functions like get_http_request() in workers.
+
+_task_snapshots: OrderedDict[str, TaskContextSnapshot] = OrderedDict()
+_TASK_SNAPSHOTS_MAX_SIZE = 10_000
+
+
+def register_task_snapshot(task_id: str, snapshot: TaskContextSnapshot) -> None:
+    """Store a snapshot for sync access by in-process workers."""
+    _task_snapshots[task_id] = snapshot
+    while len(_task_snapshots) > _TASK_SNAPSHOTS_MAX_SIZE:
+        _task_snapshots.popitem(last=False)
+
+
+def _get_task_snapshot_sync() -> TaskContextSnapshot | None:
+    """Get the task snapshot using only sync operations.
+
+    Fallback chain:
+    1. ContextVar (set by async deps like _CurrentContext)
+    2. In-memory dict (same-process workers)
+    3. Sync Redis GET (out-of-process workers)
+    """
+    snapshot = _task_snapshot.get()
+    if snapshot is not None:
+        return snapshot
+
+    task_info = get_task_context()
+    if task_info is None:
+        return None
+
+    # Same-process: check in-memory dict
+    snapshot = _task_snapshots.get(task_info.task_id)
+    if snapshot is not None:
+        return snapshot
+
+    # Out-of-process: sync Redis fallback
+    return _load_snapshot_sync_redis(task_info.session_id, task_info.task_id)
+
+
+def _load_snapshot_sync_redis(
+    session_id: str, task_id: str
+) -> TaskContextSnapshot | None:
+    """Load snapshot via sync Redis for out-of-process workers."""
+    try:
+        from docket.dependencies import current_docket as _docket_cv
+
+        docket = _docket_cv.get()
+    except (LookupError, ImportError):
+        return None
+    if docket is None:
+        return None
+
+    key = docket.key(f"fastmcp:task:{session_id}:{task_id}:snapshot")
+    try:
+        from redis import Redis
+
+        with Redis.from_url(str(docket.url)) as sync_redis:
+            raw = sync_redis.get(key)
+        if raw is None:
+            return None
+        if isinstance(raw, bytes):
+            raw = raw.decode()
+        parsed = json.loads(raw)
+        headers = parsed.get("http_headers")
+        if isinstance(headers, dict):
+            headers = {str(k).lower(): str(v) for k, v in headers.items()}
+        snapshot = TaskContextSnapshot(
+            access_token_json=parsed.get("access_token_json"),
+            http_headers=headers,
+            origin_request_id=parsed.get("origin_request_id"),
+        )
+        _task_snapshot.set(snapshot)
+        return snapshot
+    except Exception:
+        _logger.warning(
+            "Failed to load task snapshot via sync Redis for %s:%s",
+            session_id,
+            task_id,
+            exc_info=True,
+        )
+        return None
 
 
 # --- Docket availability check ---
@@ -459,8 +646,10 @@ def get_http_request() -> Request:
         request = _current_http_request.get()
 
     # In Docket workers, restore a minimal request from the snapshotted headers.
+    # Uses sync fallback chain: ContextVar → in-memory dict → sync Redis.
     if request is None:
-        task_headers = _task_http_headers.get()
+        snapshot = _get_task_snapshot_sync()
+        task_headers = snapshot.http_headers if snapshot else None
         if task_headers:
             request = Request(
                 {
@@ -575,12 +764,11 @@ def get_access_token() -> AccessToken | None:
 
     # Fall back to background task snapshot (#3095)
     # In Docket workers, neither HTTP request nor SDK context var are available.
-    # The token was snapshotted in Redis at submit_to_docket() time and restored
-    # into this ContextVar by _CurrentContext.__aenter__().
+    # Uses sync fallback chain: ContextVar → in-memory dict → sync Redis.
     if access_token is None:
-        task_token = _task_access_token.get()
-        if task_token is not None:
-            # Check expiration: if expires_at is set and past, treat as expired
+        snapshot = _get_task_snapshot_sync()
+        if snapshot is not None and snapshot.access_token_json is not None:
+            task_token = AccessToken.model_validate_json(snapshot.access_token_json)
             if task_token.expires_at is not None:
                 if task_token.expires_at < int(datetime.now(timezone.utc).timestamp()):
                     return None
@@ -811,112 +999,17 @@ async def resolve_dependencies(
 # so that get_dependency_parameters can detect them.
 
 
-async def _restore_task_access_token(
-    session_id: str, task_id: str
-) -> Token[AccessToken | None] | None:
-    """Restore the access token snapshot from Redis into a ContextVar.
-
-    Called when setting up context in a Docket worker. The token was stored at
-    submit_to_docket() time. The token is restored regardless of expiration;
-    get_access_token() checks expiry when reading from the ContextVar.
-
-    Returns:
-        The ContextVar token for resetting, or None if nothing was restored.
-    """
-    docket = _current_docket.get()
-    if docket is None:
-        return None
-
-    token_key = docket.key(f"fastmcp:task:{session_id}:{task_id}:access_token")
-    try:
-        async with docket.redis() as redis:
-            token_data = await redis.get(token_key)
-        if token_data is not None:
-            restored = AccessToken.model_validate_json(token_data)
-            return _task_access_token.set(restored)
-    except Exception:
-        _logger.warning(
-            "Failed to restore access token for task %s:%s",
-            session_id,
-            task_id,
-            exc_info=True,
-        )
-    return None
-
-
-async def _restore_task_http_headers(
-    session_id: str, task_id: str
-) -> Token[dict[str, str] | None] | None:
-    """Restore the HTTP header snapshot from Redis into a ContextVar."""
-    docket = _current_docket.get()
-    if docket is None:
-        return None
-
-    headers_key = docket.key(f"fastmcp:task:{session_id}:{task_id}:http_headers")
-    try:
-        async with docket.redis() as redis:
-            headers_data = await redis.get(headers_key)
-        if headers_data is None:
-            return None
-        if isinstance(headers_data, bytes):
-            headers_data = headers_data.decode()
-        restored = json.loads(str(headers_data))
-        if not isinstance(restored, dict):
-            return None
-        return _task_http_headers.set(
-            {str(name).lower(): str(value) for name, value in restored.items()}
-        )
-    except Exception:
-        _logger.warning(
-            "Failed to restore HTTP headers for task %s:%s",
-            session_id,
-            task_id,
-            exc_info=True,
-        )
-    return None
-
-
-async def _restore_task_origin_request_id(session_id: str, task_id: str) -> str | None:
-    """Restore the origin request ID snapshot for a background task.
-
-    Returns None if no request ID was captured at submission time.
-    """
-    docket = _current_docket.get()
-    if docket is None:
-        return None
-
-    request_id_key = docket.key(
-        f"fastmcp:task:{session_id}:{task_id}:origin_request_id"
-    )
-    try:
-        async with docket.redis() as redis:
-            request_id_data = await redis.get(request_id_key)
-        if request_id_data is None:
-            return None
-        if isinstance(request_id_data, bytes):
-            return request_id_data.decode()
-        return str(request_id_data)
-    except Exception:
-        _logger.warning(
-            "Failed to restore origin request ID for task %s:%s",
-            session_id,
-            task_id,
-            exc_info=True,
-        )
-        return None
-
-
 class _CurrentContext(Dependency["Context"]):
     """Async context manager for Context dependency.
 
     In foreground (request) mode: returns the active context from _current_context.
     In background (Docket worker) mode: creates a task-aware Context with task_id
-    and restores the access token snapshot from Redis.
-    """
+    and loads the unified task snapshot from Redis.
 
-    _context: Context | None = None
-    _access_token_cv_token: Token[AccessToken | None] | None = None
-    _http_headers_cv_token: Token[dict[str, str] | None] | None = None
+    The shared default instance is a stateless factory. All per-invocation
+    state lives on the returned Context or in task-local ContextVars, so
+    concurrent tasks never share mutable state.
+    """
 
     async def __aenter__(self) -> Context:
         from fastmcp.server.context import Context, _current_context
@@ -929,36 +1022,22 @@ class _CurrentContext(Dependency["Context"]):
         # Check if we're in a Docket worker context
         task_info = get_task_context()
         if task_info is not None:
-            # Get session from registry (registered when task was submitted)
             session = get_task_session(task_info.session_id)
-            # Get server from ContextVar
             server = get_server()
-            origin_request_id = await _restore_task_origin_request_id(
-                task_info.session_id, task_info.task_id
-            )
-            # Create task-aware Context
-            self._context = Context(
+
+            # Load unified snapshot (sets _task_snapshot ContextVar)
+            snapshot = await load_task_snapshot(task_info.session_id, task_info.task_id)
+            origin_request_id = snapshot.origin_request_id if snapshot else None
+
+            ctx = Context(
                 fastmcp=server,
                 session=session,
                 task_id=task_info.task_id,
                 origin_request_id=origin_request_id,
             )
-            # Enter the context to set up ContextVars
-            await self._context.__aenter__()
+            await ctx.__aenter__()
+            return ctx
 
-            # Restore access token snapshot from Redis (#3095)
-            self._access_token_cv_token = await _restore_task_access_token(
-                task_info.session_id, task_info.task_id
-            )
-
-            # Restore HTTP headers snapshot from Redis (#3631)
-            self._http_headers_cv_token = await _restore_task_http_headers(
-                task_info.session_id, task_info.task_id
-            )
-
-            return self._context
-
-        # Neither foreground nor background context available
         raise RuntimeError(
             "No active context found. This can happen if:\n"
             "  - Called outside an MCP request handler\n"
@@ -972,18 +1051,11 @@ class _CurrentContext(Dependency["Context"]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        # Clean up access token ContextVar
-        if self._access_token_cv_token is not None:
-            _task_access_token.reset(self._access_token_cv_token)
-            self._access_token_cv_token = None
-        # Clean up HTTP headers ContextVar
-        if self._http_headers_cv_token is not None:
-            _task_http_headers.reset(self._http_headers_cv_token)
-            self._http_headers_cv_token = None
-        # Clean up if we created a context for background task
-        if self._context is not None:
-            await self._context.__aexit__(exc_type, exc_value, traceback)
-            self._context = None
+        from fastmcp.server.context import _current_context
+
+        ctx = _current_context.get()
+        if ctx is not None and ctx.is_background_task:
+            await ctx.__aexit__(exc_type, exc_value, traceback)
 
 
 class _OptionalCurrentContext(Dependency["Context | None"]):
@@ -992,20 +1064,19 @@ class _OptionalCurrentContext(Dependency["Context | None"]):
     This is implemented as a wrapper (composition), not a subclass of
     `_CurrentContext`, to avoid overriding `__aenter__` with an incompatible
     return type.
-    """
 
-    _inner: _CurrentContext | None = None
+    The shared default instance is stateless. A fresh _CurrentContext is
+    created per invocation and delegates cleanup via its own __aexit__.
+    """
 
     async def __aenter__(self) -> Context | None:
         inner = _CurrentContext()
         try:
-            context = await inner.__aenter__()
+            return await inner.__aenter__()
         except RuntimeError as exc:
             if "No active context found" in str(exc):
                 return None
             raise
-        self._inner = inner
-        return context
 
     async def __aexit__(
         self,
@@ -1013,10 +1084,9 @@ class _OptionalCurrentContext(Dependency["Context | None"]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        if self._inner is None:
-            return
-        await self._inner.__aexit__(exc_type, exc_value, traceback)
-        self._inner = None
+        # Delegate to _CurrentContext's __aexit__ which reads from ContextVar
+        inner = _CurrentContext()
+        await inner.__aexit__(exc_type, exc_value, traceback)
 
 
 def CurrentContext() -> Context:
@@ -1054,7 +1124,14 @@ class _CurrentDocket(Dependency["Docket"]):
 
     async def __aenter__(self) -> Docket:
         require_docket("CurrentDocket()")
-        docket = _current_docket.get()
+        # Check server instance first, fall back to ContextVar for mounted children
+        # whose parent owns the Docket
+        try:
+            docket = get_server()._docket
+        except RuntimeError:
+            docket = None
+        if docket is None:
+            docket = _current_docket.get()
         if docket is None:
             raise RuntimeError(
                 "No Docket instance found. Docket is only initialized when there are "
@@ -1104,7 +1181,13 @@ class _CurrentWorker(Dependency["Worker"]):
 
     async def __aenter__(self) -> Worker:
         require_docket("CurrentWorker()")
-        worker = _current_worker.get()
+        # Check server instance first, fall back to ContextVar for mounted children
+        try:
+            worker = get_server()._worker
+        except RuntimeError:
+            worker = None
+        if worker is None:
+            worker = _current_worker.get()
         if worker is None:
             raise RuntimeError(
                 "No Worker instance found. Worker is only initialized when there are "
@@ -1191,20 +1274,8 @@ def CurrentFastMCP() -> FastMCP:
 class _CurrentRequest(Dependency[Request]):
     """Async context manager for HTTP Request dependency."""
 
-    _task_http_headers_cv_token: Token[dict[str, str] | None] | None = None
-
     async def __aenter__(self) -> Request:
-        try:
-            return get_http_request()
-        except RuntimeError:
-            task_info = get_task_context()
-            if task_info is None:
-                raise
-            if _task_http_headers.get() is None:
-                self._task_http_headers_cv_token = await _restore_task_http_headers(
-                    task_info.session_id, task_info.task_id
-                )
-            return get_http_request()
+        return get_http_request()
 
     async def __aexit__(
         self,
@@ -1212,9 +1283,7 @@ class _CurrentRequest(Dependency[Request]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        if self._task_http_headers_cv_token is not None:
-            _task_http_headers.reset(self._task_http_headers_cv_token)
-            self._task_http_headers_cv_token = None
+        pass
 
 
 def CurrentRequest() -> Request:
@@ -1246,15 +1315,7 @@ def CurrentRequest() -> Request:
 class _CurrentHeaders(Dependency[dict[str, str]]):
     """Async context manager for HTTP Headers dependency."""
 
-    _task_http_headers_cv_token: Token[dict[str, str] | None] | None = None
-
     async def __aenter__(self) -> dict[str, str]:
-        if _task_http_headers.get() is None:
-            task_info = get_task_context()
-            if task_info is not None:
-                self._task_http_headers_cv_token = await _restore_task_http_headers(
-                    task_info.session_id, task_info.task_id
-                )
         return get_http_headers(include={"authorization"})
 
     async def __aexit__(
@@ -1263,9 +1324,7 @@ class _CurrentHeaders(Dependency[dict[str, str]]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        if self._task_http_headers_cv_token is not None:
-            _task_http_headers.reset(self._task_http_headers_cv_token)
-            self._task_http_headers_cv_token = None
+        pass
 
 
 def CurrentHeaders() -> dict[str, str]:
@@ -1398,6 +1457,10 @@ class Progress(Dependency["Progress"]):
     This allows tools to use Progress() regardless of whether they're called
     immediately or as background tasks, and regardless of whether pydocket
     is installed.
+
+    The shared default instance (``Progress()``) acts as a stateless factory.
+    ``__aenter__`` creates a fresh ``Progress`` per invocation so concurrent
+    tasks never share mutable state.
     """
 
     _impl: ProgressLike | None = None
@@ -1407,18 +1470,20 @@ class Progress(Dependency["Progress"]):
         if server_ref is None or server_ref() is None:
             raise RuntimeError("Progress dependency requires a FastMCP server context.")
 
+        instance = Progress()
+
         if is_docket_available():
             from docket.dependencies import Progress as DocketProgress
 
             try:
                 docket_progress = DocketProgress()
-                self._impl = await docket_progress.__aenter__()
-                return self
+                instance._impl = await docket_progress.__aenter__()
+                return instance
             except LookupError:
                 pass
 
-        self._impl = InMemoryProgress()
-        return self
+        instance._impl = InMemoryProgress()
+        return instance
 
     async def __aexit__(
         self,
@@ -1426,7 +1491,7 @@ class Progress(Dependency["Progress"]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self._impl = None
+        pass
 
     @property
     def current(self) -> int | None:
@@ -1468,21 +1533,8 @@ class Progress(Dependency["Progress"]):
 class _CurrentAccessToken(Dependency[AccessToken]):
     """Async context manager for AccessToken dependency."""
 
-    _access_token_cv_token: Token[AccessToken | None] | None = None
-
     async def __aenter__(self) -> AccessToken:
         token = get_access_token()
-
-        # If no token found and we're in a Docket worker, try restoring from
-        # Redis. This handles the case where ctx: Context is not in the
-        # function signature, so _CurrentContext never ran the restoration.
-        if token is None:
-            task_info = get_task_context()
-            if task_info is not None:
-                self._access_token_cv_token = await _restore_task_access_token(
-                    task_info.session_id, task_info.task_id
-                )
-                token = get_access_token()
 
         if token is None:
             raise RuntimeError(
@@ -1497,9 +1549,7 @@ class _CurrentAccessToken(Dependency[AccessToken]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        if self._access_token_cv_token is not None:
-            _task_access_token.reset(self._access_token_cv_token)
-            self._access_token_cv_token = None
+        pass
 
 
 def CurrentAccessToken() -> AccessToken:

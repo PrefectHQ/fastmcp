@@ -264,24 +264,13 @@ class Context:
 
         # Set current server for dependency injection (use weakref to avoid reference cycles)
         from fastmcp.server.dependencies import (
-            _current_docket,
             _current_server,
-            _current_worker,
             is_docket_available,
         )
 
         self._server_token = _current_server.set(weakref.ref(self.fastmcp))
 
-        # Set docket/worker from server instance for this request's context.
-        # This ensures ContextVars work even in ASGI environments (Lambda, FastAPI mount)
-        # where lifespan ContextVars don't propagate to request handlers.
-        server = self.fastmcp
-        if is_docket_available():
-            if server._docket is not None:
-                self._docket_token = _current_docket.set(server._docket)
-            if server._worker is not None:
-                self._worker_token = _current_worker.set(server._worker)
-        else:
+        if not is_docket_available():
             # Without docket, the lifespan won't provide a SharedContext,
             # so create one scoped to this Context for Shared() dependencies.
             self._shared_context = SharedContext()
@@ -291,19 +280,8 @@ class Context:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit the context manager and reset the most recent token."""
-        from fastmcp.server.dependencies import (
-            _current_docket,
-            _current_server,
-            _current_worker,
-        )
+        from fastmcp.server.dependencies import _current_server
 
-        # Mirror __aenter__: clean up docket/worker tokens or SharedContext
-        if hasattr(self, "_worker_token"):
-            _current_worker.reset(self._worker_token)
-            del self._worker_token
-        if hasattr(self, "_docket_token"):
-            _current_docket.reset(self._docket_token)
-            del self._docket_token
         if hasattr(self, "_shared_context"):
             await self._shared_context.__aexit__(exc_type, exc_val, exc_tb)
             del self._shared_context

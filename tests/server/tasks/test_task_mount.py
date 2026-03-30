@@ -10,6 +10,8 @@ import asyncio
 import mcp.types as mt
 import pytest
 from docket import Docket
+from mcp.types import Tool as MCPTool
+from mcp.types import ToolExecution
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -17,6 +19,7 @@ from fastmcp.prompts.base import PromptResult
 from fastmcp.resources.base import ResourceResult
 from fastmcp.server.dependencies import CurrentDocket, CurrentFastMCP
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.server.providers.proxy import ProxyTool
 from fastmcp.server.tasks import TaskConfig
 from fastmcp.tools.base import ToolResult
 
@@ -570,6 +573,21 @@ class TestMountedTaskMetadata:
         assert parent_mcp_tool.execution is not None
         assert child_mcp_tool.execution.taskSupport == "optional"
         assert parent_mcp_tool.execution.taskSupport == "optional"
+
+    async def test_proxy_tool_preserves_execution_metadata(self):
+        """ProxyTool.from_mcp_tool should propagate execution.taskSupport (#3569)."""
+        mcp_tool = MCPTool(
+            name="remote_task_tool",
+            description="A remote tool that supports tasks",
+            inputSchema={"type": "object", "properties": {}},
+            execution=ToolExecution(taskSupport="optional"),
+        )
+
+        proxy = ProxyTool.from_mcp_tool(lambda: None, mcp_tool)
+        result = proxy.to_mcp_tool(name=proxy.name)
+
+        assert result.execution is not None
+        assert result.execution.taskSupport == "optional"
 
 
 class TestMountedTaskConfigModes:

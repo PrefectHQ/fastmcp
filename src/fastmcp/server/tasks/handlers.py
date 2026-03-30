@@ -5,7 +5,6 @@ Handles queuing tool/prompt/resource executions to Docket as background tasks.
 
 from __future__ import annotations
 
-import json
 import uuid
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -17,10 +16,11 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 
 from fastmcp.server.dependencies import (
     _current_docket,
-    get_access_token,
     get_context,
-    get_http_headers,
     register_task_server,
+    register_task_snapshot,
+    save_task_snapshot,
+    snapshot_task_context,
 )
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.tasks.keys import build_task_key
@@ -78,7 +78,10 @@ async def submit_to_docket(
     except RuntimeError:
         session_id = "internal"
 
-    docket = _current_docket.get()
+    # Check server instance first (works in ASGI where lifespan ContextVars
+    # don't propagate), then fall back to ContextVar (needed for mounted
+    # children whose parent owns the Docket)
+    docket = ctx.fastmcp._docket or _current_docket.get()
     if docket is None:
         raise McpError(
             ErrorData(
@@ -111,36 +114,18 @@ async def submit_to_docket(
     poll_interval_key = docket.key(
         f"fastmcp:task:{session_id}:{server_task_id}:poll_interval"
     )
-    origin_request_id_key = docket.key(
-        f"fastmcp:task:{session_id}:{server_task_id}:origin_request_id"
-    )
     poll_interval_ms = int(component.task_config.poll_interval.total_seconds() * 1000)
-    origin_request_id = (
-        str(ctx.request_context.request_id) if ctx.request_context is not None else None
-    )
 
-    # Snapshot the current access token (if any) for background task access (#3095)
-    access_token = get_access_token()
-    access_token_key = docket.key(
-        f"fastmcp:task:{session_id}:{server_task_id}:access_token"
-    )
-    http_headers = get_http_headers(include_all=True)
-    http_headers_key = docket.key(
-        f"fastmcp:task:{session_id}:{server_task_id}:http_headers"
-    )
+    # Snapshot all context (access token, headers, origin request ID) as a single key
+    snapshot = snapshot_task_context()
 
     async with docket.redis() as redis:
         await redis.set(task_meta_key, task_key, ex=ttl_seconds)
         await redis.set(created_at_key, created_at.isoformat(), ex=ttl_seconds)
         await redis.set(poll_interval_key, str(poll_interval_ms), ex=ttl_seconds)
-        if origin_request_id is not None:
-            await redis.set(origin_request_id_key, origin_request_id, ex=ttl_seconds)
-        if access_token is not None:
-            await redis.set(
-                access_token_key, access_token.model_dump_json(), ex=ttl_seconds
-            )
-        if http_headers:
-            await redis.set(http_headers_key, json.dumps(http_headers), ex=ttl_seconds)
+
+    await save_task_snapshot(docket, session_id, server_task_id, snapshot, ttl_seconds)
+    register_task_snapshot(server_task_id, snapshot)
 
     # Register session for Context access in background workers (SEP-1686)
     # This enables elicitation/sampling from background tasks via weakref

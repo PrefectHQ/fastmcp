@@ -6,10 +6,16 @@ no mocking of Redis, Docket, or session internals.
 """
 
 import asyncio
+import json
+from datetime import datetime, timezone
 from typing import cast
+from unittest.mock import patch
 
 import pytest
 from mcp import ServerSession
+from mcp.server.auth.middleware.auth_context import auth_context_var
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from pydantic import BaseModel
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -17,8 +23,16 @@ from fastmcp.client.elicitation import ElicitResult
 from fastmcp.dependencies import CurrentDocket
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.context import Context
-from fastmcp.server.dependencies import get_access_token
-from fastmcp.server.elicitation import AcceptedElicitation, DeclinedElicitation
+from fastmcp.server.dependencies import (
+    TaskContextSnapshot,
+    _task_snapshot,
+    get_access_token,
+)
+from fastmcp.server.elicitation import (
+    AcceptedElicitation,
+    CancelledElicitation,
+    DeclinedElicitation,
+)
 from fastmcp.server.tasks.elicitation import handle_task_input
 
 # =============================================================================
@@ -119,10 +133,6 @@ class TestElicitFailFast:
         This test patches ONLY push_notification — all other components
         (Docket, Redis, session) are real via the memory:// backend.
         """
-        from unittest.mock import patch
-
-        from fastmcp.server.elicitation import CancelledElicitation
-
         mcp = FastMCP("failfast-test")
         elicit_started = asyncio.Event()
         captured: dict[str, object] = {}
@@ -250,16 +260,16 @@ class TestBackgroundTaskIntegration:
             assert isinstance(origin, str)
             assert origin != ""
 
-            key = docket.key(
-                f"fastmcp:task:{ctx.session_id}:{ctx.task_id}:origin_request_id"
-            )
+            # Verify the snapshot in Redis contains the same value
+            key = docket.key(f"fastmcp:task:{ctx.session_id}:{ctx.task_id}:snapshot")
             async with docket.redis() as redis:
                 raw = await redis.get(key)
 
             assert raw is not None
             if isinstance(raw, bytes):
                 raw = raw.decode()
-            assert str(raw) == origin
+            snapshot = json.loads(raw)
+            assert snapshot["origin_request_id"] == origin
             return "ok"
 
         async with Client(mcp) as client:
@@ -311,7 +321,6 @@ class TestBackgroundTaskIntegration:
 
     async def test_elicit_with_pydantic_model(self):
         """E2E: tool elicits structured Pydantic input via elicitation_handler."""
-        from pydantic import BaseModel
 
         class UserInfo(BaseModel):
             name: str
@@ -371,9 +380,6 @@ class TestAccessTokenInBackgroundTasks:
 
     async def test_token_round_trips_through_background_task(self):
         """E2E: token set at submit time is available inside the worker."""
-        from mcp.server.auth.middleware.auth_context import auth_context_var
-        from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
-
         mcp = FastMCP("token-roundtrip")
 
         @mcp.tool(task=True)
@@ -412,46 +418,48 @@ class TestAccessTokenInBackgroundTasks:
 
     async def test_expired_token_returns_none(self):
         """get_access_token() returns None when task token has expired."""
-        from datetime import datetime, timezone
-
-        from fastmcp.server.dependencies import _task_access_token
-
         expired = AccessToken(
             token="expired-jwt",
             client_id="test-client",
             scopes=["read"],
             expires_at=int(datetime.now(timezone.utc).timestamp()) - 3600,
         )
-        _task_access_token.set(expired)
+        _task_snapshot.set(
+            TaskContextSnapshot(
+                access_token_json=expired.model_dump_json(),
+            )
+        )
         assert get_access_token() is None
 
     async def test_valid_token_with_future_expiry(self):
         """get_access_token() returns token when expiry is in the future."""
-        from datetime import datetime, timezone
-
-        from fastmcp.server.dependencies import _task_access_token
-
         valid = AccessToken(
             token="valid-jwt",
             client_id="test-client",
             scopes=["read"],
             expires_at=int(datetime.now(timezone.utc).timestamp()) + 3600,
         )
-        _task_access_token.set(valid)
+        _task_snapshot.set(
+            TaskContextSnapshot(
+                access_token_json=valid.model_dump_json(),
+            )
+        )
         result = get_access_token()
         assert result is not None
         assert result.token == "valid-jwt"
 
     async def test_token_without_expiry_always_valid(self):
         """get_access_token() returns token when no expires_at is set."""
-        from fastmcp.server.dependencies import _task_access_token
-
         no_expiry = AccessToken(
             token="eternal-jwt",
             client_id="test-client",
             scopes=["read"],
         )
-        _task_access_token.set(no_expiry)
+        _task_snapshot.set(
+            TaskContextSnapshot(
+                access_token_json=no_expiry.model_dump_json(),
+            )
+        )
         result = get_access_token()
         assert result is not None
         assert result.token == "eternal-jwt"
