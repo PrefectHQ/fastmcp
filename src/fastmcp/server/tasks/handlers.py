@@ -18,7 +18,6 @@ from fastmcp.server.dependencies import (
     _current_docket,
     get_context,
     register_task_server,
-    register_task_snapshot,
     save_task_snapshot,
     snapshot_task_context,
 )
@@ -125,7 +124,6 @@ async def submit_to_docket(
         await redis.set(poll_interval_key, str(poll_interval_ms), ex=ttl_seconds)
 
     await save_task_snapshot(docket, session_id, server_task_id, snapshot, ttl_seconds)
-    register_task_snapshot(server_task_id, snapshot)
 
     # Register session for Context access in background workers (SEP-1686)
     # This enables elicitation/sampling from background tasks via weakref

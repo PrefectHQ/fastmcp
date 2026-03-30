@@ -12,6 +12,10 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.dependencies import Progress
 from fastmcp.server.context import Context
+from fastmcp.server.dependencies import (
+    get_access_token,
+    get_http_headers,
+)
 
 
 async def test_concurrent_foreground_tools_with_context():
@@ -166,3 +170,44 @@ async def test_progress_aenter_returns_fresh_instances():
     assert len(progress_instances) == 2
     assert progress_instances[0] is not progress_instances[1]
     assert progress_instances[0]._impl is not progress_instances[1]._impl
+
+
+async def test_sync_context_functions_work_in_background_without_deps():
+    """Sync functions like get_http_request() should work in background tasks
+    even when the tool declares no Context or CurrentRequest dependency.
+
+    This exercises the sync Redis fallback path (_get_task_snapshot_sync →
+    _load_snapshot_sync_redis) which must work with both memory:// (fakeredis)
+    and real Redis backends.
+    """
+    mcp = FastMCP("test")
+
+    @mcp.tool(task=True)
+    async def bare_sync_access() -> dict[str, str]:
+        headers = get_http_headers()
+        return {"has_headers": str(bool(headers))}
+
+    async with Client(mcp) as client:
+        task = await client.call_tool("bare_sync_access", {}, task=True)
+        result = await task.result()
+        assert result.data == {"has_headers": "False"}
+
+
+async def test_sync_context_functions_work_in_background_with_context():
+    """Sync functions work via ContextVar when _CurrentContext loads the snapshot."""
+    mcp = FastMCP("test")
+
+    @mcp.tool(task=True)
+    async def context_sync_access(ctx: Context) -> dict[str, str]:
+        headers = get_http_headers()
+        token = get_access_token()
+        return {
+            "has_headers": str(bool(headers)),
+            "has_token": str(token is not None),
+            "is_background": str(ctx.is_background_task),
+        }
+
+    async with Client(mcp) as client:
+        task = await client.call_tool("context_sync_access", {}, task=True)
+        result = await task.result()
+        assert result.data["is_background"] == "True"

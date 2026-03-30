@@ -77,7 +77,6 @@ __all__ = [
     "is_docket_available",
     "register_task_server",
     "register_task_session",
-    "register_task_snapshot",
     "require_docket",
     "resolve_dependencies",
     "save_task_snapshot",
@@ -316,27 +315,12 @@ async def load_task_snapshot(
         return None
 
 
-# --- In-memory snapshot transfer buffer for sync access ---
-# Populated at submission time (same process), consumed on first access by the
-# worker. Entries are popped (not just read), so the dict only holds entries
-# for the brief window between submission and execution — bounded by task
-# concurrency, not by history.
-
-_task_snapshots: dict[str, TaskContextSnapshot] = {}
-
-
-def register_task_snapshot(task_id: str, snapshot: TaskContextSnapshot) -> None:
-    """Store a snapshot for sync access by in-process workers."""
-    _task_snapshots[task_id] = snapshot
-
-
 def _get_task_snapshot_sync() -> TaskContextSnapshot | None:
     """Get the task snapshot using only sync operations.
 
     Fallback chain:
     1. ContextVar (set by async deps like _CurrentContext)
-    2. In-memory transfer buffer (same-process workers, consumed on access)
-    3. Sync Redis GET (out-of-process workers)
+    2. Sync Redis GET (works for both memory:// and real Redis)
     """
     snapshot = _task_snapshot.get()
     if snapshot is not None:
@@ -346,20 +330,18 @@ def _get_task_snapshot_sync() -> TaskContextSnapshot | None:
     if task_info is None:
         return None
 
-    # Same-process: pop from transfer buffer and cache in ContextVar
-    snapshot = _task_snapshots.pop(task_info.task_id, None)
-    if snapshot is not None:
-        _task_snapshot.set(snapshot)
-        return snapshot
-
-    # Out-of-process: sync Redis fallback
     return _load_snapshot_sync_redis(task_info.session_id, task_info.task_id)
 
 
 def _load_snapshot_sync_redis(
     session_id: str, task_id: str
 ) -> TaskContextSnapshot | None:
-    """Load snapshot via sync Redis for out-of-process workers."""
+    """Load snapshot via sync Redis.
+
+    For memory:// backends (fakeredis), shares the same FakeServer instance
+    that Docket uses so data is accessible. For real Redis, creates a standard
+    sync connection.
+    """
     try:
         from docket.dependencies import current_docket as _docket_cv
 
@@ -371,10 +353,8 @@ def _load_snapshot_sync_redis(
 
     key = docket.key(f"fastmcp:task:{session_id}:{task_id}:snapshot")
     try:
-        from redis import Redis
-
-        with Redis.from_url(str(docket.url)) as sync_redis:
-            raw = sync_redis.get(key)
+        sync_redis = _get_sync_redis(docket.url)
+        raw = sync_redis.get(key)
         if raw is None:
             return None
         if isinstance(raw, bytes):
@@ -398,6 +378,26 @@ def _load_snapshot_sync_redis(
             exc_info=True,
         )
         return None
+
+
+def _get_sync_redis(url: str) -> Any:
+    """Get a sync Redis client that shares the same backend as Docket.
+
+    For memory:// URLs, connects to the same fakeredis FakeServer instance
+    so data written by the async Docket client is visible. For real Redis
+    URLs, creates a standard sync connection.
+    """
+    from docket._redis import get_memory_server
+
+    server = get_memory_server(url)
+    if server is not None:
+        from fakeredis import FakeRedis
+
+        return FakeRedis(server=server)
+
+    from redis import Redis
+
+    return Redis.from_url(url)
 
 
 # --- Docket availability check ---
