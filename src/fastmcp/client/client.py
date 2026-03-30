@@ -383,8 +383,14 @@ class Client(
         return self._session_state.initialize_result
 
     def set_roots(self, roots: RootsList | RootsHandler) -> None:
-        """Set the roots for the client. This does not automatically call `send_roots_list_changed`."""
+        """Set the roots for the client. This does not automatically call `send_roots_list_changed`.
+        Also updates the live session's _list_roots_callback if connected."""
         self._session_kwargs["list_roots_callback"] = create_roots_callback(roots)
+        # Update live session if connected
+        if hasattr(self, "_session_state") and getattr(self._session_state, "session", None) is not None:
+            session = getattr(self._session_state, "session", None)
+            if session is not None and hasattr(session, "_list_roots_callback"):
+                session._list_roots_callback = self._session_kwargs["list_roots_callback"]
 
     def set_sampling_callback(
         self,
