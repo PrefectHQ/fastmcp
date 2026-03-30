@@ -32,6 +32,7 @@ class TestClientRoots:
             # Confirm new roots are reflected
             result2 = await client.call_tool("list_roots", {})
             assert result2.data == ["file://b/", "file://c/"]
+
     @pytest.mark.parametrize("roots", [["x"], ["x", "y"]])
     async def test_invalid_roots(self, fastmcp_server: FastMCP, roots: list[str]):
         """

@@ -387,10 +387,15 @@ class Client(
         Also updates the live session's _list_roots_callback if connected."""
         self._session_kwargs["list_roots_callback"] = create_roots_callback(roots)
         # Update live session if connected
-        if hasattr(self, "_session_state") and getattr(self._session_state, "session", None) is not None:
+        if (
+            hasattr(self, "_session_state")
+            and getattr(self._session_state, "session", None) is not None
+        ):
             session = getattr(self._session_state, "session", None)
             if session is not None and hasattr(session, "_list_roots_callback"):
-                session._list_roots_callback = self._session_kwargs["list_roots_callback"]
+                session._list_roots_callback = self._session_kwargs[
+                    "list_roots_callback"
+                ]
 
     def set_sampling_callback(
         self,
