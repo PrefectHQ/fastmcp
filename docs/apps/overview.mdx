@@ -29,13 +29,7 @@ This installs [Prefab UI](https://prefab.prefect.io), the component library used
 </Note>
 
 <Warning>
-FastMCP pins a **minimum** version of `prefab-ui` for compatibility but intentionally does **not** pin an upper bound. Prefab is a rapidly evolving library with frequent breaking changes. If you are deploying to production, you **must** pin `prefab-ui` to a specific version in your own dependencies:
-
-```
-prefab-ui==0.15.0
-```
-
-Without a pin, a `pip install --upgrade` or fresh deploy could pull a newer Prefab version that changes component APIs, breaking your app. FastMCP's minimum ensures baseline compatibility; your pin ensures stability.
+FastMCP pins a **minimum** version of `prefab-ui` for compatibility but intentionally does **not** pin an upper bound. Prefab is a rapidly evolving library with frequent breaking changes. If you are deploying to production, you **must** pin `prefab-ui` to a specific version in your own dependencies. Without a pin, a fresh deploy could pull a newer Prefab version that changes component APIs, breaking your app.
 </Warning>
 
 ## Which Approach?
