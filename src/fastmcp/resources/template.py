@@ -441,8 +441,8 @@ class FunctionResourceTemplate(ResourceTemplate):
     def register_with_docket(self, docket: Docket) -> None:
         """Register this template with docket for background execution.
 
-        FunctionResourceTemplate registers its wrapped function which handles
-        all DI resolution internally (same as tools, resources, and prompts).
+        self.fn is already wrapped by without_injected_parameters at creation
+        time, so DI params are hidden and FastMCP resolves them internally.
         """
         if not self.task_config.supports_tasks():
             return

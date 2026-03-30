@@ -306,7 +306,7 @@ async def load_task_snapshot(
         )
         _task_snapshot.set(snapshot)
         return snapshot
-    except Exception:
+    except (OSError, json.JSONDecodeError, KeyError, ValueError):
         _logger.warning(
             "Failed to load task snapshot for %s:%s",
             session_id,
@@ -390,7 +390,7 @@ def _load_snapshot_sync_redis(
         )
         _task_snapshot.set(snapshot)
         return snapshot
-    except Exception:
+    except (OSError, json.JSONDecodeError, KeyError, ValueError, ImportError):
         _logger.warning(
             "Failed to load task snapshot via sync Redis for %s:%s",
             session_id,
@@ -1059,20 +1059,17 @@ class _CurrentContext(Dependency["Context"]):
 
 
 class _OptionalCurrentContext(Dependency["Context | None"]):
-    """Context dependency that degrades to None when no context is active.
+    """Context dependency that returns None instead of raising when no context
+    is active. Used for ``ctx: Context = None`` parameter patterns.
 
-    This is implemented as a wrapper (composition), not a subclass of
-    `_CurrentContext`, to avoid overriding `__aenter__` with an incompatible
-    return type.
-
-    The shared default instance is stateless. A fresh _CurrentContext is
-    created per invocation and delegates cleanup via its own __aexit__.
+    Delegates entirely to ``_CurrentContext`` — just catches the RuntimeError.
+    Cleanup is handled by ``_CurrentContext.__aexit__`` reading from the
+    task-local ContextVar.
     """
 
     async def __aenter__(self) -> Context | None:
-        inner = _CurrentContext()
         try:
-            return await inner.__aenter__()
+            return await _CurrentContext().__aenter__()
         except RuntimeError as exc:
             if "No active context found" in str(exc):
                 return None
@@ -1084,9 +1081,11 @@ class _OptionalCurrentContext(Dependency["Context | None"]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        # Delegate to _CurrentContext's __aexit__ which reads from ContextVar
-        inner = _CurrentContext()
-        await inner.__aexit__(exc_type, exc_value, traceback)
+        from fastmcp.server.context import _current_context
+
+        ctx = _current_context.get()
+        if ctx is not None and ctx.is_background_task:
+            await _CurrentContext().__aexit__(exc_type, exc_value, traceback)
 
 
 def CurrentContext() -> Context:
@@ -1447,20 +1446,14 @@ class InMemoryProgress:
 
 
 class Progress(Dependency["Progress"]):
-    """FastMCP Progress dependency that works in both server and worker contexts.
+    """Progress dependency that works in both server and worker contexts.
 
-    Handles three execution modes:
-    - In Docket worker: Uses the execution's progress (observable via Redis)
-    - In FastMCP server with Docket: Falls back to in-memory progress
-    - In FastMCP server without Docket: Uses in-memory progress
+    In a Docket worker, delegates to the execution's Redis-backed progress
+    (observable across processes). Otherwise, uses in-memory tracking.
 
-    This allows tools to use Progress() regardless of whether they're called
-    immediately or as background tasks, and regardless of whether pydocket
-    is installed.
-
-    The shared default instance (``Progress()``) acts as a stateless factory.
-    ``__aenter__`` creates a fresh ``Progress`` per invocation so concurrent
-    tasks never share mutable state.
+    The shared default instance acts as a stateless factory — ``__aenter__``
+    creates a fresh ``Progress`` per invocation so concurrent tasks never
+    share mutable state.
     """
 
     _impl: ProgressLike | None = None
@@ -1473,11 +1466,10 @@ class Progress(Dependency["Progress"]):
         instance = Progress()
 
         if is_docket_available():
-            from docket.dependencies import Progress as DocketProgress
-
             try:
-                docket_progress = DocketProgress()
-                instance._impl = await docket_progress.__aenter__()
+                from docket.dependencies import current_execution
+
+                instance._impl = current_execution.get().progress
                 return instance
             except LookupError:
                 pass
