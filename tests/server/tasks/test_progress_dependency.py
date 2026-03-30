@@ -108,6 +108,40 @@ async def test_progress_status_message_in_background_task():
         assert result.content[0].text == "done"
 
 
+async def test_progress_concurrent_tasks_no_interference():
+    """Test that concurrent tasks sharing a Progress() default don't interfere.
+
+    Regression test for #3656: when multiple Docket background tasks run
+    concurrently, one task's __aexit__ (setting _impl = None) caused
+    AssertionError in other tasks still calling progress.increment().
+    """
+    import asyncio
+
+    mcp = FastMCP("test")
+    shared_progress = Progress()
+
+    @mcp.tool()
+    async def slow_tool(progress: Progress = shared_progress) -> str:
+        await progress.set_total(5)
+        for _ in range(5):
+            await asyncio.sleep(0.01)
+            await progress.increment()
+        return "done"
+
+    async with Client(mcp) as client:
+        # Run 4 concurrent calls — previously this would raise
+        # AssertionError when a fast task's __aexit__ cleared _impl
+        # while slower tasks were still using it.
+        results = await asyncio.gather(
+            *[client.call_tool("slow_tool", {}) for _ in range(4)]
+        )
+        from mcp.types import TextContent
+
+        for result in results:
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "done"
+
+
 async def test_inmemory_progress_state():
     """Test that in-memory progress stores and returns state correctly."""
     mcp = FastMCP("test")

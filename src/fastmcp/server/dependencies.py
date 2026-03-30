@@ -1387,6 +1387,17 @@ class InMemoryProgress:
         self._message = message
 
 
+_progress_impl: ContextVar[ProgressLike | None] = ContextVar(
+    "_progress_impl", default=None
+)
+
+# Stores the ContextVar token per-context so __aexit__ can properly reset
+# the ContextVar without clobbering other concurrent tasks.
+_progress_cv_token: ContextVar[Token[ProgressLike | None] | None] = ContextVar(
+    "_progress_cv_token", default=None
+)
+
+
 class Progress(Dependency["Progress"]):
     """FastMCP Progress dependency that works in both server and worker contexts.
 
@@ -1398,26 +1409,35 @@ class Progress(Dependency["Progress"]):
     This allows tools to use Progress() regardless of whether they're called
     immediately or as background tasks, and regardless of whether pydocket
     is installed.
-    """
 
-    _impl: ProgressLike | None = None
+    Uses ContextVars to store the implementation so that concurrent Docket
+    background tasks sharing the same default ``Progress()`` instance do not
+    interfere with each other.  Previously, ``_impl`` was stored as an
+    instance attribute, so one task's ``__aexit__`` (setting ``_impl = None``)
+    would cause ``AssertionError`` in other still-running tasks (#3656).
+    """
 
     async def __aenter__(self) -> Progress:
         server_ref = _current_server.get()
         if server_ref is None or server_ref() is None:
             raise RuntimeError("Progress dependency requires a FastMCP server context.")
 
+        impl: ProgressLike | None = None
+
         if is_docket_available():
             from docket.dependencies import Progress as DocketProgress
 
             try:
                 docket_progress = DocketProgress()
-                self._impl = await docket_progress.__aenter__()
-                return self
+                impl = await docket_progress.__aenter__()
             except LookupError:
                 pass
 
-        self._impl = InMemoryProgress()
+        if impl is None:
+            impl = InMemoryProgress()
+
+        cv_token = _progress_impl.set(impl)
+        _progress_cv_token.set(cv_token)
         return self
 
     async def __aexit__(
@@ -1426,40 +1446,42 @@ class Progress(Dependency["Progress"]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self._impl = None
+        cv_token = _progress_cv_token.get()
+        if cv_token is not None:
+            _progress_impl.reset(cv_token)
+            _progress_cv_token.set(None)
+
+    def _get_impl(self) -> ProgressLike:
+        impl = _progress_impl.get()
+        assert impl is not None, "Progress must be used as a dependency"
+        return impl
 
     @property
     def current(self) -> int | None:
         """Current progress value."""
-        assert self._impl is not None, "Progress must be used as a dependency"
-        return self._impl.current
+        return self._get_impl().current
 
     @property
     def total(self) -> int:
         """Total/target progress value."""
-        assert self._impl is not None, "Progress must be used as a dependency"
-        return self._impl.total
+        return self._get_impl().total
 
     @property
     def message(self) -> str | None:
         """Current progress message."""
-        assert self._impl is not None, "Progress must be used as a dependency"
-        return self._impl.message
+        return self._get_impl().message
 
     async def set_total(self, total: int) -> None:
         """Set the total/target value for progress tracking."""
-        assert self._impl is not None, "Progress must be used as a dependency"
-        await self._impl.set_total(total)
+        await self._get_impl().set_total(total)
 
     async def increment(self, amount: int = 1) -> None:
         """Atomically increment the current progress value."""
-        assert self._impl is not None, "Progress must be used as a dependency"
-        await self._impl.increment(amount)
+        await self._get_impl().increment(amount)
 
     async def set_message(self, message: str | None) -> None:
         """Update the progress status message."""
-        assert self._impl is not None, "Progress must be used as a dependency"
-        await self._impl.set_message(message)
+        await self._get_impl().set_message(message)
 
 
 # --- Access Token dependency ---
