@@ -76,9 +76,8 @@ async def submit_to_docket(
     except RuntimeError:
         session_id = "internal"
 
-    # Check server instance first (works in ASGI where lifespan ContextVars
-    # don't propagate), then fall back to ContextVar (needed for mounted
-    # children whose parent owns the Docket)
+    # Try the server's own Docket first; fall back to the ContextVar for
+    # mounted children (whose parent server owns the Docket instance).
     docket = ctx.fastmcp._docket or _current_docket.get()
     if docket is None:
         raise McpError(
