@@ -79,8 +79,6 @@ __all__ = [
     "register_task_session",
     "require_docket",
     "resolve_dependencies",
-    "save_task_snapshot",
-    "snapshot_task_context",
     "transform_context_annotations",
     "without_injected_parameters",
 ]
@@ -224,54 +222,76 @@ class TaskContextSnapshot:
     http_headers: dict[str, str] | None = None
     origin_request_id: str | None = None
 
+    @classmethod
+    def capture(cls) -> TaskContextSnapshot:
+        """Capture current context for background task execution."""
+        access_token = get_access_token()
+        ctx = get_context()
+        request_context = ctx.request_context
+        return cls(
+            access_token_json=(
+                access_token.model_dump_json() if access_token else None
+            ),
+            http_headers=get_http_headers(include_all=True) or None,
+            origin_request_id=(
+                str(request_context.request_id) if request_context is not None else None
+            ),
+        )
+
+    @classmethod
+    def from_json(cls, raw: str | bytes) -> TaskContextSnapshot:
+        """Deserialize from JSON stored in Redis."""
+        if isinstance(raw, bytes):
+            raw = raw.decode()
+        parsed = json.loads(raw)
+        headers = parsed.get("http_headers")
+        if isinstance(headers, dict):
+            headers = {str(k).lower(): str(v) for k, v in headers.items()}
+        return cls(
+            access_token_json=parsed.get("access_token_json"),
+            http_headers=headers,
+            origin_request_id=parsed.get("origin_request_id"),
+        )
+
+    def to_json(self) -> str:
+        """Serialize to JSON for Redis storage."""
+        return json.dumps(
+            {
+                "access_token_json": self.access_token_json,
+                "http_headers": self.http_headers,
+                "origin_request_id": self.origin_request_id,
+            }
+        )
+
+    async def save(
+        self,
+        docket: Docket,
+        session_id: str,
+        task_id: str,
+        ttl_seconds: int,
+    ) -> None:
+        """Store this snapshot as a single Redis key."""
+        key = docket.key(f"fastmcp:task:{session_id}:{task_id}:snapshot")
+        async with docket.redis() as redis:
+            await redis.set(key, self.to_json(), ex=ttl_seconds)
+
 
 _task_snapshot: ContextVar[TaskContextSnapshot | None] = ContextVar(
     "task_snapshot", default=None
 )
 
 
-def snapshot_task_context() -> TaskContextSnapshot:
-    """Capture current context for background task execution."""
-    access_token = get_access_token()
-    ctx = get_context()
-    request_context = ctx.request_context
-    origin_request_id = (
-        str(request_context.request_id) if request_context is not None else None
-    )
-    return TaskContextSnapshot(
-        access_token_json=access_token.model_dump_json() if access_token else None,
-        http_headers=get_http_headers(include_all=True) or None,
-        origin_request_id=origin_request_id,
-    )
+def _redis_key(session_id: str, task_id: str) -> str:
+    """Build the Redis key suffix for a task snapshot."""
+    return f"fastmcp:task:{session_id}:{task_id}:snapshot"
 
 
-async def save_task_snapshot(
-    docket: Docket,
-    session_id: str,
-    task_id: str,
-    snapshot: TaskContextSnapshot,
-    ttl_seconds: int,
-) -> None:
-    """Store a task context snapshot as a single Redis key."""
-    key = docket.key(f"fastmcp:task:{session_id}:{task_id}:snapshot")
-    data = json.dumps(
-        {
-            "access_token_json": snapshot.access_token_json,
-            "http_headers": snapshot.http_headers,
-            "origin_request_id": snapshot.origin_request_id,
-        }
-    )
-    async with docket.redis() as redis:
-        await redis.set(key, data, ex=ttl_seconds)
-
-
-async def load_task_snapshot(
+async def _load_task_snapshot_async(
     session_id: str, task_id: str
 ) -> TaskContextSnapshot | None:
-    """Load task context snapshot from Redis and set the ContextVar.
+    """Load task context snapshot from Redis (async) and set the ContextVar.
 
-    Returns the snapshot, or None if not found. Idempotent — if already
-    loaded, returns the cached value from the ContextVar.
+    Idempotent — returns the cached value if already loaded.
     """
     existing = _task_snapshot.get()
     if existing is not None:
@@ -286,23 +306,12 @@ async def load_task_snapshot(
     if docket is None:
         return None
 
-    key = docket.key(f"fastmcp:task:{session_id}:{task_id}:snapshot")
     try:
         async with docket.redis() as redis:
-            raw = await redis.get(key)
+            raw = await redis.get(docket.key(_redis_key(session_id, task_id)))
         if raw is None:
             return None
-        if isinstance(raw, bytes):
-            raw = raw.decode()
-        parsed = json.loads(raw)
-        headers = parsed.get("http_headers")
-        if isinstance(headers, dict):
-            headers = {str(k).lower(): str(v) for k, v in headers.items()}
-        snapshot = TaskContextSnapshot(
-            access_token_json=parsed.get("access_token_json"),
-            http_headers=headers,
-            origin_request_id=parsed.get("origin_request_id"),
-        )
+        snapshot = TaskContextSnapshot.from_json(raw)
         _task_snapshot.set(snapshot)
         return snapshot
     except (OSError, json.JSONDecodeError, KeyError, ValueError):
@@ -330,10 +339,10 @@ def _get_task_snapshot_sync() -> TaskContextSnapshot | None:
     if task_info is None:
         return None
 
-    return _load_snapshot_sync_redis(task_info.session_id, task_info.task_id)
+    return _load_task_snapshot_sync(task_info.session_id, task_info.task_id)
 
 
-def _load_snapshot_sync_redis(
+def _load_task_snapshot_sync(
     session_id: str, task_id: str
 ) -> TaskContextSnapshot | None:
     """Load snapshot via sync Redis.
@@ -351,23 +360,12 @@ def _load_snapshot_sync_redis(
     if docket is None:
         return None
 
-    key = docket.key(f"fastmcp:task:{session_id}:{task_id}:snapshot")
     try:
         sync_redis = _get_sync_redis(docket.url)
-        raw = sync_redis.get(key)
+        raw = sync_redis.get(docket.key(_redis_key(session_id, task_id)))
         if raw is None:
             return None
-        if isinstance(raw, bytes):
-            raw = raw.decode()
-        parsed = json.loads(raw)
-        headers = parsed.get("http_headers")
-        if isinstance(headers, dict):
-            headers = {str(k).lower(): str(v) for k, v in headers.items()}
-        snapshot = TaskContextSnapshot(
-            access_token_json=parsed.get("access_token_json"),
-            http_headers=headers,
-            origin_request_id=parsed.get("origin_request_id"),
-        )
+        snapshot = TaskContextSnapshot.from_json(raw)
         _task_snapshot.set(snapshot)
         return snapshot
     except (OSError, json.JSONDecodeError, KeyError, ValueError, ImportError):
@@ -1026,7 +1024,9 @@ class _CurrentContext(Dependency["Context"]):
             server = get_server()
 
             # Load unified snapshot (sets _task_snapshot ContextVar)
-            snapshot = await load_task_snapshot(task_info.session_id, task_info.task_id)
+            snapshot = await _load_task_snapshot_async(
+                task_info.session_id, task_info.task_id
+            )
             origin_request_id = snapshot.origin_request_id if snapshot else None
 
             ctx = Context(

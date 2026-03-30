@@ -15,11 +15,10 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from fastmcp.server.dependencies import (
+    TaskContextSnapshot,
     _current_docket,
     get_context,
     register_task_server,
-    save_task_snapshot,
-    snapshot_task_context,
 )
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.tasks.keys import build_task_key
@@ -116,14 +115,14 @@ async def submit_to_docket(
     poll_interval_ms = int(component.task_config.poll_interval.total_seconds() * 1000)
 
     # Snapshot all context (access token, headers, origin request ID) as a single key
-    snapshot = snapshot_task_context()
+    snapshot = TaskContextSnapshot.capture()
 
     async with docket.redis() as redis:
         await redis.set(task_meta_key, task_key, ex=ttl_seconds)
         await redis.set(created_at_key, created_at.isoformat(), ex=ttl_seconds)
         await redis.set(poll_interval_key, str(poll_interval_ms), ex=ttl_seconds)
 
-    await save_task_snapshot(docket, session_id, server_task_id, snapshot, ttl_seconds)
+    await snapshot.save(docket, session_id, server_task_id, ttl_seconds)
 
     # Register session for Context access in background workers (SEP-1686)
     # This enables elicitation/sampling from background tasks via weakref
