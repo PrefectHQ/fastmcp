@@ -248,6 +248,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         valid_scopes: list[str] | None = None,
         # PKCE configuration
         forward_pkce: bool = True,
+        # Resource indicator (RFC 8707)
+        forward_resource: bool = True,
         # Token endpoint authentication
         token_endpoint_auth_method: str | None = None,
         # Extra parameters to forward to authorization endpoint
@@ -382,6 +384,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         # PKCE configuration
         self._forward_pkce: bool = forward_pkce
+        # Resource indicator (RFC 8707)
+        self._forward_resource: bool = forward_resource
 
         # Token endpoint authentication
         self._token_endpoint_auth_method: str | None = token_endpoint_auth_method
