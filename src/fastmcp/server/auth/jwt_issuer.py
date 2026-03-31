@@ -246,7 +246,7 @@ class JWTIssuer:
 
             # Validate expiration
             exp = payload.get("exp")
-            if exp and exp < time.time():
+            if exp is not None and exp < time.time():
                 logger.debug("Token expired")
                 raise JoseError("Token has expired")
 
