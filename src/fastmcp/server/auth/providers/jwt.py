@@ -421,7 +421,7 @@ class JWTVerifier(TokenVerifier):
 
             # Validate expiration
             exp = claims.get("exp")
-            if exp and exp < time.time():
+            if exp is not None and exp < time.time():
                 self.logger.debug(
                     "Token validation failed: expired token for client %s", client_id
                 )
@@ -501,7 +501,7 @@ class JWTVerifier(TokenVerifier):
                 token=token,
                 client_id=str(client_id),
                 scopes=scopes,
-                expires_at=int(exp) if exp else None,
+                expires_at=int(exp) if exp is not None else None,
                 claims=claims,
             )
 
