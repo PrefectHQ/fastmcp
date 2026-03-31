@@ -173,7 +173,7 @@ class GoogleTokenVerifier(TokenVerifier):
 
                 access_token = AccessToken(
                     token=token,
-                    client_id=aud,
+                    client_id=sub,
                     scopes=token_scopes,
                     expires_at=expires_at,
                     claims={

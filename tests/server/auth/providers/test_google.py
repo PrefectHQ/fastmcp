@@ -249,7 +249,7 @@ class TestGoogleTokenVerifier:
     USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
     async def test_valid_token_openid_only(self, httpx_mock: HTTPXMock):
-        """A token with only openid scope is accepted; client_id comes from 'aud'."""
+        """A token with only openid scope is accepted; client_id comes from 'sub'."""
         httpx_mock.add_response(
             url=_TOKENINFO_RE,
             json={
@@ -268,7 +268,7 @@ class TestGoogleTokenVerifier:
         result = await verifier.verify_token("valid-token")
 
         assert result is not None
-        assert result.client_id == "123.apps.googleusercontent.com"
+        assert result.client_id == "12345"
         assert result.scopes == ["openid"]
         assert result.expires_at is not None
         assert result.claims["sub"] == "12345"
@@ -305,7 +305,7 @@ class TestGoogleTokenVerifier:
         result = await verifier.verify_token("valid-token")
 
         assert result is not None
-        assert result.client_id == "123.apps.googleusercontent.com"
+        assert result.client_id == "12345"
         assert "openid" in result.scopes
         assert "https://www.googleapis.com/auth/userinfo.email" in result.scopes
         assert "https://www.googleapis.com/auth/userinfo.profile" in result.scopes
