@@ -28,7 +28,7 @@
   "description": "The fast, Pythonic way to build MCP servers and clients.",
   "errors": {
     "404": {
-      "description": "You\u2019ve wandered outside the context.",
+      "description": "You’ve wandered outside the context.",
       "redirect": false,
       "title": "Don't panic."
     }
