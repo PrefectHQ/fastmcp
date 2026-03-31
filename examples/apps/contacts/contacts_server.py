@@ -8,8 +8,7 @@ Demonstrates the full FastMCPApp stack:
 - Manual form construction with the context-manager pattern
 
 Usage:
-    uv run python contacts_server.py               # HTTP (default)
-    uv run python contacts_server.py --stdio        # stdio for MCP clients
+    uv run python contacts_server.py
 """
 
 from __future__ import annotations
@@ -32,7 +31,7 @@ from prefab_ui.components import (
     Separator,
     Text,
 )
-from prefab_ui.rx import RESULT
+from prefab_ui.rx import ERROR, RESULT, STATE
 from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP, FastMCPApp
@@ -123,7 +122,7 @@ def contact_manager() -> PrefabApp:
                     SetState("contacts", RESULT),
                     ShowToast("Contact saved!", variant="success"),
                 ],
-                on_error=ShowToast("{{ $error }}", variant="error"),
+                on_error=ShowToast(ERROR, variant="error"),
             ),
         )
 
@@ -133,17 +132,14 @@ def contact_manager() -> PrefabApp:
         with Form(
             on_submit=CallTool(
                 search_contacts,
-                arguments={"query": "{{ query }}"},
+                arguments={"query": STATE.query},
                 on_success=SetState("contacts", RESULT),
             )
         ):
             Input(name="query", placeholder="Search by name or email...")
             Button("Search")
 
-    return PrefabApp(
-        view=view,
-        state={"contacts": list(_contacts)},
-    )
+    return PrefabApp(view=view, state={"contacts": list(_contacts)})
 
 
 mcp = FastMCP("Contacts Server", providers=[app])

@@ -1,6 +1,7 @@
 """Request director using openapi-core for stateless HTTP request building."""
 
-from typing import Any
+import json as _json
+from typing import Any, ClassVar
 from urllib.parse import quote, urljoin
 
 import httpx
@@ -8,9 +9,20 @@ from jsonschema_path import SchemaPath
 
 from fastmcp.utilities.logging import get_logger
 
-from .models import HTTPRoute
+from .models import HTTPRoute, ParameterInfo
 
 logger = get_logger(__name__)
+
+
+def _query_scalar_to_str(value: Any) -> str:
+    """Convert a scalar to its query-string representation.
+
+    Booleans are lowercased to match JSON/OpenAPI conventions (true/false)
+    rather than Python's str(True) → "True".
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 class RequestDirector:
@@ -50,24 +62,45 @@ class RequestDirector:
             f"Unflattened - path: {path_params}, query: {query_params}, headers: {header_params}, body: {body}"
         )
 
-        # Step 2: Build base URL with path parameters
+        # Step 2: Serialize query parameters according to OpenAPI style/explode
+        query_params = self._serialize_query_params(route, query_params)
+
+        # Step 3: Build base URL with path parameters
         url = self._build_url(route.path, path_params, base_url)
 
-        # Step 3: Prepare request data
+        # Step 4: Prepare request data
         method: str = route.method.upper()
         params = query_params if query_params else None
         headers = header_params if header_params else None
         json_body: dict[str, Any] | list[Any] | None = None
         content: str | bytes | None = None
 
-        # Step 4: Handle request body
+        # Step 5: Determine the declared content type from the OpenAPI spec
+        declared_content_type: str | None = None
+        if route.request_body and route.request_body.content_schema:
+            declared_content_type = next(iter(route.request_body.content_schema))
+
+        # Step 6: Handle request body
         if body is not None:
             if isinstance(body, dict | list):
-                json_body = body
+                if (
+                    declared_content_type is not None
+                    and declared_content_type != "application/json"
+                    and "json" in declared_content_type
+                ):
+                    # JSON-compatible types like application/json-patch+json
+                    # or application/merge-patch+json need an explicit
+                    # Content-Type header since httpx's json= always
+                    # sets application/json.
+                    content = _json.dumps(body, allow_nan=False).encode("utf-8")
+                    headers = dict(headers) if headers else {}
+                    headers["Content-Type"] = declared_content_type
+                else:
+                    json_body = body
             else:
                 content = body
 
-        # Step 5: Create httpx.Request
+        # Step 7: Create httpx.Request
         return httpx.Request(
             method=method,
             url=url,
@@ -190,6 +223,76 @@ class RequestDirector:
                 body = body_props
 
         return path_params, query_params, header_params, body
+
+    # Delimiter per OpenAPI style when explode=false
+    _STYLE_DELIMITERS: ClassVar[dict[str, str]] = {
+        "form": ",",
+        "spaceDelimited": " ",
+        "pipeDelimited": "|",
+    }
+
+    def _serialize_query_params(
+        self,
+        route: HTTPRoute,
+        query_params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Serialize query parameter values according to their OpenAPI style/explode settings.
+
+        By default (style=form, explode=true), list values are passed through as-is
+        so httpx repeats the key (e.g. values=a&values=b). When explode=false,
+        list values are joined with the style-appropriate delimiter:
+          - form (default): comma  (values=a,b)
+          - pipeDelimited:  pipe   (values=a|b)
+          - spaceDelimited: space  (values=a%20b)
+        """
+        if not query_params:
+            return query_params
+
+        # Build a lookup from openapi_name -> ParameterInfo for query params
+        param_lookup: dict[str, ParameterInfo] = {
+            p.name: p for p in route.parameters if p.location == "query"
+        }
+
+        serialized: dict[str, Any] = {}
+        for key, value in query_params.items():
+            param_info = param_lookup.get(key)
+            if param_info is not None:
+                explode = param_info.explode if param_info.explode is not None else True
+                if isinstance(value, dict):
+                    if not value:
+                        continue
+                    if explode:
+                        # form,explode=true on objects: each property becomes
+                        # a separate query parameter.
+                        # e.g. {"R": 100, "G": 200} → R=100&G=200
+                        for k, v in value.items():
+                            serialized[_query_scalar_to_str(k)] = _query_scalar_to_str(
+                                v
+                            )
+                    else:
+                        style = param_info.style or "form"
+                        delimiter = self._STYLE_DELIMITERS.get(style, ",")
+                        # form,explode=false on objects: key,value pairs
+                        # e.g. {"R": 100, "G": 200} → "R,100,G,200"
+                        parts: list[str] = []
+                        for k, v in value.items():
+                            parts.append(_query_scalar_to_str(k))
+                            parts.append(_query_scalar_to_str(v))
+                        serialized[key] = delimiter.join(parts)
+                    continue
+                if not explode:
+                    style = param_info.style or "form"
+                    delimiter = self._STYLE_DELIMITERS.get(style, ",")
+                    if isinstance(value, list):
+                        if not value:
+                            continue
+                        serialized[key] = delimiter.join(
+                            _query_scalar_to_str(v) for v in value
+                        )
+                        continue
+            serialized[key] = value
+        return serialized
 
     def _build_url(
         self, path_template: str, path_params: dict[str, Any], base_url: str

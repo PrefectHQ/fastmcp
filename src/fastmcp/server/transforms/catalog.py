@@ -53,11 +53,11 @@ from fastmcp.server.transforms import Transform
 from fastmcp.utilities.versions import dedupe_with_versions
 
 if TYPE_CHECKING:
-    from fastmcp.prompts.prompt import Prompt
-    from fastmcp.resources.resource import Resource
+    from fastmcp.prompts.base import Prompt
+    from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
     from fastmcp.server.context import Context
-    from fastmcp.tools.tool import Tool
+    from fastmcp.tools.base import Tool
 
 _instance_counter = itertools.count()
 

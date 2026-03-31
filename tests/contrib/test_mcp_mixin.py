@@ -348,7 +348,7 @@ class TestMCPMixinKwargsSync:
     """Verify that the valid-kwarg sets stay in sync with from_function signatures."""
 
     def test_tool_valid_kwargs_match_from_function(self):
-        from fastmcp.tools.tool import Tool
+        from fastmcp.tools.base import Tool
 
         expected = frozenset(
             p for p in inspect.signature(Tool.from_function).parameters if p != "fn"
@@ -356,7 +356,7 @@ class TestMCPMixinKwargsSync:
         assert _TOOL_VALID_KWARGS == expected
 
     def test_resource_valid_kwargs_match_from_function(self):
-        from fastmcp.resources.resource import Resource
+        from fastmcp.resources.base import Resource
 
         expected = frozenset(
             p
@@ -366,7 +366,7 @@ class TestMCPMixinKwargsSync:
         assert _RESOURCE_VALID_KWARGS == expected
 
     def test_prompt_valid_kwargs_match_from_function(self):
-        from fastmcp.prompts.prompt import Prompt
+        from fastmcp.prompts.base import Prompt
 
         expected = frozenset(
             p for p in inspect.signature(Prompt.from_function).parameters if p != "fn"

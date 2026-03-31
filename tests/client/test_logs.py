@@ -224,7 +224,7 @@ class TestDefaultLogHandler:
 
                 # Create log message with data as a string
                 log_msg = LoggingMessageNotificationParams(
-                    level=level,  # type: ignore[arg-type]
+                    level=level,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                     logger="test.logger",
                     data=msg,
                 )

@@ -197,6 +197,67 @@ class TestDereferenceRefs:
         assert country["default"] == "US"
         assert "$defs" not in result
 
+    def test_strips_discriminator_mapping_after_inlining(self):
+        """Discriminator.mapping refs dangle after $defs are inlined (#3679)."""
+        schema = {
+            "$defs": {
+                "IdentifyPerson": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"const": "identify", "type": "string"},
+                        "name": {"type": "string"},
+                    },
+                    "required": ["action", "name"],
+                },
+                "PersonDelete": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"const": "delete", "type": "string"},
+                    },
+                    "required": ["action"],
+                },
+            },
+            "anyOf": [
+                {"$ref": "#/$defs/IdentifyPerson"},
+                {"$ref": "#/$defs/PersonDelete"},
+            ],
+            "discriminator": {
+                "mapping": {
+                    "identify": "#/$defs/IdentifyPerson",
+                    "delete": "#/$defs/PersonDelete",
+                },
+                "propertyName": "action",
+            },
+        }
+        result = dereference_refs(schema)
+
+        assert "$defs" not in result
+        assert "discriminator" not in result
+        # The anyOf variants should be inlined with their const values intact
+        assert len(result["anyOf"]) == 2
+        actions = {v["properties"]["action"]["const"] for v in result["anyOf"]}
+        assert actions == {"identify", "delete"}
+
+    def test_preserves_property_named_discriminator(self):
+        """A field *named* 'discriminator' inside properties must survive."""
+        schema = {
+            "$defs": {
+                "Inner": {
+                    "type": "object",
+                    "properties": {
+                        "discriminator": {"type": "string"},
+                    },
+                },
+            },
+            "properties": {
+                "item": {"$ref": "#/$defs/Inner"},
+            },
+        }
+        result = dereference_refs(schema)
+
+        assert "$defs" not in result
+        assert "discriminator" in result["properties"]["item"]["properties"]
+
 
 class TestCompressSchema:
     """Tests for the compress_schema function."""
@@ -359,6 +420,35 @@ class TestCompressSchema:
         # But title metadata should be removed
         assert "title" not in compressed["properties"]["name"]
         assert "title" not in compressed["properties"]["title"]
+
+    def test_title_pruning_preserves_title_property_when_type_property_exists(self):
+        """Regression test for #3576: properties dict containing both 'title' and
+        'type' as parameter names caused the heuristic to treat 'title' as schema
+        metadata and strip the entire property definition."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "dashboard_id": {"type": "string", "title": "Dashboard Id"},
+                "title": {"type": "string", "title": "Title"},
+                "type": {"type": "string", "title": "Type", "default": "vis"},
+            },
+            "required": ["dashboard_id", "title"],
+        }
+
+        compressed = compress_schema(schema, prune_titles=True)
+
+        # All three properties must survive
+        assert "dashboard_id" in compressed["properties"]
+        assert "title" in compressed["properties"]
+        assert "type" in compressed["properties"]
+
+        # 'title' is still required
+        assert "title" in compressed["required"]
+
+        # But metadata title strings inside each property schema are removed
+        assert "title" not in compressed["properties"]["dashboard_id"]
+        assert "title" not in compressed["properties"]["title"]
+        assert "title" not in compressed["properties"]["type"]
 
     def test_title_pruning_with_nested_properties(self):
         """Test that nested property structures are handled correctly."""

@@ -29,6 +29,7 @@ from pydantic import (
 from pydantic.json_schema import SkipJsonSchema
 from typing_extensions import Self
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
@@ -105,14 +106,14 @@ class ResourceContent(pydantic.BaseModel):
                 uri=AnyUrl(uri) if isinstance(uri, str) else uri,
                 text=self.content,
                 mimeType=self.mime_type or "text/plain",
-                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
             )
         else:
             return mcp.types.BlobResourceContents(
                 uri=AnyUrl(uri) if isinstance(uri, str) else uri,
                 blob=base64.b64encode(self.content).decode(),
                 mimeType=self.mime_type or "application/octet-stream",
-                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
             )
 
 
@@ -203,7 +204,7 @@ class ResourceResult(pydantic.BaseModel):
         mcp_contents = [item.to_mcp_resource_contents(uri) for item in self.contents]
         return mcp.types.ReadResourceResult(
             contents=mcp_contents,
-            _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+            _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
         )
 
 
@@ -387,7 +388,7 @@ class Resource(FastMCPComponent):
             annotations=overrides.get("annotations", self.annotations),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta()
-            ),
+            ),  # ty:ignore[unknown-argument]
         )
 
     def __repr__(self) -> str:
@@ -456,7 +457,7 @@ def __getattr__(name: str) -> Any:
             warnings.warn(
                 f"Importing {name} from fastmcp.resources.resource is deprecated. "
                 f"Import from fastmcp.resources.function_resource instead.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         from fastmcp.resources import function_resource

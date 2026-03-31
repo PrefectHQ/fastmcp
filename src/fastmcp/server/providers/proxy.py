@@ -37,15 +37,15 @@ from fastmcp.client.transports import ClientTransportT
 from fastmcp.exceptions import ResourceError, ToolError
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Message, Prompt, PromptResult
-from fastmcp.prompts.prompt import PromptArgument
+from fastmcp.prompts.base import PromptArgument
 from fastmcp.resources import Resource, ResourceTemplate
-from fastmcp.resources.resource import ResourceContent, ResourceResult
+from fastmcp.resources.base import ResourceContent, ResourceResult
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.server import FastMCP
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.components import FastMCPComponent, get_fastmcp_metadata
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
@@ -308,7 +308,7 @@ class ProxyTemplate(ResourceTemplate):
     @classmethod
     def from_mcp_template(  # type: ignore[override]
         cls, client_factory: ClientFactoryT, mcp_template: mcp.types.ResourceTemplate
-    ) -> ProxyTemplate:
+    ) -> ProxyTemplate:  # ty:ignore[invalid-method-override]
         """Factory method to create a ProxyTemplate from a raw MCP template schema."""
 
         return cls(
@@ -445,7 +445,7 @@ class ProxyPrompt(Prompt):
             task_config=TaskConfig(mode="forbidden"),
         )
 
-    async def render(self, arguments: dict[str, Any]) -> PromptResult:  # type: ignore[override]
+    async def render(self, arguments: dict[str, Any]) -> PromptResult:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """Render the prompt by making a call through the client."""
         backend_name = self._backend_name or self.name
         with client_span(
@@ -594,7 +594,7 @@ class ProxyProvider(Provider):
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     # -------------------------------------------------------------------------
     # Resource methods
@@ -631,7 +631,7 @@ class ProxyProvider(Provider):
             matching = [r for r in matching if version.matches(r.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     # -------------------------------------------------------------------------
     # Resource template methods
@@ -668,7 +668,7 @@ class ProxyProvider(Provider):
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     # -------------------------------------------------------------------------
     # Prompt methods
@@ -705,7 +705,7 @@ class ProxyProvider(Provider):
             matching = [p for p in matching if version.matches(p.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     # -------------------------------------------------------------------------
     # Task methods
@@ -1042,7 +1042,7 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
         super().__init__(*args, **kwargs)
         self._caches: dict[ServerSession, Client[ClientTransportT]] = {}
 
-    async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # type: ignore[override]
+    async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """The stateful proxy client will be forced disconnected when the session is exited.
 
         So we do nothing here.

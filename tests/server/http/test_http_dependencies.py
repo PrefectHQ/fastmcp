@@ -2,10 +2,11 @@ import json
 
 import pytest
 from mcp.types import TextContent, TextResourceContents
+from starlette.requests import Request
 
 from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
-from fastmcp.server.dependencies import get_http_request
+from fastmcp.server.dependencies import CurrentHeaders, CurrentRequest, get_http_request
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.tests import run_server_async
 
@@ -166,3 +167,53 @@ async def test_get_http_headers_excludes_content_type(sse_server: str):
             # Custom headers should be included
             assert "x-custom-header" in headers
             assert headers["x-custom-header"] == "should-be-included"
+
+
+async def test_background_task_can_read_snapshotted_request_headers():
+    """Background tools can still access request headers via get_http_request()."""
+    server = FastMCP()
+
+    @server.tool(task=True)
+    async def check_request_header() -> str:
+        request = get_http_request()
+        return request.headers.get("x-tenant-id", "missing")
+
+    async with run_server_async(server, transport="sse") as url:
+        async with Client(
+            transport=SSETransport(url, headers={"X-Tenant-ID": "tenant-123"})
+        ) as client:
+            task = await client.call_tool("check_request_header", task=True)
+            result = await task.result()
+            assert result.data == "tenant-123"
+
+
+async def test_background_task_current_http_dependencies_restore_headers():
+    """CurrentHeaders/CurrentRequest work in task workers without explicit Context."""
+    server = FastMCP()
+
+    @server.tool(task=True)
+    async def check_headers(
+        headers: dict[str, str] = CurrentHeaders(),
+        request: Request = CurrentRequest(),
+    ) -> dict[str, str]:
+        return {
+            "authorization": headers.get("authorization", "missing"),
+            "tenant": request.headers.get("x-tenant-id", "missing"),
+        }
+
+    async with run_server_async(server, transport="sse") as url:
+        async with Client(
+            transport=SSETransport(
+                url,
+                headers={
+                    "Authorization": "Bearer tenant-token",
+                    "X-Tenant-ID": "tenant-456",
+                },
+            )
+        ) as client:
+            task = await client.call_tool("check_headers", task=True)
+            result = await task.result()
+            assert result.data == {
+                "authorization": "Bearer tenant-token",
+                "tenant": "tenant-456",
+            }

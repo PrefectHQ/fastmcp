@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing_extensions import TypedDict
 
 from fastmcp import Context, FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 
 def _normalize_anyof_order(schema):

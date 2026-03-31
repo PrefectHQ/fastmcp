@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import json
 import logging
 import weakref
+from collections import OrderedDict
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from contextvars import ContextVar, Token
@@ -72,6 +74,7 @@ __all__ = [
     "get_task_context",
     "get_task_session",
     "is_docket_available",
+    "register_task_server",
     "register_task_session",
     "require_docket",
     "resolve_dependencies",
@@ -174,10 +177,39 @@ def get_task_session(session_id: str) -> ServerSession | None:
 _current_server: ContextVar[weakref.ref[FastMCP] | None] = ContextVar(
     "server", default=None
 )
+
+# --- Background task server map ---
+# Maps task_id → server weakref so background workers can resolve the correct
+# server for mounted-child tasks. Follows the same pattern as _task_sessions.
+# Populated in submit_to_docket() where the child server is in context;
+# consulted in get_server() when running inside a Docket worker.
+
+_task_server_map: OrderedDict[str, weakref.ref[FastMCP]] = OrderedDict()
+_TASK_SERVER_MAP_MAX_SIZE = 10_000
+
+
+def register_task_server(task_id: str, server: FastMCP) -> None:
+    """Register the server for a background task.
+
+    Called at task-submission time (inside the child server's call_tool
+    context) so that background workers can resolve CurrentFastMCP() and
+    ctx.fastmcp to the child server for mounted tasks.
+
+    The map is bounded to avoid unbounded growth in long-lived servers.
+    Evicted entries fall back to the ContextVar (parent server).
+    """
+    _task_server_map[task_id] = weakref.ref(server)
+    while len(_task_server_map) > _TASK_SERVER_MAP_MAX_SIZE:
+        _task_server_map.popitem(last=False)
+
+
 _current_docket: ContextVar[Docket | None] = ContextVar("docket", default=None)
 _current_worker: ContextVar[Worker | None] = ContextVar("worker", default=None)
 _task_access_token: ContextVar[AccessToken | None] = ContextVar(
     "task_access_token", default=None
+)
+_task_http_headers: ContextVar[dict[str, str] | None] = ContextVar(
+    "task_http_headers", default=None
 )
 
 
@@ -218,7 +250,7 @@ def require_docket(feature: str) -> None:
 try:
     from docket.dependencies import Progress as DocketProgress
 except ImportError:
-    DocketProgress = None  # type: ignore[assignment]
+    DocketProgress = None  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
 
 
 # --- Context utilities ---
@@ -336,10 +368,10 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
         # Insert 'self' at the beginning of our new params
         self_param = next(iter(func_sig.parameters.values()))  # Should be 'self'
         new_sig = func_sig.replace(parameters=[self_param, *new_params])
-        fn.__func__.__signature__ = new_sig  # type: ignore[union-attr]
+        fn.__func__.__signature__ = new_sig  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
     else:
         new_sig = sig.replace(parameters=new_params)
-        fn.__signature__ = new_sig  # type: ignore[attr-defined]
+        fn.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[invalid-assignment]
 
     # Clear caches that may have cached the old signature
     # This ensures get_dependency_parameters and without_injected_parameters
@@ -378,12 +410,28 @@ def get_context() -> Context:
 def get_server() -> FastMCP:
     """Get the current FastMCP server instance directly.
 
+    In a background-task worker, checks the task-server map first so that
+    mounted-child tasks resolve to the child server (not the parent that
+    started the worker).
+
     Returns:
         The active FastMCP server
 
     Raises:
         RuntimeError: If no server in context
     """
+    # In a task context, prefer the task-specific server mapping.
+    # This handles mounted-child tasks where _current_server is the parent.
+    task_info = get_task_context()
+    if task_info is not None:
+        ref = _task_server_map.get(task_info.task_id)
+        if ref is not None:
+            server = ref()
+            if server is not None:
+                return server
+            # Server was garbage collected, clean up
+            _task_server_map.pop(task_info.task_id, None)
+
     server_ref = _current_server.get()
     if server_ref is None:
         raise RuntimeError("No FastMCP server instance in context")
@@ -397,6 +445,8 @@ def get_http_request() -> Request:
     """Get the current HTTP request.
 
     Tries MCP SDK's request_ctx first, then falls back to FastMCP's HTTP context.
+    In background tasks, returns a synthetic request populated with the
+    snapshotted headers from the originating HTTP request.
     """
     # Try MCP SDK's request_ctx first (set during normal MCP request handling)
     request = None
@@ -407,6 +457,29 @@ def get_http_request() -> Request:
     # This is needed during `on_initialize` middleware where request_ctx isn't set yet
     if request is None:
         request = _current_http_request.get()
+
+    # In Docket workers, restore a minimal request from the snapshotted headers.
+    if request is None:
+        task_headers = _task_http_headers.get()
+        if task_headers:
+            request = Request(
+                {
+                    "type": "http",
+                    "http_version": "1.1",
+                    "method": "POST",
+                    "scheme": "http",
+                    "path": "/",
+                    "raw_path": b"/",
+                    "query_string": b"",
+                    "headers": [
+                        (name.encode("latin-1"), value.encode("latin-1"))
+                        for name, value in task_headers.items()
+                    ],
+                    "client": None,
+                    "server": None,
+                    "root_path": "",
+                }
+            )
 
     if request is None:
         raise RuntimeError("No active HTTP request found.")
@@ -606,7 +679,7 @@ def without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]:
     except Exception:
         resolved_hints = getattr(fn, "__annotations__", {})
 
-    wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
+    wrapper.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     wrapper.__annotations__ = {
         k: v for k, v in resolved_hints.items() if k not in exclude and k != "return"
     }
@@ -771,6 +844,38 @@ async def _restore_task_access_token(
     return None
 
 
+async def _restore_task_http_headers(
+    session_id: str, task_id: str
+) -> Token[dict[str, str] | None] | None:
+    """Restore the HTTP header snapshot from Redis into a ContextVar."""
+    docket = _current_docket.get()
+    if docket is None:
+        return None
+
+    headers_key = docket.key(f"fastmcp:task:{session_id}:{task_id}:http_headers")
+    try:
+        async with docket.redis() as redis:
+            headers_data = await redis.get(headers_key)
+        if headers_data is None:
+            return None
+        if isinstance(headers_data, bytes):
+            headers_data = headers_data.decode()
+        restored = json.loads(str(headers_data))
+        if not isinstance(restored, dict):
+            return None
+        return _task_http_headers.set(
+            {str(name).lower(): str(value) for name, value in restored.items()}
+        )
+    except Exception:
+        _logger.warning(
+            "Failed to restore HTTP headers for task %s:%s",
+            session_id,
+            task_id,
+            exc_info=True,
+        )
+    return None
+
+
 async def _restore_task_origin_request_id(session_id: str, task_id: str) -> str | None:
     """Restore the origin request ID snapshot for a background task.
 
@@ -811,6 +916,7 @@ class _CurrentContext(Dependency["Context"]):
 
     _context: Context | None = None
     _access_token_cv_token: Token[AccessToken | None] | None = None
+    _http_headers_cv_token: Token[dict[str, str] | None] | None = None
 
     async def __aenter__(self) -> Context:
         from fastmcp.server.context import Context, _current_context
@@ -845,6 +951,11 @@ class _CurrentContext(Dependency["Context"]):
                 task_info.session_id, task_info.task_id
             )
 
+            # Restore HTTP headers snapshot from Redis (#3631)
+            self._http_headers_cv_token = await _restore_task_http_headers(
+                task_info.session_id, task_info.task_id
+            )
+
             return self._context
 
         # Neither foreground nor background context available
@@ -865,6 +976,10 @@ class _CurrentContext(Dependency["Context"]):
         if self._access_token_cv_token is not None:
             _task_access_token.reset(self._access_token_cv_token)
             self._access_token_cv_token = None
+        # Clean up HTTP headers ContextVar
+        if self._http_headers_cv_token is not None:
+            _task_http_headers.reset(self._http_headers_cv_token)
+            self._http_headers_cv_token = None
         # Clean up if we created a context for background task
         if self._context is not None:
             await self._context.__aexit__(exc_type, exc_value, traceback)
@@ -1037,13 +1152,7 @@ class _CurrentFastMCP(Dependency["FastMCP"]):
     """Async context manager for FastMCP server dependency."""
 
     async def __aenter__(self) -> FastMCP:
-        server_ref = _current_server.get()
-        if server_ref is None:
-            raise RuntimeError("No FastMCP server instance in context")
-        server = server_ref()
-        if server is None:
-            raise RuntimeError("FastMCP server instance is no longer available")
-        return server
+        return get_server()
 
     async def __aexit__(
         self,
@@ -1082,8 +1191,20 @@ def CurrentFastMCP() -> FastMCP:
 class _CurrentRequest(Dependency[Request]):
     """Async context manager for HTTP Request dependency."""
 
+    _task_http_headers_cv_token: Token[dict[str, str] | None] | None = None
+
     async def __aenter__(self) -> Request:
-        return get_http_request()
+        try:
+            return get_http_request()
+        except RuntimeError:
+            task_info = get_task_context()
+            if task_info is None:
+                raise
+            if _task_http_headers.get() is None:
+                self._task_http_headers_cv_token = await _restore_task_http_headers(
+                    task_info.session_id, task_info.task_id
+                )
+            return get_http_request()
 
     async def __aexit__(
         self,
@@ -1091,7 +1212,9 @@ class _CurrentRequest(Dependency[Request]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        pass
+        if self._task_http_headers_cv_token is not None:
+            _task_http_headers.reset(self._task_http_headers_cv_token)
+            self._task_http_headers_cv_token = None
 
 
 def CurrentRequest() -> Request:
@@ -1123,7 +1246,15 @@ def CurrentRequest() -> Request:
 class _CurrentHeaders(Dependency[dict[str, str]]):
     """Async context manager for HTTP Headers dependency."""
 
+    _task_http_headers_cv_token: Token[dict[str, str] | None] | None = None
+
     async def __aenter__(self) -> dict[str, str]:
+        if _task_http_headers.get() is None:
+            task_info = get_task_context()
+            if task_info is not None:
+                self._task_http_headers_cv_token = await _restore_task_http_headers(
+                    task_info.session_id, task_info.task_id
+                )
         return get_http_headers(include={"authorization"})
 
     async def __aexit__(
@@ -1132,7 +1263,9 @@ class _CurrentHeaders(Dependency[dict[str, str]]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        pass
+        if self._task_http_headers_cv_token is not None:
+            _task_http_headers.reset(self._task_http_headers_cv_token)
+            self._task_http_headers_cv_token = None
 
 
 def CurrentHeaders() -> dict[str, str]:

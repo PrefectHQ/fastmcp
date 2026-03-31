@@ -15,10 +15,10 @@ from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.tasks.handlers import submit_to_docket
 
 if TYPE_CHECKING:
-    from fastmcp.prompts.prompt import Prompt
-    from fastmcp.resources.resource import Resource
+    from fastmcp.prompts.base import Prompt
+    from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
-    from fastmcp.tools.tool import Tool
+    from fastmcp.tools.base import Tool
 
 TaskType = Literal["tool", "resource", "template", "prompt"]
 

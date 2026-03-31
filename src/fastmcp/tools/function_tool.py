@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import warnings
 from collections.abc import Callable
@@ -18,23 +19,28 @@ from typing import (
 )
 
 import anyio
-import mcp.types
 from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, Icon, ToolAnnotations, ToolExecution
+from mcp.types import ErrorData, Icon, ToolAnnotations
 from pydantic import Field
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
-from fastmcp.server.dependencies import without_injected_parameters
+from fastmcp.server.dependencies import (
+    _restore_task_http_headers,
+    _task_http_headers,
+    get_task_context,
+    without_injected_parameters,
+)
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
-from fastmcp.tools.tool import (
+from fastmcp.tools.base import (
     Tool,
     ToolResult,
     ToolResultSerializerType,
 )
+from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -90,24 +96,6 @@ class ToolMeta:
 class FunctionTool(Tool):
     fn: SkipJsonSchema[Callable[..., Any]]
     return_type: Annotated[SkipJsonSchema[Any], Field(exclude=True)] = None
-
-    def to_mcp_tool(
-        self,
-        **overrides: Any,
-    ) -> mcp.types.Tool:
-        """Convert the FastMCP tool to an MCP tool.
-
-        Extends the base implementation to add task execution mode if enabled.
-        """
-        # Get base MCP tool from parent
-        mcp_tool = super().to_mcp_tool(**overrides)
-
-        # Add task execution mode per SEP-1686
-        # Only set execution if not overridden and task execution is supported
-        if self.task_config.supports_tasks() and "execution" not in overrides:
-            mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
-
-        return mcp_tool
 
     @classmethod
     def from_function(
@@ -193,7 +181,7 @@ class FunctionTool(Tool):
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         if metadata.exclude_args and fastmcp.settings.deprecation_warnings:
@@ -201,7 +189,7 @@ class FunctionTool(Tool):
                 "The `exclude_args` parameter is deprecated as of FastMCP 2.14. "
                 "Use dependency injection with `Depends()` instead for better lifecycle management. "
                 "See https://gofastmcp.com/servers/dependency-injection#using-depends for examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
 
@@ -302,11 +290,13 @@ class FunctionTool(Tool):
         """Register this tool with docket for background execution.
 
         FunctionTool registers the underlying function, which has the user's
-        Depends parameters for docket to resolve.
+        Depends parameters for docket to resolve. The function is wrapped to
+        eagerly restore HTTP headers from Redis so that get_http_request()
+        works even without explicit dependency injection.
         """
         if not self.task_config.supports_tasks():
             return
-        docket.register(self.fn, names=[self.key])
+        docket.register(_wrap_for_task_http_headers(self.fn), names=[self.key])
 
     async def add_to_docket(
         self,
@@ -332,6 +322,34 @@ class FunctionTool(Tool):
         if task_key:
             kwargs["key"] = task_key
         return await docket.add(lookup_key, **kwargs)(**arguments)
+
+
+def _wrap_for_task_http_headers(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap a function to restore HTTP headers in background task workers.
+
+    Uses functools.wraps so docket sees the original signature for dependency
+    resolution while the wrapper eagerly populates _task_http_headers before
+    the user's function runs.
+    """
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        task_info = get_task_context()
+        token = None
+        if task_info is not None and _task_http_headers.get() is None:
+            token = await _restore_task_http_headers(
+                task_info.session_id, task_info.task_id
+            )
+        try:
+            result = fn(*args, **kwargs)
+            if inspect.isawaitable(result):
+                result = await result
+            return result
+        finally:
+            if token is not None:
+                _task_http_headers.reset(token)
+
+    return wrapper
 
 
 @overload
@@ -453,10 +471,10 @@ def tool(
             warnings.warn(
                 "decorator_mode='object' is deprecated and will be removed in a future version. "
                 "Decorators now return the original function with metadata attached.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=4,
             )
-            return create_tool(fn, tool_name)  # type: ignore[return-value]
+            return create_tool(fn, tool_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn, tool_name)
 
     if inspect.isroutine(name_or_fn):

@@ -421,11 +421,21 @@ Each settings class accepts:
 For persistence or distributed deployments, configure a different storage backend:
 
 ```python
+from pathlib import Path
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
-from key_value.aio.stores.disk import DiskStore
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1KeySanitizationStrategy,
+    FileTreeV1CollectionSanitizationStrategy,
+)
 
+cache_dir = Path("cache")
 mcp.add_middleware(ResponseCachingMiddleware(
-    cache_storage=DiskStore(directory="cache")
+    cache_storage=FileTreeStore(
+        data_directory=cache_dir,
+        key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(cache_dir),
+        collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(cache_dir),
+    )
 ))
 ```
 

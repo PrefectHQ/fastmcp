@@ -20,11 +20,13 @@ We encourage you to use LLMs to help identify bugs, write MREs, and prepare cont
 
 ## When to open a pull request
 
-**Bug fixes** — PRs are welcome for simple, well-scoped bug fixes where the problem and solution are both straightforward. "The function raises `TypeError` when passed `None` because of a missing guard" is a good candidate. If the fix requires design decisions or touches multiple subsystems, open an issue instead.
+An open issue is not an invitation to submit a PR. Issues track problems; whether and how to solve them is a separate decision. If you want to work on something, propose your approach in the issue first — especially for anything beyond a trivial fix.
+
+**Bug fixes** — PRs are welcome for simple, well-scoped bug fixes where the problem and solution are both straightforward. "The function raises `TypeError` when passed `None` because of a missing guard" is a good candidate. If the fix requires design decisions or touches multiple subsystems, open an issue with a design proposal instead.
 
 **Documentation** — Typo fixes, clarifications, and improvements to examples are always welcome as PRs.
 
-**Enhancements and features** — For changes that affect the behavior or design of the framework, please open an issue first. Maintainers will typically implement these themselves. FastMCP is opinionated, and enhancements need to reflect those opinions — not just solve the problem, but solve it in a way that's consistent with the framework's design. That's hard to do from the outside, and it's why a clear problem description is more useful than a proposed solution.
+**Enhancements and features** — We welcome enhancement PRs, but our experience is that most contributors — even when using LLMs — implement fixes that address the one instance of a problem they encountered rather than understanding why the framework produces that problem and fixing it at the right layer. This creates branching, patch-style code that's difficult to maintain and makes it impossible to reason about the framework as a coherent system. For this reason, enhancements need a design proposal in the issue before code is written. The proposal doesn't need to be long — just enough to show you've thought about how the change fits into the framework, not just how it solves your immediate case.
 
 **Integrations** — FastMCP generally does not accept PRs that add third-party integrations (custom middleware, provider-specific adapters, etc.). If you're building something for your users, ship it as a standalone package — that's a feature, not a limitation. Authentication providers are an exception, since auth is tightly coupled to the framework.
 
@@ -36,6 +38,7 @@ If you do open a PR:
 - **Keep it focused.** One logical change per PR. Don't bundle unrelated fixes or refactors.
 - **Match existing patterns.** Follow the code style, type annotation conventions, and test patterns you see in the codebase. Run `uv run prek run --all-files` before submitting.
 - **Write tests.** Bug fixes should include a test that fails without the fix. Enhancements should include tests for the new behavior.
+- **Fix the cause, not the symptom.** If the bug is that a code path skips a step, the fix should make it stop skipping that step — not add compensation elsewhere. Workaround-style fixes will be sent back for revision.
 - **Don't submit generated boilerplate.** We review every line. PRs that read like unedited LLM output — verbose descriptions, speculative changes, shotgun-style fixes — will be closed.
 
 ## What we'll close without review
@@ -47,4 +50,4 @@ To keep the project maintainable, we will close PRs that:
 - Add third-party integrations that belong in a separate package
 - Are difficult to review due to size, scope, or generated content
 
-This isn't personal. FastMCP receives a high volume of contributions and we need to focus maintainer time where it has the most impact — which is why a good issue is often the best thing you can do for the project.
+This isn't personal — contributing to a framework is different from contributing to an application. In an application, a fix that works is a good fix. In a framework, a fix that works but doesn't fit the framework's design creates maintenance burden that compounds over time. Every patch that works around a problem instead of solving it at the right layer makes the system harder for *everyone* to reason about — maintainers, contributors, and users. We hold contributions to this standard because the alternative is a codebase that's a series of patches rather than a coherent system. A good issue is often the best thing you can do for the project.

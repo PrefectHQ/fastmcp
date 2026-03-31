@@ -19,6 +19,7 @@ import fastmcp
 from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.transports.base import ClientTransport, SessionKwargs
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.utilities.timeout import normalize_timeout_to_timedelta
 
@@ -88,7 +89,7 @@ class StreamableHttpTransport(ClientTransport):
                     "The new streamable_http_client API does not support this parameter. "
                     "Use `read_timeout_seconds` in session_kwargs or configure timeout on "
                     "the httpx client via `httpx_client_factory` instead.",
-                    DeprecationWarning,
+                    FastMCPDeprecationWarning,
                     stacklevel=2,
                 )
         self.sse_read_timeout = normalize_timeout_to_timedelta(sse_read_timeout)
@@ -169,7 +170,7 @@ class StreamableHttpTransport(ClientTransport):
             http_client = self.httpx_client_factory(
                 headers=headers,
                 auth=self.auth,
-                follow_redirects=True,  # type: ignore[call-arg]
+                follow_redirects=True,  # type: ignore[call-arg]  # ty:ignore[unknown-argument]
                 **({"timeout": timeout} if timeout else {}),
             )
         elif verify_factory is not None:

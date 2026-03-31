@@ -10,7 +10,7 @@ from fastmcp.contrib.bulk_tool_caller.bulk_tool_caller import (
     CallToolRequest,
     CallToolRequestResult,
 )
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 
 class ToolException(Exception):

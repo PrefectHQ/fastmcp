@@ -3,7 +3,7 @@
 import pytest
 
 from fastmcp.server.transforms.visibility import Visibility, is_enabled
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.versions import VersionSpec
 
 

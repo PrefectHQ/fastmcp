@@ -53,7 +53,7 @@ class PingMiddleware(Middleware):
         async with self._lock:
             if session_id not in self._active_sessions:
                 # _subscription_task_group is added by MiddlewareServerSession
-                tg = session._subscription_task_group  # type: ignore[attr-defined]
+                tg = session._subscription_task_group  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
                 if tg is not None:
                     self._active_sessions.add(session_id)
                     tg.start_soon(self._ping_loop, session, session_id)

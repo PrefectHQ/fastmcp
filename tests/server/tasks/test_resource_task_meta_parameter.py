@@ -10,7 +10,7 @@ from mcp.shared.exceptions import McpError
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.resources.resource import Resource
+from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.tasks.config import TaskMeta
 

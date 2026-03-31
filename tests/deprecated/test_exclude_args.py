@@ -4,7 +4,7 @@ import pytest
 from mcp.server.session import ServerSession
 
 from fastmcp import Client, FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 
 async def test_tool_exclude_args():

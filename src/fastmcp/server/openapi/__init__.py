@@ -20,10 +20,12 @@ FastMCPOpenAPI is still available but deprecated.
 
 import warnings
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
+
 warnings.warn(
     "fastmcp.server.openapi is deprecated. "
     "Import from fastmcp.server.providers.openapi instead.",
-    DeprecationWarning,
+    FastMCPDeprecationWarning,
     stacklevel=2,
 )
 

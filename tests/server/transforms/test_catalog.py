@@ -12,7 +12,7 @@ from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
 from fastmcp.server.transforms.version_filter import VersionFilter
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.versions import VersionSpec
 
 # ---------------------------------------------------------------------------
@@ -53,7 +53,7 @@ class CatalogReader(CatalogTransform):
     def _make_reader_tool(self) -> Tool:
         transform = self
 
-        async def read_catalog(ctx: Context = None) -> list[str]:  # type: ignore[assignment]
+        async def read_catalog(ctx: Context = None) -> list[str]:  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
             """Return names of tools visible in the catalog."""
             transform.last_catalog = await transform.get_tool_catalog(ctx)
             return [t.name for t in transform.last_catalog]
@@ -81,7 +81,7 @@ class ReplacingTransform(CatalogTransform):
     def _make_synthetic_tool(self) -> Tool:
         transform = self
 
-        async def count_tools(ctx: Context = None) -> int:  # type: ignore[assignment]
+        async def count_tools(ctx: Context = None) -> int:  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
             """Return the number of real tools in the catalog."""
             catalog = await transform.get_tool_catalog(ctx)
             return len(catalog)
@@ -252,7 +252,7 @@ class TestCatalogAuth:
 
 def _extract_result(result: object) -> list[str]:
     """Extract the list of names from a call_tool ToolResult."""
-    for c in result.content:  # type: ignore[union-attr]
+    for c in result.content:  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
         if isinstance(c, TextContent):
             return ast.literal_eval(c.text)
     raise AssertionError("No text content found")

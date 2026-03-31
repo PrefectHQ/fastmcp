@@ -16,8 +16,9 @@ from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
+from fastmcp.tools.base import Tool, ToolResult, _convert_to_content
 from fastmcp.tools.function_parsing import ParsedFunction
-from fastmcp.tools.tool import Tool, ToolResult, _convert_to_content
 from fastmcp.utilities.components import _convert_set_default_none
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -26,6 +27,7 @@ from fastmcp.utilities.types import (
     NotSet,
     NotSetT,
     get_cached_typeadapter,
+    issubclass_safe,
 )
 
 logger = get_logger(__name__)
@@ -313,16 +315,7 @@ class TransformedTool(Tool):
             # If transform function returns ToolResult, respect our output_schema setting
             if isinstance(result, ToolResult):
                 if self.output_schema is None:
-                    # Check if this is from a custom function that returns ToolResult
-
-                    return_annotation = inspect.signature(self.fn).return_annotation
-                    if return_annotation is ToolResult:
-                        # Custom function returns ToolResult - preserve its content
-                        return result
-                    else:
-                        # Forwarded call with no explicit schema - preserve parent's structured content
-                        # The parent tool may have generated structured content via its own fallback logic
-                        return result
+                    return result
                 elif self.output_schema.get(
                     "type"
                 ) != "object" and not self.output_schema.get("x-fastmcp-wrap-result"):
@@ -467,7 +460,7 @@ class TransformedTool(Tool):
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         transform_args = transform_args or {}
@@ -496,11 +489,11 @@ class TransformedTool(Tool):
                 # parsed fn is not none here
                 final_output_schema = cast(ParsedFunction, parsed_fn).output_schema
                 if final_output_schema is None:
-                    # Check if function returns ToolResult - if so, don't fall back to parent
-                    return_annotation = inspect.signature(
-                        transform_fn
-                    ).return_annotation
-                    if return_annotation is ToolResult:
+                    # Check if function returns ToolResult (or subclass) - if so, don't fall back to parent.
+                    # Use parsed_fn.return_type (resolved via get_type_hints) instead of
+                    # inspect.signature, which returns strings under `from __future__ import annotations`.
+                    return_type = cast(ParsedFunction, parsed_fn).return_type
+                    if issubclass_safe(return_type, ToolResult):
                         final_output_schema = None
                     else:
                         final_output_schema = tool.output_schema

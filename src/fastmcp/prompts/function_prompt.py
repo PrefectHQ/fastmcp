@@ -24,8 +24,8 @@ from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
-from fastmcp.exceptions import PromptError
-from fastmcp.prompts.prompt import Prompt, PromptArgument, PromptResult
+from fastmcp.exceptions import FastMCPDeprecationWarning, PromptError
+from fastmcp.prompts.base import Prompt, PromptArgument, PromptResult
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (
     transform_context_annotations,
@@ -461,10 +461,10 @@ def prompt(
             warnings.warn(
                 "decorator_mode='object' is deprecated and will be removed in a future version. "
                 "Decorators now return the original function with metadata attached.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=4,
             )
-            return create_prompt(fn, prompt_name)  # type: ignore[return-value]
+            return create_prompt(fn, prompt_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn, prompt_name)
 
     if inspect.isroutine(name_or_fn):

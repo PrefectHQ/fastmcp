@@ -17,7 +17,7 @@ from fastmcp.server.dependencies import (
     transform_context_annotations,
     without_injected_parameters,
 )
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
@@ -26,6 +26,7 @@ from fastmcp.utilities.types import (
     Image,
     create_function_without_params,
     get_cached_typeadapter,
+    is_class_member_of_type,
     replace_type,
 )
 
@@ -210,6 +211,11 @@ class ParsedFunction:
             # to handle composite types like ``Column | None`` and
             # ``Annotated[PrefabApp, ...]`` by recursing into their args.
             if _PREFAB_TYPES and _contains_prefab_type(output_type):
+                output_type = _UnserializableType
+
+            # ToolResult subclasses should suppress schema generation just
+            # like ToolResult itself — replace_type only does exact matching.
+            if is_class_member_of_type(output_type, ToolResult):
                 output_type = _UnserializableType
 
             # there are a variety of types that we don't want to attempt to

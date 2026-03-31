@@ -7,7 +7,7 @@ from mcp.types import AudioContent, EmbeddedResource, ImageContent, TextContent
 from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
 from typing_extensions import TypedDict
 
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import Audio, File, Image
 
@@ -121,6 +121,34 @@ class TestToolFromFunctionOutputSchema:
 
         tool = Tool.from_function(func)
         # Image, Audio, File types don't generate output schemas since they're converted to content directly
+        assert tool.output_schema is None
+
+    async def test_tool_result_return_annotation_no_output_schema(self):
+        def func() -> ToolResult:
+            return ToolResult(content="hello")
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
+
+    async def test_tool_result_subclass_return_annotation_no_output_schema(self):
+        class MyToolResult(ToolResult):
+            def __init__(self, data: str):
+                super().__init__(structured_content={"content": data})
+
+        def func() -> MyToolResult:
+            return MyToolResult("hello")
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
+
+    async def test_optional_tool_result_subclass_no_output_schema(self):
+        class MyToolResult(ToolResult):
+            pass
+
+        def func() -> MyToolResult | None:
+            return None
+
+        tool = Tool.from_function(func)
         assert tool.output_schema is None
 
     async def test_dataclass_return_annotation(self):

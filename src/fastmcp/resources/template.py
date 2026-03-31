@@ -23,8 +23,7 @@ from pydantic import (
     validate_call,
 )
 
-from fastmcp.resources.resource import Resource, ResourceResult
-from fastmcp.server.apps import resolve_ui_mime_type
+from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (
     transform_context_annotations,
@@ -33,6 +32,7 @@ from fastmcp.server.dependencies import (
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
+from fastmcp.utilities.mime import resolve_ui_mime_type
 from fastmcp.utilities.types import get_cached_typeadapter
 
 
@@ -276,7 +276,7 @@ class ResourceTemplate(FastMCPComponent):
             annotations=overrides.get("annotations", self.annotations),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta()
-            ),
+            ),  # ty:ignore[unknown-argument]
         )
 
     @classmethod

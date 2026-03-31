@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import secrets
 import warnings
@@ -41,8 +42,14 @@ from typing_extensions import Self
 
 import fastmcp
 import fastmcp.server
+from fastmcp.apps.config import (
+    AppConfig,
+    app_config_to_meta_dict,
+    resolve_ui_mime_type,
+)
 from fastmcp.exceptions import (
     AuthorizationError,
+    FastMCPDeprecationWarning,
     FastMCPError,
     NotFoundError,
     PromptError,
@@ -52,15 +59,10 @@ from fastmcp.exceptions import (
 )
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
+from fastmcp.prompts.base import PromptResult
 from fastmcp.prompts.function_prompt import FunctionPrompt
-from fastmcp.prompts.prompt import PromptResult
-from fastmcp.resources.resource import Resource, ResourceResult
+from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.apps import (
-    AppConfig,
-    app_config_to_meta_dict,
-    resolve_ui_mime_type,
-)
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
@@ -76,8 +78,8 @@ from fastmcp.server.transforms import (
 )
 from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
 from fastmcp.utilities.logging import get_logger
@@ -98,6 +100,19 @@ if TYPE_CHECKING:
     from fastmcp.server.providers.proxy import FastMCPProxy
 
 logger = get_logger(__name__)
+
+
+# The MCP SDK warns "Tool X not listed, no validation will be performed"
+# for every call to app-only tools (hidden from list_tools by design).
+# This fires even when validate_input=False. Suppress it.
+class _SuppressUnlistedToolWarning(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "not listed, no validation" not in record.getMessage()
+
+
+logging.getLogger("mcp.server.lowlevel.server").addFilter(
+    _SuppressUnlistedToolWarning()
+)
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -167,6 +182,32 @@ def _get_auth_context() -> tuple[bool, Any]:
     return (False, get_access_token())
 
 
+def _is_model_visible(tool: Tool) -> bool:
+    """Check whether a tool should be visible to the model.
+
+    Tools registered via ``@app.tool()`` (without ``model=True``) have
+    ``meta["ui"]["visibility"] == ["app"]`` — they are callable by app UIs
+    but should not appear in the model's tool list.
+
+    Returns True (visible) when:
+    - The tool has no ``meta.ui.visibility`` (normal tools).
+    - ``"model"`` is in the visibility list (e.g. ``["model"]`` or ``["app", "model"]``).
+
+    Returns False when the visibility list exists and does not contain ``"model"``
+    (e.g. ``["app"]``).
+    """
+    meta = tool.meta
+    if not meta:
+        return True
+    ui = meta.get("ui")
+    if not isinstance(ui, dict):
+        return True
+    visibility = ui.get("visibility")
+    if not isinstance(visibility, list):
+        return True
+    return "model" in visibility
+
+
 @asynccontextmanager
 async def default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]:
     """Default lifespan context manager that does nothing.
@@ -190,7 +231,7 @@ def _lifespan_proxy(
         low_level_server: LowLevelServer[LifespanResultT],
     ) -> AsyncIterator[LifespanResultT]:
         if fastmcp_server._lifespan is default_lifespan:
-            yield {}
+            yield {}  # ty:ignore[invalid-yield]
             return
 
         if not fastmcp_server._lifespan_result_set:
@@ -199,7 +240,7 @@ def _lifespan_proxy(
                 + " Are you running the server in a way that supports lifespans? If so, please file an issue at https://github.com/PrefectHQ/fastmcp/issues."
             )
 
-        yield fastmcp_server._lifespan_result
+        yield fastmcp_server._lifespan_result  # ty:ignore[invalid-yield]
 
     return wrap
 
@@ -495,7 +536,7 @@ class FastMCP(
             warnings.warn(
                 "add_tool_transformation is deprecated. Use "
                 "server.add_transform(ToolTransform({tool_name: config})) instead.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         self.add_transform(ToolTransform({tool_name: transformation}))
@@ -511,7 +552,7 @@ class FastMCP(
                 "remove_tool_transformation is deprecated and has no effect. "
                 "Transforms are immutable once added. Use server.disable(keys=[...]) "
                 "to hide tools instead.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
 
@@ -537,9 +578,10 @@ class FastMCP(
                 )
 
             # Get all tools, apply session transforms, then filter enabled
+            # and model-visible (app-only tools are hidden from the model).
             tools = list(await super().list_tools())
             tools = await apply_session_transforms(tools)
-            tools = [t for t in tools if is_enabled(t)]
+            tools = [t for t in tools if is_enabled(t) and _is_model_visible(t)]
 
             skip_auth, token = _get_auth_context()
             authorized: list[Tool] = []
@@ -610,17 +652,18 @@ class FastMCP(
 
         # Apply session transforms to single item
         tools = await apply_session_transforms([tool])
-        if tools and is_enabled(tools[0]):
+        if tools and is_enabled(tools[0]) and _is_model_visible(tools[0]):
             return tools[0]
 
-        # The highest version is disabled. If an explicit version was requested,
-        # respect the disable. Otherwise fall back to the next-highest enabled version.
+        # The highest version is disabled (or app-only). If an explicit version
+        # was requested, respect that. Otherwise fall back to the next-highest
+        # enabled, model-visible version.
         if version is not None:
             return None
 
         all_tools = [t for t in await super().list_tools() if t.name == name]
         all_tools = list(await apply_session_transforms(all_tools))
-        enabled = [t for t in all_tools if is_enabled(t)]
+        enabled = [t for t in all_tools if is_enabled(t) and _is_model_visible(t)]
 
         skip_auth, token = _get_auth_context()
         authorized: list[Tool] = []
@@ -1093,18 +1136,15 @@ class FastMCP(
             with server_span(
                 f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
-                # Try normal provider resolution first (applies transforms,
-                # visibility, auth).  Fall back to the global key registry
-                # so that FastMCPApp CallTool references survive namespace
-                # transforms.  Global keys contain a UUID suffix, so they
-                # won't collide with human-written tool names.
-                tool = await self.get_tool(name, version=version)
-                if tool is None:
-                    from fastmcp.server.app import get_global_tool
-
-                    tool = get_global_tool(name)
+                # Try normal resolution first. If that fails and the name
+                # contains "___" (app tool prefix), parse out the app name
+                # and route via get_app_tool which bypasses transforms.
+                tool: Tool | None = await self.get_tool(name, version=version)
+                if tool is None and "___" in name:
+                    app_prefix, _, tool_suffix = name.partition("___")
+                    tool = await self.get_app_tool(app_prefix, tool_suffix)
                     if tool is not None:
-                        # Auth still applies to global-key tools
+                        # Auth still applies to app tools
                         skip_auth, token = _get_auth_context()
                         if not skip_auth and tool.auth is not None:
                             try:
@@ -1426,7 +1466,7 @@ class FastMCP(
             warnings.warn(
                 "remove_tool() is deprecated. Use "
                 "mcp.local_provider.remove_tool(name) instead.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         try:
@@ -1921,7 +1961,7 @@ class FastMCP(
         if prefix is not None:
             warnings.warn(
                 "The 'prefix' parameter is deprecated, use 'namespace' instead",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
             if namespace is None:
@@ -1934,7 +1974,7 @@ class FastMCP(
                 "as_proxy is deprecated and will be removed in a future version. "
                 "Mounted servers now always have their lifespan and middleware invoked. "
                 "To create a proxy server, use create_proxy() explicitly.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
             # Still honor the flag for backward compatibility
@@ -2003,7 +2043,7 @@ class FastMCP(
 
         warnings.warn(
             "import_server is deprecated, use mount() instead",
-            DeprecationWarning,
+            FastMCPDeprecationWarning,
             stacklevel=2,
         )
 
@@ -2195,7 +2235,7 @@ class FastMCP(
             warnings.warn(
                 "FastMCP.as_proxy() is deprecated. Use create_proxy() from "
                 "fastmcp.server instead: `from fastmcp.server import create_proxy`",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         # Call the module-level create_proxy function directly

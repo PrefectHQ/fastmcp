@@ -5,6 +5,86 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v3.1.1" description="2026-03-14">
+
+**[v3.1.1: 'Tis But a Patch](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.1.1)**
+
+Pins `pydantic-monty` below 0.0.8 to fix a breaking change in Monty that affects code mode. Monty 0.0.8 removed the `external_functions` constructor parameter, causing `MontySandboxProvider` to fail. This patch caps the version so existing installs work correctly.
+
+### Fixes 🐞
+* Pin pydantic-monty below 0.0.8 to fix code mode by [@jlowin](https://github.com/jlowin) in [#3497](https://github.com/PrefectHQ/fastmcp/pull/3497)
+
+**Full Changelog**: [v3.1.0...v3.1.1](https://github.com/PrefectHQ/fastmcp/compare/v3.1.0...v3.1.1)
+
+</Update>
+
+<Update label="v3.1.0" description="2026-03-03">
+
+**[v3.1.0: Code to Joy](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.1.0)**
+
+FastMCP 3.1 is the Code Mode release. The 3.0 architecture introduced providers and transforms as the extensibility layer — 3.1 puts that architecture to work, shipping the most requested capability since launch: servers that can find and execute code on behalf of agents, without requiring clients to know what tools exist.
+
+### New Features 🎉
+* feat: Search transforms for tool discovery by [@jlowin](https://github.com/jlowin) in [#3154](https://github.com/PrefectHQ/fastmcp/pull/3154)
+* Add experimental CodeMode transform by [@aaazzam](https://github.com/aaazzam) in [#3297](https://github.com/PrefectHQ/fastmcp/pull/3297)
+* Add Prefab Apps integration for MCP tool UIs by [@jlowin](https://github.com/jlowin) in [#3316](https://github.com/PrefectHQ/fastmcp/pull/3316)
+### Enhancements 🔧
+* Lazy-load heavy imports to reduce import time by [@jlowin](https://github.com/jlowin) in [#3295](https://github.com/PrefectHQ/fastmcp/pull/3295)
+* Add http_client parameter to all token verifiers for connection pooling by [@jlowin](https://github.com/jlowin) in [#3300](https://github.com/PrefectHQ/fastmcp/pull/3300)
+* Add in-memory caching for token introspection results by [@jlowin](https://github.com/jlowin) in [#3298](https://github.com/PrefectHQ/fastmcp/pull/3298)
+* Add SessionStart hook to install gh CLI in cloud sessions by [@jlowin](https://github.com/jlowin) in [#3308](https://github.com/PrefectHQ/fastmcp/pull/3308)
+* Fix ty 0.0.19 type errors by [@jlowin](https://github.com/jlowin) in [#3310](https://github.com/PrefectHQ/fastmcp/pull/3310)
+* Code Mode: Add resource limits to MontySandboxProvider by [@jlowin](https://github.com/jlowin) in [#3326](https://github.com/PrefectHQ/fastmcp/pull/3326)
+* Accept transforms as FastMCP init kwarg by [@jlowin](https://github.com/jlowin) in [#3324](https://github.com/PrefectHQ/fastmcp/pull/3324)
+* Split large test files to comply with loq line limit by [@jlowin](https://github.com/jlowin) in [#3328](https://github.com/PrefectHQ/fastmcp/pull/3328)
+* Add -m/--module flag to `fastmcp run` and `dev inspector` by [@dgenio](https://github.com/dgenio) in [#3331](https://github.com/PrefectHQ/fastmcp/pull/3331)
+* Add search_result_serializer hook and serialize_tools_for_output_markdown by [@MagnusS0](https://github.com/MagnusS0) in [#3337](https://github.com/PrefectHQ/fastmcp/pull/3337)
+* Add MultiAuth for composing multiple token verification sources by [@jlowin](https://github.com/jlowin) in [#3335](https://github.com/PrefectHQ/fastmcp/pull/3335)
+* Adds PropelAuth as an AuthProvider by [@andrew-propelauth](https://github.com/andrew-propelauth) in [#3358](https://github.com/PrefectHQ/fastmcp/pull/3358)
+* Replace vendored DI with uncalled-for by [@chrisguidry](https://github.com/chrisguidry) in [#3301](https://github.com/PrefectHQ/fastmcp/pull/3301)
+* Decompose CodeMode into composable discovery tools by [@jlowin](https://github.com/jlowin) in [#3354](https://github.com/PrefectHQ/fastmcp/pull/3354)
+* feat(contrib): auto-sync MCPMixin decorators with from_function signatures by [@AnkeshThakur](https://github.com/AnkeshThakur) in [#3323](https://github.com/PrefectHQ/fastmcp/pull/3323)
+* Add Google GenAI Sampling Handler by [@strawgate](https://github.com/strawgate) in [#2977](https://github.com/PrefectHQ/fastmcp/pull/2977)
+* Add ListTools, search limit, and catalog size annotation to CodeMode by [@jlowin](https://github.com/jlowin) in [#3359](https://github.com/PrefectHQ/fastmcp/pull/3359)
+* Allow configuring FastMCP transport setting in the same way as other configuration by [@jvdmr](https://github.com/jvdmr) in [#1796](https://github.com/PrefectHQ/fastmcp/pull/1796)
+* Add include_unversioned option to VersionFilter by [@yangbaechu](https://github.com/yangbaechu) in [#3349](https://github.com/PrefectHQ/fastmcp/pull/3349)
+### Fixes 🐞
+* Fix docs banner pushing nav down by [@jlowin](https://github.com/jlowin) in [#3282](https://github.com/PrefectHQ/fastmcp/pull/3282)
+* fix: Replace hardcoded TTL with DEFAULT_TTL_MS - issue #3279 by [@cedric57](https://github.com/cedric57) in [#3280](https://github.com/PrefectHQ/fastmcp/pull/3280)
+* fix: stop suppressing server stderr in fastmcp call by [@jlowin](https://github.com/jlowin) in [#3283](https://github.com/PrefectHQ/fastmcp/pull/3283)
+* fix: skip max_completion_tokens when maxTokens is None by [@eon01](https://github.com/eon01) in [#3284](https://github.com/PrefectHQ/fastmcp/pull/3284)
+* OpenAPI: rewrite $ref under propertyNames and patternProperties in _replace_ref_with_defs; add regression test for dict[StrEnum, Model] by [@manojPal23234](https://github.com/manojPal23234) in [#3306](https://github.com/PrefectHQ/fastmcp/pull/3306)
+* Remove stale add_resource() key parameter from docs by [@jlowin](https://github.com/jlowin) in [#3309](https://github.com/PrefectHQ/fastmcp/pull/3309)
+* Handle AuthorizationError as exclusion in AuthMiddleware list hooks by [@yangbaechu](https://github.com/yangbaechu) in [#3338](https://github.com/PrefectHQ/fastmcp/pull/3338)
+* Fix flaky OpenAPI performance test threshold by [@jlowin](https://github.com/jlowin) in [#3355](https://github.com/PrefectHQ/fastmcp/pull/3355)
+* Fix flaky SSE timeout test by [@jlowin](https://github.com/jlowin) in [#3343](https://github.com/PrefectHQ/fastmcp/pull/3343)
+* Remove system role references from docs by [@jlowin](https://github.com/jlowin) in [#3356](https://github.com/PrefectHQ/fastmcp/pull/3356)
+* Fix session persistence across tool calls in multi-server MCPConfigTransport by [@jer805](https://github.com/jer805) in [#3330](https://github.com/PrefectHQ/fastmcp/pull/3330)
+### Docs 📚
+* Add v3.0.2 release notes by [@jlowin](https://github.com/jlowin) in [#3276](https://github.com/PrefectHQ/fastmcp/pull/3276)
+* Fix "FastMCP Constructor Parameters" in documentation server.mdx (Remove old parameters & Add new parameter) by [@wangyy04](https://github.com/wangyy04) in [#3317](https://github.com/PrefectHQ/fastmcp/pull/3317)
+* Fix stale docs: tag filtering API and missing output_schema param by [@jlowin](https://github.com/jlowin) in [#3322](https://github.com/PrefectHQ/fastmcp/pull/3322)
+* Narrate search example clients by [@jlowin](https://github.com/jlowin) in [#3321](https://github.com/PrefectHQ/fastmcp/pull/3321)
+* Code Mode: Document resource limits and fix docs formatting by [@jlowin](https://github.com/jlowin) in [#3327](https://github.com/PrefectHQ/fastmcp/pull/3327)
+* Add reverse proxy (nginx) section to HTTP deployment docs by [@dgenio](https://github.com/dgenio) in [#3344](https://github.com/PrefectHQ/fastmcp/pull/3344)
+* Restructure docs navigation: CLI section, Composition, More by [@jlowin](https://github.com/jlowin) in [#3361](https://github.com/PrefectHQ/fastmcp/pull/3361)
+### Other Changes 🦾
+* Don't advertise sampling.tools capability by default by [@jlowin](https://github.com/jlowin) in [#3334](https://github.com/PrefectHQ/fastmcp/pull/3334)
+
+## New Contributors
+* @cedric57 made their first contribution in [#3280](https://github.com/PrefectHQ/fastmcp/pull/3280)
+* @eon01 made their first contribution in [#3284](https://github.com/PrefectHQ/fastmcp/pull/3284)
+* @manojPal23234 made their first contribution in [#3306](https://github.com/PrefectHQ/fastmcp/pull/3306)
+* @wangyy04 made their first contribution in [#3317](https://github.com/PrefectHQ/fastmcp/pull/3317)
+* @yangbaechu made their first contribution in [#3338](https://github.com/PrefectHQ/fastmcp/pull/3338)
+* @andrew-propelauth made their first contribution in [#3358](https://github.com/PrefectHQ/fastmcp/pull/3358)
+* @jer805 made their first contribution in [#3330](https://github.com/PrefectHQ/fastmcp/pull/3330)
+* @jvdmr made their first contribution in [#1796](https://github.com/PrefectHQ/fastmcp/pull/1796)
+
+**Full Changelog**: [v3.0.2...v3.1.0](https://github.com/PrefectHQ/fastmcp/compare/v3.0.2...v3.1.0)
+
+</Update>
+
 <Update label="v3.0.2" description="2026-02-22">
 
 **[v3.0.2: Threecovery Mode II](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.0.2)**
@@ -660,6 +740,21 @@ Breaking changes are minimal: for most servers, updating the import statement is
 * [@shulkx](https://github.com/shulkx) made their first contribution in [#2884](https://github.com/PrefectHQ/fastmcp/pull/2884)
 
 **Full Changelog**: [v2.14.1...v3.0.0b1](https://github.com/PrefectHQ/fastmcp/compare/v2.14.1...v3.0.0b1)
+
+</Update>
+
+<Update label="v2.14.6" description="2026-03-27">
+
+**[v2.14.6: $Ref Dead Redemption](https://github.com/PrefectHQ/fastmcp/releases/tag/v2.14.6)**
+
+v2.14.4 backported `dereference_refs()` but never wired it into the tool schema pipeline — `$ref` and `$defs` were still sent to MCP clients. Now fixed: `compress_schema()` dereferences at both tool schema creation sites, so schemas are fully inlined before reaching clients.
+
+### Fixes 🐞
+* Updated deprecation URL for V2 by [@SrzStephen](https://github.com/SrzStephen) in [#3109](https://github.com/PrefectHQ/fastmcp/pull/3109)
+* Use MemoryStore for OAuth proxy tests by [@SrzStephen](https://github.com/SrzStephen) in [#3111](https://github.com/PrefectHQ/fastmcp/pull/3111)
+* fix: wire up dereference_refs() in tool schema pipeline by [@jlowin](https://github.com/jlowin) in [#3170](https://github.com/PrefectHQ/fastmcp/pull/3170)
+
+**Full Changelog**: [v2.14.5...v2.14.6](https://github.com/PrefectHQ/fastmcp/compare/v2.14.5...v2.14.6)
 
 </Update>
 

@@ -8,7 +8,7 @@ import mcp.types as mt
 import pydantic_core
 from mcp.types import TextContent
 
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.base import ToolResult
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 

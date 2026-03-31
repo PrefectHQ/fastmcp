@@ -14,8 +14,8 @@ import mcp.types
 from mcp.types import Annotations, AnyFunction
 
 import fastmcp
+from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import resource as standalone_resource
-from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
@@ -235,7 +235,7 @@ class ResourceDecoratorMixin:
                     enabled=enabled,
                 )
                 target = fn.__func__ if hasattr(fn, "__func__") else fn
-                target.__fastmcp__ = metadata  # type: ignore[attr-defined]
+                target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
                 self.add_resource(fn)
                 return fn
 

@@ -33,10 +33,10 @@ from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 if TYPE_CHECKING:
-    from fastmcp.prompts.prompt import Prompt
-    from fastmcp.resources.resource import Resource
+    from fastmcp.prompts.base import Prompt
+    from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
-    from fastmcp.tools.tool import Tool
+    from fastmcp.tools.base import Tool
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +166,20 @@ class AggregateProvider(Provider):
             *[p.get_tool(name, version) for p in self.providers],
             return_exceptions=True,
         )
-        return self._get_highest_version_result(results, f"get_tool({name!r})")  # type: ignore[return-value]
+        return self._get_highest_version_result(results, f"get_tool({name!r})")  # type: ignore[return-value]  # ty:ignore[invalid-argument-type, invalid-return-type]
+
+    async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
+        """Query all child providers for an app tool."""
+        results = await gather(
+            *[p.get_app_tool(app_name, tool_name) for p in self.providers],
+            return_exceptions=True,
+        )
+        for r in results:
+            if isinstance(r, BaseException):
+                continue
+            if r is not None:
+                return r
+        return None
 
     # -------------------------------------------------------------------------
     # Resources
@@ -188,7 +201,7 @@ class AggregateProvider(Provider):
             *[p.get_resource(uri, version) for p in self.providers],
             return_exceptions=True,
         )
-        return self._get_highest_version_result(results, f"get_resource({uri!r})")  # type: ignore[return-value]
+        return self._get_highest_version_result(results, f"get_resource({uri!r})")  # type: ignore[return-value]  # ty:ignore[invalid-argument-type, invalid-return-type]
 
     # -------------------------------------------------------------------------
     # Resource Templates
@@ -212,7 +225,7 @@ class AggregateProvider(Provider):
         )
         return self._get_highest_version_result(
             list(results), f"get_resource_template({uri!r})"
-        )  # type: ignore[return-value]
+        )  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
     # -------------------------------------------------------------------------
     # Prompts
@@ -234,7 +247,7 @@ class AggregateProvider(Provider):
             *[p.get_prompt(name, version) for p in self.providers],
             return_exceptions=True,
         )
-        return self._get_highest_version_result(results, f"get_prompt({name!r})")  # type: ignore[return-value]
+        return self._get_highest_version_result(results, f"get_prompt({name!r})")  # type: ignore[return-value]  # ty:ignore[invalid-argument-type, invalid-return-type]
 
     # -------------------------------------------------------------------------
     # Tasks

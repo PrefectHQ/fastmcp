@@ -1,0 +1,74 @@
+---
+title: Generative UI
+sidebarTitle: Generative UI
+description: Let the LLM generate custom UIs at runtime
+icon: wand-magic-sparkles
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.2.0" />
+
+`GenerativeUI` lets the LLM write Prefab Python code at runtime and render it as a streaming interactive UI. Instead of calling pre-built tools with fixed interfaces, the model creates tailored visualizations for whatever data it's working with.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.apps.generative import GenerativeUI
+
+mcp = FastMCP("My Server")
+mcp.add_provider(GenerativeUI())
+```
+
+This registers:
+
+| Component | Type | Purpose |
+|-----------|------|---------|
+| `generate_prefab_ui` | Tool | Accepts Python code, executes in Pyodide sandbox, renders result |
+| `search_prefab_components` | Tool | Lets the LLM discover available Prefab components |
+| Generative renderer | Resource | `ui://` resource with browser-side Pyodide for streaming |
+
+The LLM writes real Python — loops, f-strings, computation — using Prefab's component library (charts, tables, forms, cards, layout primitives). As the model generates tokens, the host streams partial code to the renderer via `ontoolinputpartial`, so the user watches the UI build up in real time.
+
+## Configuration
+
+```python
+GenerativeUI(
+    tool_name="generate_prefab_ui",                # Rename the generation tool
+    components_tool_name="search_prefab_components",  # Rename the search tool
+    include_components_tool=True,                   # Set False to omit the search tool
+)
+```
+
+## What the LLM Sees
+
+The tool description includes code examples that teach the LLM the Prefab patterns. The LLM calls `generate_prefab_ui` with a `code` argument containing Prefab Python, and optionally a `data` argument to pass in real data from the conversation:
+
+```python
+# The LLM generates something like:
+generate_prefab_ui(
+    code="""
+from prefab_ui.components import Column, Heading
+from prefab_ui.components.charts import BarChart, ChartSeries
+from prefab_ui.app import PrefabApp
+
+with PrefabApp() as app:
+    with Column(gap=4):
+        Heading("Revenue")
+        BarChart(data=data, series=[ChartSeries(data_key="revenue")], x_axis="quarter")
+""",
+    data={"data": [{"quarter": "Q1", "revenue": 42000}, ...]}
+)
+```
+
+The component search tool lets the LLM discover what's available before writing code — `search_prefab_components("Chart")` returns matching components with import paths.
+
+## Requirements
+
+Requires `fastmcp[apps]` (installs `prefab-ui`). The Pyodide sandbox for server-side validation requires Deno, which installs automatically on first use. The streaming renderer loads Pyodide from CDN in the browser — CSP is configured automatically.
+
+The sandbox includes the Python standard library and Prefab. External packages (NumPy, pandas, etc.) are not available.
+
+## Learn More
+
+The full **[Generative UI guide](/apps/generative)** covers the streaming mechanics in detail, how to pass data, the component search tool, and sandbox limitations.

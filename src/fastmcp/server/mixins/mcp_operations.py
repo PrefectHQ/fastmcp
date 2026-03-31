@@ -219,7 +219,7 @@ class MCPOperationsMixin:
             task_meta: TaskMeta | None = None
             try:
                 ctx = server._mcp_server.request_context
-                # Extract version from request-level _meta.fastmcp.version
+                # Extract version from _meta.fastmcp
                 if ctx.meta:
                     meta_dict = ctx.meta.model_dump(exclude_none=True)
                     version_str = meta_dict.get("fastmcp", {}).get("version")

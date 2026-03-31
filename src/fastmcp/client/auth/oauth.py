@@ -96,9 +96,16 @@ class TokenStorageAdapter(TokenStorage):
     def _get_client_info_cache_key(self) -> str:
         return f"{self._server_url}/client_info"
 
+    def _get_token_expiry_cache_key(self) -> str:
+        return f"{self._server_url}/token_expiry"
+
     async def clear(self) -> None:
         await self._storage_oauth_token.delete(key=self._get_token_cache_key())
         await self._storage_client_info.delete(key=self._get_client_info_cache_key())
+        await self._key_value_store.delete(
+            key=self._get_token_expiry_cache_key(),
+            collection="mcp-oauth-token-expiry",
+        )
 
     @override
     async def get_tokens(self) -> OAuthToken | None:
@@ -114,6 +121,25 @@ class TokenStorageAdapter(TokenStorage):
             value=tokens,
             ttl=60 * 60 * 24 * 365,  # 1 year
         )
+        # Store absolute expiry so reloads don't misinterpret the stale
+        # relative expires_in value (#2862).
+        if tokens.expires_in is not None:
+            expires_at = time.time() + int(tokens.expires_in)
+            await self._key_value_store.put(
+                key=self._get_token_expiry_cache_key(),
+                value={"expires_at": expires_at},
+                collection="mcp-oauth-token-expiry",
+                ttl=60 * 60 * 24 * 365,
+            )
+
+    async def get_token_expiry(self) -> float | None:
+        raw = await self._key_value_store.get(
+            key=self._get_token_expiry_cache_key(),
+            collection="mcp-oauth-token-expiry",
+        )
+        if raw is not None:
+            return float(raw["expires_at"])
+        return None
 
     @override
     async def get_client_info(self) -> OAuthClientInformationFull | None:
@@ -285,7 +311,11 @@ class OAuth(OAuthClientProvider):
             await self.token_storage_adapter.set_client_info(self._static_client_info)
 
         if self.context.current_tokens and self.context.current_tokens.expires_in:
-            self.context.update_token_expiry(self.context.current_tokens)
+            stored_expiry = await self.token_storage_adapter.get_token_expiry()
+            if stored_expiry is not None:
+                self.context.token_expiry_time = stored_expiry
+            else:
+                self.context.update_token_expiry(self.context.current_tokens)
 
     async def redirect_handler(self, authorization_url: str) -> None:
         """Open browser for authorization, with pre-flight check for invalid client."""

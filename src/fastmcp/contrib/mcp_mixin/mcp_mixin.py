@@ -6,9 +6,10 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import fastmcp
-from fastmcp.prompts.prompt import Prompt
-from fastmcp.resources.resource import Resource
-from fastmcp.tools.tool import Tool
+from fastmcp.exceptions import FastMCPDeprecationWarning
+from fastmcp.prompts.base import Prompt
+from fastmcp.resources.base import Resource
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.types import get_fn_name
 
 if TYPE_CHECKING:
@@ -77,7 +78,7 @@ def mcp_tool(
             "The `serializer` parameter is deprecated. "
             "Return ToolResult from your tools for full control over serialization. "
             "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-            DeprecationWarning,
+            FastMCPDeprecationWarning,
             stacklevel=2,
         )
 

@@ -5,7 +5,7 @@ from mcp.types import Tool as MCPTool
 from mcp.types import ToolAnnotations, ToolExecution
 
 from fastmcp import Client, FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 
 async def test_tool_annotations_in_tool_manager():

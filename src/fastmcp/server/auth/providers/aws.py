@@ -111,6 +111,7 @@ class AWSCognitoProvider(OIDCProxy):
         jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool | Literal["external"] = True,
         consent_csp_policy: str | None = None,
+        forward_resource: bool = True,
     ):
         """Initialize AWS Cognito OAuth provider.
 
@@ -167,6 +168,7 @@ class AWSCognitoProvider(OIDCProxy):
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
             consent_csp_policy=consent_csp_policy,
+            forward_resource=forward_resource,
         )
 
         logger.debug(

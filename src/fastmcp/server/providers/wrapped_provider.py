@@ -14,11 +14,11 @@ from fastmcp.server.providers.base import Provider
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
-    from fastmcp.prompts.prompt import Prompt
-    from fastmcp.resources.resource import Resource
+    from fastmcp.prompts.base import Prompt
+    from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
     from fastmcp.server.transforms import Transform
-    from fastmcp.tools.tool import Tool
+    from fastmcp.tools.base import Tool
     from fastmcp.utilities.components import FastMCPComponent
 
 
@@ -63,6 +63,10 @@ class _WrappedProvider(Provider):
         """Delegate to inner's get_tool (includes inner's transforms)."""
         return await self._inner.get_tool(name, version)
 
+    async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
+        """Delegate to inner, bypassing this wrapper's transforms."""
+        return await self._inner.get_app_tool(app_name, tool_name)
+
     async def _list_resources(self) -> Sequence[Resource]:
         """Delegate to inner's list_resources (includes inner's transforms)."""
         return await self._inner.list_resources()
@@ -96,10 +100,10 @@ class _WrappedProvider(Provider):
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
         """Delegate to inner's get_tasks and apply wrapper's transforms."""
         # Import here to avoid circular imports
-        from fastmcp.prompts.prompt import Prompt
-        from fastmcp.resources.resource import Resource
+        from fastmcp.prompts.base import Prompt
+        from fastmcp.resources.base import Resource
         from fastmcp.resources.template import ResourceTemplate
-        from fastmcp.tools.tool import Tool
+        from fastmcp.tools.base import Tool
 
         # Get tasks from inner (already has inner's transforms)
         components = list(await self._inner.get_tasks())

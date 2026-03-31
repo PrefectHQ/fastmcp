@@ -6,10 +6,11 @@ from typing import Any, get_args
 
 from mcp import ClientSession, ServerSession
 from mcp.shared.context import LifespanContextT, RequestContext
-from mcp.types import CreateMessageRequestParams as SamplingParams
 from mcp.types import (
+    AudioContent,
     CreateMessageResult,
     CreateMessageResultWithTools,
+    ImageContent,
     ModelPreferences,
     SamplingMessage,
     StopReason,
@@ -19,12 +20,17 @@ from mcp.types import (
     ToolResultContent,
     ToolUseContent,
 )
+from mcp.types import CreateMessageRequestParams as SamplingParams
 
 try:
     from openai import AsyncOpenAI
     from openai.types.chat import (
         ChatCompletion,
         ChatCompletionAssistantMessageParam,
+        ChatCompletionContentPartImageParam,
+        ChatCompletionContentPartInputAudioParam,
+        ChatCompletionContentPartParam,
+        ChatCompletionContentPartTextParam,
         ChatCompletionMessageParam,
         ChatCompletionMessageToolCallParam,
         ChatCompletionSystemMessageParam,
@@ -40,6 +46,50 @@ except ImportError as e:
         "The `openai` package is not installed. "
         "Please install `fastmcp[openai]` or add `openai` to your dependencies manually."
     ) from e
+
+# OpenAI only supports wav and mp3 for input audio
+_OPENAI_AUDIO_FORMATS: dict[str, str] = {
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/mp3": "mp3",
+    "audio/mpeg": "mp3",
+}
+
+_OPENAI_IMAGE_MEDIA_TYPES: frozenset[str] = frozenset(
+    {"image/jpeg", "image/png", "image/gif", "image/webp"}
+)
+
+
+def _image_content_to_openai_part(
+    content: ImageContent,
+) -> ChatCompletionContentPartImageParam:
+    """Convert MCP ImageContent to OpenAI image_url content part."""
+    if content.mimeType not in _OPENAI_IMAGE_MEDIA_TYPES:
+        raise ValueError(
+            f"Unsupported image MIME type for OpenAI: {content.mimeType!r}. "
+            f"Supported types: {', '.join(sorted(_OPENAI_IMAGE_MEDIA_TYPES))}"
+        )
+    data_url = f"data:{content.mimeType};base64,{content.data}"
+    return ChatCompletionContentPartImageParam(
+        type="image_url",
+        image_url={"url": data_url},
+    )
+
+
+def _audio_content_to_openai_part(
+    content: AudioContent,
+) -> ChatCompletionContentPartInputAudioParam:
+    """Convert MCP AudioContent to OpenAI input_audio content part."""
+    audio_format = _OPENAI_AUDIO_FORMATS.get(content.mimeType)
+    if audio_format is None:
+        raise ValueError(
+            f"Unsupported audio MIME type for OpenAI: {content.mimeType!r}. "
+            f"Supported types: {', '.join(sorted(_OPENAI_AUDIO_FORMATS))}"
+        )
+    return ChatCompletionContentPartInputAudioParam(
+        type="input_audio",
+        input_audio={"data": content.data, "format": audio_format},
+    )
 
 
 class OpenAISamplingHandler:
@@ -147,8 +197,9 @@ class OpenAISamplingHandler:
 
             # Handle list content (from CreateMessageResultWithTools)
             if isinstance(content, list):
-                # Collect tool calls and text from the list
+                # Collect tool calls, content parts, and text from the list
                 tool_calls: list[ChatCompletionMessageToolCallParam] = []
+                content_parts: list[ChatCompletionContentPartParam] = []
                 text_parts: list[str] = []
                 # Collect tool results separately to maintain correct ordering
                 tool_messages: list[ChatCompletionToolMessageParam] = []
@@ -167,6 +218,15 @@ class OpenAISamplingHandler:
                         )
                     elif isinstance(item, TextContent):
                         text_parts.append(item.text)
+                        content_parts.append(
+                            ChatCompletionContentPartTextParam(
+                                type="text", text=item.text
+                            )
+                        )
+                    elif isinstance(item, ImageContent):
+                        content_parts.append(_image_content_to_openai_part(item))
+                    elif isinstance(item, AudioContent):
+                        content_parts.append(_audio_content_to_openai_part(item))
                     elif isinstance(item, ToolResultContent):
                         # Collect tool results (added after assistant message)
                         content_text = ""
@@ -186,33 +246,47 @@ class OpenAISamplingHandler:
 
                 # Add assistant message with tool calls if present
                 # OpenAI requires: assistant (with tool_calls) -> tool messages
-                if tool_calls or text_parts:
-                    msg_content = "\n".join(text_parts) if text_parts else None
+                if tool_calls or content_parts:
                     if tool_calls:
+                        has_multimodal = len(content_parts) > len(text_parts)
+                        if has_multimodal:
+                            raise ValueError(
+                                "ImageContent/AudioContent is only supported "
+                                "in user messages for OpenAI"
+                            )
+                        text_str = "\n".join(text_parts) or None
                         openai_messages.append(
                             ChatCompletionAssistantMessageParam(
                                 role="assistant",
-                                content=msg_content,
+                                content=text_str,
                                 tool_calls=tool_calls,
                             )
                         )
                         # Add tool messages AFTER assistant message
                         openai_messages.extend(tool_messages)
-                    elif msg_content:
+                    elif content_parts:
                         if message.role == "user":
                             openai_messages.append(
                                 ChatCompletionUserMessageParam(
                                     role="user",
-                                    content=msg_content,
+                                    content=content_parts,
                                 )
                             )
                         else:
-                            openai_messages.append(
-                                ChatCompletionAssistantMessageParam(
-                                    role="assistant",
-                                    content=msg_content,
+                            has_multimodal = len(content_parts) > len(text_parts)
+                            if has_multimodal:
+                                raise ValueError(
+                                    "ImageContent/AudioContent is only supported "
+                                    "in user messages for OpenAI"
                                 )
-                            )
+                            assistant_text = "\n".join(text_parts)
+                            if assistant_text:
+                                openai_messages.append(
+                                    ChatCompletionAssistantMessageParam(
+                                        role="assistant",
+                                        content=assistant_text,
+                                    )
+                                )
                 elif tool_messages:
                     # Tool results only (assistant message was in previous message)
                     openai_messages.extend(tool_messages)
@@ -272,6 +346,34 @@ class OpenAISamplingHandler:
                     )
                 continue
 
+            # Handle ImageContent
+            if isinstance(content, ImageContent):
+                if message.role != "user":
+                    raise ValueError(
+                        "ImageContent is only supported in user messages for OpenAI"
+                    )
+                openai_messages.append(
+                    ChatCompletionUserMessageParam(
+                        role="user",
+                        content=[_image_content_to_openai_part(content)],
+                    )
+                )
+                continue
+
+            # Handle AudioContent
+            if isinstance(content, AudioContent):
+                if message.role != "user":
+                    raise ValueError(
+                        "AudioContent is only supported in user messages for OpenAI"
+                    )
+                openai_messages.append(
+                    ChatCompletionUserMessageParam(
+                        role="user",
+                        content=[_audio_content_to_openai_part(content)],
+                    )
+                )
+                continue
+
             raise ValueError(f"Unsupported content type: {type(content)}")
 
         return openai_messages
@@ -299,7 +401,7 @@ class OpenAISamplingHandler:
     ) -> ChatModel:
         for model_option in self._iter_models_from_preferences(model_preferences):
             if model_option in get_args(ChatModel):
-                chosen_model: ChatModel = model_option  # type: ignore[assignment]
+                chosen_model: ChatModel = model_option  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
                 return chosen_model
 
         return self.default_model
@@ -378,18 +480,18 @@ class OpenAISamplingHandler:
                 func = tool_call.function
                 # Parse the arguments JSON string
                 try:
-                    arguments = json.loads(func.arguments)  # type: ignore[union-attr]
+                    arguments = json.loads(func.arguments)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
                 except json.JSONDecodeError as e:
                     raise ValueError(
                         f"Invalid JSON in tool arguments for "
-                        f"'{func.name}': {func.arguments}"  # type: ignore[union-attr]
+                        f"'{func.name}': {func.arguments}"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
                     ) from e
 
                 content.append(
                     ToolUseContent(
                         type="tool_use",
                         id=tool_call.id,
-                        name=func.name,  # type: ignore[union-attr]
+                        name=func.name,  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
                         input=arguments,
                     )
                 )
@@ -399,7 +501,7 @@ class OpenAISamplingHandler:
             raise ValueError("No content in response from completion")
 
         return CreateMessageResultWithTools(
-            content=content,  # type: ignore[arg-type]
+            content=content,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             role="assistant",
             model=chat_completion.model,
             stopReason=stop_reason,

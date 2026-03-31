@@ -10,67 +10,172 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.0.0" />
 
-MCP Apps let your tools return interactive UIs — rendered in a sandboxed iframe right inside the host client's conversation. Instead of returning plain text, a tool can show a chart, a sortable table, a form, or anything you can build with HTML.
+MCP tools normally return text. That works for answers, but not for data the user wants to *explore* — a revenue chart they can hover over, a sortable employee directory, a form that submits structured input. MCP Apps let your tools return interactive UIs rendered right inside the conversation.
 
-FastMCP implements the [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) and provides two approaches:
+<Frame>
+  <img src="/apps/images/app-showcase.png" alt="A Prefab app showing forms, charts, metrics, progress bars, data tables, and interactive controls — all built in Python" />
+</Frame>
 
-## Prefab Apps (Recommended)
+FastMCP builds on the [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) with [Prefab](https://prefab.prefect.io), a Python component library that compiles to interactive UIs. You write Python; the user sees charts, tables, forms, and dashboards.
+
+<Note>
+The examples throughout the Apps docs require the `apps` extra:
+
+```bash
+pip install "fastmcp[apps]"
+```
+
+This installs [Prefab UI](https://prefab.prefect.io), the component library used to build app UIs.
+</Note>
+
+<Warning>
+FastMCP pins a **minimum** version of `prefab-ui` for compatibility but intentionally does **not** pin an upper bound. Prefab is a rapidly evolving library with frequent breaking changes. If you are deploying to production, you **must** pin `prefab-ui` to a specific version in your own dependencies. Without a pin, a fresh deploy could pull a newer Prefab version that changes component APIs, breaking your app.
+</Warning>
+
+## Which Approach?
+
+Most apps start with **[Prefab Apps](/apps/prefab)** — add `app=True` to a tool and return components. That covers charts, tables, dashboards, and client-side interactivity.
+
+When your UI needs multiple backend tools with managed visibility and composition safety, use **[FastMCPApp](/apps/interactive-apps)**.
+
+When you want the LLM to design the UI at runtime, use **[Generative UI](/apps/generative)**.
+
+When you need your own HTML/JS (maps, 3D, video), use **[Custom HTML](/apps/low-level)**.
+
+FastMCP also includes ready-made **[app providers](/apps/providers/approval)** that add common capabilities with a single `add_provider()` call.
+
+## Building Apps
+
+### Prefab Apps
 
 <VersionBadge version="3.1.0" />
 
-<Tip>
-[Prefab](https://prefab.prefect.io) is in extremely early, active development — its API changes frequently and breaking changes can occur with any release. The FastMCP integration is equally new and under rapid development. These docs are included for users who want to work on the cutting edge; production use is not recommended. Always [pin `prefab-ui` to a specific version](/apps/prefab#getting-started) in your dependencies.
-</Tip>
-
-[Prefab UI](https://prefab.prefect.io) is a declarative UI framework for Python. You describe layouts, charts, tables, forms, and interactive behaviors using a Python DSL — and the framework compiles them to a JSON protocol that a shared renderer interprets. It started as a component library inside FastMCP and grew into its own framework with [comprehensive documentation](https://prefab.prefect.io).
+The quickest way to give a tool a visual UI. Add `app=True` to any tool and return a Prefab component — when the host calls it, the user sees an interactive UI instead of a JSON blob:
 
 ```python
-from prefab_ui.components import Column, Heading, BarChart, ChartSeries
 from prefab_ui.app import PrefabApp
+from prefab_ui.components import Column, Heading
+from prefab_ui.components.charts import BarChart, ChartSeries
 from fastmcp import FastMCP
 
 mcp = FastMCP("Dashboard")
 
+
 @mcp.tool(app=True)
-def sales_chart(year: int) -> PrefabApp:
-    """Show sales data as an interactive chart."""
-    data = get_sales_data(year)
+def revenue_chart(year: int) -> PrefabApp:
+    """Show annual revenue as an interactive bar chart."""
+    data = [
+        {"quarter": "Q1", "revenue": 42000},
+        {"quarter": "Q2", "revenue": 51000},
+        {"quarter": "Q3", "revenue": 47000},
+        {"quarter": "Q4", "revenue": 63000},
+    ]
 
     with Column(gap=4, css_class="p-6") as view:
-        Heading(f"{year} Sales")
+        Heading(f"{year} Revenue")
         BarChart(
             data=data,
             series=[ChartSeries(data_key="revenue", label="Revenue")],
-            x_axis="month",
+            x_axis="quarter",
         )
 
     return PrefabApp(view=view)
 ```
 
-Install with `pip install "fastmcp[apps]"` and see [Prefab Apps](/apps/prefab) for the integration guide.
+Prefab apps aren't limited to static displays. Prefab's state system and client-side actions (toggles, tabs, conditionals) all work. You can even call other tools from the UI using `CallTool`. There's no hard wall on what a Prefab app can do.
 
-## Custom HTML Apps
+See [Prefab Apps](/apps/prefab) for the full guide.
 
-The [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) is an open protocol, and you can use it directly when you need full control. You write your own HTML/CSS/JavaScript and communicate with the host via the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) SDK.
+### FastMCPApp
 
-This is the right choice for custom rendering (maps, 3D, video), specific JavaScript frameworks, or capabilities beyond what the component library offers.
+<VersionBadge version="3.2.0" />
+
+When your app has a lot of server-side interaction — forms that save data, search that queries a database, multi-step workflows — managing the connection between UI and backend tools gets complicated fast. Which tools should the model see vs. only the UI? What happens to tool references when servers are composed under namespaces? How do you keep `CallTool("save_contact")` working when the tool name changes?
+
+`FastMCPApp` is a class that solves these problems. It gives you two decorators that work together:
+
+- **`@app.ui()`** — entry-point tools the model calls to open the app
+- **`@app.tool()`** — backend tools the UI calls via `CallTool`
+
+Backend tools get stable identifiers that survive namespacing, visibility is managed automatically (the model sees entry points, the UI sees backends), and `CallTool` accepts tool names that resolve correctly regardless of how servers are composed:
+
+```python
+from prefab_ui.actions import SetState, ShowToast
+from prefab_ui.actions.mcp import CallTool
+from prefab_ui.app import PrefabApp
+from prefab_ui.components import (
+    Column, Heading, Form, Input, Button, ForEach, Row, Text, Badge, Separator,
+)
+from prefab_ui.rx import RESULT
+from fastmcp import FastMCP, FastMCPApp
+
+app = FastMCPApp("Contacts")
+
+
+@app.tool()
+def save_contact(name: str, email: str) -> list[dict]:
+    """Save a contact and return the updated list."""
+    db.append({"name": name, "email": email})
+    return list(db)
+
+
+@app.ui()
+def contact_manager() -> PrefabApp:
+    """Open the contact manager."""
+    with Column(gap=6, css_class="p-6") as view:
+        Heading("Contacts")
+        with ForEach("contacts") as contact:
+            with Row(gap=2):
+                Text(contact.name)
+                Badge(contact.email)
+        Separator()
+        with Form(
+            on_submit=CallTool(
+                "save_contact",
+                on_success=[
+                    SetState("contacts", RESULT),
+                    ShowToast("Saved!", variant="success"),
+                ],
+            )
+        ):
+            Input(name="name", label="Name", required=True)
+            Input(name="email", label="Email", required=True)
+            Button("Save")
+
+    return PrefabApp(view=view, state={"contacts": list(db)})
+
+
+mcp = FastMCP("Server", providers=[app])
+```
+
+You *can* build server-interactive UIs without `FastMCPApp` — it's all the same protocol underneath. But once you have multiple tools, composition concerns, or visibility requirements, `FastMCPApp` handles the complexity so you don't have to.
+
+See [FastMCPApp](/apps/interactive-apps) for the full guide.
+
+### Generative UI
+
+<VersionBadge version="3.2.0" />
+
+Instead of pre-building a UI, the LLM can write one from scratch. The `GenerativeUI` provider registers tools that let the model write Prefab Python code, execute it in a sandbox, and render the result — with streaming so the user watches the UI build up in real time.
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.apps import AppConfig, ResourceCSP
+from fastmcp.apps.generative import GenerativeUI
 
-mcp = FastMCP("Custom App")
-
-@mcp.tool(app=AppConfig(resource_uri="ui://my-app/view.html"))
-def my_tool() -> str:
-    return '{"values": [1, 2, 3]}'
-
-@mcp.resource(
-    "ui://my-app/view.html",
-    app=AppConfig(csp=ResourceCSP(resource_domains=["https://unpkg.com"])),
-)
-def view() -> str:
-    return "<html>...</html>"
+mcp = FastMCP("Prefab Studio")
+mcp.add_provider(GenerativeUI())
 ```
 
-See [Custom HTML Apps](/apps/low-level) for the full reference.
+See [Generative UI](/apps/generative) for the full guide, or the [provider reference](/apps/providers/generative) for configuration options.
+
+### Custom HTML
+
+All the approaches above use [Prefab UI](https://prefab.prefect.io) to build UIs in pure Python. If you need full control — your own HTML, CSS, JavaScript, a specific framework — you can use the [MCP Apps extension directly](/apps/low-level). You write the HTML yourself and communicate with the host via the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) SDK.
+
+## Previewing Apps Locally
+
+The `fastmcp dev apps` command launches a browser-based preview for your app tools — no MCP host client needed. See [Development](/apps/development).
+
+```bash
+fastmcp dev apps server.py
+```

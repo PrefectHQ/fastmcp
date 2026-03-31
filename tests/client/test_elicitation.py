@@ -290,7 +290,7 @@ class TestScalarResponseTypes:
         @mcp.tool
         async def my_tool(context: Context) -> Literal["x", "y"]:
             # Literal types work at runtime but type checker doesn't recognize them in overloads
-            result = await context.elicit(message="", response_type=Literal["x", "y"])  # type: ignore[arg-type]
+            result = await context.elicit(message="", response_type=Literal["x", "y"])  # type: ignore[arg-type]  # ty:ignore[no-matching-overload]
             assert isinstance(result, AcceptedElicitation)
             accepted = cast(AcceptedElicitation[Literal["x", "y"]], result)
             assert isinstance(accepted.data, str)

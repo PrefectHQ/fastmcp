@@ -1,0 +1,69 @@
+---
+title: form
+sidebarTitle: form
+---
+
+# `fastmcp.apps.form`
+
+
+FormInput — a Provider that collects structured input from the user.
+
+Define a Pydantic model for the data you need, and ``FormInput``
+generates a form UI. The user fills it out, the submission is
+validated, and an optional callback processes the result.
+
+Requires ``fastmcp[apps]`` (prefab-ui).
+
+Usage::
+
+    from pydantic import BaseModel
+    from fastmcp import FastMCP
+    from fastmcp.apps.form import FormInput
+
+    class ShippingAddress(BaseModel):
+        street: str
+        city: str
+        state: str
+        zip_code: str
+
+    mcp = FastMCP("My Server")
+    mcp.add_provider(FormInput(model=ShippingAddress))
+
+
+## Classes
+
+### `FormInput` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/form.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A Provider that collects structured input via a Pydantic model.
+
+Define a model for the data you need, and ``FormInput`` generates
+a form from it using ``Form.from_model()``. Field types, labels,
+descriptions, and validation are all derived from the model.
+
+Optionally provide an ``on_submit`` callback to process the
+validated data. The callback receives a model instance and returns
+a string that goes back to the LLM. Without a callback, the
+validated JSON is sent directly.
+
+Example::
+
+    from pydantic import BaseModel
+    from fastmcp import FastMCP
+    from fastmcp.apps.form import FormInput
+
+    class Contact(BaseModel):
+        name: str
+        email: str
+
+    mcp = FastMCP("My Server")
+    mcp.add_provider(FormInput(model=Contact))
+
+With a callback::
+
+    def save_contact(contact: Contact) -> str:
+        db.insert(contact.model_dump())
+        return f"Saved {contact.name}"
+
+    mcp.add_provider(FormInput(model=Contact, on_submit=save_contact))
+

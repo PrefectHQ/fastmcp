@@ -48,7 +48,7 @@ class ClientTaskManagementMixin:
         request = GetTaskRequest(params=GetTaskRequestParams(taskId=task_id))
         return await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[arg-type]
+                request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                 result_type=GetTaskResult,
             )
         )
@@ -75,7 +75,7 @@ class ClientTaskManagementMixin:
         # Return raw result - Task classes handle type-specific parsing
         result = await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[arg-type]
+                request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                 result_type=GetTaskPayloadResult,
             )
         )
@@ -107,11 +107,11 @@ class ClientTaskManagementMixin:
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
         # Send protocol request
-        params = PaginatedRequestParams(cursor=cursor, limit=limit)  # type: ignore[call-arg]  # Optional field in MCP SDK
+        params = PaginatedRequestParams(cursor=cursor, limit=limit)  # type: ignore[call-arg]  # Optional field in MCP SDK  # ty:ignore[unknown-argument]
         request = ListTasksRequest(params=params)
         server_response = await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[invalid-argument-type]
+                request=request,  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type]
                 result_type=mcp.types.ListTasksResult,
             )
         )
@@ -151,7 +151,7 @@ class ClientTaskManagementMixin:
         request = CancelTaskRequest(params=CancelTaskRequestParams(taskId=task_id))
         return await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[invalid-argument-type]
+                request=request,  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type]
                 result_type=mcp.types.CancelTaskResult,
             )
         )

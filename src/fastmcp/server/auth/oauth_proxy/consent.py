@@ -285,8 +285,9 @@ class ConsentMixin:
             query_params["code_challenge_method"] = "S256"
 
         # Forward resource indicator if present in transaction
-        if resource := transaction.get("resource"):
-            query_params["resource"] = resource
+        if self._forward_resource:
+            if resource := transaction.get("resource"):
+                query_params["resource"] = resource
 
         # Extra configured parameters
         if self._extra_authorize_params:

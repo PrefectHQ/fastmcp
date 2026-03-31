@@ -27,8 +27,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal, TypeVar
 
-from fastmcp.prompts.prompt import Prompt
-from fastmcp.resources.resource import Resource
+from fastmcp.prompts.base import Prompt
+from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.local_provider.decorators import (
@@ -36,7 +36,7 @@ from fastmcp.server.providers.local_provider.decorators import (
     ResourceDecoratorMixin,
     ToolDecoratorMixin,
 )
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
@@ -191,7 +191,7 @@ class LocalProvider(
             elif self._on_duplicate == "warn":
                 logger.warning(f"Component already exists: {component.key}")
             elif self._on_duplicate == "ignore":
-                return existing  # type: ignore[return-value]
+                return existing  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
             # "replace" and "warn" fall through to add
 
         # Check for versioned/unversioned mixing before adding
@@ -366,7 +366,7 @@ class LocalProvider(
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     async def _list_resources(self) -> Sequence[Resource]:
         """Return all resources."""
@@ -390,7 +390,7 @@ class LocalProvider(
             matching = [r for r in matching if version.matches(r.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Return all resource templates."""
@@ -416,7 +416,7 @@ class LocalProvider(
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     async def _list_prompts(self) -> Sequence[Prompt]:
         """Return all prompts."""
@@ -440,7 +440,7 @@ class LocalProvider(
             matching = [p for p in matching if version.matches(p.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     # =========================================================================
     # Task registration

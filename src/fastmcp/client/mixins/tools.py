@@ -322,7 +322,7 @@ class ClientToolsMixin:
                 name=name,
                 arguments=arguments or {},
                 task=mcp.types.TaskMetadata(ttl=ttl),
-                _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias
+                _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
             )
         )
 
@@ -330,7 +330,7 @@ class ClientToolsMixin:
         # Use RootModel with Union to handle both response types (SDK calls model_validate)
         wrapped_result = await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[arg-type]
+                request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                 result_type=ToolTaskResponseUnion,
             )
         )

@@ -19,13 +19,13 @@ from urllib.parse import quote
 import mcp.types
 from mcp.types import AnyUrl
 
-from fastmcp.prompts.prompt import Prompt, PromptResult
-from fastmcp.resources.resource import Resource, ResourceResult
+from fastmcp.prompts.base import Prompt, PromptResult
+from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.telemetry import delegate_span
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.versions import VersionSpec
 
@@ -104,6 +104,7 @@ class FastMCPProviderTool(Tool):
             tags=tool.tags,
             annotations=tool.annotations,
             task_config=tool.task_config,
+            execution=tool.execution,
             meta=tool.get_meta(),
             title=tool.title,
             icons=tool.icons,
@@ -141,7 +142,10 @@ class FastMCPProviderTool(Tool):
             self._original_name or "", "FastMCPProvider", self._original_name or ""
         ):
             return await self._server.call_tool(
-                self._original_name, arguments, version=version, task_meta=task_meta
+                self._original_name,
+                arguments,
+                version=version,
+                task_meta=task_meta,
             )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
@@ -561,6 +565,18 @@ class FastMCPProvider(Provider):
         if raw_tool is None:
             return None
         return FastMCPProviderTool.wrap(self.server, raw_tool)
+
+    async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
+        """Delegate to nested server's get_app_tool, wrapping for middleware."""
+        raw_tool = await self.server.get_app_tool(app_name, tool_name)
+        if raw_tool is None:
+            return None
+        wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
+        # Use the ___-prefixed name so the inner server's call_tool also
+        # takes the app-tool bypass path (app-only tools are hidden from
+        # normal get_tool visibility filtering).
+        wrapped._original_name = f"{app_name}___{tool_name}"
+        return wrapped
 
     # -------------------------------------------------------------------------
     # Resource methods

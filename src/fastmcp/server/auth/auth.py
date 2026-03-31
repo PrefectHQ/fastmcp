@@ -321,7 +321,6 @@ class AuthProvider(TokenVerifierProtocol):
         Returns:
             List of Starlette Middleware instances to apply to the HTTP app
         """
-        # TODO(ty): remove type ignores when ty supports Starlette Middleware typing
         return [
             Middleware(
                 AuthenticationMiddleware,  # type: ignore[arg-type]

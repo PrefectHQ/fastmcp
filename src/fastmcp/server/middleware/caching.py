@@ -18,10 +18,10 @@ from key_value.aio.wrappers.statistics.wrapper import (
 from pydantic import Field
 from typing_extensions import NotRequired, Self, override
 
-from fastmcp.prompts.prompt import Message, Prompt, PromptResult
-from fastmcp.resources.resource import Resource, ResourceContent, ResourceResult
+from fastmcp.prompts.base import Message, Prompt, PromptResult
+from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel
 
@@ -133,7 +133,7 @@ class CachablePromptResult(FastMCPBaseModel):
     def unwrap(self) -> PromptResult:
         return PromptResult(
             messages=[
-                Message(content=m.content, role=m.role)  # type: ignore[arg-type]
+                Message(content=m.content, role=m.role)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                 for m in self.messages
             ],
             description=self.description,
@@ -480,14 +480,15 @@ class ResponseCachingMiddleware(Middleware):
             return cached_value.unwrap()
 
         value: PromptResult = await call_next(context=context)
+        cached_value = CachablePromptResult.wrap(value)
 
         await self._get_prompt_cache.put(
             key=cache_key,
-            value=CachablePromptResult.wrap(value),
+            value=cached_value,
             ttl=self._get_prompt_settings.get("ttl", ONE_HOUR_IN_SECONDS),
         )
 
-        return value
+        return cached_value.unwrap()
 
     def _matches_tool_cache_settings(self, tool_name: str) -> bool:
         """Check if the tool matches the cache settings for tool calls."""

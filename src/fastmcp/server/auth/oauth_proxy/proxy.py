@@ -25,6 +25,7 @@ from base64 import urlsafe_b64encode
 from typing import Any, Literal
 from urllib.parse import urlencode, urlparse, urlunparse
 
+import anyio
 import httpx
 from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
@@ -247,6 +248,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         valid_scopes: list[str] | None = None,
         # PKCE configuration
         forward_pkce: bool = True,
+        # Resource indicator (RFC 8707)
+        forward_resource: bool = True,
         # Token endpoint authentication
         token_endpoint_auth_method: str | None = None,
         # Extra parameters to forward to authorization endpoint
@@ -381,6 +384,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         # PKCE configuration
         self._forward_pkce: bool = forward_pkce
+        # Resource indicator (RFC 8707)
+        self._forward_resource: bool = forward_resource
 
         # Token endpoint authentication
         self._token_endpoint_auth_method: str | None = token_endpoint_auth_method
@@ -545,6 +550,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 default_scope=self._default_scope_str,
                 allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
             )
+
+        # Advisory locks for transparent upstream token refresh, keyed by
+        # upstream_token_id. Prevents concurrent async tasks from racing to
+        # refresh the same token within a single process. Does not protect
+        # against cross-process races in distributed deployments — those are
+        # handled by re-reading from storage after refresh failure.
+        self._refresh_locks: dict[str, anyio.Lock] = {}
 
         logger.debug(
             "Initialized OAuth proxy provider with upstream server %s",
@@ -786,7 +798,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     self._resource_url,
                 )
                 raise AuthorizeError(
-                    error="invalid_target",  # type: ignore[arg-type]
+                    error="invalid_target",  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                     error_description="Resource does not match this server",
                 )
 
@@ -806,7 +818,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Store transaction data for IdP callback processing
         if client.client_id is None:
             raise AuthorizeError(
-                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type
+                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type  # ty:ignore[invalid-argument-type]
                 error_description="Client ID is required",
             )
         transaction = OAuthTransaction(
@@ -889,7 +901,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Create authorization code object with PKCE challenge
         if client.client_id is None:
             raise AuthorizeError(
-                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type
+                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type  # ty:ignore[invalid-argument-type]
                 error_description="Client ID is required",
             )
         return AuthorizationCode(
@@ -1457,7 +1469,91 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         """
         return False
 
-    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
+    async def _try_transparent_refresh(
+        self,
+        upstream_token_set: UpstreamTokenSet,
+    ) -> UpstreamTokenSet:
+        """Refresh the upstream token transparently and update storage.
+
+        Called during load_access_token when the upstream token has expired
+        but a refresh token is available. This avoids returning a 401 that
+        would force the client into a full re-authentication flow.
+
+        Mutates and returns the upstream_token_set with refreshed token data.
+        Raises on failure (caller should catch and fall through to None).
+        """
+        scopes = upstream_token_set.scope.split() if upstream_token_set.scope else []
+        upstream_scopes = self._prepare_scopes_for_upstream_refresh(scopes)
+        oauth_client = self._create_upstream_oauth_client()
+
+        token_response: dict[str, Any] = await oauth_client.refresh_token(
+            url=self._upstream_token_endpoint,
+            refresh_token=upstream_token_set.refresh_token,
+            scope=" ".join(upstream_scopes) if upstream_scopes else None,
+            **self._extra_token_params,
+        )
+        logger.debug(
+            "Transparent upstream refresh succeeded (token_id=%s)",
+            upstream_token_set.upstream_token_id[:8],
+        )
+
+        # Calculate new expiry
+        if "expires_in" in token_response:
+            new_expires_in = int(token_response["expires_in"])
+        elif self._fallback_access_token_expiry_seconds is not None:
+            new_expires_in = self._fallback_access_token_expiry_seconds
+        else:
+            new_expires_in = DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS
+
+        upstream_token_set.access_token = token_response["access_token"]
+        upstream_token_set.expires_at = time.time() + new_expires_in
+        upstream_token_set.scope = " ".join(
+            parse_scopes(token_response["scope"]) or []
+            if "scope" in token_response
+            else scopes
+        )
+
+        # Handle upstream refresh token rotation
+        new_refresh_expires_in = None
+        if new_upstream_refresh := token_response.get("refresh_token"):
+            if new_upstream_refresh != upstream_token_set.refresh_token:
+                upstream_token_set.refresh_token = new_upstream_refresh
+            if "refresh_expires_in" in token_response and int(
+                token_response["refresh_expires_in"]
+            ):
+                new_refresh_expires_in = int(token_response["refresh_expires_in"])
+                upstream_token_set.refresh_token_expires_at = (
+                    time.time() + new_refresh_expires_in
+                )
+            elif upstream_token_set.refresh_token_expires_at:
+                new_refresh_expires_in = int(
+                    upstream_token_set.refresh_token_expires_at - time.time()
+                )
+            else:
+                new_refresh_expires_in = 60 * 60 * 24 * 30
+                upstream_token_set.refresh_token_expires_at = (
+                    time.time() + new_refresh_expires_in
+                )
+
+        upstream_token_set.raw_token_data = {
+            **upstream_token_set.raw_token_data,
+            **token_response,
+        }
+
+        refresh_ttl = new_refresh_expires_in or (
+            int(upstream_token_set.refresh_token_expires_at - time.time())
+            if upstream_token_set.refresh_token_expires_at
+            else 60 * 60 * 24 * 30
+        )
+        await self._upstream_token_store.put(
+            key=upstream_token_set.upstream_token_id,
+            value=upstream_token_set,
+            ttl=max(refresh_ttl, new_expires_in, 1),
+        )
+
+        return upstream_token_set
+
+    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """Validate FastMCP JWT by swapping for upstream token.
 
         This implements the token swap pattern:
@@ -1465,7 +1561,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         2. Look up upstream token via JTI mapping
         3. Decrypt upstream token
         4. Validate upstream token with provider (GitHub API, JWT validation, etc.)
-        5. Return upstream validation result
+        5. If upstream validation fails, attempt transparent refresh
+        6. Return upstream validation result
 
         The FastMCP JWT is a reference token - all authorization data comes
         from validating the upstream token via the TokenVerifier.
@@ -1500,6 +1597,79 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 logger.debug("No verification token available")
                 return None
             validated = await self._token_validator.verify_token(verification_token)
+
+            # 4. If upstream validation failed due to token expiry and we
+            # have a refresh token, attempt transparent refresh to avoid
+            # forcing the client into a full re-auth flow. Only refresh on
+            # expiry — other failures (scope mismatch, revocation) won't be
+            # helped by a refresh and would just burn tokens.
+            if (
+                not validated
+                and upstream_token_set.refresh_token
+                and upstream_token_set.expires_at <= time.time()
+            ):
+                try:
+                    token_id = upstream_token_set.upstream_token_id
+
+                    # Advisory lock prevents concurrent requests from racing
+                    # to refresh the same upstream token.
+                    if token_id not in self._refresh_locks:
+                        self._refresh_locks[token_id] = anyio.Lock()
+                    lock = self._refresh_locks[token_id]
+
+                    async with lock:
+                        # Re-read from storage — another task may have
+                        # already refreshed while we waited for the lock.
+                        upstream_token_set = (
+                            await self._upstream_token_store.get(key=token_id)
+                            or upstream_token_set
+                        )
+
+                        verification_token = self._get_verification_token(
+                            upstream_token_set
+                        )
+                        if verification_token is not None:
+                            validated = await self._token_validator.verify_token(
+                                verification_token
+                            )
+
+                        # Only refresh if the (possibly reloaded) token is
+                        # still expired — a non-expiry failure on a fresh
+                        # token (scope mismatch, revocation) won't be
+                        # helped by refreshing.
+                        if (
+                            not validated
+                            and upstream_token_set.expires_at <= time.time()
+                        ):
+                            upstream_token_set = await self._try_transparent_refresh(
+                                upstream_token_set
+                            )
+                            verification_token = self._get_verification_token(
+                                upstream_token_set
+                            )
+                            if verification_token is not None:
+                                validated = await self._token_validator.verify_token(
+                                    verification_token
+                                )
+                except Exception as e:
+                    logger.debug("Transparent upstream refresh failed: %s", e)
+                    # In a distributed deployment, another worker may have
+                    # already refreshed and rotated the token, causing our
+                    # stale refresh token to fail. Re-read and re-validate.
+                    try:
+                        reloaded = await self._upstream_token_store.get(
+                            key=upstream_token_set.upstream_token_id
+                        )
+                        if reloaded:
+                            verification_token = self._get_verification_token(reloaded)
+                            if verification_token is not None:
+                                validated = await self._token_validator.verify_token(
+                                    verification_token
+                                )
+                                if validated:
+                                    upstream_token_set = reloaded
+                    except Exception:
+                        pass
 
             if not validated:
                 logger.debug("Upstream token validation failed")

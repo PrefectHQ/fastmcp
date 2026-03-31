@@ -119,7 +119,7 @@ def create_github_server_with_mock_callback(base_url: str) -> FastMCP:
         separator = "&" if "?" in str(params.redirect_uri) else "?"
         return f"{params.redirect_uri}{separator}{urlencode(callback_params)}"
 
-    auth.authorize = mock_authorize  # type: ignore[assignment]
+    auth.authorize = mock_authorize  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
 
     # Mock the token verifier to accept our fake tokens
     original_verify_token = auth._token_validator.verify_token
@@ -136,7 +136,7 @@ def create_github_server_with_mock_callback(base_url: str) -> FastMCP:
         # Fall back to original verification for other tokens
         return await original_verify_token(token)
 
-    auth._token_validator.verify_token = mock_verify_token  # type: ignore[assignment]
+    auth._token_validator.verify_token = mock_verify_token  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
 
     # Create FastMCP server with mocked GitHub authentication
     server = FastMCP("GitHub OAuth Integration Test Server (Mock)", auth=auth)

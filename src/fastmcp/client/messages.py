@@ -36,17 +36,17 @@ class MessageHandler:
             case RequestResponder():
                 # handle all requests
                 # TODO(ty): remove when ty supports match statement narrowing
-                await self.on_request(message)  # type: ignore[arg-type]
+                await self.on_request(message)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
                 # handle specific requests
                 # TODO(ty): remove type ignores when ty supports match statement narrowing
-                match message.request.root:  # type: ignore[union-attr]
+                match message.request.root:  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
                     case mcp.types.PingRequest():
-                        await self.on_ping(message.request.root)  # type: ignore[union-attr]
+                        await self.on_ping(message.request.root)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
                     case mcp.types.ListRootsRequest():
-                        await self.on_list_roots(message.request.root)  # type: ignore[union-attr]
+                        await self.on_list_roots(message.request.root)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
                     case mcp.types.CreateMessageRequest():
-                        await self.on_create_message(message.request.root)  # type: ignore[union-attr]
+                        await self.on_create_message(message.request.root)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
             # notifications
             case mcp.types.ServerNotification():

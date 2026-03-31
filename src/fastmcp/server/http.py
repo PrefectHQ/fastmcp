@@ -125,7 +125,6 @@ def create_base_app(
         A Starlette application
     """
     # Always add RequestContextMiddleware as the outermost middleware
-    # TODO(ty): remove type ignore when ty supports Starlette Middleware typing
     middleware.insert(0, Middleware(RequestContextMiddleware))  # type: ignore[arg-type]
 
     return StarletteWithLifespan(

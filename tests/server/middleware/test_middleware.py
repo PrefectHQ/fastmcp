@@ -8,7 +8,7 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.base import ToolResult
 
 
 @dataclass
@@ -479,7 +479,7 @@ class TestApplyMiddlewareParameter:
 
         result = await server.call_tool("add", {"a": 1, "b": 2})
 
-        assert result.structured_content["result"] == 3  # type: ignore[union-attr,index]
+        assert result.structured_content["result"] == 3  # type: ignore[union-attr,index]  # ty:ignore[not-subscriptable]
         assert recording.assert_called(hook="on_call_tool", times=1)
 
     async def test_call_tool_with_run_middleware_false(self):
@@ -495,7 +495,7 @@ class TestApplyMiddlewareParameter:
 
         result = await server.call_tool("add", {"a": 1, "b": 2}, run_middleware=False)
 
-        assert result.structured_content["result"] == 3  # type: ignore[union-attr,index]
+        assert result.structured_content["result"] == 3  # type: ignore[union-attr,index]  # ty:ignore[not-subscriptable]
         # Middleware should not have been called
         assert len(recording.calls) == 0
 
@@ -612,10 +612,10 @@ class TestApplyMiddlewareParameter:
 
         # With middleware: a=5 becomes a=10, result = 10 + 3 = 13
         result_with = await server.call_tool("add", {"a": 5, "b": 3})
-        assert result_with.structured_content["result"] == 13  # type: ignore[union-attr,index]
+        assert result_with.structured_content["result"] == 13  # type: ignore[union-attr,index]  # ty:ignore[not-subscriptable]
 
         # Without middleware: a=5 stays a=5, result = 5 + 3 = 8
         result_without = await server.call_tool(
             "add", {"a": 5, "b": 3}, run_middleware=False
         )
-        assert result_without.structured_content["result"] == 8  # type: ignore[union-attr,index]
+        assert result_without.structured_content["result"] == 8  # type: ignore[union-attr,index]  # ty:ignore[not-subscriptable]

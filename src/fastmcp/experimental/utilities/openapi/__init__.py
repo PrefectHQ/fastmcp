@@ -2,6 +2,8 @@
 
 import warnings
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
+
 from fastmcp.utilities.openapi import (
     HTTPRoute,
     HttpMethod,
@@ -18,7 +20,7 @@ from fastmcp.utilities.openapi import (
 warnings.warn(
     "Importing from fastmcp.experimental.utilities.openapi is deprecated. "
     "Import from fastmcp.utilities.openapi instead.",
-    DeprecationWarning,
+    FastMCPDeprecationWarning,
     stacklevel=2,
 )
 

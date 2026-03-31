@@ -1,19 +1,26 @@
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 from anthropic import AsyncAnthropic
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 from mcp.types import (
+    AudioContent,
     CreateMessageResult,
     CreateMessageResultWithTools,
+    ImageContent,
     ModelHint,
     ModelPreferences,
     SamplingMessage,
     TextContent,
+    ToolResultContent,
     ToolUseContent,
 )
 
-from fastmcp.client.sampling.handlers.anthropic import AnthropicSamplingHandler
+from fastmcp.client.sampling.handlers.anthropic import (
+    AnthropicSamplingHandler,
+    _image_content_to_anthropic_block,
+)
 
 
 def test_convert_sampling_messages_to_anthropic_messages():
@@ -34,15 +41,137 @@ def test_convert_sampling_messages_to_anthropic_messages():
     ]
 
 
-def test_convert_to_anthropic_messages_raises_on_non_text():
-    from fastmcp.utilities.types import Image
+def test_image_content_to_anthropic_block():
+    block = _image_content_to_anthropic_block(
+        ImageContent(type="image", data="YWJj", mimeType="image/png")
+    )
 
-    with pytest.raises(ValueError):
+    assert block == {
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": "image/png",
+            "data": "YWJj",
+        },
+    }
+
+
+def test_image_content_unsupported_mime_type_raises():
+    with pytest.raises(ValueError, match="Unsupported image MIME type"):
+        _image_content_to_anthropic_block(
+            ImageContent(type="image", data="YWJj", mimeType="image/bmp")
+        )
+
+
+def test_convert_single_image_content_to_anthropic_message():
+    msgs = AnthropicSamplingHandler._convert_to_anthropic_messages(
+        messages=[
+            SamplingMessage(
+                role="user",
+                content=ImageContent(type="image", data="YWJj", mimeType="image/png"),
+            )
+        ],
+    )
+
+    assert len(msgs) == 1
+    assert msgs[0] == {
+        "role": "user",
+        "content": [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": "YWJj",
+                },
+            }
+        ],
+    }
+
+
+def test_convert_single_audio_content_raises():
+    with pytest.raises(ValueError, match="AudioContent is not supported"):
         AnthropicSamplingHandler._convert_to_anthropic_messages(
             messages=[
                 SamplingMessage(
                     role="user",
-                    content=Image(data=b"abc").to_image_content(),
+                    content=AudioContent(
+                        type="audio", data="YWJj", mimeType="audio/wav"
+                    ),
+                )
+            ],
+        )
+
+
+def test_convert_list_content_with_image_and_text():
+    msgs = AnthropicSamplingHandler._convert_to_anthropic_messages(
+        messages=[
+            SamplingMessage(
+                role="user",
+                content=[
+                    TextContent(type="text", text="Describe this image"),
+                    ImageContent(type="image", data="YWJj", mimeType="image/jpeg"),
+                ],
+            )
+        ],
+    )
+
+    assert len(msgs) == 1
+    assert msgs[0] == {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this image"},
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": "YWJj",
+                },
+            },
+        ],
+    }
+
+
+def test_convert_list_content_with_audio_raises():
+    with pytest.raises(ValueError, match="AudioContent is not supported"):
+        AnthropicSamplingHandler._convert_to_anthropic_messages(
+            messages=[
+                SamplingMessage(
+                    role="user",
+                    content=[
+                        TextContent(type="text", text="Listen to this"),
+                        AudioContent(type="audio", data="YWJj", mimeType="audio/wav"),
+                    ],
+                )
+            ],
+        )
+
+
+def test_convert_image_in_assistant_message_raises():
+    with pytest.raises(ValueError, match="ImageContent is only supported in user"):
+        AnthropicSamplingHandler._convert_to_anthropic_messages(
+            messages=[
+                SamplingMessage(
+                    role="assistant",
+                    content=ImageContent(
+                        type="image", data="YWJj", mimeType="image/png"
+                    ),
+                )
+            ],
+        )
+
+
+def test_convert_list_image_in_assistant_message_raises():
+    with pytest.raises(ValueError, match="ImageContent is only supported in user"):
+        AnthropicSamplingHandler._convert_to_anthropic_messages(
+            messages=[
+                SamplingMessage(
+                    role="assistant",
+                    content=[
+                        TextContent(type="text", text="Here's the image"),
+                        ImageContent(type="image", data="YWJj", mimeType="image/png"),
+                    ],
                 )
             ],
         )
@@ -61,7 +190,7 @@ def test_convert_to_anthropic_messages_raises_on_non_text():
         (["unknown-model"], "fallback-model"),
     ],
 )
-def test_select_model_from_preferences(prefs, expected):
+def test_select_model_from_preferences(prefs: Any, expected: str) -> None:
     mock_client = MagicMock(spec=AsyncAnthropic)
     handler = AnthropicSamplingHandler(
         default_model="fallback-model", client=mock_client
@@ -220,8 +349,6 @@ def test_convert_messages_with_tool_use_content():
 
 def test_convert_messages_with_tool_result_content():
     """Test converting messages that include tool result content from user."""
-    from mcp.types import ToolResultContent
-
     msgs = AnthropicSamplingHandler._convert_to_anthropic_messages(
         messages=[
             SamplingMessage(

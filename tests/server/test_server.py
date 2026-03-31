@@ -10,7 +10,7 @@ from mcp.types import TextContent, TextResourceContents
 from fastmcp import Client, FastMCP
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import FunctionTool
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.tests import temporary_settings
 
 

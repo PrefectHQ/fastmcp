@@ -26,6 +26,7 @@ from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
@@ -129,7 +130,7 @@ class ToolResult(BaseModel):
             return CallToolResult(
                 structuredContent=self.structured_content,
                 content=self.content,
-                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
             )
         if self.structured_content is None:
             return self.content
@@ -190,7 +191,7 @@ class Tool(FastMCPComponent):
         elif self.annotations and self.annotations.title:
             title = self.annotations.title
 
-        return MCPTool(
+        mcp_tool = MCPTool(
             name=overrides.get("name", self.name),
             title=overrides.get("title", title),
             description=overrides.get("description", self.description),
@@ -201,8 +202,17 @@ class Tool(FastMCPComponent):
             execution=overrides.get("execution", self.execution),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta()
-            ),
+            ),  # ty:ignore[unknown-argument]
         )
+
+        if (
+            self.task_config.supports_tasks()
+            and "execution" not in overrides
+            and not self.execution
+        ):
+            mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
+
+        return mcp_tool
 
     @classmethod
     def from_function(
@@ -268,9 +278,15 @@ class Tool(FastMCPComponent):
 
         if _HAS_PREFAB:
             if isinstance(raw_value, _PrefabApp):
-                return _prefab_to_tool_result(raw_value)
+                return _prefab_to_tool_result(
+                    raw_value,
+                    fastmcp_app_name=_get_fastmcp_app_name(self),
+                )
             if isinstance(raw_value, _PrefabComponent):
-                return _prefab_to_tool_result(_PrefabApp(view=raw_value))
+                return _prefab_to_tool_result(
+                    _PrefabApp(view=raw_value),
+                    fastmcp_app_name=_get_fastmcp_app_name(self),
+                )
 
         content = _convert_to_content(raw_value, serializer=self.serializer)
 
@@ -482,26 +498,45 @@ def _convert_to_single_content_block(
 _PREFAB_TEXT_FALLBACK = "[Rendered Prefab UI]"
 
 
-def _get_tool_resolver() -> Callable[..., str] | None:
+def _get_tool_resolver(app_name: str | None = None) -> Callable[..., str] | None:
     """Get the FastMCPApp callable resolver, if available."""
     try:
-        from fastmcp.server.app import _resolve_tool_ref
+        from fastmcp.apps.app import _make_resolver
 
-        return _resolve_tool_ref
+        return _make_resolver(app_name)
     except ImportError:
         return None
 
 
-def _prefab_to_json(app: Any) -> dict[str, Any]:
-    """Call PrefabApp.to_json() with the FastMCPApp callable resolver."""
-    return app.to_json(tool_resolver=_get_tool_resolver())
+def _prefab_to_json(app: Any, fastmcp_app_name: str | None = None) -> dict[str, Any]:
+    """Call PrefabApp.to_json() with the FastMCPApp callable resolver.
+
+    The resolver prefixes tool names with the app name (e.g.
+    ``"store_files"`` → ``"Files___store_files"``) so the server can
+    find them via the bypass lookup regardless of transforms.
+    """
+    data = app.to_json(tool_resolver=_get_tool_resolver(fastmcp_app_name))
+    return data
 
 
-def _prefab_to_tool_result(app: Any) -> ToolResult:
+def _get_fastmcp_app_name(tool: Tool) -> str | None:
+    """Read the FastMCPApp name from a tool's metadata, if present."""
+    meta = tool.meta
+    if not meta:
+        return None
+    fastmcp_meta = meta.get("fastmcp")
+    if isinstance(fastmcp_meta, dict):
+        app = fastmcp_meta.get("app")
+        if isinstance(app, str):
+            return app
+    return None
+
+
+def _prefab_to_tool_result(app: Any, fastmcp_app_name: str | None = None) -> ToolResult:
     """Convert a PrefabApp to a FastMCP ToolResult."""
     return ToolResult(
         content=[TextContent(type="text", text=_PREFAB_TEXT_FALLBACK)],
-        structured_content=_prefab_to_json(app),
+        structured_content=_prefab_to_json(app, fastmcp_app_name=fastmcp_app_name),
     )
 
 
@@ -552,7 +587,7 @@ def __getattr__(name: str) -> Any:
             warnings.warn(
                 f"Importing {name} from fastmcp.tools.tool is deprecated. "
                 f"Import from fastmcp.tools.function_tool instead.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         from fastmcp.tools import function_tool

@@ -13,8 +13,8 @@ from fastmcp.client.transports import FastMCPTransport
 from fastmcp.server.middleware.tool_injection import (
     ToolInjectionMiddleware,
 )
+from fastmcp.tools.base import Tool
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import Tool
 
 
 def multiply_fn(a: int, b: int) -> int:
