@@ -17,11 +17,11 @@
   var amplitudeInitialized = false;
   var lastTrackedUrl = null;
 
-  var PREFECT_DESTINATIONS = [
-    "https://www.prefect.io",
-    "https://prefect.io",
-    "https://horizon.prefect.io",
-    "https://app.prefect.cloud",
+  var PREFECT_DESTINATION_HOSTNAMES = [
+    "www.prefect.io",
+    "prefect.io",
+    "horizon.prefect.io",
+    "app.prefect.cloud",
   ];
 
   var routeChangeCallbacks = [];
@@ -104,10 +104,16 @@
     lastTrackedUrl = url;
   }
 
-  function isPrefectDestination(href) {
-    return PREFECT_DESTINATIONS.some(function (destination) {
-      return href.indexOf(destination) === 0;
-    });
+  function parseUrl(href) {
+    try {
+      return new URL(href, window.location.origin);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function isPrefectDestination(url) {
+    return PREFECT_DESTINATION_HOSTNAMES.indexOf(url.hostname) !== -1;
   }
 
   function addDeviceIdToLink(event) {
@@ -119,36 +125,37 @@
     var link = event.currentTarget;
     var href = link.getAttribute("href") || "";
 
-    try {
-      var url = new URL(href, window.location.origin);
-      url.searchParams.set(DEVICE_ID_PARAM, amplitude.getDeviceId());
-      link.href = url.toString();
-    } catch (error) {
+    var url = parseUrl(href);
+    if (!url || !isPrefectDestination(url)) {
       return;
     }
+
+    url.searchParams.set(DEVICE_ID_PARAM, amplitude.getDeviceId());
+    link.href = url.toString();
   }
 
   function removeDeviceIdFromLink(event) {
     var link = event.currentTarget;
     var href = link.getAttribute("href") || "";
 
-    try {
-      var url = new URL(href, window.location.origin);
-      url.searchParams.delete(DEVICE_ID_PARAM);
-      link.href = url.toString();
-    } catch (error) {
+    var url = parseUrl(href);
+    if (!url || !isPrefectDestination(url)) {
       return;
     }
+
+    url.searchParams.delete(DEVICE_ID_PARAM);
+    link.href = url.toString();
   }
 
   function attachDeviceIdForwarding() {
-    var selector = PREFECT_DESTINATIONS.map(function (url) {
-      return 'a[href^="' + url + '"]';
-    }).join(",");
-
-    var elements = document.querySelectorAll(selector);
+    var elements = document.querySelectorAll("a[href]");
     elements.forEach(function (element) {
       if (element.dataset.fastmcpDeviceIdBound === "true") {
+        return;
+      }
+
+      var url = parseUrl(element.getAttribute("href") || "");
+      if (!url || !isPrefectDestination(url)) {
         return;
       }
 
@@ -157,7 +164,7 @@
       element.addEventListener("focus", addDeviceIdToLink);
       element.addEventListener("blur", removeDeviceIdFromLink);
       element.addEventListener("touchstart", addDeviceIdToLink);
-      element.addEventListener("touchend", removeDeviceIdFromLink);
+      element.addEventListener("touchcancel", removeDeviceIdFromLink);
       element.dataset.fastmcpDeviceIdBound = "true";
     });
   }
@@ -177,9 +184,8 @@
     }
 
     var destination;
-    try {
-      destination = new URL(href, window.location.href);
-    } catch (error) {
+    destination = parseUrl(href);
+    if (!destination) {
       return;
     }
 
@@ -202,7 +208,7 @@
       destination: destination.href,
       destination_domain: destination.hostname,
       link_text: (link.textContent || "").trim().slice(0, 200),
-      is_prefect_destination: isPrefectDestination(destination.href),
+      is_prefect_destination: isPrefectDestination(destination),
     });
   }
 
