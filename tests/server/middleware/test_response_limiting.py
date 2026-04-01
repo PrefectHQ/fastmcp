@@ -178,7 +178,9 @@ class TestResponseLimitingMiddleware:
             assert result.structured_content is not None
             assert result.structured_content["text"] == "x" * 2_000
             # text content should be truncated
-            assert "[Response truncated" in result.content[0].text
+            first_content = result.content[0]
+            assert isinstance(first_content, TextContent)
+            assert "[Response truncated" in first_content.text
 
     async def test_truncation_without_structured_content_still_works(
         self, mcp_server: FastMCP
