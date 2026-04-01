@@ -1515,7 +1515,7 @@ def _make_dev_app(
 
         # Use a reasonable default timeout to prevent the proxy from hanging
         # if the backend server is unresponsive.
-        client = httpx.AsyncClient(timeout=60.0)
+        client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=None))
 
         async def _stream_and_cleanup(resp: httpx.Response) -> Any:
             is_sse = "text/event-stream" in resp.headers.get("content-type", "")
@@ -1544,6 +1544,7 @@ def _make_dev_app(
             except (
                 httpx.RemoteProtocolError,
                 httpx.ReadError,
+                httpx.ReadTimeout,  
                 httpcore.RemoteProtocolError,
             ):
                 pass  # Connection closed during shutdown — not an error
