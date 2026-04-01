@@ -193,7 +193,9 @@ class TestResponseLimitingMiddleware:
         async with Client(mcp_server) as client:
             result = await client.call_tool("plain_tool", {})
             assert result.structured_content is None
-            assert "[Response truncated" in result.content[0].text
+            first_content = result.content[0]
+            assert isinstance(first_content, TextContent)
+            assert "[Response truncated" in first_content.text
 
     def test_truncate_to_result_preserves_structured_content(self):
         """Unit test: _truncate_to_result passes through structured_content."""
@@ -201,4 +203,6 @@ class TestResponseLimitingMiddleware:
         sc = {"key": "value", "count": 42}
         result = middleware._truncate_to_result("a" * 1000, structured_content=sc)
         assert result.structured_content == sc
-        assert "[Response truncated" in result.content[0].text
+        first_content = result.content[0]
+        assert isinstance(first_content, TextContent)
+        assert "[Response truncated" in first_content.text
