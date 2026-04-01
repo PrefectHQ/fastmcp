@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import mcp.types as mt
 import pydantic_core
@@ -67,12 +68,31 @@ class ResponseLimitingMiddleware(Middleware):
         self.truncation_suffix = truncation_suffix
         self.tools = set(tools) if tools is not None else None
 
-    def _truncate_to_result(self, text: str) -> ToolResult:
-        """Truncate text to fit within max_size and wrap in ToolResult."""
+    def _truncate_to_result(
+        self,
+        text: str,
+        structured_content: dict[str, Any] | None = None,
+    ) -> ToolResult:
+        """Truncate text to fit within max_size and wrap in ToolResult.
+
+        Args:
+            text: The text content to truncate.
+            structured_content: Optional structured content to preserve.
+                When present, its serialized size is subtracted from the
+                budget available for text.
+        """
         suffix_bytes = len(self.truncation_suffix.encode("utf-8"))
         # Account for JSON wrapper overhead: {"content":[{"type":"text","text":"..."}]}
         overhead = 50
-        target_size = self.max_size - suffix_bytes - overhead
+
+        # Reserve space for structured_content when present
+        structured_bytes = 0
+        if structured_content is not None:
+            structured_bytes = len(
+                pydantic_core.to_json(structured_content, fallback=str)
+            )
+
+        target_size = self.max_size - suffix_bytes - overhead - structured_bytes
 
         if target_size <= 0:
             # Edge case: max_size too small for even the suffix
@@ -88,7 +108,10 @@ class ResponseLimitingMiddleware(Middleware):
                     + self.truncation_suffix
                 )
 
-        return ToolResult(content=[TextContent(type="text", text=truncated)])
+        return ToolResult(
+            content=[TextContent(type="text", text=truncated)],
+            structured_content=structured_content,
+        )
 
     async def on_call_tool(
         self,
@@ -122,4 +145,6 @@ class ResponseLimitingMiddleware(Middleware):
             else serialized.decode("utf-8", errors="replace")
         )
 
-        return self._truncate_to_result(text)
+        return self._truncate_to_result(
+            text, structured_content=result.structured_content
+        )

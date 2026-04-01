@@ -2,6 +2,7 @@
 
 import pytest
 from mcp.types import ImageContent, TextContent
+from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
@@ -153,3 +154,51 @@ class TestResponseLimitingMiddleware:
         content = result.content[0]
         assert isinstance(content, TextContent)
         content.text.encode("utf-8")
+
+    async def test_structured_content_preserved_on_truncation(
+        self, mcp_server: FastMCP
+    ):
+        """Test that structured_content is preserved when text content is truncated.
+
+        Regression test for #3717: tools with outputSchema must always return
+        structured_content, even when the text representation is truncated.
+        """
+        mcp_server.add_middleware(ResponseLimitingMiddleware(max_size=1_000))
+
+        class Answer(BaseModel):
+            text: str
+
+        @mcp_server.tool()
+        def big_answer() -> Answer:
+            return Answer(text="x" * 2_000)
+
+        async with Client(mcp_server) as client:
+            result = await client.call_tool("big_answer")
+            # structured_content must be present (not dropped by truncation)
+            assert result.structured_content is not None
+            assert result.structured_content["text"] == "x" * 2_000
+            # text content should be truncated
+            assert "[Response truncated" in result.content[0].text
+
+    async def test_truncation_without_structured_content_still_works(
+        self, mcp_server: FastMCP
+    ):
+        """Test that truncation still works normally for tools without outputSchema."""
+        mcp_server.add_middleware(ResponseLimitingMiddleware(max_size=500))
+
+        @mcp_server.tool()
+        def plain_tool() -> ToolResult:
+            return ToolResult(content=[TextContent(type="text", text="y" * 10_000)])
+
+        async with Client(mcp_server) as client:
+            result = await client.call_tool("plain_tool", {})
+            assert result.structured_content is None
+            assert "[Response truncated" in result.content[0].text
+
+    def test_truncate_to_result_preserves_structured_content(self):
+        """Unit test: _truncate_to_result passes through structured_content."""
+        middleware = ResponseLimitingMiddleware(max_size=500)
+        sc = {"key": "value", "count": 42}
+        result = middleware._truncate_to_result("a" * 1000, structured_content=sc)
+        assert result.structured_content == sc
+        assert "[Response truncated" in result.content[0].text
