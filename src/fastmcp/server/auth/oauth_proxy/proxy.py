@@ -1571,6 +1571,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             # 1. Verify FastMCP JWT signature and claims
             payload = self.jwt_issuer.verify_token(token)
             jti = payload["jti"]
+            upstream_claims = payload.get("upstream_claims")
 
             # 2. Look up upstream token via JTI mapping
             jti_mapping = await self._jti_mapping_store.get(key=jti)
@@ -1692,6 +1693,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "expires_at": int(upstream_token_set.expires_at),
                     }
                 )
+
+            # Propagate upstream claims from the verified FastMCP JWT into the
+            # final AccessToken object. This allows subclasses to access custom
+            # identity data extracted during the initial authorization flow.
+            # We perform a model copy to avoid mutating a potentially cached
+            # reference shared across concurrent requests.
+            if validated and upstream_claims:
+                validated = validated.model_copy(deep=True)
+                if validated.claims is None:
+                    validated.claims = {}
+                validated.claims["upstream_claims"] = upstream_claims
 
             logger.debug(
                 "Token swap successful for JTI=%s (upstream validated)", jti[:8]
