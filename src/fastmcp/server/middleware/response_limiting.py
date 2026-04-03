@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import mcp.types as mt
 import pydantic_core
@@ -67,7 +68,11 @@ class ResponseLimitingMiddleware(Middleware):
         self.truncation_suffix = truncation_suffix
         self.tools = set(tools) if tools is not None else None
 
-    def _truncate_to_result(self, text: str) -> ToolResult:
+    def _truncate_to_result(
+        self,
+        text: str,
+        meta: dict[str, Any] | None = None,
+    ) -> ToolResult:
         """Truncate text to fit within max_size and wrap in ToolResult."""
         suffix_bytes = len(self.truncation_suffix.encode("utf-8"))
         # Account for JSON wrapper overhead: {"content":[{"type":"text","text":"..."}]}
@@ -88,7 +93,15 @@ class ResponseLimitingMiddleware(Middleware):
                     + self.truncation_suffix
                 )
 
-        return ToolResult(content=[TextContent(type="text", text=truncated)])
+        # Setting meta ensures to_mcp_result() returns a CallToolResult,
+        # which bypasses MCP SDK outputSchema validation. A truncated
+        # response is no longer valid structured output.
+        if meta is None:
+            meta = {}
+        return ToolResult(
+            content=[TextContent(type="text", text=truncated)],
+            meta=meta,
+        )
 
     async def on_call_tool(
         self,
@@ -122,4 +135,4 @@ class ResponseLimitingMiddleware(Middleware):
             else serialized.decode("utf-8", errors="replace")
         )
 
-        return self._truncate_to_result(text)
+        return self._truncate_to_result(text, meta=result.meta)
