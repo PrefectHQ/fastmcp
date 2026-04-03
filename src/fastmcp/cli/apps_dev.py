@@ -36,7 +36,6 @@ import sys
 import tarfile
 import tempfile
 import time
-import urllib.request
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -1544,7 +1543,7 @@ def _make_dev_app(
             except (
                 httpx.RemoteProtocolError,
                 httpx.ReadError,
-                httpx.ReadTimeout,  
+                httpx.ReadTimeout,
                 httpcore.RemoteProtocolError,
             ):
                 pass  # Connection closed during shutdown — not an error
