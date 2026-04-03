@@ -228,11 +228,7 @@ class FunctionResource(Resource):
         return result
 
     def register_with_docket(self, docket: Docket) -> None:
-        """Register this resource with docket for background execution.
-
-        FunctionResource registers the underlying function, which has the user's
-        Depends parameters for docket to resolve.
-        """
+        """Register this resource with docket for background execution."""
         if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])
