@@ -274,6 +274,7 @@ class FastMCP(
         tools: Sequence[Tool | Callable[..., Any]] | None = None,
         on_duplicate: DuplicateBehavior | None = None,
         mask_error_details: bool | None = None,
+        auto_catalog: bool = False,
         dereference_schemas: bool = True,
         strict_input_validation: bool | None = None,
         list_page_size: int | None = None,
@@ -333,6 +334,11 @@ class FastMCP(
         if list_page_size is not None and list_page_size <= 0:
             raise ValueError("list_page_size must be a positive integer")
         self._list_page_size: int | None = list_page_size
+
+        # Auto-catalog: when enabled, a concise tool summary is appended to
+        # `instructions` at server start so LLMs can discover available tools
+        # from the initialize response alone.
+        self._auto_catalog: bool = auto_catalog
 
         # Handle Lifespan instances (they're callable) or regular lifespan functions
         if lifespan is not None:
@@ -411,6 +417,77 @@ class FastMCP(
     @instructions.setter
     def instructions(self, value: str | None) -> None:
         self._mcp_server.instructions = value
+
+    def _collect_tools_sync(self) -> list[Tool]:
+        """Synchronously collect tools from all providers.
+
+        Walks ``_components`` dicts on :class:`LocalProvider` instances and
+        recursively traverses :class:`AggregateProvider` trees.  This is used
+        by the ``auto_catalog`` feature to build a tool summary without
+        requiring an async context.
+        """
+        from fastmcp.server.providers.local_provider.local_provider import (
+            LocalProvider as _LP,
+        )
+
+        tools: list[Tool] = []
+        stack: list[Provider] = list(self.providers)
+        while stack:
+            provider = stack.pop()
+            # Unwrap wrapped providers (namespace / transform wrappers)
+            inner = getattr(provider, "_provider", None)
+            if inner is not None:
+                stack.append(inner)
+                continue
+            if isinstance(provider, AggregateProvider):
+                stack.extend(provider.providers)
+                continue
+            if isinstance(provider, _LP):
+                tools.extend(
+                    v for v in provider._components.values() if isinstance(v, Tool)
+                )
+        return tools
+
+    def _build_tool_catalog(self, budget: int = 2048) -> str | None:
+        """Build a concise tool catalog string for the ``instructions`` field.
+
+        Returns ``None`` when there are no tools.  The result is trimmed so
+        that the total ``instructions`` length stays within *budget* bytes
+        (default 2 048, matching Claude Code's cap).
+        """
+        tools = self._collect_tools_sync()
+        if not tools:
+            return None
+
+        # Sort alphabetically for stable output
+        tools.sort(key=lambda t: t.name)
+
+        header = "\n\nAvailable tools:\n"
+        base_instructions = self._mcp_server.instructions or ""
+        remaining = budget - len(base_instructions.encode("utf-8")) - len(
+            header.encode("utf-8")
+        )
+
+        lines: list[str] = []
+        for tool in tools:
+            desc = (tool.description or "").strip()
+            # Take only the first sentence
+            first_sentence = desc.split(". ")[0].rstrip(".")
+            if first_sentence:
+                first_sentence += "."
+            line = f"  {tool.name}: {first_sentence}" if first_sentence else f"  {tool.name}"
+            line_bytes = len(line.encode("utf-8")) + 1  # +1 for newline
+            if line_bytes > remaining:
+                if lines:
+                    lines.append("  ...")
+                break
+            remaining -= line_bytes
+            lines.append(line)
+
+        if not lines:
+            return None
+
+        return header + "\n".join(lines)
 
     @property
     def version(self) -> str | None:

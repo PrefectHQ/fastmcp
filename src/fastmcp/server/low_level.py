@@ -182,6 +182,15 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         # ensure we use the FastMCP notification options
         if notification_options is None:
             notification_options = self.notification_options
+
+        # Auto-catalog: append a concise tool summary to instructions so LLMs
+        # can discover tools from the initialize response alone.
+        if self.fastmcp._auto_catalog:
+            catalog = self.fastmcp._build_tool_catalog()
+            if catalog is not None:
+                original = self.instructions or ""
+                self.instructions = original + catalog
+
         return super().create_initialization_options(
             notification_options=notification_options,
             experimental_capabilities=experimental_capabilities,
