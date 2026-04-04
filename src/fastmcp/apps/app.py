@@ -306,25 +306,10 @@ class FastMCPApp(Provider):
                 _ensure_prefab_renderer,
             )
 
-            try:
-                from prefab_ui.renderer import get_renderer_csp
-
-                from fastmcp.apps.config import ResourceCSP
-
-                csp = get_renderer_csp()
-                app_config = AppConfig(
-                    resource_uri=PREFAB_RENDERER_URI,
-                    visibility=["model"],
-                    csp=ResourceCSP(
-                        resource_domains=csp.get("resource_domains"),
-                        connect_domains=csp.get("connect_domains"),
-                    ),
-                )
-            except ImportError:
-                app_config = AppConfig(
-                    resource_uri=PREFAB_RENDERER_URI,
-                    visibility=["model"],
-                )
+            app_config = AppConfig(
+                resource_uri=PREFAB_RENDERER_URI,
+                visibility=["model"],
+            )
 
             meta: dict[str, Any] = {
                 "ui": app_config_to_meta_dict(app_config),

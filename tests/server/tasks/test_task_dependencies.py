@@ -13,6 +13,7 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.dependencies import CurrentDocket, CurrentFastMCP, Depends
+from fastmcp.exceptions import ToolError
 
 
 @pytest.fixture
@@ -256,8 +257,6 @@ async def test_dependency_errors_propagate_to_task_failure():
         value: str, dep: str = cast(Any, Depends(failing_dependency))
     ) -> str:
         return f"Got: {dep}"
-
-    from fastmcp.exceptions import ToolError
 
     async with Client(mcp) as client:
         task = await client.call_tool(

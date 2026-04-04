@@ -108,6 +108,7 @@ class ProxyTool(Tool):
             icons=mcp_tool.icons,
             meta=mcp_tool.meta,
             tags=get_fastmcp_metadata(mcp_tool.meta).get("tags", []),
+            execution=mcp_tool.execution,
         )
 
     async def run(

@@ -272,16 +272,18 @@ class Context:
 
         self._server_token = _current_server.set(weakref.ref(self.fastmcp))
 
-        # Set docket/worker from server instance for this request's context.
-        # This ensures ContextVars work even in ASGI environments (Lambda, FastAPI mount)
-        # where lifespan ContextVars don't propagate to request handlers.
-        server = self.fastmcp
+        # Re-set docket/worker from the server instance so mounted children
+        # inherit the parent's Docket via the ContextVar. Only servers that
+        # own the Docket (the parent) have _docket set; children skip this,
+        # leaving the parent's value in place.
         if is_docket_available():
+            server = self.fastmcp
             if server._docket is not None:
                 self._docket_token = _current_docket.set(server._docket)
             if server._worker is not None:
                 self._worker_token = _current_worker.set(server._worker)
-        else:
+
+        if not is_docket_available():
             # Without docket, the lifespan won't provide a SharedContext,
             # so create one scoped to this Context for Shared() dependencies.
             self._shared_context = SharedContext()
@@ -297,7 +299,6 @@ class Context:
             _current_worker,
         )
 
-        # Mirror __aenter__: clean up docket/worker tokens or SharedContext
         if hasattr(self, "_worker_token"):
             _current_worker.reset(self._worker_token)
             del self._worker_token

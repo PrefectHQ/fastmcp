@@ -246,7 +246,8 @@ class TestAppUI:
         assert meta is not None
         assert meta["ui"]["resourceUri"] == "ui://prefab/renderer.html"
 
-    async def test_ui_has_csp(self):
+    async def test_ui_tool_has_no_csp(self):
+        """CSP belongs on the UI resource, not the tool (per MCP Apps spec)."""
         app = FastMCPApp("test")
 
         @app.ui()
@@ -256,8 +257,7 @@ class TestAppUI:
         tools = await app._list_tools()
         meta = tools[0].meta
         assert meta is not None
-        csp = meta["ui"].get("csp")
-        assert csp is not None
+        assert "csp" not in meta["ui"]
 
     async def test_ui_with_title_and_description(self):
         app = FastMCPApp("test")

@@ -439,11 +439,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         return result
 
     def register_with_docket(self, docket: Docket) -> None:
-        """Register this template with docket for background execution.
-
-        FunctionResourceTemplate registers the underlying function, which has the
-        user's Depends parameters for docket to resolve.
-        """
+        """Register this template with docket for background execution."""
         if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])

@@ -333,11 +333,7 @@ class FunctionPrompt(Prompt):
             raise PromptError(f"Error rendering prompt {self.name}.") from e
 
     def register_with_docket(self, docket: Docket) -> None:
-        """Register this prompt with docket for background execution.
-
-        FunctionPrompt registers the underlying function, which has the user's
-        Depends parameters for docket to resolve.
-        """
+        """Register this prompt with docket for background execution."""
         if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])

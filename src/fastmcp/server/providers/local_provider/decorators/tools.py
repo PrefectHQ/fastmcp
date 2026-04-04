@@ -108,17 +108,10 @@ def _ensure_prefab_renderer(provider: LocalProvider) -> None:
 
 def _expand_prefab_ui_meta(tool: Tool) -> None:
     """Expand meta["ui"] = True into the full AppConfig dict for a prefab tool."""
-    from prefab_ui.renderer import get_renderer_csp
+    from fastmcp.apps.config import AppConfig, app_config_to_meta_dict
 
-    from fastmcp.apps.config import AppConfig, ResourceCSP, app_config_to_meta_dict
-
-    csp = get_renderer_csp()
     app_config = AppConfig(
         resource_uri=PREFAB_RENDERER_URI,
-        csp=ResourceCSP(
-            resource_domains=csp.get("resource_domains"),
-            connect_domains=csp.get("connect_domains"),
-        ),
     )
     meta = dict(tool.meta) if tool.meta else {}
     meta["ui"] = app_config_to_meta_dict(app_config)
