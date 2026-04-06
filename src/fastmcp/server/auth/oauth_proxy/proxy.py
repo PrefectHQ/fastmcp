@@ -662,7 +662,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         client = await self._client_store.get(key=client_id)
 
         if client is not None:
-            if client.allowed_redirect_uri_patterns is None:
+            if self._allowed_client_redirect_uris is not None:
                 client.allowed_redirect_uri_patterns = (
                     self._allowed_client_redirect_uris
                 )
