@@ -18,7 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Validate skill
-        uses: hashgraph-online/skill-publish@0495e3638e9dc8cfc291ba13bda8b611999162e9 # v1 # v1
+        uses: hashgraph-online/skill-publish@c182a4aa4dba68fb7f3c01be4ca560dfb759ae9e # v1 # v1
         with:
-          mode: validate
           skill-dir: .
