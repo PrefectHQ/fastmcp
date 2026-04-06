@@ -215,11 +215,8 @@ register_with_docket(self, docket: Docket) -> None
 
 Register this template with docket for background execution.
 
-FunctionResourceTemplate registers the underlying function, which has the
-user's Depends parameters for docket to resolve.
 
-
-#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L451" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L447" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_to_docket(self, docket: Docket, params: dict[str, Any], **kwargs: Any) -> Execution
@@ -237,7 +234,7 @@ FunctionResourceTemplate splats the params dict since .fn expects **kwargs.
 - `**kwargs`: Additional kwargs passed to docket.add()
 
 
-#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L477" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L473" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any], uri_template: str, name: str | None = None, version: str | int | None = None, title: str | None = None, description: str | None = None, icons: list[Icon] | None = None, mime_type: str | None = None, tags: set[str] | None = None, annotations: Annotations | None = None, meta: dict[str, Any] | None = None, task: bool | TaskConfig | None = None, auth: AuthCheck | list[AuthCheck] | None = None) -> FunctionResourceTemplate
