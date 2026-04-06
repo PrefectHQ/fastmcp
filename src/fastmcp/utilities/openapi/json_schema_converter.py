@@ -26,6 +26,8 @@ OPENAPI_SPECIFIC_FIELDS = {
 # Fields that should be recursively processed
 RECURSIVE_FIELDS = {
     "properties": dict,
+    "$defs": dict,
+    "$definitions": dict,
     "items": dict,
     "additionalProperties": dict,
     "allOf": list,
@@ -108,19 +110,19 @@ def convert_openapi_schema_to_json_schema(
     for field_name, field_type in RECURSIVE_FIELDS.items():
         if field_name in result:
             if field_type is dict and isinstance(result[field_name], dict):
-                if field_name == "properties":
-                    # Handle properties specially - each property is a schema
+                if field_name in ("properties", "$defs", "$definitions"):
+                    # Handle maps of schemas (properties, $defs, $definitions)
                     result[field_name] = {
-                        prop_name: convert_openapi_schema_to_json_schema(
-                            prop_schema,
+                        name: convert_openapi_schema_to_json_schema(
+                            sub_schema,
                             openapi_version,
                             remove_read_only,
                             remove_write_only,
                             convert_one_of_to_any_of,
                         )
-                        if isinstance(prop_schema, dict)
-                        else prop_schema
-                        for prop_name, prop_schema in result[field_name].items()
+                        if isinstance(sub_schema, dict)
+                        else sub_schema
+                        for name, sub_schema in result[field_name].items()
                     }
                 else:
                     result[field_name] = convert_openapi_schema_to_json_schema(

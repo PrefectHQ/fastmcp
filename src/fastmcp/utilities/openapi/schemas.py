@@ -451,6 +451,11 @@ def _combine_schemas_and_map_params(
             # From parser - already converted and pruned
             result["$defs"] = schema_defs
 
+    if route.openapi_version and route.openapi_version.startswith("3"):
+        from .json_schema_converter import convert_openapi_schema_to_json_schema
+
+        result = convert_openapi_schema_to_json_schema(result, route.openapi_version)
+
     return result, parameter_map
 
 
