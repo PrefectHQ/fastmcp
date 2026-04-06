@@ -320,6 +320,9 @@ class Settings(BaseSettings):
     stateless_http: bool = (
         False  # If True, uses true stateless mode (new transport per request)
     )
+    session_idle_timeout: float | None = (
+        None  # Seconds before idle sessions are cleaned up. None means no timeout.
+    )
 
     mounted_components_raise_on_load_error: Annotated[
         bool,
