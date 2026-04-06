@@ -1,8 +1,4 @@
-"""Tests for OIDC Proxy token management and propagation.
-
-These tests cover the OIDCProxy's ability to issue, verify, and swap tokens
-between FastMCP and upstream identity providers.
-"""
+"""Tests for OIDC Proxy verify_id_token functionality."""
 
 from unittest.mock import patch
 
