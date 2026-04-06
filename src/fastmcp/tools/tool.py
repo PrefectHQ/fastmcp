@@ -500,7 +500,6 @@ class ParsedFunction:
             input_schema,
             prune_params=prune_params,
             prune_titles=True,
-            dereference=True,
         )
 
         output_schema = None
@@ -561,7 +560,8 @@ class ParsedFunction:
                     output_schema = base_schema
 
                 output_schema = compress_schema(
-                    output_schema, prune_titles=True, dereference=True
+                    output_schema,
+                    prune_titles=True,
                 )
 
                 # Resolve root-level $ref to meet MCP spec requirement for type: object

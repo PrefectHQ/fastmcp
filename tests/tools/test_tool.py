@@ -194,15 +194,18 @@ class TestToolFromFunction:
                 "tags": set(),
                 "enabled": True,
                 "parameters": {
-                    "properties": {
-                        "user": {
+                    "$defs": {
+                        "UserInput": {
                             "properties": {
                                 "name": {"type": "string"},
                                 "age": {"type": "integer"},
                             },
                             "required": ["name", "age"],
                             "type": "object",
-                        },
+                        }
+                    },
+                    "properties": {
+                        "user": {"$ref": "#/$defs/UserInput"},
                         "flag": {"type": "boolean"},
                     },
                     "required": ["user", "flag"],
