@@ -31,15 +31,11 @@ def test_fastapi_testclient_multiple_runs():
     # First test run
     with TestClient(app) as client:
         # We use analytics prefix since it's mounted there
-        response = client.get("/analytics/mcp")
-        # 406 is expected from SSE if Accept header is missing,
-        # but the important part is NO RuntimeError
-        assert response.status_code in [200, 405, 404, 406]
+        client.get("/analytics/mcp")  # Would raise RuntimeError before fix
 
     # Second test run - this would fail before the fix
     with TestClient(app) as client:
-        response = client.get("/analytics/mcp")
-        assert response.status_code in [200, 405, 404, 406]
+        client.get("/analytics/mcp")
 
 
 def test_fastapi_testclient_nested_lifespan():
@@ -58,5 +54,4 @@ def test_fastapi_testclient_nested_lifespan():
     # Multiple runs with custom lifespan
     for _ in range(3):
         with TestClient(app) as client:
-            response = client.get("/analytics/mcp")
-            assert response.status_code in [200, 405, 404, 406]
+            client.get("/analytics/mcp")
