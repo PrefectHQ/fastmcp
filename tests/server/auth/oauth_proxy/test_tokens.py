@@ -7,11 +7,16 @@ import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.handlers.token import TokenErrorResponse
 from mcp.server.auth.handlers.token import TokenHandler as SDKTokenHandler
-from mcp.server.auth.provider import AccessToken, AuthorizationCode
+from mcp.server.auth.provider import AuthorizationCode
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
-from fastmcp.server.auth.auth import RefreshToken, TokenHandler, TokenVerifier
+from fastmcp.server.auth.auth import (
+    AccessToken,
+    RefreshToken,
+    TokenHandler,
+    TokenVerifier,
+)
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import (
     DEFAULT_ACCESS_TOKEN_EXPIRY_NO_REFRESH_SECONDS,
@@ -581,14 +586,22 @@ class TestTransparentUpstreamRefresh:
         verifier = Mock(spec=TokenVerifier)
         verifier.required_scopes = ["read"]
 
+        # Cache tokens to test mutation of returned objects
+        cache: dict[str, AccessToken] = {}
+
         async def verify(token: str) -> AccessToken | None:
-            if token.startswith("refreshed-"):
-                return AccessToken(
+            if token in cache:
+                return cache[token]
+
+            if token.startswith("refreshed-") or token.startswith("valid-"):
+                t = AccessToken(
                     token=token,
                     client_id="test-client",
                     scopes=["read"],
                     expires_at=int(time.time() + 3600),
                 )
+                cache[token] = t
+                return t
             return None
 
         verifier.verify_token = AsyncMock(side_effect=verify)
@@ -659,6 +672,44 @@ class TestTransparentUpstreamRefresh:
             expires_in=3600,
         )
         return fastmcp_jwt
+
+    async def _setup_session_with_claims(self, proxy, *, upstream_claims=None):
+        """Set up a proxy JWT pointing at a valid upstream token, with optional upstream_claims."""
+        upstream_token_id = "upstream-tok-id"
+        access_jti = "test-claims-jti"
+
+        upstream_token_set = UpstreamTokenSet(
+            upstream_token_id=upstream_token_id,
+            access_token="valid-upstream-access",
+            refresh_token=None,
+            refresh_token_expires_at=None,
+            expires_at=time.time() + 3600,
+            token_type="Bearer",
+            scope="read",
+            client_id="test-client",
+            created_at=time.time(),
+        )
+        await proxy._upstream_token_store.put(
+            key=upstream_token_id,
+            value=upstream_token_set,
+            ttl=3600,
+        )
+        await proxy._jti_mapping_store.put(
+            key=access_jti,
+            value=JTIMapping(
+                jti=access_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=time.time(),
+            ),
+            ttl=3600,
+        )
+        return proxy.jwt_issuer.issue_access_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=access_jti,
+            expires_in=3600,
+            upstream_claims=upstream_claims,
+        )
 
     async def test_transparent_refresh_on_expired_upstream(self, proxy):
         """load_access_token refreshes upstream token when validation fails."""
@@ -855,3 +906,26 @@ class TestTransparentUpstreamRefresh:
 
         assert result is not None
         assert result.token == "refreshed-upstream-access"
+
+    async def test_upstream_claims_propagated(self, proxy):
+        jwt = await self._setup_session_with_claims(
+            proxy, upstream_claims={"sub": "user-123"}
+        )
+        result = await proxy.load_access_token(jwt)
+        assert result is not None
+        assert result.claims["upstream_claims"] == {"sub": "user-123"}
+
+    async def test_upstream_claims_not_mutated_on_cached_token(
+        self, proxy, mock_verifier
+    ):
+        jwt = await self._setup_session_with_claims(
+            proxy, upstream_claims={"sub": "user-123"}
+        )
+        result = await proxy.load_access_token(jwt)
+        assert result is not None
+        assert result.claims["upstream_claims"] == {"sub": "user-123"}
+        # Original verifier result must not be mutated
+        for call in list(mock_verifier.verify_token.call_args_list):
+            returned = await mock_verifier.verify_token(call.args[0])
+            if returned:
+                assert "upstream_claims" not in returned.claims
