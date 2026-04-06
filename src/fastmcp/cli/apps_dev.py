@@ -36,7 +36,6 @@ import sys
 import tarfile
 import tempfile
 import time
-import urllib.request
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -1277,8 +1276,10 @@ def _fetch_app_bridge_bundle_sync(
 
     # -- Download and patch app-bridge.js -----------------------------------
     npm_url = f"https://registry.npmjs.org/@modelcontextprotocol/ext-apps/-/ext-apps-{version}.tgz"
-    with urllib.request.urlopen(npm_url) as resp:
-        data = resp.read()
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.get(npm_url, follow_redirects=True)
+        resp.raise_for_status()
+        data = resp.content
 
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         member = tar.extractfile("package/dist/src/app-bridge.js")
@@ -1300,8 +1301,10 @@ def _fetch_app_bridge_bundle_sync(
     # version-specific v4.mjs (e.g. /zod@4.3.6/es2022/v4.mjs) which is
     # broken.  We fetch the wrapper to discover the exact version.
     types_url = f"{sdk_base}/types.js"
-    with urllib.request.urlopen(types_url) as resp:
-        types_content = resp.read().decode()
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.get(types_url, follow_redirects=True)
+        resp.raise_for_status()
+        types_content = resp.text
 
     # Extract the zod/v4?target=es2022 path from the types.js redirect
     zod_wrapper_match = re.search(r'import "(/zod@[^"]*v4[^"]*)"', types_content)
@@ -1312,8 +1315,10 @@ def _fetch_app_bridge_bundle_sync(
     zod_wrapper_path = zod_wrapper_match.group(1)  # e.g. /zod@^4.3.5/v4?target=es2022
 
     zod_wrapper_url = f"https://esm.sh{zod_wrapper_path}"
-    with urllib.request.urlopen(zod_wrapper_url) as resp:
-        wrapper_content = resp.read().decode()
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.get(zod_wrapper_url, follow_redirects=True)
+        resp.raise_for_status()
+        wrapper_content = resp.text
 
     # The wrapper does: export * from "/zod@4.3.6/es2022/v4.mjs"
     broken_match = re.search(
@@ -1507,7 +1512,9 @@ def _make_dev_app(
             if k.lower() not in ("host", "content-length")
         }
 
-        client = httpx.AsyncClient(timeout=None)
+        # Use a reasonable default timeout to prevent the proxy from hanging
+        # if the backend server is unresponsive.
+        client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=None))
 
         async def _stream_and_cleanup(resp: httpx.Response) -> Any:
             is_sse = "text/event-stream" in resp.headers.get("content-type", "")
@@ -1536,6 +1543,7 @@ def _make_dev_app(
             except (
                 httpx.RemoteProtocolError,
                 httpx.ReadError,
+                httpx.ReadTimeout,
                 httpcore.RemoteProtocolError,
             ):
                 pass  # Connection closed during shutdown — not an error
@@ -1576,7 +1584,7 @@ def _make_dev_app(
                 headers=fwd_headers,
                 media_type=content_type or "application/octet-stream",
             )
-        except httpx.ConnectError:
+        except (httpx.ConnectError, httpx.ConnectTimeout):
             await client.aclose()
             return Response(
                 content=json.dumps({"error": "MCP server not reachable"}).encode(),
