@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Validate skill
-        uses: internet-dot/skill-publish@b81e61395f7e6c0e9cd0c8ba0d53faa9e2d22b7d # fix/add-pnpm-install
+        uses: internet-dot/skill-publish@b81e6130f4afb5a887b667cd63d2a04b6940448c # fix/add-pnpm-install
         with:
           skill-dir: .
           mode: validate
