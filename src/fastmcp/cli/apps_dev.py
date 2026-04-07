@@ -1450,10 +1450,7 @@ def _make_dev_app(
                     # validation against non-string types.
                     if not stripped:
                         continue
-                    # Parse boolean strings from checkboxes/selects.
-                    if stripped.lower() in ("true", "false"):
-                        v = stripped.lower() == "true"
-                    elif stripped[0] in ("{", "["):
+                    if stripped[0] in ("{", "["):
                         try:
                             parsed = json.loads(stripped)
                             if isinstance(parsed, (dict, list)):
