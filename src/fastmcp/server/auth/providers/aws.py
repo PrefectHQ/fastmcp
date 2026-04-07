@@ -59,7 +59,11 @@ class AWSCognitoTokenVerifier(JWTVerifier):
         # Validate client_id claim (Cognito's equivalent of aud)
         if self._expected_client_id:
             token_client_id = access_token.claims.get("client_id")
-            if token_client_id != self._expected_client_id:
+            if isinstance(self._expected_client_id, list):
+                valid = token_client_id in self._expected_client_id
+            else:
+                valid = token_client_id == self._expected_client_id
+            if not valid:
                 self.logger.debug(
                     "Token validation failed: client_id mismatch (expected %s, got %s)",
                     self._expected_client_id,
