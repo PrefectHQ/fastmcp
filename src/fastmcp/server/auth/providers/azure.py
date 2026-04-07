@@ -220,7 +220,7 @@ class AzureProvider(OAuthProxy):
         token_verifier = JWTVerifier(
             jwks_uri=jwks_uri,
             issuer=issuer,
-            audience=client_id,
+            audience=self.identifier_uri,
             algorithm="RS256",
             required_scopes=validation_scopes,  # Only validate non-OIDC scopes
             http_client=http_client,
@@ -627,7 +627,7 @@ class AzureJWTVerifier(JWTVerifier):
         super().__init__(
             jwks_uri=f"https://{base_authority}/{tenant_id}/discovery/v2.0/keys",
             issuer=issuer,
-            audience=client_id,
+            audience=self._identifier_uri,
             algorithm="RS256",
             required_scopes=required_scopes,
         )
