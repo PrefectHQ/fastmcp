@@ -203,7 +203,7 @@ class TestSSLVerify:
         assert isinstance(client.transport.auth, OAuth)
         async with client.transport.auth.httpx_client_factory() as httpx_client:
             assert (
-                httpx_client._transport._pool._ssl_context.verify_mode
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
                 == VerifyMode.CERT_NONE
             )
 
@@ -226,7 +226,7 @@ class TestSSLVerify:
         assert isinstance(client.transport.auth, OAuth)
         async with client.transport.auth.httpx_client_factory() as httpx_client:
             assert (
-                httpx_client._transport._pool._ssl_context.verify_mode
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
                 != VerifyMode.CERT_NONE
             )
 

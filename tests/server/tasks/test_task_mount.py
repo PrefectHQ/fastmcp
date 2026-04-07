@@ -583,7 +583,7 @@ class TestMountedTaskMetadata:
             execution=ToolExecution(taskSupport="optional"),
         )
 
-        proxy = ProxyTool.from_mcp_tool(lambda: None, mcp_tool)
+        proxy = ProxyTool.from_mcp_tool(lambda: None, mcp_tool)  # ty: ignore[invalid-argument-type]
         result = proxy.to_mcp_tool(name=proxy.name)
 
         assert result.execution is not None

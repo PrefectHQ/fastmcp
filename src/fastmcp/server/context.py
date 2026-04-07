@@ -999,7 +999,7 @@ class Context:
             session.create_message() API directly.
         """
         # TODO: Add background task support similar to elicit() when is_background_task
-        return await sample_impl(
+        return await sample_impl(  # ty: ignore[invalid-return-type]
             self,
             messages=messages,
             system_prompt=system_prompt,
