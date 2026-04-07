@@ -127,8 +127,8 @@ class TestBooleanSchemas:
         assert obj.name == "test"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         assert obj.anything == 42  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
-    def test_false_property_schema_does_not_crash(self):
-        """A property with schema `false` should not crash parsing."""
+    def test_false_property_schema_rejects_values(self):
+        """A property with schema `false` should reject any provided value."""
         schema = {
             "type": "object",
             "properties": {"name": {"type": "string"}, "never": False},
@@ -138,6 +138,9 @@ class TestBooleanSchemas:
         validator = TypeAdapter(result)
         obj = validator.validate_python({"name": "test"})
         assert obj.name == "test"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+
+        with pytest.raises(ValidationError):
+            validator.validate_python({"name": "test", "never": "anything"})
 
     def test_boolean_schema_in_object_with_additional_properties(self):
         """Boolean property schemas work alongside additionalProperties=True."""
