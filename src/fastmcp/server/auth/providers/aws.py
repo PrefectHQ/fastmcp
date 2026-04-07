@@ -23,7 +23,7 @@ Example:
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
@@ -38,24 +38,16 @@ logger = get_logger(__name__)
 
 
 class AWSCognitoTokenVerifier(JWTVerifier):
-    """Token verifier that validates Cognito access tokens.
+    """Token verifier for Cognito access tokens.
 
     Cognito access tokens use a ``client_id`` claim instead of the
-    standard ``aud`` claim for audience identification.  The base
-    ``JWTVerifier`` checks ``aud``, which would always fail.  This
-    subclass skips the ``aud`` check and validates ``client_id``
-    directly.
+    standard ``aud`` claim.  This subclass passes ``audience=None``
+    to the parent (skipping the ``aud`` check) and validates the
+    ``client_id`` claim directly.
     """
 
-    def __init__(
-        self,
-        *,
-        expected_client_id: str | None = None,
-        **kwargs: Any,
-    ) -> None:
-        self._expected_client_id = expected_client_id
-        # Don't pass audience to the parent; we validate client_id ourselves.
-        kwargs.pop("audience", None)
+    def __init__(self, *, audience: str | list[str] | None = None, **kwargs):
+        self._expected_client_id = audience
         super().__init__(audience=None, **kwargs)
 
     async def verify_token(self, token: str) -> AccessToken | None:
@@ -64,8 +56,7 @@ class AWSCognitoTokenVerifier(JWTVerifier):
         if not access_token:
             return None
 
-        # Cognito access tokens carry the app client in a "client_id"
-        # claim rather than "aud".  Validate it here.
+        # Validate client_id claim (Cognito's equivalent of aud)
         if self._expected_client_id:
             token_client_id = access_token.claims.get("client_id")
             if token_client_id != self._expected_client_id:
@@ -223,7 +214,7 @@ class AWSCognitoProvider(OIDCProxy):
         """
         return AWSCognitoTokenVerifier(
             issuer=str(self.oidc_config.issuer),
-            expected_client_id=audience or self.client_id,
+            audience=audience or self.client_id,
             algorithm=algorithm,
             jwks_uri=str(self.oidc_config.jwks_uri),
             required_scopes=required_scopes,
