@@ -413,7 +413,7 @@ class TestAzureJWTVerifier:
             == "https://login.microsoftonline.com/my-tenant-id/discovery/v2.0/keys"
         )
         assert verifier.issuer == "https://login.microsoftonline.com/my-tenant-id/v2.0"
-        assert verifier.audience == "my-client-id"
+        assert verifier.audience == "api://my-client-id"
         assert verifier.algorithm == "RS256"
         assert verifier.required_scopes == ["access_as_user"]
 
@@ -431,7 +431,7 @@ class TestAzureJWTVerifier:
         token = key_pair.create_token(
             subject="test-user",
             issuer="https://login.microsoftonline.com/my-tenant-id/v2.0",
-            audience="my-client-id",
+            audience="api://my-client-id",
             additional_claims={"scp": "access_as_user"},
         )
         result = await verifier.load_access_token(token)
