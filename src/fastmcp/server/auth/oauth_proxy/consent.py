@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 # Maximum number of remembered client approvals/denials stored in cookies.
 # Keeps the Cookie header bounded to avoid hitting reverse proxy header limits.
-_MAX_REMEMBERED_CLIENTS = 20
+_MAX_REMEMBERED_CLIENTS = 25
 
 logger = get_logger(__name__)
 
