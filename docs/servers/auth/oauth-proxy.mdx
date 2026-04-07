@@ -168,8 +168,8 @@ mcp = FastMCP(name="My Server", auth=auth)
 <ParamField body="forward_resource" type="bool" default="True">
   Whether to forward RFC 8707 `resource` parameters from MCP clients to the
   upstream OAuth provider. When enabled, the proxy includes the resource indicator
-  in authorization and token requests, allowing providers that support RFC 8707 to
-  scope tokens to specific resources. Disable for providers that reject unknown
+  in authorization requests, allowing providers that support RFC 8707 to scope
+  tokens to specific resources. Disable for providers that reject unknown
   parameters.
 </ParamField>
 
