@@ -350,6 +350,70 @@ class TestHandleNullableFields:
         result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
         assert result == expected
 
+    def test_nullable_in_definitions(self):
+        """Test nullable field inside $defs."""
+        input_schema = {
+            "type": "object",
+            "properties": {"user": {"$ref": "#/$defs/User"}},
+            "$defs": {
+                "User": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "bio": {"type": "string", "nullable": True},
+                    },
+                }
+            },
+        }
+        expected = {
+            "type": "object",
+            "properties": {"user": {"$ref": "#/$defs/User"}},
+            "$defs": {
+                "User": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "bio": {"type": ["string", "null"]},
+                    },
+                }
+            },
+        }
+        result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
+        assert result == expected
+
+    def test_nullable_in_nested_properties(self):
+        """Test nullable field in deeply nested properties."""
+        input_schema = {
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "object",
+                    "properties": {
+                        "b": {
+                            "type": "object",
+                            "properties": {"c": {"type": "string", "nullable": True}},
+                        }
+                    },
+                }
+            },
+        }
+        expected = {
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "object",
+                    "properties": {
+                        "b": {
+                            "type": "object",
+                            "properties": {"c": {"type": ["string", "null"]}},
+                        }
+                    },
+                }
+            },
+        }
+        result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
+        assert result == expected
+
 
 class TestNullableFieldValidation:
     """Test that converted schemas validate correctly with jsonschema."""

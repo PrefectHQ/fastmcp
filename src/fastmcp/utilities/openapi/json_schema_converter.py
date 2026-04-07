@@ -43,7 +43,6 @@ def convert_openapi_schema_to_json_schema(
     remove_read_only: bool = False,
     remove_write_only: bool = False,
     convert_one_of_to_any_of: bool = True,
-    _memo: dict[int, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Convert an OpenAPI schema to JSON Schema format.
@@ -61,22 +60,13 @@ def convert_openapi_schema_to_json_schema(
         remove_read_only: Whether to remove readOnly properties
         remove_write_only: Whether to remove writeOnly properties
         convert_one_of_to_any_of: Whether to convert oneOf to anyOf
-        _memo: Internal dictionary for memoization and cycle detection
+        convert_one_of_to_any_of: Whether to convert oneOf to anyOf
 
     Returns:
         JSON Schema-compatible dictionary
     """
     if not isinstance(schema, dict):
         return schema
-
-    # Initialize memo if not provided
-    if _memo is None:
-        _memo = {}
-
-    # Check for memoized result or cycle
-    schema_id = id(schema)
-    if schema_id in _memo:
-        return _memo[schema_id]
 
     # Early exit optimization - check if conversion is needed
     needs_conversion = (
@@ -90,19 +80,14 @@ def convert_openapi_schema_to_json_schema(
             remove_read_only,
             remove_write_only,
             convert_one_of_to_any_of,
-            _visited=set(),
         )
     )
 
     if not needs_conversion:
-        # If no conversion needed, still memoize to avoid re-checking
-        _memo[schema_id] = schema
         return schema
 
     # Work on a copy to avoid mutation
-    # Store the copy in _memo immediately to handle circularity
     result = schema.copy()
-    _memo[schema_id] = result
 
     # Step 1: Handle nullable field conversion (OpenAPI 3.0 only)
     if openapi_version and openapi_version.startswith("3.0"):
@@ -135,7 +120,6 @@ def convert_openapi_schema_to_json_schema(
                             remove_read_only,
                             remove_write_only,
                             convert_one_of_to_any_of,
-                            _memo,
                         )
                         if isinstance(sub_schema, dict)
                         else sub_schema
@@ -148,7 +132,6 @@ def convert_openapi_schema_to_json_schema(
                         remove_read_only,
                         remove_write_only,
                         convert_one_of_to_any_of,
-                        _memo,
                     )
             elif field_type is list and isinstance(result[field_name], list):
                 result[field_name] = [
@@ -158,7 +141,6 @@ def convert_openapi_schema_to_json_schema(
                         remove_read_only,
                         remove_write_only,
                         convert_one_of_to_any_of,
-                        _memo,
                     )
                     if isinstance(item, dict)
                     else item
@@ -230,17 +212,8 @@ def _needs_recursive_processing(
     remove_read_only: bool,
     remove_write_only: bool,
     convert_one_of_to_any_of: bool,
-    _visited: set[int] | None = None,
 ) -> bool:
     """Check if the schema needs recursive processing (smarter than just checking for recursive fields)."""
-    if _visited is None:
-        _visited = set()
-
-    schema_id = id(schema)
-    if schema_id in _visited:
-        return False
-
-    _visited.add(schema_id)
     for field_name, field_type in RECURSIVE_FIELDS.items():
         if field_name in schema:
             if field_type is dict and isinstance(schema[field_name], dict):
@@ -262,7 +235,6 @@ def _needs_recursive_processing(
                                     remove_read_only,
                                     remove_write_only,
                                     convert_one_of_to_any_of,
-                                    _visited,
                                 )
                             )
                             if nested_needs_conversion:
@@ -289,7 +261,6 @@ def _needs_recursive_processing(
                             remove_read_only,
                             remove_write_only,
                             convert_one_of_to_any_of,
-                            _visited,
                         )
                     )
                     if nested_needs_conversion:
@@ -309,7 +280,6 @@ def _needs_recursive_processing(
                                 remove_read_only,
                                 remove_write_only,
                                 convert_one_of_to_any_of,
-                                _visited,
                             )
                         )
                         if nested_needs_conversion:
