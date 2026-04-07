@@ -1,6 +1,5 @@
 """Async utilities for FastMCP."""
 
-import asyncio
 import functools
 import inspect
 from collections.abc import Awaitable, Callable
@@ -21,7 +20,7 @@ def is_coroutine_function(fn: Any) -> bool:
     """
     while isinstance(fn, functools.partial):
         fn = fn.func
-    return inspect.iscoroutinefunction(fn) or asyncio.iscoroutinefunction(fn)
+    return inspect.iscoroutinefunction(fn)
 
 
 async def call_sync_fn_in_threadpool(

@@ -175,6 +175,9 @@ class OpenAPIProvider(Provider):
                 "entry to the spec or provide an httpx.AsyncClient explicitly."
             )
         base_url = servers[0]["url"]
+        variables = servers[0].get("variables", {})
+        for name, var in variables.items():
+            base_url = base_url.replace(f"{{{name}}}", var.get("default", ""))
         return httpx.AsyncClient(base_url=base_url, timeout=DEFAULT_TIMEOUT)
 
     @asynccontextmanager
