@@ -165,6 +165,14 @@ mcp = FastMCP(name="My Server", auth=auth)
   provider doesn't support PKCE
 </ParamField>
 
+<ParamField body="forward_resource" type="bool" default="True">
+  Whether to forward RFC 8707 `resource` parameters from MCP clients to the
+  upstream OAuth provider. When enabled, the proxy includes the resource indicator
+  in authorization and token requests, allowing providers that support RFC 8707 to
+  scope tokens to specific resources. Disable for providers that reject unknown
+  parameters.
+</ParamField>
+
 <ParamField body="token_endpoint_auth_method" type="str | None">
   Token endpoint authentication method for the upstream OAuth server. Controls
   how the proxy authenticates when exchanging authorization codes and refresh
@@ -386,7 +394,7 @@ auth = OAuthProxy(
 )
 ```
 
-The proxy also automatically forwards RFC 8707 `resource` parameters from MCP clients to upstream providers that support them.
+The proxy also forwards RFC 8707 `resource` parameters from MCP clients to upstream providers that support them. This is enabled by default via the `forward_resource` parameter. Disable it for providers that reject unknown parameters.
 
 ## OAuth Flow
 
