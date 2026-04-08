@@ -1,9 +1,11 @@
-"""Application-level event types and subscription infrastructure for MCP events.
+"""Subscription infrastructure for MCP events.
 
 This module provides:
-- Pydantic models for event topics, subscriptions, and notifications
 - SubscriptionRegistry for managing session-to-topic subscriptions with MQTT wildcards
 - RetainedValueStore for storing the most recent event per topic
+
+Event types (EventEffect, EventTopicDescriptor, EventParams, etc.) are imported
+from the mcp SDK (mcp.types). This module re-exports them for convenience.
 
 NOTE: This is completely separate from ``event_store.py`` which handles
 SSE transport-level resumability for Streamable HTTP.
@@ -19,125 +21,26 @@ from __future__ import annotations
 import asyncio
 import re
 from datetime import datetime, timezone
-from typing import Any, Literal
 
-from mcp.types import Notification, NotificationParams
-from pydantic import BaseModel, Field
-
-
-# ---------------------------------------------------------------------------
-# Event types (Pydantic models)
-# ---------------------------------------------------------------------------
-
-
-class EventEffect(BaseModel):
-    """Advisory hint about how the client should handle an event."""
-
-    type: Literal["inject_context", "notify_user", "trigger_turn"]
-    priority: Literal["low", "normal", "high", "urgent"] = "normal"
-
-
-class EventTopicDescriptor(BaseModel):
-    """Describes a topic the server can publish to."""
-
-    pattern: str
-    description: str | None = None
-    retained: bool = False
-    schema_: dict[str, Any] | None = Field(None, alias="schema")
-
-    model_config = {"populate_by_name": True}
-
-
-class EventsCapability(BaseModel):
-    """Server capability for events."""
-
-    topics: list[EventTopicDescriptor] = []
-    instructions: str | None = None
-
-
-class RetainedEvent(BaseModel):
-    """A retained event delivered on subscribe."""
-
-    topic: str
-    event_id: str
-    timestamp: str | None = None
-    payload: Any
-
-
-class SubscribedTopic(BaseModel):
-    """A topic pattern that was successfully subscribed."""
-
-    pattern: str
-
-
-class RejectedTopic(BaseModel):
-    """A topic pattern that was rejected, with reason."""
-
-    pattern: str
-    reason: str
-
-
-class EventSubscribeParams(BaseModel):
-    """Parameters for events/subscribe request."""
-
-    topics: list[str]
-
-
-class EventSubscribeResult(BaseModel):
-    """Response to events/subscribe."""
-
-    subscribed: list[SubscribedTopic]
-    rejected: list[RejectedTopic] = []
-    retained: list[RetainedEvent] = []
-
-
-class EventUnsubscribeParams(BaseModel):
-    """Parameters for events/unsubscribe request."""
-
-    topics: list[str]
-
-
-class EventUnsubscribeResult(BaseModel):
-    """Response to events/unsubscribe."""
-
-    unsubscribed: list[str]
-
-
-class EventListResult(BaseModel):
-    """Response to events/list."""
-
-    topics: list[EventTopicDescriptor]
-
-
-class EventParams(NotificationParams):
-    """Parameters for events/emit notification.
-
-    Extends NotificationParams (not BaseModel) so the SDK's
-    ``send_notification`` recognizes this as a valid notification payload.
-    """
-
-    topic: str
-    event_id: str
-    payload: Any
-    timestamp: str | None = None
-    retained: bool = False
-    source: str | None = None
-    correlation_id: str | None = None
-    requested_effects: list[EventEffect] | None = None
-    expires_at: str | None = None
-
-
-class EventEmitNotification(
-    Notification[EventParams, Literal["events/emit"]]
-):
-    """Event notification sent from server to client.
-
-    Uses "events/emit" as the method (not "notifications/events/emit").
-    Events are a new primitive distinct from protocol-level notifications.
-    """
-
-    method: Literal["events/emit"] = "events/emit"
-    params: EventParams
+# Re-export event types from the SDK for convenience
+from mcp.types import (  # noqa: F401
+    EventEffect,
+    EventEmitNotification,
+    EventListRequest,
+    EventListResult,
+    EventParams,
+    EventSubscribeParams,
+    EventSubscribeRequest,
+    EventSubscribeResult,
+    EventTopicDescriptor,
+    EventUnsubscribeParams,
+    EventUnsubscribeRequest,
+    EventUnsubscribeResult,
+    EventsCapability,
+    RejectedTopic,
+    RetainedEvent,
+    SubscribedTopic,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -286,13 +189,18 @@ class RetainedValueStore:
         async with self._lock:
             regex = _pattern_to_regex(pattern)
             result: list[RetainedEvent] = []
+            seen_event_ids: set[str] = set()
             expired_topics: list[str] = []
             for topic, event in self._store.items():
                 if self._is_expired(topic):
                     expired_topics.append(topic)
                     continue
                 if regex.match(topic):
-                    result.append(event)
+                    # Deduplicate: overlapping patterns can match same retained value
+                    eid = event.eventId
+                    if eid not in seen_event_ids:
+                        seen_event_ids.add(eid)
+                        result.append(event)
             for topic in expired_topics:
                 del self._store[topic]
                 self._expires.pop(topic, None)

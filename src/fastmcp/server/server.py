@@ -37,11 +37,13 @@ from mcp.types import (
 )
 
 from fastmcp.server.events import (
+    RetainedValueStore,
+    SubscriptionRegistry,
+)
+from mcp.types import (
     EventEffect,
     EventTopicDescriptor,
     RetainedEvent,
-    RetainedValueStore,
-    SubscriptionRegistry,
 )
 from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
@@ -311,7 +313,7 @@ class FastMCP(
         self._event_topics: dict[str, EventTopicDescriptor] = {}
         self._subscription_registry: SubscriptionRegistry = SubscriptionRegistry()
         self._retained_store: RetainedValueStore = RetainedValueStore()
-        self._active_sessions: set[MiddlewareServerSession] = set()
+        self._active_sessions: dict[str, MiddlewareServerSession] = {}
 
         self._additional_http_routes: list[BaseRoute] = []
 
@@ -1825,7 +1827,7 @@ class FastMCP(
         if retained:
             retained_event = RetainedEvent(
                 topic=topic,
-                event_id=event_id,
+                eventId=event_id,
                 timestamp=None,
                 payload=payload,
             )
@@ -1837,25 +1839,25 @@ class FastMCP(
             return
 
         # Build the event notification
-        from fastmcp.server.events import EventEmitNotification, EventParams
+        from mcp.types import EventEmitNotification, EventParams
 
         notification = EventEmitNotification(
             params=EventParams(
                 topic=topic,
-                event_id=event_id,
+                eventId=event_id,
                 payload=payload,
                 retained=retained,
                 source=source,
-                correlation_id=correlation_id,
-                requested_effects=requested_effects,
-                expires_at=expires_at,
+                correlationId=correlation_id,
+                requestedEffects=requested_effects,
+                expiresAt=expires_at,
             ),
         )
 
-        # Broadcast to matching active sessions
-        for session in list(self._active_sessions):
-            sid = getattr(session, "_fastmcp_event_session_id", None)
-            if sid is None or sid not in matching_session_ids:
+        # Broadcast to matching active sessions (O(1) lookup via dict)
+        for sid in matching_session_ids:
+            session = self._active_sessions.get(sid)
+            if session is None:
                 continue
             try:
                 await session.send_notification(notification)

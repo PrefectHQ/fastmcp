@@ -34,7 +34,7 @@ from fastmcp.server.elicitation import (
     handle_elicit_accept,
     parse_elicit_response_type,
 )
-from fastmcp.server.events import EventEffect
+from mcp.types import EventEffect
 from fastmcp.server.low_level import MiddlewareServerSession
 from fastmcp.server.sampling import SampleStep, SamplingResult, SamplingTool
 from fastmcp.server.sampling.run import (

@@ -118,7 +118,7 @@ class TestSubscriptionRegistry:
 class TestRetainedValueStore:
     async def test_set_and_get(self):
         store = RetainedValueStore()
-        event = RetainedEvent(topic="t", event_id="e1", payload={"x": 1})
+        event = RetainedEvent(topic="t", eventId="e1", payload={"x": 1})
         await store.set("t", event)
         assert await store.get("t") == event
 
@@ -128,9 +128,9 @@ class TestRetainedValueStore:
 
     async def test_get_matching(self):
         store = RetainedValueStore()
-        await store.set("myapp/a", RetainedEvent(topic="myapp/a", event_id="e1", payload=1))
-        await store.set("myapp/b", RetainedEvent(topic="myapp/b", event_id="e2", payload=2))
-        await store.set("other/c", RetainedEvent(topic="other/c", event_id="e3", payload=3))
+        await store.set("myapp/a", RetainedEvent(topic="myapp/a", eventId="e1", payload=1))
+        await store.set("myapp/b", RetainedEvent(topic="myapp/b", eventId="e2", payload=2))
+        await store.set("other/c", RetainedEvent(topic="other/c", eventId="e3", payload=3))
         result = await store.get_matching("myapp/+")
         assert len(result) == 2
         assert {e.event_id for e in result} == {"e1", "e2"}
@@ -143,21 +143,21 @@ class TestRetainedValueStore:
 
     async def test_delete(self):
         store = RetainedValueStore()
-        event = RetainedEvent(topic="t", event_id="e1", payload=1)
+        event = RetainedEvent(topic="t", eventId="e1", payload=1)
         await store.set("t", event)
         await store.delete("t")
         assert await store.get("t") is None
 
     async def test_expiry(self):
         store = RetainedValueStore()
-        event = RetainedEvent(topic="t", event_id="e1", payload=1)
+        event = RetainedEvent(topic="t", eventId="e1", payload=1)
         # Set with expired timestamp
         await store.set("t", event, expires_at="2000-01-01T00:00:00Z")
         assert await store.get("t") is None
 
     async def test_not_expired(self):
         store = RetainedValueStore()
-        event = RetainedEvent(topic="t", event_id="e1", payload=1)
+        event = RetainedEvent(topic="t", eventId="e1", payload=1)
         await store.set("t", event, expires_at="2099-01-01T00:00:00Z")
         assert await store.get("t") == event
 
@@ -165,12 +165,12 @@ class TestRetainedValueStore:
         store = RetainedValueStore()
         await store.set(
             "myapp/a",
-            RetainedEvent(topic="myapp/a", event_id="e1", payload=1),
+            RetainedEvent(topic="myapp/a", eventId="e1", payload=1),
             expires_at="2000-01-01T00:00:00Z",
         )
         await store.set(
             "myapp/b",
-            RetainedEvent(topic="myapp/b", event_id="e2", payload=2),
+            RetainedEvent(topic="myapp/b", eventId="e2", payload=2),
         )
         result = await store.get_matching("myapp/+")
         assert len(result) == 1
@@ -209,7 +209,7 @@ class TestEventEmitNotification:
         notification = EventEmitNotification(
             params=EventParams(
                 topic="myapp/status",
-                event_id="e1",
+                eventId="e1",
                 payload={"status": "running"},
             )
         )
@@ -220,10 +220,10 @@ class TestEventEmitNotification:
         notification = EventEmitNotification(
             params=EventParams(
                 topic="myapp/status",
-                event_id="e1",
+                eventId="e1",
                 payload={"status": "running"},
                 retained=True,
-                requested_effects=[
+                requestedEffects=[
                     EventEffect(type="inject_context", priority="high")
                 ],
             )
@@ -231,11 +231,11 @@ class TestEventEmitNotification:
         data = notification.model_dump(exclude_none=True)
         assert data["method"] == "events/emit"
         assert data["params"]["topic"] == "myapp/status"
-        assert data["params"]["event_id"] == "e1"
+        assert data["params"]["eventId"] == "e1"
         assert data["params"]["payload"] == {"status": "running"}
         assert data["params"]["retained"] is True
-        assert len(data["params"]["requested_effects"]) == 1
-        effect = data["params"]["requested_effects"][0]
+        assert len(data["params"]["requestedEffects"]) == 1
+        effect = data["params"]["requestedEffects"][0]
         assert effect["type"] == "inject_context"
         assert effect["priority"] == "high"
 
@@ -298,18 +298,14 @@ class TestEventCapability:
             # The client's initialize_result should have the events capability
             result = client._session_state.initialize_result
             assert result is not None
-            # events is an extra field on ServerCapabilities
-            extras = result.capabilities.model_extra or {}
-            assert "events" in extras, f"Expected 'events' in capabilities extras, got keys: {list(extras.keys())}"
-            events_cap = extras["events"]
-            # Verify topics list content
-            assert "topics" in events_cap, f"Expected 'topics' key in events capability, got: {events_cap}"
-            topics = events_cap["topics"]
-            assert len(topics) == 1, f"Expected 1 topic, got {len(topics)}"
-            topic = topics[0]
-            assert topic["pattern"] == "myapp/status"
-            assert topic["description"] == "Status updates"
-            assert topic["retained"] is False
+            # events is a first-class field on ServerCapabilities
+            events_cap = result.capabilities.events
+            assert events_cap is not None, "Expected events capability to be set"
+            assert len(events_cap.topics) == 1, f"Expected 1 topic, got {len(events_cap.topics)}"
+            topic = events_cap.topics[0]
+            assert topic.pattern == "myapp/status"
+            assert topic.description == "Status updates"
+            assert topic.retained is False
 
     async def test_no_capability_without_topics(self):
         """Without declared topics, events capability is not advertised."""
@@ -318,8 +314,7 @@ class TestEventCapability:
         async with Client(mcp) as client:
             result = client._session_state.initialize_result
             assert result is not None
-            extras = result.capabilities.model_extra or {}
-            assert "events" not in extras
+            assert result.capabilities.events is None
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +344,7 @@ class TestFastMCPEmitEvent:
         # Verify event is actually delivered to a subscribed session
         received_notifications: list[Any] = []
         async with Client(mcp) as client:
-            session = list(mcp._active_sessions)[0]
+            session = list(mcp._active_sessions.values())[0]
             session_id = getattr(session, "_fastmcp_event_session_id")
             await mcp._subscription_registry.add(session_id, "myapp/status")
 
@@ -680,7 +675,7 @@ class TestSessionRegistry:
         async with Client(mcp) as client:
             assert len(mcp._active_sessions) == 1
             # Get the session ID
-            session = list(mcp._active_sessions)[0]
+            session = list(mcp._active_sessions.values())[0]
             session_id = getattr(session, "_fastmcp_event_session_id")
             assert session_id is not None
 
@@ -702,7 +697,7 @@ class TestSessionRegistry:
 
         async with Client(mcp) as client:
             # Get session and subscribe
-            session = list(mcp._active_sessions)[0]
+            session = list(mcp._active_sessions.values())[0]
             session_id = getattr(session, "_fastmcp_event_session_id")
             await mcp._subscription_registry.add(session_id, "myapp/status")
 
@@ -730,13 +725,13 @@ class TestSessionRegistry:
         received: dict[str, list] = {}
 
         async with Client(mcp) as client1:
-            s1 = list(mcp._active_sessions)[0]
+            s1 = list(mcp._active_sessions.values())[0]
             s1_id = getattr(s1, "_fastmcp_event_session_id")
             await mcp._subscription_registry.add(s1_id, "myapp/status")
             received[s1_id] = []
 
             async with Client(mcp) as client2:
-                s2 = [s for s in mcp._active_sessions if s is not s1][0]
+                s2 = [s for s in mcp._active_sessions.values() if s is not s1][0]
                 s2_id = getattr(s2, "_fastmcp_event_session_id")
                 await mcp._subscription_registry.add(s2_id, "myapp/status")
                 received[s2_id] = []
@@ -770,12 +765,12 @@ class TestSessionRegistry:
         delivered_to: list[tuple[str, Any]] = []
 
         async with Client(mcp) as client1:
-            s1 = list(mcp._active_sessions)[0]
+            s1 = list(mcp._active_sessions.values())[0]
             s1_id = getattr(s1, "_fastmcp_event_session_id")
             await mcp._subscription_registry.add(s1_id, "myapp/status")
 
             async with Client(mcp) as client2:
-                s2 = [s for s in mcp._active_sessions if s is not s1][0]
+                s2 = [s for s in mcp._active_sessions.values() if s is not s1][0]
                 s2_id = getattr(s2, "_fastmcp_event_session_id")
                 await mcp._subscription_registry.add(s2_id, "myapp/status")
 
@@ -885,7 +880,7 @@ class TestProtocolRoundTrip:
                             await asyncio.sleep(0.05)
                         assert len(mcp_server._active_sessions) == 1
 
-                        server_session = list(mcp_server._active_sessions)[0]
+                        server_session = list(mcp_server._active_sessions.values())[0]
                         session_id = getattr(
                             server_session, "_fastmcp_event_session_id"
                         )
@@ -1066,11 +1061,11 @@ class TestProtocolRoundTrip:
 
 
 # ---------------------------------------------------------------------------
-# _receive_loop error path tests (Finding 15/16)
+# Error path tests (Finding 15/16)
 # ---------------------------------------------------------------------------
 
 
-class TestReceiveLoopErrorPaths:
+class TestErrorPaths:
     async def test_malformed_request_returns_json_rpc_error(self):
         """A malformed/unknown request returns a JSON-RPC error, not a crash."""
         import anyio
@@ -1151,7 +1146,7 @@ class TestReceiveLoopErrorPaths:
                         tg.cancel_scope.cancel()
 
     async def test_event_handler_error_returns_json_rpc_error(self):
-        """When _handle_event_request handler raises McpError, it returns a JSON-RPC error."""
+        """When events/subscribe is sent with invalid params, it returns a JSON-RPC error."""
         import anyio
         from mcp.shared.memory import create_client_server_memory_streams
         from mcp.shared.message import SessionMessage
@@ -1210,7 +1205,8 @@ class TestReceiveLoopErrorPaths:
                             await asyncio.sleep(0.05)
 
                         # Subscribe with invalid params (missing topics field)
-                        # This will cause a validation error in EventSubscribeParams
+                        # The SDK validates the request params before dispatching
+                        # to the handler, returning INVALID_PARAMS (-32602)
                         bad_sub_req = JSONRPCRequest(
                             jsonrpc="2.0",
                             id=2,
@@ -1228,7 +1224,7 @@ class TestReceiveLoopErrorPaths:
                         assert isinstance(response, JSONRPCError), (
                             f"Expected JSON-RPC error for bad event params, got: {response}"
                         )
-                        assert response.error.code == -32603  # Internal error
+                        assert response.error.code == -32602  # Invalid params
                     finally:
                         tg.cancel_scope.cancel()
 

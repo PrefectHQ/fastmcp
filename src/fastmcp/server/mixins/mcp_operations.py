@@ -380,40 +380,69 @@ class MCPOperationsMixin:
     # -------------------------------------------------------------------------
 
     def _setup_event_protocol_handlers(self: FastMCP) -> None:
-        """Placeholder/documentation hook for event protocol handling.
+        """Register event protocol handlers through the SDK's request_handlers.
 
-        This method intentionally performs no registration.  Event requests
-        (``events/subscribe``, ``events/unsubscribe``, ``events/list``) are
-        intercepted at the raw JSON-RPC level by
-        ``MiddlewareServerSession._receive_loop`` because their request types
-        are not in the published SDK's ``ClientRequest`` union.  The actual
-        handler methods (``_handle_subscribe_events``, etc.) live on this mixin
-        so ``FastMCP`` can invoke them from the session's request dispatch.
+        Event request types (EventSubscribeRequest, EventUnsubscribeRequest,
+        EventListRequest) are part of the SDK's ClientRequest union, so the
+        SDK's built-in dispatch routes them to registered handlers automatically.
 
-        Capabilities are advertised by ``LowLevelServer.get_capabilities()``
-        based on the presence of declared event topics.
-
-        This method exists so the ``_setup_handlers`` initialization sequence
-        has an explicit, documented step for events, consistent with the other
-        ``_setup_*`` methods, rather than silently relying on ``_receive_loop``
-        interception alone.
+        Capabilities are advertised by the SDK based on the presence of
+        EventSubscribeRequest in request_handlers, and overridden by
+        LowLevelServer.get_capabilities() to include declared topic descriptors.
         """
-        # No SDK-level registration needed; handled via _receive_loop interception
+        from fastmcp.server.events import (
+            EventListRequest,
+            EventSubscribeRequest,
+            EventUnsubscribeRequest,
+        )
+
+        server = self
+
+        def _check_events_capability() -> None:
+            """Raise -32601 if no event topics are declared."""
+            if not server._event_topics:
+                raise McpError(
+                    mcp.types.ErrorData(
+                        code=-32601,
+                        message="Method not found: server has no events capability",
+                    )
+                )
+
+        async def handle_subscribe(req: EventSubscribeRequest) -> mcp.types.ServerResult:
+            _check_events_capability()
+            result = await server._handle_subscribe_events(req)
+            return mcp.types.ServerResult(result)
+
+        async def handle_unsubscribe(req: EventUnsubscribeRequest) -> mcp.types.ServerResult:
+            _check_events_capability()
+            result = await server._handle_unsubscribe_events(req)
+            return mcp.types.ServerResult(result)
+
+        async def handle_list(req: EventListRequest) -> mcp.types.ServerResult:
+            _check_events_capability()
+            result = await server._handle_list_events(req)
+            return mcp.types.ServerResult(result)
+
+        server._mcp_server.request_handlers[EventSubscribeRequest] = handle_subscribe
+        server._mcp_server.request_handlers[EventUnsubscribeRequest] = handle_unsubscribe
+        server._mcp_server.request_handlers[EventListRequest] = handle_list
 
     async def _handle_subscribe_events(
-        self, ctx: Any, params: Any
-    ) -> dict:
+        self, req: Any
+    ) -> Any:
         """Handle events/subscribe requests."""
         from fastmcp.server.events import (
             EventSubscribeResult,
             RejectedTopic,
             SubscribedTopic,
         )
+        from mcp.server.lowlevel.server import request_ctx
 
         server = cast("FastMCP", self)
         logger.debug(f"[{server.name}] Handler called: events/subscribe")
 
-        # Get the session from the request context
+        # Get the session from the SDK request context
+        ctx = request_ctx.get()
         session = ctx.session
         session_id = getattr(session, "_fastmcp_event_session_id", None)
 
@@ -425,11 +454,12 @@ class MCPOperationsMixin:
                 )
             )
 
-        topics = params.topics if hasattr(params, "topics") else params.get("topics", [])
+        topics = req.params.topics
 
         subscribed: list[SubscribedTopic] = []
         rejected: list[RejectedTopic] = []
         retained_events = []
+        seen_event_ids: set[str] = set()
 
         for pattern in topics:
             # Validate topic depth (max 8 segments)
@@ -453,30 +483,34 @@ class MCPOperationsMixin:
             await server._subscription_registry.add(session_id, pattern)
             subscribed.append(SubscribedTopic(pattern=pattern))
 
-            # Deliver retained values for this pattern
+            # Deliver retained values for this pattern (deduplicated)
             matching = await server._retained_store.get_matching(pattern)
-            retained_events.extend(matching)
+            for evt in matching:
+                if evt.eventId not in seen_event_ids:
+                    seen_event_ids.add(evt.eventId)
+                    retained_events.append(evt)
 
-        result = EventSubscribeResult(
+        return EventSubscribeResult(
             subscribed=subscribed,
             rejected=rejected,
             retained=retained_events,
         )
-        return result.model_dump(exclude_none=True)
 
     async def _handle_unsubscribe_events(
-        self, ctx: Any, params: Any
-    ) -> dict:
+        self, req: Any
+    ) -> Any:
         """Handle events/unsubscribe requests."""
         from fastmcp.server.events import EventUnsubscribeResult
+        from mcp.server.lowlevel.server import request_ctx
 
         server = cast("FastMCP", self)
         logger.debug(f"[{server.name}] Handler called: events/unsubscribe")
 
+        ctx = request_ctx.get()
         session = ctx.session
         session_id = getattr(session, "_fastmcp_event_session_id", None)
 
-        topics = params.topics if hasattr(params, "topics") else params.get("topics", [])
+        topics = req.params.topics
 
         unsubscribed: list[str] = []
         if session_id is not None:
@@ -484,12 +518,11 @@ class MCPOperationsMixin:
                 await server._subscription_registry.remove(session_id, pattern)
                 unsubscribed.append(pattern)
 
-        result = EventUnsubscribeResult(unsubscribed=unsubscribed)
-        return result.model_dump(exclude_none=True)
+        return EventUnsubscribeResult(unsubscribed=unsubscribed)
 
     async def _handle_list_events(
-        self, ctx: Any, params: Any
-    ) -> dict:
+        self, req: Any
+    ) -> Any:
         """Handle events/list requests."""
         from fastmcp.server.events import EventListResult
 
@@ -497,8 +530,7 @@ class MCPOperationsMixin:
         logger.debug(f"[{server.name}] Handler called: events/list")
 
         topics = list(server._event_topics.values())
-        result = EventListResult(topics=topics)
-        return result.model_dump(exclude_none=True, by_alias=True)
+        return EventListResult(topics=topics)
 
     def _match_declared_topic(self: FastMCP, pattern: str) -> bool:
         """Check whether a subscription pattern matches any declared event topic.
