@@ -220,7 +220,9 @@ class RetainedValueStore:
         if expires_at is None:
             return False
         try:
-            expiry = datetime.fromisoformat(expires_at)
+            # Python 3.10 fromisoformat() doesn't support "Z" suffix;
+            # replace with "+00:00" for compatibility.
+            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
             if expiry.tzinfo is None:
                 expiry = expiry.replace(tzinfo=timezone.utc)
             return datetime.now(timezone.utc) >= expiry

@@ -345,12 +345,12 @@ class TestFastMCPEmitEvent:
 
         # Verify event is actually delivered to a subscribed session
         received_notifications: list[Any] = []
-        async with Client(mcp) as client:
+        async with Client(mcp) as _client:
             session = list(mcp._active_sessions.values())[0]
             session_id = getattr(session, "_fastmcp_event_session_id")
             await mcp._subscription_registry.add(session_id, "myapp/status")
 
-            original_send = session.send_notification
+            _original_send = session.send_notification
 
             async def capturing_send(notification: ServerNotification, related_request_id: str | int | None = None) -> None:
                 received_notifications.append(notification)
@@ -686,7 +686,7 @@ class TestSessionRegistry:
         mcp = FastMCP("test")
         assert len(mcp._active_sessions) == 0
 
-        async with Client(mcp) as client:
+        async with Client(mcp) as _client:
             assert len(mcp._active_sessions) == 1
 
         # After disconnect
@@ -697,7 +697,7 @@ class TestSessionRegistry:
         mcp = FastMCP("test")
         mcp.declare_event("myapp/status")
 
-        async with Client(mcp) as client:
+        async with Client(mcp) as _client:
             assert len(mcp._active_sessions) == 1
             # Get the session ID
             session = list(mcp._active_sessions.values())[0]
@@ -720,14 +720,14 @@ class TestSessionRegistry:
 
         received_notifications: list[Any] = []
 
-        async with Client(mcp) as client:
+        async with Client(mcp) as _client:
             # Get session and subscribe
             session = list(mcp._active_sessions.values())[0]
             session_id = getattr(session, "_fastmcp_event_session_id")
             await mcp._subscription_registry.add(session_id, "myapp/status")
 
             # Monkey-patch send_notification on the session to capture it
-            original_send = session.send_notification
+            _original_send = session.send_notification
 
             async def capturing_send(notification: ServerNotification, related_request_id: str | int | None = None) -> None:
                 received_notifications.append(notification)
@@ -749,13 +749,13 @@ class TestSessionRegistry:
 
         received: dict[str, list] = {}
 
-        async with Client(mcp) as client1:
+        async with Client(mcp) as _client1:
             s1 = list(mcp._active_sessions.values())[0]
             s1_id = getattr(s1, "_fastmcp_event_session_id")
             await mcp._subscription_registry.add(s1_id, "myapp/status")
             received[s1_id] = []
 
-            async with Client(mcp) as client2:
+            async with Client(mcp) as _client2:
                 s2 = [s for s in mcp._active_sessions.values() if s is not s1][0]
                 s2_id = getattr(s2, "_fastmcp_event_session_id")
                 await mcp._subscription_registry.add(s2_id, "myapp/status")
@@ -789,12 +789,12 @@ class TestSessionRegistry:
 
         delivered_to: list[tuple[str, Any]] = []
 
-        async with Client(mcp) as client1:
+        async with Client(mcp) as _client1:
             s1 = list(mcp._active_sessions.values())[0]
             s1_id = getattr(s1, "_fastmcp_event_session_id")
             await mcp._subscription_registry.add(s1_id, "myapp/status")
 
-            async with Client(mcp) as client2:
+            async with Client(mcp) as _client2:
                 s2 = [s for s in mcp._active_sessions.values() if s is not s1][0]
                 s2_id = getattr(s2, "_fastmcp_event_session_id")
                 await mcp._subscription_registry.add(s2_id, "myapp/status")
