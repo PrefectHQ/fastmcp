@@ -34,6 +34,7 @@ from fastmcp.server.elicitation import (
     handle_elicit_accept,
     parse_elicit_response_type,
 )
+from fastmcp.server.events import EventEffect
 from fastmcp.server.low_level import MiddlewareServerSession
 from fastmcp.server.sampling import SampleStep, SamplingResult, SamplingTool
 from fastmcp.server.sampling.run import (
@@ -772,6 +773,51 @@ class Context:
             message=message,
             logger_name=logger_name,
             extra=extra,
+        )
+
+    async def emit_event(
+        self,
+        topic: str,
+        payload: Any,
+        *,
+        event_id: str | None = None,
+        retained: bool | None = None,
+        source: str | None = None,
+        correlation_id: str | None = None,
+        requested_effects: list[EventEffect] | None = None,
+        expires_at: str | None = None,
+    ) -> None:
+        """Publish an event to all sessions subscribed to the given topic.
+
+        This delegates to the FastMCP instance's ``emit_event()`` method,
+        which broadcasts to all matching subscribers across all active sessions.
+
+        Example::
+
+            @server.tool
+            async def notify(ctx: Context, message: str) -> str:
+                await ctx.emit_event("myapp/notifications", {"text": message})
+                return "sent"
+
+        Args:
+            topic: Concrete topic string (no wildcards).
+            payload: Event payload (any JSON-serializable value).
+            event_id: Optional event ID (auto-generated if not provided).
+            retained: If True, store as retained value for the topic.
+            source: Optional source identifier.
+            correlation_id: Optional correlation ID.
+            requested_effects: Optional advisory effect hints for clients.
+            expires_at: Optional ISO 8601 expiry for retained values.
+        """
+        await self.fastmcp.emit_event(
+            topic=topic,
+            payload=payload,
+            event_id=event_id,
+            retained=retained,
+            source=source,
+            correlation_id=correlation_id,
+            requested_effects=requested_effects,
+            expires_at=expires_at,
         )
 
     async def list_roots(self) -> list[Root]:

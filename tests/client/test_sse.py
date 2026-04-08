@@ -132,8 +132,10 @@ async def nested_sse_server():
     try:
         yield f"http://127.0.0.1:{port}/nest-outer/nest-inner/mcp/sse/"
     finally:
-        # Graceful shutdown - required for uvicorn 0.39+ due to context isolation
+        # Cancel the server task directly; should_exit doesn't reliably
+        # propagate on recent uvicorn versions (0.39+).
         uvicorn_server.should_exit = True
+        server_task.cancel()
         try:
             await server_task
         except asyncio.CancelledError:

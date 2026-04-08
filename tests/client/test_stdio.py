@@ -2,6 +2,7 @@ import asyncio
 import gc
 import inspect
 import os
+import time
 import weakref
 
 import psutil
@@ -158,10 +159,15 @@ class TestKeepAlive:
 
         # This test may fail/hang while debugging because the debugger holds a reference to the underlying transport
 
-        with pytest.raises(psutil.NoSuchProcess):
-            while True:
+        # Poll for process exit with a bounded timeout
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
                 psutil.Process(pid)
-                await asyncio.sleep(0.1)
+            except psutil.NoSuchProcess:
+                return  # Process exited as expected
+            await asyncio.sleep(0.1)
+        pytest.fail(f"Process {pid} still alive after 10s")
 
     async def test_keep_alive_false_exit_scope_kills_server(self, stdio_script):
         pid: int | None = None
@@ -179,10 +185,15 @@ class TestKeepAlive:
 
         await test_server()
 
-        with pytest.raises(psutil.NoSuchProcess):
-            while True:
+        # Poll for process exit with a bounded timeout
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
                 psutil.Process(pid)
-                await asyncio.sleep(0.1)
+            except psutil.NoSuchProcess:
+                return  # Process exited as expected
+            await asyncio.sleep(0.1)
+        pytest.fail(f"Process {pid} still alive after 10s")
 
     async def test_keep_alive_false_starts_new_session_across_multiple_calls(
         self, stdio_script

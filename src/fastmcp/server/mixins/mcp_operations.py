@@ -81,6 +81,9 @@ class MCPOperationsMixin:
         self._mcp_server.get_prompt()(self._get_prompt_mcp)
         self._mcp_server.set_logging_level()(self._set_logging_level_mcp)
 
+        # Register event protocol handlers
+        self._setup_event_protocol_handlers()
+
         # Register SEP-1686 task protocol handlers
         self._setup_task_protocol_handlers()
 
@@ -371,3 +374,180 @@ class MCPOperationsMixin:
                 session._minimum_logging_level = level
         except LookupError:
             pass
+
+    # -------------------------------------------------------------------------
+    # Event protocol handlers
+    # -------------------------------------------------------------------------
+
+    def _setup_event_protocol_handlers(self: FastMCP) -> None:
+        """Placeholder/documentation hook for event protocol handling.
+
+        This method intentionally performs no registration.  Event requests
+        (``events/subscribe``, ``events/unsubscribe``, ``events/list``) are
+        intercepted at the raw JSON-RPC level by
+        ``MiddlewareServerSession._receive_loop`` because their request types
+        are not in the published SDK's ``ClientRequest`` union.  The actual
+        handler methods (``_handle_subscribe_events``, etc.) live on this mixin
+        so ``FastMCP`` can invoke them from the session's request dispatch.
+
+        Capabilities are advertised by ``LowLevelServer.get_capabilities()``
+        based on the presence of declared event topics.
+
+        This method exists so the ``_setup_handlers`` initialization sequence
+        has an explicit, documented step for events, consistent with the other
+        ``_setup_*`` methods, rather than silently relying on ``_receive_loop``
+        interception alone.
+        """
+        # No SDK-level registration needed; handled via _receive_loop interception
+
+    async def _handle_subscribe_events(
+        self, ctx: Any, params: Any
+    ) -> dict:
+        """Handle events/subscribe requests."""
+        from fastmcp.server.events import (
+            EventSubscribeResult,
+            RejectedTopic,
+            SubscribedTopic,
+        )
+
+        server = cast("FastMCP", self)
+        logger.debug(f"[{server.name}] Handler called: events/subscribe")
+
+        # Get the session from the request context
+        session = ctx.session
+        session_id = getattr(session, "_fastmcp_event_session_id", None)
+
+        if session_id is None:
+            raise McpError(
+                mcp.types.ErrorData(
+                    code=-32603,
+                    message="No session context available for subscription",
+                )
+            )
+
+        topics = params.topics if hasattr(params, "topics") else params.get("topics", [])
+
+        subscribed: list[SubscribedTopic] = []
+        rejected: list[RejectedTopic] = []
+        retained_events = []
+
+        for pattern in topics:
+            # Validate topic depth (max 8 segments)
+            segments = pattern.split("/")
+            if len(segments) > server._MAX_TOPIC_DEPTH:
+                raise McpError(
+                    mcp.types.ErrorData(
+                        code=-32602,
+                        message=(
+                            f"Subscription pattern has {len(segments)} segments, "
+                            f"maximum depth is {server._MAX_TOPIC_DEPTH}: {pattern!r}"
+                        ),
+                    )
+                )
+
+            # Check if the pattern matches any declared topic
+            if not server._match_declared_topic(pattern):
+                rejected.append(RejectedTopic(pattern=pattern, reason="unknown_topic"))
+                continue
+
+            await server._subscription_registry.add(session_id, pattern)
+            subscribed.append(SubscribedTopic(pattern=pattern))
+
+            # Deliver retained values for this pattern
+            matching = await server._retained_store.get_matching(pattern)
+            retained_events.extend(matching)
+
+        result = EventSubscribeResult(
+            subscribed=subscribed,
+            rejected=rejected,
+            retained=retained_events,
+        )
+        return result.model_dump(exclude_none=True)
+
+    async def _handle_unsubscribe_events(
+        self, ctx: Any, params: Any
+    ) -> dict:
+        """Handle events/unsubscribe requests."""
+        from fastmcp.server.events import EventUnsubscribeResult
+
+        server = cast("FastMCP", self)
+        logger.debug(f"[{server.name}] Handler called: events/unsubscribe")
+
+        session = ctx.session
+        session_id = getattr(session, "_fastmcp_event_session_id", None)
+
+        topics = params.topics if hasattr(params, "topics") else params.get("topics", [])
+
+        unsubscribed: list[str] = []
+        if session_id is not None:
+            for pattern in topics:
+                await server._subscription_registry.remove(session_id, pattern)
+                unsubscribed.append(pattern)
+
+        result = EventUnsubscribeResult(unsubscribed=unsubscribed)
+        return result.model_dump(exclude_none=True)
+
+    async def _handle_list_events(
+        self, ctx: Any, params: Any
+    ) -> dict:
+        """Handle events/list requests."""
+        from fastmcp.server.events import EventListResult
+
+        server = cast("FastMCP", self)
+        logger.debug(f"[{server.name}] Handler called: events/list")
+
+        topics = list(server._event_topics.values())
+        result = EventListResult(topics=topics)
+        return result.model_dump(exclude_none=True, by_alias=True)
+
+    def _match_declared_topic(self: FastMCP, pattern: str) -> bool:
+        """Check whether a subscription pattern matches any declared event topic.
+
+        Handles both exact matches and wildcard patterns that could match
+        declared topic patterns. For example, subscription pattern "myapp/+"
+        matches declared topic "myapp/{session_id}".
+
+        Uses regex-based matching in both directions: the subscription pattern
+        is checked against declared patterns (with {param} as single-segment
+        wildcards), and declared patterns are checked against the subscription
+        pattern (with + and # as MQTT wildcards).
+        """
+        import re as _re
+
+        from fastmcp.server.events import _pattern_to_regex
+
+        # Direct match
+        if pattern in self._event_topics:
+            return True
+
+        for declared_pattern in self._event_topics:
+            # Forward: build regex from declared pattern's {param} placeholders
+            # and test whether the subscription pattern (with wildcards replaced
+            # by a synthetic single-segment value) matches.
+            declared_regex_parts = []
+            for segment in declared_pattern.split("/"):
+                if segment.startswith("{") and segment.endswith("}"):
+                    declared_regex_parts.append("[^/]+")
+                else:
+                    declared_regex_parts.append(_re.escape(segment))
+            declared_regex = _re.compile(
+                "^" + "/".join(declared_regex_parts) + "$"
+            )
+
+            # Replace MQTT wildcards with a synthetic literal segment for
+            # testing against the declared pattern regex.
+            test_pattern = _re.sub(r"[+#]", "x", pattern)
+            if declared_regex.match(test_pattern):
+                return True
+
+            # Reverse: does the declared pattern (with {param} replaced by a
+            # synthetic literal) match the subscription pattern's MQTT regex?
+            concrete_declared = _re.sub(r"\{[^}]+\}", "x", declared_pattern)
+            try:
+                sub_regex = _pattern_to_regex(pattern)
+                if sub_regex.match(concrete_declared):
+                    return True
+            except ValueError:
+                continue
+
+        return False

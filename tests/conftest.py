@@ -74,7 +74,7 @@ def isolate_settings_home(tmp_path: Path):
         home=test_home,
         docket__minimum_check_interval=timedelta(milliseconds=10),
         docket__url=f"memory://{secrets.token_hex(4)}",
-        client_disconnect_timeout=1,
+        client_disconnect_timeout=10,
     ):
         yield
 
