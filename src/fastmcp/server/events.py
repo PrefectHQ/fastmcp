@@ -160,6 +160,7 @@ class RetainedValueStore:
         self._lock = asyncio.Lock()
         self._store: dict[str, RetainedEvent] = {}
         self._expires: dict[str, str] = {}
+        self._regex_cache: dict[str, re.Pattern[str]] = {}
 
     async def set(
         self, topic: str, event: RetainedEvent, expires_at: str | None = None
@@ -187,7 +188,9 @@ class RetainedValueStore:
     async def get_matching(self, pattern: str) -> list[RetainedEvent]:
         """Return all non-expired retained events whose topic matches *pattern*."""
         async with self._lock:
-            regex = _pattern_to_regex(pattern)
+            if pattern not in self._regex_cache:
+                self._regex_cache[pattern] = _pattern_to_regex(pattern)
+            regex = self._regex_cache[pattern]
             result: list[RetainedEvent] = []
             seen_event_ids: set[str] = set()
             expired_topics: list[str] = []

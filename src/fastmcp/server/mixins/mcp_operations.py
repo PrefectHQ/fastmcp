@@ -428,8 +428,8 @@ class MCPOperationsMixin:
         server._mcp_server.request_handlers[EventListRequest] = handle_list
 
     async def _handle_subscribe_events(
-        self, req: Any
-    ) -> Any:
+        self, req: mcp.types.EventSubscribeRequest
+    ) -> mcp.types.EventSubscribeResult:
         """Handle events/subscribe requests."""
         from fastmcp.server.events import (
             EventSubscribeResult,
@@ -497,8 +497,8 @@ class MCPOperationsMixin:
         )
 
     async def _handle_unsubscribe_events(
-        self, req: Any
-    ) -> Any:
+        self, req: mcp.types.EventUnsubscribeRequest
+    ) -> mcp.types.EventUnsubscribeResult:
         """Handle events/unsubscribe requests."""
         from fastmcp.server.events import EventUnsubscribeResult
         from mcp.server.lowlevel.server import request_ctx
@@ -521,8 +521,8 @@ class MCPOperationsMixin:
         return EventUnsubscribeResult(unsubscribed=unsubscribed)
 
     async def _handle_list_events(
-        self, req: Any
-    ) -> Any:
+        self, req: mcp.types.EventListRequest
+    ) -> mcp.types.EventListResult:
         """Handle events/list requests."""
         from fastmcp.server.events import EventListResult
 

@@ -1766,8 +1766,12 @@ class FastMCP(
 
                     adapter = TypeAdapter(return_type)
                     payload_schema = adapter.json_schema()
-                except Exception:
-                    pass
+                except (TypeError, ValueError, PydanticValidationError):
+                    logger.debug(
+                        "Could not generate JSON schema for event %r return type %r",
+                        pattern,
+                        return_type,
+                    )
 
             self.declare_event(
                 pattern,

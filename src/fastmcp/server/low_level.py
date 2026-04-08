@@ -21,6 +21,7 @@ from mcp.server.lowlevel.server import (
 )
 from mcp.server.models import InitializationOptions
 from mcp.server.session import ServerSession
+from mcp.shared.session import RequestResponder
 from mcp.server.stdio import stdio_server as stdio_server
 from mcp.shared.message import SessionMessage
 from pydantic import AnyUrl
@@ -74,7 +75,7 @@ class MiddlewareServerSession(ServerSession):
 
     async def _received_request(
         self,
-        responder,
+        responder: RequestResponder[mcp.types.ClientRequest, mcp.types.ServerResult],
     ):
         """
         Override the _received_request method to route special requests
