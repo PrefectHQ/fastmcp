@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+
 import pytest
+from mcp.types import ServerNotification
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
@@ -259,7 +261,7 @@ class TestFastMCPEventDeclaration:
         @mcp.event("myapp/messages")
         def message_event() -> dict:
             """Message notifications."""
-            ...
+            return {}
 
         assert "myapp/messages" in mcp._event_topics
         desc = mcp._event_topics["myapp/messages"]
@@ -270,7 +272,7 @@ class TestFastMCPEventDeclaration:
 
         @mcp.event("myapp/typed")
         def typed_event() -> int:
-            ...
+            return 0
 
         desc = mcp._event_topics["myapp/typed"]
         assert desc.schema_ is not None
@@ -350,10 +352,10 @@ class TestFastMCPEmitEvent:
 
             original_send = session.send_notification
 
-            async def capturing_send(notification, related_request_id=None):
+            async def capturing_send(notification: ServerNotification, related_request_id: str | int | None = None) -> None:
                 received_notifications.append(notification)
 
-            session.send_notification = capturing_send  # type: ignore[assignment]
+            setattr(session, "send_notification", capturing_send)
 
             await mcp.emit_event("myapp/status", {"state": "updated"})
 
@@ -457,11 +459,34 @@ class TestContextEmitEvent:
         emitted_calls: list[dict[str, Any]] = []
         original_emit = mcp.emit_event
 
-        async def tracking_emit(topic, payload, **kwargs):
+        async def tracking_emit(
+            topic: str,
+            payload: Any,
+            *,
+            event_id: str | None = None,
+            retained: bool | None = None,
+            source: str | None = None,
+            correlation_id: str | None = None,
+            requested_effects: list[EventEffect] | None = None,
+            expires_at: str | None = None,
+        ) -> None:
+            kwargs: dict[str, Any] = {}
+            if event_id is not None:
+                kwargs["event_id"] = event_id
+            if retained is not None:
+                kwargs["retained"] = retained
+            if source is not None:
+                kwargs["source"] = source
+            if correlation_id is not None:
+                kwargs["correlation_id"] = correlation_id
+            if requested_effects is not None:
+                kwargs["requested_effects"] = requested_effects
+            if expires_at is not None:
+                kwargs["expires_at"] = expires_at
             emitted_calls.append({"topic": topic, "payload": payload, **kwargs})
             await original_emit(topic, payload, **kwargs)
 
-        mcp.emit_event = tracking_emit  # type: ignore[assignment]
+        setattr(mcp, "emit_event", tracking_emit)
 
         @mcp.tool
         async def notify(message: str, ctx: Context) -> str:
@@ -704,11 +729,11 @@ class TestSessionRegistry:
             # Monkey-patch send_notification on the session to capture it
             original_send = session.send_notification
 
-            async def capturing_send(notification, related_request_id=None):
+            async def capturing_send(notification: ServerNotification, related_request_id: str | int | None = None) -> None:
                 received_notifications.append(notification)
                 # Don't actually send to avoid protocol issues in test
 
-            session.send_notification = capturing_send  # type: ignore[assignment]
+            setattr(session, "send_notification", capturing_send)
 
             await mcp.emit_event("myapp/status", {"state": "running"})
 
@@ -738,13 +763,13 @@ class TestSessionRegistry:
 
                 for s, sid in [(s1, s1_id), (s2, s2_id)]:
 
-                    async def make_capture(target_list):
-                        async def capture(notification, related_request_id=None):
+                    async def make_capture(target_list: list[Any]) -> Any:
+                        async def capture(notification: ServerNotification, related_request_id: str | int | None = None) -> None:
                             target_list.append(notification)
 
                         return capture
 
-                    s.send_notification = await make_capture(received[sid])  # type: ignore[assignment]
+                    setattr(s, "send_notification", await make_capture(received[sid]))
 
                 await mcp.emit_event("myapp/status", {"state": "running"})
 
@@ -775,15 +800,15 @@ class TestSessionRegistry:
                 await mcp._subscription_registry.add(s2_id, "myapp/status")
 
                 # Make s1 fail on send
-                async def failing_send(notification, related_request_id=None):
+                async def failing_send(notification: ServerNotification, related_request_id: str | int | None = None) -> None:
                     raise ConnectionError("broken pipe")
 
-                s1.send_notification = failing_send  # type: ignore[assignment]
+                setattr(s1, "send_notification", failing_send)
 
-                async def tracking_send(notification, related_request_id=None):
+                async def tracking_send(notification: ServerNotification, related_request_id: str | int | None = None) -> None:
                     delivered_to.append((s2_id, notification))
 
-                s2.send_notification = tracking_send  # type: ignore[assignment]
+                setattr(s2, "send_notification", tracking_send)
 
                 await mcp.emit_event("myapp/status", {"state": "running"})
 
@@ -924,8 +949,9 @@ class TestProtocolRoundTrip:
                         assert not isinstance(event_msg, Exception)
                         event_root = event_msg.message.root
                         # Should be a notification (no id field with result)
-                        assert hasattr(event_root, "method")
+                        assert isinstance(event_root, JSONRPCNotification)
                         assert event_root.method == "events/emit"
+                        assert event_root.params is not None
                         assert event_root.params["topic"] == "myapp/status"
                         assert event_root.params["payload"] == {"state": "running"}
 

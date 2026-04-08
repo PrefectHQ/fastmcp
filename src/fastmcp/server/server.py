@@ -1840,7 +1840,7 @@ class FastMCP(
             return
 
         # Build the event notification
-        from mcp.types import EventEmitNotification, EventParams
+        from mcp.types import EventEmitNotification, EventParams, ServerNotification
 
         notification = EventEmitNotification(
             params=EventParams(
@@ -1861,7 +1861,9 @@ class FastMCP(
             if session is None:
                 continue
             try:
-                await session.send_notification(notification)  # type: ignore[arg-type]
+                await session.send_notification(
+                    cast(ServerNotification, notification)
+                )
             except Exception:
                 logger.warning(
                     f"Failed to deliver event to session {sid}",
