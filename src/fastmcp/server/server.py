@@ -1822,10 +1822,7 @@ class FastMCP(
         # Determine whether to retain based on topic descriptor if not explicit
         if retained is None:
             descriptor = self._find_topic_descriptor(topic)
-            if descriptor is not None:
-                retained = descriptor.retained
-            else:
-                retained = False
+            retained = descriptor.retained if descriptor is not None else False
 
         # Store retained value if applicable
         if retained:
@@ -1864,7 +1861,7 @@ class FastMCP(
             if session is None:
                 continue
             try:
-                await session.send_notification(notification)
+                await session.send_notification(notification)  # type: ignore[arg-type]
             except Exception:
                 logger.warning(
                     f"Failed to deliver event to session {sid}",

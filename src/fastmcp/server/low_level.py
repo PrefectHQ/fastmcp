@@ -38,6 +38,8 @@ logger = get_logger(__name__)
 class MiddlewareServerSession(ServerSession):
     """ServerSession that routes initialization requests through FastMCP middleware."""
 
+    _fastmcp_event_session_id: str | None = None
+
     def __init__(self, fastmcp: FastMCP, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._fastmcp_ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)
@@ -264,7 +266,7 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
             from uuid import uuid4
 
             session_id = str(uuid4())
-            session._fastmcp_event_session_id = session_id  # type: ignore[attr-defined]
+            session._fastmcp_event_session_id = session_id
             self.fastmcp._active_sessions[session_id] = session
 
             try:
