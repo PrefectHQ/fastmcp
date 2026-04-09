@@ -211,7 +211,7 @@ class TestAzureProvider:
             "https://login.microsoftonline.com/my-tenant/discovery/v2.0/keys"
         )
         assert verifier.issuer == "https://login.microsoftonline.com/my-tenant/v2.0"
-        assert verifier.audience == "api://my-api"
+        assert verifier.audience == ["test_client", "api://my-api"]
         # Scopes are stored unprefixed for token validation
         # (Azure returns unprefixed scopes like ".default" in JWT tokens)
         assert verifier.required_scopes == [".default"]

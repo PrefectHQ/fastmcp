@@ -413,7 +413,7 @@ class TestAzureJWTVerifier:
             == "https://login.microsoftonline.com/my-tenant-id/discovery/v2.0/keys"
         )
         assert verifier.issuer == "https://login.microsoftonline.com/my-tenant-id/v2.0"
-        assert verifier.audience == "api://my-client-id"
+        assert verifier.audience == ["my-client-id", "api://my-client-id"]
         assert verifier.algorithm == "RS256"
         assert verifier.required_scopes == ["access_as_user"]
 
