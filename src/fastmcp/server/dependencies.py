@@ -79,7 +79,8 @@ __all__ = [
 ]
 
 
-# Re-exports for backward compatibility (these used to live here).
+# Task context lives in fastmcp.server.tasks.context; public symbols are
+# re-exported here so existing imports from dependencies continue to work.
 # _get_task_snapshot_sync and _load_task_snapshot_async are not re-exported
 # but are used internally by get_access_token / get_http_request / get_server.
 from fastmcp.server.tasks.context import (
