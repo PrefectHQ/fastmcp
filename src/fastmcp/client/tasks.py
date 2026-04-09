@@ -269,6 +269,21 @@ class Task(abc.ABC, Generic[TaskResultT]):
                 # Fallback: poll server (notification didn't arrive in time)
                 self._status_cache = await self._client.get_task_status(self._task_id)
 
+    async def _wait_terminal(self, timeout: float = 300.0) -> GetTaskResult:
+        """Wait until task reaches a terminal state (completed, failed, cancelled).
+
+        Unlike wait(), this will not return on input_required — it continues
+        waiting until the task fully resolves. Used internally by result().
+        """
+        terminal_states = {"completed", "failed", "cancelled"}
+        status = await self.wait(timeout=timeout)
+        while status.status not in terminal_states:
+            # Task is in a non-terminal state (e.g. input_required) — reset
+            # cache so the next wait() call blocks instead of returning immediately.
+            self._status_cache = None
+            status = await self.wait(timeout=timeout)
+        return status
+
     async def cancel(self) -> None:
         """Cancel this task, transitioning it to cancelled state.
 
@@ -354,7 +369,7 @@ class ToolTask(Task["CallToolResult"]):
             self._check_client_connected()
 
             # Wait for completion using event-based wait (respects notifications)
-            await self.wait()
+            await self._wait_terminal()
 
             # Get the raw result (dict or CallToolResult)
             raw_result = await self._client.get_task_result(self._task_id)
@@ -445,7 +460,7 @@ class PromptTask(Task[mcp.types.GetPromptResult]):
             self._check_client_connected()
 
             # Wait for completion using event-based wait (respects notifications)
-            await self.wait()
+            await self._wait_terminal()
 
             # Get the raw MCP result
             mcp_result = await self._client.get_task_result(self._task_id)
@@ -517,7 +532,7 @@ class ResourceTask(
             self._check_client_connected()
 
             # Wait for completion using event-based wait (respects notifications)
-            await self.wait()
+            await self._wait_terminal()
 
             # Get the raw MCP result
             mcp_result = await self._client.get_task_result(self._task_id)
