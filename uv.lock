@@ -827,6 +827,7 @@ openai = [
     { name = "openai" },
 ]
 tasks = [
+    { name = "fakeredis", extra = ["lua"] },
     { name = "pydocket" },
 ]
 
@@ -868,6 +869,7 @@ requires-dist = [
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.16.0" },
     { name = "cyclopts", specifier = ">=4.0.0" },
     { name = "exceptiongroup", specifier = ">=1.2.2" },
+    { name = "fakeredis", extras = ["lua"], marker = "extra == 'tasks'", specifier = "<2.35.0" },
     { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=1.18.0" },
     { name = "httpx", specifier = ">=0.28.1,<1.0" },
     { name = "jsonref", specifier = ">=1.1.0" },
