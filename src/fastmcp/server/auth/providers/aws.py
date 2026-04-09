@@ -38,14 +38,38 @@ logger = get_logger(__name__)
 
 
 class AWSCognitoTokenVerifier(JWTVerifier):
-    """Token verifier that filters claims to Cognito-specific subset."""
+    """Token verifier for Cognito access tokens.
+
+    Cognito access tokens use a ``client_id`` claim instead of the
+    standard ``aud`` claim.  This subclass passes ``audience=None``
+    to the parent (skipping the ``aud`` check) and validates the
+    ``client_id`` claim directly.
+    """
+
+    def __init__(self, *, audience: str | list[str] | None = None, **kwargs):
+        self._expected_client_id = audience
+        super().__init__(audience=None, **kwargs)
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify token and filter claims to Cognito-specific subset."""
-        # Use base JWT verification
         access_token = await super().verify_token(token)
         if not access_token:
             return None
+
+        # Validate client_id claim (Cognito's equivalent of aud)
+        if self._expected_client_id:
+            token_client_id = access_token.claims.get("client_id")
+            if isinstance(self._expected_client_id, list):
+                valid = token_client_id in self._expected_client_id
+            else:
+                valid = token_client_id == self._expected_client_id
+            if not valid:
+                self.logger.debug(
+                    "Token validation failed: client_id mismatch (expected %s, got %s)",
+                    self._expected_client_id,
+                    token_client_id,
+                )
+                return None
 
         # Filter claims to Cognito-specific subset
         cognito_claims = {
@@ -54,7 +78,6 @@ class AWSCognitoTokenVerifier(JWTVerifier):
             "cognito:groups": access_token.claims.get("cognito:groups", []),
         }
 
-        # Return new AccessToken with filtered claims
         return AccessToken(
             token=access_token.token,
             client_id=access_token.client_id,

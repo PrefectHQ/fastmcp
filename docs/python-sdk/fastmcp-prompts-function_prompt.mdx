@@ -10,7 +10,7 @@ Standalone @prompt decorator for FastMCP.
 
 ## Functions
 
-### `prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/function_prompt.py#L402" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/function_prompt.py#L398" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(name_or_fn: str | Callable[..., Any] | None = None) -> Any
@@ -83,11 +83,8 @@ register_with_docket(self, docket: Docket) -> None
 
 Register this prompt with docket for background execution.
 
-FunctionPrompt registers the underlying function, which has the user's
-Depends parameters for docket to resolve.
 
-
-#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/function_prompt.py#L345" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/function_prompt.py#L341" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_to_docket(self, docket: Docket, arguments: dict[str, Any] | None, **kwargs: Any) -> Execution

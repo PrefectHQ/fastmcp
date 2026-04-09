@@ -53,6 +53,7 @@ from typing import (
 from pydantic import (
     AnyUrl,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     EmailStr,
     Field,
@@ -64,6 +65,15 @@ from typing_extensions import NotRequired, TypedDict
 
 __all__ = ["JSONSchema", "json_schema_to_type"]
 
+
+def _reject_all(v: Any) -> Any:
+    """Validator that rejects every value, implementing JSON Schema `false`."""
+    raise ValueError("No value is valid against a false schema")
+
+
+# JSON Schema `false` means no value is valid. This type rejects everything
+# during Pydantic validation.
+_UnsatisfiableType = Annotated[Any, BeforeValidator(_reject_all)]
 
 FORMAT_TYPES: dict[str, Any] = {
     "date-time": datetime,
@@ -313,10 +323,18 @@ def _get_from_type_handler(
 
 
 def _schema_to_type(
-    schema: Mapping[str, Any],
+    schema: Mapping[str, Any] | bool,
     schemas: Mapping[str, Any],
 ) -> type | ForwardRef:
     """Convert schema to appropriate Python type."""
+    # Boolean schemas are valid in JSON Schema draft-06+:
+    # true means "any value is valid" (equivalent to {}),
+    # false means "no value is valid" (unsatisfiable).
+    if schema is True:
+        return Any
+    if schema is False:
+        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+
     if not schema:
         return object
 
@@ -475,7 +493,13 @@ def _create_pydantic_model(
     defaults = {}
 
     for prop_name, prop_schema in properties.items():
-        field_type = _schema_to_type(prop_schema, schemas or {})
+        # Boolean schemas (JSON Schema draft-06+): resolve type directly,
+        # then use an empty dict for .get() calls below.
+        if isinstance(prop_schema, bool):
+            field_type = _schema_to_type(prop_schema, schemas or {})
+            prop_schema = {}
+        else:
+            field_type = _schema_to_type(prop_schema, schemas or {})
 
         # Handle defaults
         default_value = prop_schema.get("default", MISSING)
@@ -540,8 +564,13 @@ def _create_dataclass(
     for prop_name, prop_schema in properties.items():
         field_name = _sanitize_name(prop_name)
 
-        # Check for self-reference in property
-        if prop_schema.get("$ref") == "#":
+        # Boolean schemas (JSON Schema draft-06+): resolve type directly,
+        # then use an empty dict for .get() calls below.
+        if isinstance(prop_schema, bool):
+            field_type = _schema_to_type(prop_schema, schemas or {})
+            prop_schema = {}
+        elif prop_schema.get("$ref") == "#":
+            # Check for self-reference in property
             field_type = ForwardRef(sanitized_name)
         else:
             field_type = _schema_to_type(prop_schema, schemas or {})
@@ -623,6 +652,10 @@ def _merge_defaults(
 
     # For each property in the schema
     for prop_name, prop_schema in schema.get("properties", {}).items():
+        # Normalize boolean schemas (JSON Schema draft-06+)
+        if isinstance(prop_schema, bool):
+            continue
+
         # If property is missing, apply defaults in priority order
         if prop_name not in result:
             if parent_default and prop_name in parent_default:

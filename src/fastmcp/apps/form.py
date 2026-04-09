@@ -54,6 +54,27 @@ import pydantic
 from fastmcp.apps.app import FastMCPApp
 
 
+def _backfill_boolean_defaults(
+    model: type[pydantic.BaseModel],
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    """Fill in missing boolean fields with their model defaults.
+
+    HTML checkboxes omit the field entirely when unchecked, so the
+    submitted data dict won't contain a key for ``False`` booleans.
+    This backfills those missing keys so Pydantic validation succeeds.
+    """
+    for name, field_info in model.model_fields.items():
+        if name in data:
+            continue
+        if field_info.annotation is bool:
+            if field_info.default is not pydantic.fields.PydanticUndefined:
+                data[name] = field_info.default
+            else:
+                data[name] = False
+    return data
+
+
 class FormInput(FastMCPApp):
     """A Provider that collects structured input via a Pydantic model.
 
@@ -117,8 +138,11 @@ class FormInput(FastMCPApp):
         model = self._model
 
         @self.tool()
-        def submit_form(data: dict[str, Any]) -> str:
+        def submit_form(data: dict[str, Any] | None = None) -> str:
             """Validate and process form submission."""
+            if data is None:
+                data = {}
+            data = _backfill_boolean_defaults(model, data)
             validated = model.model_validate(data)
             if provider._on_submit is not None:
                 return provider._on_submit(validated)

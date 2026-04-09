@@ -32,11 +32,15 @@ logger = get_logger(__name__)
 class StreamableHTTPASGIApp:
     """ASGI application wrapper for Streamable HTTP server transport."""
 
-    def __init__(self, session_manager):
+    def __init__(self, session_manager: StreamableHTTPSessionManager | None):
         self.session_manager = session_manager
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         try:
+            if self.session_manager is None:
+                raise RuntimeError(
+                    "Task group is not initialized. Make sure to use run()."
+                )
             await self.session_manager.handle_request(scope, receive, send)
         except RuntimeError as e:
             if str(e) == "Task group is not initialized. Make sure to use run().":
@@ -296,17 +300,8 @@ def create_streamable_http_app(
     server_routes: list[BaseRoute] = []
     server_middleware: list[Middleware] = []
 
-    # Create session manager using the provided event store
-    session_manager = StreamableHTTPSessionManager(
-        app=server._mcp_server,
-        event_store=event_store,
-        retry_interval=retry_interval,
-        json_response=json_response,
-        stateless=stateless_http,
-    )
-
-    # Create the ASGI app wrapper
-    streamable_http_app = StreamableHTTPASGIApp(session_manager)
+    # Create the ASGI app wrapper (session manager is set each lifespan cycle)
+    streamable_http_app = StreamableHTTPASGIApp(None)
 
     # Add StreamableHTTP routes with or without auth
     if auth:
@@ -364,7 +359,17 @@ def create_streamable_http_app(
     # Create a lifespan manager to start and stop the session manager
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
-        async with server._lifespan_manager(), session_manager.run():
+        streamable_http_app.session_manager = StreamableHTTPSessionManager(
+            app=server._mcp_server,
+            event_store=event_store,
+            retry_interval=retry_interval,
+            json_response=json_response,
+            stateless=stateless_http,
+        )
+        async with (
+            server._lifespan_manager(),
+            streamable_http_app.session_manager.run(),
+        ):
             yield
 
     # Create and return the app with lifespan

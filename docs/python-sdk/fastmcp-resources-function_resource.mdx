@@ -10,7 +10,7 @@ Standalone @resource decorator for FastMCP.
 
 ## Functions
 
-### `resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L241" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/function_resource.py#L237" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resource(uri: str) -> Callable[[F], F]
@@ -87,7 +87,4 @@ register_with_docket(self, docket: Docket) -> None
 ```
 
 Register this resource with docket for background execution.
-
-FunctionResource registers the underlying function, which has the user's
-Depends parameters for docket to resolve.
 
