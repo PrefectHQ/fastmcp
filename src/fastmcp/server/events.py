@@ -192,18 +192,18 @@ class RetainedValueStore:
                 self._regex_cache[pattern] = _pattern_to_regex(pattern)
             regex = self._regex_cache[pattern]
             result: list[RetainedEvent] = []
-            seen_event_ids: set[str] = set()
             expired_topics: list[str] = []
             for topic, event in self._store.items():
                 if self._is_expired(topic):
                     expired_topics.append(topic)
                     continue
                 if regex.match(topic):
-                    # Deduplicate: overlapping patterns can match same retained value
-                    eid = event.eventId
-                    if eid not in seen_event_ids:
-                        seen_event_ids.add(eid)
-                        result.append(event)
+                    # Each topic has exactly one retained event in the store,
+                    # so no per-topic deduplication is needed here. The caller
+                    # is responsible for deduplicating across multiple pattern
+                    # matches (e.g. when processing a subscribe request with
+                    # overlapping patterns).
+                    result.append(event)
             for topic in expired_topics:
                 del self._store[topic]
                 self._expires.pop(topic, None)

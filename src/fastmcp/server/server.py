@@ -311,6 +311,10 @@ class FastMCP(
 
         # Event topics and subscription infrastructure
         self._event_topics: dict[str, EventTopicDescriptor] = {}
+        # Cached regex compiled from each declared topic pattern's {param}
+        # placeholders, used to accelerate subscription pattern matching.
+        # Keyed by declared pattern string; populated lazily on first use.
+        self._declared_topic_regex_cache: dict[str, re.Pattern[str]] = {}
         self._subscription_registry: SubscriptionRegistry = SubscriptionRegistry()
         self._retained_store: RetainedValueStore = RetainedValueStore()
         self._active_sessions: dict[str, MiddlewareServerSession] = {}
