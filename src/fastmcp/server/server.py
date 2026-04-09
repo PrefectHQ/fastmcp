@@ -11,6 +11,7 @@ from collections.abc import (
     AsyncIterator,
     Awaitable,
     Callable,
+    Collection,
     Sequence,
 )
 from contextlib import (
@@ -309,6 +310,13 @@ class FastMCP(
 
         # Event topics and subscription infrastructure
         self._event_topics: dict[str, EventTopicDescriptor] = {}
+        # Per-declared-pattern authorization callbacks. Stored separately from
+        # EventTopicDescriptor (a python-sdk protocol type we do not mutate).
+        # Key: declared pattern string; value: callback(session_id, topic_params)
+        # returning True to allow the subscription, False to reject it.
+        self._event_topic_authorize: dict[
+            str, Callable[[str, dict[str, str]], bool]
+        ] = {}
         # Cached regex compiled from each declared topic pattern's {param}
         # placeholders, used to accelerate subscription pattern matching.
         # Keyed by declared pattern string; populated lazily on first use.
@@ -1651,6 +1659,7 @@ class FastMCP(
         description: str | None = None,
         retained: bool = False,
         schema: dict[str, Any] | None = None,
+        authorize: Callable[[str, dict[str, str]], bool] | None = None,
     ) -> EventTopicDescriptor:
         """Declare an event topic that this server can publish to.
 
@@ -1662,6 +1671,29 @@ class FastMCP(
             retained: Whether the most recent event per topic is stored and
                       delivered to new subscribers on subscribe.
             schema: Optional JSON Schema for the event payload.
+            authorize: Optional callback invoked when a client subscribes to a
+                       pattern that matches this declaration. Receives
+                       ``(session_id, topic_params)`` and returns True to
+                       permit the subscription or False to reject it with
+                       ``reason="permission_denied"``. When provided, this
+                       callback OVERRIDES the default ``{session_id}``
+                       enforcement described below and is fully responsible
+                       for authorization. ``topic_params`` is a dict mapping
+                       each placeholder name in the declared pattern to the
+                       value supplied by the subscribing pattern: either a
+                       literal string, the wildcard character ``"+"`` (single
+                       segment wildcard), or ``"#"`` (multi-segment wildcard).
+
+        ``{session_id}`` convention:
+            The literal placeholder ``{session_id}`` in a declared pattern is
+            magic. When no ``authorize`` callback is set, any subscribe
+            pattern whose corresponding segment is NOT the literal subscriber
+            session UUID is rejected with ``reason="permission_denied"``.
+            Wildcards (``+``, ``#``) in that slot are not permitted. Other
+            ``{param}`` placeholder names have no special meaning and impose
+            no per-subscriber restriction. If neither ``{session_id}`` nor
+            ``authorize`` is present, all subscribers that match the pattern
+            are allowed (legacy behavior).
 
         Returns:
             The registered EventTopicDescriptor.
@@ -1682,6 +1714,12 @@ class FastMCP(
             schema=schema,
         )
         self._event_topics[pattern] = descriptor
+        if authorize is not None:
+            self._event_topic_authorize[pattern] = authorize
+        else:
+            # Clear any stale callback from a prior declaration of the same
+            # pattern so redeclaration behaves predictably.
+            self._event_topic_authorize.pop(pattern, None)
         return descriptor
 
     @staticmethod
@@ -1730,6 +1768,7 @@ class FastMCP(
         *,
         description: str | None = None,
         retained: bool = False,
+        authorize: Callable[[str, dict[str, str]], bool] | None = None,
     ) -> Callable[[F], F]:
         """Decorator to declare an event topic.
 
@@ -1749,6 +1788,9 @@ class FastMCP(
             pattern: Topic pattern for the event.
             description: Optional description (falls back to docstring).
             retained: Whether to store the most recent value per topic.
+            authorize: Optional subscription authorization callback. See
+                       ``declare_event`` for full semantics, including the
+                       ``{session_id}`` magic-placeholder convention.
         """
 
         def decorator(fn: F) -> F:
@@ -1778,6 +1820,7 @@ class FastMCP(
                 description=desc,
                 retained=retained,
                 schema=payload_schema,
+                authorize=authorize,
             )
             return fn
 
@@ -1794,6 +1837,7 @@ class FastMCP(
         correlation_id: str | None = None,
         requested_effects: list[EventEffect] | None = None,
         expires_at: str | None = None,
+        target_session_ids: Collection[str] | None = None,
     ) -> None:
         """Broadcast an event to all sessions subscribed to the given topic.
 
@@ -1813,6 +1857,17 @@ class FastMCP(
             correlation_id: Optional correlation ID for request tracing.
             requested_effects: Optional list of advisory effect hints.
             expires_at: Optional ISO 8601 expiry timestamp for retained values.
+            target_session_ids: Optional defense-in-depth filter. When None
+                      (default), the event is delivered to every session whose
+                      subscriptions match the topic. When a collection is
+                      provided, the set of matching subscribers is
+                      intersected (AND logic) with this set so that only
+                      sessions whose ``_fastmcp_event_session_id`` is in
+                      ``target_session_ids`` receive the notification. An
+                      empty intersection is a silent no-op. This is intended
+                      as a routing safety net paired with subscription-time
+                      authorization; subscription auth is still the primary
+                      boundary.
         """
         if event_id is None:
             event_id = str(ULID())
@@ -1836,6 +1891,16 @@ class FastMCP(
         matching_session_ids = await self._subscription_registry.match(topic)
         if not matching_session_ids:
             return
+
+        # Defense-in-depth routing filter: restrict delivery to the provided
+        # session-id whitelist. Empty intersection is a silent no-op.
+        if target_session_ids is not None:
+            target_set = set(target_session_ids)
+            matching_session_ids = [
+                sid for sid in matching_session_ids if sid in target_set
+            ]
+            if not matching_session_ids:
+                return
 
         # Build the event notification
         from mcp.types import EventEmitNotification, EventParams, ServerNotification

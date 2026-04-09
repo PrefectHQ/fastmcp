@@ -7,10 +7,15 @@ session registry, context integration, and capabilities.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from mcp.types import ServerNotification
+from mcp.server.lowlevel.server import request_ctx
+from mcp.shared.context import RequestContext
+from mcp.types import EventSubscribeRequest, ServerNotification
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
@@ -18,6 +23,8 @@ from fastmcp.server.events import (
     EventEffect,
     EventEmitNotification,
     EventParams,
+    EventSubscribeParams,
+    EventSubscribeResult,
     EventTopicDescriptor,
     RetainedEvent,
     RetainedValueStore,
@@ -474,6 +481,7 @@ class TestContextEmitEvent:
             correlation_id: str | None = None,
             requested_effects: list[EventEffect] | None = None,
             expires_at: str | None = None,
+            target_session_ids: Any = None,
         ) -> None:
             kwargs: dict[str, Any] = {}
             if event_id is not None:
@@ -488,6 +496,8 @@ class TestContextEmitEvent:
                 kwargs["requested_effects"] = requested_effects
             if expires_at is not None:
                 kwargs["expires_at"] = expires_at
+            if target_session_ids is not None:
+                kwargs["target_session_ids"] = target_session_ids
             emitted_calls.append({"topic": topic, "payload": payload, **kwargs})
             await original_emit(topic, payload, **kwargs)
 
@@ -1473,3 +1483,536 @@ class TestNoEventsCapability:
                         assert "Method not found" in response.error.message
                     finally:
                         tg.cancel_scope.cancel()
+
+
+# ---------------------------------------------------------------------------
+# Authorization helpers
+# ---------------------------------------------------------------------------
+
+
+@contextlib.asynccontextmanager
+async def _request_ctx_for_session(session: Any) -> AsyncIterator[None]:
+    """Push a minimal RequestContext containing ``session`` for the duration.
+
+    The event subscribe handler reads the session from ``request_ctx``; tests
+    that invoke ``_handle_subscribe_events`` directly need this context to be
+    populated.
+    """
+    rctx = RequestContext(
+        request_id=0,
+        meta=None,
+        session=session,
+        lifespan_context=None,
+        experimental=None,
+    )
+    token = request_ctx.set(rctx)  # type: ignore[arg-type]
+    try:
+        yield
+    finally:
+        request_ctx.reset(token)
+
+
+async def _subscribe_via_handler(
+    mcp: FastMCP, session: Any, topics: list[str]
+) -> EventSubscribeResult:
+    """Drive ``_handle_subscribe_events`` using the active session.
+
+    Exercises the full authorization path (the same code that the JSON-RPC
+    handler runs) without the verbosity of a raw protocol round-trip.
+    """
+    req = EventSubscribeRequest(params=EventSubscribeParams(topics=topics))
+    async with _request_ctx_for_session(session):
+        return await mcp._handle_subscribe_events(req)
+
+
+def _get_active_session(mcp: FastMCP) -> Any:
+    """Return the single active session, asserting there is exactly one."""
+    sessions = list(mcp._active_sessions.values())
+    assert len(sessions) == 1, f"Expected 1 active session, got {len(sessions)}"
+    return sessions[0]
+
+
+# ---------------------------------------------------------------------------
+# InitializeResult._meta.session_id exposure
+# ---------------------------------------------------------------------------
+
+
+class TestInitializeResultSessionId:
+    async def test_initialize_result_meta_contains_session_id(self):
+        """The initialize handshake exposes the server-side session_id via _meta."""
+        mcp = FastMCP("test")
+
+        async with Client(mcp) as client:
+            init_result = client._session_state.initialize_result
+            assert init_result is not None
+            assert init_result.meta is not None
+            session_id = init_result.meta.get("session_id")  # type: ignore[union-attr]
+            assert isinstance(session_id, str) and session_id, (
+                "session_id should be a non-empty string"
+            )
+
+            server_session = _get_active_session(mcp)
+            server_side_id = getattr(server_session, "_fastmcp_event_session_id")
+            assert session_id == server_side_id
+
+    async def test_initialize_result_meta_session_id_is_stable_per_session(self):
+        """Multiple operations within the same session see a stable id."""
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        def ping() -> str:
+            return "pong"
+
+        async with Client(mcp) as client:
+            init_result = client._session_state.initialize_result
+            assert init_result is not None
+            assert init_result.meta is not None
+            session_id_first = init_result.meta.get("session_id")  # type: ignore[union-attr]
+
+            # Issue several operations and confirm the underlying session and
+            # its id remain stable.
+            await client.call_tool("ping", {})
+            await client.call_tool("ping", {})
+
+            server_session = _get_active_session(mcp)
+            server_side_id = getattr(server_session, "_fastmcp_event_session_id")
+            assert session_id_first == server_side_id
+
+            init_result_after = client._session_state.initialize_result
+            assert init_result_after is not None
+            assert init_result_after.meta is not None
+            assert (
+                init_result_after.meta.get("session_id")  # type: ignore[union-attr]
+                == session_id_first
+            )
+
+
+# ---------------------------------------------------------------------------
+# {session_id} default enforcement (no authorize callback)
+# ---------------------------------------------------------------------------
+
+
+class TestSessionIdEnforcement:
+    async def test_can_subscribe_to_own_session_topic(self):
+        mcp = FastMCP("test")
+        mcp.declare_event("spellbook/sessions/{session_id}/messages")
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            sid = getattr(session, "_fastmcp_event_session_id")
+            result = await _subscribe_via_handler(
+                mcp, session, [f"spellbook/sessions/{sid}/messages"]
+            )
+
+        assert len(result.subscribed) == 1
+        assert result.subscribed[0].pattern == f"spellbook/sessions/{sid}/messages"
+        assert result.rejected == []
+
+    async def test_cannot_subscribe_to_other_session_topic(self):
+        mcp = FastMCP("test")
+        mcp.declare_event("spellbook/sessions/{session_id}/messages")
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            result = await _subscribe_via_handler(
+                mcp,
+                session,
+                ["spellbook/sessions/00000000-0000-0000-0000-000000000000/messages"],
+            )
+
+        assert result.subscribed == []
+        assert len(result.rejected) == 1
+        assert result.rejected[0].reason == "permission_denied"
+
+    async def test_cannot_use_single_wildcard_in_session_slot(self):
+        mcp = FastMCP("test")
+        mcp.declare_event("spellbook/sessions/{session_id}/messages")
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            result = await _subscribe_via_handler(
+                mcp, session, ["spellbook/sessions/+/messages"]
+            )
+
+        assert result.subscribed == []
+        assert len(result.rejected) == 1
+        assert result.rejected[0].reason == "permission_denied"
+
+    async def test_cannot_use_hash_wildcard_over_session_slot(self):
+        mcp = FastMCP("test")
+        mcp.declare_event("spellbook/sessions/{session_id}/messages")
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            result = await _subscribe_via_handler(
+                mcp, session, ["spellbook/sessions/#"]
+            )
+
+        assert result.subscribed == []
+        assert len(result.rejected) == 1
+        assert result.rejected[0].reason == "permission_denied"
+
+    async def test_public_topic_allows_any_subscriber(self):
+        mcp = FastMCP("test")
+        mcp.declare_event("spellbook/server/status")
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            result = await _subscribe_via_handler(
+                mcp, session, ["spellbook/server/status"]
+            )
+
+        assert len(result.subscribed) == 1
+        assert result.rejected == []
+
+    async def test_non_magic_placeholder_allows_wildcard(self):
+        """``{project}`` is not magic, so wildcards are permitted in that slot."""
+        mcp = FastMCP("test")
+        mcp.declare_event("spellbook/builds/{project}/status")
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            result = await _subscribe_via_handler(
+                mcp, session, ["spellbook/builds/+/status"]
+            )
+
+        assert len(result.subscribed) == 1
+        assert result.rejected == []
+
+
+# ---------------------------------------------------------------------------
+# authorize callback escape hatch
+# ---------------------------------------------------------------------------
+
+
+class TestAuthorizeCallback:
+    async def test_authorize_callback_called_with_correct_params(self):
+        captured: list[tuple[str, dict[str, str]]] = []
+
+        def authorize(session_id: str, params: dict[str, str]) -> bool:
+            captured.append((session_id, params))
+            return True
+
+        mcp = FastMCP("test")
+        mcp.declare_event("rooms/{room}/chat", authorize=authorize)
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            sid = getattr(session, "_fastmcp_event_session_id")
+            result = await _subscribe_via_handler(mcp, session, ["rooms/lobby/chat"])
+
+        assert len(result.subscribed) == 1
+        assert captured == [(sid, {"room": "lobby"})]
+
+    async def test_authorize_callback_receives_wildcard_literal(self):
+        captured: list[tuple[str, dict[str, str]]] = []
+
+        def authorize(session_id: str, params: dict[str, str]) -> bool:
+            captured.append((session_id, params))
+            return True
+
+        mcp = FastMCP("test")
+        mcp.declare_event("rooms/{room}/chat", authorize=authorize)
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            sid = getattr(session, "_fastmcp_event_session_id")
+            result = await _subscribe_via_handler(mcp, session, ["rooms/+/chat"])
+
+        assert len(result.subscribed) == 1
+        assert captured == [(sid, {"room": "+"})]
+
+    async def test_authorize_callback_denies_rejects_subscription(self):
+        def authorize(session_id: str, params: dict[str, str]) -> bool:
+            return False
+
+        mcp = FastMCP("test")
+        mcp.declare_event("rooms/{room}/chat", authorize=authorize)
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            result = await _subscribe_via_handler(mcp, session, ["rooms/lobby/chat"])
+
+        assert result.subscribed == []
+        assert len(result.rejected) == 1
+        assert result.rejected[0].reason == "permission_denied"
+
+    async def test_authorize_callback_exception_fails_closed(
+        self, caplog: pytest.LogCaptureFixture
+    ):
+        def authorize(session_id: str, params: dict[str, str]) -> bool:
+            raise RuntimeError("intentional failure for test")
+
+        mcp = FastMCP("test")
+        mcp.declare_event("rooms/{room}/chat", authorize=authorize)
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            with caplog.at_level(
+                logging.WARNING, logger="fastmcp.server.mixins.mcp_operations"
+            ):
+                result = await _subscribe_via_handler(
+                    mcp, session, ["rooms/lobby/chat"]
+                )
+
+        assert result.subscribed == []
+        assert len(result.rejected) == 1
+        assert result.rejected[0].reason == "permission_denied"
+        assert any(
+            "authorize callback raised" in record.message for record in caplog.records
+        ), "Expected a warning log when authorize raises"
+
+    async def test_authorize_callback_overrides_default_session_id_check(self):
+        """An authorize callback fully replaces the {session_id} default policy."""
+
+        def authorize(session_id: str, params: dict[str, str]) -> bool:
+            return True
+
+        mcp = FastMCP("test")
+        mcp.declare_event(
+            "sessions/{session_id}/messages", authorize=authorize
+        )
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            # Subscribe to a session id that does NOT belong to this session.
+            result = await _subscribe_via_handler(
+                mcp,
+                session,
+                ["sessions/00000000-0000-0000-0000-000000000000/messages"],
+            )
+
+        assert len(result.subscribed) == 1
+        assert result.rejected == []
+
+
+# ---------------------------------------------------------------------------
+# target_session_ids on emit_event
+# ---------------------------------------------------------------------------
+
+
+class TestTargetSessionIds:
+    async def _capture_session(
+        self, session: Any, sink: list[Any]
+    ) -> None:
+        async def capturing_send(
+            notification: ServerNotification,
+            related_request_id: str | int | None = None,
+        ) -> None:
+            sink.append(notification)
+
+        setattr(session, "send_notification", capturing_send)
+
+    async def test_emit_without_target_session_ids_broadcasts(self):
+        """Default behavior: every matching subscriber receives the event."""
+        mcp = FastMCP("test")
+        mcp.declare_event("public/topic")
+
+        sinks: dict[str, list[Any]] = {}
+
+        async with Client(mcp) as _c1:
+            s1 = _get_active_session(mcp)
+            s1_id = getattr(s1, "_fastmcp_event_session_id")
+            await mcp._subscription_registry.add(s1_id, "public/topic")
+            sinks[s1_id] = []
+            await self._capture_session(s1, sinks[s1_id])
+
+            async with Client(mcp) as _c2:
+                s2 = next(
+                    s for s in mcp._active_sessions.values() if s is not s1
+                )
+                s2_id = getattr(s2, "_fastmcp_event_session_id")
+                await mcp._subscription_registry.add(s2_id, "public/topic")
+                sinks[s2_id] = []
+                await self._capture_session(s2, sinks[s2_id])
+
+                async with Client(mcp) as _c3:
+                    s3 = next(
+                        s
+                        for s in mcp._active_sessions.values()
+                        if s is not s1 and s is not s2
+                    )
+                    s3_id = getattr(s3, "_fastmcp_event_session_id")
+                    await mcp._subscription_registry.add(s3_id, "public/topic")
+                    sinks[s3_id] = []
+                    await self._capture_session(s3, sinks[s3_id])
+
+                    await mcp.emit_event("public/topic", {"v": 1})
+
+                    assert len(sinks[s1_id]) == 1
+                    assert len(sinks[s2_id]) == 1
+                    assert len(sinks[s3_id]) == 1
+
+    async def test_emit_with_target_session_ids_filters(self):
+        mcp = FastMCP("test")
+        mcp.declare_event("public/topic")
+
+        sinks: dict[str, list[Any]] = {}
+
+        async with Client(mcp) as _c1:
+            s1 = _get_active_session(mcp)
+            s1_id = getattr(s1, "_fastmcp_event_session_id")
+            await mcp._subscription_registry.add(s1_id, "public/topic")
+            sinks[s1_id] = []
+            await self._capture_session(s1, sinks[s1_id])
+
+            async with Client(mcp) as _c2:
+                s2 = next(
+                    s for s in mcp._active_sessions.values() if s is not s1
+                )
+                s2_id = getattr(s2, "_fastmcp_event_session_id")
+                await mcp._subscription_registry.add(s2_id, "public/topic")
+                sinks[s2_id] = []
+                await self._capture_session(s2, sinks[s2_id])
+
+                async with Client(mcp) as _c3:
+                    s3 = next(
+                        s
+                        for s in mcp._active_sessions.values()
+                        if s is not s1 and s is not s2
+                    )
+                    s3_id = getattr(s3, "_fastmcp_event_session_id")
+                    await mcp._subscription_registry.add(s3_id, "public/topic")
+                    sinks[s3_id] = []
+                    await self._capture_session(s3, sinks[s3_id])
+
+                    await mcp.emit_event(
+                        "public/topic",
+                        {"v": 1},
+                        target_session_ids=[s1_id, s2_id],
+                    )
+
+                    assert len(sinks[s1_id]) == 1
+                    assert len(sinks[s2_id]) == 1
+                    assert sinks[s3_id] == []
+
+    async def test_emit_with_target_session_ids_intersection_empty_is_noop(self):
+        """A target list that overlaps no subscribers delivers nothing, no error."""
+        mcp = FastMCP("test")
+        mcp.declare_event("public/topic")
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            sid = getattr(session, "_fastmcp_event_session_id")
+            await mcp._subscription_registry.add(sid, "public/topic")
+            sink: list[Any] = []
+            await self._capture_session(session, sink)
+
+            await mcp.emit_event(
+                "public/topic",
+                {"v": 1},
+                target_session_ids=["nope-not-a-real-session-id"],
+            )
+
+            assert sink == []
+
+    async def test_emit_with_target_session_ids_and_subscription_mismatch(self):
+        """Targeted session that lacks a matching subscription does not receive."""
+        mcp = FastMCP("test")
+        mcp.declare_event("public/topic")
+        mcp.declare_event("other/topic")
+
+        async with Client(mcp) as _c1:
+            s1 = _get_active_session(mcp)
+            s1_id = getattr(s1, "_fastmcp_event_session_id")
+            await mcp._subscription_registry.add(s1_id, "public/topic")
+            sink_s1: list[Any] = []
+            await self._capture_session(s1, sink_s1)
+
+            async with Client(mcp) as _c2:
+                s2 = next(
+                    s for s in mcp._active_sessions.values() if s is not s1
+                )
+                s2_id = getattr(s2, "_fastmcp_event_session_id")
+                # s2 subscribes to a DIFFERENT topic
+                await mcp._subscription_registry.add(s2_id, "other/topic")
+                sink_s2: list[Any] = []
+                await self._capture_session(s2, sink_s2)
+
+                # Target both sessions but emit on a topic only s1 subscribes to.
+                await mcp.emit_event(
+                    "public/topic",
+                    {"v": 1},
+                    target_session_ids=[s1_id, s2_id],
+                )
+
+                assert len(sink_s1) == 1
+                assert sink_s2 == []
+
+    async def test_context_emit_event_supports_target_session_ids(self):
+        """Context.emit_event passes target_session_ids through to FastMCP.emit_event."""
+        mcp = FastMCP("test")
+        mcp.declare_event("public/topic")
+
+        @mcp.tool
+        async def fan_out(target: str, ctx: Context) -> str:
+            await ctx.emit_event(
+                "public/topic", {"hello": "world"}, target_session_ids=[target]
+            )
+            return "ok"
+
+        async with Client(mcp) as caller:
+            # caller is the session that invokes the tool; spin up two
+            # additional subscriber sessions.
+            caller_session = _get_active_session(mcp)
+
+            async with Client(mcp) as _c2:
+                s2 = next(
+                    s
+                    for s in mcp._active_sessions.values()
+                    if s is not caller_session
+                )
+                s2_id = getattr(s2, "_fastmcp_event_session_id")
+                await mcp._subscription_registry.add(s2_id, "public/topic")
+                sink_s2: list[Any] = []
+                await TestTargetSessionIds()._capture_session(s2, sink_s2)
+
+                async with Client(mcp) as _c3:
+                    s3 = next(
+                        s
+                        for s in mcp._active_sessions.values()
+                        if s is not caller_session and s is not s2
+                    )
+                    s3_id = getattr(s3, "_fastmcp_event_session_id")
+                    await mcp._subscription_registry.add(s3_id, "public/topic")
+                    sink_s3: list[Any] = []
+                    await TestTargetSessionIds()._capture_session(s3, sink_s3)
+
+                    result = await caller.call_tool("fan_out", {"target": s2_id})
+                    assert result.data == "ok"
+
+                    assert len(sink_s2) == 1
+                    assert sink_s3 == []
+
+
+# ---------------------------------------------------------------------------
+# Wildcard-smuggling regression guards
+# ---------------------------------------------------------------------------
+
+
+class TestWildcardSmuggling:
+    async def test_wildcard_smuggling_rejected(self):
+        """A subscribe pattern that touches a session-scoped declaration via
+        wildcard must be rejected even if it ALSO matches an open declaration.
+
+        Two declarations:
+            - ``sessions/{session_id}/messages`` (private, session-scoped)
+            - ``sessions/{room}/public`` (open; ``{room}`` is non-magic)
+
+        The subscribe pattern ``sessions/+/messages`` is a wildcard superset
+        of the private pattern. It must be rejected because the wildcard would
+        cover other sessions' private messages.
+        """
+        mcp = FastMCP("test")
+        mcp.declare_event("sessions/{session_id}/messages")
+        mcp.declare_event("sessions/{room}/public")
+
+        async with Client(mcp) as _client:
+            session = _get_active_session(mcp)
+            result = await _subscribe_via_handler(
+                mcp, session, ["sessions/+/messages"]
+            )
+
+        assert result.subscribed == []
+        assert len(result.rejected) == 1
+        assert result.rejected[0].reason == "permission_denied"

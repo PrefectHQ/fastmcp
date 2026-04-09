@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import weakref
-from collections.abc import Callable, Generator, Mapping, Sequence
+from collections.abc import Callable, Collection, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
@@ -786,6 +786,7 @@ class Context:
         correlation_id: str | None = None,
         requested_effects: list[EventEffect] | None = None,
         expires_at: str | None = None,
+        target_session_ids: Collection[str] | None = None,
     ) -> None:
         """Publish an event to all sessions subscribed to the given topic.
 
@@ -808,6 +809,11 @@ class Context:
             correlation_id: Optional correlation ID.
             requested_effects: Optional advisory effect hints for clients.
             expires_at: Optional ISO 8601 expiry for retained values.
+            target_session_ids: Optional defense-in-depth filter. When
+                      provided, delivery is restricted to sessions whose
+                      fastmcp session_id is in this collection. Used as a
+                      routing safety net alongside subscription-time
+                      authorization; see ``FastMCP.emit_event`` for details.
         """
         await self.fastmcp.emit_event(
             topic=topic,
@@ -818,6 +824,7 @@ class Context:
             correlation_id=correlation_id,
             requested_effects=requested_effects,
             expires_at=expires_at,
+            target_session_ids=target_session_ids,
         )
 
     async def list_roots(self) -> list[Root]:

@@ -24,6 +24,94 @@ logger = get_logger(__name__)
 PaginateT = TypeVar("PaginateT")
 
 
+def _is_placeholder(segment: str) -> bool:
+    """Return True if ``segment`` is a ``{param}`` placeholder."""
+    return (
+        len(segment) >= 2 and segment.startswith("{") and segment.endswith("}")
+    )
+
+
+def _placeholder_name(segment: str) -> str:
+    """Extract the name from a ``{param}`` placeholder segment."""
+    return segment[1:-1]
+
+
+def _extract_topic_params(
+    declared_segments: list[str],
+    subscribe_segments: list[str],
+) -> dict[str, str]:
+    """Build the ``topic_params`` dict passed to ``authorize`` callbacks.
+
+    For each placeholder segment in the declared pattern, determine the
+    substituted value from the corresponding subscribe-pattern segment. If
+    the subscribe pattern uses a single-segment wildcard (``+``), the value
+    is the literal string ``"+"``. If the subscribe pattern uses the
+    multi-segment wildcard (``#``), ALL placeholder slots at that position
+    or later receive the literal string ``"#"``.
+
+    Segments without placeholders do not contribute to the dict.
+    """
+    params: dict[str, str] = {}
+    hash_active = False
+    for index, declared_seg in enumerate(declared_segments):
+        if not _is_placeholder(declared_seg):
+            continue
+        name = _placeholder_name(declared_seg)
+        if hash_active:
+            params[name] = "#"
+            continue
+        if index >= len(subscribe_segments):
+            # Subscribe pattern is shorter than declared. This should only
+            # happen when `#` consumed earlier segments, which is handled
+            # above. Record a sentinel for safety.
+            params[name] = "#"
+            continue
+        sub_seg = subscribe_segments[index]
+        if sub_seg == "#":
+            params[name] = "#"
+            hash_active = True
+        else:
+            # Covers literal values and the "+" single-segment wildcard.
+            params[name] = sub_seg
+    return params
+
+
+def _check_session_id_enforcement(
+    declared_segments: list[str],
+    subscribe_segments: list[str],
+    session_id: str,
+) -> bool:
+    """Enforce the ``{session_id}`` magic-placeholder convention.
+
+    For each segment in the declared pattern that is ``{session_id}``, the
+    corresponding segment in the subscribe pattern MUST be the literal
+    ``session_id`` string. Wildcards or any other value cause rejection.
+    Handles the ``#`` multi-segment wildcard: if ``#`` in the subscribe
+    pattern would consume a ``{session_id}`` declared segment, reject.
+
+    Declared patterns with no ``{session_id}`` placeholder always pass.
+    """
+    hash_index: int | None = None
+    for i, seg in enumerate(subscribe_segments):
+        if seg == "#":
+            hash_index = i
+            break
+    for index, declared_seg in enumerate(declared_segments):
+        if declared_seg != "{session_id}":
+            continue
+        if hash_index is not None and index >= hash_index:
+            # "#" would wildcard over the session_id slot -- reject.
+            return False
+        if index >= len(subscribe_segments):
+            # Subscribe pattern too short to cover the session_id slot and
+            # no `#` consumed it; this cannot happen if the patterns
+            # genuinely match, but guard against it anyway.
+            return False
+        if subscribe_segments[index] != session_id:
+            return False
+    return True
+
+
 def _apply_pagination(
     items: Sequence[PaginateT],
     cursor: str | None,
@@ -483,8 +571,27 @@ class MCPOperationsMixin:
                 )
 
             # Check if the pattern matches any declared topic
-            if not server._match_declared_topic(pattern):
+            matched_declared = server._find_matching_declared_topics(pattern)
+            if not matched_declared:
                 rejected.append(RejectedTopic(pattern=pattern, reason="unknown_topic"))
+                continue
+
+            # Authorize the subscription against each declared pattern that
+            # the subscribe pattern matches. Require every match to
+            # authorize: a single denial rejects the whole subscription so
+            # a client cannot smuggle in a forbidden pattern by combining
+            # it with a permissive one via wildcards.
+            authorized = True
+            for declared_pattern in matched_declared:
+                if not server._authorize_subscription(
+                    declared_pattern, pattern, session_id
+                ):
+                    authorized = False
+                    break
+            if not authorized:
+                rejected.append(
+                    RejectedTopic(pattern=pattern, reason="permission_denied")
+                )
                 continue
 
             await server._subscription_registry.add(session_id, pattern)
@@ -540,8 +647,68 @@ class MCPOperationsMixin:
         topics = list(server._event_topics.values())
         return EventListResult(topics=topics)
 
+    def _authorize_subscription(
+        self: FastMCP,
+        declared_pattern: str,
+        subscribe_pattern: str,
+        session_id: str,
+    ) -> bool:
+        """Check whether a subscribing session is authorized for a declared pattern.
+
+        Applies the authorize-callback override if one is registered for
+        ``declared_pattern``. Otherwise enforces the ``{session_id}`` magic
+        placeholder convention: for any segment in the declared pattern that
+        is ``{session_id}``, the corresponding segment in the subscribe
+        pattern must be the literal subscriber session UUID. Wildcards
+        (``+``, ``#``) or any other literal in that slot cause rejection.
+
+        Non-``{session_id}`` ``{param}`` placeholders impose no restriction.
+        If the declared pattern contains no ``{session_id}`` and no authorize
+        callback is registered, all matching subscribers are allowed
+        (legacy behavior).
+
+        Handles the ``#`` (multi-segment wildcard) edge case: ``#`` must
+        appear at the end of the subscribe pattern and consumes all
+        remaining declared-pattern segments. If any consumed segment is
+        ``{session_id}``, the subscription is rejected.
+
+        Returns True to allow the subscription, False to reject it.
+        """
+        declared_segments = declared_pattern.split("/")
+        subscribe_segments = subscribe_pattern.split("/")
+        authorize_cb = self._event_topic_authorize.get(declared_pattern)
+
+        if authorize_cb is not None:
+            topic_params = _extract_topic_params(
+                declared_segments, subscribe_segments
+            )
+            try:
+                return bool(authorize_cb(session_id, topic_params))
+            except Exception:
+                logger.warning(
+                    "authorize callback raised for declared topic %r; "
+                    "denying subscription",
+                    declared_pattern,
+                    exc_info=True,
+                )
+                return False
+
+        # Default policy: {session_id} enforcement if present in declared.
+        return _check_session_id_enforcement(
+            declared_segments, subscribe_segments, session_id
+        )
+
     def _match_declared_topic(self: FastMCP, pattern: str) -> bool:
         """Check whether a subscription pattern matches any declared event topic.
+
+        See ``_find_matching_declared_topics`` for the underlying logic.
+        """
+        return bool(self._find_matching_declared_topics(pattern))
+
+    def _find_matching_declared_topics(
+        self: FastMCP, pattern: str
+    ) -> list[str]:
+        """Return the declared topic patterns that a subscription pattern matches.
 
         Handles both exact matches and wildcard patterns that could match
         declared topic patterns. For example, subscription pattern "myapp/+"
@@ -556,9 +723,12 @@ class MCPOperationsMixin:
 
         from fastmcp.server.events import _pattern_to_regex
 
-        # Direct match
+        matches: list[str] = []
+
+        # Direct match short-circuit
         if pattern in self._event_topics:
-            return True
+            matches.append(pattern)
+            return matches
 
         for declared_pattern in self._event_topics:
             # Forward: build regex from declared pattern's {param} placeholders
@@ -579,7 +749,8 @@ class MCPOperationsMixin:
             # testing against the declared pattern regex.
             test_pattern = _re.sub(r"[+#]", "x", pattern)
             if declared_regex.match(test_pattern):
-                return True
+                matches.append(declared_pattern)
+                continue
 
             # Reverse: does the declared pattern (with {param} replaced by a
             # synthetic literal) match the subscription pattern's MQTT regex?
@@ -587,8 +758,8 @@ class MCPOperationsMixin:
             try:
                 sub_regex = _pattern_to_regex(pattern)
                 if sub_regex.match(concrete_declared):
-                    return True
+                    matches.append(declared_pattern)
             except ValueError:
                 continue
 
-        return False
+        return matches

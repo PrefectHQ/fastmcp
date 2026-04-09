@@ -104,6 +104,17 @@ class MiddlewareServerSession(ServerSession):
                 response: mcp.types.ServerResult,
             ) -> None:
                 nonlocal captured_response
+                # Inject the fastmcp session_id into InitializeResult._meta so
+                # clients can learn their own session identifier synchronously
+                # during the initialize handshake. This value is the same UUID
+                # set on the session in LowLevelServer.run() and used by the
+                # event subscription system for cross-session authorization.
+                if isinstance(response.root, mcp.types.InitializeResult):
+                    session_id = getattr(self, "_fastmcp_event_session_id", None)
+                    if session_id is not None:
+                        existing_meta = response.root.meta or {}
+                        merged_meta = {**existing_meta, "session_id": session_id}
+                        response.root.meta = merged_meta
                 captured_response = response
                 return await original_respond(response)
 

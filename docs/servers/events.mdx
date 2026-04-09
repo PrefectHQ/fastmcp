@@ -232,6 +232,71 @@ A session that subscribes to `chat/rooms/+/messages` receives events from all ro
 
 Each session receives at most one copy of an event, even if multiple subscription patterns overlap.
 
+## Authorization
+
+### The `{session_id}` Placeholder
+
+The placeholder name `{session_id}` is special. When a topic is declared with `{session_id}`, FastMCP automatically enforces that each subscriber can only subscribe to their own session's slot:
+
+- A subscriber **must** substitute their own session UUID in the `{session_id}` position.
+- Wildcards (`+`, `#`) in the `{session_id}` position are rejected.
+- Another session's UUID in that position is rejected.
+- Rejected subscriptions receive reason `"permission_denied"`.
+
+Other `{param}` names have no special enforcement and allow wildcards freely.
+
+```python
+# Session-scoped: only the owning session can subscribe
+mcp.declare_event("app/sessions/{session_id}/messages")
+
+# Public: any session can subscribe
+mcp.declare_event("app/server/status")
+
+# Public with descriptive placeholder: {project} is not magic
+mcp.declare_event("app/builds/{project}/status")
+```
+
+### The `authorize` Callback
+
+For custom authorization beyond `{session_id}`, use the `authorize` parameter on `declare_event`:
+
+```python
+mcp.declare_event(
+    "app/rooms/{room}/chat",
+    authorize=lambda session_id, topic_params: session_id in get_room_members(topic_params["room"]),
+)
+```
+
+The callback signature is `(session_id: str, topic_params: dict[str, str])`:
+
+- `session_id` is the subscribing session's UUID.
+- `topic_params` maps placeholder names to the concrete values from the subscribe pattern. Wildcards are passed as literal `"+"` or `"#"`.
+- Return `True` to allow, `False` to reject.
+- If `authorize` is set, it **overrides** the default `{session_id}` check entirely. The callback is fully responsible for authorization.
+- If the callback raises, the subscription is denied (fail-closed) and a warning is logged.
+
+### Client `session_id` Discovery
+
+Clients can discover their server-assigned `session_id` from the initialize response. The server includes `session_id` in `InitializeResult._meta`. Python SDK clients access it via `session.session_id`.
+
+This is the UUID that the `{session_id}` convention enforces against.
+
+### Targeted Emission
+
+Use `target_session_ids` on `emit_event` to restrict delivery to specific sessions:
+
+```python
+await mcp.emit_event(
+    "topic/name",
+    payload={"data": "value"},
+    target_session_ids=["session-uuid-1", "session-uuid-2"],
+)
+```
+
+- If `None` (default): broadcast to all matching subscribers.
+- If set: only deliver to sessions in this list that also have a matching subscription.
+- Useful for defense-in-depth routing alongside `{session_id}` scoping.
+
 ## Session Registry and Broadcast
 
 FastMCP maintains a registry of active sessions and their subscriptions. When `emit_event()` is called:
