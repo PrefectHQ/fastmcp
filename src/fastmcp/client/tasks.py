@@ -217,7 +217,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
 
         Args:
             state: Desired state ('submitted', 'working', 'completed', 'failed').
-                   If None, waits for any terminal state (completed/failed)
+                   If None, waits until the task exits the 'working' state (completed, failed, cancelled, input_required, etc.)
             timeout: Maximum time to wait in seconds
 
         Returns:
@@ -237,7 +237,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
             self._status_event = asyncio.Event()
 
         start = time.time()
-        terminal_states = {"completed", "failed", "cancelled"}
+        in_progress_states = {"working"}
         poll_interval = 0.5  # Fallback polling interval (500ms)
 
         while True:
@@ -245,7 +245,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
             if self._status_cache:
                 current = self._status_cache.status
                 if state is None:
-                    if current in terminal_states:
+                    if current not in in_progress_states:
                         return self._status_cache
                 elif current == state:
                     return self._status_cache
