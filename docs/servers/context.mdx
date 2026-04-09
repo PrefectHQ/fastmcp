@@ -23,6 +23,7 @@ The `Context` object provides a clean interface to access MCP features within yo
 - **Prompt Access**: List and retrieve prompts registered with the server
 - **LLM Sampling**: Request the client's LLM to generate text based on provided messages
 - **User Elicitation**: Request structured input from users during tool execution
+- **Event Publishing**: [Broadcast events](/servers/events) to subscribed clients
 - **Session State**: Store data that persists across requests within an MCP session
 - **Session Visibility**: [Control which components are visible](/servers/visibility#per-session-visibility) to the current session
 - **Request Information**: Access metadata about the current request
@@ -210,6 +211,21 @@ messages = result.messages
 **Method signatures:**
 - **`ctx.list_prompts() -> list[MCPPrompt]`**: Returns list of all available prompts
 - **`ctx.get_prompt(name: str, arguments: dict[str, Any] | None = None) -> GetPromptResult`**: Get a specific prompt with optional arguments
+
+### Event Publishing
+
+Broadcast [events](/servers/events) to all clients subscribed to a topic. Events are delivered as server-initiated notifications; subscribers do not need to poll.
+
+```python
+@mcp.tool
+async def notify_users(message: str, ctx: Context) -> str:
+    """Send a notification event to all subscribers."""
+    await ctx.emit_event("myapp/notifications", {"text": message})
+    return "sent"
+```
+
+**Method signature:**
+- **`await ctx.emit_event(topic, payload, *, event_id=None, retained=None, source=None, correlation_id=None, requested_effects=None, expires_at=None)`**: Publish an event to matching subscribers. See [Events](/servers/events) for full parameter documentation.
 
 ### Session State
 

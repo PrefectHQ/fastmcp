@@ -115,6 +115,7 @@
                       "servers/composition",
                       "servers/dependency-injection",
                       "servers/elicitation",
+                      "servers/events",
                       "servers/icons",
                       "servers/lifespan",
                       "servers/logging",
