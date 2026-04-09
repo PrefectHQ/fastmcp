@@ -1853,11 +1853,12 @@ class FastMCP(
             ),
         )
 
-        # Broadcast to matching active sessions (O(1) lookup via dict)
-        for sid in matching_session_ids:
+        # Broadcast to matching active sessions in parallel so slow sessions
+        # don't block delivery to others.
+        async def _deliver(sid: str) -> None:
             session = self._active_sessions.get(sid)
             if session is None:
-                continue
+                return
             try:
                 await session.send_notification(cast(ServerNotification, notification))
             except Exception:
@@ -1865,6 +1866,11 @@ class FastMCP(
                     f"Failed to deliver event to session {sid}",
                     exc_info=True,
                 )
+
+        await asyncio.gather(
+            *[_deliver(sid) for sid in matching_session_ids],
+            return_exceptions=True,
+        )
 
     def add_resource(
         self, resource: Resource | Callable[..., Any]

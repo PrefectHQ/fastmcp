@@ -564,13 +564,16 @@ class MCPOperationsMixin:
             # Forward: build regex from declared pattern's {param} placeholders
             # and test whether the subscription pattern (with wildcards replaced
             # by a synthetic single-segment value) matches.
-            declared_regex_parts = []
-            for segment in declared_pattern.split("/"):
-                if segment.startswith("{") and segment.endswith("}"):
-                    declared_regex_parts.append("[^/]+")
-                else:
-                    declared_regex_parts.append(_re.escape(segment))
-            declared_regex = _re.compile("^" + "/".join(declared_regex_parts) + "$")
+            declared_regex = self._declared_topic_regex_cache.get(declared_pattern)
+            if declared_regex is None:
+                declared_regex_parts = []
+                for segment in declared_pattern.split("/"):
+                    if segment.startswith("{") and segment.endswith("}"):
+                        declared_regex_parts.append("[^/]+")
+                    else:
+                        declared_regex_parts.append(_re.escape(segment))
+                declared_regex = _re.compile("^" + "/".join(declared_regex_parts) + "$")
+                self._declared_topic_regex_cache[declared_pattern] = declared_regex
 
             # Replace MQTT wildcards with a synthetic literal segment for
             # testing against the declared pattern regex.

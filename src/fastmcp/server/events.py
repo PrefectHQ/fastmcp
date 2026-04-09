@@ -19,6 +19,7 @@ Wildcard rules:
 from __future__ import annotations
 
 import asyncio
+import functools
 import re
 from datetime import datetime, timezone
 
@@ -47,6 +48,7 @@ from mcp.types import (  # noqa: F401
 # ---------------------------------------------------------------------------
 
 
+@functools.lru_cache(maxsize=256)
 def _pattern_to_regex(pattern: str) -> re.Pattern[str]:
     """Convert an MQTT-style topic pattern to a compiled regex.
 
