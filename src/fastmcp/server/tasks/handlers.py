@@ -23,6 +23,7 @@ from fastmcp.server.tasks.context import (
     TaskContextSnapshot,
     get_task_scope,
     register_task_server,
+    register_task_session,
 )
 from fastmcp.server.tasks.keys import build_task_key
 from fastmcp.utilities.logging import get_logger
@@ -135,8 +136,6 @@ async def submit_to_docket(
     # This enables elicitation/sampling from background tasks via weakref
     # Skip when there is no session (programmatic calls without MCP session)
     if session_id is not None:
-        from fastmcp.server.tasks.context import register_task_session
-
         register_task_session(session_id, ctx.session)
 
     # Send an initial tasks/status notification before queueing.
@@ -168,7 +167,7 @@ async def submit_to_docket(
     # Queue function to Docket by key (result storage via execution_ttl)
     # Use component.add_to_docket() which handles calling conventions
     # `fn_key` is the function lookup key (e.g., "child_multiply")
-    # `task_key` is the task result key (e.g., "{task_scope}:{task_id}:tool:child_multiply")
+    # `task_key` is the task result key (e.g., "fastmcp:task:{task_scope}:{task_id}:tool:child_multiply")
     # Resources don't take arguments; tools/prompts/templates always pass arguments (even if None/empty)
     if task_type == "resource":
         await component.add_to_docket(docket, fn_key=key, task_key=task_key)  # type: ignore[call-arg]  # ty:ignore[missing-argument]
@@ -176,9 +175,10 @@ async def submit_to_docket(
         await component.add_to_docket(docket, arguments, fn_key=key, task_key=task_key)  # type: ignore[call-arg]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
 
     # Spawn subscription task to send status notifications (SEP-1686 optional feature)
+    # Start subscription in session's task group (persists for connection lifetime)
+    # Deferred: subscriptions and notifications depend on docket at import time
     from fastmcp.server.tasks.subscriptions import subscribe_to_task_updates
 
-    # Start subscription in session's task group (persists for connection lifetime)
     if hasattr(ctx.session, "_subscription_task_group"):
         tg = ctx.session._subscription_task_group
         if tg:
@@ -191,9 +191,7 @@ async def submit_to_docket(
                 poll_interval_ms,
             )
 
-    # Start notification subscriber for distributed elicitation (idempotent)
-    # This enables ctx.elicit() to work when workers run in separate processes
-    # Subscriber forwards notifications from Redis queue to client session
+    # Deferred: notifications depends on docket at import time
     from fastmcp.server.tasks.notifications import (
         ensure_subscriber_running,
         stop_subscriber,

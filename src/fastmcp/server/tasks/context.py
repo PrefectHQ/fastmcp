@@ -1,7 +1,9 @@
-"""Task context management for background task execution.
+"""Task context and scoping for background task execution.
 
-Provides task scoping, context snapshotting, and session/server registries
-for Docket background workers.
+Determines authorization scope (``get_task_scope``), manages the context
+snapshot that is captured at task submission and restored in workers
+(``TaskContextSnapshot``), and maintains in-process registries for live
+sessions and servers.
 """
 
 from __future__ import annotations
@@ -14,6 +16,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
+
+from fastmcp.server.tasks.keys import parse_task_key
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -69,8 +73,6 @@ def get_task_context() -> TaskContextInfo | None:
         return None
 
     from docket.dependencies import current_execution
-
-    from fastmcp.server.tasks.keys import parse_task_key
 
     try:
         execution = current_execution.get()
@@ -229,6 +231,17 @@ async def _load_task_snapshot_async(
             exc_info=True,
         )
         return None
+
+
+def get_task_session_id() -> str | None:
+    """Get the session_id for the current background task, if available.
+
+    Loads the task snapshot (from cache or Redis) and returns the session_id
+    that was captured at task submission time.  Returns None if not in a task
+    context or if the snapshot isn't available.
+    """
+    snapshot = _get_task_snapshot_sync()
+    return snapshot.session_id if snapshot else None
 
 
 def _get_task_snapshot_sync() -> TaskContextSnapshot | None:

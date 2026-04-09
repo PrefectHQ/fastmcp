@@ -1,17 +1,13 @@
-"""Task key management for SEP-1686 background tasks.
+"""Docket key encoding for background tasks.
 
-Task keys encode authorization scoping and metadata in the Docket key format:
-    `{task_scope}:{client_task_id}:{task_type}:{component_identifier}`
+Builds and parses the compound string key that Docket uses to identify a task
+execution::
 
-This format provides:
-- Authorization-based security scoping (prevents cross-identity access)
-- Task type identification (tool/prompt/resource)
-- Component identification (name or URI for result conversion)
+    {task_scope}:{client_task_id}:{task_type}:{component_identifier}
 
-The task_scope segment is the authorization identity (e.g. OAuth client_id)
-when auth is configured, or ``_`` for unauthenticated servers.  Both the
-task_scope and the component_identifier are URI-encoded so that special
-characters (colons, slashes, etc.) never collide with the ``:`` delimiter.
+Both ``task_scope`` and ``component_identifier`` are URI-encoded so that
+special characters never collide with the ``:`` delimiter.  See
+``context.py`` for how the ``task_scope`` value is determined.
 """
 
 from urllib.parse import quote, unquote

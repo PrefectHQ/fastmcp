@@ -79,8 +79,9 @@ __all__ = [
 ]
 
 
-# Re-exports from fastmcp.server.tasks.context (moved for clarity, kept
-# here for backward compatibility with existing imports).
+# Re-exports for backward compatibility (these used to live here).
+# _get_task_snapshot_sync and _load_task_snapshot_async are not re-exported
+# but are used internally by get_access_token / get_http_request / get_server.
 from fastmcp.server.tasks.context import (
     TaskContextInfo,
     TaskContextSnapshot,
@@ -91,7 +92,7 @@ from fastmcp.server.tasks.context import (
     get_task_session,
     register_task_server,
     register_task_session,
-)  # get_task_server is not re-exported; it's only used internally by get_server()
+)
 
 _current_server: ContextVar[weakref.ref[FastMCP] | None] = ContextVar(
     "server", default=None

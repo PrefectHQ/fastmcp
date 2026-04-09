@@ -24,6 +24,9 @@ from typing import TYPE_CHECKING, Any, cast
 import mcp.types
 from mcp import ServerSession
 
+from fastmcp.server.tasks.context import get_task_context, get_task_session_id
+from fastmcp.server.tasks.notifications import push_notification
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -75,15 +78,14 @@ async def elicit_for_task(
     # Generate a unique request ID for this elicitation
     request_id = str(uuid.uuid4())
 
-    # Get scope and session_id from task context
-    from fastmcp.server.tasks.context import _get_task_snapshot_sync, get_task_context
-
     task_context = get_task_context()
     if task_context is not None:
         task_scope = task_context.task_scope
-        # session_id comes from the snapshot (needed for notification delivery)
-        snapshot = _get_task_snapshot_sync()
-        session_id = snapshot.session_id if snapshot else None
+        # Prefer the live session's cached ID (always available in-process),
+        # fall back to the snapshot for distributed workers.
+        session_id = (
+            getattr(session, "_fastmcp_state_prefix", None) or get_task_session_id()
+        )
     else:
         raise RuntimeError(
             "Cannot determine task scope for elicitation. "
@@ -146,10 +148,6 @@ async def elicit_for_task(
             }
         },
     }
-
-    # Push notification to Redis queue (works from any process)
-    # Server's subscriber loop will forward to client
-    from fastmcp.server.tasks.notifications import push_notification
 
     if session_id is None:
         logger.warning(

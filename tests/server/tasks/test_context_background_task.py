@@ -33,6 +33,7 @@ from fastmcp.server.tasks.context import (
     TaskContextInfo,
     TaskContextSnapshot,
     _set_cached_snapshot,
+    get_task_scope,
 )
 from fastmcp.server.tasks.elicitation import handle_task_input
 
@@ -262,9 +263,6 @@ class TestBackgroundTaskIntegration:
             assert origin != ""
 
             # Verify the snapshot in Redis contains the same value
-            # Snapshot is keyed by scope (auth identity or "_" for unauthenticated)
-            from fastmcp.server.tasks.context import get_task_scope
-
             task_scope = get_task_scope()
             key = docket.key(f"fastmcp:task:{task_scope}:{ctx.task_id}:snapshot")
             async with docket.redis() as redis:
