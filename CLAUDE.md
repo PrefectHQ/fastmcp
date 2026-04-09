@@ -82,6 +82,16 @@ The handwritten notes are prepended above the auto-generated changelog and are t
 
 **Before drafting, always read recent existing releases** (`gh release list` then `gh release view <tag>`) to absorb the voice, structure, and level of detail. Each release builds on the tone of previous ones — don't guess at the style from these instructions alone.
 
+**To preview what PRs will be in the release** before it's cut, call the GitHub generate-notes API. This returns the exact auto-generated changelog that `--generate-notes` would append, so you can see the full PR list — useful for picking a pun theme and making sure nothing's been missed:
+
+```bash
+gh api -X POST repos/PrefectHQ/fastmcp/releases/generate-notes \
+  -f tag_name=v3.2.3 \
+  -f target_commitish=main \
+  -f previous_tag_name=v3.2.2 \
+  --jq '.body'
+```
+
 **Point releases** (3.0, 3.1, 3.2) get narrative prose: open with the theme of the release, then walk through headline features conceptually — what they enable, why they matter, how they fit together. Write it the way a blog post reads, not a changelog. Multiple paragraphs, code examples where they clarify.
 
 **Patch releases** (3.1.1, 3.0.2) get 1-2 sentences explaining what broke and what the fix does. Keep it minimal — the auto-generated changelog has the details.
