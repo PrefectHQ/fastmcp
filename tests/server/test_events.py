@@ -17,19 +17,13 @@ from fastmcp.server.context import Context
 from fastmcp.server.events import (
     EventEffect,
     EventEmitNotification,
-    EventListResult,
     EventParams,
-    EventSubscribeParams,
-    EventSubscribeResult,
     EventTopicDescriptor,
-    EventUnsubscribeParams,
-    EventUnsubscribeResult,
     RetainedEvent,
     RetainedValueStore,
     SubscriptionRegistry,
     _pattern_to_regex,
 )
-
 
 # ---------------------------------------------------------------------------
 # SubscriptionRegistry unit tests
@@ -130,9 +124,15 @@ class TestRetainedValueStore:
 
     async def test_get_matching(self):
         store = RetainedValueStore()
-        await store.set("myapp/a", RetainedEvent(topic="myapp/a", eventId="e1", payload=1))
-        await store.set("myapp/b", RetainedEvent(topic="myapp/b", eventId="e2", payload=2))
-        await store.set("other/c", RetainedEvent(topic="other/c", eventId="e3", payload=3))
+        await store.set(
+            "myapp/a", RetainedEvent(topic="myapp/a", eventId="e1", payload=1)
+        )
+        await store.set(
+            "myapp/b", RetainedEvent(topic="myapp/b", eventId="e2", payload=2)
+        )
+        await store.set(
+            "other/c", RetainedEvent(topic="other/c", eventId="e3", payload=3)
+        )
         result = await store.get_matching("myapp/+")
         assert len(result) == 2
         assert {e.event_id for e in result} == {"e1", "e2"}
@@ -225,9 +225,7 @@ class TestEventEmitNotification:
                 eventId="e1",
                 payload={"status": "running"},
                 retained=True,
-                requestedEffects=[
-                    EventEffect(type="inject_context", priority="high")
-                ],
+                requestedEffects=[EventEffect(type="inject_context", priority="high")],
             )
         )
         data = notification.model_dump(exclude_none=True)
@@ -303,7 +301,9 @@ class TestEventCapability:
             # events is a first-class field on ServerCapabilities
             events_cap = result.capabilities.events
             assert events_cap is not None, "Expected events capability to be set"
-            assert len(events_cap.topics) == 1, f"Expected 1 topic, got {len(events_cap.topics)}"
+            assert len(events_cap.topics) == 1, (
+                f"Expected 1 topic, got {len(events_cap.topics)}"
+            )
             topic = events_cap.topics[0]
             assert topic.pattern == "myapp/status"
             assert topic.description == "Status updates"
@@ -352,14 +352,19 @@ class TestFastMCPEmitEvent:
 
             _original_send = session.send_notification
 
-            async def capturing_send(notification: ServerNotification, related_request_id: str | int | None = None) -> None:
+            async def capturing_send(
+                notification: ServerNotification,
+                related_request_id: str | int | None = None,
+            ) -> None:
                 received_notifications.append(notification)
 
             setattr(session, "send_notification", capturing_send)
 
             await mcp.emit_event("myapp/status", {"state": "updated"})
 
-            assert len(received_notifications) == 1, "Event should be delivered to client"
+            assert len(received_notifications) == 1, (
+                "Event should be delivered to client"
+            )
             notif = received_notifications[0]
             assert notif.params.event_id, "Delivered event should have an event_id"
             assert re.fullmatch(r"[0-9A-HJKMNP-TV-Z]{26}", notif.params.event_id)
@@ -496,7 +501,9 @@ class TestContextEmitEvent:
         async with Client(mcp) as client:
             result = await client.call_tool("notify", {"message": "hello"})
             assert result.data == "sent"
-            assert len(emitted_calls) == 1, f"Expected exactly 1 emit call, got {len(emitted_calls)}"
+            assert len(emitted_calls) == 1, (
+                f"Expected exactly 1 emit call, got {len(emitted_calls)}"
+            )
             call = emitted_calls[0]
             assert call["topic"] == "myapp/notifications"
             assert call["payload"] == {"text": "hello"}
@@ -548,15 +555,10 @@ class TestTopicMatchesPattern:
         )
 
     def test_multiple_params_match(self):
-        assert (
-            FastMCP._topic_matches_pattern("a/1/b/2/c", "a/{x}/b/{y}/c")
-            is True
-        )
+        assert FastMCP._topic_matches_pattern("a/1/b/2/c", "a/{x}/b/{y}/c") is True
 
     def test_segment_count_mismatch(self):
-        assert (
-            FastMCP._topic_matches_pattern("a/b", "a/{x}/c") is False
-        )
+        assert FastMCP._topic_matches_pattern("a/b", "a/{x}/c") is False
 
     def test_literal_segment_mismatch(self):
         assert (
@@ -613,12 +615,8 @@ class TestFindTopicDescriptor:
 
     def test_parameterized_match(self):
         mcp = FastMCP("test")
-        mcp.declare_event(
-            "spellbook/sessions/{session_id}/messages", retained=True
-        )
-        desc = mcp._find_topic_descriptor(
-            "spellbook/sessions/worker-42/messages"
-        )
+        mcp.declare_event("spellbook/sessions/{session_id}/messages", retained=True)
+        desc = mcp._find_topic_descriptor("spellbook/sessions/worker-42/messages")
         assert desc is not None
         assert desc.retained is True
 
@@ -633,17 +631,11 @@ class TestEmitEventParameterizedRetained:
         """Emitting to a concrete topic that matches a parameterized
         retained declaration auto-retains the event."""
         mcp = FastMCP("test")
-        mcp.declare_event(
-            "spellbook/sessions/{session_id}/messages", retained=True
-        )
+        mcp.declare_event("spellbook/sessions/{session_id}/messages", retained=True)
 
-        await mcp.emit_event(
-            "spellbook/sessions/worker-42/messages", {"text": "hello"}
-        )
+        await mcp.emit_event("spellbook/sessions/worker-42/messages", {"text": "hello"})
 
-        stored = await mcp._retained_store.get(
-            "spellbook/sessions/worker-42/messages"
-        )
+        stored = await mcp._retained_store.get("spellbook/sessions/worker-42/messages")
         assert stored is not None
         assert stored.payload == {"text": "hello"}
 
@@ -651,17 +643,11 @@ class TestEmitEventParameterizedRetained:
         """Emitting to a concrete topic that matches a parameterized
         non-retained declaration does not retain."""
         mcp = FastMCP("test")
-        mcp.declare_event(
-            "spellbook/sessions/{session_id}/messages", retained=False
-        )
+        mcp.declare_event("spellbook/sessions/{session_id}/messages", retained=False)
 
-        await mcp.emit_event(
-            "spellbook/sessions/worker-42/messages", {"text": "hello"}
-        )
+        await mcp.emit_event("spellbook/sessions/worker-42/messages", {"text": "hello"})
 
-        stored = await mcp._retained_store.get(
-            "spellbook/sessions/worker-42/messages"
-        )
+        stored = await mcp._retained_store.get("spellbook/sessions/worker-42/messages")
         assert stored is None
 
     async def test_undeclared_topic_defaults_not_retained(self):
@@ -729,7 +715,10 @@ class TestSessionRegistry:
             # Monkey-patch send_notification on the session to capture it
             _original_send = session.send_notification
 
-            async def capturing_send(notification: ServerNotification, related_request_id: str | int | None = None) -> None:
+            async def capturing_send(
+                notification: ServerNotification,
+                related_request_id: str | int | None = None,
+            ) -> None:
                 received_notifications.append(notification)
                 # Don't actually send to avoid protocol issues in test
 
@@ -764,7 +753,10 @@ class TestSessionRegistry:
                 for s, sid in [(s1, s1_id), (s2, s2_id)]:
 
                     async def make_capture(target_list: list[Any]) -> Any:
-                        async def capture(notification: ServerNotification, related_request_id: str | int | None = None) -> None:
+                        async def capture(
+                            notification: ServerNotification,
+                            related_request_id: str | int | None = None,
+                        ) -> None:
                             target_list.append(notification)
 
                         return capture
@@ -780,7 +772,9 @@ class TestSessionRegistry:
                     notif = received[sid][0]
                     assert notif.params.topic == "myapp/status"
                     assert notif.params.payload == {"state": "running"}
-                    assert notif.params.event_id, f"event_id should be non-empty for session {sid}"
+                    assert notif.params.event_id, (
+                        f"event_id should be non-empty for session {sid}"
+                    )
 
     async def test_emit_failure_does_not_block_others(self):
         """Delivery failure to one session does not prevent delivery to others."""
@@ -800,12 +794,18 @@ class TestSessionRegistry:
                 await mcp._subscription_registry.add(s2_id, "myapp/status")
 
                 # Make s1 fail on send
-                async def failing_send(notification: ServerNotification, related_request_id: str | int | None = None) -> None:
+                async def failing_send(
+                    notification: ServerNotification,
+                    related_request_id: str | int | None = None,
+                ) -> None:
                     raise ConnectionError("broken pipe")
 
                 setattr(s1, "send_notification", failing_send)
 
-                async def tracking_send(notification: ServerNotification, related_request_id: str | int | None = None) -> None:
+                async def tracking_send(
+                    notification: ServerNotification,
+                    related_request_id: str | int | None = None,
+                ) -> None:
                     delivered_to.append((s2_id, notification))
 
                 setattr(s2, "send_notification", tracking_send)
@@ -813,7 +813,9 @@ class TestSessionRegistry:
                 await mcp.emit_event("myapp/status", {"state": "running"})
 
                 # s2 should still receive despite s1 failure
-                assert len(delivered_to) == 1, f"Expected exactly 1 delivery, got {len(delivered_to)}"
+                assert len(delivered_to) == 1, (
+                    f"Expected exactly 1 delivery, got {len(delivered_to)}"
+                )
                 sid, notif = delivered_to[0]
                 assert sid == s2_id
                 assert notif.params.topic == "myapp/status"
@@ -893,9 +895,7 @@ class TestProtocolRoundTrip:
                             method="notifications/initialized",
                         )
                         await client_write.send(
-                            SessionMessage(
-                                message=JSONRPCMessage(initialized_notif)
-                            )
+                            SessionMessage(message=JSONRPCMessage(initialized_notif))
                         )
 
                         # Wait for server to register the session
@@ -918,9 +918,7 @@ class TestProtocolRoundTrip:
                             params={"topics": ["myapp/status"]},
                         )
                         await client_write.send(
-                            SessionMessage(
-                                message=JSONRPCMessage(subscribe_request)
-                            )
+                            SessionMessage(message=JSONRPCMessage(subscribe_request))
                         )
 
                         sub_resp = await client_read.receive()
@@ -934,8 +932,10 @@ class TestProtocolRoundTrip:
                         assert result["subscribed"][0]["pattern"] == "myapp/status"
 
                         # Verify subscription was registered
-                        subs = await mcp_server._subscription_registry.get_subscriptions(
-                            session_id
+                        subs = (
+                            await mcp_server._subscription_registry.get_subscriptions(
+                                session_id
+                            )
                         )
                         assert "myapp/status" in subs
 
@@ -963,9 +963,7 @@ class TestProtocolRoundTrip:
                             params={"topics": ["myapp/status"]},
                         )
                         await client_write.send(
-                            SessionMessage(
-                                message=JSONRPCMessage(unsubscribe_request)
-                            )
+                            SessionMessage(message=JSONRPCMessage(unsubscribe_request))
                         )
 
                         unsub_resp = await client_read.receive()
@@ -975,8 +973,10 @@ class TestProtocolRoundTrip:
                         assert "myapp/status" in unsub_root.result["unsubscribed"]
 
                         # Verify subscription was removed
-                        subs = await mcp_server._subscription_registry.get_subscriptions(
-                            session_id
+                        subs = (
+                            await mcp_server._subscription_registry.get_subscriptions(
+                                session_id
+                            )
                         )
                         assert "myapp/status" not in subs
 
@@ -998,10 +998,17 @@ class TestProtocolRoundTrip:
         import anyio
         from mcp.shared.memory import create_client_server_memory_streams
         from mcp.shared.message import SessionMessage
-        from mcp.types import JSONRPCMessage, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse
+        from mcp.types import (
+            JSONRPCMessage,
+            JSONRPCNotification,
+            JSONRPCRequest,
+            JSONRPCResponse,
+        )
 
         mcp_server = FastMCP("test-events-list")
-        mcp_server.declare_event("myapp/status", description="Status updates", retained=True)
+        mcp_server.declare_event(
+            "myapp/status", description="Status updates", retained=True
+        )
         mcp_server.declare_event("myapp/logs", description="Log stream")
 
         async with mcp_server._lifespan_manager():
@@ -1078,7 +1085,10 @@ class TestProtocolRoundTrip:
                         assert patterns == {"myapp/status", "myapp/logs"}
                         # Verify topic details
                         by_pattern = {t["pattern"]: t for t in topics}
-                        assert by_pattern["myapp/status"]["description"] == "Status updates"
+                        assert (
+                            by_pattern["myapp/status"]["description"]
+                            == "Status updates"
+                        )
                         assert by_pattern["myapp/status"]["retained"] is True
                         assert by_pattern["myapp/logs"]["description"] == "Log stream"
                         assert by_pattern["myapp/logs"]["retained"] is False
@@ -1097,7 +1107,12 @@ class TestErrorPaths:
         import anyio
         from mcp.shared.memory import create_client_server_memory_streams
         from mcp.shared.message import SessionMessage
-        from mcp.types import JSONRPCError, JSONRPCMessage, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse
+        from mcp.types import (
+            JSONRPCError,
+            JSONRPCMessage,
+            JSONRPCNotification,
+            JSONRPCRequest,
+        )
 
         mcp_server = FastMCP("test-malformed")
 
@@ -1176,7 +1191,12 @@ class TestErrorPaths:
         import anyio
         from mcp.shared.memory import create_client_server_memory_streams
         from mcp.shared.message import SessionMessage
-        from mcp.types import JSONRPCError, JSONRPCMessage, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse
+        from mcp.types import (
+            JSONRPCError,
+            JSONRPCMessage,
+            JSONRPCNotification,
+            JSONRPCRequest,
+        )
 
         mcp_server = FastMCP("test-event-error")
         mcp_server.declare_event("myapp/status")
@@ -1285,7 +1305,6 @@ class TestTopicDepthEnforcement:
             JSONRPCMessage,
             JSONRPCNotification,
             JSONRPCRequest,
-            JSONRPCResponse,
         )
 
         mcp_server = FastMCP("test")
@@ -1379,7 +1398,6 @@ class TestNoEventsCapability:
             JSONRPCMessage,
             JSONRPCNotification,
             JSONRPCRequest,
-            JSONRPCResponse,
         )
 
         mcp_server = FastMCP("test-no-events")

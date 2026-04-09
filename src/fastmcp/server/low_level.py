@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import logging
 import weakref
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import anyio
@@ -21,9 +19,9 @@ from mcp.server.lowlevel.server import (
 )
 from mcp.server.models import InitializationOptions
 from mcp.server.session import ServerSession
-from mcp.shared.session import RequestResponder
 from mcp.server.stdio import stdio_server as stdio_server
 from mcp.shared.message import SessionMessage
+from mcp.shared.session import RequestResponder
 from pydantic import AnyUrl
 
 from fastmcp.apps.config import UI_EXTENSION_ID

@@ -29,6 +29,7 @@ from mcp.types import (  # noqa: F401
     EventListRequest,
     EventListResult,
     EventParams,
+    EventsCapability,
     EventSubscribeParams,
     EventSubscribeRequest,
     EventSubscribeResult,
@@ -36,12 +37,10 @@ from mcp.types import (  # noqa: F401
     EventUnsubscribeParams,
     EventUnsubscribeRequest,
     EventUnsubscribeResult,
-    EventsCapability,
     RejectedTopic,
     RetainedEvent,
     SubscribedTopic,
 )
-
 
 # ---------------------------------------------------------------------------
 # Wildcard pattern matching
@@ -64,9 +63,7 @@ def _pattern_to_regex(pattern: str) -> re.Pattern[str]:
             # If preceding segments exist, the / before # is optional
             # so "myapp/#" matches both "myapp" and "myapp/anything"
             if regex_parts:
-                return re.compile(
-                    "^" + "/".join(regex_parts) + "(/.*)?$"
-                )
+                return re.compile("^" + "/".join(regex_parts) + "(/.*)?$")
             else:
                 return re.compile("^.*$")
         elif part == "+":

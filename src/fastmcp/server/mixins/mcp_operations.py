@@ -408,12 +408,16 @@ class MCPOperationsMixin:
                     )
                 )
 
-        async def handle_subscribe(req: EventSubscribeRequest) -> mcp.types.ServerResult:
+        async def handle_subscribe(
+            req: EventSubscribeRequest,
+        ) -> mcp.types.ServerResult:
             _check_events_capability()
             result = await server._handle_subscribe_events(req)
             return mcp.types.ServerResult(result)
 
-        async def handle_unsubscribe(req: EventUnsubscribeRequest) -> mcp.types.ServerResult:
+        async def handle_unsubscribe(
+            req: EventUnsubscribeRequest,
+        ) -> mcp.types.ServerResult:
             _check_events_capability()
             result = await server._handle_unsubscribe_events(req)
             return mcp.types.ServerResult(result)
@@ -424,19 +428,22 @@ class MCPOperationsMixin:
             return mcp.types.ServerResult(result)
 
         server._mcp_server.request_handlers[EventSubscribeRequest] = handle_subscribe
-        server._mcp_server.request_handlers[EventUnsubscribeRequest] = handle_unsubscribe
+        server._mcp_server.request_handlers[EventUnsubscribeRequest] = (
+            handle_unsubscribe
+        )
         server._mcp_server.request_handlers[EventListRequest] = handle_list
 
     async def _handle_subscribe_events(
         self, req: mcp.types.EventSubscribeRequest
     ) -> mcp.types.EventSubscribeResult:
         """Handle events/subscribe requests."""
+        from mcp.server.lowlevel.server import request_ctx
+
         from fastmcp.server.events import (
             EventSubscribeResult,
             RejectedTopic,
             SubscribedTopic,
         )
-        from mcp.server.lowlevel.server import request_ctx
 
         server = cast("FastMCP", self)
         logger.debug(f"[{server.name}] Handler called: events/subscribe")
@@ -500,8 +507,9 @@ class MCPOperationsMixin:
         self, req: mcp.types.EventUnsubscribeRequest
     ) -> mcp.types.EventUnsubscribeResult:
         """Handle events/unsubscribe requests."""
-        from fastmcp.server.events import EventUnsubscribeResult
         from mcp.server.lowlevel.server import request_ctx
+
+        from fastmcp.server.events import EventUnsubscribeResult
 
         server = cast("FastMCP", self)
         logger.debug(f"[{server.name}] Handler called: events/unsubscribe")
@@ -562,9 +570,7 @@ class MCPOperationsMixin:
                     declared_regex_parts.append("[^/]+")
                 else:
                     declared_regex_parts.append(_re.escape(segment))
-            declared_regex = _re.compile(
-                "^" + "/".join(declared_regex_parts) + "$"
-            )
+            declared_regex = _re.compile("^" + "/".join(declared_regex_parts) + "$")
 
             # Replace MQTT wildcards with a synthetic literal segment for
             # testing against the declared pattern regex.

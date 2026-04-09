@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
 import httpx
 import mcp.types
-from ulid import ULID
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
@@ -34,22 +33,16 @@ from mcp.types import (
     Annotations,
     AnyFunction,
     CallToolRequestParams,
-    ToolAnnotations,
-)
-
-from fastmcp.server.events import (
-    RetainedValueStore,
-    SubscriptionRegistry,
-)
-from mcp.types import (
     EventEffect,
     EventTopicDescriptor,
     RetainedEvent,
+    ToolAnnotations,
 )
 from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
 from starlette.routing import BaseRoute
 from typing_extensions import Self
+from ulid import ULID
 
 import fastmcp
 import fastmcp.server
@@ -75,6 +68,10 @@ from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
+from fastmcp.server.events import (
+    RetainedValueStore,
+    SubscriptionRegistry,
+)
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
@@ -1688,9 +1685,7 @@ class FastMCP(
         return descriptor
 
     @staticmethod
-    def _topic_matches_pattern(
-        concrete_topic: str, declared_pattern: str
-    ) -> bool:
+    def _topic_matches_pattern(concrete_topic: str, declared_pattern: str) -> bool:
         """Check if a concrete topic matches a declared pattern with {param} placeholders.
 
         Compares segment-by-segment: literal segments must match exactly,
@@ -1704,16 +1699,16 @@ class FastMCP(
             return False
         if len(concrete_parts) != len(pattern_parts):
             return False
-        for concrete_seg, pattern_seg in zip(concrete_parts, pattern_parts):
+        for concrete_seg, pattern_seg in zip(
+            concrete_parts, pattern_parts, strict=True
+        ):
             if pattern_seg.startswith("{") and pattern_seg.endswith("}"):
                 continue  # {param} matches any single segment
             if concrete_seg != pattern_seg:
                 return False
         return True
 
-    def _find_topic_descriptor(
-        self, topic: str
-    ) -> EventTopicDescriptor | None:
+    def _find_topic_descriptor(self, topic: str) -> EventTopicDescriptor | None:
         """Find the EventTopicDescriptor for a concrete topic.
 
         Tries a direct lookup first, then falls back to segment-by-segment
@@ -1864,9 +1859,7 @@ class FastMCP(
             if session is None:
                 continue
             try:
-                await session.send_notification(
-                    cast(ServerNotification, notification)
-                )
+                await session.send_notification(cast(ServerNotification, notification))
             except Exception:
                 logger.warning(
                     f"Failed to deliver event to session {sid}",
