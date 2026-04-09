@@ -115,11 +115,11 @@ async def _send_status_notification(
     state_map = DOCKET_TO_MCP_STATE
     mcp_status = state_map.get(state, "failed")
 
-    # Extract session_id from task_key for Redis lookup
+    # Extract task_scope from task_key for Redis lookup
     key_parts = parse_task_key(task_key)
-    session_id = key_parts["session_id"]
+    task_scope = key_parts["task_scope"]
 
-    created_at_key = docket.key(f"fastmcp:task:{session_id}:{task_id}:created_at")
+    created_at_key = docket.key(f"fastmcp:task:{task_scope}:{task_id}:created_at")
     async with docket.redis() as redis:
         created_at_bytes = await redis.get(created_at_key)
 
@@ -189,11 +189,11 @@ async def _send_progress_notification(
     state_map = DOCKET_TO_MCP_STATE
     mcp_status = state_map.get(execution.state, "failed")
 
-    # Extract session_id from task_key for Redis lookup
+    # Extract task_scope from task_key for Redis lookup
     key_parts = parse_task_key(task_key)
-    session_id = key_parts["session_id"]
+    task_scope = key_parts["task_scope"]
 
-    created_at_key = docket.key(f"fastmcp:task:{session_id}:{task_id}:created_at")
+    created_at_key = docket.key(f"fastmcp:task:{task_scope}:{task_id}:created_at")
     async with docket.redis() as redis:
         created_at_bytes = await redis.get(created_at_key)
 

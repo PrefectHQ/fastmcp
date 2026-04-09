@@ -29,6 +29,7 @@ from fastmcp.prompts.base import Prompt
 from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.tasks.config import DEFAULT_POLL_INTERVAL_MS, DEFAULT_TTL_MS
+from fastmcp.server.tasks.context import get_task_scope
 from fastmcp.server.tasks.keys import parse_task_key
 from fastmcp.tools.base import Tool
 from fastmcp.utilities.versions import VersionSpec
@@ -70,7 +71,7 @@ def _parse_key_version(key_suffix: str) -> tuple[str, str | None]:
 
 async def _lookup_task_execution(
     docket: Any,
-    session_id: str,
+    task_scope: str,
     client_task_id: str,
 ) -> tuple[Any, str | None, int]:
     """Look up task execution and metadata from Redis.
@@ -80,7 +81,7 @@ async def _lookup_task_execution(
 
     Args:
         docket: Docket instance
-        session_id: Session ID
+        task_scope: Authorization scope
         client_task_id: Client-provided task ID
 
     Returns:
@@ -89,12 +90,12 @@ async def _lookup_task_execution(
     Raises:
         McpError: If task not found or execution not found
     """
-    task_meta_key = docket.key(f"fastmcp:task:{session_id}:{client_task_id}")
+    task_meta_key = docket.key(f"fastmcp:task:{task_scope}:{client_task_id}")
     created_at_key = docket.key(
-        f"fastmcp:task:{session_id}:{client_task_id}:created_at"
+        f"fastmcp:task:{task_scope}:{client_task_id}:created_at"
     )
     poll_interval_key = docket.key(
-        f"fastmcp:task:{session_id}:{client_task_id}:poll_interval"
+        f"fastmcp:task:{task_scope}:{client_task_id}:poll_interval"
     )
 
     # Fetch metadata (single round-trip with mget)
@@ -144,7 +145,7 @@ async def tasks_get_handler(server: FastMCP, params: dict[str, Any]) -> GetTaskR
     Returns:
         GetTaskResult: Task status response with spec-compliant fields
     """
-    async with fastmcp.server.context.Context(fastmcp=server) as ctx:
+    async with fastmcp.server.context.Context(fastmcp=server):
         client_task_id = params.get("taskId")
         if not client_task_id:
             raise McpError(
@@ -153,8 +154,8 @@ async def tasks_get_handler(server: FastMCP, params: dict[str, Any]) -> GetTaskR
                 )
             )
 
-        # Get session ID from Context
-        session_id = ctx.session_id
+        # Get authorization scope for task lookup
+        task_scope = get_task_scope()
 
         # Get Docket instance
         docket = server._docket
@@ -168,7 +169,7 @@ async def tasks_get_handler(server: FastMCP, params: dict[str, Any]) -> GetTaskR
 
         # Look up task execution and metadata
         execution, created_at, poll_interval_ms = await _lookup_task_execution(
-            docket, session_id, client_task_id
+            docket, task_scope, client_task_id
         )
 
         # Sync state from Redis
@@ -231,7 +232,7 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
     Returns:
         MCP result (CallToolResult, GetPromptResult, or ReadResourceResult)
     """
-    async with fastmcp.server.context.Context(fastmcp=server) as ctx:
+    async with fastmcp.server.context.Context(fastmcp=server):
         client_task_id = params.get("taskId")
         if not client_task_id:
             raise McpError(
@@ -240,8 +241,8 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
                 )
             )
 
-        # Get session ID from Context
-        session_id = ctx.session_id
+        # Get authorization scope for task lookup
+        task_scope = get_task_scope()
 
         # Get execution from Docket (use instance attribute for cross-task access)
         docket = server._docket
@@ -254,7 +255,7 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
             )
 
         # Look up full task key from Redis
-        task_meta_key = docket.key(f"fastmcp:task:{session_id}:{client_task_id}")
+        task_meta_key = docket.key(f"fastmcp:task:{task_scope}:{client_task_id}")
         async with docket.redis() as redis:
             task_key_bytes = await redis.get(task_meta_key)
 
@@ -432,7 +433,7 @@ async def tasks_cancel_handler(
     Returns:
         CancelTaskResult: Task status response showing cancelled state
     """
-    async with fastmcp.server.context.Context(fastmcp=server) as ctx:
+    async with fastmcp.server.context.Context(fastmcp=server):
         client_task_id = params.get("taskId")
         if not client_task_id:
             raise McpError(
@@ -441,8 +442,8 @@ async def tasks_cancel_handler(
                 )
             )
 
-        # Get session ID from Context
-        session_id = ctx.session_id
+        # Get authorization scope for task lookup
+        task_scope = get_task_scope()
 
         # Get Docket instance
         docket = server._docket
@@ -456,7 +457,7 @@ async def tasks_cancel_handler(
 
         # Look up task execution and metadata
         execution, created_at, poll_interval_ms = await _lookup_task_execution(
-            docket, session_id, client_task_id
+            docket, task_scope, client_task_id
         )
 
         # Cancel via Docket (now sets CANCELLED state natively)
