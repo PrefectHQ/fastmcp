@@ -216,7 +216,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
         on status changes when server sends notifications/tasks/status.
 
         Args:
-            state: Desired state ('submitted', 'working', 'completed', 'failed').
+            state: Desired state ('working', 'input_required', 'completed', 'failed', 'cancelled').
                    If None, waits until the task exits the 'working' state (completed, failed, cancelled, input_required, etc.)
             timeout: Maximum time to wait in seconds
 
@@ -237,7 +237,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
             self._status_event = asyncio.Event()
 
         start = time.time()
-        in_progress_states = {"submitted", "working"}
+        in_progress_states = {"working"}
         poll_interval = 0.5  # Fallback polling interval (500ms)
 
         while True:
