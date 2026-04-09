@@ -186,7 +186,7 @@ def _get_cached_snapshot(task_id: str) -> TaskContextSnapshot | None:
     return None
 
 
-def _redis_key(task_scope: str, task_id: str) -> str:
+def _snapshot_redis_key(task_scope: str, task_id: str) -> str:
     """Build the Redis key suffix for a task snapshot."""
     return f"fastmcp:task:{task_scope}:{task_id}:snapshot"
 
@@ -215,7 +215,7 @@ async def _load_task_snapshot_async(
 
     try:
         async with docket.redis() as redis:
-            raw = await redis.get(docket.key(_redis_key(task_scope, task_id)))
+            raw = await redis.get(docket.key(_snapshot_redis_key(task_scope, task_id)))
         if raw is None:
             return None
         snapshot = TaskContextSnapshot.from_json(raw)
@@ -269,7 +269,7 @@ def _load_task_snapshot_sync(
 
     try:
         sync_redis = _get_sync_redis(docket.url)
-        raw = sync_redis.get(docket.key(_redis_key(task_scope, task_id)))
+        raw = sync_redis.get(docket.key(_snapshot_redis_key(task_scope, task_id)))
         if raw is None:
             return None
         snapshot = TaskContextSnapshot.from_json(raw)
