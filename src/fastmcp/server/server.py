@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
 import httpx
 import mcp.types
+from ulid import ULID
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
@@ -1818,8 +1819,6 @@ class FastMCP(
             requested_effects: Optional list of advisory effect hints.
             expires_at: Optional ISO 8601 expiry timestamp for retained values.
         """
-        from ulid import ULID
-
         if event_id is None:
             event_id = str(ULID())
 
