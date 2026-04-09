@@ -237,7 +237,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
             self._status_event = asyncio.Event()
 
         start = time.time()
-        in_progress_states = {"working"}
+        in_progress_states = {"submitted", "working"}
         poll_interval = 0.5  # Fallback polling interval (500ms)
 
         while True:
