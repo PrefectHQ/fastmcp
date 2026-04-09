@@ -305,11 +305,19 @@ def _get_sync_redis(url: str) -> Any:
     return Redis.from_url(url)
 
 
+# In-process optimization: when the Docket worker runs in the same process as
+# the MCP server, we can hand background tasks a live ServerSession so they can
+# call session methods directly (e.g. send_notification).  In distributed
+# deployments where workers are separate processes, these registries will be
+# empty and the worker's Context will have session=None — that's fine, because
+# elicitation and notifications have Redis-based fallbacks that work across
+# process boundaries (see notifications.py and elicitation.py).
+
 _task_sessions: dict[str, weakref.ref[ServerSession]] = {}
 
 
 def register_task_session(session_id: str, session: ServerSession) -> None:
-    """Register a session for Context access in background tasks.
+    """Register a session for in-process background task access.
 
     Called automatically when a task is submitted to Docket. The session is
     stored as a weakref so it doesn't prevent garbage collection when the
@@ -319,7 +327,11 @@ def register_task_session(session_id: str, session: ServerSession) -> None:
 
 
 def get_task_session(session_id: str) -> ServerSession | None:
-    """Get a registered session by ID if still alive."""
+    """Get a registered session by ID if still alive.
+
+    Returns None in distributed workers where the session lives in another
+    process — callers must handle this gracefully.
+    """
     ref = _task_sessions.get(session_id)
     if ref is None:
         return None
