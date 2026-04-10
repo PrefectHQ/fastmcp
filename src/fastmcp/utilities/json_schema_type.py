@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import keyword
 import re
 from collections.abc import Callable, Mapping
 from copy import deepcopy
@@ -140,13 +141,14 @@ class JSONSchema(TypedDict):
 
 
 def json_schema_to_type(
-    schema: Mapping[str, Any],
+    schema: Mapping[str, Any] | bool,
     name: str | None = None,
 ) -> type:
     """Convert JSON schema to appropriate Python type with validation.
 
     Args:
-        schema: A JSON Schema dictionary defining the type structure and validation rules
+        schema: A JSON Schema dictionary defining the type structure and validation rules.
+            Boolean schemas are also accepted (``True`` = any type, ``False`` = unsatisfiable).
         name: Optional name for object schemas. Only allowed when schema type is "object".
             If not provided for objects, name will be inferred from schema's "title"
             property or default to "Root".
@@ -197,6 +199,12 @@ def json_schema_to_type(
             name: NameType
         ```
     """
+    # Boolean schemas (JSON Schema 2020-12 §4.3.2; also valid since draft-06)
+    if schema is True:
+        return Any
+    if schema is False:
+        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+
     # Normalise YAML-parsed types (datetime/date → str, non-str keys → str)
     # so that downstream json.dumps/hashing and default values work correctly.
     schema = _normalize_yaml_types(schema)
@@ -301,6 +309,11 @@ def _create_numeric_type(
 
 def _create_enum(name: str, values: list[Any]) -> type:
     """Create enum type from list of values."""
+    if not values:
+        # Empty enum means no value is valid (same semantics as ``false``
+        # schema).  Return the unsatisfiable type instead of ``Literal[()]``
+        # which triggers an AssertionError in Pydantic.
+        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
     # Always return Literal for enum fields to preserve the literal nature
     return Literal[tuple(values)]  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
 
@@ -466,6 +479,9 @@ def _sanitize_name(name: str) -> str:
     # Step 5: only strip trailing underscores if they weren't in the original name
     if not original_name.endswith("_"):
         cleaned = cleaned.rstrip("_")
+    # Step 6: if result is a Python keyword, append an underscore (PEP 8 convention)
+    if keyword.iskeyword(cleaned):
+        cleaned = f"{cleaned}_"
     return cleaned
 
 
@@ -597,8 +613,17 @@ def _create_dataclass(
     required = schema.get("required", [])
 
     fields: list[tuple[Any, ...]] = []
+    used_field_names: set[str] = set()
     for prop_name, prop_schema in properties.items():
         field_name = _sanitize_name(prop_name)
+        # Deduplicate: if sanitized names collide (e.g. "foo-bar" and
+        # "foo_bar" both become "foo_bar"), append a numeric suffix.
+        base = field_name
+        counter = 2
+        while field_name in used_field_names:
+            field_name = f"{base}_{counter}"
+            counter += 1
+        used_field_names.add(field_name)
 
         # Boolean schemas (JSON Schema draft-06+): resolve type directly,
         # then use an empty dict for .get() calls below.

@@ -239,3 +239,79 @@ class TestConstrainedTypes:
         assert TypeAdapter(type_).validate_python("y") == "y"
         with pytest.raises(ValidationError):
             TypeAdapter(type_).validate_python("z")
+
+
+class TestCrashPrevention:
+    """Schemas that previously caused crashes should now be handled gracefully."""
+
+    def test_boolean_schema_true(self):
+        """Boolean schema True should return Any (JSON Schema draft-06+)."""
+        from typing import Any
+
+        assert json_schema_to_type(True) is Any
+
+    def test_boolean_schema_false(self):
+        """Boolean schema False should return an unsatisfiable type."""
+        result = json_schema_to_type(False)
+        with pytest.raises(ValidationError):
+            TypeAdapter(result).validate_python("anything")
+
+    def test_python_keyword_property_names(self):
+        """Properties named after Python keywords should not crash."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "class": {"type": "string"},
+                "return": {"type": "integer"},
+                "import": {"type": "boolean"},
+            },
+            "required": ["class"],
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"class": "A", "return": 1, "import": True})
+        assert result.class_ == "A"  # ty:ignore[unresolved-attribute]
+
+    def test_empty_enum(self):
+        """Empty enum means no value is valid — should reject like a false schema."""
+        schema = {
+            "type": "object",
+            "properties": {"status": {"enum": []}},
+            "required": ["status"],
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        with pytest.raises(ValidationError):
+            ta.validate_python({"status": "anything"})
+
+    def test_sanitized_name_collision(self):
+        """Properties that collide after sanitization get deduplicated."""
+        import dataclasses
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "foo-bar": {"type": "string"},
+                "foo_bar": {"type": "string"},
+            },
+        }
+        T = json_schema_to_type(schema)
+        field_names = [f.name for f in dataclasses.fields(T)]
+        assert len(field_names) == 2
+        assert len(set(field_names)) == 2
+
+    def test_empty_property_name(self):
+        """Empty and whitespace-only property names should not crash."""
+        import dataclasses
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "": {"type": "string"},
+                " ": {"type": "integer"},
+            },
+        }
+        T = json_schema_to_type(schema)
+        field_names = [f.name for f in dataclasses.fields(T)]
+        assert len(field_names) == 2
+        assert len(set(field_names)) == 2
