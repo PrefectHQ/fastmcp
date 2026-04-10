@@ -422,11 +422,11 @@ def _get_sync_redis(url: str) -> Any:
 _DOCKET_AVAILABLE: bool | None = None
 
 
-_MIN_DOCKET_VERSION = Version("0.18.0")
+_MIN_DOCKET_VERSION = Version("0.19.0")
 
 
 def is_docket_available() -> bool:
-    """Check if a compatible pydocket (>= 0.18.0) is installed and importable.
+    """Check if a compatible pydocket (>= 0.19.0) is installed and importable.
 
     Three things have to be true for fastmcp's task features to work:
       1. pydocket distribution metadata is discoverable

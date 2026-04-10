@@ -758,7 +758,7 @@ class TestDependencyInjection:
         assert is_docket_available() is True
 
     def test_is_docket_available_false_when_pydocket_too_old(self, monkeypatch):
-        """``is_docket_available()`` must treat pre-0.18.0 pydocket as unavailable.
+        """``is_docket_available()`` must treat pre-0.19.0 pydocket as unavailable.
 
         Older pydocket versions (e.g. 0.16.x, pulled in transitively by
         packages like prefect) import cleanly but lack the APIs fastmcp
