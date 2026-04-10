@@ -208,6 +208,31 @@ def _is_model_visible(tool: Tool) -> bool:
     return "model" in visibility
 
 
+def _is_app_visible(tool: Tool) -> bool:
+    """Check whether a tool has explicitly opted into app-callable visibility.
+
+    Gates the dispatcher's hashed-name routing path: only tools whose
+    ``meta.ui.visibility`` list contains ``"app"`` can be reached via
+    ``<hash>_<local_name>`` calls. Tools without an explicit visibility
+    declaration are NOT app-callable — they must be reached by their
+    display name through the normal transform-aware resolution path.
+
+    This is the inverse of the "everything is dot-callable" trap: the
+    hashed-name path is an opt-in mechanism for FastMCPApp backend tools,
+    not a general bypass for arbitrary tools.
+    """
+    meta = tool.meta
+    if not meta:
+        return False
+    ui = meta.get("ui")
+    if not isinstance(ui, dict):
+        return False
+    visibility = ui.get("visibility")
+    if not isinstance(visibility, list):
+        return False
+    return "app" in visibility
+
+
 @asynccontextmanager
 async def default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]:
     """Default lifespan context manager that does nothing.
@@ -312,6 +337,12 @@ class FastMCP(
         self._local_provider: LocalProvider = LocalProvider(
             on_duplicate=self._on_duplicate
         )
+
+        # Internal address registry (and its reverse-hash map). Built lazily
+        # on first access by walking the provider graph; invalidated whenever
+        # a new provider is added so dynamic composition stays correct.
+        self._address_registry: dict[tuple[int, ...], Provider] | None = None
+        self._reverse_hash_map: dict[str, Any] | None = None
 
         # Add providers using AggregateProvider's add_provider
         # LocalProvider is always first (no namespace)
@@ -468,6 +499,60 @@ class FastMCP(
                 - Prompts become "namespace_promptname"
         """
         super().add_provider(provider, namespace=namespace)
+        # Adding a provider changes the shape of the address graph; drop the
+        # cached registry and reverse-hash map so they rebuild on next access.
+        self._address_registry = None
+        self._reverse_hash_map = None
+
+    @property
+    def address_registry(self) -> dict[tuple[int, ...], Provider]:
+        """Lazy address → provider map for the full provider graph.
+
+        Built on first access by walking ``self.providers`` and assigning
+        each mount point its positional integer index. The result is a
+        pure dict — building it has no side effects. Invalidated when
+        ``add_provider`` runs.
+        """
+        if self._address_registry is None:
+            from fastmcp.server.providers.addressing import build_address_registry
+
+            self._address_registry = build_address_registry(self)
+        return self._address_registry
+
+    @property
+    def reverse_hash_map(self) -> dict[str, Any]:
+        """Lazy hash → ``HashEntry`` reverse map for backend tool dispatch.
+
+        Built alongside the address registry. Each entry maps a tool's
+        deterministic hash to ``(address, provider, tool_name)`` so the
+        dispatcher and ``read_resource`` can do O(1) lookups by hash.
+        """
+        if self._reverse_hash_map is None:
+            from fastmcp.server.providers.addressing import build_reverse_hash_map
+
+            self._reverse_hash_map = build_reverse_hash_map(self.address_registry)
+        return self._reverse_hash_map
+
+    async def _find_owning_address(
+        self, display_name: str, version: VersionSpec | None
+    ) -> tuple[int, ...]:
+        """Walk the registry to find which provider yields *display_name*.
+
+        Used by the dispatcher after a successful display-name resolution
+        to set ``Context.mount_path`` correctly. Walks providers in
+        registration order and queries each one's transform-aware
+        ``get_tool`` — the first match wins, matching the aggregation
+        order. Returns ``()`` (the root) if no provider claims it, which
+        is the right default for tools registered directly on the server.
+        """
+        for address, provider in self.address_registry.items():
+            try:
+                found = await provider.get_tool(display_name, version=version)
+            except Exception:
+                found = None
+            if found is not None:
+                return address
+        return ()
 
     # -------------------------------------------------------------------------
     # Provider interface overrides - inherited from AggregateProvider
@@ -1109,6 +1194,18 @@ class FastMCP(
         # For mounted servers, the parent's provider sets fn_key to the
         # namespaced key before delegating, ensuring correct Docket routing.
 
+        from fastmcp.server.providers.addressing import (
+            parse_hashed_backend_name,
+        )
+
+        # Two routing paths:
+        #   1. Hashed-name path — backend tools that opted into
+        #      app-callable visibility. Recognized by their
+        #      `<hash>_<local_name>` format and resolved via the
+        #      reverse-hash map. Address is known eagerly.
+        #   2. Display-name path — everything else. Goes through normal
+        #      `get_tool` aggregation/transforms. Address is determined
+        #      after resolution by walking the registry.
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext[CallToolRequestParams](
@@ -1131,30 +1228,54 @@ class FastMCP(
                     ),
                 )
 
-            # Core logic: find and execute tool (providers queried in parallel)
-            # Use get_tool to apply transforms and filter disabled
             with server_span(
                 f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
-                # Try normal resolution first. If that fails and the name
-                # contains "___" (app tool prefix), parse out the app name
-                # and route via get_app_tool which bypasses transforms.
-                tool: Tool | None = await self.get_tool(name, version=version)
-                if tool is None and "___" in name:
-                    app_prefix, _, tool_suffix = name.partition("___")
-                    tool = await self.get_app_tool(app_prefix, tool_suffix)
+                tool: Tool | None = None
+                resolved_mount_path: tuple[int, ...] = ()
+
+                # Hashed-name dispatch — bypass transforms via the registry.
+                hashed = parse_hashed_backend_name(name)
+                if hashed is not None:
+                    digest, local_name = hashed
+                    entry = self.reverse_hash_map.get(digest)
+                    if entry is not None and entry.tool_name == local_name:
+                        candidate = await entry.provider._get_tool(
+                            local_name, version=version
+                        )
+                        if candidate is not None and _is_app_visible(candidate):
+                            tool = candidate
+                            resolved_mount_path = entry.address
+                            # Auth still applies on the bypass path.
+                            skip_auth, token = _get_auth_context()
+                            if not skip_auth and tool.auth is not None:
+                                try:
+                                    auth_ctx = AuthContext(token=token, component=tool)
+                                    if not await run_auth_checks(tool.auth, auth_ctx):
+                                        raise NotFoundError(f"Unknown tool: {name!r}")
+                                except AuthorizationError:
+                                    raise NotFoundError(
+                                        f"Unknown tool: {name!r}"
+                                    ) from None
+
+                # Display-name path: normal aggregation through transforms.
+                if tool is None:
+                    tool = await self.get_tool(name, version=version)
                     if tool is not None:
-                        # Auth still applies to app tools
-                        skip_auth, token = _get_auth_context()
-                        if not skip_auth and tool.auth is not None:
-                            try:
-                                ctx = AuthContext(token=token, component=tool)
-                                if not await run_auth_checks(tool.auth, ctx):
-                                    raise NotFoundError(f"Unknown tool: {name!r}")
-                            except AuthorizationError:
-                                raise NotFoundError(f"Unknown tool: {name!r}") from None
+                        # Reverse-lookup the owning provider so the
+                        # Prefab resolver can serialize peer references
+                        # with the correct mount path.
+                        resolved_mount_path = await self._find_owning_address(
+                            name, version
+                        )
+
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")
+
+                # Eagerly publish the resolved mount_path on the context
+                # so the Prefab serializer (if invoked) can read it.
+                ctx._mount_path = resolved_mount_path
+                ctx._mount_path_resolver = None
                 span.set_attributes(tool.get_span_attributes())
                 if task_meta is not None and task_meta.fn_key is None:
                     task_meta = replace(task_meta, fn_key=tool.key)

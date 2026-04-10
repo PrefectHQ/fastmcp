@@ -193,6 +193,8 @@ class Context:
         *,
         task_id: str | None = None,
         origin_request_id: str | None = None,
+        mount_path: tuple[int, ...] | None = None,
+        mount_path_resolver: Callable[[], tuple[int, ...]] | None = None,
     ):
         self._fastmcp: weakref.ref[FastMCP] = weakref.ref(fastmcp)
         self._session: ServerSession | None = session  # For state ops during init
@@ -202,6 +204,16 @@ class Context:
         self._origin_request_id: str | None = origin_request_id
         # Request-scoped state for non-serializable values (serializable=False)
         self._request_state: dict[str, Any] = {}
+        # Internal positional address of the mount point this call came
+        # through. Used by the Prefab peer-reference resolver to format
+        # backend-tool callbacks. Stored as either a known tuple or a
+        # deferred resolver callable — display-name resolution sets the
+        # resolver so the cost of looking up the owning provider is only
+        # paid if the tool actually emits Prefab output.
+        self._mount_path: tuple[int, ...] | None = mount_path
+        self._mount_path_resolver: Callable[[], tuple[int, ...]] | None = (
+            mount_path_resolver
+        )
 
     @property
     def is_background_task(self) -> bool:
@@ -250,6 +262,25 @@ class Context:
             raise RuntimeError("FastMCP instance is no longer available")
         return fastmcp
 
+    @property
+    def mount_path(self) -> tuple[int, ...]:
+        """Internal positional address of this call's mount point.
+
+        For tools resolved via the hashed-name dispatch path the address is
+        known immediately and stored eagerly. For tools resolved by display
+        name the dispatcher attaches a lazy resolver — the cost of finding
+        the owning provider is only paid the first time something (e.g. the
+        Prefab peer-reference resolver) actually reads ``mount_path``.
+        Defaults to ``()`` (the root) when no resolver was supplied.
+        """
+        if self._mount_path is None:
+            if self._mount_path_resolver is not None:
+                self._mount_path = self._mount_path_resolver()
+                self._mount_path_resolver = None
+            else:
+                self._mount_path = ()
+        return self._mount_path
+
     async def __aenter__(self) -> Context:
         """Enter the context manager and set this context as the current context."""
         # Inherit request-scoped state from parent context so middleware
@@ -257,6 +288,11 @@ class Context:
         parent = _current_context.get(None)
         if parent is not None:
             self._request_state = parent._request_state
+            # Inherit mount_path from a parent context if our own is unset
+            # (so middleware and nested re-entries see the dispatcher's value).
+            if self._mount_path is None and self._mount_path_resolver is None:
+                self._mount_path = parent._mount_path
+                self._mount_path_resolver = parent._mount_path_resolver
 
         # Always set this context and save the token
         token = _current_context.set(self)

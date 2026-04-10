@@ -6,6 +6,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.apps.file_upload import FileUpload
+from fastmcp.server.providers.addressing import hashed_backend_name
 
 
 def _make_file(
@@ -27,7 +28,9 @@ class TestFileUploadProvider:
         server = FastMCP("test", providers=[FileUpload()])
         files = [_make_file()]
 
-        result = await server.call_tool("Files___store_files", {"files": files})
+        result = await server.call_tool(
+            hashed_backend_name((0,), "store_files"), {"files": files}
+        )
         text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
         assert "test.txt" in text
 
@@ -39,7 +42,9 @@ class TestFileUploadProvider:
         server = FastMCP("test", providers=[FileUpload()])
         files = [_make_file(content="DON'T PANIC")]
 
-        await server.call_tool("Files___store_files", {"files": files})
+        await server.call_tool(
+            hashed_backend_name((0,), "store_files"), {"files": files}
+        )
 
         result = await server.call_tool("read_file", {"name": "test.txt"})
         text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
@@ -50,7 +55,9 @@ class TestFileUploadProvider:
         data = base64.b64encode(b"\x00\x01\x02\xff").decode()
         files = [{"name": "image.png", "size": 4, "type": "image/png", "data": data}]
 
-        await server.call_tool("Files___store_files", {"files": files})
+        await server.call_tool(
+            hashed_backend_name((0,), "store_files"), {"files": files}
+        )
 
         result = await server.call_tool("read_file", {"name": "image.png"})
         text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
@@ -69,7 +76,9 @@ class TestFileUploadProvider:
             _make_file("b.txt", "bbb"),
         ]
 
-        await server.call_tool("Files___store_files", {"files": files})
+        await server.call_tool(
+            hashed_backend_name((0,), "store_files"), {"files": files}
+        )
 
         result = await server.call_tool("list_files", {})
         text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
@@ -80,11 +89,11 @@ class TestFileUploadProvider:
         server = FastMCP("test", providers=[FileUpload()])
 
         await server.call_tool(
-            "Files___store_files",
+            hashed_backend_name((0,), "store_files"),
             {"files": [_make_file(content="version 1")]},
         )
         await server.call_tool(
-            "Files___store_files",
+            hashed_backend_name((0,), "store_files"),
             {"files": [_make_file(content="version 2")]},
         )
 
@@ -99,9 +108,12 @@ class TestFileUploadProvider:
         tool_names = [t.name for t in tools]
         assert "file_manager" in tool_names
 
-        # Routing uses the custom name
+        # Routing uses the same hashed-address path regardless of the
+        # custom display name — the address is positional, not name-based.
         files = [_make_file()]
-        result = await server.call_tool("Uploads___store_files", {"files": files})
+        result = await server.call_tool(
+            hashed_backend_name((0,), "store_files"), {"files": files}
+        )
         text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
         assert "test.txt" in text
 
@@ -121,7 +133,9 @@ class TestFileUploadProvider:
         big_file = _make_file(content="x" * 200)
 
         with pytest.raises(Exception, match="exceeds max size"):
-            await server.call_tool("Files___store_files", {"files": [big_file]})
+            await server.call_tool(
+                hashed_backend_name((0,), "store_files"), {"files": [big_file]}
+            )
 
 
 class TestFileUploadSubclass:
@@ -165,7 +179,9 @@ class TestFileUploadSubclass:
         server = FastMCP("test", providers=[MemoryUpload()])
         files = [_make_file()]
 
-        await server.call_tool("Files___store_files", {"files": files})
+        await server.call_tool(
+            hashed_backend_name((0,), "store_files"), {"files": files}
+        )
 
         assert "test.txt" in stored
 

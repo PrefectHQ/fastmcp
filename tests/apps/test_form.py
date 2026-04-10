@@ -7,6 +7,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.apps.form import FormInput, _backfill_boolean_defaults
+from fastmcp.server.providers.addressing import hashed_backend_name
 
 
 class Contact(pydantic.BaseModel):
@@ -52,7 +53,7 @@ class TestFormInputProvider:
         server = FastMCP("test", providers=[FormInput(model=Contact)])
 
         result = await server.call_tool(
-            "Contact___submit_form",
+            hashed_backend_name((0,), "submit_form"),
             {"data": {"name": "Alice", "email": "alice@example.com"}},
         )
         text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
@@ -74,7 +75,7 @@ class TestFormInputProvider:
         )
 
         result = await server.call_tool(
-            "Contact___submit_form",
+            hashed_backend_name((0,), "submit_form"),
             {"data": {"name": "Bob", "email": "bob@example.com"}},
         )
         text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
@@ -94,7 +95,7 @@ class TestFormInputProvider:
         server = FastMCP("test", providers=[FormInput(model=NoteForm)])
 
         result = await server.call_tool(
-            "NoteForm___submit_form",
+            hashed_backend_name((0,), "submit_form"),
             {"data": {"title": "My Note", "content": "Hello"}},
         )
         text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
@@ -107,7 +108,7 @@ class TestFormInputProvider:
         server = FastMCP("test", providers=[FormInput(model=NoteForm)])
 
         result = await server.call_tool(
-            "NoteForm___submit_form",
+            hashed_backend_name((0,), "submit_form"),
             {"data": {"title": "My Note", "content": "Hello", "archived": True}},
         )
         text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
@@ -122,7 +123,7 @@ class TestFormInputProvider:
         # for the data parameter itself). Pydantic will still reject missing
         # required fields like title/content, but that's expected.
         with pytest.raises(pydantic.ValidationError, match="title"):
-            await server.call_tool("NoteForm___submit_form", {})
+            await server.call_tool(hashed_backend_name((0,), "submit_form"), {})
 
     async def test_multiple_models(self):
         class Address(pydantic.BaseModel):

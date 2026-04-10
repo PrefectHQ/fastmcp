@@ -278,15 +278,9 @@ class Tool(FastMCPComponent):
 
         if _HAS_PREFAB:
             if isinstance(raw_value, _PrefabApp):
-                return _prefab_to_tool_result(
-                    raw_value,
-                    fastmcp_app_name=_get_fastmcp_app_name(self),
-                )
+                return _prefab_to_tool_result(raw_value)
             if isinstance(raw_value, _PrefabComponent):
-                return _prefab_to_tool_result(
-                    _PrefabApp(view=raw_value),
-                    fastmcp_app_name=_get_fastmcp_app_name(self),
-                )
+                return _prefab_to_tool_result(_PrefabApp(view=raw_value))
 
         content = _convert_to_content(raw_value, serializer=self.serializer)
 
@@ -498,45 +492,45 @@ def _convert_to_single_content_block(
 _PREFAB_TEXT_FALLBACK = "[Rendered Prefab UI]"
 
 
-def _get_tool_resolver(app_name: str | None = None) -> Callable[..., str] | None:
-    """Get the FastMCPApp callable resolver, if available."""
+def _current_mount_path() -> tuple[int, ...]:
+    """Read the running tool's mount_path from the current Context, or ``()``."""
+    from fastmcp.server.context import _current_context
+
+    ctx = _current_context.get(None)
+    if ctx is None:
+        return ()
+    return ctx.mount_path
+
+
+def _get_tool_resolver(
+    mount_path: tuple[int, ...] = (),
+) -> Callable[..., str] | None:
+    """Get the Prefab peer-reference resolver bound to a mount path."""
     try:
         from fastmcp.apps.app import _make_resolver
 
-        return _make_resolver(app_name)
+        return _make_resolver(mount_path)
     except ImportError:
         return None
 
 
-def _prefab_to_json(app: Any, fastmcp_app_name: str | None = None) -> dict[str, Any]:
-    """Call PrefabApp.to_json() with the FastMCPApp callable resolver.
+def _prefab_to_json(app: Any) -> dict[str, Any]:
+    """Call PrefabApp.to_json() with the mount-path-aware tool resolver.
 
-    The resolver prefixes tool names with the app name (e.g.
-    ``"store_files"`` → ``"Files___store_files"``) so the server can
-    find them via the bypass lookup regardless of transforms.
+    The resolver formats peer-tool references as ``<hash>_<local_name>``
+    where the hash is computed from the running tool's mount path. The
+    dispatcher recognizes that format on incoming CallTool calls and
+    routes them directly through the registry.
     """
-    data = app.to_json(tool_resolver=_get_tool_resolver(fastmcp_app_name))
+    data = app.to_json(tool_resolver=_get_tool_resolver(_current_mount_path()))
     return data
 
 
-def _get_fastmcp_app_name(tool: Tool) -> str | None:
-    """Read the FastMCPApp name from a tool's metadata, if present."""
-    meta = tool.meta
-    if not meta:
-        return None
-    fastmcp_meta = meta.get("fastmcp")
-    if isinstance(fastmcp_meta, dict):
-        app = fastmcp_meta.get("app")
-        if isinstance(app, str):
-            return app
-    return None
-
-
-def _prefab_to_tool_result(app: Any, fastmcp_app_name: str | None = None) -> ToolResult:
+def _prefab_to_tool_result(app: Any) -> ToolResult:
     """Convert a PrefabApp to a FastMCP ToolResult."""
     return ToolResult(
         content=[TextContent(type="text", text=_PREFAB_TEXT_FALLBACK)],
-        structured_content=_prefab_to_json(app, fastmcp_app_name=fastmcp_app_name),
+        structured_content=_prefab_to_json(app),
     )
 
 

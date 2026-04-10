@@ -211,16 +211,19 @@ class TestProvider:
     async def test_call_tool_uses_get_tool_for_efficient_lookup(
         self, base_server: FastMCP, dynamic_tools: list[Tool]
     ):
-        """Test that call_tool uses get_tool() for efficient single-tool lookup."""
+        """Test that call_tool uses get_tool() (not list_tools) for lookup."""
         provider = SimpleToolProvider(tools=dynamic_tools)
         base_server.add_provider(provider)
 
         await base_server.call_tool(name="dynamic_multiply", arguments={"a": 2, "b": 3})
 
-        # get_tool is called once for efficient lookup:
-        # call_tool() calls provider.get_tool() to get the tool and execute it
-        # Key point: list_tools is NOT called during tool execution (efficient lookup)
-        assert provider.get_tool_call_count == 1
+        # get_tool may be called more than once — once for the initial
+        # resolution and once again by the dispatcher's reverse-lookup to
+        # find the tool's owning provider for Context.mount_path. Both
+        # are bounded by provider count, much cheaper than list_tools.
+        # The key invariant: list_tools is NOT called during dispatch.
+        assert provider.get_tool_call_count >= 1
+        assert provider.list_tools_call_count == 0
 
     async def test_default_get_tool_falls_back_to_list(self, base_server: FastMCP):
         """Test that BaseToolProvider's default get_tool calls list_tools."""

@@ -50,26 +50,38 @@ F = TypeVar("F", bound=Callable[..., Any])
 # ---------------------------------------------------------------------------
 
 
-def _make_resolver(app_name: str | None = None) -> Any:
-    """Create a CallTool resolver that prefixes tool names with the app name.
+def _make_resolver(mount_path: tuple[int, ...] = ()) -> Any:
+    """Create a CallTool resolver that turns peer-tool refs into hashed names.
 
-    When ``app_name`` is set, tool references like ``CallTool("store_files")``
-    or ``CallTool(store_files)`` are resolved to
-    ``ResolvedTool(name="Files___store_files")``.  This produces stable
-    identifiers that bypass transforms and work without host ``_meta``
-    forwarding.
+    Prefab components reference other tools via ``on_click=other_tool``.
+    When a Prefab UI runs and serializes its content, this resolver
+    converts each reference into the universal backend-tool name —
+    ``<hash>_<local_tool_name>`` — where the hash is computed from the
+    current invocation's *mount path* (the address of the provider that
+    owns the calling tool) plus the referenced tool's local name.
+
+    Calls coming back through the dispatcher recognize the hashed name,
+    look it up via the server's reverse-hash map, and route directly to
+    the owning provider — bypassing the transform chain entirely. This
+    is the only mechanism by which tools with ``visibility=["app"]`` are
+    callable from outside the server.
+
+    When ``mount_path`` is empty (the calling tool lives at the server's
+    root), there's no prefix to add — the referenced tool must itself be
+    a root-level tool and is callable by its bare name.
     """
+    from fastmcp.server.providers.addressing import hashed_backend_name
 
-    def _prefix(name: str) -> str:
-        if app_name and "___" not in name:
-            return f"{app_name}___{name}"
-        return name
+    def _format(local_name: str) -> str:
+        if not mount_path:
+            return local_name
+        return hashed_backend_name(mount_path, local_name)
 
     def _resolve_tool_ref(fn: Any) -> Any:
         from prefab_ui.app import ResolvedTool
 
         if isinstance(fn, str):
-            return ResolvedTool(name=_prefix(fn))
+            return ResolvedTool(name=_format(fn))
 
         fmeta: Any = None
         try:
@@ -82,11 +94,11 @@ def _make_resolver(app_name: str | None = None) -> Any:
         if fmeta is not None:
             name: str | None = getattr(fmeta, "name", None)
             if name is not None:
-                return ResolvedTool(name=_prefix(name))
+                return ResolvedTool(name=_format(name))
 
         fn_name = getattr(fn, "__name__", None)
         if fn_name is not None:
-            return ResolvedTool(name=_prefix(fn_name))
+            return ResolvedTool(name=_format(fn_name))
 
         raise ValueError(f"Cannot resolve tool reference: {fn!r}")
 
@@ -138,11 +150,6 @@ class FastMCPApp(Provider):
     """
 
     def __init__(self, name: str) -> None:
-        if "___" in name:
-            raise ValueError(
-                f"App name {name!r} must not contain '___' "
-                "(reserved as the app tool routing separator)"
-            )
         super().__init__()
         self.name = name
         self._local = LocalProvider(on_duplicate="error")
