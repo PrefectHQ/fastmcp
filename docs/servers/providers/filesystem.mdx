@@ -37,6 +37,10 @@ from fastmcp.server.providers import FileSystemProvider
 mcp = FastMCP("MyServer", providers=[FileSystemProvider(Path(__file__).parent / "mcp")])
 ```
 
+<Warning>
+Avoid naming your components directory `mcp` if it contains an `__init__.py` file. This can cause import conflicts with the `mcp` package that FastMCP depends on. Use alternative names like `mcp_components`, `server`, or `components` instead.
+</Warning>
+
 In your `mcp/` directory, create Python files with decorated functions.
 
 ```python
