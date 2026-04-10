@@ -71,6 +71,15 @@ _TEXT_EXTENSIONS = frozenset(
 )
 
 
+def _b64_decoded_size(b64: str) -> int:
+    """Return the exact decoded byte-length of a base64 string without decoding it."""
+    n = len(b64)
+    if n == 0:
+        return 0
+    padding = b64.count("=", max(0, n - 2))
+    return n * 3 // 4 - padding
+
+
 def _format_size(size: int) -> str:
     if size < 1024:
         return f"{size} B"
@@ -274,10 +283,13 @@ class FileUpload(FastMCPApp):
         def store_files(files: list[dict], ctx: Context) -> list[dict]:
             """Store uploaded files. Receives file objects with name, size, type, data (base64)."""
             for f in files:
-                if f.get("size", 0) > provider._max_file_size:
+                # Compute actual data size from the base64 payload rather
+                # than trusting the client-reported ``size`` field.
+                actual_size = _b64_decoded_size(f.get("data", ""))
+                if actual_size > provider._max_file_size:
                     raise ValueError(
                         f"File {f.get('name', '?')!r} exceeds max size "
-                        f"({_format_size(f['size'])} > "
+                        f"({_format_size(actual_size)} > "
                         f"{_format_size(provider._max_file_size)})"
                     )
             return provider.on_store(files, ctx)
