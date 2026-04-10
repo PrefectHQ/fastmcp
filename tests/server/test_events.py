@@ -2016,3 +2016,150 @@ class TestWildcardSmuggling:
         assert result.subscribed == []
         assert len(result.rejected) == 1
         assert result.rejected[0].reason == "permission_denied"
+
+
+# ---------------------------------------------------------------------------
+# Context._tool_name and auto-source tests
+# ---------------------------------------------------------------------------
+
+
+class TestContextToolName:
+    def test_tool_name_set(self):
+        """Context created with _tool_name exposes it via tool_name property."""
+        mcp = FastMCP("test")
+        ctx = Context(mcp, _tool_name="my_tool")
+        assert ctx.tool_name == "my_tool"
+
+    def test_tool_name_default_none(self):
+        """Context created without _tool_name has tool_name == None."""
+        mcp = FastMCP("test")
+        ctx = Context(mcp)
+        assert ctx.tool_name is None
+
+
+class TestAutoSourceFromToolName:
+    async def test_auto_source_set_from_tool_name(self):
+        """When a tool emits an event without explicit source, source is auto-set
+        to 'tool/<tool_name>'."""
+        mcp_server = FastMCP("test")
+        mcp_server.declare_event("myapp/notifications")
+
+        captured_sources: list[str | None] = []
+        original_emit = mcp_server.emit_event
+
+        async def tracking_emit(
+            topic: str,
+            payload: Any,
+            *,
+            event_id: str | None = None,
+            retained: bool | None = None,
+            source: str | None = None,
+            correlation_id: str | None = None,
+            requested_effects: list[EventEffect] | None = None,
+            expires_at: str | None = None,
+            target_session_ids: Any = None,
+        ) -> None:
+            captured_sources.append(source)
+            await original_emit(
+                topic,
+                payload,
+                event_id=event_id,
+                retained=retained,
+                source=source,
+                correlation_id=correlation_id,
+                requested_effects=requested_effects,
+                expires_at=expires_at,
+                target_session_ids=target_session_ids,
+            )
+
+        setattr(mcp_server, "emit_event", tracking_emit)
+
+        @mcp_server.tool
+        async def notify(message: str, ctx: Context) -> str:
+            await ctx.emit_event("myapp/notifications", {"text": message})
+            return "sent"
+
+        async with Client(mcp_server) as client:
+            result = await client.call_tool("notify", {"message": "hello"})
+            assert result.data == "sent"
+            assert len(captured_sources) == 1
+            assert captured_sources[0] == "tool/notify"
+
+    async def test_explicit_source_overrides_auto_source(self):
+        """When a tool provides explicit source, it is not overridden."""
+        mcp_server = FastMCP("test")
+        mcp_server.declare_event("myapp/notifications")
+
+        captured_sources: list[str | None] = []
+        original_emit = mcp_server.emit_event
+
+        async def tracking_emit(
+            topic: str,
+            payload: Any,
+            *,
+            event_id: str | None = None,
+            retained: bool | None = None,
+            source: str | None = None,
+            correlation_id: str | None = None,
+            requested_effects: list[EventEffect] | None = None,
+            expires_at: str | None = None,
+            target_session_ids: Any = None,
+        ) -> None:
+            captured_sources.append(source)
+            await original_emit(
+                topic,
+                payload,
+                event_id=event_id,
+                retained=retained,
+                source=source,
+                correlation_id=correlation_id,
+                requested_effects=requested_effects,
+                expires_at=expires_at,
+                target_session_ids=target_session_ids,
+            )
+
+        setattr(mcp_server, "emit_event", tracking_emit)
+
+        @mcp_server.tool
+        async def notify_custom(message: str, ctx: Context) -> str:
+            await ctx.emit_event(
+                "myapp/notifications",
+                {"text": message},
+                source="custom/source",
+            )
+            return "sent"
+
+        async with Client(mcp_server) as client:
+            result = await client.call_tool("notify_custom", {"message": "hello"})
+            assert result.data == "sent"
+            assert len(captured_sources) == 1
+            assert captured_sources[0] == "custom/source"
+
+    async def test_source_none_when_not_in_tool_context(self):
+        """When emit_event is called directly on the server (not via a tool),
+        source remains None in the delivered notification."""
+        mcp_server = FastMCP("test")
+        mcp_server.declare_event("myapp/status")
+
+        received_notifications: list[Any] = []
+
+        async with Client(mcp_server) as _client:
+            session = list(mcp_server._active_sessions.values())[0]
+            session_id = getattr(session, "_fastmcp_event_session_id")
+            await mcp_server._subscription_registry.add(session_id, "myapp/status")
+
+            async def capturing_send(
+                notification: ServerNotification,
+                related_request_id: str | int | None = None,
+            ) -> None:
+                received_notifications.append(notification)
+
+            setattr(session, "send_notification", capturing_send)
+
+            # Emit directly on server, not through a tool
+            await mcp_server.emit_event("myapp/status", {"state": "running"})
+
+            assert len(received_notifications) == 1
+            notif = received_notifications[0]
+            # Server-level emit has no tool context, so source should be None
+            assert notif.params.source is None

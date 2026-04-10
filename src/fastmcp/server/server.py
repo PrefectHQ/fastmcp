@@ -1136,7 +1136,7 @@ class FastMCP(
         # For mounted servers, the parent's provider sets fn_key to the
         # namespaced key before delegating, ensuring correct Docket routing.
 
-        async with fastmcp.server.context.Context(fastmcp=self) as ctx:
+        async with fastmcp.server.context.Context(fastmcp=self, _tool_name=name) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext[CallToolRequestParams](
                     message=mcp.types.CallToolRequestParams(

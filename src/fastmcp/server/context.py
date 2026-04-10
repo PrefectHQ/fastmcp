@@ -194,6 +194,7 @@ class Context:
         *,
         task_id: str | None = None,
         origin_request_id: str | None = None,
+        _tool_name: str | None = None,
     ):
         self._fastmcp: weakref.ref[FastMCP] = weakref.ref(fastmcp)
         self._session: ServerSession | None = session  # For state ops during init
@@ -201,6 +202,8 @@ class Context:
         # Background task support (SEP-1686)
         self._task_id: str | None = task_id
         self._origin_request_id: str | None = origin_request_id
+        # Tool name for auto-source in emit_event
+        self._tool_name: str | None = _tool_name
         # Request-scoped state for non-serializable values (serializable=False)
         self._request_state: dict[str, Any] = {}
 
@@ -242,6 +245,14 @@ class Context:
         if self.request_context is not None:
             return str(self.request_context.request_id)
         return self._origin_request_id
+
+    @property
+    def tool_name(self) -> str | None:
+        """Get the tool name if this context was created for a tool call.
+
+        Returns None if the context was not created from a call_tool invocation.
+        """
+        return self._tool_name
 
     @property
     def fastmcp(self) -> FastMCP:
@@ -815,6 +826,10 @@ class Context:
                       routing safety net alongside subscription-time
                       authorization; see ``FastMCP.emit_event`` for details.
         """
+        # Auto-set source from tool name when not explicitly provided
+        if source is None and self._tool_name is not None:
+            source = f"tool/{self._tool_name}"
+
         await self.fastmcp.emit_event(
             topic=topic,
             payload=payload,
