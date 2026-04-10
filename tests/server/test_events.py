@@ -2040,7 +2040,7 @@ class TestContextToolName:
 class TestAutoSourceFromToolName:
     async def test_auto_source_set_from_tool_name(self):
         """When a tool emits an event without explicit source, source is auto-set
-        to 'tool/<tool_name>'."""
+        to 'tool/<tool_name>' and is present in the delivered notification."""
         mcp_server = FastMCP("test")
         mcp_server.declare_event("myapp/notifications")
 
@@ -2079,14 +2079,44 @@ class TestAutoSourceFromToolName:
             await ctx.emit_event("myapp/notifications", {"text": message})
             return "sent"
 
+        received_notifications: list[Any] = []
+
         async with Client(mcp_server) as client:
+            # Subscribe the client's session so it receives the notification
+            session = list(mcp_server._active_sessions.values())[0]
+            session_id = getattr(session, "_fastmcp_event_session_id")
+            await mcp_server._subscription_registry.add(
+                session_id, "myapp/notifications"
+            )
+
+            async def capturing_send(
+                notification: ServerNotification,
+                related_request_id: str | int | None = None,
+            ) -> None:
+                received_notifications.append(notification)
+
+            setattr(session, "send_notification", capturing_send)
+
             result = await client.call_tool("notify", {"message": "hello"})
             assert result.data == "sent"
+
+            # Verify source kwarg passed to emit_event
             assert len(captured_sources) == 1
             assert captured_sources[0] == "tool/notify"
 
+            # Verify source is present in the delivered notification
+            assert len(received_notifications) == 1, (
+                "Expected the subscribed session to receive the notification"
+            )
+            notif = received_notifications[0]
+            assert notif.params.source == "tool/notify", (
+                f"Expected source 'tool/notify' in delivered notification, "
+                f"got {notif.params.source!r}"
+            )
+
     async def test_explicit_source_overrides_auto_source(self):
-        """When a tool provides explicit source, it is not overridden."""
+        """When a tool provides explicit source, it is not overridden and is
+        present in the delivered notification."""
         mcp_server = FastMCP("test")
         mcp_server.declare_event("myapp/notifications")
 
@@ -2129,11 +2159,40 @@ class TestAutoSourceFromToolName:
             )
             return "sent"
 
+        received_notifications: list[Any] = []
+
         async with Client(mcp_server) as client:
+            # Subscribe the client's session so it receives the notification
+            session = list(mcp_server._active_sessions.values())[0]
+            session_id = getattr(session, "_fastmcp_event_session_id")
+            await mcp_server._subscription_registry.add(
+                session_id, "myapp/notifications"
+            )
+
+            async def capturing_send(
+                notification: ServerNotification,
+                related_request_id: str | int | None = None,
+            ) -> None:
+                received_notifications.append(notification)
+
+            setattr(session, "send_notification", capturing_send)
+
             result = await client.call_tool("notify_custom", {"message": "hello"})
             assert result.data == "sent"
+
+            # Verify source kwarg passed to emit_event
             assert len(captured_sources) == 1
             assert captured_sources[0] == "custom/source"
+
+            # Verify source is present in the delivered notification
+            assert len(received_notifications) == 1, (
+                "Expected the subscribed session to receive the notification"
+            )
+            notif = received_notifications[0]
+            assert notif.params.source == "custom/source", (
+                f"Expected source 'custom/source' in delivered notification, "
+                f"got {notif.params.source!r}"
+            )
 
     async def test_source_none_when_not_in_tool_context(self):
         """When emit_event is called directly on the server (not via a tool),
