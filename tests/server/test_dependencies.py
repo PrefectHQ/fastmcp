@@ -810,6 +810,31 @@ class TestDependencyInjection:
 
         require_docket("test feature")
 
+    def test_require_docket_error_mentions_version_when_too_old(self, monkeypatch):
+        """``require_docket()`` distinguishes "missing" from "too old".
+
+        When pydocket is installed but pinned below the floor, the install
+        instructions in the error must point at upgrading pydocket — not at
+        installing the ``tasks`` extra (which the resolver will treat as a
+        no-op as long as the lower pin is held by another package).
+        """
+        import importlib.metadata
+
+        from fastmcp.server import dependencies
+
+        original_version = importlib.metadata.version
+
+        def fake_version(name: str) -> str:
+            if name == "pydocket":
+                return "0.16.6"
+            return original_version(name)
+
+        monkeypatch.setattr(dependencies, "_DOCKET_AVAILABLE", None)
+        monkeypatch.setattr(importlib.metadata, "version", fake_version)
+
+        with pytest.raises(ImportError, match="pydocket 0.16.6 is installed"):
+            dependencies.require_docket("CurrentDocket()")
+
     def test_dependency_class_exists(self):
         """Test Dependency and Depends are importable from fastmcp."""
         from fastmcp.dependencies import Dependency, Depends

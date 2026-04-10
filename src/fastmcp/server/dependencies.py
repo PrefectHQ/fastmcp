@@ -452,12 +452,27 @@ def require_docket(feature: str) -> None:
         feature: Description of what requires docket (e.g., "`task=True`",
                  "CurrentDocket()"). Will be included in the error message.
     """
-    if not is_docket_available():
-        raise ImportError(
-            f"FastMCP background tasks require the `tasks` extra. "
-            f"Install with: pip install 'fastmcp[tasks]'. "
-            f"(Triggered by {feature})"
+    if is_docket_available():
+        return
+
+    try:
+        installed = importlib.metadata.version("pydocket")
+    except importlib.metadata.PackageNotFoundError:
+        installed = None
+
+    if installed is None:
+        detail = (
+            "FastMCP background tasks require the `tasks` extra. "
+            "Install with: pip install 'fastmcp[tasks]'."
         )
+    else:
+        detail = (
+            f"FastMCP background tasks require pydocket>={_MIN_DOCKET_VERSION}, "
+            f"but pydocket {installed} is installed (likely pulled in by another "
+            f"package). Upgrade with: pip install -U 'pydocket>={_MIN_DOCKET_VERSION}'."
+        )
+
+    raise ImportError(f"{detail} (Triggered by {feature})")
 
 
 # Import Progress separately — it's docket-specific, not part of uncalled-for
