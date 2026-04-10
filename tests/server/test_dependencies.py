@@ -757,6 +757,28 @@ class TestDependencyInjection:
 
         assert is_docket_available() is True
 
+    def test_is_docket_available_false_when_current_execution_missing(
+        self, monkeypatch
+    ):
+        """``is_docket_available()`` must treat a pre-0.18.0 pydocket as unavailable.
+
+        Older pydocket versions (e.g. 0.16.x, pulled in transitively by
+        prefect) import cleanly but lack ``docket.dependencies.current_execution``.
+        A naive ``import docket`` probe would report the package as available
+        and later crash at runtime. Simulate that by shadowing the symbol.
+        """
+        import docket.dependencies
+
+        from fastmcp.server import dependencies
+
+        monkeypatch.setattr(dependencies, "_DOCKET_AVAILABLE", None)
+        monkeypatch.delattr(docket.dependencies, "current_execution")
+
+        assert dependencies.is_docket_available() is False
+        # The wrapper that actually failed in #3803 must now return None
+        # instead of raising ImportError on the inner import.
+        assert dependencies.get_task_context() is None
+
     def test_require_docket_passes_when_installed(self):
         """Test require_docket doesn't raise when docket is installed."""
         from fastmcp.server.dependencies import require_docket

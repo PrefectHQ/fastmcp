@@ -421,11 +421,18 @@ _DOCKET_AVAILABLE: bool | None = None
 
 
 def is_docket_available() -> bool:
-    """Check if pydocket is installed."""
+    """Check if a compatible pydocket (>= 0.18.0) is installed.
+
+    Probes for ``docket.dependencies.current_execution`` — a symbol added in
+    pydocket 0.18.0 — rather than just ``import docket``. This prevents
+    runtime crashes when an older pydocket is present transitively (e.g.
+    pulled in by another package like prefect) but fastmcp's task features
+    cannot actually work against it.
+    """
     global _DOCKET_AVAILABLE
     if _DOCKET_AVAILABLE is None:
         try:
-            import docket  # noqa: F401
+            from docket.dependencies import current_execution  # noqa: F401
 
             _DOCKET_AVAILABLE = True
         except ImportError:
