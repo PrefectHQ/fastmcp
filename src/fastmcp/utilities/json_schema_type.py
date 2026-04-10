@@ -40,7 +40,7 @@ import re
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import MISSING, field, make_dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import (
     Annotated,
     Any,
@@ -64,6 +64,27 @@ from pydantic import (
 from typing_extensions import NotRequired, TypedDict
 
 __all__ = ["JSONSchema", "json_schema_to_type"]
+
+
+def _normalize_yaml_types(obj: Any) -> Any:
+    """Convert YAML-parsed types back to JSON-native types.
+
+    ``yaml.safe_load`` converts ISO date-time strings to ``datetime``/``date``
+    objects.  These crash ``json.dumps`` and produce wrong default values in
+    dataclass fields.  This function recursively normalises them to strings.
+    """
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {
+            str(k) if not isinstance(k, str) else k: _normalize_yaml_types(v)
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_normalize_yaml_types(v) for v in obj]
+    return obj
 
 
 def _reject_all(v: Any) -> Any:
@@ -176,6 +197,10 @@ def json_schema_to_type(
             name: NameType
         ```
     """
+    # Normalise YAML-parsed types (datetime/date → str, non-str keys → str)
+    # so that downstream json.dumps/hashing and default values work correctly.
+    schema = _normalize_yaml_types(schema)
+
     # Always use the top-level schema for references
     if schema.get("type") == "object":
         # If no properties defined but has additionalProperties, return typed dict
@@ -203,8 +228,19 @@ def json_schema_to_type(
 
 
 def _hash_schema(schema: Mapping[str, Any]) -> str:
-    """Generate a deterministic hash for schema caching."""
-    return hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
+    """Generate a deterministic hash for schema caching.
+
+    Handles non-JSON-native types (datetime, date, bool keys) that can
+    appear in schemas loaded from YAML, which auto-parses date strings.
+    Uses ``default=str`` for unserializable values and drops ``sort_keys``
+    to avoid ``TypeError`` when dicts mix ``bool`` and ``str`` keys.
+    """
+    try:
+        raw = json.dumps(schema, sort_keys=True, default=str)
+    except TypeError:
+        # Mixed key types (bool + str) can't be sorted; fall back
+        raw = json.dumps(schema, default=str)
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
