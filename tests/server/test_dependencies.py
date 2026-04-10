@@ -804,6 +804,31 @@ class TestDependencyInjection:
 
         assert dependencies.is_docket_available() is False
 
+    def test_is_docket_available_false_when_import_broken(self, monkeypatch):
+        """Metadata says installed but ``import docket`` fails — treat as unavailable.
+
+        Catches the broken/partial-install case where ``importlib.metadata``
+        still reports a usable version but the package itself isn't actually
+        importable (corrupted wheel, sys.path weirdness, etc.). Without the
+        import probe, fastmcp would later crash on its first ``from docket
+        ...`` instead of falling back gracefully.
+        """
+        import builtins
+
+        from fastmcp.server import dependencies
+
+        original_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "docket" or name.startswith("docket."):
+                raise ImportError("simulated broken docket install")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(dependencies, "_DOCKET_AVAILABLE", None)
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        assert dependencies.is_docket_available() is False
+
     def test_require_docket_passes_when_installed(self):
         """Test require_docket doesn't raise when docket is installed."""
         from fastmcp.server.dependencies import require_docket
