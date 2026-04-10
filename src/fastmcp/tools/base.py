@@ -492,37 +492,30 @@ def _convert_to_single_content_block(
 _PREFAB_TEXT_FALLBACK = "[Rendered Prefab UI]"
 
 
-def _current_mount_path() -> tuple[int, ...]:
-    """Read the running tool's mount_path from the current Context, or ``()``."""
-    from fastmcp.server.context import _current_context
+def _get_tool_resolver() -> Callable[..., str] | None:
+    """Get the Prefab peer-reference resolver.
 
-    ctx = _current_context.get(None)
-    if ctx is None:
-        return ()
-    return ctx.mount_path
-
-
-def _get_tool_resolver(
-    mount_path: tuple[int, ...] = (),
-) -> Callable[..., str] | None:
-    """Get the Prefab peer-reference resolver bound to a mount path."""
+    The resolver looks up each peer tool's address via the current
+    server's callable map at serialization time — no mount_path needed.
+    """
     try:
         from fastmcp.apps.app import _make_resolver
 
-        return _make_resolver(mount_path)
+        return _make_resolver()
     except ImportError:
         return None
 
 
 def _prefab_to_json(app: Any) -> dict[str, Any]:
-    """Call PrefabApp.to_json() with the mount-path-aware tool resolver.
+    """Call PrefabApp.to_json() with the callable-identity-based resolver.
 
-    The resolver formats peer-tool references as ``<hash>_<local_name>``
-    where the hash is computed from the running tool's mount path. The
-    dispatcher recognizes that format on incoming CallTool calls and
-    routes them directly through the registry.
+    The resolver looks up each peer tool in the server's callable map
+    by function identity, computes the hashed backend name from the
+    tool's address, and embeds it in the Prefab JSON. The dispatcher
+    recognizes that format on incoming CallTool calls and routes them
+    directly through the registry.
     """
-    data = app.to_json(tool_resolver=_get_tool_resolver(_current_mount_path()))
+    data = app.to_json(tool_resolver=_get_tool_resolver())
     return data
 
 

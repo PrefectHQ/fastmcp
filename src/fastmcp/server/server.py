@@ -338,11 +338,12 @@ class FastMCP(
             on_duplicate=self._on_duplicate
         )
 
-        # Internal address registry (and its reverse-hash map). Built lazily
+        # Internal address registry (and its reverse-hash maps). Built lazily
         # on first access by walking the provider graph; invalidated whenever
         # a new provider is added so dynamic composition stays correct.
         self._address_registry: dict[tuple[int, ...], Provider] | None = None
         self._reverse_hash_map: dict[str, Any] | None = None
+        self._callable_map: dict[int, Any] = {}
 
         # Add providers using AggregateProvider's add_provider
         # LocalProvider is always first (no namespace)
@@ -500,9 +501,10 @@ class FastMCP(
         """
         super().add_provider(provider, namespace=namespace)
         # Adding a provider changes the shape of the address graph; drop the
-        # cached registry and reverse-hash map so they rebuild on next access.
+        # cached registry and reverse-hash maps so they rebuild on next access.
         self._address_registry = None
         self._reverse_hash_map = None
+        self._callable_map = {}
 
     @property
     def address_registry(self) -> dict[tuple[int, ...], Provider]:
@@ -524,35 +526,26 @@ class FastMCP(
         """Lazy hash → ``HashEntry`` reverse map for backend tool dispatch.
 
         Built alongside the address registry. Each entry maps a tool's
-        deterministic hash to ``(address, provider, tool_name)`` so the
-        dispatcher and ``read_resource`` can do O(1) lookups by hash.
+        deterministic hash to ``(address, provider, tool_name, fn)`` so
+        the dispatcher and ``read_resource`` can do O(1) lookups by hash.
         """
         if self._reverse_hash_map is None:
             from fastmcp.server.providers.addressing import build_reverse_hash_map
 
-            self._reverse_hash_map = build_reverse_hash_map(self.address_registry)
+            maps = build_reverse_hash_map(self.address_registry)
+            self._reverse_hash_map = maps.by_hash
+            self._callable_map = maps.by_callable
         return self._reverse_hash_map
 
-    async def _find_owning_address(
-        self, display_name: str, version: VersionSpec | None
-    ) -> tuple[int, ...]:
-        """Walk the registry to find which provider yields *display_name*.
+    @property
+    def callable_map(self) -> dict[int, Any]:
+        """Lazy ``id(fn) → HashEntry`` map for peer-tool lookup by callable.
 
-        Used by the dispatcher after a successful display-name resolution
-        to set ``Context.mount_path`` correctly. Walks providers in
-        registration order and queries each one's transform-aware
-        ``get_tool`` — the first match wins, matching the aggregation
-        order. Returns ``()`` (the root) if no provider claims it, which
-        is the right default for tools registered directly on the server.
+        Used by the Prefab resolver to find a peer tool's address by
+        function identity — no name ambiguity, no dispatch-time walk.
         """
-        for address, provider in self.address_registry.items():
-            try:
-                found = await provider.get_tool(display_name, version=version)
-            except Exception:
-                found = None
-            if found is not None:
-                return address
-        return ()
+        _ = self.reverse_hash_map  # triggers build if needed
+        return getattr(self, "_callable_map", {})
 
     async def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
         """Replace placeholder Prefab URIs with mount-address-derived ones.
@@ -1287,7 +1280,6 @@ class FastMCP(
                 f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
                 tool: Tool | None = None
-                resolved_mount_path: tuple[int, ...] = ()
 
                 # Hashed-name dispatch — bypass transforms via the registry.
                 hashed = parse_hashed_backend_name(name)
@@ -1300,7 +1292,6 @@ class FastMCP(
                         )
                         if candidate is not None and _is_app_visible(candidate):
                             tool = candidate
-                            resolved_mount_path = entry.address
                             # Auth still applies on the bypass path.
                             skip_auth, token = _get_auth_context()
                             if not skip_auth and tool.auth is not None:
@@ -1316,21 +1307,9 @@ class FastMCP(
                 # Display-name path: normal aggregation through transforms.
                 if tool is None:
                     tool = await self.get_tool(name, version=version)
-                    if tool is not None:
-                        # Reverse-lookup the owning provider so the
-                        # Prefab resolver can serialize peer references
-                        # with the correct mount path.
-                        resolved_mount_path = await self._find_owning_address(
-                            name, version
-                        )
 
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")
-
-                # Eagerly publish the resolved mount_path on the context
-                # so the Prefab serializer (if invoked) can read it.
-                ctx._mount_path = resolved_mount_path
-                ctx._mount_path_resolver = None
                 span.set_attributes(tool.get_span_attributes())
                 if task_meta is not None and task_meta.fn_key is None:
                     task_meta = replace(task_meta, fn_key=tool.key)

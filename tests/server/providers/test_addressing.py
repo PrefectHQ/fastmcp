@@ -158,10 +158,10 @@ class TestReverseHashMap:
         def greet(name: str) -> str:
             return name
 
-        reverse = build_reverse_hash_map(build_address_registry(mcp))
+        maps = build_reverse_hash_map(build_address_registry(mcp))
         digest = hash_tool_address((), "greet")
-        assert digest in reverse
-        entry = reverse[digest]
+        assert digest in maps.by_hash
+        entry = maps.by_hash[digest]
         assert entry.address == ()
         assert entry.tool_name == "greet"
 
@@ -174,13 +174,28 @@ class TestReverseHashMap:
         def save(name: str) -> str:
             return name
 
-        reverse = build_reverse_hash_map(build_address_registry(mcp))
+        maps = build_reverse_hash_map(build_address_registry(mcp))
         digest = hash_tool_address((0,), "save")
-        assert digest in reverse
-        entry = reverse[digest]
+        assert digest in maps.by_hash
+        entry = maps.by_hash[digest]
         assert entry.address == (0,)
         assert entry.tool_name == "save"
         assert entry.provider is app
+
+    def test_callable_map_indexes_by_fn_identity(self):
+        """The callable map lets the resolver look up a tool by function
+        identity — no name ambiguity, no mount_path needed."""
+        mcp = FastMCP("server")
+        app = FastMCPApp("dashboard")
+        mcp.add_provider(app)
+
+        @app.tool()
+        def save(name: str) -> str:
+            return name
+
+        maps = build_reverse_hash_map(build_address_registry(mcp))
+        assert id(save) in maps.by_callable
+        assert maps.by_callable[id(save)].tool_name == "save"
 
     def test_same_tool_at_two_addresses_has_two_hashes(self):
         """Mounting the same FastMCPApp instance twice produces distinct
@@ -195,14 +210,14 @@ class TestReverseHashMap:
         mcp.add_provider(shared)
         mcp.add_provider(shared)
 
-        reverse = build_reverse_hash_map(build_address_registry(mcp))
+        maps = build_reverse_hash_map(build_address_registry(mcp))
         h1 = hash_tool_address((0,), "save")
         h2 = hash_tool_address((1,), "save")
         assert h1 != h2
-        assert h1 in reverse
-        assert h2 in reverse
+        assert h1 in maps.by_hash
+        assert h2 in maps.by_hash
         # Both entries point at the same provider object.
-        assert reverse[h1].provider is reverse[h2].provider
+        assert maps.by_hash[h1].provider is maps.by_hash[h2].provider
 
 
 class TestServerLazyAddressRegistry:

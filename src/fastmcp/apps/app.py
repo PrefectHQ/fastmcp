@@ -50,38 +50,56 @@ F = TypeVar("F", bound=Callable[..., Any])
 # ---------------------------------------------------------------------------
 
 
-def _make_resolver(mount_path: tuple[int, ...] = ()) -> Any:
+def _make_resolver() -> Any:
     """Create a CallTool resolver that turns peer-tool refs into hashed names.
 
     Prefab components reference other tools via ``on_click=other_tool``.
     When a Prefab UI runs and serializes its content, this resolver
-    converts each reference into the universal backend-tool name —
-    ``<hash>_<local_tool_name>`` — where the hash is computed from the
-    current invocation's *mount path* (the address of the provider that
-    owns the calling tool) plus the referenced tool's local name.
+    looks up each referenced tool's address via the current server's
+    callable map (``id(fn) → HashEntry``) and formats the universal
+    backend-tool name ``<hash>_<local_name>``.
+
+    For function references, the lookup is by callable identity — no
+    name ambiguity, no mount_path needed. For string references, we
+    fall back to name-based lookup in the hash-keyed reverse map.
 
     Calls coming back through the dispatcher recognize the hashed name,
     look it up via the server's reverse-hash map, and route directly to
-    the owning provider — bypassing the transform chain entirely. This
-    is the only mechanism by which tools with ``visibility=["app"]`` are
-    callable from outside the server.
-
-    When ``mount_path`` is empty (the calling tool lives at the server's
-    root), there's no prefix to add — the referenced tool must itself be
-    a root-level tool and is callable by its bare name.
+    the owning provider — bypassing the transform chain entirely.
     """
     from fastmcp.server.providers.addressing import hashed_backend_name
-
-    def _format(local_name: str) -> str:
-        if not mount_path:
-            return local_name
-        return hashed_backend_name(mount_path, local_name)
 
     def _resolve_tool_ref(fn: Any) -> Any:
         from prefab_ui.app import ResolvedTool
 
+        from fastmcp.server.context import _current_context
+
+        # Try to look up the callable directly in the server's callable map.
+        ctx = _current_context.get(None)
+        server = ctx.fastmcp if ctx is not None else None
+        callable_map = server.callable_map if server is not None else {}
+
+        def _format_by_callable(func: Any, fallback_name: str) -> ResolvedTool:
+            entry = callable_map.get(id(func))
+            if entry is not None:
+                parent = ctx._parent_address if ctx is not None else ()
+                global_addr = (*parent, *entry.address)
+                return ResolvedTool(
+                    name=hashed_backend_name(global_addr, entry.tool_name)
+                )
+            # Not in the callable map — return bare name (root tool).
+            return ResolvedTool(name=fallback_name)
+
         if isinstance(fn, str):
-            return ResolvedTool(name=_format(fn))
+            # String ref — can't do callable lookup. Check the hash
+            # reverse map by name.
+            if server is not None:
+                parent = ctx._parent_address if ctx is not None else ()
+                for entry in server.reverse_hash_map.values():
+                    if entry.tool_name == fn:
+                        global_addr = (*parent, *entry.address)
+                        return ResolvedTool(name=hashed_backend_name(global_addr, fn))
+            return ResolvedTool(name=fn)
 
         fmeta: Any = None
         try:
@@ -94,11 +112,11 @@ def _make_resolver(mount_path: tuple[int, ...] = ()) -> Any:
         if fmeta is not None:
             name: str | None = getattr(fmeta, "name", None)
             if name is not None:
-                return ResolvedTool(name=_format(name))
+                return _format_by_callable(fn, name)
 
         fn_name = getattr(fn, "__name__", None)
         if fn_name is not None:
-            return ResolvedTool(name=_format(fn_name))
+            return _format_by_callable(fn, fn_name)
 
         raise ValueError(f"Cannot resolve tool reference: {fn!r}")
 

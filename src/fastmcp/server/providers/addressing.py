@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.base import Provider
@@ -54,6 +54,7 @@ class HashEntry(NamedTuple):
     address: AddressPath
     provider: Provider
     tool_name: str
+    fn: Any  #: underlying callable for FunctionTools, None for others
 
 
 def hash_tool_address(address: AddressPath, tool_name: str) -> str:
@@ -164,45 +165,67 @@ def build_address_registry(root: FastMCP) -> dict[AddressPath, Provider]:
     return registry
 
 
+class ReverseHashMaps(NamedTuple):
+    """Both reverse-lookup indexes produced by :func:`build_reverse_hash_map`.
+
+    ``by_hash``: ``hash_hex → HashEntry`` — used by the dispatcher for
+    hashed-name calls and by ``read_resource`` for prefab URI lookups.
+
+    ``by_callable``: ``id(fn) → HashEntry`` — used by the Prefab
+    peer-reference resolver to look up a peer tool's address by the
+    original function identity, without needing ``Context.mount_path``
+    or a name-based reverse walk.
+    """
+
+    by_hash: dict[str, HashEntry]
+    by_callable: dict[int, HashEntry]
+
+
 def build_reverse_hash_map(
     registry: dict[AddressPath, Provider],
-) -> dict[str, HashEntry]:
-    """Build the ``hash → (address, provider, tool_name)`` reverse map.
+) -> ReverseHashMaps:
+    """Build both reverse-lookup indexes from the address registry.
 
-    Walks every provider in the registry, calls its synchronous tool
-    storage to enumerate tools, and computes a hash for each one. The
-    result lets ``read_resource`` and the hashed-name dispatcher do O(1)
-    lookups by hash. Built once per registry build and invalidated
-    alongside it.
+    Walks every provider in the registry, reads its synchronous tool
+    storage, and for each tool computes its hash and (for FunctionTools)
+    captures the underlying callable. The result lets the dispatcher,
+    ``read_resource``, and the Prefab resolver do O(1) lookups.
 
     Tools that aren't directly stored in a ``LocalProvider`` (or a
-    ``FastMCPApp``'s internal ``_local``) won't appear in the reverse
-    map. That's intentional — the addressing system is for tools you
-    register, not for tools dynamically synthesized at list time by
-    custom providers, which already have their own naming.
+    ``FastMCPApp``'s internal ``_local``) won't appear. That's
+    intentional — the addressing system is for tools you register, not
+    for tools dynamically synthesized at list time by custom providers.
     """
-    reverse: dict[str, HashEntry] = {}
+    by_hash: dict[str, HashEntry] = {}
+    by_callable: dict[int, HashEntry] = {}
     for address, provider in registry.items():
-        for tool_name in _enumerate_tool_names(provider):
-            digest = hash_tool_address(address, tool_name)
-            reverse[digest] = HashEntry(
-                address=address, provider=provider, tool_name=tool_name
+        for tool_name, fn in _enumerate_tools(provider):
+            entry = HashEntry(
+                address=address,
+                provider=provider,
+                tool_name=tool_name,
+                fn=fn,
             )
-    return reverse
+            digest = hash_tool_address(address, tool_name)
+            by_hash[digest] = entry
+            if fn is not None:
+                by_callable[id(fn)] = entry
+    return ReverseHashMaps(by_hash=by_hash, by_callable=by_callable)
 
 
-def _enumerate_tool_names(provider: Provider) -> list[str]:
-    """Synchronously enumerate the local tool names directly stored in *provider*.
+def _enumerate_tools(provider: Provider) -> list[tuple[str, Any]]:
+    """Synchronously enumerate ``(name, fn_or_None)`` for tools in *provider*.
 
     Reaches into the underlying ``LocalProvider`` (unwrapping any
     ``_WrappedProvider`` transform layers and looking through
-    ``FastMCPApp._local``). Used by the registry build to populate the
-    reverse-hash map without going through async list paths.
+    ``FastMCPApp._local``). ``fn`` is the underlying callable for
+    ``FunctionTool`` instances, ``None`` for other Tool subclasses.
     """
     from fastmcp.apps.app import FastMCPApp
     from fastmcp.server.providers.local_provider import LocalProvider
     from fastmcp.server.providers.wrapped_provider import _WrappedProvider
     from fastmcp.tools.base import Tool
+    from fastmcp.tools.function_tool import FunctionTool
 
     inner: Provider = provider
     while isinstance(inner, _WrappedProvider):
@@ -214,9 +237,10 @@ def _enumerate_tool_names(provider: Provider) -> list[str]:
     if isinstance(inner, FastMCPApp):
         sources.append(inner._local)
 
-    names: list[str] = []
+    results: list[tuple[str, Any]] = []
     for src in sources:
         for component in src._components.values():
             if isinstance(component, Tool):
-                names.append(component.name)
-    return names
+                fn = component.fn if isinstance(component, FunctionTool) else None
+                results.append((component.name, fn))
+    return results

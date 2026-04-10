@@ -287,75 +287,44 @@ class TestAppUI:
 
 
 class TestResolveToolRef:
-    def test_resolve_string_at_root(self):
-        """Empty mount_path means the calling tool is at the server root,
-        so peer references stay bare — they refer to root-level tools
-        callable by their normal display name."""
+    def test_resolve_string_no_context(self):
+        """Without a running Context the resolver returns bare names."""
         result = _make_resolver()("save_contact")
         assert isinstance(result, ResolvedTool)
         assert result.name == "save_contact"
 
-    def test_resolve_string_with_mount_path(self):
-        """With a mount path the resolver formats peer references as the
-        deterministic ``<hash>_<local_name>`` so the dispatcher can route
-        them via the reverse-hash map regardless of transforms."""
+    async def test_resolve_callable_via_callable_map(self):
+        """When a Context is active, the resolver looks up the peer tool
+        by callable identity in the server's callable map and produces
+        a hashed backend name."""
         from fastmcp.server.providers.addressing import hashed_backend_name
 
-        result = _make_resolver((0,))("store_files")
+        app = FastMCPApp("contacts")
+
+        @app.tool()
+        def save_contact(name: str) -> str:
+            return name
+
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        import fastmcp.server.context
+
+        async with fastmcp.server.context.Context(fastmcp=server):
+            result = _make_resolver()(save_contact)
+
         assert isinstance(result, ResolvedTool)
-        assert result.name == hashed_backend_name((0,), "store_files")
+        assert result.name == hashed_backend_name((0,), "save_contact")
 
-    def test_resolve_string_at_nested_mount_path(self):
-        """Nested mount paths feed into the same hash function — the
-        result is opaque from the outside but deterministic per-position."""
-        from fastmcp.server.providers.addressing import hashed_backend_name
+    def test_resolve_callable_no_context(self):
+        """Without context, callables resolve to their bare __name__."""
 
-        result = _make_resolver((0, 1, 2))("save_contact")
-        assert isinstance(result, ResolvedTool)
-        assert result.name == hashed_backend_name((0, 1, 2), "save_contact")
-
-    def test_resolve_callable_at_root(self):
         def my_tool():
             pass
 
         result = _make_resolver()(my_tool)
         assert isinstance(result, ResolvedTool)
         assert result.name == "my_tool"
-
-    def test_resolve_callable_with_mount_path(self):
-        from fastmcp.server.providers.addressing import hashed_backend_name
-
-        def store_files():
-            pass
-
-        result = _make_resolver((0,))(store_files)
-        assert isinstance(result, ResolvedTool)
-        assert result.name == hashed_backend_name((0,), "store_files")
-
-    def test_resolve_fastmcp_metadata(self):
-        from fastmcp.tools.function_tool import ToolMeta
-
-        def my_tool():
-            pass
-
-        my_tool.__fastmcp__ = ToolMeta(name="custom_name")  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-
-        result = _make_resolver()(my_tool)
-        assert isinstance(result, ResolvedTool)
-        assert result.name == "custom_name"
-
-    def test_resolve_fastmcp_metadata_with_mount_path(self):
-        from fastmcp.server.providers.addressing import hashed_backend_name
-        from fastmcp.tools.function_tool import ToolMeta
-
-        def my_tool():
-            pass
-
-        my_tool.__fastmcp__ = ToolMeta(name="custom_name")  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-
-        result = _make_resolver((0,))(my_tool)
-        assert isinstance(result, ResolvedTool)
-        assert result.name == hashed_backend_name((0,), "custom_name")
 
     def test_resolve_unresolvable_raises(self):
         with pytest.raises(ValueError):
