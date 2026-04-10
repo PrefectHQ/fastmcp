@@ -62,7 +62,7 @@ openai = ["openai>=1.102.0"]
 # fakeredis 2.35.0 renamed FakeConnection, which breaks pydocket's memory://
 # backend. Remove the ceiling once a fixed pydocket release ships.
 # See https://github.com/chrisguidry/docket/pull/382
-tasks = ["pydocket>=0.18.0", "fakeredis[lua]<2.35.0"]
+tasks = ["pydocket>=0.18.0", "fakeredis[lua]<2.36.0"]
 
 [dependency-groups]
 dev = [
