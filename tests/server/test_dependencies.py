@@ -757,27 +757,52 @@ class TestDependencyInjection:
 
         assert is_docket_available() is True
 
-    def test_is_docket_available_false_when_current_execution_missing(
-        self, monkeypatch
-    ):
-        """``is_docket_available()`` must treat a pre-0.18.0 pydocket as unavailable.
+    def test_is_docket_available_false_when_pydocket_too_old(self, monkeypatch):
+        """``is_docket_available()`` must treat pre-0.18.0 pydocket as unavailable.
 
         Older pydocket versions (e.g. 0.16.x, pulled in transitively by
-        prefect) import cleanly but lack ``docket.dependencies.current_execution``.
-        A naive ``import docket`` probe would report the package as available
-        and later crash at runtime. Simulate that by shadowing the symbol.
+        packages like prefect) import cleanly but lack the APIs fastmcp
+        uses (``docket.dependencies.current_execution``, etc.). Without a
+        version floor, the check would report available and then crash at
+        runtime. Simulate by forcing ``importlib.metadata`` to report an
+        old version.
         """
-        import docket.dependencies
+        import importlib.metadata
 
         from fastmcp.server import dependencies
 
+        original_version = importlib.metadata.version
+
+        def fake_version(name: str) -> str:
+            if name == "pydocket":
+                return "0.16.6"
+            return original_version(name)
+
         monkeypatch.setattr(dependencies, "_DOCKET_AVAILABLE", None)
-        monkeypatch.delattr(docket.dependencies, "current_execution")
+        monkeypatch.setattr(importlib.metadata, "version", fake_version)
 
         assert dependencies.is_docket_available() is False
         # The wrapper that actually failed in #3803 must now return None
         # instead of raising ImportError on the inner import.
         assert dependencies.get_task_context() is None
+
+    def test_is_docket_available_false_when_pydocket_not_installed(self, monkeypatch):
+        """``is_docket_available()`` returns False when pydocket is absent."""
+        import importlib.metadata
+
+        from fastmcp.server import dependencies
+
+        original_version = importlib.metadata.version
+
+        def fake_version(name: str) -> str:
+            if name == "pydocket":
+                raise importlib.metadata.PackageNotFoundError(name)
+            return original_version(name)
+
+        monkeypatch.setattr(dependencies, "_DOCKET_AVAILABLE", None)
+        monkeypatch.setattr(importlib.metadata, "version", fake_version)
+
+        assert dependencies.is_docket_available() is False
 
     def test_require_docket_passes_when_installed(self):
         """Test require_docket doesn't raise when docket is installed."""

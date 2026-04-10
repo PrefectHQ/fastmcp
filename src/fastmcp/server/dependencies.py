@@ -8,6 +8,7 @@ CurrentWorker) and background task execution require fastmcp[tasks].
 from __future__ import annotations
 
 import contextlib
+import importlib.metadata
 import inspect
 import json
 import logging
@@ -30,6 +31,7 @@ from mcp.server.auth.provider import (
     AccessToken as _SDKAccessToken,
 )
 from mcp.server.lowlevel.server import request_ctx
+from packaging.version import Version
 from starlette.requests import Request
 from uncalled_for import Dependency, get_dependency_parameters
 from uncalled_for.resolution import _Depends
@@ -420,22 +422,25 @@ def _get_sync_redis(url: str) -> Any:
 _DOCKET_AVAILABLE: bool | None = None
 
 
+_MIN_DOCKET_VERSION = Version("0.18.0")
+
+
 def is_docket_available() -> bool:
     """Check if a compatible pydocket (>= 0.18.0) is installed.
 
-    Probes for ``docket.dependencies.current_execution`` — a symbol added in
-    pydocket 0.18.0 — rather than just ``import docket``. This prevents
-    runtime crashes when an older pydocket is present transitively (e.g.
-    pulled in by another package like prefect) but fastmcp's task features
-    cannot actually work against it.
+    Verifies both that pydocket is installed AND that its version is at
+    least ``_MIN_DOCKET_VERSION``. Without the version floor, an older
+    pydocket pulled in transitively (e.g. via prefect, which pins
+    ``pydocket>=0.16.2``) would report as available and then crash at
+    runtime on imports like ``docket.dependencies.current_execution``.
     """
     global _DOCKET_AVAILABLE
     if _DOCKET_AVAILABLE is None:
         try:
-            from docket.dependencies import current_execution  # noqa: F401
-
-            _DOCKET_AVAILABLE = True
-        except ImportError:
+            _DOCKET_AVAILABLE = (
+                Version(importlib.metadata.version("pydocket")) >= _MIN_DOCKET_VERSION
+            )
+        except importlib.metadata.PackageNotFoundError:
             _DOCKET_AVAILABLE = False
     return _DOCKET_AVAILABLE
 
