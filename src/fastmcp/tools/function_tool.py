@@ -255,6 +255,9 @@ class FunctionTool(Tool):
                         # Handle sync wrappers that return awaitables
                         if inspect.isawaitable(result):
                             result = await result
+                    # Materialize generators inside timeout scope so slow
+                    # generators don't run past the configured timeout
+                    result = await self._materialize_generator(result)
             except TimeoutError:
                 logger.warning(
                     f"Tool '{self.name}' timed out after {self.timeout}s. "
@@ -277,8 +280,23 @@ class FunctionTool(Tool):
                 )
                 if inspect.isawaitable(result):
                     result = await result
+            result = await self._materialize_generator(result)
 
         return self.convert_result(result)
+
+    @staticmethod
+    async def _materialize_generator(result: Any) -> Any:
+        """Consume generators/async generators into lists.
+
+        Without this, async generators pass through as objects (repr string),
+        and sync generators get consumed during text serialization but are
+        exhausted by the time structured content is built.
+        """
+        if inspect.isasyncgen(result):
+            return [item async for item in result]
+        if inspect.isgenerator(result):
+            return list(result)
+        return result
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this tool with docket for background execution.

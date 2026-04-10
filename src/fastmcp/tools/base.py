@@ -290,6 +290,10 @@ class Tool(FastMCPComponent):
 
         content = _convert_to_content(raw_value, serializer=self.serializer)
 
+        # Bytes can't be represented as structured JSON content
+        if isinstance(raw_value, bytes):
+            return ToolResult(content=content)
+
         # Skip structured content for ContentBlock types only if no output_schema
         # (if output_schema exists, MCP SDK requires structured_content)
         if self.output_schema is None and (
@@ -303,7 +307,7 @@ class Tool(FastMCPComponent):
 
         try:
             structured = pydantic_core.to_jsonable_python(raw_value)
-        except pydantic_core.PydanticSerializationError:
+        except (pydantic_core.PydanticSerializationError, UnicodeDecodeError):
             return ToolResult(content=content)
 
         if self.output_schema is None:
@@ -491,6 +495,14 @@ def _convert_to_single_content_block(
 
     if isinstance(item, str):
         return TextContent(type="text", text=item)
+
+    if isinstance(item, bytes):
+        try:
+            return TextContent(type="text", text=item.decode("utf-8"))
+        except UnicodeDecodeError:
+            import base64
+
+            return TextContent(type="text", text=base64.b64encode(item).decode("ascii"))
 
     return TextContent(type="text", text=_serialize_with_fallback(item, serializer))
 
