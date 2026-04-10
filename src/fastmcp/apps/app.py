@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import AsyncIterator, Callable, Sequence
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from typing import Any, Literal, TypeVar, overload
 
 from mcp.types import AnyFunction, Icon, ToolAnnotations
@@ -310,9 +310,12 @@ class FastMCPApp(Provider):
             from fastmcp.apps.config import AppConfig, app_config_to_meta_dict
             from fastmcp.server.providers.local_provider.decorators.tools import (
                 PREFAB_RENDERER_URI,
-                _ensure_prefab_renderer,
             )
 
+            # Stamp the placeholder URI; the per-tool renderer resource is
+            # synthesized at list_resources / read_resource time from the
+            # tool's mount-point address. No singleton resource gets
+            # registered here.
             app_config = AppConfig(
                 resource_uri=PREFAB_RENDERER_URI,
                 visibility=["model"],
@@ -336,10 +339,6 @@ class FastMCPApp(Provider):
                 auth=auth,
             )
             self._local._add_component(tool_obj)
-
-            # Register the Prefab renderer resource on the internal provider
-            with suppress(ImportError):
-                _ensure_prefab_renderer(self._local)
 
             return fn
 

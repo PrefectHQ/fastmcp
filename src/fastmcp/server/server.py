@@ -554,6 +554,45 @@ class FastMCP(
                 return address
         return ()
 
+    async def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
+        """Replace placeholder Prefab URIs with mount-address-derived ones.
+
+        Walks the registry, asks each provider for its display-name list
+        of tools, and for any tool that came back with the prefab
+        placeholder URI substitutes a per-tool hashed URI. Originals
+        stay pristine — the substitution produces ``model_copy`` views.
+        Tools without a prefab marker pass through unchanged.
+
+        The walk only pays its cost when prefab tools exist; for servers
+        that don't use Prefab UI it's effectively a no-op pass through
+        the result list.
+        """
+        from fastmcp.server.providers.prefab_synthesis import (
+            _is_prefab_tool,
+            rewrite_tool_meta_for_address,
+        )
+
+        if not any(_is_prefab_tool(t) for t in tools):
+            return tools
+
+        # Build name → address by querying each leaf provider once.
+        name_to_address: dict[str, tuple[int, ...]] = {}
+        for address, provider in self.address_registry.items():
+            try:
+                provider_tools = await provider.list_tools()
+            except Exception:
+                continue
+            for t in provider_tools:
+                if _is_prefab_tool(t):
+                    name_to_address.setdefault(t.name, address)
+
+        return [
+            rewrite_tool_meta_for_address(t, name_to_address.get(t.name, ()))
+            if _is_prefab_tool(t)
+            else t
+            for t in tools
+        ]
+
     # -------------------------------------------------------------------------
     # Provider interface overrides - inherited from AggregateProvider
     # -------------------------------------------------------------------------
@@ -667,6 +706,13 @@ class FastMCP(
             tools = list(await super().list_tools())
             tools = await apply_session_transforms(tools)
             tools = [t for t in tools if is_enabled(t) and _is_model_visible(t)]
+
+            # Rewrite per-tool Prefab renderer URIs based on the tool's
+            # mount-point address. The walk pairs each tool with the
+            # provider that yielded it, computes the hashed URI, and
+            # produces a model_copy with the URI in place. Original
+            # Tool objects are not mutated.
+            tools = await self._rewrite_prefab_uris(tools)
 
             skip_auth, token = _get_auth_context()
             authorized: list[Tool] = []
@@ -793,6 +839,15 @@ class FastMCP(
             resources = list(await super().list_resources())
             resources = await apply_session_transforms(resources)
             resources = [r for r in resources if is_enabled(r)]
+
+            # Append synthetic Prefab renderer resources — one per
+            # prefab tool, hashed by mount address. These don't live on
+            # any provider's storage; they're computed on demand.
+            from fastmcp.server.providers.prefab_synthesis import (
+                synthesize_prefab_resources,
+            )
+
+            resources.extend(await synthesize_prefab_resources(self))
 
             skip_auth, token = _get_auth_context()
             authorized: list[Resource] = []
@@ -1391,6 +1446,18 @@ class FastMCP(
                 uri,
                 resource_uri=uri,
             ) as span:
+                # Intercept synthetic Prefab renderer URIs before normal
+                # resolution. The resource isn't stored anywhere — we
+                # build it on demand from the matching tool's CSP.
+                from fastmcp.server.providers.prefab_synthesis import (
+                    synthesize_prefab_resource_by_uri,
+                )
+
+                synthesized = await synthesize_prefab_resource_by_uri(self, uri)
+                if synthesized is not None:
+                    span.set_attributes(synthesized.get_span_attributes())
+                    return await synthesized._read(task_meta=task_meta)
+
                 # Try concrete resources first (transforms + auth via _get_resource)
                 resource = await self.get_resource(uri, version=version)
                 if resource is not None:
