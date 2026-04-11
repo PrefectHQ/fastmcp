@@ -326,7 +326,7 @@ def _response_to_create_message_result(
         has_thoughts = (
             candidate.content
             and candidate.content.parts
-            and any(getattr(p, "thought", False) for p in candidate.content.parts)
+            and all(getattr(p, "thought", False) for p in candidate.content.parts)
         )
         if has_thoughts:
             msg = (
