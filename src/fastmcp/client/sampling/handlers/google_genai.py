@@ -322,7 +322,16 @@ def _response_to_create_message_result(
     """Convert Google GenAI response to CreateMessageResult (no tools)."""
     if not (text := response.text):
         candidate = _get_candidate_from_response(response)
-        msg = f"No content in response: {candidate.finish_reason}"
+        # Check if the response only contained thinking
+        has_thoughts = (
+            candidate.content
+            and candidate.content.parts
+            and any(getattr(p, "thought", False) for p in candidate.content.parts)
+        )
+        if has_thoughts:
+            msg = "Model returned only thinking/reasoning content with no response text."
+        else:
+            msg = f"No content in response (finish_reason={candidate.finish_reason})"
         raise ValueError(msg)
 
     return CreateMessageResult(
@@ -365,7 +374,7 @@ def _response_to_result_with_tools(
     if candidate.content and candidate.content.parts:
         for part in candidate.content.parts:
             # Note: Skip thought parts from thinking_config - not relevant for MCP responses
-            if part.text:
+            if part.text and not part.thought:
                 content.append(TextContent(type="text", text=part.text))
             elif part.function_call is not None:
                 fc = part.function_call
@@ -380,7 +389,9 @@ def _response_to_result_with_tools(
                 )
 
     if not content:
-        raise ValueError("No content in response from completion")
+        finish = candidate.finish_reason if candidate else "unknown"
+        msg = f"No content in response from completion (finish_reason={finish})"
+        raise ValueError(msg)
 
     return CreateMessageResultWithTools(
         content=content,
