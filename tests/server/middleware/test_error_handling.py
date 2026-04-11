@@ -295,6 +295,32 @@ class TestRetryMiddleware:
         assert middleware._should_retry(ValueError()) is False
         assert middleware._should_retry(RuntimeError()) is False
 
+    def test_should_retry_checks_cause_chain(self):
+        """Retry should match on __cause__ since FastMCP wraps tool errors.
+
+        When a tool raises ConnectionError, FastMCP catches it and raises
+        ToolError(...) from ConnectionError.  The middleware must check
+        __cause__ to detect the retryable original exception.
+        """
+        middleware = RetryMiddleware(retry_exceptions=(ConnectionError,))
+
+        # Direct ConnectionError — should retry
+        assert middleware._should_retry(ConnectionError()) is True
+
+        # ToolError wrapping ConnectionError — should also retry
+        wrapped = ToolError("Error calling tool")
+        wrapped.__cause__ = ConnectionError("conn refused")
+        assert middleware._should_retry(wrapped) is True
+
+        # ToolError wrapping ValueError — should NOT retry
+        wrong_cause = ToolError("Error calling tool")
+        wrong_cause.__cause__ = ValueError("bad input")
+        assert middleware._should_retry(wrong_cause) is False
+
+        # ToolError with no cause — should NOT retry
+        no_cause = ToolError("Error calling tool")
+        assert middleware._should_retry(no_cause) is False
+
     def test_calculate_delay(self):
         """Test delay calculation."""
         middleware = RetryMiddleware(
@@ -554,37 +580,40 @@ class TestErrorHandlingMiddlewareIntegration:
 class TestRetryMiddlewareIntegration:
     """Integration tests for retry middleware with real FastMCP server."""
 
-    async def test_retry_middleware_with_transient_failures(
-        self, error_handling_server, caplog
-    ):
-        """Test retry middleware with operations that have transient failures."""
+    async def test_retry_actually_retries_through_server_pipeline(self):
+        """Retry middleware should retry tool calls that raise retryable errors.
+
+        FastMCP wraps tool exceptions as ToolError(...) from <original>,
+        so the middleware must check __cause__ to detect retryable errors.
+        This test verifies the full pipeline works by counting call attempts.
+        """
+        from fastmcp import FastMCP
         from fastmcp.client import Client
 
-        # Configure retry middleware to retry connection errors
-        error_handling_server.add_middleware(
+        call_count = 0
+        server = FastMCP("RetryTest")
+        server.add_middleware(
             RetryMiddleware(
                 max_retries=3,
-                base_delay=0.01,  # Very short delay for testing
+                base_delay=0.01,
                 retry_exceptions=(ConnectionError,),
             )
         )
 
-        with caplog.at_level(logging.WARNING):
-            async with Client(error_handling_server) as client:
-                # This operation fails intermittently - try several times
-                success_count = 0
-                for _ in range(5):
-                    try:
-                        await client.call_tool(
-                            "intermittent_operation", {"fail_rate": 0.7}
-                        )
-                        success_count += 1
-                    except Exception:
-                        pass  # Some failures expected even with retries
+        @server.tool
+        def fails_then_succeeds() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ConnectionError("transient failure")
+            return "success"
 
-        # Should have some retry log messages
-        # Note: Retry logs might not appear if the underlying errors are wrapped by FastMCP
-        # The key is that some operations should succeed due to retries
+        async with Client(server) as client:
+            result = await client.call_tool("fails_then_succeeds")
+            assert result.data == "success"
+
+        # Tool should have been called 3 times: 2 failures + 1 success
+        assert call_count == 3
 
     async def test_retry_middleware_with_permanent_failures(
         self, error_handling_server
