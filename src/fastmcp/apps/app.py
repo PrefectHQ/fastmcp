@@ -356,8 +356,12 @@ class FastMCPApp(Provider):
         if not isinstance(tool, Tool):
             tool = Tool._ensure_tool(tool)
 
+        from fastmcp.server.providers.addressing import hash_tool
+
         meta = dict(tool.meta) if tool.meta else {}
-        meta.setdefault("fastmcp", {})["app"] = self.name
+        fm = meta.setdefault("fastmcp", {})
+        fm["app"] = self.name
+        fm["_tool_hash"] = hash_tool(self.name, tool.name)
         ui = meta.setdefault("ui", {})
         if "visibility" not in ui:
             ui["visibility"] = ["app"]

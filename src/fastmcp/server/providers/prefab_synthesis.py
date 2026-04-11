@@ -165,9 +165,14 @@ def _walk_prefab_tools(server: FastMCP) -> list[Tool]:
 
         # Recurse into aggregate children
         from fastmcp.server.providers.aggregate import AggregateProvider
+        from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
 
         if isinstance(inner, AggregateProvider):
             for child in inner.providers:
+                _walk_provider(child)
+        # Recurse into mounted FastMCP servers
+        if isinstance(inner, FastMCPProvider):
+            for child in inner.server.providers:
                 _walk_provider(child)
 
     for provider in server.providers:
