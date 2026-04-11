@@ -374,10 +374,10 @@ def test_response_to_result_with_tools_text_only():
     assert result.model == "gemini-2.0-flash"
     assert result.stopReason == "endTurn"
     assert isinstance(result.content, list)
-    assert len(result.content) == 1  # ty: ignore[invalid-argument-type]
-    assert result.content[0].type == "text"  # ty: ignore[not-subscriptable]
-    assert isinstance(result.content[0], TextContent)  # ty: ignore[not-subscriptable]
-    assert result.content[0].text == "Here's the answer"  # ty: ignore[not-subscriptable]
+    assert len(result.content) == 1
+    assert result.content[0].type == "text"
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "Here's the answer"
 
 
 def test_response_to_result_with_tools_function_call():
@@ -396,7 +396,7 @@ def test_response_to_result_with_tools_function_call():
 
     assert result.stopReason == "toolUse"
     assert isinstance(result.content, list)
-    assert len(result.content) == 1  # ty: ignore[invalid-argument-type]
+    assert len(result.content) == 1
     tool_use = result.content[0]
     assert isinstance(tool_use, ToolUseContent)
     assert tool_use.type == "tool_use"
@@ -423,7 +423,7 @@ def test_response_to_result_with_tools_mixed_content():
 
     assert result.stopReason == "toolUse"
     assert isinstance(result.content, list)
-    assert len(result.content) == 2  # ty: ignore[invalid-argument-type]
+    assert len(result.content) == 2
     text_content = result.content[0]
     assert isinstance(text_content, TextContent)
     assert text_content.type == "text"
