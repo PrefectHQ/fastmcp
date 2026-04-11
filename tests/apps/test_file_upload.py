@@ -29,7 +29,7 @@ class TestFileUploadProvider:
         files = [_make_file()]
 
         result = await server.call_tool(
-            hashed_backend_name((0,), "store_files"), {"files": files}
+            hashed_backend_name("Files", "store_files"), {"files": files}
         )
         text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
         assert "test.txt" in text
@@ -43,7 +43,7 @@ class TestFileUploadProvider:
         files = [_make_file(content="DON'T PANIC")]
 
         await server.call_tool(
-            hashed_backend_name((0,), "store_files"), {"files": files}
+            hashed_backend_name("Files", "store_files"), {"files": files}
         )
 
         result = await server.call_tool("read_file", {"name": "test.txt"})
@@ -56,7 +56,7 @@ class TestFileUploadProvider:
         files = [{"name": "image.png", "size": 4, "type": "image/png", "data": data}]
 
         await server.call_tool(
-            hashed_backend_name((0,), "store_files"), {"files": files}
+            hashed_backend_name("Files", "store_files"), {"files": files}
         )
 
         result = await server.call_tool("read_file", {"name": "image.png"})
@@ -77,7 +77,7 @@ class TestFileUploadProvider:
         ]
 
         await server.call_tool(
-            hashed_backend_name((0,), "store_files"), {"files": files}
+            hashed_backend_name("Files", "store_files"), {"files": files}
         )
 
         result = await server.call_tool("list_files", {})
@@ -89,11 +89,11 @@ class TestFileUploadProvider:
         server = FastMCP("test", providers=[FileUpload()])
 
         await server.call_tool(
-            hashed_backend_name((0,), "store_files"),
+            hashed_backend_name("Files", "store_files"),
             {"files": [_make_file(content="version 1")]},
         )
         await server.call_tool(
-            hashed_backend_name((0,), "store_files"),
+            hashed_backend_name("Files", "store_files"),
             {"files": [_make_file(content="version 2")]},
         )
 
@@ -108,11 +108,10 @@ class TestFileUploadProvider:
         tool_names = [t.name for t in tools]
         assert "file_manager" in tool_names
 
-        # Routing uses the same hashed-address path regardless of the
-        # custom display name — the address is positional, not name-based.
+        # The hash uses the app's actual name ("Uploads"), not the default.
         files = [_make_file()]
         result = await server.call_tool(
-            hashed_backend_name((0,), "store_files"), {"files": files}
+            hashed_backend_name("Uploads", "store_files"), {"files": files}
         )
         text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
         assert "test.txt" in text
@@ -134,7 +133,7 @@ class TestFileUploadProvider:
 
         with pytest.raises(Exception, match="exceeds max size"):
             await server.call_tool(
-                hashed_backend_name((0,), "store_files"), {"files": [big_file]}
+                hashed_backend_name("Files", "store_files"), {"files": [big_file]}
             )
 
 
@@ -180,7 +179,7 @@ class TestFileUploadSubclass:
         files = [_make_file()]
 
         await server.call_tool(
-            hashed_backend_name((0,), "store_files"), {"files": files}
+            hashed_backend_name("Files", "store_files"), {"files": files}
         )
 
         assert "test.txt" in stored

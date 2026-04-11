@@ -193,7 +193,6 @@ class Context:
         *,
         task_id: str | None = None,
         origin_request_id: str | None = None,
-        parent_address: tuple[int, ...] = (),
     ):
         self._fastmcp: weakref.ref[FastMCP] = weakref.ref(fastmcp)
         self._session: ServerSession | None = session  # For state ops during init
@@ -203,12 +202,6 @@ class Context:
         self._origin_request_id: str | None = origin_request_id
         # Request-scoped state for non-serializable values (serializable=False)
         self._request_state: dict[str, Any] = {}
-        # Accumulated address of the current server's mount point as seen
-        # from the outermost root. For a single-server setup this is ().
-        # When calls cross a server boundary via FastMCPProvider, the
-        # parent's address segment is prepended so inner servers know
-        # their global position without walking up to the root.
-        self._parent_address: tuple[int, ...] = parent_address
 
     @property
     def is_background_task(self) -> bool:
@@ -257,18 +250,6 @@ class Context:
             raise RuntimeError("FastMCP instance is no longer available")
         return fastmcp
 
-    @property
-    def parent_address(self) -> tuple[int, ...]:
-        """Accumulated address prefix from parent servers.
-
-        For a single-server setup this is always ``()``. When a call
-        crosses into a mounted server via ``FastMCPProvider``, the
-        parent's address segment is prepended so the inner server's
-        tools can compute their full global address as
-        ``parent_address + local_address``.
-        """
-        return self._parent_address
-
     async def __aenter__(self) -> Context:
         """Enter the context manager and set this context as the current context."""
         # Inherit request-scoped state from parent context so middleware
@@ -276,11 +257,6 @@ class Context:
         parent = _current_context.get(None)
         if parent is not None:
             self._request_state = parent._request_state
-            # Inherit parent_address from a parent context if our own is
-            # the default empty tuple (so middleware and nested re-entries
-            # see the accumulated address without explicit propagation).
-            if self._parent_address == () and parent._parent_address != ():
-                self._parent_address = parent._parent_address
 
         # Always set this context and save the token
         token = _current_context.set(self)

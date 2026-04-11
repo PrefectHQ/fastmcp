@@ -181,6 +181,19 @@ class AggregateProvider(Provider):
                 return r
         return None
 
+    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Query all child providers for a tool matching a hash."""
+        results = await gather(
+            *[p.get_tool_by_hash(tool_hash, tool_name) for p in self.providers],
+            return_exceptions=True,
+        )
+        for r in results:
+            if isinstance(r, BaseException):
+                continue
+            if r is not None:
+                return r
+        return None
+
     # -------------------------------------------------------------------------
     # Resources
     # -------------------------------------------------------------------------

@@ -338,13 +338,6 @@ class FastMCP(
             on_duplicate=self._on_duplicate
         )
 
-        # Internal address registry (and its reverse-hash maps). Built lazily
-        # on first access by walking the provider graph; invalidated whenever
-        # a new provider is added so dynamic composition stays correct.
-        self._address_registry: dict[tuple[int, ...], Provider] | None = None
-        self._reverse_hash_map: dict[str, Any] | None = None
-        self._callable_map: dict[int, Any] = {}
-
         # Add providers using AggregateProvider's add_provider
         # LocalProvider is always first (no namespace)
         self.add_provider(self._local_provider)
@@ -500,90 +493,23 @@ class FastMCP(
                 - Prompts become "namespace_promptname"
         """
         super().add_provider(provider, namespace=namespace)
-        # Adding a provider changes the shape of the address graph; drop the
-        # cached registry and reverse-hash maps so they rebuild on next access.
-        self._address_registry = None
-        self._reverse_hash_map = None
-        self._callable_map = {}
 
-    @property
-    def address_registry(self) -> dict[tuple[int, ...], Provider]:
-        """Lazy address → provider map for the full provider graph.
+    def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
+        """Replace placeholder Prefab URIs with per-tool hashed ones.
 
-        Built on first access by walking ``self.providers`` and assigning
-        each mount point its positional integer index. The result is a
-        pure dict — building it has no side effects. Invalidated when
-        ``add_provider`` runs.
-        """
-        if self._address_registry is None:
-            from fastmcp.server.providers.addressing import build_address_registry
-
-            self._address_registry = build_address_registry(self)
-        return self._address_registry
-
-    @property
-    def reverse_hash_map(self) -> dict[str, Any]:
-        """Lazy hash → ``HashEntry`` reverse map for backend tool dispatch.
-
-        Built alongside the address registry. Each entry maps a tool's
-        deterministic hash to ``(address, provider, tool_name, fn)`` so
-        the dispatcher and ``read_resource`` can do O(1) lookups by hash.
-        """
-        if self._reverse_hash_map is None:
-            from fastmcp.server.providers.addressing import build_reverse_hash_map
-
-            maps = build_reverse_hash_map(self.address_registry)
-            self._reverse_hash_map = maps.by_hash
-            self._callable_map = maps.by_callable
-        return self._reverse_hash_map
-
-    @property
-    def callable_map(self) -> dict[int, Any]:
-        """Lazy ``id(fn) → HashEntry`` map for peer-tool lookup by callable.
-
-        Used by the Prefab resolver to find a peer tool's address by
-        function identity — no name ambiguity, no dispatch-time walk.
-        """
-        _ = self.reverse_hash_map  # triggers build if needed
-        return getattr(self, "_callable_map", {})
-
-    async def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
-        """Replace placeholder Prefab URIs with mount-address-derived ones.
-
-        Walks the registry, asks each provider for its display-name list
-        of tools, and for any tool that came back with the prefab
-        placeholder URI substitutes a per-tool hashed URI. Originals
-        stay pristine — the substitution produces ``model_copy`` views.
-        Tools without a prefab marker pass through unchanged.
-
-        The walk only pays its cost when prefab tools exist; for servers
-        that don't use Prefab UI it's effectively a no-op pass through
-        the result list.
+        For each tool whose ``meta.ui.resourceUri`` is the placeholder,
+        reads the tool's stored hash from ``meta.fastmcp._tool_hash``
+        and rewrites the URI to the per-tool form. Also strips CSP from
+        tool meta (it belongs on the resource). Produces ``model_copy``
+        views — originals are untouched.
         """
         from fastmcp.server.providers.prefab_synthesis import (
             _is_prefab_tool,
-            rewrite_tool_meta_for_address,
+            rewrite_tool_meta_for_wire,
         )
 
-        if not any(_is_prefab_tool(t) for t in tools):
-            return tools
-
-        # Build name → address by querying each leaf provider once.
-        name_to_address: dict[str, tuple[int, ...]] = {}
-        for address, provider in self.address_registry.items():
-            try:
-                provider_tools = await provider.list_tools()
-            except Exception:
-                continue
-            for t in provider_tools:
-                if _is_prefab_tool(t):
-                    name_to_address.setdefault(t.name, address)
-
         return [
-            rewrite_tool_meta_for_address(t, name_to_address.get(t.name, ()))
-            if _is_prefab_tool(t)
-            else t
-            for t in tools
+            rewrite_tool_meta_for_wire(t) if _is_prefab_tool(t) else t for t in tools
         ]
 
     # -------------------------------------------------------------------------
@@ -705,7 +631,7 @@ class FastMCP(
             # provider that yielded it, computes the hashed URI, and
             # produces a model_copy with the URI in place. Original
             # Tool objects are not mutated.
-            tools = await self._rewrite_prefab_uris(tools)
+            tools = self._rewrite_prefab_uris(tools)
 
             skip_auth, token = _get_auth_context()
             authorized: list[Tool] = []
@@ -1276,22 +1202,23 @@ class FastMCP(
                     ),
                 )
 
+            # Core logic: find and execute tool
             with server_span(
                 f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
-                tool: Tool | None = None
+                # Try normal display-name resolution first.
+                tool: Tool | None = await self.get_tool(name, version=version)
 
-                # Hashed-name dispatch — bypass transforms via the registry.
-                hashed = parse_hashed_backend_name(name)
-                if hashed is not None:
-                    digest, local_name = hashed
-                    entry = self.reverse_hash_map.get(digest)
-                    if entry is not None and entry.tool_name == local_name:
-                        candidate = await entry.provider._get_tool(
-                            local_name, version=version
-                        )
-                        if candidate is not None and _is_app_visible(candidate):
-                            tool = candidate
+                # If that fails, try hashed-name dispatch. This walks
+                # the provider tree recursively (same pattern as the old
+                # get_app_tool) looking for a tool whose stored hash
+                # matches the parsed prefix.
+                if tool is None:
+                    hashed = parse_hashed_backend_name(name)
+                    if hashed is not None:
+                        digest, local_name = hashed
+                        tool = await self.get_tool_by_hash(digest, local_name)
+                        if tool is not None:
                             # Auth still applies on the bypass path.
                             skip_auth, token = _get_auth_context()
                             if not skip_auth and tool.auth is not None:
@@ -1303,10 +1230,6 @@ class FastMCP(
                                     raise NotFoundError(
                                         f"Unknown tool: {name!r}"
                                     ) from None
-
-                # Display-name path: normal aggregation through transforms.
-                if tool is None:
-                    tool = await self.get_tool(name, version=version)
 
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")

@@ -293,28 +293,13 @@ class TestResolveToolRef:
         assert isinstance(result, ResolvedTool)
         assert result.name == "save_contact"
 
-    async def test_resolve_callable_via_callable_map(self):
-        """When a Context is active, the resolver looks up the peer tool
-        by callable identity in the server's callable map and produces
-        a hashed backend name."""
+    def test_resolve_string_with_app_name(self):
+        """With an app name the resolver produces a hashed backend name."""
         from fastmcp.server.providers.addressing import hashed_backend_name
 
-        app = FastMCPApp("contacts")
-
-        @app.tool()
-        def save_contact(name: str) -> str:
-            return name
-
-        server = FastMCP("Platform")
-        server.add_provider(app)
-
-        import fastmcp.server.context
-
-        async with fastmcp.server.context.Context(fastmcp=server):
-            result = _make_resolver()(save_contact)
-
+        result = _make_resolver("contacts")("save_contact")
         assert isinstance(result, ResolvedTool)
-        assert result.name == hashed_backend_name((0,), "save_contact")
+        assert result.name == hashed_backend_name("contacts", "save_contact")
 
     def test_resolve_callable_no_context(self):
         """Without context, callables resolve to their bare __name__."""
@@ -486,7 +471,7 @@ class TestCallToolAppRouting:
         server.add_provider(app)
 
         result = await server.call_tool(
-            hashed_backend_name((0,), "save"), {"name": "alice"}
+            hashed_backend_name("contacts", "save"), {"name": "alice"}
         )
         assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
@@ -520,7 +505,7 @@ class TestCallToolAppRouting:
         server.add_provider(app, namespace="crm")
 
         result = await server.call_tool(
-            hashed_backend_name((0,), "save_contact"), {"name": "alice"}
+            hashed_backend_name("crm", "save_contact"), {"name": "alice"}
         )
         assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
@@ -557,7 +542,7 @@ class TestCallToolAppRouting:
         token = _current_transport.set("streamable-http")
         try:
             with pytest.raises(NotFoundError):
-                await server.call_tool(hashed_backend_name((0,), "secret"), {})
+                await server.call_tool(hashed_backend_name("test", "secret"), {})
         finally:
             _current_transport.reset(token)
 
@@ -583,10 +568,10 @@ class TestCallToolAppRouting:
         server.add_provider(billing)  # → address (1,)
 
         r1 = await server.call_tool(
-            hashed_backend_name((0,), "save"), {"name": "alice"}
+            hashed_backend_name("contacts", "save"), {"name": "alice"}
         )
         r2 = await server.call_tool(
-            hashed_backend_name((1,), "save"), {"amount": "100"}
+            hashed_backend_name("billing", "save"), {"amount": "100"}
         )
 
         assert r1.content[0].text == "contact: alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
@@ -664,7 +649,7 @@ class TestAppOnlyToolFiltering:
         from fastmcp.server.providers.addressing import hashed_backend_name
 
         result = await server.call_tool(
-            hashed_backend_name((0,), "save"), {"name": "alice"}
+            hashed_backend_name("contacts", "save"), {"name": "alice"}
         )
         assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
@@ -820,10 +805,10 @@ class TestComposition:
 
         # CRM is at address (0,), billing at (1,) — registration order.
         r1 = await server.call_tool(
-            hashed_backend_name((0,), "save_contact"), {"name": "alice"}
+            hashed_backend_name("CRM", "save_contact"), {"name": "alice"}
         )
         r2 = await server.call_tool(
-            hashed_backend_name((1,), "create_invoice"), {"amount": 100}
+            hashed_backend_name("Billing", "create_invoice"), {"amount": 100}
         )
 
         assert r1.content[0].text == "alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
@@ -903,7 +888,7 @@ class TestAppIntegration:
         # Call the backend tool via its hashed address — bypasses namespace
         # transforms and visibility filtering by going through the registry.
         backend_result = await server.call_tool(
-            hashed_backend_name((0,), "save_contact"),
+            hashed_backend_name("contacts", "save_contact"),
             {"name": "Alice", "email": "alice@example.com"},
         )
         result_text = backend_result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]

@@ -50,56 +50,30 @@ F = TypeVar("F", bound=Callable[..., Any])
 # ---------------------------------------------------------------------------
 
 
-def _make_resolver() -> Any:
-    """Create a CallTool resolver that turns peer-tool refs into hashed names.
+def _make_resolver(app_name: str | None = None) -> Any:
+    """Create a CallTool resolver that prefixes tool names with a hash.
 
-    Prefab components reference other tools via ``on_click=other_tool``.
-    When a Prefab UI runs and serializes its content, this resolver
-    looks up each referenced tool's address via the current server's
-    callable map (``id(fn) → HashEntry``) and formats the universal
-    backend-tool name ``<hash>_<local_name>``.
+    Structurally identical to the old ``___`` resolver — ``app_name`` is
+    the FastMCPApp's name, known at serialization time from the tool's
+    ``meta["fastmcp"]["app"]`` tag. The only change is the wire format:
+    ``<hash>_<local_name>`` instead of ``<app_name>___<local_name>``.
 
-    For function references, the lookup is by callable identity — no
-    name ambiguity, no mount_path needed. For string references, we
-    fall back to name-based lookup in the hash-keyed reverse map.
-
-    Calls coming back through the dispatcher recognize the hashed name,
-    look it up via the server's reverse-hash map, and route directly to
-    the owning provider — bypassing the transform chain entirely.
+    The dispatcher recognizes the hashed form and routes it via
+    ``get_tool_by_hash`` which walks the provider tree recursively —
+    same pattern as ``get_app_tool``.
     """
     from fastmcp.server.providers.addressing import hashed_backend_name
+
+    def _prefix(local_name: str) -> str:
+        if app_name:
+            return hashed_backend_name(app_name, local_name)
+        return local_name
 
     def _resolve_tool_ref(fn: Any) -> Any:
         from prefab_ui.app import ResolvedTool
 
-        from fastmcp.server.context import _current_context
-
-        # Try to look up the callable directly in the server's callable map.
-        ctx = _current_context.get(None)
-        server = ctx.fastmcp if ctx is not None else None
-        callable_map = server.callable_map if server is not None else {}
-
-        def _format_by_callable(func: Any, fallback_name: str) -> ResolvedTool:
-            entry = callable_map.get(id(func))
-            if entry is not None:
-                parent = ctx._parent_address if ctx is not None else ()
-                global_addr = (*parent, *entry.address)
-                return ResolvedTool(
-                    name=hashed_backend_name(global_addr, entry.tool_name)
-                )
-            # Not in the callable map — return bare name (root tool).
-            return ResolvedTool(name=fallback_name)
-
         if isinstance(fn, str):
-            # String ref — can't do callable lookup. Check the hash
-            # reverse map by name.
-            if server is not None:
-                parent = ctx._parent_address if ctx is not None else ()
-                for entry in server.reverse_hash_map.values():
-                    if entry.tool_name == fn:
-                        global_addr = (*parent, *entry.address)
-                        return ResolvedTool(name=hashed_backend_name(global_addr, fn))
-            return ResolvedTool(name=fn)
+            return ResolvedTool(name=_prefix(fn))
 
         fmeta: Any = None
         try:
@@ -112,11 +86,11 @@ def _make_resolver() -> Any:
         if fmeta is not None:
             name: str | None = getattr(fmeta, "name", None)
             if name is not None:
-                return _format_by_callable(fn, name)
+                return ResolvedTool(name=_prefix(name))
 
         fn_name = getattr(fn, "__name__", None)
         if fn_name is not None:
-            return _format_by_callable(fn, fn_name)
+            return ResolvedTool(name=_prefix(fn_name))
 
         raise ValueError(f"Cannot resolve tool reference: {fn!r}")
 
@@ -239,11 +213,15 @@ class FastMCPApp(Provider):
                 raise ValueError(f"Cannot determine tool name for {fn!r}")
 
             from fastmcp.apps.config import AppConfig, app_config_to_meta_dict
+            from fastmcp.server.providers.addressing import hash_tool
 
             app_config = AppConfig(visibility=visibility)
             meta: dict[str, Any] = {
                 "ui": app_config_to_meta_dict(app_config),
-                "fastmcp": {"app": self.name},
+                "fastmcp": {
+                    "app": self.name,
+                    "_tool_hash": hash_tool(self.name, resolved_name),
+                },
             }
 
             tool_obj = Tool.from_function(
@@ -326,14 +304,12 @@ class FastMCPApp(Provider):
 
         def _register(fn: F, tool_name: str | None) -> F:
             from fastmcp.apps.config import AppConfig, app_config_to_meta_dict
+            from fastmcp.server.providers.addressing import hash_tool
             from fastmcp.server.providers.local_provider.decorators.tools import (
                 PREFAB_RENDERER_URI,
             )
 
-            # Stamp the placeholder URI; the per-tool renderer resource is
-            # synthesized at list_resources / read_resource time from the
-            # tool's mount-point address. No singleton resource gets
-            # registered here.
+            resolved = tool_name or getattr(fn, "__name__", None) or "unknown"
             app_config = AppConfig(
                 resource_uri=PREFAB_RENDERER_URI,
                 visibility=["model"],
@@ -341,7 +317,10 @@ class FastMCPApp(Provider):
 
             meta: dict[str, Any] = {
                 "ui": app_config_to_meta_dict(app_config),
-                "fastmcp": {"app": self.name},
+                "fastmcp": {
+                    "app": self.name,
+                    "_tool_hash": hash_tool(self.name, resolved),
+                },
             }
 
             tool_obj = Tool.from_function(
