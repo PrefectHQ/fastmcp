@@ -387,7 +387,7 @@ def _schema_to_type(
     if not schema:
         return object
 
-    if "type" not in schema and "properties" in schema:
+    if "type" not in schema and "properties" in schema and "allOf" not in schema:
         return _create_dataclass(schema, schema.get("title", "<unknown>"), schemas)
 
     # Handle references first
@@ -440,6 +440,79 @@ def _schema_to_type(
                 return Union[(*types, type(None))]  # type: ignore
             else:
                 return Union[tuple(types)]  # type: ignore # noqa: UP007
+
+    # Handle allOf (schema intersection / composition).
+    # Flatten all sub-schemas into a single merged object schema.
+    if "allOf" in schema:
+        merged: dict[str, Any] = {}
+        merged_properties: dict[str, Any] = {}
+        merged_required: list[str] = []
+
+        def _collect_allof(sub: Any) -> None:
+            """Recursively collect properties from a sub-schema."""
+            if isinstance(sub, bool):
+                return
+            if "$ref" in sub:
+                sub = dict(_resolve_ref(sub["$ref"], schemas))
+            # Recurse into nested allOf
+            if "allOf" in sub:
+                for nested in sub["allOf"]:
+                    _collect_allof(nested)
+            merged_properties.update(sub.get("properties", {}))
+            merged_required.extend(sub.get("required", []))
+            for key in ("title", "description", "additionalProperties"):
+                if key in sub and key not in merged:
+                    merged[key] = sub[key]
+
+        # Include sibling properties/required from the schema itself,
+        # not just from allOf children.  This handles schemas like
+        # {"properties": {"local": ...}, "allOf": [{"properties": {"inherited": ...}}]}
+        merged_properties.update(schema.get("properties", {}))
+        merged_required.extend(schema.get("required", []))
+
+        for sub in schema["allOf"]:
+            _collect_allof(sub)
+        if merged_properties:
+            merged["type"] = "object"
+            merged["properties"] = merged_properties
+            if merged_required:
+                merged["required"] = list(dict.fromkeys(merged_required))
+            return _schema_to_type(merged, schemas)
+        # allOf with no mergeable properties — fall through to Any
+
+    # Handle oneOf (exactly-one-of union).
+    # Treat like anyOf for type construction — Pydantic's Union
+    # does "first match" which is a reasonable approximation.
+    if "oneOf" in schema:
+        types: list[type | Any] = []
+        for subschema in schema["oneOf"]:
+            # Same dict special-case as the anyOf handler: detect
+            # map-like objects so they become dict[str, X] instead
+            # of empty dataclasses that discard key/value data.
+            if (
+                isinstance(subschema, dict)
+                and subschema.get("type") == "object"
+                and not subschema.get("properties")
+                and subschema.get("additionalProperties")
+            ):
+                additional_props = subschema["additionalProperties"]
+                if additional_props is True:
+                    types.append(dict[str, Any])
+                else:
+                    value_type = _schema_to_type(additional_props, schemas)
+                    types.append(dict[str, value_type])  # type: ignore
+            else:
+                types.append(_schema_to_type(subschema, schemas))
+        has_null = type(None) in types
+        types = [t for t in types if t is not type(None)]
+        if len(types) == 0:
+            return type(None)
+        elif len(types) == 1:
+            return types[0] | None if has_null else types[0]  # type: ignore
+        else:
+            if has_null:
+                return Union[(*types, type(None))]  # type: ignore
+            return Union[tuple(types)]  # type: ignore # noqa: UP007
 
     schema_type = schema.get("type")
     if not schema_type:
