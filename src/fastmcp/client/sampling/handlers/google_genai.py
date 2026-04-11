@@ -329,7 +329,9 @@ def _response_to_create_message_result(
             and any(getattr(p, "thought", False) for p in candidate.content.parts)
         )
         if has_thoughts:
-            msg = "Model returned only thinking/reasoning content with no response text."
+            msg = (
+                "Model returned only thinking/reasoning content with no response text."
+            )
         else:
             msg = f"No content in response (finish_reason={candidate.finish_reason})"
         raise ValueError(msg)

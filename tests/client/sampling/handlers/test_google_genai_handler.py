@@ -374,10 +374,10 @@ def test_response_to_result_with_tools_text_only():
     assert result.model == "gemini-2.0-flash"
     assert result.stopReason == "endTurn"
     assert isinstance(result.content, list)
-    assert len(result.content) == 1
-    assert result.content[0].type == "text"
-    assert isinstance(result.content[0], TextContent)
-    assert result.content[0].text == "Here's the answer"
+    assert len(result.content) == 1  # ty: ignore[invalid-argument-type]
+    assert result.content[0].type == "text"  # ty: ignore[not-subscriptable]
+    assert isinstance(result.content[0], TextContent)  # ty: ignore[not-subscriptable]
+    assert result.content[0].text == "Here's the answer"  # ty: ignore[not-subscriptable]
 
 
 def test_response_to_result_with_tools_function_call():
@@ -396,7 +396,7 @@ def test_response_to_result_with_tools_function_call():
 
     assert result.stopReason == "toolUse"
     assert isinstance(result.content, list)
-    assert len(result.content) == 1
+    assert len(result.content) == 1  # ty: ignore[invalid-argument-type]
     tool_use = result.content[0]
     assert isinstance(tool_use, ToolUseContent)
     assert tool_use.type == "tool_use"
@@ -423,7 +423,7 @@ def test_response_to_result_with_tools_mixed_content():
 
     assert result.stopReason == "toolUse"
     assert isinstance(result.content, list)
-    assert len(result.content) == 2
+    assert len(result.content) == 2  # ty: ignore[invalid-argument-type]
     text_content = result.content[0]
     assert isinstance(text_content, TextContent)
     assert text_content.type == "text"
@@ -483,9 +483,9 @@ def test_thought_parts_filtered_on_tool_path():
 
     result = _response_to_result_with_tools(mock_response, model="gemini-2.5-flash")
 
-    assert len(result.content) == 1
-    assert isinstance(result.content[0], TextContent)
-    assert result.content[0].text == "Here is the real answer"
+    assert len(result.content) == 1  # ty: ignore[invalid-argument-type]
+    assert isinstance(result.content[0], TextContent)  # ty: ignore[not-subscriptable]
+    assert result.content[0].text == "Here is the real answer"  # ty: ignore[not-subscriptable]
 
 
 def test_thought_only_response_on_tool_path_raises():
@@ -570,12 +570,12 @@ def test_normal_response_text_and_function_call():
 
     result = _response_to_result_with_tools(mock_response, model="gemini-2.5-flash")
 
-    assert len(result.content) == 2
-    assert isinstance(result.content[0], TextContent)
-    assert result.content[0].text == "Let me look that up."
-    assert isinstance(result.content[1], ToolUseContent)
-    assert result.content[1].name == "lookup"
-    assert result.content[1].input == {"q": "test"}
+    assert len(result.content) == 2  # ty: ignore[invalid-argument-type]
+    assert isinstance(result.content[0], TextContent)  # ty: ignore[not-subscriptable]
+    assert result.content[0].text == "Let me look that up."  # ty: ignore[not-subscriptable]
+    assert isinstance(result.content[1], ToolUseContent)  # ty: ignore[not-subscriptable]
+    assert result.content[1].name == "lookup"  # ty: ignore[not-subscriptable]
+    assert result.content[1].input == {"q": "test"}  # ty: ignore[not-subscriptable]
     assert result.stopReason == "toolUse"
 
 
@@ -595,7 +595,7 @@ def test_thought_with_function_call_keeps_function_call():
 
     result = _response_to_result_with_tools(mock_response, model="gemini-2.5-flash")
 
-    assert len(result.content) == 1
-    assert isinstance(result.content[0], ToolUseContent)
-    assert result.content[0].name == "get_weather"
+    assert len(result.content) == 1  # ty: ignore[invalid-argument-type]
+    assert isinstance(result.content[0], ToolUseContent)  # ty: ignore[not-subscriptable]
+    assert result.content[0].name == "get_weather"  # ty: ignore[not-subscriptable]
     assert result.stopReason == "toolUse"
