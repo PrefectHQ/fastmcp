@@ -162,6 +162,15 @@ python-version = "3.10"
 # Some code uses `# ty: ignore[invalid-argument-type]` for this limitation.
 # TODO: Remove these ignores once ty supports union narrowing
 
+# Promote rules from default-ignore to warn (becomes error via error-on-warning)
+division-by-zero = "warn"
+possibly-missing-attribute = "warn"
+possibly-missing-import = "warn"
+possibly-unresolved-reference = "warn"
+unsupported-dynamic-base = "warn"
+unsupported-operator = "warn"
+unused-ignore-comment = "warn"
+
 [tool.ty.terminal]
 error-on-warning = true
 
