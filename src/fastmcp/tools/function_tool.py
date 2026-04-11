@@ -222,7 +222,9 @@ class FunctionTool(Tool):
             name=metadata.name or parsed_fn.name,
             version=str(metadata.version) if metadata.version is not None else None,
             title=metadata.title,
-            description=metadata.description or parsed_fn.description,
+            description=metadata.description
+            if metadata.description is not None
+            else parsed_fn.description,
             icons=metadata.icons,
             parameters=parsed_fn.input_schema,
             output_schema=final_output_schema,

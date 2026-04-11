@@ -152,7 +152,11 @@ class FunctionPrompt(Prompt):
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as prompts")
 
-        description = metadata.description or inspect.getdoc(fn)
+        description = (
+            metadata.description
+            if metadata.description is not None
+            else inspect.getdoc(fn)
+        )
 
         # Normalize task to TaskConfig and validate
         task_value = metadata.task

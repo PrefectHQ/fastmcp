@@ -181,11 +181,15 @@ async def run_command(
             config = load_mcp_server_config(config_path)
 
             # Merge deployment config with CLI arguments (CLI takes precedence)
-            transport = transport or config.deployment.transport
-            host = host or config.deployment.host
-            port = port or config.deployment.port
-            path = path or config.deployment.path
-            log_level = log_level or config.deployment.log_level
+            transport = (
+                transport if transport is not None else config.deployment.transport
+            )
+            host = host if host is not None else config.deployment.host
+            port = port if port is not None else config.deployment.port
+            path = path if path is not None else config.deployment.path
+            log_level = (
+                log_level if log_level is not None else config.deployment.log_level
+            )
             server_args = (
                 server_args if server_args is not None else config.deployment.args
             )
@@ -234,15 +238,17 @@ async def run_command(
         return
 
     kwargs = {}
-    if transport:
+    if transport is not None:
         kwargs["transport"] = transport
-    if host:
-        kwargs["host"] = host
-    if port:
-        kwargs["port"] = port
-    if path:
-        kwargs["path"] = path
-    if log_level:
+    # Only pass HTTP-specific options for non-stdio transports
+    if transport != "stdio":
+        if host is not None:
+            kwargs["host"] = host
+        if port is not None:
+            kwargs["port"] = port
+        if path is not None:
+            kwargs["path"] = path
+    if log_level is not None:
         kwargs["log_level"] = log_level
     if stateless:
         kwargs["stateless"] = True
@@ -310,9 +316,9 @@ async def run_v1_server_async(
         port: Port to bind to
         transport: Transport protocol to use
     """
-    if host:
+    if host is not None:
         server.settings.host = host
-    if port:
+    if port is not None:
         server.settings.port = port
 
     match transport:

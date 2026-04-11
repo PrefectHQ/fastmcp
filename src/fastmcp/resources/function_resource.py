@@ -196,7 +196,9 @@ class FunctionResource(Resource):
             name=func_name,
             version=str(metadata.version) if metadata.version is not None else None,
             title=metadata.title,
-            description=metadata.description or inspect.getdoc(fn),
+            description=metadata.description
+            if metadata.description is not None
+            else inspect.getdoc(fn),
             icons=metadata.icons,
             mime_type=resolved_mime or "text/plain",
             tags=metadata.tags or set(),
