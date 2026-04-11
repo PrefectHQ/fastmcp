@@ -360,7 +360,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             else None
         )
         self._upstream_revocation_endpoint: str | None = upstream_revocation_endpoint
-        self._default_scope_str: str = " ".join(self.required_scopes or [])
+        self._default_scope_str: str = " ".join(
+            valid_scopes or self.required_scopes or []
+        )
 
         # Store redirect configuration
         if not redirect_path:
