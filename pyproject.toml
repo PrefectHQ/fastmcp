@@ -173,13 +173,20 @@ ignore = [
     "SIM102",  # Dont require combining if statements
 ]
 extend-select = [
-    "B",   # flake8-bugbear: Catches actual bugs like mutable default arguments
-    "C4",  # flake8-comprehensions: More efficient/readable comprehensions
-    "I",   # flake8-builtins: Catches builtins that are not explicitly imported
-    "PIE", # flake8-pie: More idiomatic Python code
-    "RUF", # Ruff-specific: Modern best practices unique to Ruff
-    "SIM", # flake8-simplify: Simplifies verbose code patterns
-    "UP",  # flake8-unused-imports: Catches unused imports
+    "B",    # flake8-bugbear: Catches actual bugs like mutable default arguments
+    "C4",   # flake8-comprehensions: More efficient/readable comprehensions
+    "FA",   # flake8-future-annotations: Enforce from __future__ import annotations
+    "FLY",  # flynt: Static string joins that should be f-strings
+    "I",    # isort: Import sorting
+    "LOG",  # flake8-logging: Catches logging module misuse
+    "PIE",  # flake8-pie: More idiomatic Python code
+    "PLE",  # pylint-error: Catches actual errors (invalid operations, syntax issues)
+    "RSE",  # flake8-raise: Unnecessary parentheses on raise
+    "RUF",  # Ruff-specific: Modern best practices unique to Ruff
+    "SIM",  # flake8-simplify: Simplifies verbose code patterns
+    "SLOT", # flake8-slots: Enforce __slots__ where applicable
+    "TID",  # flake8-tidy-imports: Banned imports and relative import enforcement
+    "UP",   # pyupgrade: Modernize syntax for newer Python versions
 ]
 
 [tool.ruff.lint.isort]
@@ -190,11 +197,18 @@ known-first-party = ["fastmcp"]
 # allow imports not at the top of the file
 "src/fastmcp/__init__.py" = ["E402"]
 "!src/**.py" = [ # Only enforce extended ruff rules for code in src/
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "PIE", # flake8-pie
-    "RUF", # Ruff-specific
-    "SIM", # flake8-simplify
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "FA",   # flake8-future-annotations
+    "FLY",  # flynt
+    "LOG",  # flake8-logging
+    "PIE",  # flake8-pie
+    "PLE",  # pylint-error
+    "RSE",  # flake8-raise
+    "RUF",  # Ruff-specific
+    "SIM",  # flake8-simplify
+    "SLOT", # flake8-slots
+    "TID",  # flake8-tidy-imports
 ]
 
 
