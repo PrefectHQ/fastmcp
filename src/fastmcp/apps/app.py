@@ -62,10 +62,17 @@ def _make_resolver(app_name: str | None = None) -> Any:
     ``get_tool_by_hash`` which walks the provider tree recursively —
     same pattern as ``get_app_tool``.
     """
-    from fastmcp.server.providers.addressing import hashed_backend_name
+    from fastmcp.server.providers.addressing import (
+        hashed_backend_name,
+        parse_hashed_backend_name,
+    )
 
     def _prefix(local_name: str) -> str:
         if app_name:
+            # Don't re-hash an already-addressed name (same guard the
+            # old ___ resolver had with "___" not in name).
+            if parse_hashed_backend_name(local_name) is not None:
+                return local_name
             return hashed_backend_name(app_name, local_name)
         return local_name
 
