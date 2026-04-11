@@ -18,6 +18,7 @@ from fastmcp.server.dependencies import (
     without_injected_parameters,
 )
 from fastmcp.tools.base import ToolResult
+from fastmcp.tools.docstring_parsing import parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
@@ -164,9 +165,9 @@ class ParsedFunction:
                             f"Parameter '{arg_name}' in exclude_args must have a default value."
                         )
 
-        # collect name and doc before we potentially modify the function
+        # collect name and docstring before we potentially modify the function
         fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
-        fn_doc = inspect.getdoc(fn)
+        fn_description, docstring_params = parse_docstring(fn)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
@@ -194,6 +195,18 @@ class ParsedFunction:
         input_schema = compress_schema(
             input_schema, prune_params=prune_params, prune_titles=True
         )
+
+        # Inject parameter descriptions from the docstring into the schema.
+        # Explicit annotations (Field(description=...), Annotated[x, "..."])
+        # already have a "description" key and take precedence.
+        if docstring_params:
+            properties = input_schema.get("properties", {})
+            for param_name, param_desc in docstring_params.items():
+                if (
+                    param_name in properties
+                    and "description" not in properties[param_name]
+                ):
+                    properties[param_name]["description"] = param_desc
 
         output_schema = None
         # Get the return annotation from the signature
@@ -282,7 +295,7 @@ class ParsedFunction:
         return cls(
             fn=fn,
             name=fn_name,
-            description=fn_doc,
+            description=fn_description,
             input_schema=input_schema,
             output_schema=output_schema or None,
             return_type=original_output_type,
