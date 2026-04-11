@@ -13,6 +13,7 @@ from mcp.types import TextContent
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ToolError
 
 
 class UserProfile(BaseModel):
@@ -130,8 +131,13 @@ class TestPydanticModelArguments:
             assert "Alice" in result.content[0].text
             assert "30" in result.content[0].text
 
-    async def test_pydantic_model_with_stringified_json_no_strict(self):
-        """Test if stringified JSON is accepted for Pydantic models without strict validation."""
+    async def test_stringified_json_not_auto_parsed_for_pydantic_models(self):
+        """Stringified JSON is rejected for Pydantic model parameters.
+
+        Some LLM clients send stringified JSON (a JSON string containing a
+        JSON object) instead of a proper JSON object.  FastMCP does not
+        auto-parse these; callers get a validation error.
+        """
         mcp = FastMCP("TestServer", strict_input_validation=False)
 
         @mcp.tool
@@ -140,33 +146,12 @@ class TestPydanticModelArguments:
             return f"Created user {profile.name}, age {profile.age}"
 
         async with Client(mcp) as client:
-            # Some LLM clients send stringified JSON instead of actual JSON
             stringified = json.dumps(
                 {"name": "Bob", "age": 25, "email": "bob@example.com"}
             )
 
-            # This test verifies whether we handle stringified JSON
-            error_msg = ""
-            try:
-                result = await client.call_tool("create_user", {"profile": stringified})
-                # If this succeeds, we're handling stringified JSON
-                assert isinstance(result.content[0], TextContent)
-                assert "Bob" in result.content[0].text
-                stringified_json_works = True
-            except Exception as e:
-                # If this fails, we're not handling stringified JSON
-                stringified_json_works = False
-                error_msg = str(e)
-
-            # Document the behavior - we want to know if this works or not
-            if stringified_json_works:
-                # This is the desired behavior
-                pass
-            else:
-                # This means stringified JSON doesn't work - document it
-                assert (
-                    "validation" in error_msg.lower() or "invalid" in error_msg.lower()
-                )
+            with pytest.raises(ToolError, match="validation"):
+                await client.call_tool("create_user", {"profile": stringified})
 
     async def test_pydantic_model_with_coercion(self):
         """Pydantic models should benefit from coercion without strict validation."""
