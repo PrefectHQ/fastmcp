@@ -752,6 +752,15 @@ def _create_client_factory(
     """
     if isinstance(target, Client):
         client = target
+
+        # Plain Clients used as proxy backends also need header forwarding,
+        # same as ProxyClient (which sets this in __init__).
+        from fastmcp.client.transports.http import StreamableHttpTransport
+        from fastmcp.client.transports.sse import SSETransport
+
+        if isinstance(client.transport, StreamableHttpTransport | SSETransport):
+            client.transport.forward_incoming_headers = True
+
         if client.is_connected() and type(client) is ProxyClient:
             logger.info(
                 "Proxy detected connected ProxyClient - creating fresh sessions for each "
