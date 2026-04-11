@@ -46,6 +46,10 @@ if TYPE_CHECKING:
 
 ResultT = TypeVar("ResultT")
 
+# Maximum number of consecutive final_response validation failures before
+# we abort instead of burning more tokens on a model that can't satisfy the schema.
+_MAX_VALIDATION_RETRIES = 3
+
 # Simplified tool choice type - just the mode string instead of the full MCP object
 ToolChoiceOption = Literal["auto", "required", "none"]
 
@@ -615,6 +619,7 @@ async def sample_impl(
     current_messages: str | Sequence[str | SamplingMessage] = messages
 
     text_response_retries = 0
+    consecutive_validation_failures = 0
 
     for _iteration in range(max_iterations):
         step = await sample_step_impl(
@@ -631,9 +636,11 @@ async def sample_impl(
         )
 
         # Check for final_response tool call for structured output
+        had_final_response = False
         if result_type is not None and result_type is not str and step.is_tool_use:
             for tool_call in step.tool_calls:
                 if tool_call.name == "final_response":
+                    had_final_response = True
                     # Validate and return the structured result
                     type_adapter = get_cached_typeadapter(result_type)
 
@@ -660,6 +667,13 @@ async def sample_impl(
                             history=step.history,
                         )
                     except ValidationError as e:
+                        consecutive_validation_failures += 1
+                        if consecutive_validation_failures > _MAX_VALIDATION_RETRIES:
+                            raise RuntimeError(
+                                f"Structured output validation failed "
+                                f"{consecutive_validation_failures} consecutive "
+                                f"times for type {result_type.__name__}: {e}"
+                            ) from e
                         # Validation failed - add error as tool result
                         step.history.append(
                             SamplingMessage(
@@ -682,6 +696,10 @@ async def sample_impl(
                                 ],
                             )
                         )
+
+        # The LLM called tools but not final_response — reset validation counter
+        if not had_final_response:
+            consecutive_validation_failures = 0
 
         # If not a tool use response, we're done
         if not step.is_tool_use:
