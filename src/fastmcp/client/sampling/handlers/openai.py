@@ -231,10 +231,11 @@ class OpenAISamplingHandler:
                         # Collect tool results (added after assistant message)
                         content_text = ""
                         if item.content:
-                            result_texts = []
-                            for sub_item in item.content:
-                                if isinstance(sub_item, TextContent):
-                                    result_texts.append(sub_item.text)
+                            result_texts = [
+                                sub_item.text
+                                for sub_item in item.content
+                                if isinstance(sub_item, TextContent)
+                            ]
                             content_text = "\n".join(result_texts)
                         tool_messages.append(
                             ChatCompletionToolMessageParam(

@@ -104,7 +104,7 @@ class PromptsAsTools(Transform):
 
             result: list[dict[str, Any]] = []
             for p in prompts:
-                result.append(
+                result.append(  # noqa: PERF401
                     {
                         "name": p.name,
                         "description": p.description,

@@ -280,9 +280,9 @@ def _convert_messages_to_google_genai_content(
 
         # Handle list content (tool calls + results)
         if isinstance(content, list):
-            parts: list[Part] = []
-            for item in content:
-                parts.append(_sampling_content_to_google_genai_part(item))
+            parts: list[Part] = [
+                _sampling_content_to_google_genai_part(item) for item in content
+            ]
 
             if message.role == "user":
                 google_messages.append(UserContent(parts=parts))

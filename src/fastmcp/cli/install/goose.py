@@ -47,8 +47,7 @@ def generate_goose_deeplink(
     extension_id = _slugify(name)
 
     params: list[str] = [f"cmd={quote(command, safe='')}"]
-    for arg in args:
-        params.append(f"arg={quote(arg, safe='')}")
+    params.extend(f"arg={quote(arg, safe='')}" for arg in args)
     params.append(f"id={quote(extension_id, safe='')}")
     params.append(f"name={quote(name, safe='')}")
     params.append(f"description={quote(description, safe='')}")
