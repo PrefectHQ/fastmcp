@@ -1,0 +1,55 @@
+name: Schema Crash Test
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "src/fastmcp/utilities/json_schema_type.py"
+      - "src/fastmcp/utilities/json_schema.py"
+      - "src/fastmcp/utilities/openapi/**"
+      - "src/fastmcp/server/providers/openapi/**"
+      - "src/fastmcp/client/mixins/tools.py"
+      - "tests/utilities/json_schema_type/test_real_world_schemas.py"
+      - ".github/workflows/run-schema-crash-test.yml"
+
+  pull_request:
+    paths:
+      - "src/fastmcp/utilities/json_schema_type.py"
+      - "src/fastmcp/utilities/json_schema.py"
+      - "src/fastmcp/utilities/openapi/**"
+      - "src/fastmcp/server/providers/openapi/**"
+      - "src/fastmcp/client/mixins/tools.py"
+      - "tests/utilities/json_schema_type/test_real_world_schemas.py"
+      - ".github/workflows/run-schema-crash-test.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  schema_crash_test:
+    name: "Real-world schema crash test (232K schemas)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Clone openapi-directory
+        run: git clone --depth 1 https://github.com/APIs-guru/openapi-directory.git /tmp/openapi-directory
+
+      - name: Run schema crash test
+        env:
+          RUN_REAL_WORLD_SCHEMA_TEST: "1"
+          OPENAPI_DIRECTORY_PATH: /tmp/openapi-directory
+        run: uv run pytest tests/utilities/json_schema_type/test_real_world_schemas.py -m integration -v -s --timeout-method=thread

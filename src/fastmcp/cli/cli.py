@@ -521,13 +521,13 @@ async def run(
 
         # Warn about options that are ignored in module mode
         ignored_options: list[str] = []
-        if transport:
+        if transport is not None:
             ignored_options.append("--transport")
-        if host:
+        if host is not None:
             ignored_options.append("--host")
-        if port:
+        if port is not None:
             ignored_options.append("--port")
-        if path:
+        if path is not None:
             ignored_options.append("--path")
         if ignored_options:
             logger.warning(
@@ -601,11 +601,15 @@ async def run(
         sys.exit(1)
 
     # Get effective values (CLI overrides take precedence)
-    final_transport = transport or config.deployment.transport
-    final_host = host or config.deployment.host
-    final_port = port or config.deployment.port
-    final_path = path or config.deployment.path
-    final_log_level = log_level or config.deployment.log_level
+    final_transport = (
+        transport if transport is not None else config.deployment.transport
+    )
+    final_host = host if host is not None else config.deployment.host
+    final_port = port if port is not None else config.deployment.port
+    final_path = path if path is not None else config.deployment.path
+    final_log_level = (
+        log_level if log_level is not None else config.deployment.log_level
+    )
     final_server_args = server_args or config.deployment.args
     # Use CLI override if provided, otherwise use settings
     # no_banner CLI flag overrides the show_server_banner setting
@@ -642,11 +646,11 @@ async def run(
             if final_transport:
                 reload_cmd.extend(["--transport", final_transport])
             if final_transport != "stdio":
-                if final_host:
+                if final_host is not None:
                     reload_cmd.extend(["--host", final_host])
-                if final_port:
+                if final_port is not None:
                     reload_cmd.extend(["--port", str(final_port)])
-                if final_path:
+                if final_path is not None:
                     reload_cmd.extend(["--path", final_path])
             if final_log_level:
                 reload_cmd.extend(["--log-level", final_log_level])
@@ -691,11 +695,11 @@ async def run(
             inner_cmd.extend(["--transport", final_transport])
         # Only add HTTP-specific options for non-stdio transports
         if final_transport != "stdio":
-            if final_host:
+            if final_host is not None:
                 inner_cmd.extend(["--host", final_host])
-            if final_port:
+            if final_port is not None:
                 inner_cmd.extend(["--port", str(final_port)])
-            if final_path:
+            if final_path is not None:
                 inner_cmd.extend(["--path", final_path])
         if final_log_level:
             inner_cmd.extend(["--log-level", final_log_level])

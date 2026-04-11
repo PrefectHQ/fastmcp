@@ -61,6 +61,8 @@ class SSETransport(ClientTransport):
 
         self._set_auth(auth)
 
+        self.forward_incoming_headers: bool = False
+
         self.sse_read_timeout = normalize_timeout_to_timedelta(sse_read_timeout)
 
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
@@ -117,12 +119,16 @@ class SSETransport(ClientTransport):
     ) -> AsyncIterator[ClientSession]:
         client_kwargs: dict[str, Any] = {}
 
-        # load headers from an active HTTP request, if available. This will only be true
-        # if the client is used in a FastMCP Proxy, in which case the MCP client headers
-        # need to be forwarded to the remote server.
-        client_kwargs["headers"] = (
-            get_http_headers(include={"authorization"}) | self.headers
-        )
+        # When used in a proxy, forward the inbound request's authorization
+        # header to the upstream server. This is off by default so that a
+        # plain Client used inside a server tool handler doesn't accidentally
+        # leak the caller's credentials to an unrelated remote server.
+        if self.forward_incoming_headers:
+            client_kwargs["headers"] = (
+                get_http_headers(include={"authorization"}) | self.headers
+            )
+        else:
+            client_kwargs["headers"] = dict(self.headers)
 
         # sse_read_timeout has a default value set, so we can't pass None without overriding it
         # instead we simply leave the kwarg out if it's not provided

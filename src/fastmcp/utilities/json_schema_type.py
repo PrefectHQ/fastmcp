@@ -36,11 +36,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import keyword
 import re
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import MISSING, field, make_dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import (
     Annotated,
     Any,
@@ -64,6 +65,27 @@ from pydantic import (
 from typing_extensions import NotRequired, TypedDict
 
 __all__ = ["JSONSchema", "json_schema_to_type"]
+
+
+def _normalize_yaml_types(obj: Any) -> Any:
+    """Convert YAML-parsed types back to JSON-native types.
+
+    ``yaml.safe_load`` converts ISO date-time strings to ``datetime``/``date``
+    objects.  These crash ``json.dumps`` and produce wrong default values in
+    dataclass fields.  This function recursively normalises them to strings.
+    """
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {
+            str(k) if not isinstance(k, str) else k: _normalize_yaml_types(v)
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_normalize_yaml_types(v) for v in obj]
+    return obj
 
 
 def _reject_all(v: Any) -> Any:
@@ -119,13 +141,14 @@ class JSONSchema(TypedDict):
 
 
 def json_schema_to_type(
-    schema: Mapping[str, Any],
+    schema: Mapping[str, Any] | bool,
     name: str | None = None,
 ) -> type:
     """Convert JSON schema to appropriate Python type with validation.
 
     Args:
-        schema: A JSON Schema dictionary defining the type structure and validation rules
+        schema: A JSON Schema dictionary defining the type structure and validation rules.
+            Boolean schemas are also accepted (``True`` = any type, ``False`` = unsatisfiable).
         name: Optional name for object schemas. Only allowed when schema type is "object".
             If not provided for objects, name will be inferred from schema's "title"
             property or default to "Root".
@@ -176,6 +199,16 @@ def json_schema_to_type(
             name: NameType
         ```
     """
+    # Boolean schemas (JSON Schema 2020-12 §4.3.2; also valid since draft-06)
+    if schema is True:
+        return Any
+    if schema is False:
+        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+
+    # Normalise YAML-parsed types (datetime/date → str, non-str keys → str)
+    # so that downstream json.dumps/hashing and default values work correctly.
+    schema = _normalize_yaml_types(schema)
+
     # Always use the top-level schema for references
     if schema.get("type") == "object":
         # If no properties defined but has additionalProperties, return typed dict
@@ -203,8 +236,19 @@ def json_schema_to_type(
 
 
 def _hash_schema(schema: Mapping[str, Any]) -> str:
-    """Generate a deterministic hash for schema caching."""
-    return hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
+    """Generate a deterministic hash for schema caching.
+
+    Handles non-JSON-native types (datetime, date, bool keys) that can
+    appear in schemas loaded from YAML, which auto-parses date strings.
+    Uses ``default=str`` for unserializable values and drops ``sort_keys``
+    to avoid ``TypeError`` when dicts mix ``bool`` and ``str`` keys.
+    """
+    try:
+        raw = json.dumps(schema, sort_keys=True, default=str)
+    except TypeError:
+        # Mixed key types (bool + str) can't be sorted; fall back
+        raw = json.dumps(schema, default=str)
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -265,6 +309,11 @@ def _create_numeric_type(
 
 def _create_enum(name: str, values: list[Any]) -> type:
     """Create enum type from list of values."""
+    if not values:
+        # Empty enum means no value is valid (same semantics as ``false``
+        # schema).  Return the unsatisfiable type instead of ``Literal[()]``
+        # which triggers an AssertionError in Pydantic.
+        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
     # Always return Literal for enum fields to preserve the literal nature
     return Literal[tuple(values)]  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
 
@@ -430,6 +479,9 @@ def _sanitize_name(name: str) -> str:
     # Step 5: only strip trailing underscores if they weren't in the original name
     if not original_name.endswith("_"):
         cleaned = cleaned.rstrip("_")
+    # Step 6: if result is a Python keyword, append an underscore (PEP 8 convention)
+    if keyword.iskeyword(cleaned):
+        cleaned = f"{cleaned}_"
     return cleaned
 
 
@@ -561,8 +613,17 @@ def _create_dataclass(
     required = schema.get("required", [])
 
     fields: list[tuple[Any, ...]] = []
+    used_field_names: set[str] = set()
     for prop_name, prop_schema in properties.items():
         field_name = _sanitize_name(prop_name)
+        # Deduplicate: if sanitized names collide (e.g. "foo-bar" and
+        # "foo_bar" both become "foo_bar"), append a numeric suffix.
+        base = field_name
+        counter = 2
+        while field_name in used_field_names:
+            field_name = f"{base}_{counter}"
+            counter += 1
+        used_field_names.add(field_name)
 
         # Boolean schemas (JSON Schema draft-06+): resolve type directly,
         # then use an empty dict for .get() calls below.

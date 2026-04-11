@@ -5,8 +5,33 @@ import base64
 import pytest
 
 from fastmcp import FastMCP
-from fastmcp.apps.file_upload import FileUpload
+from fastmcp.apps.file_upload import FileUpload, _b64_decoded_size
 from fastmcp.server.providers.addressing import hashed_backend_name
+
+
+class TestB64DecodedSize:
+    """Unit tests for the _b64_decoded_size helper."""
+
+    @pytest.mark.parametrize("size", [0, 1, 2, 3, 4, 50, 99, 100, 101, 1000])
+    def test_matches_actual_decode(self, size: int):
+        data = b"x" * size
+        b64 = base64.b64encode(data).decode()
+        assert _b64_decoded_size(b64) == size
+
+    def test_empty_string(self):
+        assert _b64_decoded_size("") == 0
+
+    def test_no_padding(self):
+        # 3 bytes → 4 base64 chars, no padding
+        assert _b64_decoded_size(base64.b64encode(b"abc").decode()) == 3
+
+    def test_one_pad(self):
+        # 2 bytes → 4 base64 chars with 1 '='
+        assert _b64_decoded_size(base64.b64encode(b"ab").decode()) == 2
+
+    def test_two_pads(self):
+        # 1 byte → 4 base64 chars with 2 '='
+        assert _b64_decoded_size(base64.b64encode(b"a").decode()) == 1
 
 
 def _make_file(
@@ -134,6 +159,25 @@ class TestFileUploadProvider:
         with pytest.raises(Exception, match="exceeds max size"):
             await server.call_tool(
                 hashed_backend_name("Files", "store_files"), {"files": [big_file]}
+            )
+
+    async def test_max_file_size_checks_actual_data_not_reported_size(self):
+        """Size limit should be enforced on actual base64 payload, not the
+        client-reported ``size`` field which can be spoofed."""
+        server = FastMCP("test", providers=[FileUpload(max_file_size=100)])
+
+        big_content = "x" * 200
+        big_b64 = base64.b64encode(big_content.encode()).decode()
+        spoofed_file = {
+            "name": "spoofed.bin",
+            "size": 1,  # lies about size
+            "type": "application/octet-stream",
+            "data": big_b64,
+        }
+
+        with pytest.raises(Exception, match="exceeds max size"):
+            await server.call_tool(
+                hashed_backend_name("Files", "store_files"), {"files": [spoofed_file]}
             )
 
 

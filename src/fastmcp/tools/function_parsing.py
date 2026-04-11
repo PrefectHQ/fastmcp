@@ -39,6 +39,16 @@ except ImportError:
     _PREFAB_TYPES = ()
 
 
+def _contains_bytes_type(tp: Any) -> bool:
+    """Check if *tp* is or contains bytes, recursing through unions and Annotated."""
+    if tp is bytes:
+        return True
+    origin = get_origin(tp)
+    if origin is Union or origin is types.UnionType or origin is Annotated:
+        return any(_contains_bytes_type(a) for a in get_args(tp))
+    return False
+
+
 def _contains_prefab_type(tp: Any) -> bool:
     """Check if *tp* is or contains a prefab type, recursing through unions and Annotated."""
     if isinstance(tp, type) and issubclass(tp, _PREFAB_TYPES):
@@ -205,6 +215,10 @@ class ParsedFunction:
         original_output_type = output_type
 
         if output_type not in (inspect._empty, None, Any, ...):
+            # bytes can't be represented as structured JSON output — skip schema
+            if _contains_bytes_type(output_type):
+                output_type = _UnserializableType
+
             # Prefab component subclasses (Column, Card, etc.) shouldn't
             # produce output schemas — replace_type only does exact matching,
             # so we handle subclass matching explicitly here.  We also need
