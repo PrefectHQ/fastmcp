@@ -1,5 +1,5 @@
 import pytest
-from mcp.types import TextContent
+from mcp.types import CreateMessageResultWithTools, TextContent, ToolUseContent
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
@@ -552,25 +552,29 @@ class TestTextResponseRetry:
         assert result.data == "hello"
 
 
-def _final_response(call_id: str, input_data: dict) -> "CreateMessageResultWithTools":
+def _final_response(call_id: str, input_data: dict) -> CreateMessageResultWithTools:
     """Build a final_response tool-use reply."""
-    from mcp.types import CreateMessageResultWithTools, ToolUseContent
-
     return CreateMessageResultWithTools(
         role="assistant",
-        content=[ToolUseContent(type="tool_use", id=call_id, name="final_response", input=input_data)],
+        content=[
+            ToolUseContent(
+                type="tool_use", id=call_id, name="final_response", input=input_data
+            )
+        ],
         model="test-model",
         stopReason="toolUse",
     )
 
 
-def _tool_call(call_id: str, name: str, input_data: dict) -> "CreateMessageResultWithTools":
+def _tool_call(
+    call_id: str, name: str, input_data: dict
+) -> CreateMessageResultWithTools:
     """Build a regular tool-use reply."""
-    from mcp.types import CreateMessageResultWithTools, ToolUseContent
-
     return CreateMessageResultWithTools(
         role="assistant",
-        content=[ToolUseContent(type="tool_use", id=call_id, name=name, input=input_data)],
+        content=[
+            ToolUseContent(type="tool_use", id=call_id, name=name, input=input_data)
+        ],
         model="test-model",
         stopReason="toolUse",
     )
@@ -635,7 +639,7 @@ class TestValidationRetryCap:
             with pytest.raises(ToolError, match="consecutive"):
                 await client.call_tool("t", {})
 
-        assert call_count == _MAX_VALIDATION_RETRIES + 1
+        assert call_count == _MAX_VALIDATION_RETRIES
 
     async def test_validation_counter_resets_after_other_tool_call(self):
         """A tool call between validation failures resets the counter."""

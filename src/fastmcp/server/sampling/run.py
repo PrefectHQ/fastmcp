@@ -668,7 +668,7 @@ async def sample_impl(
                         )
                     except ValidationError as e:
                         consecutive_validation_failures += 1
-                        if consecutive_validation_failures > _MAX_VALIDATION_RETRIES:
+                        if consecutive_validation_failures >= _MAX_VALIDATION_RETRIES:
                             raise RuntimeError(
                                 f"Structured output validation failed "
                                 f"{consecutive_validation_failures} consecutive "
