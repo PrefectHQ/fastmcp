@@ -188,6 +188,12 @@ class ResourceResult(pydantic.BaseModel):
                         f"Use ResourceContent({item!r}) to wrap the value."
                     )
             return contents
+        # Auto-serialize JSON-native types (dict, int, float, bool, None, list/tuple
+        # of primitives) to JSON text
+        if isinstance(contents, dict | int | float | bool) or contents is None:
+            import json
+
+            return [ResourceContent(json.dumps(contents), mime_type="application/json")]
         raise TypeError(
             f"contents must be str, bytes, or list[ResourceContent], got {type(contents).__name__}"
         )

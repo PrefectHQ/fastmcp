@@ -437,6 +437,10 @@ class Client(
             # Reset session state to fresh state
             new_client._session_state = ClientSessionState()
 
+        # Reset mutable task tracking state so new client is independent
+        new_client._task_registry = {}
+        new_client._submitted_task_ids = set()
+
         new_client.name += f":{secrets.token_hex(2)}"
 
         return new_client
