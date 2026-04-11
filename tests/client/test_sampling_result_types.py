@@ -550,3 +550,238 @@ class TestTextResponseRetry:
 
         assert call_count == 1
         assert result.data == "hello"
+
+
+class TestValidationRetryCap:
+    """Tests for the consecutive validation retry cap (PR #3851)."""
+
+    async def test_validation_failures_within_cap_then_success(self):
+        """Two consecutive validation failures followed by a valid response succeeds."""
+        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from pydantic import BaseModel
+
+        class NumberResult(BaseModel):
+            value: int
+
+        call_count = 0
+
+        def sampling_handler(
+            messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
+        ) -> CreateMessageResultWithTools:
+            nonlocal call_count
+            call_count += 1
+
+            if call_count <= 2:
+                # First two calls: return invalid data (string instead of int)
+                return CreateMessageResultWithTools(
+                    role="assistant",
+                    content=[
+                        ToolUseContent(
+                            type="tool_use",
+                            id=f"call_{call_count}",
+                            name="final_response",
+                            input={"value": "not_a_number"},
+                        )
+                    ],
+                    model="test-model",
+                    stopReason="toolUse",
+                )
+            else:
+                # Third call: return valid data
+                return CreateMessageResultWithTools(
+                    role="assistant",
+                    content=[
+                        ToolUseContent(
+                            type="tool_use",
+                            id=f"call_{call_count}",
+                            name="final_response",
+                            input={"value": 99},
+                        )
+                    ],
+                    model="test-model",
+                    stopReason="toolUse",
+                )
+
+        mcp = FastMCP(sampling_handler=sampling_handler)
+
+        @mcp.tool
+        async def validate_tool(context: Context) -> str:
+            result = await context.sample(
+                messages="Give me a number",
+                result_type=NumberResult,
+            )
+            assert isinstance(result.result, NumberResult)
+            return str(result.result.value)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("validate_tool", {})
+
+        assert call_count == 3
+        assert result.data == "99"
+
+    async def test_consecutive_validation_failures_exceed_cap(self):
+        """Always-invalid responses raise RuntimeError after exceeding the cap."""
+        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from pydantic import BaseModel
+
+        from fastmcp.exceptions import ToolError
+        from fastmcp.server.sampling.run import _MAX_VALIDATION_RETRIES
+
+        class StrictResult(BaseModel):
+            value: int
+
+        call_count = 0
+
+        def sampling_handler(
+            messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
+        ) -> CreateMessageResultWithTools:
+            nonlocal call_count
+            call_count += 1
+
+            # Always return invalid data
+            return CreateMessageResultWithTools(
+                role="assistant",
+                content=[
+                    ToolUseContent(
+                        type="tool_use",
+                        id=f"call_{call_count}",
+                        name="final_response",
+                        input={"value": "always_wrong"},
+                    )
+                ],
+                model="test-model",
+                stopReason="toolUse",
+            )
+
+        mcp = FastMCP(sampling_handler=sampling_handler)
+
+        @mcp.tool
+        async def validate_tool(context: Context) -> str:
+            result = await context.sample(
+                messages="Give me a number",
+                result_type=StrictResult,
+            )
+            return str(result.result)
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="consecutive"):
+                await client.call_tool("validate_tool", {})
+
+        # Should have been called _MAX_VALIDATION_RETRIES + 1 times
+        # (the first call plus _MAX_VALIDATION_RETRIES retries, then the
+        # next failure triggers the cap)
+        assert call_count == _MAX_VALIDATION_RETRIES + 1
+
+    async def test_validation_counter_resets_after_other_tool_call(self):
+        """Non-consecutive validation failures (interleaved with tool calls) don't trigger the cap."""
+        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from pydantic import BaseModel
+
+        class NumberResult(BaseModel):
+            value: int
+
+        call_count = 0
+
+        def helper_tool(x: int) -> str:
+            """A helper tool."""
+            return f"result:{x}"
+
+        def sampling_handler(
+            messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
+        ) -> CreateMessageResultWithTools:
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 1:
+                # Call 1: invalid final_response
+                return CreateMessageResultWithTools(
+                    role="assistant",
+                    content=[
+                        ToolUseContent(
+                            type="tool_use",
+                            id="call_1",
+                            name="final_response",
+                            input={"value": "bad"},
+                        )
+                    ],
+                    model="test-model",
+                    stopReason="toolUse",
+                )
+            elif call_count == 2:
+                # Call 2: use a regular tool (resets consecutive counter)
+                return CreateMessageResultWithTools(
+                    role="assistant",
+                    content=[
+                        ToolUseContent(
+                            type="tool_use",
+                            id="call_2",
+                            name="helper_tool",
+                            input={"x": 1},
+                        )
+                    ],
+                    model="test-model",
+                    stopReason="toolUse",
+                )
+            elif call_count == 3:
+                # Call 3: invalid final_response again (but counter was reset)
+                return CreateMessageResultWithTools(
+                    role="assistant",
+                    content=[
+                        ToolUseContent(
+                            type="tool_use",
+                            id="call_3",
+                            name="final_response",
+                            input={"value": "also_bad"},
+                        )
+                    ],
+                    model="test-model",
+                    stopReason="toolUse",
+                )
+            elif call_count == 4:
+                # Call 4: use a regular tool again (resets counter again)
+                return CreateMessageResultWithTools(
+                    role="assistant",
+                    content=[
+                        ToolUseContent(
+                            type="tool_use",
+                            id="call_4",
+                            name="helper_tool",
+                            input={"x": 2},
+                        )
+                    ],
+                    model="test-model",
+                    stopReason="toolUse",
+                )
+            else:
+                # Call 5: valid final_response
+                return CreateMessageResultWithTools(
+                    role="assistant",
+                    content=[
+                        ToolUseContent(
+                            type="tool_use",
+                            id="call_5",
+                            name="final_response",
+                            input={"value": 42},
+                        )
+                    ],
+                    model="test-model",
+                    stopReason="toolUse",
+                )
+
+        mcp = FastMCP(sampling_handler=sampling_handler)
+
+        @mcp.tool
+        async def validate_tool(context: Context) -> str:
+            result = await context.sample(
+                messages="Give me a number",
+                tools=[helper_tool],
+                result_type=NumberResult,
+            )
+            assert isinstance(result.result, NumberResult)
+            return str(result.result.value)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("validate_tool", {})
+
+        assert call_count == 5
+        assert result.data == "42"
