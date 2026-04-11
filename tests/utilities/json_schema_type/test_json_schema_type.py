@@ -1,8 +1,9 @@
 """Core JSON schema type conversion tests."""
 
+import dataclasses
 from dataclasses import Field
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -246,8 +247,6 @@ class TestCrashPrevention:
 
     def test_boolean_schema_true(self):
         """Boolean schema True should return Any (JSON Schema draft-06+)."""
-        from typing import Any
-
         assert json_schema_to_type(True) is Any
 
     def test_boolean_schema_false(self):
@@ -286,8 +285,6 @@ class TestCrashPrevention:
 
     def test_sanitized_name_collision(self):
         """Properties that collide after sanitization get deduplicated."""
-        import dataclasses
-
         schema = {
             "type": "object",
             "properties": {
@@ -302,8 +299,6 @@ class TestCrashPrevention:
 
     def test_empty_property_name(self):
         """Empty and whitespace-only property names should not crash."""
-        import dataclasses
-
         schema = {
             "type": "object",
             "properties": {
