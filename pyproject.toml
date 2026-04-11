@@ -185,9 +185,13 @@ ignore = [
 extend-select = [
     "B",    # flake8-bugbear: Catches actual bugs like mutable default arguments
     "C4",   # flake8-comprehensions: More efficient/readable comprehensions
+    "DTZ",  # flake8-datetimez: Enforce timezone-aware datetime usage
+    "ERA",  # eradicate: Detect commented-out code
     "FA",   # flake8-future-annotations: Enforce from __future__ import annotations
     "FLY",  # flynt: Static string joins that should be f-strings
     "I",    # isort: Import sorting
+    "INP",  # flake8-no-pep420: Require __init__.py in namespace packages
+    "ISC",  # flake8-implicit-str-concat: Prevent accidental string concatenation
     "LOG",  # flake8-logging: Catches logging module misuse
     "PIE",  # flake8-pie: More idiomatic Python code
     "PLE",  # pylint-error: Catches actual errors (invalid operations, syntax issues)
@@ -209,8 +213,12 @@ known-first-party = ["fastmcp"]
 "!src/**.py" = [ # Only enforce extended ruff rules for code in src/
     "B",    # flake8-bugbear
     "C4",   # flake8-comprehensions
+    "DTZ",  # flake8-datetimez
+    "ERA",  # eradicate
     "FA",   # flake8-future-annotations
     "FLY",  # flynt
+    "INP",  # flake8-no-pep420
+    "ISC",  # flake8-implicit-str-concat
     "LOG",  # flake8-logging
     "PIE",  # flake8-pie
     "PLE",  # pylint-error

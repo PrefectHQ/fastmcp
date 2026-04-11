@@ -60,7 +60,7 @@ except ImportError as _exc:
     ) from _exc
 
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastmcp.apps.app import FastMCPApp
@@ -209,7 +209,7 @@ class FileUpload(FastMCPApp):
                 "size": f["size"],
                 "type": f["type"],
                 "data": f["data"],
-                "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+                "uploaded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             }
         return [_make_summary(e) for e in session_files.values()]
 
