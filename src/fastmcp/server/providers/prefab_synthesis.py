@@ -124,7 +124,21 @@ def _build_resource_for_tool(tool: Tool) -> Resource | None:
     }
 
     resource_csp = ResourceCSP(**merged) if any(merged.values()) else None
-    resource_app = AppConfig(csp=resource_csp) if resource_csp else AppConfig()
+
+    # Carry permissions from the tool's meta to the resource (same
+    # principle as CSP — belongs on the resource, not the tool).
+    user_permissions = None
+    if tool.meta and isinstance(tool.meta.get("ui"), dict):
+        raw_perms = tool.meta["ui"].get("permissions")
+        if isinstance(raw_perms, dict):
+            from fastmcp.apps.config import ResourcePermissions
+
+            user_permissions = ResourcePermissions(**raw_perms)
+
+    resource_app = AppConfig(
+        csp=resource_csp,
+        permissions=user_permissions,
+    )
     uri = f"ui://prefab/tool/{tool_hash}/renderer.html"
 
     return TextResource(
