@@ -1,6 +1,6 @@
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import TypeAlias
+from typing import TypeAlias, cast
 
 import mcp.types
 import pydantic
@@ -35,7 +35,7 @@ def create_roots_callback(
 ) -> ListRootsFnT:
     if isinstance(handler, list):
         # TODO(ty): remove when ty supports isinstance union narrowing
-        return _create_roots_callback_from_roots(handler)  # type: ignore[arg-type]
+        return _create_roots_callback_from_roots(handler)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
     elif inspect.isfunction(handler):
         return _create_roots_callback_from_fn(handler)
     else:
@@ -66,7 +66,9 @@ def _create_roots_callback_from_fn(
             roots = fn(context)
             if inspect.isawaitable(roots):
                 roots = await roots
-            return mcp.types.ListRootsResult(roots=convert_roots_list(roots))
+            return mcp.types.ListRootsResult(
+                roots=convert_roots_list(cast(RootsList, roots))
+            )
         except Exception as e:
             return mcp.types.ErrorData(
                 code=mcp.types.INTERNAL_ERROR,

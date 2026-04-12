@@ -39,7 +39,7 @@ console = Console()
 
 app = cyclopts.App(
     name="fastmcp",
-    help="FastMCP 2.0 - The fast, Pythonic way to build MCP servers and clients.",
+    help="FastMCP - The fast, Pythonic way to build MCP servers and clients.",
     version=fastmcp.__version__,
     # Disable automatic negative parameters by default
     default_parameter=Parameter(negative=()),
@@ -54,7 +54,7 @@ def _get_npx_command():
             try:
                 subprocess.run([cmd, "--version"], check=True, capture_output=True)
                 return cmd
-            except subprocess.CalledProcessError:
+            except (subprocess.CalledProcessError, FileNotFoundError):
                 continue
         return None
     return "npx"  # On Unix-like systems, just use npx
@@ -333,6 +333,54 @@ async def inspector(
         sys.exit(1)
 
 
+@dev_app.command
+async def apps(
+    server_spec: str,
+    *,
+    mcp_port: Annotated[
+        int,
+        cyclopts.Parameter(
+            "--mcp-port",
+            help="Port for the user's MCP server",
+        ),
+    ] = 8000,
+    dev_port: Annotated[
+        int,
+        cyclopts.Parameter(
+            "--dev-port",
+            help="Port for the FastMCP dev UI",
+        ),
+    ] = 8080,
+    reload: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--reload",
+            negative="--no-reload",
+            help="Auto-reload the MCP server on file changes",
+        ),
+    ] = True,
+) -> None:
+    """Preview a FastMCPApp UI in the browser.
+
+    Starts the MCP server from SERVER_SPEC on --mcp-port, launches a local
+    dev UI on --dev-port with a tool picker and AppBridge host, then opens
+    the browser automatically.
+
+    Requires fastmcp[apps] to be installed (prefab-ui).
+    """
+    try:
+        import prefab_ui  # noqa: F401
+    except ImportError:
+        logger.error(
+            "fastmcp dev apps requires prefab-ui. Install with: pip install 'fastmcp[apps]'"
+        )
+        sys.exit(1)
+
+    from fastmcp.cli.apps_dev import run_dev_apps
+
+    await run_dev_apps(server_spec, mcp_port=mcp_port, dev_port=dev_port, reload=reload)
+
+
 @app.command
 async def run(
     server_spec: str | None = None,
@@ -473,13 +521,13 @@ async def run(
 
         # Warn about options that are ignored in module mode
         ignored_options: list[str] = []
-        if transport:
+        if transport is not None:
             ignored_options.append("--transport")
-        if host:
+        if host is not None:
             ignored_options.append("--host")
-        if port:
+        if port is not None:
             ignored_options.append("--port")
-        if path:
+        if path is not None:
             ignored_options.append("--path")
         if ignored_options:
             logger.warning(
@@ -553,11 +601,15 @@ async def run(
         sys.exit(1)
 
     # Get effective values (CLI overrides take precedence)
-    final_transport = transport or config.deployment.transport
-    final_host = host or config.deployment.host
-    final_port = port or config.deployment.port
-    final_path = path or config.deployment.path
-    final_log_level = log_level or config.deployment.log_level
+    final_transport = (
+        transport if transport is not None else config.deployment.transport
+    )
+    final_host = host if host is not None else config.deployment.host
+    final_port = port if port is not None else config.deployment.port
+    final_path = path if path is not None else config.deployment.path
+    final_log_level = (
+        log_level if log_level is not None else config.deployment.log_level
+    )
     final_server_args = server_args or config.deployment.args
     # Use CLI override if provided, otherwise use settings
     # no_banner CLI flag overrides the show_server_banner setting
@@ -594,11 +646,11 @@ async def run(
             if final_transport:
                 reload_cmd.extend(["--transport", final_transport])
             if final_transport != "stdio":
-                if final_host:
+                if final_host is not None:
                     reload_cmd.extend(["--host", final_host])
-                if final_port:
+                if final_port is not None:
                     reload_cmd.extend(["--port", str(final_port)])
-                if final_path:
+                if final_path is not None:
                     reload_cmd.extend(["--path", final_path])
             if final_log_level:
                 reload_cmd.extend(["--log-level", final_log_level])
@@ -643,11 +695,11 @@ async def run(
             inner_cmd.extend(["--transport", final_transport])
         # Only add HTTP-specific options for non-stdio transports
         if final_transport != "stdio":
-            if final_host:
+            if final_host is not None:
                 inner_cmd.extend(["--host", final_host])
-            if final_port:
+            if final_port is not None:
                 inner_cmd.extend(["--port", str(final_port)])
-            if final_path:
+            if final_path is not None:
                 inner_cmd.extend(["--path", final_path])
         if final_log_level:
             inner_cmd.extend(["--log-level", final_log_level])

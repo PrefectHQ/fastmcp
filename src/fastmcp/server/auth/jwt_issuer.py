@@ -17,11 +17,13 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+import fastmcp
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
-KDF_ITERATIONS = 1000000
+KDF_ITERATIONS = 1_000_000
+KDF_ITERATIONS_TEST = 10
 
 
 @overload
@@ -57,11 +59,14 @@ def derive_jwt_key(
         return base64.urlsafe_b64encode(derived_key)
 
     if low_entropy_material is not None:
+        iterations = (
+            KDF_ITERATIONS_TEST if fastmcp.settings.test_mode else KDF_ITERATIONS
+        )
         pbkdf2 = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
             salt=salt.encode(),
-            iterations=KDF_ITERATIONS,
+            iterations=iterations,
         ).derive(key_material=low_entropy_material.encode())
 
         return base64.urlsafe_b64encode(pbkdf2)
@@ -202,13 +207,19 @@ class JWTIssuer:
 
         return token
 
-    def verify_token(self, token: str) -> dict[str, Any]:
+    def verify_token(
+        self,
+        token: str,
+        expected_token_use: str = "access",
+    ) -> dict[str, Any]:
         """Verify and decode a FastMCP token.
 
-        Validates JWT signature, expiration, issuer, and audience.
+        Validates JWT signature, expiration, issuer, audience, and token type.
 
         Args:
             token: JWT token to verify
+            expected_token_use: Expected token type ("access" or "refresh").
+                Defaults to "access", which rejects refresh tokens.
 
         Returns:
             Decoded token payload
@@ -220,9 +231,22 @@ class JWTIssuer:
             # Decode and verify signature
             payload = self._jwt.decode(token, self._signing_key)
 
+            # Validate token type
+            token_use = payload.get("token_use", "access")
+            if token_use != expected_token_use:
+                logger.debug(
+                    "Token type mismatch: expected %s, got %s",
+                    expected_token_use,
+                    token_use,
+                )
+                raise JoseError(
+                    f"Token type mismatch: expected {expected_token_use}, "
+                    f"got {token_use}"
+                )
+
             # Validate expiration
             exp = payload.get("exp")
-            if exp and exp < time.time():
+            if exp is not None and exp < time.time():
                 logger.debug("Token expired")
                 raise JoseError("Token has expired")
 

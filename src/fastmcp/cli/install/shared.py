@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +17,26 @@ from fastmcp.utilities.mcp_server_config import MCPServerConfig
 from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 logger = get_logger(__name__)
+
+# Server names are passed as subprocess arguments to CLI tools like `claude`
+# and `gemini`. On Windows these may resolve to .cmd/.bat wrappers that run
+# through cmd.exe, where shell metacharacters (& | ; etc.) in arguments can
+# cause command injection. Restrict names to safe characters.
+_SAFE_NAME_RE = re.compile(r"^[\w\-. ]+$")
+
+
+def validate_server_name(name: str) -> str:
+    """Validate that a server name is safe for use as a subprocess argument.
+
+    Raises SystemExit if the name contains shell metacharacters.
+    """
+    if not _SAFE_NAME_RE.match(name):
+        print(
+            f"[red]Invalid server name '[bold]{name}[/bold]': "
+            "names may only contain letters, numbers, hyphens, underscores, dots, and spaces.[/red]"
+        )
+        sys.exit(1)
+    return name
 
 
 def parse_env_var(env_var: str) -> tuple[str, str]:

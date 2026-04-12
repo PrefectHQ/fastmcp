@@ -9,7 +9,7 @@ from typing_extensions import TypedDict
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import NotFoundError
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 
 def _normalize_anyof_order(schema):

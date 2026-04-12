@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import re
 from collections.abc import Callable
@@ -22,8 +23,7 @@ from pydantic import (
     validate_call,
 )
 
-from fastmcp.resources.resource import Resource, ResourceResult
-from fastmcp.server.apps import resolve_ui_mime_type
+from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (
     transform_context_annotations,
@@ -32,6 +32,7 @@ from fastmcp.server.dependencies import (
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
+from fastmcp.utilities.mime import resolve_ui_mime_type
 from fastmcp.utilities.types import get_cached_typeadapter
 
 
@@ -43,13 +44,16 @@ def extract_query_params(uri_template: str) -> set[str]:
     return set()
 
 
-def build_regex(template: str) -> re.Pattern:
+def build_regex(template: str) -> re.Pattern[str] | None:
     """Build regex pattern for URI template, handling RFC 6570 syntax.
 
     Supports:
     - `{var}` - simple path parameter
     - `{var*}` - wildcard path parameter (captures multiple segments)
     - `{?var1,var2}` - query parameters (ignored in path matching)
+
+    Returns None if the template produces an invalid regex (e.g. parameter
+    names with hyphens, leading digits, or duplicates from a remote server).
     """
     # Remove query parameter syntax for path matching
     template_without_query = re.sub(r"\{\?[^}]+\}", "", template)
@@ -66,7 +70,10 @@ def build_regex(template: str) -> re.Pattern:
                 pattern += f"(?P<{name}>[^/]+)"
         else:
             pattern += re.escape(part)
-    return re.compile(f"^{pattern}$")
+    try:
+        return re.compile(f"^{pattern}$")
+    except re.error:
+        return None
 
 
 def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
@@ -81,6 +88,8 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
 
     # Match path parameters
     regex = build_regex(uri_template)
+    if regex is None:
+        return None
     match = regex.match(uri_path)
     if not match:
         return None
@@ -267,7 +276,7 @@ class ResourceTemplate(FastMCPComponent):
             annotations=overrides.get("annotations", self.annotations),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta()
-            ),
+            ),  # ty:ignore[unknown-argument]
         )
 
     @classmethod
@@ -409,9 +418,17 @@ class FunctionResourceTemplate(ResourceTemplate):
                     elif annotation is float:
                         kwargs[param_name] = float(param_value)
                     elif annotation is bool:
-                        kwargs[param_name] = param_value.lower() in ("true", "1", "yes")
+                        lower = param_value.lower()
+                        if lower in ("true", "1", "yes"):
+                            kwargs[param_name] = True
+                        elif lower in ("false", "0", "no"):
+                            kwargs[param_name] = False
+                        else:
+                            raise ValueError(
+                                f"Invalid boolean value for {param_name}: {param_value!r}"
+                            )
                 except (ValueError, AttributeError):
-                    pass
+                    raise
 
         # self.fn is wrapped by without_injected_parameters which handles
         # dependency resolution internally, so we call it directly
@@ -422,11 +439,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         return result
 
     def register_with_docket(self, docket: Docket) -> None:
-        """Register this template with docket for background execution.
-
-        FunctionResourceTemplate registers the underlying function, which has the
-        user's Depends parameters for docket to resolve.
-        """
+        """Register this template with docket for background execution."""
         if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])
@@ -540,7 +553,7 @@ class FunctionResourceTemplate(ResourceTemplate):
                     f"URI parameters {all_uri_params} must be a subset of the function arguments: {func_params}"
                 )
 
-        description = description or inspect.getdoc(fn)
+        description = description if description is not None else inspect.getdoc(fn)
 
         # Normalize task to TaskConfig and validate
         if task is None:
@@ -552,7 +565,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         task_config.validate_function(fn, func_name)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn):
+        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):

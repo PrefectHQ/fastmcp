@@ -36,7 +36,7 @@ jobs:
 
       - name: Generate Marvin App token
         id: marvin-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
@@ -49,7 +49,7 @@ jobs:
           PROMPT<<PROMPT_END
           You're an issue triage assistant for FastMCP, a Python framework for building Model Context Protocol servers and clients. Your task is to analyze issues/PRs and apply appropriate labels.
 
-          IMPORTANT: Your ONLY action should be to apply labels using mcp__github__update_issue. DO NOT post any comments.
+          IMPORTANT: Your primary action should be to apply labels using mcp__github__update_issue. DO NOT post comments EXCEPT when applying the too-long label (see below).
 
           Issue/PR Information:
           - REPO: ${{ github.repository }}
@@ -68,7 +68,7 @@ jobs:
 
           3. Analyze and apply labels based on these guidelines:
 
-          CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive):
+          CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive; skip if applying too-long):
           - bug: Reports of broken functionality OR PRs that fix bugs
           - enhancement: New functions/endpoints, improvements to existing features, internal tooling, workflow improvements, minor new capabilities
           - feature: ONLY for major headline functionality worthy of a blog post announcement (2-4 per release, never for issues)
@@ -96,8 +96,12 @@ jobs:
 
           STATUS (apply if applicable):
           - needs more info: Issue lacks reproduction steps, error messages, or clear description
-          - good first issue: ONLY if it's clearly scoped, has obvious solution, and touches limited files
           - invalid: Spam, completely off-topic, or nonsensical (often LLM-generated)
+          - too-long: Apply when an issue or PR doesn't conform to CONTRIBUTING.md. Issues should be a short problem description, an MRE, and expected vs. actual behavior — not a design document. PRs should have a focused description of the change — not a report. We don't need proposed solutions or design alternatives (the issue should describe the problem and let maintainers architect the fix), summaries of what tests cover, explanations of code we can read ourselves, or speculative root-cause analysis. Common LLM failure modes to watch for: verbose "diagnostic" writeups, large proposed patches in issue bodies, multi-section reports restating what's visible in the diff, numbered lists of possible approaches or solutions, "suggested" schemas/shapes/APIs, generic analysis that doesn't reference specific code, and "Notes" sections. But these are heuristics, not rules — a complex PR may legitimately need more context, and a brief submission can still be low-quality. Judge by whether the content helps a reviewer or just adds noise. When applying, do not apply other triage labels. The author needs to condense before triage is worthwhile.
+
+          WHEN APPLYING too-long: After labeling, post a brief comment using mcp__github__add_issue_comment:
+            "Thanks for the report. This issue goes beyond what our contributor guidelines ask for — we just need a short problem description and an MRE. Please see our [contributing guidelines](https://github.com/PrefectHQ/fastmcp/blob/main/CONTRIBUTING.md) and condense this issue. We'll triage it once it's trimmed down."
+            Use this exact text (or very close to it). Do not editorialize or add details.
 
           AREA LABELS (apply ONLY when thematically central to the issue):
           - cli: Issues primarily about FastMCP CLI commands (run, dev, install)
@@ -108,6 +112,7 @@ jobs:
           - http: HTTP transport or networking is the main issue
           - contrib: Specifically about community contributions in src/contrib/
           - tests: Issues primarily about testing infrastructure, CI/CD workflows, or test coverage
+          - security: Apply ONLY when the issue/PR addresses an exploitable vulnerability or hardens against one. Examples: SSRF, LFI, path traversal, injection, auth bypass allowing unauthorized access, scope escalation, open redirects. Do NOT apply for ordinary auth bugs (wrong scopes returned, token refresh logic, OAuth flow correctness) unless an attacker could exploit the bug to bypass access controls or escalate privileges. The key question: "Could a malicious actor exploit this?" If the answer is just "it breaks for legitimate users," that's a bug, not a security issue.
 
           IMPORTANT LABELING RULES:
           - Be selective - only apply labels that are clearly relevant
@@ -122,7 +127,7 @@ jobs:
 
           4. Apply selected labels:
              Use mcp__github__update_issue to apply your selected labels
-             DO NOT post any comments
+             DO NOT post any comments unless applying too-long (see above)
           PROMPT_END
           EOF
 
@@ -139,7 +144,7 @@ jobs:
           allowed_non_write_users: "*"
           allowed_bots: "marvin-context-protocol"
           claude_args: |
-            --allowedTools Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__get_pull_request_files
+            --allowedTools Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__add_issue_comment,mcp__github__get_pull_request_files
           settings: |
             {
               "model": "claude-sonnet-4-6",

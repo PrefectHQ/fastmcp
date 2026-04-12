@@ -21,6 +21,8 @@ Example:
     ```
 """
 
+from typing import Literal
+
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 
@@ -69,7 +71,9 @@ class Auth0Provider(OIDCProxy):
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
-        require_authorization_consent: bool = True,
+        require_authorization_consent: bool | Literal["external"] = True,
+        consent_csp_policy: str | None = None,
+        forward_resource: bool = True,
     ) -> None:
         """Initialize Auth0 OAuth provider.
 
@@ -94,7 +98,9 @@ class Auth0Provider(OIDCProxy):
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to Auth0.
                 When False, authorization proceeds directly without user confirmation.
-                SECURITY WARNING: Only disable for local development or testing environments.
+                When "external", the built-in consent screen is skipped but no warning is
+                logged, indicating that consent is handled externally (e.g. by the upstream IdP).
+                SECURITY WARNING: Only set to False for local development or testing environments.
         """
         # Parse scopes if provided as string
         auth0_required_scopes = (
@@ -114,6 +120,8 @@ class Auth0Provider(OIDCProxy):
             client_storage=client_storage,
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
+            consent_csp_policy=consent_csp_policy,
+            forward_resource=forward_resource,
         )
 
         logger.debug(

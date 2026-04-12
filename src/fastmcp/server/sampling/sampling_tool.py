@@ -10,9 +10,12 @@ from mcp.types import TextContent
 from mcp.types import Tool as SDKTool
 from pydantic import ConfigDict
 
+from fastmcp.exceptions import AuthorizationError
+from fastmcp.server.auth.authorization import AuthContext, run_auth_checks
+from fastmcp.server.dependencies import get_access_token
+from fastmcp.tools.base import ToolResult
 from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import ToolResult
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.types import FastMCPBaseModel
 
@@ -113,7 +116,7 @@ class SamplingTool(FastMCPBaseModel):
 
         return cls(
             name=name or parsed.name,
-            description=description or parsed.description,
+            description=description if description is not None else parsed.description,
             parameters=parsed.input_schema,
             fn=parsed.fn,
             sequential=sequential,
@@ -151,6 +154,24 @@ class SamplingTool(FastMCPBaseModel):
         # Both FunctionTool and TransformedTool need .run() to ensure proper
         # result processing (serializers, output_schema, wrap-result flags)
         async def wrapper(**kwargs: Any) -> Any:
+            # Enforce per-tool auth checks, mirroring what the server
+            # dispatcher does for direct tool calls.  Without this, an
+            # auth-protected tool wrapped as a SamplingTool could be
+            # invoked by the LLM during sampling without authorization.
+            if tool.auth is not None:
+                # Late import to avoid circular import with context.py
+                from fastmcp.server.context import _current_transport
+
+                is_stdio = _current_transport.get() == "stdio"
+                if not is_stdio:
+                    token = get_access_token()
+                    ctx = AuthContext(token=token, component=tool)
+                    if not await run_auth_checks(tool.auth, ctx):
+                        raise AuthorizationError(
+                            f"Authorization failed for tool '{tool.name}': "
+                            "insufficient permissions"
+                        )
+
             result = await tool.run(kwargs)
             # Unwrap ToolResult - extract the actual value
             if isinstance(result, ToolResult):

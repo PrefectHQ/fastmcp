@@ -9,7 +9,7 @@ from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
 from fastmcp.server.auth.providers.azure import AzureProvider
-from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 
 
 @pytest.fixture
@@ -34,6 +34,7 @@ class TestAzureProvider:
         )
 
         assert provider._upstream_client_id == "12345678-1234-1234-1234-123456789012"
+        assert provider._upstream_client_secret is not None
         assert provider._upstream_client_secret.get_secret_value() == "azure_secret_123"
         assert str(provider.base_url) == "https://myserver.com/"
         # Check tenant is in the endpoints
@@ -189,8 +190,6 @@ class TestAzureProvider:
         self, memory_storage: MemoryStore
     ):
         """When audience is provided, JWTVerifier is configured with JWKS and issuer."""
-        from fastmcp.server.auth.providers.jwt import JWTVerifier
-
         provider = AzureProvider(
             client_id="test_client",
             client_secret="test_secret",
@@ -210,10 +209,99 @@ class TestAzureProvider:
             "https://login.microsoftonline.com/my-tenant/discovery/v2.0/keys"
         )
         assert verifier.issuer == "https://login.microsoftonline.com/my-tenant/v2.0"
-        assert verifier.audience == "test_client"
+        assert verifier.audience == ["test_client", "api://my-api"]
         # Scopes are stored unprefixed for token validation
         # (Azure returns unprefixed scopes like ".default" in JWT tokens)
         assert verifier.required_scopes == [".default"]
+
+    async def test_token_accepted_with_client_id_audience(
+        self, memory_storage: MemoryStore
+    ):
+        """Azure AD v2 tokens use the bare client_id as aud — must be accepted."""
+        key_pair = RSAKeyPair.generate()
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="my-tenant",
+            base_url="https://myserver.com",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert isinstance(provider._token_validator, JWTVerifier)
+        verifier = provider._token_validator
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://login.microsoftonline.com/my-tenant/v2.0",
+            audience="test_client",
+            additional_claims={"scp": "read"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is not None
+
+    async def test_token_accepted_with_identifier_uri_audience(
+        self, memory_storage: MemoryStore
+    ):
+        """Azure AD v1 tokens use the identifier_uri as aud — must be accepted."""
+        key_pair = RSAKeyPair.generate()
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="my-tenant",
+            base_url="https://myserver.com",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert isinstance(provider._token_validator, JWTVerifier)
+        verifier = provider._token_validator
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://login.microsoftonline.com/my-tenant/v2.0",
+            audience="api://my-api",
+            additional_claims={"scp": "read"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is not None
+
+    async def test_token_rejected_with_wrong_audience(
+        self, memory_storage: MemoryStore
+    ):
+        """Tokens for a different application must be rejected."""
+        key_pair = RSAKeyPair.generate()
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="my-tenant",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert isinstance(provider._token_validator, JWTVerifier)
+        verifier = provider._token_validator
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://login.microsoftonline.com/my-tenant/v2.0",
+            audience="wrong-app-id",
+            additional_claims={"scp": "read"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is None
 
     async def test_authorize_filters_resource_and_stores_unprefixed_scopes(
         self, memory_storage: MemoryStore

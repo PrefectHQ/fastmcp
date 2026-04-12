@@ -1,5 +1,6 @@
 """A middleware for injecting tools into the MCP server context."""
 
+import warnings
 from collections.abc import Sequence
 from logging import Logger
 from typing import Annotated, Any
@@ -9,10 +10,12 @@ from mcp.types import Prompt
 from pydantic import AnyUrl
 from typing_extensions import override
 
-from fastmcp.resources.resource import ResourceResult
+import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
+from fastmcp.resources.base import ResourceResult
 from fastmcp.server.context import Context
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 
 logger: Logger = get_logger(name=__name__)
@@ -78,9 +81,20 @@ get_prompt_tool = Tool.from_function(
 
 
 class PromptToolMiddleware(ToolInjectionMiddleware):
-    """A middleware for injecting prompts as tools into the context."""
+    """A middleware for injecting prompts as tools into the context.
+
+    .. deprecated::
+        Use ``fastmcp.server.transforms.PromptsAsTools`` instead.
+    """
 
     def __init__(self) -> None:
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "PromptToolMiddleware is deprecated. Use the PromptsAsTools transform instead: "
+                "from fastmcp.server.transforms import PromptsAsTools",
+                FastMCPDeprecationWarning,
+                stacklevel=2,
+            )
         tools: list[Tool] = [list_prompts_tool, get_prompt_tool]
         super().__init__(tools=tools)
 
@@ -109,8 +123,19 @@ read_resource_tool = Tool.from_function(
 
 
 class ResourceToolMiddleware(ToolInjectionMiddleware):
-    """A middleware for injecting resources as tools into the context."""
+    """A middleware for injecting resources as tools into the context.
+
+    .. deprecated::
+        Use ``fastmcp.server.transforms.ResourcesAsTools`` instead.
+    """
 
     def __init__(self) -> None:
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "ResourceToolMiddleware is deprecated. Use the ResourcesAsTools transform instead: "
+                "from fastmcp.server.transforms import ResourcesAsTools",
+                FastMCPDeprecationWarning,
+                stacklevel=2,
+            )
         tools: list[Tool] = [list_resources_tool, read_resource_tool]
         super().__init__(tools=tools)

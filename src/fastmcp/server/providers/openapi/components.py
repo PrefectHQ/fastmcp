@@ -13,6 +13,7 @@ from mcp.types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
 import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.resources import (
     Resource,
     ResourceContent,
@@ -21,13 +22,32 @@ from fastmcp.resources import (
 )
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import HTTPRoute
 from fastmcp.utilities.openapi.director import RequestDirector
 
 if TYPE_CHECKING:
     from fastmcp.server import Context
+
+_SAFE_HEADERS = frozenset(
+    {
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "cache-control",
+        "connection",
+        "content-length",
+        "content-type",
+        "host",
+        "user-agent",
+    }
+)
+
+
+def _redact_headers(headers: httpx.Headers) -> dict[str, str]:
+    return {k: v if k.lower() in _SAFE_HEADERS else "***" for k, v in headers.items()}
+
 
 __all__ = [
     "OpenAPIResource",
@@ -138,7 +158,7 @@ class OpenAPITool(Tool):
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         super().__init__(
@@ -183,7 +203,9 @@ class OpenAPITool(Tool):
 
         # Send the request and process the response.
         try:
-            logger.debug(f"run - sending request; headers: {request.headers}")
+            logger.debug(
+                f"run - sending request; headers: {_redact_headers(request.headers)}"
+            )
 
             response = await self._client.send(request)
             response.raise_for_status()

@@ -34,7 +34,7 @@ class SupabaseProvider(RemoteAuthProvider):
     1. Supabase Project Setup:
        - Create a Supabase project at https://supabase.com
        - Note your project URL (e.g., "https://abc123.supabase.co")
-       - Configure your JWT algorithm in Supabase Auth settings (HS256, RS256, or ES256)
+       - Configure your JWT algorithm in Supabase Auth settings (RS256 or ES256)
        - Asymmetric keys (RS256/ES256) are recommended for production
 
     2. JWT Verification:
@@ -74,8 +74,11 @@ class SupabaseProvider(RemoteAuthProvider):
         project_url: AnyHttpUrl | str,
         base_url: AnyHttpUrl | str,
         auth_route: str = "/auth/v1",
-        algorithm: Literal["HS256", "RS256", "ES256"] = "ES256",
+        algorithm: Literal["RS256", "ES256"] = "ES256",
         required_scopes: list[str] | None = None,
+        scopes_supported: list[str] | None = None,
+        resource_name: str | None = None,
+        resource_documentation: AnyHttpUrl | None = None,
         token_verifier: TokenVerifier | None = None,
     ):
         """Initialize Supabase metadata provider.
@@ -85,11 +88,16 @@ class SupabaseProvider(RemoteAuthProvider):
             base_url: Public URL of this FastMCP server
             auth_route: Supabase Auth route. Defaults to "/auth/v1". Can be customized
                 for self-hosted Supabase Auth setups using custom routes.
-            algorithm: JWT signing algorithm (HS256, RS256, or ES256). Must match your
+            algorithm: JWT signing algorithm (RS256 or ES256). Must match your
                 Supabase Auth configuration. Defaults to ES256.
             required_scopes: Optional list of scopes to require for all requests.
                 Note: Supabase currently uses RLS policies for authorization. OAuth-level
                 scopes are an upcoming feature.
+            scopes_supported: Optional list of scopes to advertise in OAuth metadata.
+                If None, uses required_scopes. Use this when the scopes clients should
+                request differ from the scopes enforced on tokens.
+            resource_name: Optional name for the protected resource metadata.
+            resource_documentation: Optional documentation URL for the protected resource.
             token_verifier: Optional token verifier. If None, creates JWT verifier for Supabase
         """
         self.project_url = str(project_url).rstrip("/")
@@ -121,6 +129,9 @@ class SupabaseProvider(RemoteAuthProvider):
             token_verifier=token_verifier,
             authorization_servers=[AnyHttpUrl(f"{self.project_url}/{self.auth_route}")],
             base_url=self.base_url,
+            scopes_supported=scopes_supported,
+            resource_name=resource_name,
+            resource_documentation=resource_documentation,
         )
 
     def get_routes(

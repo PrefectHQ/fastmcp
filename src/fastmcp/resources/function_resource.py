@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import warnings
 from collections.abc import Callable
@@ -14,15 +15,19 @@ from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
-from fastmcp.resources.resource import Resource, ResourceResult
-from fastmcp.server.apps import resolve_ui_mime_type
+from fastmcp.exceptions import FastMCPDeprecationWarning
+from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (
     transform_context_annotations,
     without_injected_parameters,
 )
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
+from fastmcp.utilities.mime import resolve_ui_mime_type
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -170,7 +175,7 @@ class FunctionResource(Resource):
         task_config.validate_function(fn, func_name)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn):
+        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
@@ -191,7 +196,9 @@ class FunctionResource(Resource):
             name=func_name,
             version=str(metadata.version) if metadata.version is not None else None,
             title=metadata.title,
-            description=metadata.description or inspect.getdoc(fn),
+            description=metadata.description
+            if metadata.description is not None
+            else inspect.getdoc(fn),
             icons=metadata.icons,
             mime_type=resolved_mime or "text/plain",
             tags=metadata.tags or set(),
@@ -207,7 +214,7 @@ class FunctionResource(Resource):
         """Read the resource by calling the wrapped function."""
         # self.fn is wrapped by without_injected_parameters which handles
         # dependency resolution internally
-        if inspect.iscoroutinefunction(self.fn):
+        if is_coroutine_function(self.fn):
             result = await self.fn()
         else:
             # Run sync functions in threadpool to avoid blocking the event loop
@@ -223,11 +230,7 @@ class FunctionResource(Resource):
         return result
 
     def register_with_docket(self, docket: Docket) -> None:
-        """Register this resource with docket for background execution.
-
-        FunctionResource registers the underlying function, which has the user's
-        Depends parameters for docket to resolve.
-        """
+        """Register this resource with docket for background execution."""
         if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])
@@ -331,10 +334,10 @@ def resource(
             warnings.warn(
                 "decorator_mode='object' is deprecated and will be removed in a future version. "
                 "Decorators now return the original function with metadata attached.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=3,
             )
-            return create_resource(fn)  # type: ignore[return-value]
+            return create_resource(fn)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn)
 
     return decorator

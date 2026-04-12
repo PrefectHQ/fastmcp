@@ -1,5 +1,8 @@
 """Unit tests for RequestDirector."""
 
+import json
+from urllib.parse import unquote
+
 import pytest
 from jsonschema_path import SchemaPath
 
@@ -194,8 +197,6 @@ class TestRequestDirector:
         )  # httpx normalizes headers to lowercase
 
         # Check body
-        import json
-
         assert request.content is not None
         body_data = json.loads(request.content)
         assert body_data["title"] == "Updated Title"
@@ -215,8 +216,6 @@ class TestRequestDirector:
         assert "123" in str(request.url)  # Path ID should be 123
 
         # Check body
-        import json
-
         body_data = json.loads(request.content)
         assert body_data["id"] == 456  # Body ID should be 456
         assert body_data["name"] == "John Doe"
@@ -239,8 +238,6 @@ class TestRequestDirector:
 
         headers = dict(request.headers) if request.headers else {}
         assert "X-Client-Version" not in headers
-
-        import json
 
         body_data = json.loads(request.content)
         assert body_data["title"] == "Required Title"
@@ -309,8 +306,6 @@ class TestRequestDirector:
         assert request.method == "POST"
         assert "123" in str(request.url)
 
-        import json
-
         body_data = json.loads(request.content)
         assert body_data["name"] == "John Doe"
 
@@ -377,10 +372,580 @@ class TestRequestDirector:
 
         assert request.method == "POST"
         # Should wrap in object when multiple properties but schema is not object
-        import json
-
         body_data = json.loads(request.content)
         assert body_data == {"prop1": "value1", "prop2": "value2"}
+
+
+class TestContentTypeHandling:
+    """Test that request Content-Type respects the OpenAPI spec."""
+
+    @pytest.fixture
+    def director(self, basic_openapi_30_spec):
+        spec = SchemaPath.from_dict(basic_openapi_30_spec)
+        return RequestDirector(spec)
+
+    def test_application_json_uses_httpx_json(self, director):
+        """Standard application/json uses httpx's json= parameter."""
+        route = HTTPRoute(
+            path="/items",
+            method="PATCH",
+            operation_id="update_item",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/json": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                    }
+                },
+            ),
+            parameter_map={
+                "name": {"location": "body", "openapi_name": "name"},
+            },
+        )
+
+        request = director.build(route, {"name": "test"}, "https://example.com")
+        assert request.headers["content-type"] == "application/json"
+        assert json.loads(request.content) == {"name": "test"}
+
+    def test_json_patch_content_type_preserved(self, director):
+        """application/json-patch+json is sent as the Content-Type header."""
+        route = HTTPRoute(
+            path="/items/{id}",
+            method="PATCH",
+            operation_id="patch_item",
+            parameters=[
+                ParameterInfo(
+                    name="id",
+                    location="path",
+                    required=True,
+                    schema={"type": "string"},
+                ),
+            ],
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/json-patch+json": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "op": {"type": "string"},
+                                "path": {"type": "string"},
+                                "value": {},
+                            },
+                        },
+                    }
+                },
+            ),
+            parameter_map={
+                "id": {"location": "path", "openapi_name": "id"},
+                "body": {"location": "body", "openapi_name": "body"},
+            },
+        )
+
+        patch_ops = [{"op": "replace", "path": "/name", "value": "new-name"}]
+        request = director.build(
+            route, {"id": "123", "body": patch_ops}, "https://example.com"
+        )
+
+        assert request.headers["content-type"] == "application/json-patch+json"
+        assert json.loads(request.content) == patch_ops
+
+    def test_custom_json_content_type_with_dict_body(self, director):
+        """Any non-standard JSON content type gets the correct header."""
+        route = HTTPRoute(
+            path="/items",
+            method="POST",
+            operation_id="create_item",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/merge-patch+json": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                    }
+                },
+            ),
+            parameter_map={
+                "name": {"location": "body", "openapi_name": "name"},
+            },
+        )
+
+        request = director.build(route, {"name": "test"}, "https://example.com")
+        assert request.headers["content-type"] == "application/merge-patch+json"
+        assert json.loads(request.content) == {"name": "test"}
+
+    def test_custom_content_type_preserves_other_headers(self, director):
+        """Custom content type doesn't clobber other headers from parameters."""
+        route = HTTPRoute(
+            path="/items",
+            method="PATCH",
+            operation_id="patch_item",
+            parameters=[
+                ParameterInfo(
+                    name="X-Request-Id",
+                    location="header",
+                    required=True,
+                    schema={"type": "string"},
+                ),
+            ],
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/json-patch+json": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                    }
+                },
+            ),
+            parameter_map={
+                "X-Request-Id": {
+                    "location": "header",
+                    "openapi_name": "X-Request-Id",
+                },
+                "name": {"location": "body", "openapi_name": "name"},
+            },
+        )
+
+        request = director.build(
+            route,
+            {"X-Request-Id": "abc-123", "name": "test"},
+            "https://example.com",
+        )
+        assert request.headers["content-type"] == "application/json-patch+json"
+        assert request.headers["x-request-id"] == "abc-123"
+
+    def test_no_request_body_info_defaults_to_json(self, director):
+        """When route has no request_body metadata, dict body uses application/json."""
+        route = HTTPRoute(
+            path="/items",
+            method="POST",
+            operation_id="create_item",
+            parameter_map={
+                "name": {"location": "body", "openapi_name": "name"},
+            },
+        )
+
+        request = director.build(route, {"name": "test"}, "https://example.com")
+        assert request.headers["content-type"] == "application/json"
+
+    def test_non_json_content_type_falls_through(self, director):
+        """Non-JSON types like multipart/form-data don't get JSON-serialized."""
+        route = HTTPRoute(
+            path="/upload",
+            method="POST",
+            operation_id="upload",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "multipart/form-data": {
+                        "type": "object",
+                        "properties": {"file": {"type": "string"}},
+                    }
+                },
+            ),
+            parameter_map={
+                "file": {"location": "body", "openapi_name": "file"},
+            },
+        )
+
+        request = director.build(route, {"file": "data"}, "https://example.com")
+        # Should fall through to httpx's json= path (not manually serialized
+        # with a multipart/form-data header), since the content type isn't
+        # JSON-compatible.
+        assert request.headers["content-type"] == "application/json"
+
+
+class TestQueryParameterSerialization:
+    """Test that query parameters respect OpenAPI explode/style settings."""
+
+    @pytest.fixture
+    def director(self, basic_openapi_30_spec):
+        spec = SchemaPath.from_dict(basic_openapi_30_spec)
+        return RequestDirector(spec)
+
+    def test_explode_true_repeats_keys(self, director):
+        """Default behavior: explode=true sends values=a&values=b."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="values",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=True,
+                )
+            ],
+            parameter_map={
+                "values": {"location": "query", "openapi_name": "values"},
+            },
+        )
+
+        request = director.build(
+            route, {"values": ["hello", "world"]}, "https://example.com"
+        )
+        url = str(request.url)
+        assert "values=hello" in url
+        assert "values=world" in url
+
+    def test_explode_false_comma_joins(self, director):
+        """explode=false sends values=hello,world."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="values",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=False,
+                )
+            ],
+            parameter_map={
+                "values": {"location": "query", "openapi_name": "values"},
+            },
+        )
+
+        request = director.build(
+            route, {"values": ["hello", "world"]}, "https://example.com"
+        )
+        url = str(request.url)
+        assert "values=hello%2Cworld" in url or "values=hello,world" in url
+        # Must NOT have repeated keys
+        assert url.count("values=") == 1
+
+    def test_explode_none_defaults_to_true(self, director):
+        """When explode is unset, OpenAPI default for form style is explode=true."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="tags",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=None,
+                )
+            ],
+            parameter_map={
+                "tags": {"location": "query", "openapi_name": "tags"},
+            },
+        )
+
+        request = director.build(route, {"tags": ["a", "b"]}, "https://example.com")
+        url = str(request.url)
+        assert "tags=a" in url
+        assert "tags=b" in url
+
+    def test_explode_false_with_integers(self, director):
+        """explode=false works with non-string values."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="ids",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "integer"}},
+                    explode=False,
+                )
+            ],
+            parameter_map={
+                "ids": {"location": "query", "openapi_name": "ids"},
+            },
+        )
+
+        request = director.build(route, {"ids": [1, 2, 3]}, "https://example.com")
+        url = str(request.url)
+        assert "ids=1%2C2%2C3" in url or "ids=1,2,3" in url
+        assert url.count("ids=") == 1
+
+    def test_scalar_query_param_unaffected_by_explode(self, director):
+        """Non-list values pass through regardless of explode setting."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="get_item",
+            parameters=[
+                ParameterInfo(
+                    name="name",
+                    location="query",
+                    required=True,
+                    schema={"type": "string"},
+                    explode=False,
+                )
+            ],
+            parameter_map={
+                "name": {"location": "query", "openapi_name": "name"},
+            },
+        )
+
+        request = director.build(route, {"name": "foo"}, "https://example.com")
+        assert "name=foo" in str(request.url)
+
+    def test_pipe_delimited_explode_false(self, director):
+        """style=pipeDelimited, explode=false sends ids=1|2|3."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="ids",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=False,
+                    style="pipeDelimited",
+                )
+            ],
+            parameter_map={
+                "ids": {"location": "query", "openapi_name": "ids"},
+            },
+        )
+
+        request = director.build(route, {"ids": ["1", "2", "3"]}, "https://example.com")
+        url = str(request.url)
+        assert "ids=1%7C2%7C3" in url or "ids=1|2|3" in url
+        assert url.count("ids=") == 1
+
+    def test_space_delimited_explode_false(self, director):
+        """style=spaceDelimited, explode=false sends ids=1%202%203."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="ids",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=False,
+                    style="spaceDelimited",
+                )
+            ],
+            parameter_map={
+                "ids": {"location": "query", "openapi_name": "ids"},
+            },
+        )
+
+        request = director.build(route, {"ids": ["1", "2", "3"]}, "https://example.com")
+        url = str(request.url)
+        assert "ids=1+2+3" in url or "ids=1%202%203" in url
+        assert url.count("ids=") == 1
+
+    def test_explode_false_booleans_lowercased(self, director):
+        """Booleans serialize as true/false, not True/False."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="flags",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "boolean"}},
+                    explode=False,
+                )
+            ],
+            parameter_map={
+                "flags": {"location": "query", "openapi_name": "flags"},
+            },
+        )
+
+        request = director.build(route, {"flags": [True, False]}, "https://example.com")
+        url = str(request.url)
+        assert "true" in url and "false" in url
+        assert "True" not in url and "False" not in url
+
+    def test_explode_false_empty_list_omitted(self, director):
+        """Empty list with explode=false omits the parameter entirely."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="ids",
+                    location="query",
+                    required=False,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=False,
+                )
+            ],
+            parameter_map={
+                "ids": {"location": "query", "openapi_name": "ids"},
+            },
+        )
+
+        request = director.build(route, {"ids": []}, "https://example.com")
+        assert "ids" not in str(request.url)
+
+    def test_explode_false_dict_value(self, director):
+        """style=form, explode=false on objects serializes as key,value pairs."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="color",
+                    location="query",
+                    required=True,
+                    schema={
+                        "type": "object",
+                        "properties": {
+                            "R": {"type": "integer"},
+                            "G": {"type": "integer"},
+                            "B": {"type": "integer"},
+                        },
+                    },
+                    explode=False,
+                    style="form",
+                )
+            ],
+            parameter_map={
+                "color": {"location": "query", "openapi_name": "color"},
+            },
+        )
+
+        request = director.build(
+            route,
+            {"color": {"R": 100, "G": 200, "B": 150}},
+            "https://example.com",
+        )
+        url = str(request.url)
+        assert "color=R" in url
+        assert url.count("color=") == 1
+        # Should contain alternating key,value pairs
+        assert "100" in url and "200" in url and "150" in url
+
+    def test_explode_true_dict_expands_to_separate_params(self, director):
+        """style=form, explode=true on objects expands each property as a query param."""
+        route = HTTPRoute(
+            path="/test",
+            method="GET",
+            operation_id="test_endpoint",
+            parameters=[
+                ParameterInfo(
+                    name="data",
+                    location="query",
+                    required=True,
+                    schema={
+                        "type": "object",
+                        "properties": {
+                            "myAttribute": {"type": "boolean"},
+                        },
+                    },
+                    explode=True,
+                )
+            ],
+            parameter_map={
+                "data": {"location": "query", "openapi_name": "data"},
+            },
+        )
+
+        request = director.build(
+            route, {"data": {"myAttribute": True}}, "https://example.com"
+        )
+        url = str(request.url)
+        # Should expand to myAttribute=true (not data={'myAttribute': True})
+        assert "myAttribute=true" in url
+        assert "data=" not in url
+
+    def test_explode_default_dict_expands_to_separate_params(self, director):
+        """Default explode (None → true) on objects expands properties."""
+        route = HTTPRoute(
+            path="/test",
+            method="GET",
+            operation_id="test_endpoint",
+            parameters=[
+                ParameterInfo(
+                    name="filter",
+                    location="query",
+                    required=True,
+                    schema={
+                        "type": "object",
+                        "properties": {
+                            "category": {"type": "string"},
+                            "active": {"type": "boolean"},
+                        },
+                    },
+                    # explode defaults to None → treated as true
+                )
+            ],
+            parameter_map={
+                "filter": {"location": "query", "openapi_name": "filter"},
+            },
+        )
+
+        request = director.build(
+            route,
+            {"filter": {"category": "electronics", "active": False}},
+            "https://example.com",
+        )
+        url = str(request.url)
+        assert "category=electronics" in url
+        assert "active=false" in url
+        assert "filter=" not in url
+
+    def test_explode_true_empty_dict_omitted(self, director):
+        """Empty dict with explode=true omits the parameter."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="filter",
+                    location="query",
+                    required=False,
+                    schema={"type": "object"},
+                    explode=True,
+                )
+            ],
+            parameter_map={
+                "filter": {"location": "query", "openapi_name": "filter"},
+            },
+        )
+
+        request = director.build(route, {"filter": {}}, "https://example.com")
+        assert "filter" not in str(request.url)
+
+    def test_explode_false_empty_dict_omitted(self, director):
+        """Empty dict with explode=false omits the parameter."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="filter",
+                    location="query",
+                    required=False,
+                    schema={"type": "object"},
+                    explode=False,
+                )
+            ],
+            parameter_map={
+                "filter": {"location": "query", "openapi_name": "filter"},
+            },
+        )
+
+        request = director.build(route, {"filter": {}}, "https://example.com")
+        assert "filter" not in str(request.url)
 
 
 class TestRequestDirectorIntegration:
@@ -460,3 +1025,130 @@ class TestRequestDirectorIntegration:
 
             assert request.method == "GET"
             assert str(request.url).startswith("https://api.example.com/search")
+
+
+class TestPathTraversalPrevention:
+    """Test that path parameter values are URL-encoded to prevent SSRF/path traversal."""
+
+    @pytest.fixture
+    def director(self, basic_openapi_30_spec):
+        spec = SchemaPath.from_dict(basic_openapi_30_spec)
+        return RequestDirector(spec)
+
+    @pytest.fixture
+    def path_route(self):
+        return HTTPRoute(
+            path="/api/v1/users/{id}/profile",
+            method="GET",
+            operation_id="get_user_profile",
+            parameters=[
+                ParameterInfo(
+                    name="id",
+                    location="path",
+                    required=True,
+                    schema={"type": "string"},
+                )
+            ],
+            flat_param_schema={
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+                "required": ["id"],
+            },
+            parameter_map={"id": {"location": "path", "openapi_name": "id"}},
+        )
+
+    @pytest.mark.parametrize(
+        "malicious_id",
+        [
+            "../../../admin/delete-all?",
+            "../../secret",
+            "../../../etc/passwd",
+            "foo/../../../admin",
+            "..%2F..%2Fadmin",
+            "..%2f..%2fadmin",
+        ],
+    )
+    def test_path_traversal_encoded(self, director, path_route, malicious_id: str):
+        request = director.build(
+            path_route, {"id": malicious_id}, "https://api.example.com"
+        )
+        url = str(request.url)
+        assert "/admin" not in url
+        assert "/secret" not in url
+        assert "/etc/passwd" not in url
+        assert url.startswith("https://api.example.com/api/v1/users/")
+
+    def test_slash_in_param_is_encoded(self, director, path_route):
+        request = director.build(path_route, {"id": "a/b"}, "https://api.example.com")
+        url = str(request.url)
+        assert "/a/b/" not in url
+        assert "a%2Fb" in url
+
+    def test_dot_dot_slash_is_encoded(self, director, path_route):
+        request = director.build(
+            path_route, {"id": "../admin"}, "https://api.example.com"
+        )
+        url = str(request.url)
+        assert "%2E%2E%2Fadmin" in url or "%2e%2e%2fadmin" in url
+        assert url.startswith("https://api.example.com/api/v1/users/")
+
+    def test_question_mark_encoded(self, director, path_route):
+        request = director.build(
+            path_route, {"id": "foo?bar=baz"}, "https://api.example.com"
+        )
+        url = str(request.url)
+        assert "foo%3Fbar%3Dbaz" in url or "foo%3fbar%3dbaz" in url
+
+    def test_hash_encoded(self, director, path_route):
+        request = director.build(
+            path_route, {"id": "foo#fragment"}, "https://api.example.com"
+        )
+        url = str(request.url)
+        assert "foo%23fragment" in url
+
+    def test_normal_values_still_work(self, director, path_route):
+        request = director.build(
+            path_route, {"id": "user-123"}, "https://api.example.com"
+        )
+        assert (
+            str(request.url) == "https://api.example.com/api/v1/users/user-123/profile"
+        )
+
+    def test_dotted_values_encode_dots(self, director, path_route):
+        """Dots are encoded to prevent path normalization by urljoin."""
+        request = director.build(
+            path_route, {"id": "v1.2.3"}, "https://api.example.com"
+        )
+        url = str(request.url)
+        assert "v1%2E2%2E3" in url
+        assert url.startswith("https://api.example.com/api/v1/users/")
+
+    def test_numeric_values_still_work(self, director, path_route):
+        request = director.build(path_route, {"id": 42}, "https://api.example.com")
+        assert str(request.url) == "https://api.example.com/api/v1/users/42/profile"
+
+    def test_bare_single_dot_encoded(self, director, path_route):
+        """Bare '.' must be encoded so urljoin doesn't normalize it away."""
+        request = director.build(path_route, {"id": "."}, "https://api.example.com")
+        url = str(request.url)
+        assert "%2E" in url
+        assert url.startswith("https://api.example.com/api/v1/users/")
+
+    def test_bare_dotdot_encoded(self, director, path_route):
+        """Bare '..' must be encoded so urljoin doesn't resolve it as traversal."""
+        request = director.build(path_route, {"id": ".."}, "https://api.example.com")
+        url = str(request.url)
+        assert "%2E%2E" in url or "%2e%2e" in url
+        assert url.startswith("https://api.example.com/api/v1/users/")
+
+    def test_double_encoded_traversal(self, director, path_route):
+        request = director.build(
+            path_route,
+            {"id": "..%2F..%2Fadmin"},
+            "https://api.example.com",
+        )
+        url = str(request.url)
+        decoded = unquote(unquote(url))
+        # Verify traversal didn't escape the users/ prefix
+        assert decoded.startswith("https://api.example.com/api/v1/users/")
+        assert url.startswith("https://api.example.com/api/v1/users/")

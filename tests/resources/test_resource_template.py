@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from fastmcp import Context, FastMCP
 from fastmcp.resources import ResourceTemplate
 from fastmcp.resources.function_resource import FunctionResource
-from fastmcp.resources.template import match_uri_template
+from fastmcp.resources.template import build_regex, match_uri_template
 
 
 class TestResourceTemplate:
@@ -747,3 +747,62 @@ class TestContextHandling:
             # read() returns the raw value
             result = await resource.read()
             assert result == "item: 42"
+
+
+class TestMalformedURITemplates:
+    """Test that malformed URI templates from remote servers don't crash."""
+
+    @pytest.mark.parametrize(
+        "template",
+        [
+            "test://{bad-name}/path",
+            "test://{hyphen-param}/{other-param}/path",
+            "test://{1leading}/path",
+            "test://{123}/path",
+        ],
+        ids=[
+            "hyphen_in_name",
+            "multiple_hyphens",
+            "leading_digit",
+            "all_digits",
+        ],
+    )
+    def test_build_regex_returns_none_for_invalid_group_names(self, template: str):
+        assert build_regex(template) is None
+
+    def test_build_regex_returns_none_for_duplicate_group_names(self):
+        assert build_regex("test://{a}/{a}/path") is None
+
+    @pytest.mark.parametrize(
+        "template",
+        [
+            "test://{bad-name}/path",
+            "test://{a}/{a}/path",
+            "test://{1leading}/path",
+        ],
+        ids=[
+            "hyphen_in_name",
+            "duplicate_groups",
+            "leading_digit",
+        ],
+    )
+    def test_match_uri_template_returns_none_for_malformed_templates(
+        self, template: str
+    ):
+        assert match_uri_template("test://anything/path", template) is None
+
+    def test_resource_template_matches_returns_none_for_malformed_template(self):
+        template = ResourceTemplate(
+            uri_template="test://{bad-name}/path",
+            name="test",
+            parameters={},
+        )
+        assert template.matches("test://anything/path") is None
+
+    def test_build_regex_still_works_for_valid_templates(self):
+        regex = build_regex("test://{name}/{id}")
+        assert regex is not None
+        match = regex.match("test://foo/123")
+        assert match is not None
+        assert match.group("name") == "foo"
+        assert match.group("id") == "123"

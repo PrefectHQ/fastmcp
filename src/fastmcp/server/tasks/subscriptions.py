@@ -55,17 +55,26 @@ async def subscribe_to_task_updates(
             return
 
         # Subscribe to state and progress events from Docket
+        terminal_states = {
+            ExecutionState.COMPLETED,
+            ExecutionState.FAILED,
+            ExecutionState.CANCELLED,
+        }
         async for event in execution.subscribe():
             if event["type"] == "state":
+                state = ExecutionState(event["state"])
                 # Send notifications/tasks/status when state changes
                 await _send_status_notification(
                     session=session,
                     task_id=task_id,
                     task_key=task_key,
                     docket=docket,
-                    state=ExecutionState(event["state"]),
+                    state=state,
                     poll_interval_ms=poll_interval_ms,
                 )
+                # Stop subscribing once the task reaches a terminal state
+                if state in terminal_states:
+                    break
             elif event["type"] == "progress":
                 # Send notification when progress message changes
                 await _send_progress_notification(
@@ -148,7 +157,7 @@ async def _send_status_notification(
 
     # Send notification (don't let failures break the subscription)
     with suppress(Exception):
-        await session.send_notification(notification)  # type: ignore[arg-type]
+        await session.send_notification(notification)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
 
 async def _send_progress_notification(
@@ -210,4 +219,4 @@ async def _send_progress_notification(
     )
 
     with suppress(Exception):
-        await session.send_notification(notification)  # type: ignore[arg-type]
+        await session.send_notification(notification)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]

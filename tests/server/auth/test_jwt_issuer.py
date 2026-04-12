@@ -132,7 +132,7 @@ class TestJWTIssuer:
             expires_in=60 * 60 * 24 * 30,  # 30 days
         )
 
-        payload = issuer.verify_token(token)
+        payload = issuer.verify_token(token, expected_token_use="refresh")
         assert payload["client_id"] == "client-abc"
         assert payload["token_use"] == "refresh"
         assert payload["jti"] == "refresh-token-id"
@@ -280,8 +280,31 @@ class TestJWTIssuer:
             upstream_claims=upstream_claims,
         )
 
-        payload = issuer.verify_token(token)
+        payload = issuer.verify_token(token, expected_token_use="refresh")
         assert "upstream_claims" in payload
         assert payload["upstream_claims"]["sub"] == "user-123"
         assert payload["upstream_claims"]["name"] == "Test User"
         assert payload["token_use"] == "refresh"
+
+    def test_verify_token_rejects_refresh_token_as_access(self, issuer):
+        """Refresh tokens must not be accepted when expecting access tokens."""
+        token = issuer.issue_refresh_token(
+            client_id="client-abc",
+            scopes=["read"],
+            jti="refresh-token-id",
+            expires_in=60 * 60 * 24 * 30,
+        )
+
+        with pytest.raises(JoseError, match="Token type mismatch"):
+            issuer.verify_token(token)
+
+    def test_verify_token_rejects_access_token_as_refresh(self, issuer):
+        """Access tokens must not be accepted when expecting refresh tokens."""
+        token = issuer.issue_access_token(
+            client_id="client-abc",
+            scopes=["read"],
+            jti="token-id",
+        )
+
+        with pytest.raises(JoseError, match="Token type mismatch"):
+            issuer.verify_token(token, expected_token_use="refresh")

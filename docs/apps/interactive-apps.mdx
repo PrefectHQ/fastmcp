@@ -1,0 +1,538 @@
+---
+title: FastMCPApp
+sidebarTitle: FastMCPApp
+description: Managed tool binding, visibility, and composition for apps with heavy server interaction.
+icon: puzzle-piece
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.2.0" />
+
+<Tip>
+[Prefab](https://prefab.prefect.io) is in early, active development — its API changes frequently and breaking changes can occur with any release. Always pin `prefab-ui` to a specific version in your dependencies.
+</Tip>
+
+Any [Prefab app](/apps/prefab) can call server tools — there's nothing stopping you from using `CallTool("tool_name")` in a regular `@mcp.tool(app=True)`. But once you have multiple backend tools, the management overhead adds up: Which tools should the model see vs. only the UI? What happens to string-based tool references when servers are composed under namespaces? How do you keep things wired correctly as the app grows?
+
+`FastMCPApp` is a class that solves these problems. It gives you two decorators that work together:
+
+- **`@app.ui()`** — entry-point tools the model calls to open the app. These return a Prefab UI.
+- **`@app.tool()`** — backend tools the UI calls via `CallTool`. These do the work.
+
+Backend tools get globally stable identifiers that survive namespacing. Visibility is managed automatically — the model sees entry points, the UI sees backends. And `CallTool` accepts function references instead of strings, so references are refactorable and composition-safe.
+
+## Your First Interactive App
+
+Here's a minimal app with a form that saves data:
+
+```python
+from prefab_ui.actions import SetState, ShowToast
+from prefab_ui.actions.mcp import CallTool
+from prefab_ui.app import PrefabApp
+from prefab_ui.components import (
+    Badge, Button, Column, ForEach, Form,
+    Heading, Input, Row, Separator, Text,
+)
+from prefab_ui.rx import RESULT
+from fastmcp import FastMCP, FastMCPApp
+
+app = FastMCPApp("Notes")
+
+notes_db: list[dict] = []
+
+
+@app.tool()
+def add_note(title: str, body: str) -> list[dict]:
+    """Save a note and return all notes."""
+    notes_db.append({"title": title, "body": body})
+    return list(notes_db)
+
+
+@app.ui()
+def notes_app() -> PrefabApp:
+    """Open the notes app."""
+    with Column(gap=6, css_class="p-6") as view:
+        Heading("Notes")
+
+        with ForEach("notes") as note:
+            with Row(gap=2, align="center"):
+                Text(note.title, css_class="font-semibold")
+                Badge(note.body)
+
+        Separator()
+
+        with Form(
+            on_submit=CallTool(
+                "add_note",
+                on_success=[
+                    SetState("notes", RESULT),
+                    ShowToast("Note saved!", variant="success"),
+                ],
+                on_error=ShowToast("Failed to save", variant="error"),
+            )
+        ):
+            Input(name="title", label="Title", required=True)
+            Input(name="body", label="Body", required=True)
+            Button("Add Note")
+
+    return PrefabApp(view=view, state={"notes": list(notes_db)})
+
+
+mcp = FastMCP("Notes Server", providers=[app])
+```
+
+When the model calls `notes_app`, the user sees a form. Submitting it calls `add_note` on the server, updates the state with the result, and shows a toast — all without leaving the UI.
+
+Let's break down the key concepts.
+
+## Entry Points: @app.ui()
+
+Entry points are what the model sees and calls to open your app. They return a Prefab UI, just like display tools:
+
+```python
+@app.ui()
+def dashboard() -> PrefabApp:
+    """The model calls this to open the dashboard."""
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Dashboard")
+        # ... build UI ...
+    return PrefabApp(view=view)
+```
+
+Entry points default to `visibility=["model"]` — they show up in the tool list for the LLM but aren't callable from within the app UI. They support the same options as `@mcp.tool`: `name`, `description`, `title`, `tags`, `icons`, `auth`, and `timeout`.
+
+```python
+@app.ui(title="Contact Manager", description="Open the contact management interface")
+def contact_manager() -> PrefabApp:
+    ...
+```
+
+## Backend Tools: @app.tool()
+
+Backend tools do the work. The UI calls them via `CallTool`; they run on the server and return data:
+
+```python
+@app.tool()
+def save_contact(name: str, email: str) -> list[dict]:
+    """Save a contact and return the updated list."""
+    db.append({"name": name, "email": email})
+    return list(db)
+```
+
+By default, backend tools are only visible to the app UI (`visibility=["app"]`). The model doesn't see them in the tool list. If you want a tool callable by both the model and the UI, pass `model=True`:
+
+```python
+@app.tool(model=True)
+def list_contacts() -> list[dict]:
+    """Both the model and the UI can call this."""
+    return list(db)
+```
+
+Backend tools support `name`, `description`, `auth`, and `timeout`:
+
+```python
+@app.tool(description="Search contacts by name or email", timeout=10.0)
+def search(query: str) -> list[dict]:
+    ...
+```
+
+## Connecting UI to Backend: CallTool
+
+`CallTool` is the bridge between the UI and the server. Pass the name of a backend tool registered with `@app.tool()`:
+
+```python
+from prefab_ui.actions.mcp import CallTool
+
+# Reference a backend tool by name
+CallTool("save_contact", arguments={"name": "Alice", "email": "alice@example.com"})
+
+# Arguments can reference state with Rx
+from prefab_ui.rx import STATE
+
+CallTool("search", arguments={"query": STATE.search_term})
+```
+
+FastMCPApp resolves the name to the tool's stable global key automatically, so `CallTool("save_contact")` keeps working even when the server is mounted under a namespace.
+
+You can also pass the function directly — `CallTool(save_contact)` — which can be convenient when the tool is defined in the same file. Both forms resolve identically.
+
+### Handling Results
+
+Server calls are asynchronous. Use `on_success` and `on_error` callbacks to handle outcomes:
+
+```python
+from prefab_ui.actions import SetState, ShowToast
+from prefab_ui.rx import RESULT
+
+CallTool(
+    "save_contact",
+    on_success=[
+        SetState("contacts", RESULT),
+        ShowToast("Saved!", variant="success"),
+    ],
+    on_error=ShowToast("Something went wrong", variant="error"),
+)
+```
+
+`RESULT` is a reactive reference to the value the tool returned — available inside `on_success` callbacks. Similarly, `ERROR` (from `prefab_ui.rx`) is available inside `on_error`.
+
+Callbacks can be a single action or a list of actions. They execute in order, and an error in any action short-circuits the rest.
+
+### result_key Shorthand
+
+When a tool returns data that should replace a state key, `result_key` is a convenient shorthand for `on_success=SetState(key, RESULT)`:
+
+```python
+CallTool("list_contacts", result_key="contacts")
+
+# equivalent to:
+CallTool(
+    "list_contacts",
+    on_success=SetState("contacts", RESULT),
+)
+```
+
+## Actions
+
+`CallTool` is one of several actions available in Prefab. Actions are events attached to component handlers like `on_click`, `on_submit`, and `on_change`.
+
+### Client Actions
+
+These run instantly in the browser — no server round-trip:
+
+```python
+from prefab_ui.actions import SetState, ToggleState, AppendState, PopState, ShowToast
+
+# Set a value
+SetState("count", 42)
+
+# Toggle a boolean
+ToggleState("expanded")
+
+# Append to a list
+AppendState("items", {"name": "New Item"})
+
+# Remove by index
+PopState("items", 0)
+
+# Show a notification
+ShowToast("Done!", variant="success")
+```
+
+### Chaining Actions
+
+Pass a list to execute multiple actions in sequence:
+
+```python
+from prefab_ui.components import Button
+from prefab_ui.actions import SetState, ShowToast
+
+Button(
+    "Reset",
+    on_click=[
+        SetState("query", ""),
+        SetState("results", []),
+        ShowToast("Cleared", variant="default"),
+    ],
+)
+```
+
+### Loading States
+
+A common pattern: show a loading indicator while a server call is in flight.
+
+```python
+from prefab_ui.actions import SetState, ShowToast
+from prefab_ui.actions.mcp import CallTool
+from prefab_ui.components import Button
+from prefab_ui.rx import RESULT, Rx
+
+saving = Rx("saving")
+
+Button(
+    saving.then("Saving...", "Save"),
+    disabled=saving,
+    on_click=[
+        SetState("saving", True),
+        CallTool(
+            "save_data",
+            on_success=[
+                SetState("saving", False),
+                SetState("result", RESULT),
+                ShowToast("Saved!", variant="success"),
+            ],
+            on_error=[
+                SetState("saving", False),
+                ShowToast("Failed", variant="error"),
+            ],
+        ),
+    ],
+)
+
+# Pass state={"saving": False} to PrefabApp when returning
+```
+
+## Forms
+
+Forms are the most common way to collect input and send it to the server. When a form submits, all named input values are gathered and passed as arguments to the `CallTool` action.
+
+### Manual Forms
+
+Build forms with individual input components:
+
+```python
+from prefab_ui.components import Form, Input, Select, SelectOption, Textarea, Button
+from prefab_ui.actions.mcp import CallTool
+from prefab_ui.actions import ShowToast
+
+with Form(
+    on_submit=CallTool(
+        "create_ticket",
+        on_success=ShowToast("Ticket created!", variant="success"),
+    )
+):
+    Input(name="title", label="Title", required=True)
+    with Select(name="priority", label="Priority"):
+        SelectOption("Low", value="low")
+        SelectOption("Medium", value="medium")
+        SelectOption("High", value="high")
+        SelectOption("Critical", value="critical")
+    Textarea(name="description", label="Description")
+    Button("Create Ticket")
+```
+
+When submitted, the CallTool receives `{"title": "...", "priority": "...", "description": "..."}` as arguments to `create_ticket`.
+
+### Pydantic Model Forms
+
+For structured data, `Form.from_model()` generates the entire form from a Pydantic model — inputs, labels, and submit wiring:
+
+```python
+from typing import Literal
+
+from pydantic import BaseModel, Field
+from prefab_ui.components import Column, Heading, Form
+from prefab_ui.actions.mcp import CallTool
+from prefab_ui.actions import SetState, ShowToast
+from prefab_ui.app import PrefabApp
+from prefab_ui.rx import RESULT
+
+class BugReport(BaseModel):
+    title: str = Field(title="Bug Title")
+    severity: Literal["low", "medium", "high", "critical"] = Field(
+        title="Severity", default="medium"
+    )
+    description: str = Field(title="Description")
+
+
+@app.ui()
+def report_bug() -> PrefabApp:
+    """File a bug report."""
+    with Column(gap=4, css_class="p-6") as view:
+        Heading("Report a Bug")
+        Form.from_model(
+            BugReport,
+            on_submit=CallTool(
+                "create_bug",
+                on_success=ShowToast("Bug filed!", variant="success"),
+                on_error=ShowToast("Failed to submit", variant="error"),
+            ),
+        )
+    return PrefabApp(view=view)
+
+
+@app.tool()
+def create_bug(data: BugReport) -> str:
+    """Create a bug report."""
+    # save to database...
+    return f"Created: {data.title}"
+```
+
+`str` fields become text inputs, `Literal` becomes a select dropdown, `bool` becomes a checkbox. Field titles and defaults are respected.
+
+## Composition and Namespacing
+
+The reason `FastMCPApp` exists — and why you'd use it instead of plain `@mcp.tool(app=True)` with `CallTool("tool_name")` — is composition safety.
+
+When you mount a server under a namespace, tool names get prefixed:
+
+```python
+from fastmcp import FastMCP
+
+platform = FastMCP("Platform")
+platform.mount("contacts", contacts_server)
+
+# "save_contact" becomes "contacts_save_contact"
+```
+
+If your UI used `CallTool("save_contact")`, it would break — the tool is now named `contacts_save_contact`. But `CallTool(save_contact)` with a function reference resolves to a globally stable key (like `save_contact-a1b2c3d4`) that bypasses the namespace entirely.
+
+This is why `FastMCPApp` assigns global keys to backend tools, and why `CallTool` accepts function references. Your app works the same whether it's running standalone or mounted inside a larger platform.
+
+### Mounting an App
+
+`FastMCPApp` is a Provider. Add it to a server with `providers=` or `add_provider`:
+
+```python
+from fastmcp import FastMCP, FastMCPApp
+
+app = FastMCPApp("Contacts")
+
+@app.ui()
+def contact_manager() -> PrefabApp:
+    ...
+
+@app.tool()
+def save_contact(name: str, email: str) -> dict:
+    ...
+
+
+# Option 1: providers list
+mcp = FastMCP("Platform", providers=[app])
+
+# Option 2: add_provider
+mcp = FastMCP("Platform")
+mcp.add_provider(app)
+```
+
+Multiple apps can coexist on the same server:
+
+```python
+mcp = FastMCP("Platform", providers=[contacts_app, inventory_app, billing_app])
+```
+
+Each app's backend tools have their own global keys, so there's no collision even if two apps have a tool named `save`.
+
+### Running Standalone
+
+For development, `FastMCPApp` has a convenience `run()` method that wraps itself in a temporary `FastMCP` server:
+
+```python
+app = FastMCPApp("Contacts")
+# ... register tools ...
+
+if __name__ == "__main__":
+    app.run()
+```
+
+## Complete Example: Contact Manager
+
+This pulls together everything — entry points, backend tools, callable references, forms (both manual and Pydantic), state management, and actions:
+
+```python expandable
+from __future__ import annotations
+
+from typing import Literal
+
+from prefab_ui.actions import SetState, ShowToast
+from prefab_ui.actions.mcp import CallTool
+from prefab_ui.app import PrefabApp
+from prefab_ui.components import (
+    Badge, Button, Column, ForEach, Form,
+    Heading, Input, Muted, Row, Separator, Text,
+)
+from prefab_ui.rx import RESULT, Rx
+from pydantic import BaseModel, Field
+from fastmcp import FastMCP, FastMCPApp
+
+# Data
+
+contacts_db: list[dict] = [
+    {"name": "Arthur Dent", "email": "arthur@earth.com", "category": "Customer"},
+    {"name": "Ford Prefect", "email": "ford@betelgeuse.org", "category": "Partner"},
+]
+
+
+class ContactModel(BaseModel):
+    name: str = Field(title="Full Name", min_length=1)
+    email: str = Field(title="Email")
+    category: Literal["Customer", "Vendor", "Partner", "Other"] = "Other"
+
+
+# App
+
+app = FastMCPApp("Contacts")
+
+
+@app.tool()
+def save_contact(data: ContactModel) -> list[dict]:
+    """Save a new contact and return the updated list."""
+    contacts_db.append(data.model_dump())
+    return list(contacts_db)
+
+
+@app.tool()
+def search_contacts(query: str) -> list[dict]:
+    """Filter contacts by name or email."""
+    q = query.lower()
+    return [
+        c for c in contacts_db
+        if q in c["name"].lower() or q in c["email"].lower()
+    ]
+
+
+@app.tool(model=True)
+def list_contacts() -> list[dict]:
+    """Return all contacts. Visible to both the model and the UI."""
+    return list(contacts_db)
+
+
+@app.ui()
+def contact_manager() -> PrefabApp:
+    """Open the contact manager."""
+    with Column(gap=6, css_class="p-6") as view:
+        Heading("Contacts")
+
+        with ForEach("contacts") as contact:
+            with Row(gap=2, align="center"):
+                Text(contact.name, css_class="font-medium")
+                Muted(contact.email)
+                Badge(contact.category)
+
+        Separator()
+
+        Heading("Add Contact", level=3)
+        Form.from_model(
+            ContactModel,
+            on_submit=CallTool(
+                "save_contact",
+                on_success=[
+                    SetState("contacts", RESULT),
+                    ShowToast("Contact saved!", variant="success"),
+                ],
+                on_error=ShowToast("Failed to save", variant="error"),
+            ),
+        )
+
+        Separator()
+
+        Heading("Search", level=3)
+        with Form(
+            on_submit=CallTool(
+                "search_contacts",
+                arguments={"query": Rx("query")},
+                on_success=SetState("contacts", RESULT),
+            )
+        ):
+            Input(name="query", placeholder="Search by name or email...")
+            Button("Search")
+
+    return PrefabApp(view=view, state={"contacts": list(contacts_db)})
+
+
+mcp = FastMCP("Contacts Server", providers=[app])
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+This example is also available as a runnable server at `examples/apps/contacts/contacts_server.py`.
+
+## Next Steps
+
+- **[Prefab Apps](/apps/prefab)** — Components, state, and reactive displays (the building blocks)
+- **[Patterns](/apps/patterns)** — Copy-paste examples for common UIs
+- **[Development](/apps/development)** — Preview and test app tools locally
+- **[Prefab UI Docs](https://prefab.prefect.io)** — Full component reference and advanced patterns

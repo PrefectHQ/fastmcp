@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from typing import TYPE_CHECKING, Any
 
+import anyio
 from uncalled_for import SharedContext
 
 import fastmcp
@@ -89,14 +90,12 @@ class LifespanMixin:
                 name=settings.docket.name,
                 url=settings.docket.url,
             ) as docket:
-                # Store on server instance for cross-task access (FastMCPTransport)
                 self._docket = docket
 
                 # Register task-enabled components with Docket
                 for component in task_components:
                     component.register_with_docket(docket)
 
-                # Set Docket in ContextVar so CurrentDocket can access it
                 docket_token = _current_docket.set(docket)
                 try:
                     # Build worker kwargs from settings
@@ -104,15 +103,14 @@ class LifespanMixin:
                         "concurrency": settings.docket.concurrency,
                         "redelivery_timeout": settings.docket.redelivery_timeout,
                         "reconnection_delay": settings.docket.reconnection_delay,
+                        "minimum_check_interval": settings.docket.minimum_check_interval,
                     }
                     if settings.docket.worker_name:
                         worker_kwargs["name"] = settings.docket.worker_name
 
                     # Create and start Worker
                     async with Worker(docket, **worker_kwargs) as worker:
-                        # Store on server instance for cross-context access
                         self._worker = worker
-                        # Set Worker in ContextVar so CurrentWorker can access it
                         worker_token = _current_worker.set(worker)
                         try:
                             worker_task = asyncio.create_task(worker.run_forever())
@@ -126,9 +124,7 @@ class LifespanMixin:
                             _current_worker.reset(worker_token)
                             self._worker = None
                 finally:
-                    # Reset ContextVar
                     _current_docket.reset(docket_token)
-                    # Clear instance attribute
                     self._docket = None
         finally:
             # Reset server ContextVar
@@ -136,30 +132,56 @@ class LifespanMixin:
 
     @asynccontextmanager
     async def _lifespan_manager(self: FastMCP) -> AsyncIterator[None]:
-        if self._lifespan_result_set:
-            yield
+        async with self._lifespan_lock:
+            if self._lifespan_result_set:
+                self._lifespan_ref_count += 1
+                should_enter_lifespan = False
+            else:
+                self._lifespan_ref_count = 1
+                should_enter_lifespan = True
+
+        if not should_enter_lifespan:
+            try:
+                yield
+            finally:
+                async with self._lifespan_lock:
+                    self._lifespan_ref_count -= 1
+                    if self._lifespan_ref_count == 0:
+                        self._lifespan_result_set = False
+                        self._lifespan_result = None
             return
 
-        async with (
-            self._lifespan(self) as user_lifespan_result,
-            self._docket_lifespan(),
-        ):
+        # Use an explicit AsyncExitStack so we can shield teardown from
+        # cancellation. Without this, Ctrl-C causes CancelledError to
+        # propagate into lifespan finally blocks, preventing any async
+        # cleanup (e.g. closing DB connections, flushing buffers).
+        stack = AsyncExitStack()
+        try:
+            user_lifespan_result = await stack.enter_async_context(self._lifespan(self))
+            await stack.enter_async_context(self._docket_lifespan())
+
             self._lifespan_result = user_lifespan_result
             self._lifespan_result_set = True
 
-            async with AsyncExitStack[bool | None]() as stack:
-                # Start lifespans for all providers
-                for provider in self.providers:
-                    await stack.enter_async_context(provider.lifespan())
+            # Start lifespans for all providers
+            for provider in self.providers:
+                await stack.enter_async_context(provider.lifespan())
 
-                self._started.set()
-                try:
-                    yield
-                finally:
-                    self._started.clear()
-
-        self._lifespan_result_set = False
-        self._lifespan_result = None
+            self._started.set()
+            try:
+                yield
+            finally:
+                self._started.clear()
+        finally:
+            try:
+                with anyio.CancelScope(shield=True):
+                    await stack.aclose()
+            finally:
+                async with self._lifespan_lock:
+                    self._lifespan_ref_count -= 1
+                    if self._lifespan_ref_count == 0:
+                        self._lifespan_result_set = False
+                        self._lifespan_result = None
 
     def _setup_task_protocol_handlers(self: FastMCP) -> None:
         """Register SEP-1686 task protocol handlers with SDK.

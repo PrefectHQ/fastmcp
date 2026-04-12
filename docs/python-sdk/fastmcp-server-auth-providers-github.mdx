@@ -29,7 +29,7 @@ Example:
 
 ## Classes
 
-### `GitHubTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/github.py#L39" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GitHubTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/github.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Token verifier for GitHub OAuth tokens.
@@ -37,10 +37,14 @@ Token verifier for GitHub OAuth tokens.
 GitHub OAuth tokens are opaque (not JWTs), so we verify them
 by calling GitHub's API to check if they're valid and get user info.
 
+Caching is disabled by default.  Set ``cache_ttl_seconds`` to a positive
+integer to cache successful verification results and avoid repeated
+GitHub API calls for the same token.
+
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/github.py#L66" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/github.py#L82" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -49,7 +53,7 @@ verify_token(self, token: str) -> AccessToken | None
 Verify GitHub OAuth token by calling GitHub API.
 
 
-### `GitHubProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/github.py#L153" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GitHubProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/github.py#L178" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Complete GitHub OAuth provider for FastMCP.

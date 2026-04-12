@@ -1,5 +1,6 @@
 """A middleware for response caching."""
 
+import hashlib
 from collections.abc import Sequence
 from logging import Logger
 from typing import Any, TypedDict
@@ -17,10 +18,10 @@ from key_value.aio.wrappers.statistics.wrapper import (
 from pydantic import Field
 from typing_extensions import NotRequired, Self, override
 
-from fastmcp.prompts.prompt import Message, Prompt, PromptResult
-from fastmcp.resources.resource import Resource, ResourceContent, ResourceResult
+from fastmcp.prompts.base import Message, Prompt, PromptResult
+from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel
 
@@ -101,7 +102,12 @@ class CachableMessage(FastMCPBaseModel):
     """A wrapper for Message that can be cached."""
 
     role: str
-    content: mcp.types.TextContent | mcp.types.EmbeddedResource
+    content: (
+        mcp.types.TextContent
+        | mcp.types.ImageContent
+        | mcp.types.AudioContent
+        | mcp.types.EmbeddedResource
+    )
 
 
 class CachablePromptResult(FastMCPBaseModel):
@@ -127,7 +133,7 @@ class CachablePromptResult(FastMCPBaseModel):
     def unwrap(self) -> PromptResult:
         return PromptResult(
             messages=[
-                Message(content=m.content, role=m.role)  # type: ignore[arg-type]
+                Message(content=m.content, role=m.role)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                 for m in self.messages
             ],
             description=self.description,
@@ -411,7 +417,7 @@ class ResponseCachingMiddleware(Middleware):
         ) is False or not self._matches_tool_cache_settings(tool_name=tool_name):
             return await call_next(context=context)
 
-        cache_key: str = f"{tool_name}:{_get_arguments_str(context.message.arguments)}"
+        cache_key: str = _make_call_tool_cache_key(msg=context.message)
 
         if cached_value := await self._call_tool_cache.get(key=cache_key):
             return cached_value.unwrap()
@@ -440,7 +446,7 @@ class ResponseCachingMiddleware(Middleware):
         if self._read_resource_settings.get("enabled") is False:
             return await call_next(context=context)
 
-        cache_key: str = str(context.message.uri)
+        cache_key: str = _make_read_resource_cache_key(msg=context.message)
         cached_value: CachableResourceResult | None
 
         if cached_value := await self._read_resource_cache.get(key=cache_key):
@@ -468,20 +474,21 @@ class ResponseCachingMiddleware(Middleware):
         if self._get_prompt_settings.get("enabled") is False:
             return await call_next(context=context)
 
-        cache_key: str = f"{context.message.name}:{_get_arguments_str(arguments=context.message.arguments)}"
+        cache_key: str = _make_get_prompt_cache_key(msg=context.message)
 
         if cached_value := await self._get_prompt_cache.get(key=cache_key):
             return cached_value.unwrap()
 
         value: PromptResult = await call_next(context=context)
+        cached_value = CachablePromptResult.wrap(value)
 
         await self._get_prompt_cache.put(
             key=cache_key,
-            value=CachablePromptResult.wrap(value),
+            value=cached_value,
             ttl=self._get_prompt_settings.get("ttl", ONE_HOUR_IN_SECONDS),
         )
 
-        return value
+        return cached_value.unwrap()
 
     def _matches_tool_cache_settings(self, tool_name: str) -> bool:
         """Check if the tool matches the cache settings for tool calls."""
@@ -519,3 +526,27 @@ def _get_arguments_str(arguments: dict[str, Any] | None) -> str:
 
     except TypeError:
         return repr(arguments)
+
+
+def _hash_cache_key(value: str) -> str:
+    """Build a fixed-length SHA-256 cache key from request-derived input."""
+
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _make_call_tool_cache_key(msg: mcp.types.CallToolRequestParams) -> str:
+    """Make a cache key for a tool call using a stable hash of name and arguments."""
+
+    return _hash_cache_key(f"{msg.name}:{_get_arguments_str(msg.arguments)}")
+
+
+def _make_read_resource_cache_key(msg: mcp.types.ReadResourceRequestParams) -> str:
+    """Make a cache key for a resource read using a stable hash of URI."""
+
+    return _hash_cache_key(str(msg.uri))
+
+
+def _make_get_prompt_cache_key(msg: mcp.types.GetPromptRequestParams) -> str:
+    """Make a cache key for a prompt get using a stable hash of name and arguments."""
+
+    return _hash_cache_key(f"{msg.name}:{_get_arguments_str(msg.arguments)}")

@@ -64,7 +64,7 @@ This ordering matters. Place error handling early so it catches exceptions from 
 
 ### Server Composition
 
-When using [mounted servers](/servers/providers/mounting), middleware behavior follows a clear hierarchy:
+When using [mounted servers](/servers/composition), middleware behavior follows a clear hierarchy:
 
 - **Parent middleware** runs for all requests, including those routed to mounted servers
 - **Mounted server middleware** only runs for requests handled by that specific server
@@ -83,6 +83,8 @@ parent.mount(child, namespace="child")
 ```
 
 Requests to `child_tool` flow through the parent's `AuthMiddleware` first, then through the child's `LoggingMiddleware`.
+
+Middleware-stored state does not automatically cross mount boundaries. If `AuthMiddleware` on the parent calls `ctx.set_state("user_id", ...)`, a tool on the child server calling `ctx.get_state("user_id")` will get `None` — each `FastMCP` instance owns its own session state store. To share state across the mount, either pass the same `session_state_store` to both servers or use `serializable=False` for request-scoped values. See [State and Mounted Servers](/servers/context#state-and-mounted-servers) for details.
 
 ## Hooks
 
@@ -421,11 +423,21 @@ Each settings class accepts:
 For persistence or distributed deployments, configure a different storage backend:
 
 ```python
+from pathlib import Path
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
-from key_value.aio.stores.disk import DiskStore
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1KeySanitizationStrategy,
+    FileTreeV1CollectionSanitizationStrategy,
+)
 
+cache_dir = Path("cache")
 mcp.add_middleware(ResponseCachingMiddleware(
-    cache_storage=DiskStore(directory="cache")
+    cache_storage=FileTreeStore(
+        data_directory=cache_dir,
+        key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(cache_dir),
+        collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(cache_dir),
+    )
 ))
 ```
 
@@ -534,30 +546,6 @@ mcp.add_middleware(PingMiddleware(interval_ms=5000))
 | `interval_ms` | `int` | `30000` | Ping interval in milliseconds |
 
 The ping task starts on the first message and stops automatically when the session ends. Most useful for stateful HTTP connections; has no effect on stateless connections.
-
-### Tool Injection
-
-```python
-from fastmcp.server.middleware.tool_injection import (
-    ToolInjectionMiddleware,
-    PromptToolMiddleware,
-    ResourceToolMiddleware
-)
-```
-
-`ToolInjectionMiddleware` dynamically injects tools during request processing. `PromptToolMiddleware` and `ResourceToolMiddleware` provide compatibility layers for clients that cannot list or access prompts and resources directly—they expose those capabilities as tools.
-
-```python
-from fastmcp import FastMCP
-from fastmcp.tools import Tool
-from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
-
-def my_tool_fn(a: int, b: int) -> int:
-    return a + b
-
-my_tool = Tool.from_function(fn=my_tool_fn, name="my_tool")
-mcp.add_middleware(ToolInjectionMiddleware(tools=[my_tool]))
-```
 
 ### Response Limiting
 

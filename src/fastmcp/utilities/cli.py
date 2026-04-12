@@ -221,7 +221,7 @@ def log_server_banner(server: FastMCP[Any]) -> None:
     if server.version:
         server_info += f", {server.version}"
     info_table.add_row("🖥", "Server:", Text(server_info, style="dim"))
-    info_table.add_row("🚀", "Deploy free:", "https://fastmcp.cloud")
+    info_table.add_row("🚀", "Deploy free:", "https://horizon.prefect.io")
 
     # Create panel with logo, title, and information using Group
     docs_url = Text("https://gofastmcp.com", style="dim")

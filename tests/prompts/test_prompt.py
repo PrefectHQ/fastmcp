@@ -2,7 +2,7 @@ import pytest
 from mcp.types import EmbeddedResource, TextResourceContents
 from pydantic import FileUrl
 
-from fastmcp.prompts.prompt import (
+from fastmcp.prompts.base import (
     Message,
     Prompt,
     PromptResult,
@@ -493,6 +493,36 @@ class TestMessage:
         assert isinstance(mcp_msg.content, TextContent)
         assert mcp_msg.content.text == "Hello"
 
+    def test_message_passthrough_image_content(self):
+        """Test Message passes through ImageContent without JSON serialization."""
+        from mcp.types import ImageContent
+
+        img = ImageContent(type="image", data="base64data", mimeType="image/png")
+        msg = Message(img, role="user")
+        assert isinstance(msg.content, ImageContent)
+        assert msg.content.data == "base64data"
+        assert msg.content.mimeType == "image/png"
+
+    def test_message_passthrough_audio_content(self):
+        """Test Message passes through AudioContent without JSON serialization."""
+        from mcp.types import AudioContent
+
+        audio = AudioContent(type="audio", data="base64audio", mimeType="audio/wav")
+        msg = Message(audio, role="user")
+        assert isinstance(msg.content, AudioContent)
+        assert msg.content.data == "base64audio"
+        assert msg.content.mimeType == "audio/wav"
+
+    def test_message_image_content_to_mcp_prompt_message(self):
+        """Test that ImageContent round-trips through to_mcp_prompt_message."""
+        from mcp.types import ImageContent
+
+        img = ImageContent(type="image", data="base64data", mimeType="image/png")
+        msg = Message(img, role="user")
+        mcp_msg = msg.to_mcp_prompt_message()
+        assert isinstance(mcp_msg.content, ImageContent)
+        assert mcp_msg.content.data == "base64data"
+
 
 class TestPromptResult:
     def test_promptresult_from_string(self):
@@ -520,12 +550,12 @@ class TestPromptResult:
     def test_promptresult_rejects_single_message(self):
         """Test PromptResult rejects single Message (must be in list)."""
         with pytest.raises(TypeError, match="must be str or list"):
-            PromptResult(Message("Hello"))  # type: ignore[arg-type]
+            PromptResult(Message("Hello"))  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     def test_promptresult_rejects_dict(self):
         """Test PromptResult rejects dict."""
         with pytest.raises(TypeError, match="must be str or list"):
-            PromptResult({"key": "value"})  # type: ignore[arg-type]
+            PromptResult({"key": "value"})  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     def test_promptresult_with_meta(self):
         """Test PromptResult with meta field."""

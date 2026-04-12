@@ -22,6 +22,7 @@ Example:
 from __future__ import annotations
 
 import contextlib
+from typing import Literal
 
 import httpx
 from key_value.aio.protocols import AsyncKeyValue
@@ -32,6 +33,7 @@ from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.token_cache import TokenCache
 
 logger = get_logger(__name__)
 
@@ -41,6 +43,10 @@ class GitHubTokenVerifier(TokenVerifier):
 
     GitHub OAuth tokens are opaque (not JWTs), so we verify them
     by calling GitHub's API to check if they're valid and get user info.
+
+    Caching is disabled by default.  Set ``cache_ttl_seconds`` to a positive
+    integer to cache successful verification results and avoid repeated
+    GitHub API calls for the same token.
     """
 
     def __init__(
@@ -48,6 +54,8 @@ class GitHubTokenVerifier(TokenVerifier):
         *,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
+        cache_ttl_seconds: int | None = None,
+        max_cache_size: int | None = None,
         http_client: httpx.AsyncClient | None = None,
     ):
         """Initialize the GitHub token verifier.
@@ -55,6 +63,10 @@ class GitHubTokenVerifier(TokenVerifier):
         Args:
             required_scopes: Required OAuth scopes (e.g., ['user:email'])
             timeout_seconds: HTTP request timeout
+            cache_ttl_seconds: How long to cache verification results in seconds.
+                Caching is disabled by default (None).  Set to a positive integer
+                to enable (e.g., 300 for 5 minutes).
+            max_cache_size: Maximum number of tokens to cache.  Default: 10 000.
             http_client: Optional httpx.AsyncClient for connection pooling. When provided,
                 the client is reused across calls and the caller is responsible for its
                 lifecycle. When None (default), a fresh client is created per call.
@@ -62,9 +74,18 @@ class GitHubTokenVerifier(TokenVerifier):
         super().__init__(required_scopes=required_scopes)
         self.timeout_seconds = timeout_seconds
         self._http_client = http_client
+        self._cache = TokenCache(
+            ttl_seconds=cache_ttl_seconds,
+            max_size=max_cache_size,
+        )
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify GitHub OAuth token by calling GitHub API."""
+        is_cached, cached_result = self._cache.get(token)
+        if is_cached:
+            logger.debug("GitHub token cache hit")
+            return cached_result
+
         try:
             async with (
                 contextlib.nullcontext(self._http_client)
@@ -103,6 +124,7 @@ class GitHubTokenVerifier(TokenVerifier):
                 )
 
                 # Extract scopes from X-OAuth-Scopes header if available
+                scopes_verified = scopes_response.status_code == 200
                 oauth_scopes_header = scopes_response.headers.get("x-oauth-scopes", "")
                 token_scopes = [
                     scope.strip()
@@ -127,7 +149,7 @@ class GitHubTokenVerifier(TokenVerifier):
                         return None
 
                 # Create AccessToken with GitHub user info
-                return AccessToken(
+                result = AccessToken(
                     token=token,
                     client_id=str(user_data.get("id", "unknown")),  # Use GitHub user ID
                     scopes=token_scopes,
@@ -141,6 +163,9 @@ class GitHubTokenVerifier(TokenVerifier):
                         "github_user_data": user_data,
                     },
                 )
+                if scopes_verified:
+                    self._cache.set(token, result)
+                return result
 
         except httpx.RequestError as e:
             logger.debug("Failed to verify GitHub token: %s", e)
@@ -188,11 +213,16 @@ class GitHubProvider(OAuthProxy):
         redirect_path: str | None = None,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
+        cache_ttl_seconds: int | None = None,
+        max_cache_size: int | None = None,
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
-        require_authorization_consent: bool = True,
+        require_authorization_consent: bool | Literal["external"] = True,
+        consent_csp_policy: str | None = None,
+        forward_resource: bool = True,
         http_client: httpx.AsyncClient | None = None,
+        enable_cimd: bool = True,
     ):
         """Initialize GitHub OAuth provider.
 
@@ -205,6 +235,10 @@ class GitHubProvider(OAuthProxy):
             redirect_path: Redirect path configured in GitHub OAuth app (defaults to "/auth/callback")
             required_scopes: Required GitHub scopes (defaults to ["user"])
             timeout_seconds: HTTP request timeout for GitHub API calls (defaults to 10)
+            cache_ttl_seconds: How long to cache token verification results in seconds.
+                Caching is disabled by default (None).  Set to a positive integer to
+                enable (e.g., 300 for 5 minutes).
+            max_cache_size: Maximum number of tokens to cache.  Default: 10 000.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
@@ -216,10 +250,14 @@ class GitHubProvider(OAuthProxy):
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to GitHub.
                 When False, authorization proceeds directly without user confirmation.
-                SECURITY WARNING: Only disable for local development or testing environments.
+                When "external", the built-in consent screen is skipped but no warning is
+                logged, indicating that consent is handled externally (e.g. by the upstream IdP).
+                SECURITY WARNING: Only set to False for local development or testing environments.
             http_client: Optional httpx.AsyncClient for connection pooling in token verification.
                 When provided, the client is reused across verify_token calls and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
+            enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
+                client IDs (default True). Set to False to disable.
         """
         # Parse scopes if provided as string
         required_scopes_final = (
@@ -230,6 +268,8 @@ class GitHubProvider(OAuthProxy):
         token_verifier = GitHubTokenVerifier(
             required_scopes=required_scopes_final,
             timeout_seconds=timeout_seconds,
+            cache_ttl_seconds=cache_ttl_seconds,
+            max_cache_size=max_cache_size,
             http_client=http_client,
         )
 
@@ -247,6 +287,9 @@ class GitHubProvider(OAuthProxy):
             client_storage=client_storage,
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
+            consent_csp_policy=consent_csp_policy,
+            forward_resource=forward_resource,
+            enable_cimd=enable_cimd,
         )
 
         logger.debug(

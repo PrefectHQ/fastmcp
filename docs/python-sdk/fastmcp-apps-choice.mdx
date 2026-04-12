@@ -1,0 +1,44 @@
+---
+title: choice
+sidebarTitle: choice
+---
+
+# `fastmcp.apps.choice`
+
+
+Choice — a Provider that lets the user pick from a set of options.
+
+The LLM presents options, the user clicks one, and the selection
+flows back into the conversation as a message.
+
+Requires ``fastmcp[apps]`` (prefab-ui).
+
+Usage::
+
+    from fastmcp import FastMCP
+    from fastmcp.apps.choice import Choice
+
+    mcp = FastMCP("My Server")
+    mcp.add_provider(Choice())
+
+
+## Classes
+
+### `Choice` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/choice.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A Provider that lets the user choose from a set of options.
+
+The LLM calls ``choose`` with a prompt and a list of options.
+The user sees a card with one button per option. Clicking a button
+sends the selection back into the conversation via ``SendMessage``,
+triggering the LLM's next turn.
+
+Example::
+
+    from fastmcp import FastMCP
+    from fastmcp.apps.choice import Choice
+
+    mcp = FastMCP("My Server")
+    mcp.add_provider(Choice())
+

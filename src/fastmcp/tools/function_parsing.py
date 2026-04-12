@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import types
 from collections.abc import Callable
@@ -16,7 +17,7 @@ from fastmcp.server.dependencies import (
     transform_context_annotations,
     without_injected_parameters,
 )
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
@@ -25,6 +26,7 @@ from fastmcp.utilities.types import (
     Image,
     create_function_without_params,
     get_cached_typeadapter,
+    is_class_member_of_type,
     replace_type,
 )
 
@@ -35,6 +37,16 @@ try:
     _PREFAB_TYPES: tuple[type, ...] = (_PrefabApp, _PrefabComponent)
 except ImportError:
     _PREFAB_TYPES = ()
+
+
+def _contains_bytes_type(tp: Any) -> bool:
+    """Check if *tp* is or contains bytes, recursing through unions and Annotated."""
+    if tp is bytes:
+        return True
+    origin = get_origin(tp)
+    if origin is Union or origin is types.UnionType or origin is Annotated:
+        return any(_contains_bytes_type(a) for a in get_args(tp))
+    return False
 
 
 def _contains_prefab_type(tp: Any) -> bool:
@@ -63,8 +75,16 @@ class _UnserializableType:
     pass
 
 
-def _is_object_schema(schema: dict[str, Any]) -> bool:
+def _is_object_schema(
+    schema: dict[str, Any],
+    *,
+    _root_schema: dict[str, Any] | None = None,
+    _seen_refs: set[str] | None = None,
+) -> bool:
     """Check if a JSON schema represents an object type."""
+    root_schema = _root_schema or schema
+    seen_refs = _seen_refs or set()
+
     # Direct object type
     if schema.get("type") == "object":
         return True
@@ -73,9 +93,34 @@ def _is_object_schema(schema: dict[str, Any]) -> bool:
     if "properties" in schema:
         return True
 
-    # Self-referencing types use $ref pointing to $defs
-    # The referenced type is always an object in our use case
-    return "$ref" in schema and "$defs" in schema
+    # Resolve local $ref definitions and recurse into the target schema.
+    ref = schema.get("$ref")
+    if not isinstance(ref, str) or not ref.startswith("#/"):
+        return False
+
+    if ref in seen_refs:
+        return False
+
+    # Walk the JSON Pointer path from the root schema, unescaping each
+    # token per RFC 6901 (~1 → /, ~0 → ~).
+    pointer = ref.removeprefix("#/")
+    segments = pointer.split("/")
+    target: Any = root_schema
+    for segment in segments:
+        unescaped = segment.replace("~1", "/").replace("~0", "~")
+        if not isinstance(target, dict) or unescaped not in target:
+            return False
+        target = target[unescaped]
+
+    target_schema = target
+    if not isinstance(target_schema, dict):
+        return False
+
+    return _is_object_schema(
+        target_schema,
+        _root_schema=root_schema,
+        _seen_refs=seen_refs | {ref},
+    )
 
 
 @dataclass
@@ -124,7 +169,7 @@ class ParsedFunction:
         fn_doc = inspect.getdoc(fn)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn):
+        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
@@ -170,12 +215,21 @@ class ParsedFunction:
         original_output_type = output_type
 
         if output_type not in (inspect._empty, None, Any, ...):
+            # bytes can't be represented as structured JSON output — skip schema
+            if _contains_bytes_type(output_type):
+                output_type = _UnserializableType
+
             # Prefab component subclasses (Column, Card, etc.) shouldn't
             # produce output schemas — replace_type only does exact matching,
             # so we handle subclass matching explicitly here.  We also need
             # to handle composite types like ``Column | None`` and
             # ``Annotated[PrefabApp, ...]`` by recursing into their args.
             if _PREFAB_TYPES and _contains_prefab_type(output_type):
+                output_type = _UnserializableType
+
+            # ToolResult subclasses should suppress schema generation just
+            # like ToolResult itself — replace_type only does exact matching.
+            if is_class_member_of_type(output_type, ToolResult):
                 output_type = _UnserializableType
 
             # there are a variety of types that we don't want to attempt to

@@ -1,0 +1,369 @@
+"""Crash-test json_schema_to_type against real-world OpenAPI schemas.
+
+Uses the APIs.guru openapi-directory (https://github.com/APIs-guru/openapi-directory)
+pinned to a specific commit for reproducibility.
+
+Parametrized by API provider (~700 providers, one test each) so pytest
+shows progress and can identify which provider caused a hang.
+
+Marked as an integration test — skipped by default, run with:
+    uv run pytest tests/utilities/json_schema_type/test_real_world_schemas.py -m integration -v
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import signal
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+import yaml
+from pydantic import TypeAdapter
+
+from fastmcp.utilities.json_schema_type import json_schema_to_type
+
+# Pin to a specific commit for reproducibility
+OPENAPI_DIRECTORY_REPO = "https://github.com/APIs-guru/openapi-directory.git"
+OPENAPI_DIRECTORY_COMMIT = "f7207cf0a5c56081d275ebae4cf615249323385d"
+CLONE_DIR = Path(os.environ.get("OPENAPI_DIRECTORY_PATH", "/tmp/openapi-directory"))
+
+# Per-schema timeout (seconds) to catch infinite loops
+SCHEMA_TIMEOUT = 5
+
+# In CI (RUN_REAL_WORLD_SCHEMA_TEST=1), _ensure_repo clones automatically.
+# Locally, skip unless the repo is already cloned to avoid a surprise 200MB download.
+_run_in_ci = os.environ.get("RUN_REAL_WORLD_SCHEMA_TEST") == "1"
+_skip_locally = not _run_in_ci and not CLONE_DIR.exists()
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        _skip_locally,
+        reason=(
+            f"openapi-directory not found at {CLONE_DIR}. "
+            f"Set RUN_REAL_WORLD_SCHEMA_TEST=1 to auto-clone, or: "
+            f"git clone --depth 1 {OPENAPI_DIRECTORY_REPO} {CLONE_DIR}"
+        ),
+    ),
+]
+
+
+class _SchemaTimeout(Exception):
+    pass
+
+
+def _alarm_handler(signum: object, frame: object) -> None:
+    raise _SchemaTimeout()
+
+
+# ── Helpers ──────────────────────────────────────────────────────────
+
+
+def _is_openapi_directory_clone(path: Path) -> bool:
+    """Check whether *path* looks like a clone of the openapi-directory repo."""
+    if not (path / ".git").is_dir():
+        return False
+    result = subprocess.run(
+        ["git", "-C", str(path), "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+    )
+    return "openapi-directory" in result.stdout
+
+
+def _ensure_repo() -> Path:
+    """Clone the openapi-directory repo if not already present at the pinned commit."""
+    if CLONE_DIR.exists() and (CLONE_DIR / ".git").is_dir():
+        result = subprocess.run(
+            ["git", "-C", str(CLONE_DIR), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+        if result.stdout.strip() == OPENAPI_DIRECTORY_COMMIT:
+            return CLONE_DIR
+
+    if CLONE_DIR.exists():
+        if not _is_openapi_directory_clone(CLONE_DIR):
+            raise RuntimeError(
+                f"{CLONE_DIR} exists but is not an openapi-directory clone. "
+                f"Remove it manually or set OPENAPI_DIRECTORY_PATH to a different path."
+            )
+        import shutil
+
+        shutil.rmtree(CLONE_DIR)
+
+    subprocess.run(
+        ["git", "clone", "--depth", "1", OPENAPI_DIRECTORY_REPO, str(CLONE_DIR)],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(CLONE_DIR),
+            "fetch",
+            "--depth",
+            "1",
+            "origin",
+            OPENAPI_DIRECTORY_COMMIT,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(CLONE_DIR), "checkout", OPENAPI_DIRECTORY_COMMIT],
+        check=True,
+        capture_output=True,
+    )
+    return CLONE_DIR
+
+
+def _load_spec(spec_file: Path) -> dict | None:
+    """Load and return a spec dict, or None on failure."""
+    try:
+        if spec_file.suffix == ".yaml":
+            spec = yaml.safe_load(spec_file.read_text())
+        else:
+            spec = json.loads(spec_file.read_text())
+        return spec if isinstance(spec, dict) else None
+    except Exception:
+        return None
+
+
+def _extract_schemas(spec: dict) -> dict:
+    """Pull all schema definitions out of an OpenAPI spec."""
+    schemas: dict = {}
+    if "definitions" in spec:
+        schemas.update(spec["definitions"])
+    components = spec.get("components")
+    if isinstance(components, dict):
+        schemas.update(components.get("schemas", {}))
+    return {k: v for k, v in schemas.items() if isinstance(v, dict)}
+
+
+# ── Per-provider collection ──────────────────────────────────────────
+
+
+def _collect_providers() -> list[str]:
+    """List API provider directories (e.g. 'github.com', 'amazonaws.com')."""
+    apis_dir = CLONE_DIR / "APIs"
+    if not apis_dir.is_dir():
+        return []
+    return sorted(d.name for d in apis_dir.iterdir() if d.is_dir())
+
+
+def _spec_files_for_provider(provider: str) -> list[Path]:
+    """Find all spec files for a given provider."""
+    provider_dir = CLONE_DIR / "APIs" / provider
+    files: list[Path] = []
+    for name in ("openapi.yaml", "swagger.yaml", "openapi.json", "swagger.json"):
+        files.extend(provider_dir.rglob(name))
+    return sorted(files)
+
+
+# ── Test logic ───────────────────────────────────────────────────────
+
+
+@dataclass
+class ProviderResult:
+    """Crash counts for one API provider."""
+
+    schemas: int = 0
+    type_errors: int = 0
+    schema_errors: int = 0
+    timeouts: int = 0
+    other_errors: int = 0
+
+
+def _test_provider(provider: str) -> ProviderResult:
+    """Run json_schema_to_type on every schema for one provider."""
+    # Clear the module-level type cache between providers to avoid
+    # unbounded memory growth across 232K schemas.
+    from fastmcp.utilities.json_schema_type import _classes
+
+    _classes.clear()
+
+    result = ProviderResult()
+    use_alarm = hasattr(signal, "SIGALRM")
+
+    for spec_file in _spec_files_for_provider(provider):
+        spec = _load_spec(spec_file)
+        if spec is None:
+            continue
+        for _name, schema in _extract_schemas(spec).items():
+            # JSON-round-trip to simulate production: schemas arrive over
+            # MCP as JSON, so YAML-specific types (datetime, date) should
+            # not be present.  This avoids counting YAML-parser artifacts
+            # as json_schema_to_type bugs.
+            try:
+                schema = json.loads(json.dumps(schema, default=str))
+            except (TypeError, ValueError):
+                continue
+
+            result.schemas += 1
+
+            if use_alarm:
+                old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
+                signal.alarm(SCHEMA_TIMEOUT)
+            try:
+                T = json_schema_to_type(schema)
+                TypeAdapter(T)
+            except _SchemaTimeout:
+                result.timeouts += 1
+            except TypeError:
+                result.type_errors += 1
+            except Exception as e:
+                err_type = type(e).__name__
+                if "SchemaError" in err_type or "schema" in str(e).lower()[:50]:
+                    result.schema_errors += 1
+                else:
+                    result.other_errors += 1
+            finally:
+                if use_alarm:
+                    signal.alarm(0)
+                    signal.signal(signal.SIGALRM, old_handler)
+
+    return result
+
+
+# ── Per-provider test (parametrized) ─────────────────────────────────
+#
+# ~700 test items — one per API provider.
+# Profiled on a fast MacBook (p50=0.06s, p99=8s); CI is ~3x slower.
+# Tiered timeouts so small providers fail fast while large ones get room.
+#
+# Local times → CI estimate → timeout bucket:
+#   azure/aws/github/msft/google  80-137s → 240-410s → 600s
+#   adyen                         21s     → 63s      → 120s
+#   loket/mailchimp/apisetu/k8s   6-10s   → 18-30s   → 120s
+#   everything else (p99)         <8s     → <24s     → 60s
+
+_TIER1_PROVIDERS = frozenset(
+    {
+        "azure.com",
+        "amazonaws.com",
+        "googleapis.com",
+        "github.com",
+        "microsoft.com",
+    }
+)
+
+_TIER2_PROVIDERS = frozenset(
+    {
+        "adyen.com",
+        "loket.nl",
+        "mailchimp.com",
+        "apisetu.gov.in",
+        "kubernetes.io",
+        "twilio.com",
+        "sportsdata.io",
+        "vtex.local",
+        "amadeus.com",
+    }
+)
+
+
+def _providers_with_timeouts() -> list:  # list of pytest.param
+    """Build parametrize list with per-provider timeouts."""
+    params = []
+    for p in _collect_providers():
+        if p in _TIER1_PROVIDERS:
+            t = 600
+        elif p in _TIER2_PROVIDERS:
+            t = 120
+        else:
+            t = 60
+        params.append(
+            pytest.param(p, id=p, marks=pytest.mark.timeout(t, method="thread"))
+        )
+    return params
+
+
+# Accumulator: per-provider tests store results here, final test reads them.
+_results: dict[str, ProviderResult] = {}
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("provider", _providers_with_timeouts())
+def test_provider_schemas(provider: str):
+    """json_schema_to_type should not infinite-loop on schemas from this provider."""
+    _ensure_repo()
+    result = _test_provider(provider)
+    _results[provider] = result
+    assert result.timeouts == 0, (
+        f"{provider}: {result.timeouts} schema(s) timed out (possible infinite loop)"
+    )
+
+
+# ── Aggregate baseline test ──────────────────────────────────────────
+#
+# Runs last (sorted after test_provider_schemas by name).
+# Reads accumulated _results instead of re-running all providers.
+
+
+@pytest.mark.integration
+@pytest.mark.timeout(30, method="thread")
+def test_z_aggregate_crash_rate():
+    """Aggregate crash-rate baseline across all providers.
+
+    Asserts that total crash counts haven't regressed beyond known baselines.
+    As we fix crash patterns, ratchet the baselines down.
+
+    Named test_z_* so pytest runs it after all test_provider_schemas.
+    """
+    if not _results:
+        pytest.skip("No provider results collected — run with -m integration")
+
+    total = ProviderResult()
+    for r in _results.values():
+        total.schemas += r.schemas
+        total.type_errors += r.type_errors
+        total.schema_errors += r.schema_errors
+        total.timeouts += r.timeouts
+        total.other_errors += r.other_errors
+
+    crashes = (
+        total.type_errors + total.schema_errors + total.timeouts + total.other_errors
+    )
+
+    print(f"\n{'=' * 60}")
+    print("Real-world schema crash test — aggregate results")
+    print(f"{'=' * 60}")
+    print(f"Providers tested: {len(_results):,}")
+    print(f"Schemas tested:  {total.schemas:,}")
+    print(f"TypeErrors:      {total.type_errors:,}")
+    print(f"SchemaErrors:    {total.schema_errors:,}")
+    print(f"Timeouts:        {total.timeouts:,}")
+    print(f"Other errors:    {total.other_errors:,}")
+    print(
+        f"Total crashes:   {crashes:,} ({crashes / max(total.schemas, 1) * 100:.2f}%)"
+    )
+
+    assert total.schemas > 200_000, (
+        f"Expected >200k schemas but only found {total.schemas}. "
+        f"Is the openapi-directory checkout correct?"
+    )
+
+    # Snapshot baselines (captured 2026-04-10, openapi-directory@f7207cf0,
+    # origin/main, with JSON round-trip to strip YAML artifacts).
+    MAX_TYPE_ERRORS = 420  # was 388 — real json_schema_to_type bugs
+    MAX_SCHEMA_ERRORS = 300  # was 277 — Pydantic regex rejections (not our code)
+    MAX_TIMEOUTS = 5  # was 0
+    MAX_OTHER_ERRORS = 50  # was 0
+
+    assert total.type_errors <= MAX_TYPE_ERRORS, (
+        f"TypeErrors regressed: {total.type_errors} > {MAX_TYPE_ERRORS}"
+    )
+    assert total.schema_errors <= MAX_SCHEMA_ERRORS, (
+        f"SchemaErrors regressed: {total.schema_errors} > {MAX_SCHEMA_ERRORS}"
+    )
+    assert total.timeouts <= MAX_TIMEOUTS, (
+        f"Timeouts regressed: {total.timeouts} > {MAX_TIMEOUTS}"
+    )
+    assert total.other_errors <= MAX_OTHER_ERRORS, (
+        f"Other errors regressed: {total.other_errors} > {MAX_OTHER_ERRORS}"
+    )

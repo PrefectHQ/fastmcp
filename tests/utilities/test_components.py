@@ -5,14 +5,15 @@ import warnings
 import pytest
 from pydantic import ValidationError
 
-from fastmcp.prompts.prompt import Prompt
-from fastmcp.resources.resource import Resource
+from fastmcp.prompts.base import Prompt
+from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.components import (
     FastMCPComponent,
     FastMCPMeta,
     _convert_set_default_none,
+    get_fastmcp_metadata,
 )
 
 
@@ -171,19 +172,19 @@ class TestFastMCPComponent:
         """Test that tags are deduplicated when passed as a sequence."""
         component = FastMCPComponent(
             name="test",
-            tags=["tag1", "tag2", "tag1", "tag2"],  # type: ignore[arg-type]
+            tags=["tag1", "tag2", "tag1", "tag2"],  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
         )
         assert component.tags == {"tag1", "tag2"}
 
     def test_validation_error_for_invalid_data(self):
         """Test that validation errors are raised for invalid data."""
         with pytest.raises(ValidationError):
-            FastMCPComponent()  # type: ignore[call-arg]
+            FastMCPComponent()  # type: ignore[call-arg]  # ty:ignore[missing-argument]
 
     def test_extra_fields_forbidden(self):
         """Test that extra fields are not allowed."""
         with pytest.raises(ValidationError) as exc_info:
-            FastMCPComponent(name="test", unknown_field="value")  # type: ignore[call-arg]  # Intentionally passing invalid field for test
+            FastMCPComponent(name="test", unknown_field="value")  # type: ignore[call-arg]  # Intentionally passing invalid field for test  # ty:ignore[unknown-argument]
         assert "Extra inputs are not permitted" in str(exc_info.value)
 
 
@@ -236,8 +237,10 @@ class TestKeyPrefix:
             class NoPrefix(FastMCPComponent):
                 pass
 
-            assert len(w) == 1
-            assert "NoPrefix does not define KEY_PREFIX" in str(w[0].message)
+            key_prefix_warnings = [
+                x for x in w if "does not define KEY_PREFIX" in str(x.message)
+            ]
+            assert len(key_prefix_warnings) == 1
 
     def test_no_warning_when_key_prefix_defined(self):
         """Test that subclassing with KEY_PREFIX does not emit a warning."""
@@ -247,8 +250,30 @@ class TestKeyPrefix:
             class WithPrefix(FastMCPComponent):
                 KEY_PREFIX = "custom"
 
-            assert len(w) == 0
+            key_prefix_warnings = [
+                x for x in w if "does not define KEY_PREFIX" in str(x.message)
+            ]
+            assert len(key_prefix_warnings) == 0
             assert WithPrefix.make_key("test") == "custom:test"
+
+
+class TestGetFastMCPMetadata:
+    """Tests for get_fastmcp_metadata helper."""
+
+    def test_returns_fastmcp_namespace_when_dict(self):
+        meta = {"fastmcp": {"tags": ["a"]}, "_fastmcp": {"tags": ["b"]}}
+
+        assert get_fastmcp_metadata(meta) == {"tags": ["a"]}
+
+    def test_falls_back_to_legacy_namespace_when_dict(self):
+        meta = {"fastmcp": "invalid", "_fastmcp": {"tags": ["legacy"]}}
+
+        assert get_fastmcp_metadata(meta) == {"tags": ["legacy"]}
+
+    def test_ignores_non_dict_metadata(self):
+        assert get_fastmcp_metadata({"fastmcp": "invalid"}) == {}
+        assert get_fastmcp_metadata({"fastmcp": ["invalid"]}) == {}
+        assert get_fastmcp_metadata({"_fastmcp": "invalid"}) == {}
 
 
 class TestComponentEnableDisable:

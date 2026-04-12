@@ -11,6 +11,10 @@ Transform that exposes resources as tools.
 This transform generates tools for listing and reading resources, enabling
 clients that only support tools to access resource functionality.
 
+The generated tools route through `ctx.fastmcp` at runtime, so all server
+middleware (auth, visibility, rate limiting, etc.) applies to resource
+operations exactly as it would for direct `resources/read` calls.
+
 Example:
     ```python
     from fastmcp import FastMCP
@@ -24,23 +28,26 @@ Example:
 
 ## Classes
 
-### `ResourcesAsTools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/transforms/resources_as_tools.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResourcesAsTools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/transforms/resources_as_tools.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Transform that adds tools for listing and reading resources.
 
 Generates two tools:
-- `list_resources`: Lists all resources and templates from the provider
+- `list_resources`: Lists all resources and templates
 - `read_resource`: Reads a resource by URI
 
-The transform captures a provider reference at construction and queries it
-for resources when the generated tools are called. When used with FastMCP,
-the provider's auth and visibility filtering is automatically applied.
+The generated tools route through the server at runtime, so auth,
+middleware, and visibility apply automatically.
+
+This transform should be applied to a FastMCP server instance, not
+a raw Provider, because the generated tools need the server's
+middleware chain for auth and visibility filtering.
 
 
 **Methods:**
 
-#### `list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/transforms/resources_as_tools.py#L63" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/transforms/resources_as_tools.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
@@ -49,7 +56,7 @@ list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
 Add resource tools to the tool list.
 
 
-#### `get_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/transforms/resources_as_tools.py#L71" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/transforms/resources_as_tools.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tool(self, name: str, call_next: GetToolNext) -> Tool | None

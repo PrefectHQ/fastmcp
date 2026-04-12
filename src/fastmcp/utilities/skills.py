@@ -164,7 +164,11 @@ async def download_skill(
         ```
     """
     target_dir = Path(target_dir).expanduser().resolve()
-    skill_dir = target_dir / skill_name
+    skill_dir = (target_dir / skill_name).resolve()
+
+    # Security: ensure skill_dir stays within target_dir
+    if not skill_dir.is_relative_to(target_dir):
+        raise ValueError(f"Skill name {skill_name!r} would escape the target directory")
 
     # Check if directory exists
     if skill_dir.exists() and not overwrite:

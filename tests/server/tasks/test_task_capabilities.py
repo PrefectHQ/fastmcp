@@ -42,3 +42,28 @@ async def test_client_uses_task_capable_session():
         assert client.initialize_result is not None
         # Session should be a ClientSession (task-capable init uses standard session)
         assert type(client.session).__name__ == "ClientSession"
+
+
+def test_capabilities_hidden_when_pydocket_too_old(monkeypatch):
+    """Capability advertisement and handler registration must agree.
+
+    If ``is_docket_available()`` returns False (e.g. an old transitive
+    pydocket), the server skips registering task handlers — so it must
+    also stop advertising task capabilities, or clients would discover
+    task support and then hit "method not found" at runtime.
+    """
+    import importlib.metadata
+
+    from fastmcp.server import dependencies
+
+    original_version = importlib.metadata.version
+
+    def fake_version(name: str) -> str:
+        if name == "pydocket":
+            return "0.16.6"
+        return original_version(name)
+
+    monkeypatch.setattr(dependencies, "_DOCKET_AVAILABLE", None)
+    monkeypatch.setattr(importlib.metadata, "version", fake_version)
+
+    assert get_task_capabilities() is None

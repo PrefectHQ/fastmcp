@@ -9,7 +9,7 @@ from fastmcp.server.transforms.search.base import (
     BaseSearchTransform,
     _extract_searchable_text,
 )
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 
 class RegexSearchTransform(BaseSearchTransform):
@@ -27,7 +27,7 @@ class RegexSearchTransform(BaseSearchTransform):
                 str,
                 "Regex pattern to match against tool names, descriptions, and parameters",
             ],
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str | list[dict[str, Any]]:
             """Search for tools matching a regex pattern.
 

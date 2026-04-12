@@ -3,7 +3,7 @@ title: Quickstart
 icon: rocket-launch
 ---
 
-Welcome! This guide will help you quickly set up FastMCP, run your first MCP server, and deploy a server to Prefect Horizon.
+Welcome! This guide will help you quickly set up FastMCP, run your first MCP server, give it a visual UI, and deploy it to Prefect Horizon.
 
 If you haven't already installed FastMCP, follow the [installation instructions](/getting-started/installation).
 
@@ -116,6 +116,34 @@ Note that:
 - FastMCP clients are asynchronous, so we need to use `asyncio.run` to run the client
 - We must enter a client context (`async with client:`) before using the client
 - You can make multiple client calls within the same context
+
+## Give Your Tool a UI
+
+Tools normally return text, but any tool can return an interactive UI instead. Add `app=True` to your tool decorator and return a [Prefab](https://prefab.prefect.io) component — the host renders it as a chart, table, form, or any other visual element right in the conversation. This requires the `apps` extra (`pip install "fastmcp[apps]"`).
+
+The `app=True` flag tells FastMCP to wire up the renderer and protocol metadata automatically. The tool still works like any other MCP tool — it receives arguments and returns a result — but the result is a component tree that the host displays visually instead of as plain text.
+
+```python my_server.py
+from prefab_ui.app import PrefabApp
+from prefab_ui.components import Column, Heading, Text, Badge, Row
+from fastmcp import FastMCP
+
+mcp = FastMCP("My MCP Server")
+
+
+@mcp.tool(app=True)
+def greet(name: str) -> PrefabApp:
+    """Greet someone with a visual card."""
+    with Column(gap=4, css_class="p-6") as view:
+        Heading(f"Hello, {name}!")
+        with Row(gap=2, align="center"):
+            Text("Status")
+            Badge("Greeted", variant="success")
+
+    return PrefabApp(view=view)
+```
+
+You can preview app tools locally with `fastmcp dev apps my_server.py` — no MCP host required. See the [Apps overview](/apps/overview) for the full guide, including state management, forms, charts, and server-connected interactivity.
 
 ## Deploy to Prefect Horizon
 

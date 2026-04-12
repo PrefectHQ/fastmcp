@@ -13,7 +13,7 @@ Run with:
 """
 
 from fastmcp import FastMCP
-from fastmcp.experimental.transforms import CodeMode
+from fastmcp.experimental.transforms.code_mode import CodeMode
 
 mcp = FastMCP("CodeMode Demo")
 

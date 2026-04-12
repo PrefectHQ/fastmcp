@@ -329,3 +329,97 @@ class TestVerifyIdToken:
                 "read",
                 "write",
             ]
+
+
+class TestUsesAlternateVerification:
+    """Tests for _uses_alternate_verification intent-based flag."""
+
+    def test_disabled_by_default(self, valid_oidc_configuration_dict):
+        """OIDCProxy without verify_id_token returns False."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+            )
+
+            assert proxy._uses_alternate_verification() is False
+
+    def test_enabled_with_verify_id_token(self, valid_oidc_configuration_dict):
+        """OIDCProxy with verify_id_token=True returns True."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+                verify_id_token=True,
+            )
+
+            assert proxy._uses_alternate_verification() is True
+
+    def test_scope_patch_applied_when_tokens_identical(
+        self, valid_oidc_configuration_dict
+    ):
+        """Regression test: scopes must be patched even when id_token and
+        access_token carry the same JWT value (fixes #3461)."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+                verify_id_token=True,
+            )
+
+            # Same JWT for both access_token and id_token — the scenario
+            # that triggered the bug.
+            same_jwt = "eyJhbGciOiJSUzI1NiJ9.identical-token"
+            token_set = UpstreamTokenSet(
+                upstream_token_id="test-id",
+                access_token=same_jwt,
+                refresh_token=None,
+                refresh_token_expires_at=None,
+                expires_at=9999999999.0,
+                token_type="Bearer",
+                scope="openid offline_access",
+                client_id="test-client",
+                created_at=1000000000.0,
+                raw_token_data={
+                    "access_token": same_jwt,
+                    "id_token": same_jwt,
+                },
+            )
+
+            # _uses_alternate_verification should be True regardless of
+            # token value equality
+            assert proxy._uses_alternate_verification() is True
+            # _get_verification_token returns the id_token (same value)
+            assert proxy._get_verification_token(token_set) == same_jwt
+            # The key point: even though the tokens are equal, the intent
+            # flag ensures load_access_token will patch scopes

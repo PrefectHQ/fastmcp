@@ -1,6 +1,9 @@
 from pathlib import Path
 
+import pytest
+
 from fastmcp.cli.install import install_app
+from fastmcp.cli.install.shared import validate_server_name
 from fastmcp.cli.install.stdio import install_stdio
 
 
@@ -141,6 +144,20 @@ class TestClaudeDesktopInstall:
         assert bound.arguments["python"] == "3.10"
         assert bound.arguments["project"] == Path("/my/project")
         assert bound.arguments["with_requirements"] == Path("reqs.txt")
+
+    def test_claude_desktop_with_config_path(self):
+        """Test claude-desktop install with custom config path."""
+        command, bound, _ = install_app.parse_args(
+            ["claude-desktop", "server.py", "--config-path", "/custom/path/Claude"]
+        )
+
+        assert bound.arguments["config_path"] == Path("/custom/path/Claude")
+
+    def test_claude_desktop_without_config_path(self):
+        """Test claude-desktop install without config path defaults to None."""
+        command, bound, _ = install_app.parse_args(["claude-desktop", "server.py"])
+
+        assert bound.arguments.get("config_path") is None
 
 
 class TestCursorInstall:
@@ -441,3 +458,37 @@ class TestInstallCommandParsing:
             command, bound, _ = install_app.parse_args(cmd_args)
             assert command is not None
             assert str(bound.arguments["project"]) == str(Path("/path/to/project"))
+
+
+class TestServerNameValidation:
+    """Test server name validation rejects shell metacharacters."""
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "my-server",
+            "my_server",
+            "My Server",
+            "server.v2",
+            "test123",
+        ],
+    )
+    def test_valid_names(self, name: str):
+        assert validate_server_name(name) == name
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "test&calc",
+            "test|whoami",
+            "test;ls",
+            "test$(id)",
+            "test`id`",
+            'test"quoted',
+            "test>file",
+            "test<file",
+        ],
+    )
+    def test_rejects_shell_metacharacters(self, name: str):
+        with pytest.raises(SystemExit):
+            validate_server_name(name)

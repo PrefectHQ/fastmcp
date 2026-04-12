@@ -90,6 +90,99 @@ class TestClientLogs:
         assert caplog.records[1].levelname == "WARNING"
 
 
+class TestSetLoggingLevel:
+    async def test_set_logging_level(self, fastmcp_server: FastMCP):
+        """Client can set the minimum log level and lower-level messages are suppressed."""
+        log_handler = LogHandler()
+        async with Client(fastmcp_server, log_handler=log_handler.handle_log) as client:
+            await client.set_logging_level("warning")
+            await client.call_tool(
+                "echo_log", {"message": "debug msg", "level": "debug"}
+            )
+            await client.call_tool("echo_log", {"message": "info msg", "level": "info"})
+            await client.call_tool(
+                "echo_log", {"message": "warning msg", "level": "warning"}
+            )
+            await client.call_tool(
+                "echo_log", {"message": "error msg", "level": "error"}
+            )
+
+        assert len(log_handler.logs) == 2
+        assert log_handler.logs[0].data["msg"] == "warning msg"
+        assert log_handler.logs[1].data["msg"] == "error msg"
+
+    async def test_set_logging_level_debug_allows_all(self, fastmcp_server: FastMCP):
+        """Setting level to debug allows all messages through."""
+        log_handler = LogHandler()
+        async with Client(fastmcp_server, log_handler=log_handler.handle_log) as client:
+            await client.set_logging_level("debug")
+            await client.call_tool(
+                "echo_log", {"message": "debug msg", "level": "debug"}
+            )
+            await client.call_tool("echo_log", {"message": "info msg", "level": "info"})
+
+        assert len(log_handler.logs) == 2
+
+    async def test_default_level_allows_all(self, fastmcp_server: FastMCP):
+        """Without calling set_logging_level, all messages are sent."""
+        log_handler = LogHandler()
+        async with Client(fastmcp_server, log_handler=log_handler.handle_log) as client:
+            await client.call_tool(
+                "echo_log", {"message": "debug msg", "level": "debug"}
+            )
+            await client.call_tool("echo_log", {"message": "info msg", "level": "info"})
+
+        assert len(log_handler.logs) == 2
+
+    async def test_server_default_client_log_level(self):
+        """Server-wide client_log_level filters messages for all sessions."""
+        mcp = FastMCP(client_log_level="error")
+
+        @mcp.tool
+        async def echo_log(
+            message: str, context: Context, level: LoggingLevel | None = None
+        ) -> None:
+            await context.log(message=message, level=level)
+
+        log_handler = LogHandler()
+        async with Client(mcp, log_handler=log_handler.handle_log) as client:
+            await client.call_tool("echo_log", {"message": "info msg", "level": "info"})
+            await client.call_tool(
+                "echo_log", {"message": "warning msg", "level": "warning"}
+            )
+            await client.call_tool(
+                "echo_log", {"message": "error msg", "level": "error"}
+            )
+
+        assert len(log_handler.logs) == 1
+        assert log_handler.logs[0].data["msg"] == "error msg"
+
+    async def test_session_level_overrides_server_default(self):
+        """Per-session setLevel overrides the server's client_log_level."""
+        mcp = FastMCP(client_log_level="error")
+
+        @mcp.tool
+        async def echo_log(
+            message: str, context: Context, level: LoggingLevel | None = None
+        ) -> None:
+            await context.log(message=message, level=level)
+
+        log_handler = LogHandler()
+        async with Client(mcp, log_handler=log_handler.handle_log) as client:
+            await client.set_logging_level("warning")
+            await client.call_tool("echo_log", {"message": "info msg", "level": "info"})
+            await client.call_tool(
+                "echo_log", {"message": "warning msg", "level": "warning"}
+            )
+            await client.call_tool(
+                "echo_log", {"message": "error msg", "level": "error"}
+            )
+
+        assert len(log_handler.logs) == 2
+        assert log_handler.logs[0].data["msg"] == "warning msg"
+        assert log_handler.logs[1].data["msg"] == "error msg"
+
+
 class TestDefaultLogHandler:
     """Tests for default_log_handler with data as any JSON-serializable type."""
 
@@ -131,7 +224,7 @@ class TestDefaultLogHandler:
 
                 # Create log message with data as a string
                 log_msg = LoggingMessageNotificationParams(
-                    level=level,  # type: ignore[arg-type]
+                    level=level,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                     logger="test.logger",
                     data=msg,
                 )

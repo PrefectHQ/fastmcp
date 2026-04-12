@@ -14,60 +14,14 @@ from fastmcp.exceptions import DisabledError, NotFoundError
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.pagination import paginate_sequence
-from fastmcp.utilities.versions import VersionSpec, parse_version_key, version_sort_key
+from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
 
-C = TypeVar("C", bound=Any)
 PaginateT = TypeVar("PaginateT")
-
-
-def _dedupe_with_versions(
-    components: Sequence[C],
-    key_fn: Callable[[C], str],
-) -> list[C]:
-    """Deduplicate components by key, keeping highest version.
-
-    Groups components by key, selects the highest version from each group,
-    and injects available versions into meta if any component is versioned.
-
-    Args:
-        components: Sequence of components to deduplicate.
-        key_fn: Function to extract the grouping key from a component.
-
-    Returns:
-        Deduplicated list with versions injected into meta.
-    """
-    by_key: dict[str, list[C]] = {}
-    for c in components:
-        by_key.setdefault(key_fn(c), []).append(c)
-
-    result: list[C] = []
-    for versions in by_key.values():
-        highest: C = cast(C, max(versions, key=version_sort_key))
-        if any(c.version is not None for c in versions):
-            all_versions = sorted(
-                [c.version for c in versions if c.version is not None],
-                key=parse_version_key,
-                reverse=True,
-            )
-            meta = highest.meta or {}
-            highest = highest.model_copy(
-                update={
-                    "meta": {
-                        **meta,
-                        "fastmcp": {
-                            **meta.get("fastmcp", {}),
-                            "versions": all_versions,
-                        },
-                    }
-                }
-            )
-        result.append(highest)
-    return result
 
 
 def _apply_pagination(
@@ -125,6 +79,7 @@ class MCPOperationsMixin:
         )
         self._mcp_server.read_resource()(self._read_resource_mcp)
         self._mcp_server.get_prompt()(self._get_prompt_mcp)
+        self._mcp_server.set_logging_level()(self._set_logging_level_mcp)
 
         # Register SEP-1686 task protocol handlers
         self._setup_task_protocol_handlers()
@@ -152,7 +107,7 @@ class MCPOperationsMixin:
         server = cast("FastMCP", self)
         logger.debug(f"[{server.name}] Handler called: list_tools")
 
-        tools = _dedupe_with_versions(list(await server.list_tools()), lambda t: t.name)
+        tools = dedupe_with_versions(list(await server.list_tools()), lambda t: t.name)
         sdk_tools = [tool.to_mcp_tool(name=tool.name) for tool in tools]
 
         # SDK may pass None for internal cache refresh despite type hint
@@ -172,7 +127,7 @@ class MCPOperationsMixin:
         server = cast("FastMCP", self)
         logger.debug(f"[{server.name}] Handler called: list_resources")
 
-        resources = _dedupe_with_versions(
+        resources = dedupe_with_versions(
             list(await server.list_resources()), lambda r: str(r.uri)
         )
         sdk_resources = [
@@ -195,7 +150,7 @@ class MCPOperationsMixin:
         server = cast("FastMCP", self)
         logger.debug(f"[{server.name}] Handler called: list_resource_templates")
 
-        templates = _dedupe_with_versions(
+        templates = dedupe_with_versions(
             list(await server.list_resource_templates()), lambda t: t.uri_template
         )
         sdk_templates = [
@@ -220,7 +175,7 @@ class MCPOperationsMixin:
         server = cast("FastMCP", self)
         logger.debug(f"[{server.name}] Handler called: list_prompts")
 
-        prompts = _dedupe_with_versions(
+        prompts = dedupe_with_versions(
             list(await server.list_prompts()), lambda p: p.name
         )
         sdk_prompts = [prompt.to_mcp_prompt(name=prompt.name) for prompt in prompts]
@@ -264,7 +219,7 @@ class MCPOperationsMixin:
             task_meta: TaskMeta | None = None
             try:
                 ctx = server._mcp_server.request_context
-                # Extract version from request-level _meta.fastmcp.version
+                # Extract version from _meta.fastmcp
                 if ctx.meta:
                     meta_dict = ctx.meta.model_dump(exclude_none=True)
                     version_str = meta_dict.get("fastmcp", {}).get("version")
@@ -398,3 +353,21 @@ class MCPOperationsMixin:
             raise NotFoundError(f"Unknown prompt: {name!r}") from e
         except NotFoundError:
             raise
+
+    async def _set_logging_level_mcp(self, level: mcp.types.LoggingLevel) -> None:
+        """Handle MCP 'logging/setLevel' requests.
+
+        Stores the requested minimum log level on the session so that
+        subsequent log messages below this level are suppressed.
+        """
+        from fastmcp.server.low_level import MiddlewareServerSession
+
+        server = cast("FastMCP", self)
+        logger.debug(f"[{server.name}] Handler called: set_logging_level %s", level)
+        try:
+            ctx = server._mcp_server.request_context
+            session = ctx.session
+            if isinstance(session, MiddlewareServerSession):
+                session._minimum_logging_level = level
+        except LookupError:
+            pass

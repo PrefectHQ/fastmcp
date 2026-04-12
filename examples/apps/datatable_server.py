@@ -1,144 +1,108 @@
-"""DataTable MCP App — interactive, sortable data views with Prefab.
-
-Demonstrates `fastmcp[apps]` with Prefab UI components:
-- `app=True` for automatic renderer wiring
-- `PrefabApp` with `DataTable` for rich tabular views
-- Searchable, sortable, paginated tables
-- Layout composition with `Column`, `Heading`, `Text`, and `Badge`
-
-Usage:
-    uv run python datatable_server.py              # HTTP (port 8000)
-    uv run python datatable_server.py --stdio       # stdio for MCP clients
-"""
-
-from __future__ import annotations
+from collections import Counter
 
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Badge,
+    Card,
+    CardContent,
     Column,
-    DataTable,
-    DataTableColumn,
+    Grid,
     Heading,
-    Muted,
     Row,
+    Separator,
+    Text,
 )
+from prefab_ui.components.charts import BarChart, ChartSeries, PieChart
+from prefab_ui.components.data_table import DataTable, DataTableColumn
 
 from fastmcp import FastMCP
 
 mcp = FastMCP("Team Directory")
 
-EMPLOYEES = [
+TEAM = [
     {
         "name": "Alice Chen",
         "role": "Engineering",
         "level": "Senior",
         "location": "San Francisco",
-        "status": "active",
     },
-    {
-        "name": "Bob Martinez",
-        "role": "Design",
-        "level": "Lead",
-        "location": "New York",
-        "status": "active",
-    },
+    {"name": "Bob Martinez", "role": "Design", "level": "Lead", "location": "New York"},
     {
         "name": "Carol Johnson",
         "role": "Engineering",
         "level": "Staff",
         "location": "London",
-        "status": "active",
     },
     {
         "name": "David Kim",
         "role": "Product",
         "level": "Senior",
         "location": "San Francisco",
-        "status": "away",
     },
-    {
-        "name": "Eva Müller",
-        "role": "Engineering",
-        "level": "Mid",
-        "location": "Berlin",
-        "status": "active",
-    },
+    {"name": "Eva Müller", "role": "Engineering", "level": "Mid", "location": "Berlin"},
     {
         "name": "Frank Okafor",
         "role": "Data Science",
         "level": "Senior",
         "location": "Lagos",
-        "status": "active",
     },
     {
         "name": "Grace Liu",
         "role": "Engineering",
         "level": "Junior",
         "location": "Singapore",
-        "status": "active",
     },
-    {
-        "name": "Hassan Ali",
-        "role": "Design",
-        "level": "Senior",
-        "location": "Dubai",
-        "status": "away",
-    },
-    {
-        "name": "Iris Tanaka",
-        "role": "Product",
-        "level": "Lead",
-        "location": "Tokyo",
-        "status": "active",
-    },
-    {
-        "name": "James Wright",
-        "role": "Engineering",
-        "level": "Senior",
-        "location": "London",
-        "status": "inactive",
-    },
-    {
-        "name": "Karen Petrov",
-        "role": "Data Science",
-        "level": "Lead",
-        "location": "Berlin",
-        "status": "active",
-    },
-    {
-        "name": "Liam O'Brien",
-        "role": "Engineering",
-        "level": "Mid",
-        "location": "Dublin",
-        "status": "active",
-    },
+    {"name": "Hassan Ali", "role": "Design", "level": "Senior", "location": "Dubai"},
 ]
 
 
 @mcp.tool(app=True)
-def list_team(department: str | None = None) -> PrefabApp:
-    """Browse the team directory with sorting and search.
+def team_directory(department: str | None = None) -> PrefabApp:
+    """Browse the team directory — sortable, searchable, with department breakdown."""
+    rows = [p for p in TEAM if not department or p["role"] == department]
 
-    Args:
-        department: Filter by department (e.g. "Engineering", "Design").
-                    Leave empty to show everyone.
-    """
-    if department:
-        rows = [e for e in EMPLOYEES if e["role"].lower() == department.lower()]
-    else:
-        rows = EMPLOYEES
+    dept_counts = Counter(p["role"] for p in rows)
+    chart_data = [{"department": k, "count": v} for k, v in dept_counts.items()]
 
-    active = sum(1 for e in rows if e["status"] == "active")
+    level_counts = Counter(p["level"] for p in rows)
+    level_data = [{"level": k, "count": v} for k, v in level_counts.items()]
 
     with Column(gap=6, css_class="p-6") as view:
-        with Column(gap=1):
+        with Row(gap=2, align="center"):
             Heading("Team Directory")
-            with Row(gap=2):
-                Muted(f"{len(rows)} members")
-                Muted(f"{active} active", css_class="text-success")
-                if department:
-                    Badge(department, variant="outline")
+            Badge(f"{len(rows)} people", variant="secondary")
+
+        with Grid(columns=2, gap=6):
+            with Card():
+                with CardContent():
+                    Text(
+                        "By Department",
+                        css_class="text-sm font-medium text-muted-foreground mb-2",
+                    )
+                    PieChart(
+                        data=chart_data,
+                        data_key="count",
+                        name_key="department",
+                        show_legend=True,
+                        inner_radius=40,
+                        height=200,
+                    )
+
+            with Card():
+                with CardContent():
+                    Text(
+                        "By Level",
+                        css_class="text-sm font-medium text-muted-foreground mb-2",
+                    )
+                    BarChart(
+                        data=level_data,
+                        series=[ChartSeries(data_key="count", label="People")],
+                        x_axis="level",
+                        height=200,
+                        horizontal=True,
+                    )
+
+        Separator()
 
         DataTable(
             columns=[
@@ -146,19 +110,13 @@ def list_team(department: str | None = None) -> PrefabApp:
                 DataTableColumn(key="role", header="Department", sortable=True),
                 DataTableColumn(key="level", header="Level", sortable=True),
                 DataTableColumn(key="location", header="Location", sortable=True),
-                DataTableColumn(key="status", header="Status", sortable=True),
             ],
             rows=rows,
-            searchable=True,
+            search=True,
             paginated=True,
-            page_size=10,
         )
 
-    return PrefabApp(
-        title="Team Directory",
-        view=view,
-        state={"total": len(rows), "active": active},
-    )
+    return PrefabApp(view=view)
 
 
 if __name__ == "__main__":

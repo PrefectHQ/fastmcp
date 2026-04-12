@@ -14,7 +14,7 @@ class TestMainCLI:
         """Test that the main app is properly configured."""
         # app.name is a tuple in cyclopts
         assert "fastmcp" in app.name
-        assert "FastMCP 2.0" in app.help
+        assert "FastMCP" in app.help
         # Just check that version exists, not the specific value
         assert hasattr(app, "version")
 
@@ -50,7 +50,7 @@ class TestVersionCommand:
         """Test that the version command parses arguments correctly."""
         command, bound, _ = app.parse_args(["version"])
         assert callable(command)
-        assert command.__name__ == "version"  # type: ignore[attr-defined]
+        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         # Default arguments aren't included in bound.arguments
         assert bound.arguments == {}
 
@@ -58,7 +58,7 @@ class TestVersionCommand:
         """Test that the version command parses --copy flag correctly."""
         command, bound, _ = app.parse_args(["version", "--copy"])
         assert callable(command)
-        assert command.__name__ == "version"  # type: ignore[attr-defined]
+        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         assert bound.arguments == {"copy": True}
 
     @patch("fastmcp.cli.cli.pyperclip.copy")
@@ -432,6 +432,23 @@ class TestWindowsSpecific:
             # First call fails, second succeeds
             mock_run.side_effect = [
                 subprocess.CalledProcessError(1, "npx.cmd"),
+                Mock(returncode=0),
+            ]
+
+            result = _get_npx_command()
+
+            assert result == "npx.exe"
+            assert mock_run.call_count == 2
+
+    @patch("subprocess.run")
+    def test_get_npx_command_windows_cmd_missing(self, mock_run):
+        """Test npx command detection continues when npx.cmd is missing."""
+        from fastmcp.cli.cli import _get_npx_command
+
+        with patch("sys.platform", "win32"):
+            # Missing npx.cmd should not abort detection
+            mock_run.side_effect = [
+                FileNotFoundError("npx.cmd not found"),
                 Mock(returncode=0),
             ]
 

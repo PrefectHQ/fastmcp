@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import json
 import warnings
@@ -23,15 +24,18 @@ from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
-from fastmcp.exceptions import PromptError
-from fastmcp.prompts.prompt import Prompt, PromptArgument, PromptResult
+from fastmcp.exceptions import FastMCPDeprecationWarning, PromptError
+from fastmcp.prompts.base import Prompt, PromptArgument, PromptResult
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (
     transform_context_annotations,
     without_injected_parameters,
 )
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
@@ -148,7 +152,11 @@ class FunctionPrompt(Prompt):
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as prompts")
 
-        description = metadata.description or inspect.getdoc(fn)
+        description = (
+            metadata.description
+            if metadata.description is not None
+            else inspect.getdoc(fn)
+        )
 
         # Normalize task to TaskConfig and validate
         task_value = metadata.task
@@ -161,7 +169,7 @@ class FunctionPrompt(Prompt):
         task_config.validate_function(fn, func_name)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn):
+        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
@@ -312,7 +320,7 @@ class FunctionPrompt(Prompt):
 
             # self.fn is wrapped by without_injected_parameters which handles
             # dependency resolution internally
-            if inspect.iscoroutinefunction(self.fn):
+            if is_coroutine_function(self.fn):
                 result = await type_adapter.validate_python(kwargs)
             else:
                 # Run sync functions in threadpool to avoid blocking the event loop
@@ -329,11 +337,7 @@ class FunctionPrompt(Prompt):
             raise PromptError(f"Error rendering prompt {self.name}.") from e
 
     def register_with_docket(self, docket: Docket) -> None:
-        """Register this prompt with docket for background execution.
-
-        FunctionPrompt registers the underlying function, which has the user's
-        Depends parameters for docket to resolve.
-        """
+        """Register this prompt with docket for background execution."""
         if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])
@@ -457,10 +461,10 @@ def prompt(
             warnings.warn(
                 "decorator_mode='object' is deprecated and will be removed in a future version. "
                 "Decorators now return the original function with metadata attached.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=4,
             )
-            return create_prompt(fn, prompt_name)  # type: ignore[return-value]
+            return create_prompt(fn, prompt_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn, prompt_name)
 
     if inspect.isroutine(name_or_fn):

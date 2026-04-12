@@ -20,6 +20,8 @@ from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
+AUTO_PAGINATION_MAX_PAGES = 250
+
 # Type alias for task response union (SEP-1686 graceful degradation)
 PromptTaskResponseUnion = RootModel[
     mcp.types.CreateTaskResult | mcp.types.GetPromptResult
@@ -54,25 +56,31 @@ class ClientPromptsMixin:
         )
         return result
 
-    async def list_prompts(self: Client) -> list[mcp.types.Prompt]:
+    async def list_prompts(
+        self: Client,
+        max_pages: int = AUTO_PAGINATION_MAX_PAGES,
+    ) -> list[mcp.types.Prompt]:
         """Retrieve all prompts available on the server.
 
         This method automatically fetches all pages if the server paginates results,
         returning the complete list. For manual pagination control (e.g., to handle
         large result sets incrementally), use list_prompts_mcp() with the cursor parameter.
 
+        Args:
+            max_pages: Maximum number of pages to fetch before raising. Defaults to 250.
+
         Returns:
             list[mcp.types.Prompt]: A list of all Prompt objects.
 
         Raises:
-            RuntimeError: If called while the client is not connected.
+            RuntimeError: If the page limit is reached before pagination completes.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
         all_prompts: list[mcp.types.Prompt] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
-        while True:
+        for _ in range(max_pages):
             result = await self.list_prompts_mcp(cursor=cursor)
             all_prompts.extend(result.prompts)
             if not result.nextCursor:
@@ -85,6 +93,13 @@ class ClientPromptsMixin:
                 break
             seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
+        else:
+            raise RuntimeError(
+                f"[{self.name}] Reached auto-pagination limit"
+                f" ({max_pages} pages) for list_prompts."
+                " Use list_prompts_mcp() with cursor for manual pagination,"
+                " or increase max_pages."
+            )
 
         return all_prompts
 
@@ -142,12 +157,12 @@ class ClientPromptsMixin:
                         name=name,
                         arguments=serialized_arguments,
                         task=mcp.types.TaskMetadata(**task_dict) if task_dict else None,
-                        _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias
+                        _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
                     )
                 )
                 result = await self._await_with_session_monitoring(
                     self.session.send_request(
-                        request=request,  # type: ignore[arg-type]
+                        request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                         result_type=mcp.types.GetPromptResult,
                     )
                 )
@@ -272,14 +287,14 @@ class ClientPromptsMixin:
                 name=name,
                 arguments=serialized_arguments,
                 task=mcp.types.TaskMetadata(ttl=ttl),
-                _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias
+                _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
             )
         )
 
         # Server returns CreateTaskResult (task accepted) or GetPromptResult (graceful degradation)
         wrapped_result = await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[arg-type]
+                request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                 result_type=PromptTaskResponseUnion,
             )
         )

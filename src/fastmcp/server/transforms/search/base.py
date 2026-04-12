@@ -34,7 +34,7 @@ from typing import Annotated, Any
 from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec
 
 
@@ -229,7 +229,7 @@ class BaseSearchTransform(CatalogTransform):
             arguments: Annotated[
                 dict[str, Any] | None, "Arguments to pass to the tool"
             ] = None,
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> ToolResult:
             """Call a tool by name with the given arguments.
 

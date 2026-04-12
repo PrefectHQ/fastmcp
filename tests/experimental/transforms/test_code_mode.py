@@ -5,18 +5,18 @@ from typing import Any
 import pytest
 from mcp.types import ImageContent, TextContent
 
-from fastmcp import FastMCP
+from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp.experimental.transforms import CodeMode, MontySandboxProvider
 from fastmcp.experimental.transforms.code_mode import (
+    CodeMode,
     GetSchemas,
-    GetTags,
     GetToolCatalog,
+    MontySandboxProvider,
     Search,
     _ensure_async,
 )
 from fastmcp.server.context import Context
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 
 
 def _unwrap_result(result: ToolResult) -> Any:
@@ -362,7 +362,7 @@ async def test_code_mode_custom_discovery_tool_function() -> None:
 
     def list_all(get_catalog: GetToolCatalog) -> Tool:
         async def list_tools(
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str:
             """List all available tools."""
             tools = await get_catalog(ctx)
@@ -471,242 +471,6 @@ def test_code_mode_rejects_duplicate_discovery_names() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tags discovery tool
-# ---------------------------------------------------------------------------
-
-
-async def test_categories_brief_shows_tag_counts() -> None:
-    mcp = FastMCP("Tags Brief")
-
-    @mcp.tool(tags={"math"})
-    def add(x: int, y: int) -> int:
-        return x + y
-
-    @mcp.tool(tags={"math"})
-    def multiply(x: int, y: int) -> int:
-        return x * y
-
-    @mcp.tool(tags={"text"})
-    def greet(name: str) -> str:
-        return f"Hello, {name}!"
-
-    mcp.add_transform(
-        CodeMode(
-            discovery_tools=[GetTags()],
-            sandbox_provider=_UnsafeTestSandboxProvider(),
-        )
-    )
-
-    result = await _run_tool(mcp, "tags", {})
-    text = _unwrap_string_result(result)
-    assert "math (2 tools)" in text
-    assert "text (1 tool)" in text
-
-
-async def test_categories_full_lists_tools_per_tag() -> None:
-    mcp = FastMCP("Tags Full")
-
-    @mcp.tool(tags={"math"})
-    def add(x: int, y: int) -> int:
-        """Add two numbers."""
-        return x + y
-
-    @mcp.tool(tags={"text"})
-    def greet(name: str) -> str:
-        """Say hello."""
-        return f"Hello, {name}!"
-
-    mcp.add_transform(
-        CodeMode(
-            discovery_tools=[GetTags(default_detail="full")],
-            sandbox_provider=_UnsafeTestSandboxProvider(),
-        )
-    )
-
-    result = await _run_tool(mcp, "tags", {})
-    text = _unwrap_string_result(result)
-    assert "### math" in text
-    assert "- add: Add two numbers." in text
-    assert "### text" in text
-    assert "- greet: Say hello." in text
-
-
-async def test_categories_includes_untagged() -> None:
-    mcp = FastMCP("Tags Untagged")
-
-    @mcp.tool(tags={"math"})
-    def add(x: int, y: int) -> int:
-        return x + y
-
-    @mcp.tool
-    def ping() -> str:
-        return "pong"
-
-    mcp.add_transform(
-        CodeMode(
-            discovery_tools=[GetTags()],
-            sandbox_provider=_UnsafeTestSandboxProvider(),
-        )
-    )
-
-    result = await _run_tool(mcp, "tags", {})
-    text = _unwrap_string_result(result)
-    assert "math" in text
-    assert "untagged (1 tool)" in text
-
-
-async def test_categories_tool_in_multiple_tags() -> None:
-    mcp = FastMCP("Tags Multi-tag")
-
-    @mcp.tool(tags={"math", "core"})
-    def add(x: int, y: int) -> int:
-        return x + y
-
-    mcp.add_transform(
-        CodeMode(
-            discovery_tools=[GetTags(default_detail="full")],
-            sandbox_provider=_UnsafeTestSandboxProvider(),
-        )
-    )
-
-    result = await _run_tool(mcp, "tags", {})
-    text = _unwrap_string_result(result)
-    assert "### core" in text
-    assert "### math" in text
-    # Tool appears under both tags
-    assert text.count("- add") == 2
-
-
-async def test_categories_detail_override_per_call() -> None:
-    """LLM can override default_detail on a per-call basis."""
-    mcp = FastMCP("Tags Override")
-
-    @mcp.tool(tags={"math"})
-    def add(x: int, y: int) -> int:
-        """Add numbers."""
-        return x + y
-
-    mcp.add_transform(
-        CodeMode(
-            discovery_tools=[GetTags()],  # default_detail="brief"
-            sandbox_provider=_UnsafeTestSandboxProvider(),
-        )
-    )
-
-    # Override to full
-    result = await _run_tool(mcp, "tags", {"detail": "full"})
-    text = _unwrap_string_result(result)
-    assert "### math" in text
-    assert "- add: Add numbers." in text
-
-
-# ---------------------------------------------------------------------------
-# Search with tags filtering
-# ---------------------------------------------------------------------------
-
-
-async def test_search_with_tags_filter() -> None:
-    mcp = FastMCP("Search Tags")
-
-    @mcp.tool(tags={"math"})
-    def add(x: int, y: int) -> int:
-        """Add two numbers."""
-        return x + y
-
-    @mcp.tool(tags={"text"})
-    def greet(name: str) -> str:
-        """Say hello."""
-        return f"Hello, {name}!"
-
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
-
-    result = await _run_tool(mcp, "search", {"query": "add hello", "tags": ["math"]})
-    text = _unwrap_string_result(result)
-    assert "add" in text
-    assert "greet" not in text
-
-
-async def test_search_with_tags_filter_no_matches() -> None:
-    mcp = FastMCP("Search Tags Empty")
-
-    @mcp.tool(tags={"math"})
-    def add(x: int, y: int) -> int:
-        """Add two numbers."""
-        return x + y
-
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
-
-    result = await _run_tool(mcp, "search", {"query": "add", "tags": ["nonexistent"]})
-    text = _unwrap_string_result(result)
-    assert "add" not in text or "No tools" in text
-
-
-async def test_search_without_tags_returns_all() -> None:
-    """Search without tags parameter searches the full catalog."""
-    mcp = FastMCP("Search No Tags")
-
-    @mcp.tool(tags={"math"})
-    def add(x: int, y: int) -> int:
-        """Add two numbers."""
-        return x + y
-
-    @mcp.tool(tags={"text"})
-    def greet(name: str) -> str:
-        """Say hello."""
-        return f"Hello, {name}!"
-
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
-
-    result = await _run_tool(mcp, "search", {"query": "add hello"})
-    text = _unwrap_string_result(result)
-    assert "add" in text
-    assert "greet" in text
-
-
-async def test_search_with_untagged_filter() -> None:
-    """Search with tags=["untagged"] matches tools that have no tags."""
-    mcp = FastMCP("Search Untagged")
-
-    @mcp.tool(tags={"math"})
-    def add(x: int, y: int) -> int:
-        """Add two numbers."""
-        return x + y
-
-    @mcp.tool
-    def ping() -> str:
-        """Ping."""
-        return "pong"
-
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
-
-    result = await _run_tool(mcp, "search", {"query": "ping add", "tags": ["untagged"]})
-    text = _unwrap_string_result(result)
-    assert "ping" in text
-    assert "add" not in text
-
-
-async def test_get_schema_full_partial_match_returns_valid_json() -> None:
-    """get_schema with detail=full and missing tools returns valid JSON."""
-    mcp = FastMCP("Schema Full Partial")
-
-    @mcp.tool
-    def square(x: int) -> int:
-        """Compute the square."""
-        return x * x
-
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
-
-    result = await _run_tool(
-        mcp, "get_schema", {"tools": ["square", "nonexistent"], "detail": "full"}
-    )
-    text = _unwrap_string_result(result)
-    parsed = json.loads(text)
-    assert isinstance(parsed, list)
-    assert parsed[0]["name"] == "square"
-    assert parsed[-1] == {"not_found": ["nonexistent"]}
-
-
-# ---------------------------------------------------------------------------
 # Visibility and auth
 # ---------------------------------------------------------------------------
 
@@ -741,6 +505,32 @@ async def test_code_mode_search_respects_disabled_tool_visibility() -> None:
     result = await _run_tool(mcp, "search", {"query": "secret"})
     text = _unwrap_string_result(result)
     assert "secret" not in text or "No tools" in text
+
+
+async def test_code_mode_execute_sees_mid_run_visibility_changes() -> None:
+    """Unlocking a tool mid-execution makes it callable in the same run."""
+    mcp = FastMCP("CodeMode Unlock")
+
+    @mcp.tool
+    async def unlock(ctx: Context) -> str:
+        await ctx.enable_components(names={"secret"}, components={"tool"})
+        return "unlocked"
+
+    @mcp.tool
+    async def secret() -> str:
+        return "secret-ok"
+
+    mcp.disable(names={"secret"}, components={"tool"})
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "execute",
+            {
+                "code": "await call_tool('unlock', {})\nreturn await call_tool('secret', {})"
+            },
+        )
+        assert result.data == {"result": "secret-ok"}
 
 
 async def test_code_mode_execute_respects_tool_auth() -> None:

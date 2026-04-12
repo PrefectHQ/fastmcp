@@ -3,7 +3,6 @@ title: Upgrading from FastMCP 2
 sidebarTitle: "From FastMCP 2"
 description: Migration instructions for upgrading between FastMCP versions
 icon: up
-tag: NEW
 ---
 
 This guide covers breaking changes and migration steps when upgrading FastMCP.
@@ -78,7 +77,7 @@ BREAKING CHANGES (will crash at import or runtime):
 10. DECORATORS: @mcp.tool, @mcp.resource, @mcp.prompt now return the original function, not a component object. Code that accesses .name, .description, or other component attributes on the decorated result will crash with AttributeError.
    Fix: set FASTMCP_DECORATOR_MODE=object for v2 compat (itself deprecated).
 
-11. OAUTH STORAGE: Default OAuth client storage changed from DiskStore to FileTreeStore due to pickle deserialization vulnerability in diskcache (CVE-2025-69872). Clients using default storage will re-register automatically on first connection. If using DiskStore explicitly, switch to FileTreeStore or add pip install 'py-key-value-aio[disk]'.
+11. OAUTH STORAGE: Default OAuth client storage changed from DiskStore to FileTreeStore due to pickle deserialization vulnerability in diskcache (CVE-2025-69872). Clients using default storage will re-register automatically on first connection. If using DiskStore explicitly, switch to FileTreeStore (with key/collection sanitization strategies) or add pip install 'py-key-value-aio[disk]'.
 
 12. REPO MOVE: GitHub repository moved from jlowin/fastmcp to PrefectHQ/fastmcp. Update git remotes and dependency URLs that reference the old location.
 
@@ -127,7 +126,11 @@ The default OAuth client storage has moved from `DiskStore` to `FileTreeStore` t
 
 If you were using the default storage (i.e., not passing an explicit `client_storage`), clients will need to re-register on their first connection after upgrading. This happens automatically — no user action required, and it's the same flow that already occurs whenever a server restarts with in-memory storage.
 
-If you were passing a `DiskStore` explicitly, you can either [switch to `FileTreeStore`](/servers/storage-backends) (recommended) or keep using `DiskStore` by adding the dependency yourself:
+If you were passing a `DiskStore` explicitly, you can either [switch to `FileTreeStore`](/servers/storage-backends) (recommended) or keep using `DiskStore` by adding the dependency yourself.
+
+<Warning>
+When switching to `FileTreeStore`, you **must** configure key and collection sanitization strategies. Without them, keys containing special characters (such as URL-based OAuth client IDs) will cause filesystem errors. See the [File Storage](/servers/storage-backends#file-storage) section for the recommended setup.
+</Warning>
 
 <Warning>
 Keeping `DiskStore` requires `pip install 'py-key-value-aio[disk]'`, which re-introduces the vulnerable `diskcache` package into your dependency tree.

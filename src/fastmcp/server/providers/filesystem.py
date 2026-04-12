@@ -31,12 +31,12 @@ import asyncio
 from collections.abc import Sequence
 from pathlib import Path
 
-from fastmcp.prompts.prompt import Prompt
-from fastmcp.resources.resource import Resource
+from fastmcp.prompts.base import Prompt
+from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.filesystem_discovery import discover_and_import
 from fastmcp.server.providers.local_provider import LocalProvider
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec

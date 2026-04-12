@@ -65,7 +65,7 @@ class TestCIMDDocument:
             CIMDDocument(
                 client_id=AnyHttpUrl("https://example.com/client.json"),
                 redirect_uris=["http://localhost:3000/callback"],
-                token_endpoint_auth_method="client_secret_basic",  # type: ignore[arg-type] - testing invalid value
+                token_endpoint_auth_method="client_secret_basic",  # type: ignore[arg-type] - testing invalid value  # ty:ignore[invalid-argument-type]
             )
         # Literal type rejects invalid values before custom validator
         assert "token_endpoint_auth_method" in str(exc_info.value)
@@ -76,7 +76,7 @@ class TestCIMDDocument:
             CIMDDocument(
                 client_id=AnyHttpUrl("https://example.com/client.json"),
                 redirect_uris=["http://localhost:3000/callback"],
-                token_endpoint_auth_method="client_secret_post",  # type: ignore[arg-type] - testing invalid value
+                token_endpoint_auth_method="client_secret_post",  # type: ignore[arg-type] - testing invalid value  # ty:ignore[invalid-argument-type]
             )
         assert "token_endpoint_auth_method" in str(exc_info.value)
 
@@ -86,7 +86,7 @@ class TestCIMDDocument:
             CIMDDocument(
                 client_id=AnyHttpUrl("https://example.com/client.json"),
                 redirect_uris=["http://localhost:3000/callback"],
-                token_endpoint_auth_method="client_secret_jwt",  # type: ignore[arg-type] - testing invalid value
+                token_endpoint_auth_method="client_secret_jwt",  # type: ignore[arg-type] - testing invalid value  # ty:ignore[invalid-argument-type]
             )
         assert "token_endpoint_auth_method" in str(exc_info.value)
 
@@ -178,6 +178,16 @@ class TestCIMDFetcher:
         assert fetcher.validate_redirect_uri(doc, "http://localhost:3000/callback")
         assert fetcher.validate_redirect_uri(doc, "http://localhost:8080/callback")
         assert not fetcher.validate_redirect_uri(doc, "http://localhost:3000/other")
+
+    def test_validate_redirect_uri_loopback_no_port(self, fetcher: CIMDFetcher):
+        """RFC 8252 §7.3: loopback URI without port should match any port."""
+        doc = CIMDDocument(
+            client_id=AnyHttpUrl("https://example.com/client.json"),
+            redirect_uris=["http://localhost/callback", "http://127.0.0.1/callback"],
+        )
+        assert fetcher.validate_redirect_uri(doc, "http://localhost:51353/callback")
+        assert fetcher.validate_redirect_uri(doc, "http://127.0.0.1:3000/callback")
+        assert not fetcher.validate_redirect_uri(doc, "http://localhost:51353/other")
 
 
 class TestCIMDFetcherHTTP:

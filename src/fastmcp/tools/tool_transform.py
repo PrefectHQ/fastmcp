@@ -16,8 +16,13 @@ from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
+from fastmcp.tools.base import Tool, ToolResult, _convert_to_content
 from fastmcp.tools.function_parsing import ParsedFunction
-from fastmcp.tools.tool import Tool, ToolResult, _convert_to_content
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.components import _convert_set_default_none
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -26,6 +31,7 @@ from fastmcp.utilities.types import (
     NotSet,
     NotSetT,
     get_cached_typeadapter,
+    issubclass_safe,
 )
 
 logger = get_logger(__name__)
@@ -308,21 +314,17 @@ class TransformedTool(Tool):
 
         token = _current_tool.set(self)
         try:
-            result = await self.fn(**arguments)
+            if is_coroutine_function(self.fn):
+                result = await self.fn(**arguments)
+            else:
+                result = await call_sync_fn_in_threadpool(self.fn, **arguments)
+                if inspect.isawaitable(result):
+                    result = await result
 
             # If transform function returns ToolResult, respect our output_schema setting
             if isinstance(result, ToolResult):
                 if self.output_schema is None:
-                    # Check if this is from a custom function that returns ToolResult
-
-                    return_annotation = inspect.signature(self.fn).return_annotation
-                    if return_annotation is ToolResult:
-                        # Custom function returns ToolResult - preserve its content
-                        return result
-                    else:
-                        # Forwarded call with no explicit schema - preserve parent's structured content
-                        # The parent tool may have generated structured content via its own fallback logic
-                        return result
+                    return result
                 elif self.output_schema.get(
                     "type"
                 ) != "object" and not self.output_schema.get("x-fastmcp-wrap-result"):
@@ -392,17 +394,14 @@ class TransformedTool(Tool):
             version: New version for the tool. Defaults to parent tool's version.
             title: New title for the tool. Defaults to parent tool's title.
             transform_args: Optional transformations for parent tool arguments.
-                Only specified arguments are transformed, others pass through unchanged:
-                - Simple rename (str)
-                - Complex transformation (rename/description/default/drop) (ArgTransform)
-                - Drop the argument (None)
+                Only specified arguments are transformed, others pass through unchanged.
+                Use ArgTransform for rename, description, default, or hide operations.
             description: New description. Defaults to parent's description.
             tags: New tags. Defaults to parent's tags.
             annotations: New annotations. Defaults to parent's annotations.
             output_schema: Control output schema for structured outputs:
                 - None (default): Inherit from transform_fn if available, then parent tool
                 - dict: Use custom output schema
-                - False: Disable output schema and structured outputs
             serializer: Deprecated. Return ToolResult from your tools for full control over serialization.
             meta: Control meta information:
                 - NotSet (default): Inherit from parent tool
@@ -467,7 +466,7 @@ class TransformedTool(Tool):
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         transform_args = transform_args or {}
@@ -496,11 +495,11 @@ class TransformedTool(Tool):
                 # parsed fn is not none here
                 final_output_schema = cast(ParsedFunction, parsed_fn).output_schema
                 if final_output_schema is None:
-                    # Check if function returns ToolResult - if so, don't fall back to parent
-                    return_annotation = inspect.signature(
-                        transform_fn
-                    ).return_annotation
-                    if return_annotation is ToolResult:
+                    # Check if function returns ToolResult (or subclass) - if so, don't fall back to parent.
+                    # Use parsed_fn.return_type (resolved via get_type_hints) instead of
+                    # inspect.signature, which returns strings under `from __future__ import annotations`.
+                    return_type = cast(ParsedFunction, parsed_fn).return_type
+                    if issubclass_safe(return_type, ToolResult):
                         final_output_schema = None
                     else:
                         final_output_schema = tool.output_schema
@@ -554,12 +553,16 @@ class TransformedTool(Tool):
         # Additional validation: check for naming conflicts after transformation
         if transform_args:
             new_names = []
-            for old_name, transform in transform_args.items():
-                if not transform.hide:
-                    if transform.name is not NotSet:
-                        new_names.append(transform.name)
-                    else:
-                        new_names.append(old_name)
+            for old_name in parent_params:
+                transform = transform_args.get(old_name, ArgTransform())
+
+                if transform.hide:
+                    continue
+
+                if transform.name is not NotSet:
+                    new_names.append(transform.name)
+                else:
+                    new_names.append(old_name)
 
             # Check for duplicate names after transformation
             name_counts = {}
@@ -632,9 +635,9 @@ class TransformedTool(Tool):
         """
 
         # Build transformed schema and mapping
-        # Deep copy to prevent compress_schema from mutating parent tool's $defs
+        # Deep copy to prevent mutations from corrupting the parent tool's schema
         parent_defs = deepcopy(parent_tool.parameters.get("$defs", {}))
-        parent_props = parent_tool.parameters.get("properties", {}).copy()
+        parent_props = deepcopy(parent_tool.parameters.get("properties", {}))
         parent_required = set(parent_tool.parameters.get("required", []))
 
         new_props = {}

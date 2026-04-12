@@ -13,7 +13,7 @@ class TestDeprecatedFunctionToolImports:
             with pytest.warns(
                 DeprecationWarning, match="Import from fastmcp.tools.function_tool"
             ):
-                from fastmcp.tools.tool import FunctionTool
+                from fastmcp.tools.base import FunctionTool
 
             # Verify it's the real class
             from fastmcp.tools.function_tool import (
@@ -27,7 +27,7 @@ class TestDeprecatedFunctionToolImports:
             with pytest.warns(
                 DeprecationWarning, match="Import from fastmcp.tools.function_tool"
             ):
-                from fastmcp.tools.tool import ParsedFunction
+                from fastmcp.tools.base import ParsedFunction
 
             from fastmcp.tools.function_tool import (
                 ParsedFunction as CanonicalParsedFunction,
@@ -40,7 +40,7 @@ class TestDeprecatedFunctionToolImports:
             with pytest.warns(
                 DeprecationWarning, match="Import from fastmcp.tools.function_tool"
             ):
-                from fastmcp.tools.tool import tool
+                from fastmcp.tools.base import tool
 
             from fastmcp.tools.function_tool import tool as canonical_tool
 
@@ -50,7 +50,7 @@ class TestDeprecatedFunctionToolImports:
         with temporary_settings(deprecation_warnings=False):
             with warnings.catch_warnings():
                 warnings.simplefilter("error")
-                from fastmcp.tools.tool import FunctionTool  # noqa: F401
+                from fastmcp.tools.base import FunctionTool  # noqa: F401
 
 
 class TestDeprecatedFunctionResourceImports:
@@ -60,7 +60,7 @@ class TestDeprecatedFunctionResourceImports:
                 DeprecationWarning,
                 match="Import from fastmcp.resources.function_resource",
             ):
-                from fastmcp.resources.resource import FunctionResource
+                from fastmcp.resources.base import FunctionResource
 
             from fastmcp.resources.function_resource import (
                 FunctionResource as CanonicalFunctionResource,
@@ -74,7 +74,7 @@ class TestDeprecatedFunctionResourceImports:
                 DeprecationWarning,
                 match="Import from fastmcp.resources.function_resource",
             ):
-                from fastmcp.resources.resource import resource
+                from fastmcp.resources.base import resource
 
             from fastmcp.resources.function_resource import (
                 resource as canonical_resource,
@@ -86,7 +86,7 @@ class TestDeprecatedFunctionResourceImports:
         with temporary_settings(deprecation_warnings=False):
             with warnings.catch_warnings():
                 warnings.simplefilter("error")
-                from fastmcp.resources.resource import FunctionResource  # noqa: F401
+                from fastmcp.resources.base import FunctionResource  # noqa: F401
 
 
 class TestDeprecatedFunctionPromptImports:
@@ -95,7 +95,7 @@ class TestDeprecatedFunctionPromptImports:
             with pytest.warns(
                 DeprecationWarning, match="Import from fastmcp.prompts.function_prompt"
             ):
-                from fastmcp.prompts.prompt import FunctionPrompt
+                from fastmcp.prompts.base import FunctionPrompt
 
             from fastmcp.prompts.function_prompt import (
                 FunctionPrompt as CanonicalFunctionPrompt,
@@ -108,7 +108,7 @@ class TestDeprecatedFunctionPromptImports:
             with pytest.warns(
                 DeprecationWarning, match="Import from fastmcp.prompts.function_prompt"
             ):
-                from fastmcp.prompts.prompt import prompt
+                from fastmcp.prompts.base import prompt
 
             from fastmcp.prompts.function_prompt import prompt as canonical_prompt
 
@@ -118,4 +118,4 @@ class TestDeprecatedFunctionPromptImports:
         with temporary_settings(deprecation_warnings=False):
             with warnings.catch_warnings():
                 warnings.simplefilter("error")
-                from fastmcp.prompts.prompt import FunctionPrompt  # noqa: F401
+                from fastmcp.prompts.base import FunctionPrompt  # noqa: F401

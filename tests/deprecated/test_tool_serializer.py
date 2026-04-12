@@ -13,12 +13,9 @@ from mcp.types import TextContent
 from fastmcp import FastMCP
 from fastmcp.contrib.mcp_mixin import mcp_tool
 from fastmcp.server.providers import LocalProvider
-from fastmcp.tools.tool import Tool, _convert_to_content
+from fastmcp.tools.base import Tool, _convert_to_content
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.tests import temporary_settings
-
-# Reset deprecation warnings for this module
-pytestmark = pytest.mark.filterwarnings("default::DeprecationWarning")
 
 
 class TestToolSerializerDeprecated:

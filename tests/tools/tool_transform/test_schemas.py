@@ -7,8 +7,8 @@ from mcp.types import TextContent
 from pydantic import BaseModel, Field, TypeAdapter
 
 from fastmcp.tools import Tool, forward
+from fastmcp.tools.base import ToolResult
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import ToolResult
 from fastmcp.tools.tool_transform import (
     ArgTransform,
     TransformedTool,

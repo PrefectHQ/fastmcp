@@ -436,6 +436,7 @@ def validate_proxy(mock_get, proxy, oidc_config):
     assert proxy._upstream_authorization_endpoint == TEST_AUTHORIZATION_ENDPOINT
     assert proxy._upstream_token_endpoint == TEST_TOKEN_ENDPOINT
     assert proxy._upstream_client_id == TEST_CLIENT_ID
+    assert proxy._upstream_client_secret is not None
     assert proxy._upstream_client_secret.get_secret_value() == TEST_CLIENT_SECRET
     assert str(proxy.base_url) == str(TEST_BASE_URL)
     assert proxy.oidc_config == oidc_config
@@ -623,11 +624,14 @@ class TestOIDCProxyInitialization:
             )
             mock_get.return_value = oidc_config
 
-            with pytest.raises(ValueError, match="Missing required client secret"):
+            with pytest.raises(
+                ValueError,
+                match="Either client_secret or jwt_signing_key must be provided",
+            ):
                 OIDCProxy(
                     config_url=TEST_CONFIG_URL,
                     client_id=TEST_CLIENT_ID,
-                    client_secret=None,  # type: ignore
+                    client_secret=None,
                     base_url=TEST_BASE_URL,
                 )
 

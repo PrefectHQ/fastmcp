@@ -10,7 +10,7 @@ from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
-    from fastmcp.tools.tool import Tool
+    from fastmcp.tools.base import Tool
 
 
 class ToolTransform(Transform):

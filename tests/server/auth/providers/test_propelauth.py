@@ -133,8 +133,8 @@ class TestPropelAuthProvider:
         )
 
         assert isinstance(provider.token_verifier, IntrospectionTokenVerifier)
-        assert provider.token_verifier._cache_ttl == 300
-        assert provider.token_verifier._max_cache_size == 500
+        assert provider.token_verifier._cache._ttl == 300
+        assert provider.token_verifier._cache._max_size == 500
 
     def test_token_introspection_overrides_http_client(self):
         """Test that http_client override is passed to the verifier."""

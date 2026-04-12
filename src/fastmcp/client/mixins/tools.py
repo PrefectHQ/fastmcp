@@ -25,6 +25,8 @@ from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
 
+AUTO_PAGINATION_MAX_PAGES = 250
+
 # Type alias for task response union (SEP-1686 graceful degradation)
 ToolTaskResponseUnion = RootModel[mcp.types.CreateTaskResult | mcp.types.CallToolResult]
 
@@ -57,25 +59,31 @@ class ClientToolsMixin:
         )
         return result
 
-    async def list_tools(self: Client) -> list[mcp.types.Tool]:
+    async def list_tools(
+        self: Client,
+        max_pages: int = AUTO_PAGINATION_MAX_PAGES,
+    ) -> list[mcp.types.Tool]:
         """Retrieve all tools available on the server.
 
         This method automatically fetches all pages if the server paginates results,
         returning the complete list. For manual pagination control (e.g., to handle
         large result sets incrementally), use list_tools_mcp() with the cursor parameter.
 
+        Args:
+            max_pages: Maximum number of pages to fetch before raising. Defaults to 250.
+
         Returns:
             list[mcp.types.Tool]: A list of all Tool objects.
 
         Raises:
-            RuntimeError: If called while the client is not connected.
+            RuntimeError: If the page limit is reached before pagination completes.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
         all_tools: list[mcp.types.Tool] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
-        while True:
+        for _ in range(max_pages):
             result = await self.list_tools_mcp(cursor=cursor)
             all_tools.extend(result.tools)
             if not result.nextCursor:
@@ -88,6 +96,13 @@ class ClientToolsMixin:
                 break
             seen_cursors.add(result.nextCursor)
             cursor = result.nextCursor
+        else:
+            raise RuntimeError(
+                f"[{self.name}] Reached auto-pagination limit"
+                f" ({max_pages} pages) for list_tools."
+                " Use list_tools_mcp() with cursor for manual pagination,"
+                " or increase max_pages."
+            )
 
         return all_tools
 
@@ -307,7 +322,7 @@ class ClientToolsMixin:
                 name=name,
                 arguments=arguments or {},
                 task=mcp.types.TaskMetadata(ttl=ttl),
-                _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias
+                _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
             )
         )
 
@@ -315,7 +330,7 @@ class ClientToolsMixin:
         # Use RootModel with Union to handle both response types (SDK calls model_validate)
         wrapped_result = await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[arg-type]
+                request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                 result_type=ToolTaskResponseUnion,
             )
         )
@@ -364,33 +379,57 @@ async def _parse_call_tool_result(
     Returns:
         CallToolResult: Parsed result with structured data
     """
-    from typing import cast
-
+    # Local import: CallToolResult is under TYPE_CHECKING at module level to
+    # avoid a circular import (client.client -> mixins.tools -> client.client),
+    # but we need the concrete class here to construct the return value.
     from fastmcp.client.client import CallToolResult
 
     data = None
     if result.isError and raise_on_error:
-        msg = cast(mcp.types.TextContent, result.content[0]).text
+        if result.content and isinstance(result.content[0], mcp.types.TextContent):
+            msg = result.content[0].text
+        else:
+            msg = f"Tool '{name}' returned an error"
         raise ToolError(msg)
-    elif result.structuredContent:
+    elif result.structuredContent and not result.isError:
         try:
+            raw_fastmcp_meta = (result.meta or {}).get("fastmcp")
+            fastmcp_meta = (
+                raw_fastmcp_meta if isinstance(raw_fastmcp_meta, dict) else {}
+            )
+            wrap_from_meta = fastmcp_meta.get("wrap_result", False)
+
+            # Ensure the schema cache is populated for type validation.
+            # When meta tells us the result is wrapped we can skip the
+            # schema check for *wrap detection*, but we still need the
+            # schema for proper type coercion (e.g. list → set, str → datetime).
             if name not in tool_output_schemas:
                 await list_tools_fn()
-            if name in tool_output_schemas:
+
+            if wrap_from_meta:
+                # Meta tells us the result is wrapped — unwrap and validate.
+                structured_content = result.structuredContent.get("result")
+            elif name in tool_output_schemas:
                 output_schema = tool_output_schemas.get(name)
-                if output_schema:
-                    if output_schema.get("x-fastmcp-wrap-result"):
-                        output_schema = output_schema.get("properties", {}).get(
-                            "result"
-                        )
-                        structured_content = result.structuredContent.get("result")
-                    else:
-                        structured_content = result.structuredContent
-                    output_type = json_schema_to_type(output_schema)
-                    type_adapter = get_cached_typeadapter(output_type)
-                    data = type_adapter.validate_python(structured_content)
+                if output_schema and output_schema.get("x-fastmcp-wrap-result"):
+                    structured_content = result.structuredContent.get("result")
                 else:
-                    data = result.structuredContent
+                    structured_content = result.structuredContent
+            else:
+                structured_content = result.structuredContent
+
+            # Type-validate through the schema if available.
+            output_schema = tool_output_schemas.get(name)
+            if output_schema:
+                if wrap_from_meta or output_schema.get("x-fastmcp-wrap-result"):
+                    output_schema = output_schema.get("properties", {}).get(
+                        "result", output_schema
+                    )
+                output_type = json_schema_to_type(output_schema)
+                type_adapter = get_cached_typeadapter(output_type)
+                data = type_adapter.validate_python(structured_content)
+            else:
+                data = structured_content
         except Exception as e:
             logger.error(
                 f"[{client_name or 'client'}] Error parsing structured content: {e}"

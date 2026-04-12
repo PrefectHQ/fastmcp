@@ -60,7 +60,7 @@ def mock_duration_ms() -> Generator[float, None]:
         "fastmcp.server.middleware.logging._get_duration_ms", return_value=0.02
     )
     patched.start()
-    yield
+    yield  # ty:ignore[invalid-yield]
     patched.stop()
 
 

@@ -10,6 +10,7 @@ This implementation is based on:
 """
 
 from collections.abc import Sequence
+from typing import Literal
 
 import httpx
 from key_value.aio.protocols import AsyncKeyValue
@@ -203,7 +204,7 @@ class OIDCProxy(OAuthProxy):
         strict: bool | None = None,
         # Upstream server configuration
         client_id: str,
-        client_secret: str,
+        client_secret: str | None = None,
         audience: str | None = None,
         timeout_seconds: int | None = None,
         # Token verifier
@@ -223,8 +224,9 @@ class OIDCProxy(OAuthProxy):
         # Token validation configuration
         token_endpoint_auth_method: str | None = None,
         # Consent screen configuration
-        require_authorization_consent: bool = True,
+        require_authorization_consent: bool | Literal["external"] = True,
         consent_csp_policy: str | None = None,
+        forward_resource: bool = True,
         # Extra parameters
         extra_authorize_params: dict[str, str] | None = None,
         extra_token_params: dict[str, str] | None = None,
@@ -239,7 +241,9 @@ class OIDCProxy(OAuthProxy):
             config_url: URL of upstream configuration
             strict: Optional strict flag for the configuration
             client_id: Client ID registered with upstream server
-            client_secret: Client secret for upstream server
+            client_secret: Client secret for upstream server. Optional for PKCE public
+                clients or when using alternative credentials. When omitted,
+                jwt_signing_key must be provided.
             audience: Audience for upstream server
             timeout_seconds: HTTP request timeout in seconds
             token_verifier: Optional custom token verifier (e.g., IntrospectionTokenVerifier for opaque tokens).
@@ -271,7 +275,9 @@ class OIDCProxy(OAuthProxy):
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
-                SECURITY WARNING: Only disable for local development or testing environments.
+                When "external", the built-in consent screen is skipped but no warning is
+                logged, indicating that consent is handled externally (e.g. by the upstream IdP).
+                SECURITY WARNING: Only set to False for local development or testing environments.
             consent_csp_policy: Content Security Policy for the consent page.
                 If None (default), uses the built-in CSP policy with appropriate directives.
                 If empty string "", disables CSP entirely (no meta tag is rendered).
@@ -295,8 +301,12 @@ class OIDCProxy(OAuthProxy):
         if not client_id:
             raise ValueError("Missing required client id")
 
-        if not client_secret:
-            raise ValueError("Missing required client secret")
+        if not client_secret and not jwt_signing_key:
+            raise ValueError(
+                "Either client_secret or jwt_signing_key must be provided. "
+                "jwt_signing_key is required when client_secret is omitted "
+                "(e.g., for PKCE public clients)."
+            )
 
         if not base_url:
             raise ValueError("Missing required base URL")
@@ -368,6 +378,7 @@ class OIDCProxy(OAuthProxy):
             "token_endpoint_auth_method": token_endpoint_auth_method,
             "require_authorization_consent": require_authorization_consent,
             "consent_csp_policy": consent_csp_policy,
+            "forward_resource": forward_resource,
             "fallback_access_token_expiry_seconds": fallback_access_token_expiry_seconds,
             "enable_cimd": enable_cimd,
         }
@@ -428,6 +439,15 @@ class OIDCProxy(OAuthProxy):
                 )
             return id_token
         return upstream_token_set.access_token
+
+    def _uses_alternate_verification(self) -> bool:
+        """Return True when id_token verification is enabled.
+
+        This ensures ``load_access_token`` always patches the validated
+        result with upstream scopes, even when the IdP issues the same
+        JWT for both ``access_token`` and ``id_token``.
+        """
+        return self._verify_id_token
 
     def get_oidc_configuration(
         self,

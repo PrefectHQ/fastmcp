@@ -9,7 +9,7 @@ import pytest
 from mcp.types import TextContent
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.prompts.prompt import Prompt, PromptResult
+from fastmcp.prompts.base import Prompt, PromptResult
 
 
 class TestPromptContext:

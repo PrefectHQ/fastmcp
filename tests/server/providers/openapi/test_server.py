@@ -9,6 +9,58 @@ from fastmcp.server.providers.openapi import OpenAPIProvider
 from fastmcp.server.providers.openapi.provider import DEFAULT_TIMEOUT
 
 
+class TestOpenAPIProviderServerVariables:
+    """Test that OpenAPIProvider resolves OpenAPI 3.x server variables."""
+
+    def test_server_variables_substituted_with_defaults(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "servers": [
+                {
+                    "url": "https://{region}.api.example.com/v1",
+                    "variables": {
+                        "region": {
+                            "default": "us",
+                            "enum": ["us", "eu", "apac"],
+                        }
+                    },
+                }
+            ],
+            "paths": {},
+        }
+        client = OpenAPIProvider._create_default_client(spec)
+        assert str(client.base_url) == "https://us.api.example.com/v1/"
+
+    def test_multiple_server_variables_substituted(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "servers": [
+                {
+                    "url": "{scheme}://{host}/v1",
+                    "variables": {
+                        "scheme": {"default": "https"},
+                        "host": {"default": "api.example.com"},
+                    },
+                }
+            ],
+            "paths": {},
+        }
+        client = OpenAPIProvider._create_default_client(spec)
+        assert str(client.base_url) == "https://api.example.com/v1/"
+
+    def test_static_server_url_unaffected(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {},
+        }
+        client = OpenAPIProvider._create_default_client(spec)
+        assert str(client.base_url) == "https://api.example.com"
+
+
 class TestOpenAPIProviderBasicFunctionality:
     """Test basic OpenAPIProvider functionality."""
 

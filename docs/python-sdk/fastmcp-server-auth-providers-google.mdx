@@ -29,27 +29,35 @@ Example:
 
 ## Classes
 
-### `GoogleTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GoogleTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Token verifier for Google OAuth tokens.
 
-Google OAuth tokens are opaque (not JWTs), so we verify them
-by calling Google's tokeninfo API to check if they're valid and get user info.
+Google OAuth tokens are opaque (not JWTs), so we verify them by calling
+Google's tokeninfo endpoint with the access token as a query parameter.
+This returns the OAuth app ID (``aud``), granted scopes, and expiry time.
+User profile data (name, picture, etc.) is fetched separately from the
+v2 userinfo endpoint when the token is valid.
 
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L67" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L92" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
 ```
 
-Verify Google OAuth token by calling Google's tokeninfo API.
+Verify a Google OAuth token using the tokeninfo endpoint.
+
+Calls ``https://oauth2.googleapis.com/tokeninfo?access_token=TOKEN``
+to validate the token and retrieve the OAuth app ID (``aud``), granted
+scopes, and expiry time.  On success, fetches user profile data from
+the v2 userinfo endpoint to populate name, picture, and locale claims.
 
 
-### `GoogleProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GoogleProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Complete Google OAuth provider for FastMCP.

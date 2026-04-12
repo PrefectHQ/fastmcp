@@ -93,7 +93,7 @@ class TestSupabaseProvider:
 
     @pytest.mark.parametrize(
         "algorithm",
-        ["HS256", "RS256", "ES256"],
+        ["RS256", "ES256"],
     )
     def test_algorithm_configuration(self, algorithm):
         """Test that algorithm can be configured for different JWT signing methods."""
@@ -105,6 +105,15 @@ class TestSupabaseProvider:
 
         assert isinstance(provider.token_verifier, JWTVerifier)
         assert provider.token_verifier.algorithm == algorithm
+
+    def test_algorithm_rejects_hs256(self):
+        """Test that HS256 is rejected for Supabase's JWKS-based verifier."""
+        with pytest.raises(ValueError, match="cannot be used with jwks_uri"):
+            SupabaseProvider(
+                project_url="https://abc123.supabase.co",
+                base_url="https://myserver.com",
+                algorithm="HS256",  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            )
 
     def test_algorithm_default_es256(self):
         """Test that algorithm defaults to ES256 when not specified."""

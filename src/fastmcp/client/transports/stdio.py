@@ -84,6 +84,13 @@ class StdioTransport(ClientTransport):
     async def connect(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> ClientSession | None:
+        # If the connect task completed or the session's streams are dead,
+        # the subprocess has exited. Tear down so we can start fresh.
+        if self._connect_task is not None and (
+            self._connect_task.done() or self._is_session_dead()
+        ):
+            await self.disconnect()
+
         if self._connect_task is not None:
             return
 
@@ -98,7 +105,7 @@ class StdioTransport(ClientTransport):
                 cwd=self.cwd,
                 log_file=self.log_file,
                 # TODO(ty): remove when ty supports Unpack[TypedDict] inference
-                session_kwargs=session_kwargs,  # type: ignore[arg-type]
+                session_kwargs=session_kwargs,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                 ready_event=self._ready_event,
                 stop_event=self._stop_event,
                 session_future=session_future,
@@ -125,12 +132,32 @@ class StdioTransport(ClientTransport):
         self._stop_event.set()
 
         # wait for the connection task to finish cleanly
-        await self._connect_task
+        with contextlib.suppress(Exception):
+            await self._connect_task
 
         # reset variables and events for potential future reconnects
         self._connect_task = None
+        self._session = None
         self._stop_event = anyio.Event()
         self._ready_event = anyio.Event()
+
+    def _is_session_dead(self) -> bool:
+        """Check if the session's underlying streams have been closed.
+
+        Checks both the write stream (stdin to subprocess) and the read
+        stream (stdout from subprocess).  On some platforms the write-side
+        pipe lingers after the process exits, so the read-side check
+        (which reflects stdout_reader detecting the dead process) is the
+        more reliable signal.
+        """
+        if self._session is None:
+            return False
+        try:
+            if self._session._write_stream.statistics().open_send_streams == 0:
+                return True
+            return self._session._read_stream.statistics().open_send_streams == 0
+        except AttributeError:
+            return False
 
     async def close(self):
         await self.disconnect()

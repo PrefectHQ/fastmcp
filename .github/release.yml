@@ -8,12 +8,25 @@ changelog:
       labels:
         - feature
 
-    - title: Enhancements 🔧
+    - title: Breaking Changes ⚠️
+      labels:
+        - breaking change
+      exclude:
+        labels:
+          - contrib
+          - security
+
+    - title: Enhancements ✨
       labels:
         - enhancement
       exclude:
         labels:
           - breaking change
+          - security
+
+    - title: Security 🔒
+      labels:
+        - security
 
     - title: Fixes 🐞
       labels:
@@ -21,13 +34,7 @@ changelog:
       exclude:
         labels:
           - contrib
-
-    - title: Breaking Changes 🛫
-      labels:
-        - breaking change
-      exclude:
-        labels:
-          - contrib
+          - security
 
     - title: Docs 📚
       labels:
@@ -41,6 +48,9 @@ changelog:
     - title: Dependencies 📦
       labels:
         - dependencies
+      exclude:
+        labels:
+          - security
 
     - title: Other Changes 🦾
       labels:

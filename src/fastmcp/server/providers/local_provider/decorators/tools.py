@@ -27,10 +27,11 @@ import mcp.types
 from mcp.types import AnyFunction, ToolAnnotations
 
 import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.tools.base import Tool
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import Tool
 from fastmcp.utilities.types import NotSet, NotSetT
 
 try:
@@ -43,7 +44,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider
-    from fastmcp.tools.tool import ToolResultSerializerType
+    from fastmcp.tools.base import ToolResultSerializerType
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -76,13 +77,13 @@ def _ensure_prefab_renderer(provider: LocalProvider) -> None:
     """Lazily register the shared prefab renderer as a ui:// resource."""
     from prefab_ui.renderer import get_renderer_csp, get_renderer_html
 
-    from fastmcp.resources.types import TextResource
-    from fastmcp.server.apps import (
+    from fastmcp.apps.config import (
         UI_MIME_TYPE,
         AppConfig,
         ResourceCSP,
         app_config_to_meta_dict,
     )
+    from fastmcp.resources.types import TextResource
 
     renderer_key = f"resource:{PREFAB_RENDERER_URI}@"
     if renderer_key in provider._components:
@@ -96,7 +97,7 @@ def _ensure_prefab_renderer(provider: LocalProvider) -> None:
         )
     )
     resource = TextResource(
-        uri=PREFAB_RENDERER_URI,  # type: ignore[arg-type]  # AnyUrl accepts ui:// scheme at runtime
+        uri=PREFAB_RENDERER_URI,  # type: ignore[arg-type]  # AnyUrl accepts ui:// scheme at runtime  # ty:ignore[invalid-argument-type]
         name="Prefab Renderer",
         text=get_renderer_html(),
         mime_type=UI_MIME_TYPE,
@@ -107,17 +108,10 @@ def _ensure_prefab_renderer(provider: LocalProvider) -> None:
 
 def _expand_prefab_ui_meta(tool: Tool) -> None:
     """Expand meta["ui"] = True into the full AppConfig dict for a prefab tool."""
-    from prefab_ui.renderer import get_renderer_csp
+    from fastmcp.apps.config import AppConfig, app_config_to_meta_dict
 
-    from fastmcp.server.apps import AppConfig, ResourceCSP, app_config_to_meta_dict
-
-    csp = get_renderer_csp()
     app_config = AppConfig(
         resource_uri=PREFAB_RENDERER_URI,
-        csp=ResourceCSP(
-            resource_domains=csp.get("resource_domains"),
-            connect_domains=csp.get("connect_domains"),
-        ),
     )
     meta = dict(tool.meta) if tool.meta else {}
     meta["ui"] = app_config_to_meta_dict(app_config)
@@ -140,7 +134,10 @@ def _maybe_apply_prefab_ui(provider: LocalProvider, tool: Tool) -> None:
         # Inference: return type is a prefab type, auto-wire
         _ensure_prefab_renderer(provider)
         _expand_prefab_ui_meta(tool)
-    # If ui is a dict, it's already manually configured — leave it alone
+    elif isinstance(ui, dict) and ui.get("resourceUri") == PREFAB_RENDERER_URI:
+        # PrefabAppConfig or manual config pointing to the Prefab renderer —
+        # ensure the renderer resource is registered (CSP already set by caller)
+        _ensure_prefab_renderer(provider)
 
 
 class ToolDecoratorMixin:
@@ -169,7 +166,7 @@ class ToolDecoratorMixin:
                 # Merge ToolMeta.app into the meta dict
                 tool_meta = fmeta.meta
                 if fmeta.app is not None:
-                    from fastmcp.server.apps import app_config_to_meta_dict
+                    from fastmcp.apps.config import app_config_to_meta_dict
 
                     tool_meta = dict(tool_meta) if tool_meta else {}
                     if fmeta.app is True:
@@ -319,7 +316,7 @@ class ToolDecoratorMixin:
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         if isinstance(annotations, dict):
@@ -400,7 +397,7 @@ class ToolDecoratorMixin:
                     enabled=enabled,
                 )
                 target = fn.__func__ if hasattr(fn, "__func__") else fn
-                target.__fastmcp__ = metadata  # type: ignore[attr-defined]
+                target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
                 tool_obj = self.add_tool(fn)
                 return fn
 

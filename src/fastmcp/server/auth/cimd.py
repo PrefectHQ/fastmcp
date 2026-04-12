@@ -16,7 +16,6 @@ This module provides:
 
 from __future__ import annotations
 
-import fnmatch
 import json
 import time
 from collections.abc import Mapping
@@ -28,6 +27,7 @@ from urllib.parse import urlparse
 
 from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
 
+from fastmcp.server.auth.redirect_validation import matches_allowed_pattern
 from fastmcp.server.auth.ssrf import (
     SSRFError,
     SSRFFetchError,
@@ -422,6 +422,9 @@ class CIMDFetcher:
     def validate_redirect_uri(self, doc: CIMDDocument, redirect_uri: str) -> bool:
         """Validate that a redirect_uri is allowed by the CIMD document.
 
+        Uses component-level matching (scheme, host, port, path) which correctly
+        handles RFC 8252 §7.3 loopback port flexibility and wildcard patterns.
+
         Args:
             doc: The CIMD document
             redirect_uri: The redirect URI to validate
@@ -438,13 +441,8 @@ class CIMDFetcher:
 
         for allowed in doc.redirect_uris:
             allowed_str = allowed.rstrip("/")
-            if redirect_uri == allowed_str:
+            if matches_allowed_pattern(redirect_uri, allowed_str):
                 return True
-
-            # Check for wildcard port matching (http://localhost:*/callback)
-            if "*" in allowed_str:
-                if fnmatch.fnmatch(redirect_uri, allowed_str):
-                    return True
 
         return False
 

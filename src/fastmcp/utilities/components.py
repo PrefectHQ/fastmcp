@@ -31,7 +31,13 @@ def get_fastmcp_metadata(meta: dict[str, Any] | None) -> FastMCPMeta:
     """
     if not meta:
         return {}
-    return cast(FastMCPMeta, meta.get("fastmcp") or meta.get("_fastmcp") or {})
+
+    for key in ("fastmcp", "_fastmcp"):
+        metadata = meta.get(key)
+        if isinstance(metadata, dict):
+            return cast(FastMCPMeta, metadata)
+
+    return {}
 
 
 def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
@@ -43,13 +49,20 @@ def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
     return set(maybe_set)
 
 
-def _coerce_version(v: str | int | None) -> str | None:
-    """Coerce version to string, accepting int or str.
+def _coerce_version(v: str | int | float | None) -> str | None:
+    """Coerce version to string, accepting int, float, or str.
 
+    Raises TypeError for non-scalar types (list, dict, set, etc.).
     Raises ValueError if version contains '@' (used as key delimiter).
     """
     if v is None:
         return None
+    if isinstance(v, bool):
+        raise TypeError(f"Version must be a string, int, or float, got bool: {v!r}")
+    if not isinstance(v, (str, int, float)):
+        raise TypeError(
+            f"Version must be a string, int, or float, got {type(v).__name__}: {v!r}"
+        )
     version = str(v)
     if "@" in version:
         raise ValueError(
@@ -200,7 +213,7 @@ class FastMCPComponent(FastMCPBaseModel):
             f"Use server.disable(keys=['{self.key}']) instead."
         )
 
-    def copy(self) -> Self:  # type: ignore[override]
+    def copy(self) -> Self:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """Create a copy of the component."""
         return self.model_copy()
 

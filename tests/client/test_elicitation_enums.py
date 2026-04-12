@@ -200,7 +200,7 @@ async def test_list_list_multi_select_untitled():
         if result.action == "accept":
             assert isinstance(result, AcceptedElicitation)
             assert isinstance(result.data, list)
-            return ",".join(result.data)  # type: ignore[no-matching-overload]
+            return ",".join(result.data)  # type: ignore[no-matching-overload]  # ty:ignore[no-matching-overload]
         return "declined"
 
     async def elicitation_handler(message, response_type, params, ctx):
@@ -238,7 +238,7 @@ async def test_list_dict_multi_select_titled():
         if result.action == "accept":
             assert isinstance(result, AcceptedElicitation)
             assert isinstance(result.data, list)
-            return ",".join(result.data)  # type: ignore[no-matching-overload]
+            return ",".join(result.data)  # type: ignore[no-matching-overload]  # ty:ignore[no-matching-overload]
         return "declined"
 
     async def elicitation_handler(message, response_type, params, ctx):

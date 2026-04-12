@@ -18,24 +18,27 @@ from typing import (
 )
 
 import anyio
-import mcp.types
 from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, Icon, ToolAnnotations, ToolExecution
+from mcp.types import ErrorData, Icon, ToolAnnotations
 from pydantic import Field
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import without_injected_parameters
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
-from fastmcp.tools.tool import (
+from fastmcp.tools.base import (
     Tool,
     ToolResult,
     ToolResultSerializerType,
 )
-from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
+from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     NotSet,
@@ -87,24 +90,6 @@ class ToolMeta:
 class FunctionTool(Tool):
     fn: SkipJsonSchema[Callable[..., Any]]
     return_type: Annotated[SkipJsonSchema[Any], Field(exclude=True)] = None
-
-    def to_mcp_tool(
-        self,
-        **overrides: Any,
-    ) -> mcp.types.Tool:
-        """Convert the FastMCP tool to an MCP tool.
-
-        Extends the base implementation to add task execution mode if enabled.
-        """
-        # Get base MCP tool from parent
-        mcp_tool = super().to_mcp_tool(**overrides)
-
-        # Add task execution mode per SEP-1686
-        # Only set execution if not overridden and task execution is supported
-        if self.task_config.supports_tasks() and "execution" not in overrides:
-            mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
-
-        return mcp_tool
 
     @classmethod
     def from_function(
@@ -190,7 +175,7 @@ class FunctionTool(Tool):
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         if metadata.exclude_args and fastmcp.settings.deprecation_warnings:
@@ -198,7 +183,7 @@ class FunctionTool(Tool):
                 "The `exclude_args` parameter is deprecated as of FastMCP 2.14. "
                 "Use dependency injection with `Depends()` instead for better lifecycle management. "
                 "See https://gofastmcp.com/servers/dependency-injection#using-depends for examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
 
@@ -237,7 +222,9 @@ class FunctionTool(Tool):
             name=metadata.name or parsed_fn.name,
             version=str(metadata.version) if metadata.version is not None else None,
             title=metadata.title,
-            description=metadata.description or parsed_fn.description,
+            description=metadata.description
+            if metadata.description is not None
+            else parsed_fn.description,
             icons=metadata.icons,
             parameters=parsed_fn.input_schema,
             output_schema=final_output_schema,
@@ -260,7 +247,7 @@ class FunctionTool(Tool):
             try:
                 with anyio.fail_after(self.timeout):
                     # Thread pool execution for sync functions, direct await for async
-                    if inspect.iscoroutinefunction(wrapper_fn):
+                    if is_coroutine_function(wrapper_fn):
                         result = await type_adapter.validate_python(arguments)
                     else:
                         # Sync function: run in threadpool to avoid blocking
@@ -270,6 +257,9 @@ class FunctionTool(Tool):
                         # Handle sync wrappers that return awaitables
                         if inspect.isawaitable(result):
                             result = await result
+                    # Materialize generators inside timeout scope so slow
+                    # generators don't run past the configured timeout
+                    result = await self._materialize_generator(result)
             except TimeoutError:
                 logger.warning(
                     f"Tool '{self.name}' timed out after {self.timeout}s. "
@@ -284,7 +274,7 @@ class FunctionTool(Tool):
                 ) from None
         else:
             # No timeout: use existing execution path
-            if inspect.iscoroutinefunction(wrapper_fn):
+            if is_coroutine_function(wrapper_fn):
                 result = await type_adapter.validate_python(arguments)
             else:
                 result = await call_sync_fn_in_threadpool(
@@ -292,14 +282,30 @@ class FunctionTool(Tool):
                 )
                 if inspect.isawaitable(result):
                     result = await result
+            result = await self._materialize_generator(result)
 
         return self.convert_result(result)
+
+    @staticmethod
+    async def _materialize_generator(result: Any) -> Any:
+        """Consume generators/async generators into lists.
+
+        Without this, async generators pass through as objects (repr string),
+        and sync generators get consumed during text serialization but are
+        exhausted by the time structured content is built.
+        """
+        if inspect.isasyncgen(result):
+            return [item async for item in result]
+        if inspect.isgenerator(result):
+            return list(result)
+        return result
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this tool with docket for background execution.
 
-        FunctionTool registers the underlying function, which has the user's
-        Depends parameters for docket to resolve.
+        Registers the raw function so Docket sees and resolves ALL
+        dependencies — both FastMCP's (CurrentContext, Progress) and
+        Docket-native ones (Retry, Timeout, ConcurrencyLimit).
         """
         if not self.task_config.supports_tasks():
             return
@@ -450,10 +456,10 @@ def tool(
             warnings.warn(
                 "decorator_mode='object' is deprecated and will be removed in a future version. "
                 "Decorators now return the original function with metadata attached.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=4,
             )
-            return create_tool(fn, tool_name)  # type: ignore[return-value]
+            return create_tool(fn, tool_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn, tool_name)
 
     if inspect.isroutine(name_or_fn):

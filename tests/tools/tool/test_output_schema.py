@@ -7,7 +7,7 @@ from mcp.types import AudioContent, EmbeddedResource, ImageContent, TextContent
 from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
 from typing_extensions import TypedDict
 
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import Audio, File, Image
 
@@ -121,6 +121,34 @@ class TestToolFromFunctionOutputSchema:
 
         tool = Tool.from_function(func)
         # Image, Audio, File types don't generate output schemas since they're converted to content directly
+        assert tool.output_schema is None
+
+    async def test_tool_result_return_annotation_no_output_schema(self):
+        def func() -> ToolResult:
+            return ToolResult(content="hello")
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
+
+    async def test_tool_result_subclass_return_annotation_no_output_schema(self):
+        class MyToolResult(ToolResult):
+            def __init__(self, data: str):
+                super().__init__(structured_content={"content": data})
+
+        def func() -> MyToolResult:
+            return MyToolResult("hello")
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
+
+    async def test_optional_tool_result_subclass_no_output_schema(self):
+        class MyToolResult(ToolResult):
+            pass
+
+        def func() -> MyToolResult | None:
+            return None
+
+        tool = Tool.from_function(func)
         assert tool.output_schema is None
 
     async def test_dataclass_return_annotation(self):
@@ -532,3 +560,49 @@ class TestToolFromFunctionOutputSchema:
                 ValueError, match="Output schemas must represent object types"
             ):
                 Tool.from_function(func, output_schema=schema)
+
+
+class TestWrapResultMeta:
+    async def test_list_return_includes_wrap_result_meta(self):
+        """A tool returning list[dict] should set wrap_result in meta."""
+
+        def func() -> list[dict]:
+            return [{"a": 1}, {"b": 2}]
+
+        tool = Tool.from_function(func)
+        result = await tool.run({})
+        assert result.structured_content == {"result": [{"a": 1}, {"b": 2}]}
+        assert result.meta == {"fastmcp": {"wrap_result": True}}
+
+    async def test_int_return_includes_wrap_result_meta(self):
+        """A tool returning int should set wrap_result in meta."""
+
+        def func() -> int:
+            return 42
+
+        tool = Tool.from_function(func)
+        result = await tool.run({})
+        assert result.structured_content == {"result": 42}
+        assert result.meta == {"fastmcp": {"wrap_result": True}}
+
+    async def test_dict_return_does_not_include_wrap_result_meta(self):
+        """A tool returning dict should NOT set wrap_result in meta."""
+
+        def func() -> dict[str, int]:
+            return {"value": 42}
+
+        tool = Tool.from_function(func)
+        result = await tool.run({})
+        assert result.structured_content == {"value": 42}
+        assert result.meta is None
+
+    async def test_no_schema_dict_return_no_meta(self):
+        """A tool without output schema returning dict should not set meta."""
+
+        def func():
+            return {"key": "val"}
+
+        tool = Tool.from_function(func)
+        result = await tool.run({})
+        assert result.structured_content == {"key": "val"}
+        assert result.meta is None

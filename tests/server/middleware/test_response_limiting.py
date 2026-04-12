@@ -2,10 +2,16 @@
 
 import pytest
 from mcp.types import ImageContent, TextContent
+from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.base import ToolResult
+
+
+# Regression test model for #3717
+class Answer(BaseModel):
+    text: str
 
 
 class TestResponseLimitingMiddleware:
@@ -142,6 +148,26 @@ class TestResponseLimitingMiddleware:
             ResponseLimitingMiddleware(max_size=0)
         with pytest.raises(ValueError, match="max_size must be positive"):
             ResponseLimitingMiddleware(max_size=-100)
+
+    async def test_truncation_does_not_break_output_schema_tools(
+        self, mcp_server: FastMCP
+    ):
+        """Truncating a tool with outputSchema must not cause validation errors.
+
+        Regression test for #3717: the MCP SDK rejects truncated results
+        from tools with outputSchema because structured_content is dropped.
+        We verify the server returns a successful (non-error) truncated result.
+        """
+        mcp_server.add_middleware(ResponseLimitingMiddleware(max_size=1_000))
+
+        @mcp_server.tool()
+        def big_answer() -> Answer:
+            return Answer(text="x" * 2_000)
+
+        result = await mcp_server.call_tool("big_answer", {})
+        first = result.content[0]
+        assert isinstance(first, TextContent)
+        assert "[Response truncated" in first.text
 
     def test_utf8_truncation_preserves_characters(self):
         """Test that UTF-8 truncation doesn't break multi-byte characters."""

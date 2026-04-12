@@ -1,5 +1,6 @@
 """Tests for middleware support during initialization."""
 
+from collections.abc import Sequence
 from typing import Any
 
 import mcp.types as mt
@@ -9,6 +10,7 @@ from mcp.types import ErrorData, TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools.base import Tool
 
 
 class InitializationMiddleware(Middleware):
@@ -28,8 +30,8 @@ class InitializationMiddleware(Middleware):
     async def on_initialize(
         self,
         context: MiddlewareContext[mt.InitializeRequest],
-        call_next: CallNext[mt.InitializeRequest, None],
-    ) -> None:
+        call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None],
+    ) -> mt.InitializeResult | None:
         """Capture initialization details."""
         self.initialized = True
 
@@ -66,8 +68,8 @@ class ClientDetectionMiddleware(Middleware):
     async def on_initialize(
         self,
         context: MiddlewareContext[mt.InitializeRequest],
-        call_next: CallNext[mt.InitializeRequest, None],
-    ) -> None:
+        call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None],
+    ) -> mt.InitializeResult | None:
         """Detect test client during initialization."""
         self.initialization_called = True
 
@@ -80,8 +82,8 @@ class ClientDetectionMiddleware(Middleware):
     async def on_list_tools(
         self,
         context: MiddlewareContext[mt.ListToolsRequest],
-        call_next: CallNext[mt.ListToolsRequest, list],
-    ) -> list:
+        call_next: CallNext[mt.ListToolsRequest, Sequence[Tool]],
+    ) -> Sequence[Tool]:
         """Modify tools based on client detection."""
         tools = await call_next(context)
 
@@ -112,8 +114,8 @@ async def test_simple_initialization_hook():
         async def on_initialize(
             self,
             context: MiddlewareContext[mt.InitializeRequest],
-            call_next: CallNext[mt.InitializeRequest, None],
-        ) -> None:
+            call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None],
+        ) -> mt.InitializeResult | None:
             self.called = True
             return await call_next(context)
 
@@ -304,8 +306,8 @@ async def test_middleware_mcp_error_during_initialization():
         async def on_initialize(
             self,
             context: MiddlewareContext[mt.InitializeRequest],
-            call_next: CallNext[mt.InitializeRequest, None],
-        ) -> None:
+            call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None],
+        ) -> mt.InitializeResult | None:
             raise McpError(
                 ErrorData(
                     code=mt.INVALID_PARAMS, message="Invalid initialization parameters"
@@ -330,8 +332,8 @@ async def test_middleware_mcp_error_before_call_next():
         async def on_initialize(
             self,
             context: MiddlewareContext[mt.InitializeRequest],
-            call_next: CallNext[mt.InitializeRequest, None],
-        ) -> None:
+            call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None],
+        ) -> mt.InitializeResult | None:
             raise McpError(
                 ErrorData(code=mt.INVALID_REQUEST, message="Request validation failed")
             )

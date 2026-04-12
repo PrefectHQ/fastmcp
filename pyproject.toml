@@ -52,17 +52,19 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-anthropic = ["anthropic>=0.40.0"]
-apps = ["prefab-ui>=0.6.0"]
-azure = ["azure-identity>=1.16.0"]
-code-mode = ["pydantic-monty>=0.0.7"]
+anthropic = ["anthropic>=0.48.0"]
+apps = ["prefab-ui>=0.18.0"]
+# PyJWT floor: transitive via msal; CVE-2026-32597 affects <= 2.11.0
+azure = ["azure-identity>=1.16.0", "PyJWT>=2.12.0"]
+code-mode = ["pydantic-monty==0.0.9"]
+gemini = ["google-genai>=1.18.0"]
 openai = ["openai>=1.102.0"]
-tasks = ["pydocket>=0.18.0"]
+tasks = ["pydocket>=0.19.0"]
 
 [dependency-groups]
 dev = [
     "dirty-equals>=0.9.0",
-    "fastmcp[anthropic,apps,azure,code-mode,openai,tasks]",
+    "fastmcp[anthropic,apps,azure,code-mode,gemini,openai,tasks]",
     # add optional dependencies for fastmcp dev
     "fastapi>=0.115.12",
     "opentelemetry-sdk>=1.20.0",
@@ -83,7 +85,7 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff>=0.12.8",
-    "ty>=0.0.15",
+    "ty>=0.0.29",
     "prek>=0.2.12",
     "loq>=0.1.0a3",
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
@@ -137,6 +139,7 @@ env = [
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "client_process: marks tests that spawn client processes via stdio transport. These can create issues when run in the same CI environment as other subprocess-based tests.",
+    "conformance: marks MCP conformance tests (require Node.js/npx)",
 ]
 # Automatically mark all tests in integration_tests folder
 pythonpath = ["."]

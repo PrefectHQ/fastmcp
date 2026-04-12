@@ -4,6 +4,7 @@ import asyncio
 import copy
 import datetime
 import secrets
+import ssl
 import weakref
 from collections.abc import Coroutine
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
@@ -20,6 +21,7 @@ from mcp.types import GetTaskResult, TaskStatusNotification
 from pydantic import AnyUrl
 
 import fastmcp
+from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.elicitation import ElicitationHandler, create_elicitation_callback
 from fastmcp.client.logging import (
     LogHandler,
@@ -258,10 +260,34 @@ class Client(
         init_timeout: datetime.timedelta | float | int | None = None,
         client_info: mcp.types.Implementation | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
+        verify: ssl.SSLContext | bool | str | None = None,
     ) -> None:
         self.name = name or self.generate_name()
 
         self.transport = cast(ClientTransportT, infer_transport(transport))
+
+        if verify is not None:
+            from fastmcp.client.transports.http import StreamableHttpTransport
+            from fastmcp.client.transports.sse import SSETransport
+
+            if isinstance(self.transport, StreamableHttpTransport | SSETransport):
+                self.transport.verify = verify
+                # Re-sync existing OAuth auth with the new verify setting,
+                # but only if the transport doesn't have a custom factory
+                # (which takes precedence and was already applied to OAuth).
+                if (
+                    isinstance(self.transport.auth, OAuth)
+                    and auth is None
+                    and self.transport.httpx_client_factory is None
+                ):
+                    verify_factory = self.transport._make_verify_factory()
+                    if verify_factory is not None:
+                        self.transport.auth.httpx_client_factory = verify_factory
+            else:
+                raise ValueError(
+                    "The 'verify' parameter is only supported for HTTP transports."
+                )
+
         if auth is not None:
             self.transport._set_auth(auth)
 
@@ -309,6 +335,11 @@ class Client(
             self._session_kwargs["elicitation_callback"] = create_elicitation_callback(
                 elicitation_handler
             )
+
+        # Maximum time to wait for a clean disconnect before giving up.
+        # Normally disconnects complete in <100ms; this is a safety net for
+        # unresponsive servers.
+        self._disconnect_timeout: float = fastmcp.settings.client_disconnect_timeout
 
         # Session context management - see class docstring for detailed explanation
         self._session_state = ClientSessionState()
@@ -485,7 +516,7 @@ class Client(
         # Use a timeout to prevent hanging during cleanup if the connection is in a bad
         # state (e.g., rate-limited). The MCP SDK's transport may try to terminate the
         # session which can hang if the server is unresponsive.
-        with anyio.move_on_after(5):
+        with anyio.move_on_after(self._disconnect_timeout):
             await self._disconnect()
 
     async def _connect(self):

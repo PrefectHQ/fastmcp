@@ -53,6 +53,7 @@ class TestAWSCognitoProvider:
 
             # Check that the provider was initialized correctly
             assert provider._upstream_client_id == "test_client"
+            assert provider._upstream_client_secret is not None
             assert provider._upstream_client_secret.get_secret_value() == "test_secret"
             assert (
                 str(provider.base_url) == "https://example.com/"
@@ -101,6 +102,38 @@ class TestAWSCognitoProvider:
             assert provider._upstream_authorization_endpoint is not None
             assert provider._upstream_token_endpoint is not None
             assert "amazoncognito.com" in provider._upstream_authorization_endpoint
+
+    def test_token_verifier_checks_client_id_not_aud(self):
+        """Cognito verifier should check client_id claim, not aud."""
+        with mock_cognito_oidc_discovery():
+            provider = AWSCognitoProvider(
+                user_pool_id="us-east-1_XXXXXXXXX",
+                client_id="test_client",
+                client_secret="test_secret",
+                base_url="https://example.com",
+                jwt_signing_key="test-secret",
+            )
+
+            verifier = provider.get_token_verifier()
+
+            assert verifier._expected_client_id == "test_client"
+            assert verifier.audience is None
+
+    def test_token_verifier_supports_audience_override(self):
+        """Audience param maps to client_id validation in Cognito verifier."""
+        with mock_cognito_oidc_discovery():
+            provider = AWSCognitoProvider(
+                user_pool_id="us-east-1_XXXXXXXXX",
+                client_id="test_client",
+                client_secret="test_secret",
+                base_url="https://example.com",
+                jwt_signing_key="test-secret",
+            )
+
+            verifier = provider.get_token_verifier(audience="custom-audience")
+
+            assert verifier._expected_client_id == "custom-audience"
+            assert verifier.audience is None
 
 
 # Token verification functionality is now tested as part of the OIDC provider integration

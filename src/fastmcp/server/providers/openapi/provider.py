@@ -28,7 +28,7 @@ from fastmcp.server.providers.openapi.routing import (
     RouteMapFn,
     _determine_route_type,
 )
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import (
@@ -175,6 +175,9 @@ class OpenAPIProvider(Provider):
                 "entry to the spec or provide an httpx.AsyncClient explicitly."
             )
         base_url = servers[0]["url"]
+        variables = servers[0].get("variables", {})
+        for name, var in variables.items():
+            base_url = base_url.replace(f"{{{name}}}", var.get("default", ""))
         return httpx.AsyncClient(base_url=base_url, timeout=DEFAULT_TIMEOUT)
 
     @asynccontextmanager
@@ -422,7 +425,7 @@ class OpenAPIProvider(Provider):
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     async def _list_prompts(self) -> Sequence[Prompt]:
         """Return empty list - OpenAPI doesn't create prompts."""

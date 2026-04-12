@@ -35,11 +35,11 @@ from typing import TYPE_CHECKING, Literal, cast
 
 from typing_extensions import Self
 
-from fastmcp.prompts.prompt import Prompt
-from fastmcp.resources.resource import Resource
+from fastmcp.prompts.base import Prompt
+from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.transforms.visibility import Visibility
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
@@ -174,6 +174,32 @@ class Provider:
             chain = partial(transform.get_tool, call_next=chain)
 
         return await chain(name, version=version)
+
+    async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
+        """Look up an app-visible tool by original name, bypassing transforms.
+
+        Searches for a tool named ``tool_name`` tagged with the given app
+        name.  Skips the transform chain entirely.
+
+        Returns:
+            The tool if found and tagged with the given app name, else None.
+        """
+        tool = await self._get_tool(tool_name)
+        if tool is not None:
+            meta = tool.meta or {}
+            fastmcp_meta = meta.get("fastmcp")
+            ui_meta = meta.get("ui")
+            # Must match app name AND have app visibility (not model-only)
+            visibility = (
+                ui_meta.get("visibility", []) if isinstance(ui_meta, dict) else []
+            )
+            if (
+                isinstance(fastmcp_meta, dict)
+                and fastmcp_meta.get("app") == app_name
+                and "app" in visibility
+            ):
+                return tool
+        return None
 
     async def list_resources(self) -> Sequence[Resource]:
         """List resources with all transforms applied.
@@ -316,7 +342,7 @@ class Provider:
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     async def _list_resources(self) -> Sequence[Resource]:
         """Return all available resources.
@@ -347,7 +373,7 @@ class Provider:
             matching = [r for r in matching if version.matches(r.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Return all available resource templates.
@@ -378,7 +404,7 @@ class Provider:
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     async def _list_prompts(self) -> Sequence[Prompt]:
         """Return all available prompts.
@@ -409,7 +435,7 @@ class Provider:
             matching = [p for p in matching if version.matches(p.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     # -------------------------------------------------------------------------
     # Task registration

@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import hashlib
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import httpx
 from key_value.aio.protocols import AsyncKeyValue
 
 from fastmcp.dependencies import Dependency
+from fastmcp.server.auth.auth import MultiAuth
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.auth import decode_jwt_payload, parse_scopes
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
     from azure.identity.aio import OnBehalfOfCredential
     from mcp.server.auth.provider import AuthorizationParams
     from mcp.shared.auth import OAuthClientInformationFull
+
+    from fastmcp.server.auth.auth import AuthProvider
 
 logger = get_logger(__name__)
 
@@ -96,7 +99,7 @@ class AzureProvider(OAuthProxy):
         self,
         *,
         client_id: str,
-        client_secret: str,
+        client_secret: str | None = None,
         tenant_id: str,
         required_scopes: list[str],
         base_url: str,
@@ -107,15 +110,21 @@ class AzureProvider(OAuthProxy):
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
-        require_authorization_consent: bool = True,
+        require_authorization_consent: bool | Literal["external"] = True,
+        consent_csp_policy: str | None = None,
+        forward_resource: bool = True,
         base_authority: str = "login.microsoftonline.com",
         http_client: httpx.AsyncClient | None = None,
+        enable_cimd: bool = True,
     ) -> None:
         """Initialize Azure OAuth provider.
 
         Args:
             client_id: Azure application (client) ID from your App registration
-            client_secret: Azure client secret from your App registration
+            client_secret: Azure client secret from your App registration. Optional when
+                using alternative credentials (e.g., managed identity with a custom
+                _create_upstream_oauth_client override). When omitted, jwt_signing_key
+                must be provided.
             tenant_id: Azure tenant ID (specific tenant GUID, "organizations", or "consumers")
             identifier_uri: Optional Application ID URI for your custom API (defaults to api://{client_id}).
                 This URI is automatically prefixed to all required_scopes during initialization.
@@ -153,10 +162,14 @@ class AzureProvider(OAuthProxy):
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to Azure.
                 When False, authorization proceeds directly without user confirmation.
-                SECURITY WARNING: Only disable for local development or testing environments.
+                When "external", the built-in consent screen is skipped but no warning is
+                logged, indicating that consent is handled externally (e.g. by the upstream IdP).
+                SECURITY WARNING: Only set to False for local development or testing environments.
             http_client: Optional httpx.AsyncClient for connection pooling in JWKS fetches.
                 When provided, the client is reused for JWT key fetches and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per fetch.
+            enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
+                client IDs (default True). Set to False to disable.
         """
         # Parse scopes if provided as string
         parsed_required_scopes = parse_scopes(required_scopes)
@@ -192,20 +205,22 @@ class AzureProvider(OAuthProxy):
         # NOT standard OIDC scopes (openid, profile, email, offline_access).
         # Filter out OIDC scopes from validation - they'll still be sent to Azure
         # during authorization (handled by _prefix_scopes_for_azure).
-        if parsed_required_scopes:
-            validation_scopes = [
-                s for s in parsed_required_scopes if s not in OIDC_SCOPES
-            ]
-            # If all scopes were OIDC scopes, use None (no scope validation)
-            if not validation_scopes:
-                validation_scopes = None
-        else:
-            validation_scopes = None
+        validation_scopes = [
+            s for s in (parsed_required_scopes or []) if s not in OIDC_SCOPES
+        ]
+        if not validation_scopes:
+            raise ValueError(
+                "AzureProvider requires at least one non-OIDC scope in "
+                "required_scopes (e.g., 'read', 'write'). OIDC scopes like "
+                "'openid', 'profile', 'email', and 'offline_access' are not "
+                "included in Azure access token claims and cannot be used for "
+                "scope enforcement."
+            )
 
         token_verifier = JWTVerifier(
             jwks_uri=jwks_uri,
             issuer=issuer,
-            audience=client_id,
+            audience=[client_id, self.identifier_uri],
             algorithm="RS256",
             required_scopes=validation_scopes,  # Only validate non-OIDC scopes
             http_client=http_client,
@@ -233,7 +248,10 @@ class AzureProvider(OAuthProxy):
             client_storage=client_storage,
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
+            consent_csp_policy=consent_csp_policy,
+            forward_resource=forward_resource,
             valid_scopes=parsed_required_scopes,
+            enable_cimd=enable_cimd,
         )
 
         authority_info = ""
@@ -498,13 +516,23 @@ class AzureProvider(OAuthProxy):
             self._obo_credentials.move_to_end(key)
             return self._obo_credentials[key]
 
-        credential = OnBehalfOfCredential(
-            tenant_id=self._tenant_id,
-            client_id=self._upstream_client_id,
-            client_secret=self._upstream_client_secret.get_secret_value(),
-            user_assertion=user_assertion,
-            authority=f"https://{self._base_authority}",
-        )
+        obo_kwargs: dict[str, Any] = {
+            "tenant_id": self._tenant_id,
+            "client_id": self._upstream_client_id,
+            "user_assertion": user_assertion,
+            "authority": f"https://{self._base_authority}",
+        }
+        if self._upstream_client_secret is not None:
+            obo_kwargs["client_secret"] = (
+                self._upstream_client_secret.get_secret_value()
+            )
+        else:
+            raise ValueError(
+                "OBO token exchange requires either a client_secret or a subclass "
+                "that overrides get_obo_credential() to provide alternative credentials "
+                "(e.g., client_assertion_func for managed identity)."
+            )
+        credential = OnBehalfOfCredential(**obo_kwargs)
         self._obo_credentials[key] = credential
 
         # Evict oldest if over capacity
@@ -599,7 +627,7 @@ class AzureJWTVerifier(JWTVerifier):
         super().__init__(
             jwks_uri=f"https://{base_authority}/{tenant_id}/discovery/v2.0/keys",
             issuer=issuer,
-            audience=client_id,
+            audience=[client_id, self._identifier_uri],
             algorithm="RS256",
             required_scopes=required_scopes,
         )
@@ -640,6 +668,17 @@ def _require_azure_identity(feature: str) -> None:
         ) from e
 
 
+def _find_azure_provider(auth: AuthProvider | None) -> AzureProvider | None:
+    """Extract an AzureProvider from an auth provider, unwrapping MultiAuth if needed."""
+    if isinstance(auth, AzureProvider):
+        return auth
+
+    if isinstance(auth, MultiAuth) and isinstance(auth.server, AzureProvider):
+        return auth.server
+
+    return None
+
+
 class _EntraOBOToken(Dependency[str]):
     """Dependency that performs OBO token exchange for Microsoft Entra.
 
@@ -664,13 +703,14 @@ class _EntraOBOToken(Dependency[str]):
             )
 
         server = get_server()
-        if not isinstance(server.auth, AzureProvider):
+        azure_provider = _find_azure_provider(server.auth)
+        if azure_provider is None:
             raise RuntimeError(
                 "EntraOBOToken requires an AzureProvider as the auth provider. "
                 f"Current provider: {type(server.auth).__name__}"
             )
 
-        credential = await server.auth.get_obo_credential(
+        credential = await azure_provider.get_obo_credential(
             user_assertion=access_token.token,
         )
 

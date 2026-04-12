@@ -45,30 +45,37 @@ class FastMCPTransport(ClientTransport):
             # is called during cleanup, so we capture and re-raise manually.
             exception_to_raise: BaseException | None = None
 
-            async with (
-                anyio.create_task_group() as tg,
-                _enter_server_lifespan(server=self.server),
-            ):
-                tg.start_soon(
-                    lambda: self.server._mcp_server.run(
-                        server_read,
-                        server_write,
-                        self.server._mcp_server.create_initialization_options(),
-                        raise_exceptions=self.raise_exceptions,
+            # IMPORTANT: The lifespan MUST be the outer context and the task
+            # group MUST be the inner context. This ensures the task group
+            # (containing the server's run() and all its pub/sub subscriptions)
+            # is cancelled and fully drained BEFORE the lifespan tears down
+            # the Docket Worker and closes Redis connections. Reversing this
+            # order (e.g. via `async with (tg, lifespan):`) causes the Worker
+            # shutdown to hang for 5 seconds per test because fakeredis
+            # blocking operations hold references that prevent clean
+            # cancellation.
+            async with _enter_server_lifespan(server=self.server):  # noqa: SIM117
+                async with anyio.create_task_group() as tg:
+                    tg.start_soon(
+                        lambda: self.server._mcp_server.run(
+                            server_read,
+                            server_write,
+                            self.server._mcp_server.create_initialization_options(),
+                            raise_exceptions=self.raise_exceptions,
+                        )
                     )
-                )
 
-                try:
-                    async with ClientSession(
-                        read_stream=client_read,
-                        write_stream=client_write,
-                        **session_kwargs,
-                    ) as client_session:
-                        yield client_session
-                except BaseException as e:
-                    exception_to_raise = e
-                finally:
-                    tg.cancel_scope.cancel()
+                    try:
+                        async with ClientSession(
+                            read_stream=client_read,
+                            write_stream=client_write,
+                            **session_kwargs,
+                        ) as client_session:
+                            yield client_session
+                    except BaseException as e:
+                        exception_to_raise = e
+                    finally:
+                        tg.cancel_scope.cancel()
 
             # Re-raise after task group has exited cleanly
             if exception_to_raise is not None:

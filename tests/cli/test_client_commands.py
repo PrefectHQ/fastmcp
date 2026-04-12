@@ -16,6 +16,7 @@ from fastmcp.cli.client import (
     _build_stdio_from_command,
     _format_call_result_text,
     _is_http_target,
+    _sanitize_untrusted_text,
     call_command,
     coerce_value,
     format_tool_signature,
@@ -555,3 +556,27 @@ class TestFormatCallResult:
         _format_call_result_text(result)
         captured = capsys.readouterr()
         assert "value" in captured.out
+
+    def test_escapes_rich_markup_and_control_chars(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        result = CallToolResult(
+            content=[mcp.types.TextContent(type="text", text="[red]x[/red]\x1b[2J")],
+            structured_content=None,
+            meta=None,
+            data=None,
+            is_error=False,
+        )
+
+        _format_call_result_text(result)
+        captured = capsys.readouterr()
+        assert "[red]x[/red]" in captured.out
+        assert "\\x1b" in captured.out
+        assert "\x1b" not in captured.out
+
+
+class TestSanitizeUntrustedText:
+    def test_sanitize_untrusted_text(self):
+        value = "[bold]hello[/bold]\x07"
+        sanitized = _sanitize_untrusted_text(value)
+        assert sanitized == "\\[bold]hello\\[/bold]\\x07"

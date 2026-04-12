@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from fastmcp import FastMCP
+from fastmcp.server.transforms import VersionFilter
 from fastmcp.utilities.versions import (
     VersionSpec,
 )
@@ -149,6 +150,28 @@ class TestVersionFilter:
         assert "unversioned_tool" in names
         assert "versioned_tool" not in names
 
+    async def test_include_unversioned_false_excludes_unversioned_tools(self):
+        """Setting include_unversioned=False hides unversioned tools."""
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def unversioned_tool() -> str:
+            return "unversioned"
+
+        @mcp.tool(version="2.0")
+        def included_versioned_tool() -> str:
+            return "v2"
+
+        @mcp.tool(version="5.0")
+        def excluded_versioned_tool() -> str:
+            return "v5"
+
+        mcp.add_transform(VersionFilter(version_lt="3.0", include_unversioned=False))
+
+        tools = await mcp.list_tools()
+        assert [tool.name for tool in tools] == ["included_versioned_tool"]
+
     async def test_date_versions(self):
         """Works with date-based versions like '2025-01-15'."""
         from fastmcp.server.transforms import VersionFilter
@@ -219,6 +242,55 @@ class TestVersionFilter:
         assert len(resources) == 1
         assert resources[0].version == "1.0"
 
+    async def test_include_unversioned_false_excludes_unversioned_resources(self):
+        """Setting include_unversioned=False hides unversioned resources."""
+
+        mcp = FastMCP()
+
+        @mcp.resource("file:///unversioned")
+        def unversioned_resource() -> str:
+            return "unversioned"
+
+        @mcp.resource("file:///included_versioned", version="1.0")
+        def included_versioned_resource() -> str:
+            return "v1"
+
+        @mcp.resource("file:///excluded_versioned", version="5.0")
+        def excluded_versioned_resource() -> str:
+            return "v5"
+
+        mcp.add_transform(VersionFilter(version_lt="2.0", include_unversioned=False))
+
+        resources = await mcp.list_resources()
+        assert [str(resource.uri) for resource in resources] == [
+            "file:///included_versioned"
+        ]
+
+    async def test_include_unversioned_false_excludes_unversioned_resource_templates(
+        self,
+    ):
+        """Setting include_unversioned=False hides unversioned resource templates."""
+        mcp = FastMCP()
+
+        @mcp.resource("resource://unversioned/{name}")
+        def unversioned_template(name: str) -> str:
+            return f"unversioned:{name}"
+
+        @mcp.resource("resource://included_versioned/{name}", version="1.0")
+        def included_versioned_template(name: str) -> str:
+            return f"versioned:{name}"
+
+        @mcp.resource("resource://excluded_versioned/{name}", version="5.0")
+        def excluded_versioned_template(name: str) -> str:
+            return f"excluded:{name}"
+
+        mcp.add_transform(VersionFilter(version_lt="2.0", include_unversioned=False))
+
+        templates = await mcp.list_resource_templates()
+        assert [template.uri_template for template in templates] == [
+            "resource://included_versioned/{name}"
+        ]
+
     async def test_prompts_filtered(self):
         """Prompts are filtered by version."""
         from fastmcp.server.transforms import VersionFilter
@@ -239,6 +311,27 @@ class TestVersionFilter:
         assert len(prompts) == 1
         assert prompts[0].version == "1.0"
 
+    async def test_include_unversioned_false_excludes_unversioned_prompts(self):
+        """Setting include_unversioned=False hides unversioned prompts."""
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def unversioned_prompt(name: str) -> str:
+            return f"Unversioned: {name}"
+
+        @mcp.prompt(version="1.0")
+        def included_versioned_prompt(name: str) -> str:
+            return f"Versioned: {name}"
+
+        @mcp.prompt(version="5.0")
+        def excluded_versioned_prompt(name: str) -> str:
+            return f"Excluded: {name}"
+
+        mcp.add_transform(VersionFilter(version_lt="2.0", include_unversioned=False))
+
+        prompts = await mcp.list_prompts()
+        assert [prompt.name for prompt in prompts] == ["included_versioned_prompt"]
+
     async def test_repr(self):
         """Test VersionFilter string representation."""
         from fastmcp.server.transforms import VersionFilter
@@ -251,6 +344,9 @@ class TestVersionFilter:
 
         f3 = VersionFilter(version_gte="1.0")
         assert repr(f3) == "VersionFilter(version_gte='1.0')"
+
+        f4 = VersionFilter(version_lt="3.0", include_unversioned=False)
+        assert repr(f4) == "VersionFilter(version_lt='3.0', include_unversioned=False)"
 
 
 class TestMountedVersionFiltering:
@@ -353,6 +449,32 @@ class TestMountedVersionFiltering:
         assert len(tools) == 1
         assert tools[0].name == "child_unversioned_tool"
         assert tools[0].version is None
+
+    async def test_mounted_include_unversioned_false_excludes_unversioned_tools(self):
+        """Mounted unversioned tools can be excluded with include_unversioned=False."""
+
+        child = FastMCP("Child")
+
+        @child.tool
+        def unversioned_tool() -> str:
+            return "unversioned"
+
+        @child.tool(version="2.0")
+        def included_versioned_tool() -> str:
+            return "versioned"
+
+        @child.tool(version="0.5")
+        def excluded_versioned_tool() -> str:
+            return "excluded-versioned"
+
+        parent = FastMCP("Parent")
+        parent.mount(child, "child")
+        parent.add_transform(
+            VersionFilter(version_gte="1.0", include_unversioned=False)
+        )
+
+        tools = await parent.list_tools()
+        assert [tool.name for tool in tools] == ["child_included_versioned_tool"]
 
     async def test_version_filter_filters_out_high_mounted_version(self):
         """VersionFilter hides mounted components outside the range."""

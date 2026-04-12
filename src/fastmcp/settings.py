@@ -21,6 +21,10 @@ ENV_FILE = os.getenv("FASTMCP_ENV_FILE", ".env")
 
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
+MCP_LOG_LEVEL = Literal[
+    "debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"
+]
+
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
 TEN_MB_IN_BYTES = 1024 * 1024 * 10
@@ -112,6 +116,21 @@ class DocketSettings(BaseSettings):
             ),
         ),
     ] = timedelta(seconds=5)
+
+    minimum_check_interval: Annotated[
+        timedelta,
+        Field(
+            description=inspect.cleandoc(
+                """
+                How frequently the worker polls for new tasks. Lower
+                values reduce latency for task pickup at the cost of
+                more CPU usage. The default of 50ms is a good balance;
+                increase for high-volume production deployments where
+                tasks are long-running.
+                """
+            ),
+        ),
+    ] = timedelta(milliseconds=50)
 
 
 class Settings(BaseSettings):
@@ -227,6 +246,16 @@ class Settings(BaseSettings):
         ),
     ] = None
 
+    client_disconnect_timeout: Annotated[
+        float,
+        Field(
+            description="Maximum time to wait for a clean disconnect before giving up, in seconds.",
+        ),
+    ] = 5
+
+    # Transport settings
+    transport: Literal["stdio", "http", "sse", "streamable-http"] = "stdio"
+
     # HTTP settings
     host: str = "127.0.0.1"
     port: int = 8000
@@ -250,6 +279,20 @@ class Settings(BaseSettings):
             ),
         ),
     ] = False
+
+    client_log_level: Annotated[
+        MCP_LOG_LEVEL | None,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Default minimum log level for messages sent to MCP clients.
+                When set, log messages below this level are suppressed.
+                Individual clients can override this per-session using the
+                MCP logging/setLevel request.
+                """
+            ),
+        ),
+    ] = None
 
     strict_input_validation: Annotated[
         bool,
