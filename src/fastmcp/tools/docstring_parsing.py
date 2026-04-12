@@ -8,6 +8,7 @@ implementation can be swapped without touching callers.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -33,8 +34,6 @@ def parse_docstring(fn: Callable[..., Any]) -> tuple[str | None, dict[str, str]]
         A tuple of (description, {param_name: param_description}).
         Description is None if the function has no docstring.
     """
-    import inspect
-
     doc = inspect.getdoc(fn)
     if not doc:
         return None, {}
