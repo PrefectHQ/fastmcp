@@ -63,6 +63,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 - **NEVER** force-push on collaborative repos
 - **ALWAYS** run prek before PRs
 - **NEVER** create a release, comment on an issue, or open a PR unless specifically instructed to do so.
+- **NEVER** merge a PR marked as do-not-merge. Check title, body, AND labels for `[DNM]`, `DNM`, `DO NOT MERGE`, `DON'T MERGE`, `DONT MERGE`, `do-not-merge`, or `dont-merge` (case-insensitive, any variation). Authors use these as hard stops — respect them even if CI is green and review looks clean. When triaging a batch of PRs, filter these out up front and re-check each one's labels immediately before merging.
 
 ### Releases
 
