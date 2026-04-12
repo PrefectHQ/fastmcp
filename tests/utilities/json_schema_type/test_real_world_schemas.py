@@ -12,7 +12,6 @@ Marked as an integration test — skipped by default, run with:
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import shutil
@@ -86,6 +85,10 @@ def _ensure_repo() -> Path:
     # Fast-path check without a lock — if HEAD already matches, skip locking entirely.
     if _head_matches_pinned():
         return CLONE_DIR
+
+    # fcntl is POSIX-only; imported here (not at module level) so this file
+    # collects cleanly on Windows where the integration test is skipped.
+    import fcntl
 
     lock_path = CLONE_DIR.with_suffix(".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
