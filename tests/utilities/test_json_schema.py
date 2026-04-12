@@ -471,6 +471,28 @@ class TestCompressSchema:
         # targets "title" specifically
         assert compressed["properties"]["described_any"]["description"] == "anything"
 
+    def test_prune_titles_preserves_user_extension_payloads(self):
+        """User extensions (json_schema_extra, x-* vendor keys) carry opaque
+        payloads that may look metadata-shaped. They must not be touched."""
+        schema = {
+            "type": "object",
+            "x-ui": {"title": "Dashboard", "description": "sidebar label"},
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "x-widget": {"title": "Dropdown"},
+                }
+            },
+        }
+
+        compressed = compress_schema(schema, prune_titles=True)
+
+        assert compressed["x-ui"] == {
+            "title": "Dashboard",
+            "description": "sidebar label",
+        }
+        assert compressed["properties"]["config"]["x-widget"] == {"title": "Dropdown"}
+
     def test_prune_titles_does_not_recurse_into_default_values(self):
         """A user default that happens to be a dict shaped like schema metadata
         must not be corrupted — `default` holds literal values, not sub-schemas."""
