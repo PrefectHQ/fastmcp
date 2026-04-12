@@ -1,0 +1,58 @@
+---
+title: prefab_synthesis
+sidebarTitle: prefab_synthesis
+---
+
+# `fastmcp.server.providers.prefab_synthesis`
+
+
+On-demand Prefab renderer resource synthesis.
+
+Tools marked as Prefab (via ``app=True``, ``PrefabAppConfig``, etc.) carry
+a placeholder ``meta.ui.resourceUri`` and optionally a hash in
+``meta.fastmcp._tool_hash``. This module synthesizes per-tool renderer
+resources on demand at ``list_resources`` and ``read_resource`` time
+without storing or materializing anything.
+
+Each tool's resource URI is ``ui://prefab/tool/<hash>/renderer.html``
+where the hash comes from the tool's own meta (set at registration from
+the app name + tool name). CSP on the resource is the tool's
+``meta.ui.csp`` merged with the renderer defaults across all four
+``*_domains`` fields.
+
+
+## Functions
+
+### `synthesize_prefab_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/prefab_synthesis.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+synthesize_prefab_resources(server: FastMCP) -> list[Resource]
+```
+
+
+Return fresh synthetic Prefab resources for all prefab tools. Pure.
+
+
+### `synthesize_prefab_resource_by_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/prefab_synthesis.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+synthesize_prefab_resource_by_uri(server: FastMCP, uri: str) -> Resource | None
+```
+
+
+Intercept a Prefab renderer URI and synthesize on demand.
+
+
+### `rewrite_tool_meta_for_wire` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/prefab_synthesis.py#L226" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+rewrite_tool_meta_for_wire(tool: Tool) -> Tool
+```
+
+
+Return a model_copy with the per-tool URI and CSP stripped.
+
+Reads the hash from the tool's own meta. If no hash is found,
+returns the tool unchanged. Produces a fresh copy — the original
+Tool object is untouched.
+
