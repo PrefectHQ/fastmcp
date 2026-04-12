@@ -136,7 +136,7 @@ class MontySandboxProvider:
             run_kwargs["inputs"] = inputs
         if self.limits is not None:
             run_kwargs["limits"] = self.limits
-        return await pydantic_monty.run_monty_async(monty, **run_kwargs)
+        return await monty.run_async(**run_kwargs)
 
 
 # ---------------------------------------------------------------------------
