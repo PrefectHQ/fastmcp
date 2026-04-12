@@ -119,42 +119,49 @@ class TestAppTrue:
         assert "ui" in tool.meta
         assert tool.meta["ui"]["resourceUri"] == PREFAB_RENDERER_URI
 
-    def test_app_true_registers_renderer_resource(self):
+    async def test_app_true_synthesizes_renderer_resource(self):
+        """Each prefab tool gets a per-tool renderer resource synthesized
+        on demand at list_resources time. Resources don't live on any
+        provider's storage — they're computed from the registry walk."""
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)
         def my_tool() -> str:
             return "hello"
 
-        renderer_key = f"resource:{PREFAB_RENDERER_URI}@"
-        assert renderer_key in mcp._local_provider._components
+        resources = list(await mcp.list_resources())
+        prefab_resources = [r for r in resources if "prefab/tool" in str(r.uri)]
+        assert len(prefab_resources) == 1
+        assert "renderer.html" in str(prefab_resources[0].uri)
 
-    def test_renderer_resource_has_correct_mime_type(self):
+    async def test_renderer_resource_has_correct_mime_type(self):
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)
         def my_tool() -> str:
             return "hello"
 
-        renderer_key = f"resource:{PREFAB_RENDERER_URI}@"
-        resource = mcp._local_provider._components[renderer_key]
-        assert isinstance(resource, TextResource)
-        assert resource.mime_type == UI_MIME_TYPE
+        resources = list(await mcp.list_resources())
+        renderer = next(r for r in resources if "prefab/tool" in str(r.uri))
+        assert isinstance(renderer, TextResource)
+        assert renderer.mime_type == UI_MIME_TYPE
 
-    def test_renderer_resource_has_csp(self):
+    async def test_renderer_resource_has_csp(self):
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)
         def my_tool() -> str:
             return "hello"
 
-        renderer_key = f"resource:{PREFAB_RENDERER_URI}@"
-        resource = mcp._local_provider._components[renderer_key]
-        assert resource.meta is not None
-        assert "ui" in resource.meta
-        assert "csp" in resource.meta["ui"]
+        resources = list(await mcp.list_resources())
+        renderer = next(r for r in resources if "prefab/tool" in str(r.uri))
+        assert renderer.meta is not None
+        assert "ui" in renderer.meta
+        assert "csp" in renderer.meta["ui"]
 
-    def test_multiple_tools_share_renderer(self):
+    async def test_multiple_tools_get_dedicated_resources(self):
+        """Each prefab tool gets its own resource at a distinct hashed
+        URI — no shared singleton, so per-tool CSP becomes possible."""
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)
@@ -165,10 +172,9 @@ class TestAppTrue:
         def tool_b() -> str:
             return "b"
 
-        renderer_keys = [
-            k for k in mcp._local_provider._components if k.startswith("resource:ui://")
-        ]
-        assert len(renderer_keys) == 1
+        resources = list(await mcp.list_resources())
+        prefab_uris = {str(r.uri) for r in resources if "prefab/tool" in str(r.uri)}
+        assert len(prefab_uris) == 2
 
     def test_explicit_app_config_not_overridden(self):
         mcp = FastMCP("test")
@@ -421,7 +427,9 @@ class TestIntegration:
         tool = next(t for t in tools if t.name == "my_tool")
         meta = tool.meta or {}
         assert "ui" in meta
-        assert meta["ui"]["resourceUri"] == PREFAB_RENDERER_URI
+        # URI is the per-tool hashed form, not the singleton.
+        assert meta["ui"]["resourceUri"].startswith("ui://prefab/tool/")
+        assert meta["ui"]["resourceUri"].endswith("/renderer.html")
 
     async def test_renderer_resource_readable(self):
         mcp = FastMCP("test")
@@ -431,7 +439,13 @@ class TestIntegration:
             return "hello"
 
         async with Client(mcp) as client:
-            contents = await client.read_resource(PREFAB_RENDERER_URI)
+            # Look up the URI by listing first — the hash isn't
+            # computable from outside without the address registry.
+            tools = await client.list_tools()
+            uri = next(t for t in tools if t.name == "my_tool").meta["ui"][
+                "resourceUri"
+            ]
+            contents = await client.read_resource(uri)
 
         assert len(contents) > 0
         text = contents[0].text if hasattr(contents[0], "text") else ""

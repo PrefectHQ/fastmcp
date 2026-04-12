@@ -161,7 +161,7 @@ The implementation provides all required OAuth endpoints including authorization
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.oauth import MyOAuthProvider
+from fastmcp.server.auth import OAuthProvider
 
 auth = MyOAuthProvider(
     user_store=your_user_database,

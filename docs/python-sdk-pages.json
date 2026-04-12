@@ -160,6 +160,13 @@
           "python-sdk/fastmcp-server-auth-auth",
           "python-sdk/fastmcp-server-auth-authorization",
           "python-sdk/fastmcp-server-auth-cimd",
+          {
+            "group": "handlers",
+            "pages": [
+              "python-sdk/fastmcp-server-auth-handlers-__init__",
+              "python-sdk/fastmcp-server-auth-handlers-authorize"
+            ]
+          },
           "python-sdk/fastmcp-server-auth-jwt_issuer",
           "python-sdk/fastmcp-server-auth-middleware",
           {
@@ -246,6 +253,7 @@
         "group": "providers",
         "pages": [
           "python-sdk/fastmcp-server-providers-__init__",
+          "python-sdk/fastmcp-server-providers-addressing",
           "python-sdk/fastmcp-server-providers-aggregate",
           "python-sdk/fastmcp-server-providers-base",
           "python-sdk/fastmcp-server-providers-fastmcp_provider",
@@ -276,6 +284,7 @@
               "python-sdk/fastmcp-server-providers-openapi-routing"
             ]
           },
+          "python-sdk/fastmcp-server-providers-prefab_synthesis",
           "python-sdk/fastmcp-server-providers-proxy",
           {
             "group": "skills",
@@ -358,6 +367,7 @@
       "python-sdk/fastmcp-utilities-auth",
       "python-sdk/fastmcp-utilities-cli",
       "python-sdk/fastmcp-utilities-components",
+      "python-sdk/fastmcp-utilities-docstring_parsing",
       "python-sdk/fastmcp-utilities-exceptions",
       "python-sdk/fastmcp-utilities-http",
       "python-sdk/fastmcp-utilities-inspect",

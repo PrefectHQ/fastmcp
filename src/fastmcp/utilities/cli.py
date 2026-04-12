@@ -240,7 +240,6 @@ def log_server_banner(server: FastMCP[Any]) -> None:
         panel_content,
         border_style="dim",
         padding=(1, 4),
-        # expand=False,
         width=80,  # Set max width for the panel
     )
 

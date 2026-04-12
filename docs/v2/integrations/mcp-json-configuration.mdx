@@ -357,6 +357,98 @@ echo "$CONFIG" | jq '."CI Server".command'
 # Output: "uv"
 ```
 
+### UV-Managed Project Dependencies
+
+For servers that live inside a uv-managed project (with `pyproject.toml`), use the `--project` flag to run within that project's environment:
+
+```bash
+fastmcp install mcp-json server.py --project .
+```
+
+Output:
+```json
+{
+  "My Server": {
+    "command": "uv",
+    "args": [
+      "run",
+      "--project",
+      "/absolute/path/to/project",
+      "--with",
+      "fastmcp",
+      "fastmcp",
+      "run",
+      "/absolute/path/to/project/server.py"
+    ]
+  }
+}
+```
+
+You can also use `fastmcp.json` with a local project:
+
+```json fastmcp.json
+{
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "source": {
+    "path": "server.py"
+  },
+  "environment": {
+    "project": "."
+  }
+}
+```
+
+If your server needs additional packages beyond those in `pyproject.toml`, add them via the `dependencies` array or `--with`.
+
+### Published Packages with `uvx`
+
+If your team publishes MCP servers as pip packages, you can configure clients to run them with `uvx` directly instead of `uv run`. For example, if your package is called `my-mcp-server` and provides a CLI entry point of the same name:
+
+```json
+{
+  "mcpServers": {
+    "My Server": {
+      "command": "uvx",
+      "args": ["my-mcp-server"]
+    }
+  }
+}
+```
+
+If the package name differs from the CLI command (e.g., package `weather-mcp` with command `weather-server`):
+
+```json
+{
+  "mcpServers": {
+    "Weather": {
+      "command": "uvx",
+      "args": ["--from", "weather-mcp", "weather-server"]
+    }
+  }
+}
+```
+
+You can also pin Python versions or add extra dependencies:
+
+```json
+{
+  "mcpServers": {
+    "My Server": {
+      "command": "uvx",
+      "args": [
+        "--python", "3.12",
+        "--with", "requests",
+        "my-mcp-server"
+      ]
+    }
+  }
+}
+```
+
+<Note>
+`fastmcp install mcp-json` generates `uv run` configurations for local development. For published packages, you'll typically write the `uvx` configuration manually or generate it through your own packaging workflow.
+</Note>
+
 ## Integration with MCP Clients
 
 The generated configuration works with any MCP-compatible application:

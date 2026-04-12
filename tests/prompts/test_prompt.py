@@ -430,6 +430,135 @@ class TestPromptArgumentDescriptions:
                     not in arg.description
                 )
 
+    def test_docstring_populates_argument_descriptions(self):
+        """Google-style docstrings should populate PromptArgument descriptions."""
+
+        def greet(name: str, topic: str) -> str:
+            """Generate a greeting.
+
+            Args:
+                name: The person's name.
+                topic: The topic to discuss.
+            """
+            return f"Hello {name}, let's talk about {topic}"
+
+        prompt = Prompt.from_function(greet)
+
+        # Description is summary-only — Args section stripped
+        assert prompt.description == "Generate a greeting."
+
+        assert prompt.arguments is not None
+        name_arg = next(arg for arg in prompt.arguments if arg.name == "name")
+        topic_arg = next(arg for arg in prompt.arguments if arg.name == "topic")
+        assert name_arg.description == "The person's name."
+        assert topic_arg.description == "The topic to discuss."
+
+    def test_docstring_works_with_numpy_and_sphinx_styles(self):
+        def numpy_prompt(a: str) -> str:
+            """Do something.
+
+            Parameters
+            ----------
+            a
+                The first argument.
+            """
+            return a
+
+        def sphinx_prompt(a: str) -> str:
+            """Do something.
+
+            :param a: The first argument.
+            """
+            return a
+
+        numpy = Prompt.from_function(numpy_prompt)
+        sphinx = Prompt.from_function(sphinx_prompt)
+
+        for prompt in (numpy, sphinx):
+            assert prompt.description == "Do something."
+            assert prompt.arguments is not None
+            a_arg = next(arg for arg in prompt.arguments if arg.name == "a")
+            assert a_arg.description == "The first argument."
+
+    def test_explicit_field_description_overrides_docstring(self):
+        """Field(description=...) takes precedence over docstring."""
+        from typing import Annotated
+
+        from pydantic import Field
+
+        def greet(
+            name: Annotated[str, Field(description="From Field")],
+        ) -> str:
+            """Greet.
+
+            Args:
+                name: From docstring (ignored).
+            """
+            return f"Hello {name}"
+
+        prompt = Prompt.from_function(greet)
+        assert prompt.arguments is not None
+        name_arg = next(arg for arg in prompt.arguments if arg.name == "name")
+        # Field description wins over the docstring's "From docstring (ignored)".
+        # (The existing schema-hint suffix for Annotated params is appended
+        # afterwards and is unrelated to precedence.)
+        assert name_arg.description is not None
+        assert name_arg.description.startswith("From Field")
+        assert "From docstring" not in name_arg.description
+
+    def test_explicit_description_keeps_docstring_arg_descriptions(self):
+        """Overriding the prompt description does not drop docstring-sourced
+        argument descriptions — they come from separate parsing paths."""
+
+        def greet(name: str) -> str:
+            """Greet.
+
+            Args:
+                name: The person's name.
+            """
+            return f"Hello {name}"
+
+        prompt = Prompt.from_function(greet, description="Custom description")
+        assert prompt.description == "Custom description"
+        assert prompt.arguments is not None
+        name_arg = next(arg for arg in prompt.arguments if arg.name == "name")
+        assert name_arg.description == "The person's name."
+
+    def test_docstring_without_args_section(self):
+        """Summary-only docstrings produce a description with no arg descriptions."""
+
+        def greet(name: str) -> str:
+            """Just a summary."""
+            return f"Hello {name}"
+
+        prompt = Prompt.from_function(greet)
+        assert prompt.description == "Just a summary."
+        assert prompt.arguments is not None
+        name_arg = next(arg for arg in prompt.arguments if arg.name == "name")
+        assert name_arg.description is None
+
+    def test_callable_class_sources_description_from_class(self):
+        """Class docstring drives the prompt description, while __call__'s
+        Args section drives per-argument descriptions (since the arguments
+        are __call__'s, not the class's)."""
+
+        class MyPrompt:
+            """Class-level description."""
+
+            def __call__(self, name: str) -> str:
+                """Internal call doc.
+
+                Args:
+                    name: From call.
+                """
+                return f"Hello {name}"
+
+        prompt = Prompt.from_function(MyPrompt())
+        assert prompt.description == "Class-level description."
+        assert prompt.arguments is not None
+        name_arg = next(arg for arg in prompt.arguments if arg.name == "name")
+        assert name_arg.description == "From call."
+
     def test_prompt_meta_parameter(self):
         """Test that meta parameter is properly handled."""
 

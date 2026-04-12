@@ -18,6 +18,7 @@ from fastmcp.server.dependencies import (
     without_injected_parameters,
 )
 from fastmcp.tools.base import ToolResult
+from fastmcp.utilities.docstring_parsing import ParsedDocstring, parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
@@ -164,9 +165,9 @@ class ParsedFunction:
                             f"Parameter '{arg_name}' in exclude_args must have a default value."
                         )
 
-        # collect name and doc before we potentially modify the function
+        # collect name and description before we potentially modify the function
         fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
-        fn_doc = inspect.getdoc(fn)
+        outer_docstring = parse_docstring(fn)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
@@ -174,6 +175,19 @@ class ParsedFunction:
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
             fn = fn.__func__
+
+        # For callable classes, parameter descriptions must come from
+        # __call__'s docstring — where the exposed parameters are actually
+        # declared. The class docstring's Args section, if any, typically
+        # describes __init__, so falling back to it would risk injecting
+        # constructor docs into __call__'s schema on overlapping names.
+        # The description, however, comes from the class docstring (which
+        # describes what the tool IS) when present.
+        inner_docstring = parse_docstring(fn)
+        parsed_docstring = ParsedDocstring(
+            description=outer_docstring.description or inner_docstring.description,
+            parameters=inner_docstring.parameters,
+        )
 
         # Transform Context type annotations to Depends() for unified DI
         fn = transform_context_annotations(fn)
@@ -194,6 +208,18 @@ class ParsedFunction:
         input_schema = compress_schema(
             input_schema, prune_params=prune_params, prune_titles=True
         )
+
+        # Inject parameter descriptions from the docstring into the schema.
+        # Explicit annotations (Field(description=...), Annotated[x, "..."])
+        # already have a "description" key and take precedence.
+        if parsed_docstring.parameters:
+            properties = input_schema.get("properties", {})
+            for param_name, param_desc in parsed_docstring.parameters.items():
+                if (
+                    param_name in properties
+                    and "description" not in properties[param_name]
+                ):
+                    properties[param_name]["description"] = param_desc
 
         output_schema = None
         # Get the return annotation from the signature
@@ -282,7 +308,7 @@ class ParsedFunction:
         return cls(
             fn=fn,
             name=fn_name,
-            description=fn_doc,
+            description=parsed_docstring.description,
             input_schema=input_schema,
             output_schema=output_schema or None,
             return_type=original_output_type,

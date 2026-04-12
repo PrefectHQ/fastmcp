@@ -1,7 +1,10 @@
 import importlib
 import json
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Annotated, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
+
+if TYPE_CHECKING:
+    from pydantic_monty import ResourceLimits
 
 from mcp.types import TextContent
 from pydantic import Field
@@ -102,7 +105,7 @@ class MontySandboxProvider:
     def __init__(
         self,
         *,
-        limits: dict[str, Any] | None = None,
+        limits: "ResourceLimits | None" = None,
     ) -> None:
         self.limits = limits
 
@@ -127,16 +130,12 @@ class MontySandboxProvider:
             for key, value in (external_functions or {}).items()
         }
 
-        monty = pydantic_monty.Monty(
-            code,
-            inputs=list(inputs.keys()),
+        monty = pydantic_monty.Monty(code, inputs=list(inputs))
+        return await monty.run_async(
+            inputs=inputs or None,
+            external_functions=async_functions or None,
+            limits=self.limits,
         )
-        run_kwargs: dict[str, Any] = {"external_functions": async_functions}
-        if inputs:
-            run_kwargs["inputs"] = inputs
-        if self.limits is not None:
-            run_kwargs["limits"] = self.limits
-        return await pydantic_monty.run_monty_async(monty, **run_kwargs)
 
 
 # ---------------------------------------------------------------------------

@@ -572,10 +572,18 @@ class FastMCPProvider(Provider):
         if raw_tool is None:
             return None
         wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
-        # Use the ___-prefixed name so the inner server's call_tool also
-        # takes the app-tool bypass path (app-only tools are hidden from
-        # normal get_tool visibility filtering).
-        wrapped._original_name = f"{app_name}___{tool_name}"
+        from fastmcp.server.providers.addressing import hashed_backend_name
+
+        wrapped._original_name = hashed_backend_name(app_name, tool_name)
+        return wrapped
+
+    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Delegate to nested server's get_tool_by_hash, wrapping for middleware."""
+        raw_tool = await self.server.get_tool_by_hash(tool_hash, tool_name)
+        if raw_tool is None:
+            return None
+        wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
+        wrapped._original_name = f"{tool_hash}_{tool_name}"
         return wrapped
 
     # -------------------------------------------------------------------------

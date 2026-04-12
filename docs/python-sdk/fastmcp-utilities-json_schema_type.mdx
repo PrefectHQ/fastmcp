@@ -42,17 +42,18 @@ Example:
 
 ## Functions
 
-### `json_schema_to_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/json_schema_type.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `json_schema_to_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/json_schema_type.py#L143" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-json_schema_to_type(schema: Mapping[str, Any], name: str | None = None) -> type
+json_schema_to_type(schema: Mapping[str, Any] | bool, name: str | None = None) -> type
 ```
 
 
 Convert JSON schema to appropriate Python type with validation.
 
 **Args:**
-- `schema`: A JSON Schema dictionary defining the type structure and validation rules
+- `schema`: A JSON Schema dictionary defining the type structure and validation rules.
+Boolean schemas are also accepted (``True`` = any type, ``False`` = unsatisfiable).
 - `name`: Optional name for object schemas. Only allowed when schema type is "object".
 If not provided for objects, name will be inferred from schema's "title"
 property or default to "Root".
@@ -107,4 +108,4 @@ class Name:
 
 ## Classes
 
-### `JSONSchema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/json_schema_type.py#L88" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `JSONSchema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/json_schema_type.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>

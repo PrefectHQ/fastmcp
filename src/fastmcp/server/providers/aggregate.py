@@ -106,16 +106,37 @@ class AggregateProvider(Provider):
     def _collect_list_results(
         self, results: list[Sequence[T] | BaseException], operation: str
     ) -> list[T]:
-        """Collect successful list results, logging any exceptions."""
+        """Collect successful list results, logging any exceptions.
+
+        Emits a warning when the same MCP identity is returned by more than
+        one provider — surfaces composition mistakes to the server author.
+        This is always a warning: cross-provider collisions happen at runtime
+        (sometimes dynamically), so an errorable/strict mode would give the
+        author no way to react and would crash list calls in production.
+        """
         collected: list[T] = []
+        # FastMCPComponent.key encodes type, identifier, and version —
+        # so version variants of the same component are NOT reported as
+        # collisions (matching _get_highest_version_result behavior).
+        seen_keys: dict[str, int] = {}
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
-                logger.debug(
+                logger.warning(
                     f"Error during {operation} from provider "
                     f"{self.providers[i]}: {result}"
                 )
                 continue
-            collected.extend(result)
+            for item in result:
+                key = getattr(item, "key", None)
+                if key is not None:
+                    first = seen_keys.setdefault(key, i)
+                    if first != i:
+                        logger.warning(
+                            f"Duplicate {operation} component {key!r} "
+                            f"from provider {self.providers[i]} "
+                            f"(first seen from provider {self.providers[first]})"
+                        )
+                collected.append(item)
         return collected
 
     def _get_highest_version_result(
@@ -132,7 +153,7 @@ class AggregateProvider(Provider):
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 if not isinstance(result, NotFoundError):
-                    logger.debug(
+                    logger.warning(
                         f"Error during {operation} from provider "
                         f"{self.providers[i]}: {result}"
                     )
@@ -172,6 +193,19 @@ class AggregateProvider(Provider):
         """Query all child providers for an app tool."""
         results = await gather(
             *[p.get_app_tool(app_name, tool_name) for p in self.providers],
+            return_exceptions=True,
+        )
+        for r in results:
+            if isinstance(r, BaseException):
+                continue
+            if r is not None:
+                return r
+        return None
+
+    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Query all child providers for a tool matching a hash."""
+        results = await gather(
+            *[p.get_tool_by_hash(tool_hash, tool_name) for p in self.providers],
             return_exceptions=True,
         )
         for r in results:
