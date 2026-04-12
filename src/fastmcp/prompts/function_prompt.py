@@ -36,7 +36,7 @@ from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
-from fastmcp.utilities.docstring_parsing import parse_docstring
+from fastmcp.utilities.docstring_parsing import ParsedDocstring, parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
@@ -153,12 +153,9 @@ class FunctionPrompt(Prompt):
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as prompts")
 
-        parsed_docstring = parse_docstring(fn)
-        description = (
-            metadata.description
-            if metadata.description is not None
-            else parsed_docstring.description
-        )
+        # Parse the outer docstring (before unwrapping) to preserve the class
+        # docstring as the prompt description for callable class instances.
+        outer_docstring = parse_docstring(fn)
 
         # Normalize task to TaskConfig and validate
         task_value = metadata.task
@@ -176,6 +173,20 @@ class FunctionPrompt(Prompt):
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
             fn = fn.__func__
+
+        # For callable classes, argument descriptions live on __call__'s
+        # docstring (where the parameters are actually declared), while the
+        # prompt description comes from the outer class docstring.
+        inner_docstring = parse_docstring(fn)
+        parsed_docstring = ParsedDocstring(
+            description=outer_docstring.description or inner_docstring.description,
+            parameters=inner_docstring.parameters or outer_docstring.parameters,
+        )
+        description = (
+            metadata.description
+            if metadata.description is not None
+            else parsed_docstring.description
+        )
 
         # Transform Context type annotations to Depends() for unified DI
         fn = transform_context_annotations(fn)

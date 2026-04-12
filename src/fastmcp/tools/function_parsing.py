@@ -18,7 +18,7 @@ from fastmcp.server.dependencies import (
     without_injected_parameters,
 )
 from fastmcp.tools.base import ToolResult
-from fastmcp.utilities.docstring_parsing import parse_docstring
+from fastmcp.utilities.docstring_parsing import ParsedDocstring, parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
@@ -165,9 +165,9 @@ class ParsedFunction:
                             f"Parameter '{arg_name}' in exclude_args must have a default value."
                         )
 
-        # collect name and docstring before we potentially modify the function
+        # collect name and description before we potentially modify the function
         fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
-        parsed_docstring = parse_docstring(fn)
+        outer_docstring = parse_docstring(fn)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
@@ -175,6 +175,15 @@ class ParsedFunction:
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
             fn = fn.__func__
+
+        # For callable classes, parameter descriptions live on __call__'s
+        # docstring (where the parameters are actually declared), while the
+        # tool description comes from the outer class docstring.
+        inner_docstring = parse_docstring(fn)
+        parsed_docstring = ParsedDocstring(
+            description=outer_docstring.description or inner_docstring.description,
+            parameters=inner_docstring.parameters or outer_docstring.parameters,
+        )
 
         # Transform Context type annotations to Depends() for unified DI
         fn = transform_context_annotations(fn)

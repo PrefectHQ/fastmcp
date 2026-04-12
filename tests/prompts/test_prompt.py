@@ -537,6 +537,28 @@ class TestPromptArgumentDescriptions:
         name_arg = next(arg for arg in prompt.arguments if arg.name == "name")
         assert name_arg.description is None
 
+    def test_callable_class_sources_description_from_class(self):
+        """Class docstring drives the prompt description, while __call__'s
+        Args section drives per-argument descriptions (since the arguments
+        are __call__'s, not the class's)."""
+
+        class MyPrompt:
+            """Class-level description."""
+
+            def __call__(self, name: str) -> str:
+                """Internal call doc.
+
+                Args:
+                    name: From call.
+                """
+                return f"Hello {name}"
+
+        prompt = Prompt.from_function(MyPrompt())
+        assert prompt.description == "Class-level description."
+        assert prompt.arguments is not None
+        name_arg = next(arg for arg in prompt.arguments if arg.name == "name")
+        assert name_arg.description == "From call."
+
     def test_prompt_meta_parameter(self):
         """Test that meta parameter is properly handled."""
 

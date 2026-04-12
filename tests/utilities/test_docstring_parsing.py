@@ -499,3 +499,41 @@ class TestParsedFunctionIntegration:
         p = ParsedFunction.from_function(fn)
         assert p.description == "Async summary."
         assert p.input_schema["properties"]["a"]["description"] == "The number."
+
+    def test_callable_class_sources_description_from_class(self):
+        """Class docstring drives the tool description (it describes what the
+        tool IS), while __call__'s Args section drives parameter descriptions
+        (its params are what the schema actually exposes)."""
+
+        class MyTool:
+            """Class-level description."""
+
+            def __call__(self, x: int) -> int:
+                """Internal call doc.
+
+                Args:
+                    x: From call.
+                """
+                return x
+
+        p = ParsedFunction.from_function(MyTool())
+        # Class docstring wins for the description
+        assert p.description == "Class-level description."
+        # __call__'s Args wins for the parameter description
+        assert p.input_schema["properties"]["x"]["description"] == "From call."
+
+    def test_callable_class_falls_back_to_call_description(self):
+        """If the class has no docstring, fall back to __call__'s description."""
+
+        class MyTool:
+            def __call__(self, x: int) -> int:
+                """Call-level description.
+
+                Args:
+                    x: From call.
+                """
+                return x
+
+        p = ParsedFunction.from_function(MyTool())
+        assert p.description == "Call-level description."
+        assert p.input_schema["properties"]["x"]["description"] == "From call."
