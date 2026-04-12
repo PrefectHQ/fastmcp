@@ -36,7 +36,7 @@ def add(a: int, b: int) -> int:
 
 When this tool is registered, FastMCP automatically:
 - Uses the function name (`add`) as the tool name.
-- Uses the function's docstring (`Adds two integer numbers...`) as the tool description.
+- Parses the function's docstring for the tool description and, if present, per-parameter descriptions (see [Docstring Descriptions](#docstring-descriptions)).
 - Generates an input schema based on the function's parameters and type annotations.
 - Handles parameter validation and error reporting.
 
@@ -288,6 +288,31 @@ The default flexible validation mode is recommended for most use cases as it han
 ### Parameter Metadata
 
 You can provide additional metadata about parameters in several ways:
+
+#### Docstring Descriptions
+
+FastMCP parses your function's docstring to extract both the tool description and per-parameter descriptions. Google, NumPy, and Sphinx docstring styles are all supported — the parser tries each and uses whichever finds parameter descriptions:
+
+```python
+@mcp.tool
+def process_image(
+    image_url: str,
+    resize: bool = False,
+    width: int = 800,
+) -> dict:
+    """Process an image with optional resizing.
+
+    Args:
+        image_url: URL of the image to process.
+        resize: Whether to resize the image.
+        width: Target width in pixels.
+    """
+    # Implementation...
+```
+
+The summary line becomes the tool description, and each parameter's docstring entry becomes the description for that parameter in the generated schema. Sections like `Returns`, `Raises`, and `Example` are excluded from the description but otherwise ignored.
+
+If a parameter already has an explicit description — via `Annotated[x, "..."]` or `Field(description=...)` — that description takes precedence over the docstring. This makes it safe to adopt docstring-based descriptions incrementally: existing annotations keep working, and docstrings fill in the gaps.
 
 #### Simple String Descriptions
 
