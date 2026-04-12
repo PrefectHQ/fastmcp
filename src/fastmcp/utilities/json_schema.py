@@ -343,17 +343,32 @@ _LITERAL_KEYWORDS = frozenset({"default", "const", "examples", "example", "enum"
 # are user property/definition names, not schema keywords, so a property
 # literally named "enum" or "default" must not be confused with the
 # schema keywords of the same name.
+#
+# `dependencies` is a draft-07 keyword whose values can be sub-schemas OR
+# lists of required property names; list values short-circuit in the list
+# branch, so including it here is safe for both shapes.
 _SUBSCHEMA_MAP_KEYS = frozenset(
-    {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"}
+    {
+        "properties",
+        "patternProperties",
+        "$defs",
+        "definitions",
+        "dependentSchemas",
+        "dependencies",
+    }
 )
 
 # Keys whose values are a single sub-schema (not a dict of sub-schemas).
 # We traverse into them and treat the result as a schema node.
+# `additionalItems` is the draft-07 predecessor of `unevaluatedItems`.
+# `contentSchema` is a 2019-09+ keyword for typed string payloads.
 _SUBSCHEMA_VALUE_KEYS = frozenset(
     {
         "items",
+        "additionalItems",
         "additionalProperties",
         "contains",
+        "contentSchema",
         "propertyNames",
         "unevaluatedItems",
         "unevaluatedProperties",

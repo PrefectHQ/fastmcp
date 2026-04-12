@@ -471,6 +471,46 @@ class TestCompressSchema:
         # targets "title" specifically
         assert compressed["properties"]["described_any"]["description"] == "anything"
 
+    def test_prune_titles_on_draft07_and_legacy_keywords(self):
+        """Sub-schemas under draft-07 and 2019-09+ keywords that previous
+        drafts still use must be treated as schemas, not opaque payload —
+        `dependencies`, `additionalItems`, `contentSchema` all hold
+        sub-schemas in at least some JSON Schema drafts."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "payload": {
+                    "type": "string",
+                    "contentMediaType": "application/json",
+                    "contentSchema": {
+                        "type": "object",
+                        "title": "Payload",
+                    },
+                },
+                "items_field": {
+                    "type": "array",
+                    "items": [{"type": "string", "title": "First"}],
+                    "additionalItems": {"type": "number", "title": "Extra"},
+                },
+            },
+            "dependencies": {
+                "credit_card": {
+                    "type": "object",
+                    "title": "HasBillingAddress",
+                    "required": ["billing_address"],
+                }
+            },
+        }
+
+        compressed = compress_schema(schema, prune_titles=True)
+
+        # title metadata stripped from sub-schemas reachable through
+        # draft-07 / 2019-09+ keywords
+        assert "title" not in compressed["properties"]["payload"]["contentSchema"]
+        assert "title" not in compressed["properties"]["items_field"]["items"][0]
+        assert "title" not in compressed["properties"]["items_field"]["additionalItems"]
+        assert "title" not in compressed["dependencies"]["credit_card"]
+
     def test_prune_titles_preserves_user_extension_payloads(self):
         """User extensions (json_schema_extra, x-* vendor keys) carry opaque
         payloads that may look metadata-shaped. They must not be touched."""
