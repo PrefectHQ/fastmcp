@@ -216,7 +216,7 @@ Because FastMCP's FastAPI integration is based on its [OpenAPI integration](/v2/
 ```python
 # Assumes the FastAPI app from above is already defined
 from fastmcp import FastMCP
-from fastmcp.server.openapi import RouteMap, MCPType
+from fastmcp.server.providers.openapi import RouteMap, MCPType
 
 # Custom mapping rules
 mcp = FastMCP.from_fastapi(

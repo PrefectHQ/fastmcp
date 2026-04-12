@@ -376,7 +376,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         ):
             logger.warning(
                 "allowed_client_redirect_uris is empty list; no redirect URIs will be accepted. "
-                + "This will block all OAuth clients."
+                "This will block all OAuth clients."
             )
         self._allowed_client_redirect_uris: list[str] | None = (
             allowed_client_redirect_uris
@@ -402,7 +402,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         elif not require_authorization_consent:
             logger.warning(
                 "Authorization consent screen disabled - only use for local development or testing. "
-                + "In production, this screen protects against confused deputy attacks."
+                "In production, this screen protects against confused deputy attacks."
             )
 
         # Extra parameters for authorization and token endpoints
@@ -429,7 +429,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if len(jwt_signing_key) < 12:
                 logger.warning(
                     "jwt_signing_key is less than 12 characters; it is recommended to use a longer. "
-                    + "string for the key derivation."
+                    "string for the key derivation."
                 )
             jwt_signing_key = derive_jwt_key(
                 low_entropy_material=jwt_signing_key,

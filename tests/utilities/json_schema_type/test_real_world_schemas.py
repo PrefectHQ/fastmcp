@@ -206,6 +206,7 @@ def _test_provider(provider: str) -> ProviderResult:
 
             result.schemas += 1
 
+            old_handler = signal.SIG_DFL
             if use_alarm:
                 old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
                 signal.alarm(SCHEMA_TIMEOUT)

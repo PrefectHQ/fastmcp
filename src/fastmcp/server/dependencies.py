@@ -767,7 +767,7 @@ def get_http_headers(
         }
         if include:
             exclude_headers -= {h.lower() for h in include}
-        # (just in case)
+        # Sanity check: all entries must already be lowercase
         if not all(h.lower() == h for h in exclude_headers):
             raise ValueError("Excluded headers must be lowercase")
     headers: dict[str, str] = {}

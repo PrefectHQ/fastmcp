@@ -243,6 +243,10 @@ class OpenAISamplingHandler:
                                 content=content_text,
                             )
                         )
+                    else:
+                        raise ValueError(
+                            f"Unsupported content type for OpenAI: {type(item).__name__}"
+                        )
 
                 # Add assistant message with tool calls if present
                 # OpenAI requires: assistant (with tool_calls) -> tool messages

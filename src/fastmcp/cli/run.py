@@ -15,6 +15,7 @@ from typing import Any, Literal
 from mcp.server.fastmcp import FastMCP as FastMCP1x
 from watchfiles import Change, awatch
 
+import fastmcp
 from fastmcp.server.server import FastMCP, create_proxy
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config import (
@@ -240,8 +241,13 @@ async def run_command(
     kwargs = {}
     if transport is not None:
         kwargs["transport"] = transport
-    # Only pass HTTP-specific options for non-stdio transports
-    if transport != "stdio":
+    # Resolve effective transport for the HTTP kwargs guard — transport
+    # may be None here if the user didn't pass --transport, in which case
+    # run_async will resolve it from settings.transport.
+    effective_transport = (
+        transport if transport is not None else fastmcp.settings.transport
+    )
+    if effective_transport != "stdio":
         if host is not None:
             kwargs["host"] = host
         if port is not None:
