@@ -16,12 +16,13 @@ import json
 import os
 import signal
 import subprocess
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import pytest
 import yaml
 from pydantic import TypeAdapter
+from yaml import CSafeLoader  # ty: ignore[possibly-missing-import]
 
 from fastmcp.utilities.json_schema_type import json_schema_to_type
 
@@ -126,7 +127,7 @@ def _load_spec(spec_file: Path) -> dict | None:
     """Load and return a spec dict, or None on failure."""
     try:
         if spec_file.suffix == ".yaml":
-            spec = yaml.safe_load(spec_file.read_text())
+            spec = yaml.load(spec_file.read_text(), Loader=CSafeLoader)
         else:
             spec = json.loads(spec_file.read_text())
         return spec if isinstance(spec, dict) else None
@@ -284,8 +285,14 @@ def _providers_with_timeouts() -> list:  # list of pytest.param
     return params
 
 
-# Accumulator: per-provider tests store results here, final test reads them.
-_results: dict[str, ProviderResult] = {}
+# Per-provider results are persisted to disk so they survive across xdist
+# workers (each worker runs in its own process). Aggregation and baseline
+# assertions happen in the pytest_sessionfinish hook in conftest.py.
+# This path is duplicated in conftest.py by design — tests shouldn't import
+# from conftest, which isn't a reliably importable module.
+_RESULTS_DIR = Path(
+    os.environ.get("SCHEMA_CRASH_RESULTS_DIR", "/tmp/schema_crash_results")
+)
 
 
 @pytest.mark.integration
@@ -293,78 +300,9 @@ _results: dict[str, ProviderResult] = {}
 def test_provider_schemas(provider: str):
     """json_schema_to_type should not infinite-loop on schemas from this provider."""
     _ensure_repo()
+    _RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     result = _test_provider(provider)
-    _results[provider] = result
+    (_RESULTS_DIR / f"{provider}.json").write_text(json.dumps(asdict(result)))
     assert result.timeouts == 0, (
         f"{provider}: {result.timeouts} schema(s) timed out (possible infinite loop)"
-    )
-
-
-# ── Aggregate baseline test ──────────────────────────────────────────
-#
-# Runs last (sorted after test_provider_schemas by name).
-# Reads accumulated _results instead of re-running all providers.
-
-
-@pytest.mark.integration
-@pytest.mark.timeout(30, method="thread")
-def test_z_aggregate_crash_rate():
-    """Aggregate crash-rate baseline across all providers.
-
-    Asserts that total crash counts haven't regressed beyond known baselines.
-    As we fix crash patterns, ratchet the baselines down.
-
-    Named test_z_* so pytest runs it after all test_provider_schemas.
-    """
-    if not _results:
-        pytest.skip("No provider results collected — run with -m integration")
-
-    total = ProviderResult()
-    for r in _results.values():
-        total.schemas += r.schemas
-        total.type_errors += r.type_errors
-        total.schema_errors += r.schema_errors
-        total.timeouts += r.timeouts
-        total.other_errors += r.other_errors
-
-    crashes = (
-        total.type_errors + total.schema_errors + total.timeouts + total.other_errors
-    )
-
-    print(f"\n{'=' * 60}")
-    print("Real-world schema crash test — aggregate results")
-    print(f"{'=' * 60}")
-    print(f"Providers tested: {len(_results):,}")
-    print(f"Schemas tested:  {total.schemas:,}")
-    print(f"TypeErrors:      {total.type_errors:,}")
-    print(f"SchemaErrors:    {total.schema_errors:,}")
-    print(f"Timeouts:        {total.timeouts:,}")
-    print(f"Other errors:    {total.other_errors:,}")
-    print(
-        f"Total crashes:   {crashes:,} ({crashes / max(total.schemas, 1) * 100:.2f}%)"
-    )
-
-    assert total.schemas > 200_000, (
-        f"Expected >200k schemas but only found {total.schemas}. "
-        f"Is the openapi-directory checkout correct?"
-    )
-
-    # Snapshot baselines (captured 2026-04-10, openapi-directory@f7207cf0,
-    # origin/main, with JSON round-trip to strip YAML artifacts).
-    MAX_TYPE_ERRORS = 420  # was 388 — real json_schema_to_type bugs
-    MAX_SCHEMA_ERRORS = 300  # was 277 — Pydantic regex rejections (not our code)
-    MAX_TIMEOUTS = 5  # was 0
-    MAX_OTHER_ERRORS = 50  # was 0
-
-    assert total.type_errors <= MAX_TYPE_ERRORS, (
-        f"TypeErrors regressed: {total.type_errors} > {MAX_TYPE_ERRORS}"
-    )
-    assert total.schema_errors <= MAX_SCHEMA_ERRORS, (
-        f"SchemaErrors regressed: {total.schema_errors} > {MAX_SCHEMA_ERRORS}"
-    )
-    assert total.timeouts <= MAX_TIMEOUTS, (
-        f"Timeouts regressed: {total.timeouts} > {MAX_TIMEOUTS}"
-    )
-    assert total.other_errors <= MAX_OTHER_ERRORS, (
-        f"Other errors regressed: {total.other_errors} > {MAX_OTHER_ERRORS}"
     )
