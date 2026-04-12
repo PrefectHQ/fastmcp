@@ -50,6 +50,8 @@ When modifying MCP functionality, changes typically need to be applied across al
 - **Resource Templates** (`src/resources/`)
 - **Prompts** (`src/prompts/`)
 
+**Before writing cross-component logic (dedupe, grouping, lookups, identity checks), read `FastMCPComponent` in `src/fastmcp/utilities/components.py`.** The base class defines the shared surface — `name`, `version`, `tags`, `meta`, and critically the `key` property which is the canonical MCP identity (encodes type, identifier, and version). Prefer `item.key` over ad-hoc `name or uri or uri_template` fallbacks; overrides in `Resource` and `ResourceTemplate` already handle URI-based identity, and `.key` includes the version suffix so variants of the same component don't falsely collide.
+
 ## Development Rules
 
 **Read `CONTRIBUTING.md` before opening issues or PRs.** It describes when PRs are appropriate, what we expect from enhancement proposals, and what we'll close without review.
