@@ -85,7 +85,7 @@ Each `RouteMap` specifies a combination of methods, patterns, and tags, as well 
 Here is FastMCP's default rule:
 
 ```python
-from fastmcp.server.openapi import RouteMap, MCPType
+from fastmcp.server.providers.openapi import RouteMap, MCPType
 
 DEFAULT_ROUTE_MAPPINGS = [
     # All routes become tools
@@ -101,7 +101,7 @@ For example, prior to FastMCP 2.8.0, GET requests were automatically mapped to `
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.openapi import RouteMap, MCPType
+from fastmcp.server.providers.openapi import RouteMap, MCPType
 
 # Restore pre-2.8.0 semantic mapping
 semantic_maps = [
@@ -124,7 +124,7 @@ Here is a more complete example that uses custom route maps to convert all `GET`
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.openapi import RouteMap, MCPType
+from fastmcp.server.providers.openapi import RouteMap, MCPType
 
 mcp = FastMCP.from_openapi(
     openapi_spec=spec,
@@ -164,7 +164,7 @@ You can use this to remove sensitive or internal routes by targeting them specif
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.openapi import RouteMap, MCPType
+from fastmcp.server.providers.openapi import RouteMap, MCPType
 
 mcp = FastMCP.from_openapi(
     openapi_spec=spec,
@@ -180,7 +180,7 @@ Or you can use a catch-all rule to exclude everything that your maps don't handl
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.openapi import RouteMap, MCPType
+from fastmcp.server.providers.openapi import RouteMap, MCPType
 
 mcp = FastMCP.from_openapi(
     openapi_spec=spec,
@@ -278,7 +278,7 @@ FastMCP provides several ways to add tags to your MCP components, allowing you t
 You can add custom tags to components created from specific routes using the `mcp_tags` parameter in `RouteMap`. These tags will be applied to all components created from routes that match that particular route map.
 
 ```python
-from fastmcp.server.openapi import RouteMap, MCPType
+from fastmcp.server.providers.openapi import RouteMap, MCPType
 
 mcp = FastMCP.from_openapi(
     openapi_spec=spec,

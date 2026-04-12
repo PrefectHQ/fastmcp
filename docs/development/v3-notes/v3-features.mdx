@@ -386,7 +386,7 @@ Support for [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.apps import AppConfig, ResourceCSP, ResourcePermissions
+from fastmcp.apps import AppConfig, ResourceCSP, ResourcePermissions
 
 mcp = FastMCP("My Server")
 
@@ -421,7 +421,7 @@ The `app=` parameter accepts `True` (enable with defaults), an `AppConfig` insta
 
 ```python
 from fastmcp import Context
-from fastmcp.server.apps import AppConfig, UI_EXTENSION_ID
+from fastmcp.apps import AppConfig, UI_EXTENSION_ID
 
 @mcp.tool(app=AppConfig(resource_uri="ui://dashboard"))
 async def dashboard(ctx: Context) -> dict:

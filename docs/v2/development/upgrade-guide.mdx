@@ -19,11 +19,11 @@ The experimental OpenAPI parser is now the standard implementation. The legacy p
 **If you were using the experimental parser:** Update your imports from the experimental module to the standard location:
 
 <CodeGroup>
-```python Before
+```python test="skip" Before
 from fastmcp.experimental.server.openapi import FastMCPOpenAPI, RouteMap, MCPType
 ```
 
-```python After
+```python test="skip" After
 from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap, MCPType
 ```
 </CodeGroup>
