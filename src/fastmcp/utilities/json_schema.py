@@ -334,8 +334,18 @@ _METADATA_KEYS = frozenset(
 
 # Keywords whose values are literal user data, not sub-schemas. Skipping
 # recursion here prevents `default: {"title": "X"}` from losing the "title"
-# data value because it happens to look metadata-shaped.
-_LITERAL_KEYWORDS = frozenset({"default", "const", "examples", "enum"})
+# data value because it happens to look metadata-shaped. Includes both
+# `examples` (JSON Schema draft 7+) and `example` (OpenAPI/Swagger 2.0).
+_LITERAL_KEYWORDS = frozenset({"default", "const", "examples", "example", "enum"})
+
+# Keys whose values are dicts of arbitrary-name -> sub-schema. When we see
+# these, we traverse into each sub-schema regardless of its name — the keys
+# are user property/definition names, not schema keywords, so a property
+# literally named "enum" or "default" must not be confused with the
+# schema keywords of the same name.
+_SUBSCHEMA_MAP_KEYS = frozenset(
+    {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"}
+)
 
 
 def _single_pass_optimize(
@@ -454,6 +464,18 @@ def _single_pass_optimize(
             for key, value in node.items():
                 if skip_defs_section and key == "$defs":
                     continue  # Skip $defs during main schema traversal
+
+                # Arbitrary-key dicts of sub-schemas. The keys are user names
+                # (property/definition names), not schema keywords, so we
+                # must NOT apply the literal-keyword skip to them — a user
+                # property named "enum" or "default" still needs its
+                # sub-schema traversed (e.g. to collect $ref references).
+                if key in _SUBSCHEMA_MAP_KEYS and isinstance(value, dict):
+                    for sub_schema in value.values():
+                        traverse_and_clean(
+                            sub_schema, current_def_name, depth=depth + 1
+                        )
+                    continue
 
                 # Don't descend into keywords that carry literal data, not
                 # sub-schemas — `default: {"title": "X"}` is a user value, not

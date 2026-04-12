@@ -279,7 +279,7 @@ class TestToolFromFunction:
                 "tags": set(),
                 "parameters": {
                     "additionalProperties": False,
-                    "properties": {"x": {"title": "X"}},
+                    "properties": {"x": {}},
                     "required": ["x"],
                     "type": "object",
                 },
