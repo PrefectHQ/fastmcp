@@ -43,26 +43,6 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-def _mcp_identity(item: object) -> str | None:
-    """Return the MCP-level identity a client would key on for *item*.
-
-    Tools and prompts are addressed by ``name``. Resources are addressed by
-    ``uri``, and resource templates by ``uri_template``. Using the right key
-    per type avoids false-positive/negative collision reports when two
-    providers expose, for example, differently-named resources at the same URI.
-    """
-    uri = getattr(item, "uri", None)
-    if uri is not None:
-        return str(uri)
-    uri_template = getattr(item, "uri_template", None)
-    if uri_template is not None:
-        return str(uri_template)
-    name = getattr(item, "name", None)
-    if name is not None:
-        return str(name)
-    return None
-
-
 class AggregateProvider(Provider):
     """Utility provider that combines multiple providers into one.
 
@@ -135,8 +115,10 @@ class AggregateProvider(Provider):
         author no way to react and would crash list calls in production.
         """
         collected: list[T] = []
-        # MCP-level identity per item: the value a client would key on.
-        seen_identity: dict[str, int] = {}
+        # FastMCPComponent.key encodes type, identifier, and version —
+        # so version variants of the same component are NOT reported as
+        # collisions (matching _get_highest_version_result behavior).
+        seen_keys: dict[str, int] = {}
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 logger.warning(
@@ -145,17 +127,15 @@ class AggregateProvider(Provider):
                 )
                 continue
             for item in result:
-                identity = _mcp_identity(item)
-                if identity is not None and identity in seen_identity:
-                    first = seen_identity[identity]
+                key = getattr(item, "key", None)
+                if key is not None:
+                    first = seen_keys.setdefault(key, i)
                     if first != i:
                         logger.warning(
-                            f"Duplicate {operation} identity {identity!r} "
+                            f"Duplicate {operation} component {key!r} "
                             f"from provider {self.providers[i]} "
                             f"(first seen from provider {self.providers[first]})"
                         )
-                elif identity is not None:
-                    seen_identity[identity] = i
                 collected.append(item)
         return collected
 
