@@ -155,11 +155,11 @@ Install the Anthropic handler with `pip install fastmcp[anthropic]`.
 
 ```python
 from fastmcp import Client
-from fastmcp.client.sampling.handlers.google_genai import GoogleGenAISamplingHandler
+from fastmcp.client.sampling.handlers.google_genai import GoogleGenaiSamplingHandler
 
 client = Client(
     "my_mcp_server.py",
-    sampling_handler=GoogleGenAISamplingHandler(default_model="gemini-2.0-flash"),
+    sampling_handler=GoogleGenaiSamplingHandler(default_model="gemini-2.0-flash"),
 )
 ```
 

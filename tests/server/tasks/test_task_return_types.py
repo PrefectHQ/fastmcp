@@ -259,8 +259,9 @@ async def binary_type_server():
         (
             "return_bytes",
             type(None),
-            lambda r: r.data is None
-            and any("Hello bytes!" in c.text for c in r.content),
+            lambda r: (
+                r.data is None and any("Hello bytes!" in c.text for c in r.content)
+            ),
         ),
         (
             "return_uuid",

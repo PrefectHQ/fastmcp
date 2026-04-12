@@ -511,7 +511,7 @@ _PREFAB_TEXT_FALLBACK = "[Rendered Prefab UI]"
 
 
 def _get_tool_resolver(app_name: str | None = None) -> Callable[..., str] | None:
-    """Get the FastMCPApp callable resolver, if available."""
+    """Get the Prefab peer-reference resolver bound to an app name."""
     try:
         from fastmcp.apps.app import _make_resolver
 
@@ -521,11 +521,12 @@ def _get_tool_resolver(app_name: str | None = None) -> Callable[..., str] | None
 
 
 def _prefab_to_json(app: Any, fastmcp_app_name: str | None = None) -> dict[str, Any]:
-    """Call PrefabApp.to_json() with the FastMCPApp callable resolver.
+    """Call PrefabApp.to_json() with the hash-based resolver.
 
-    The resolver prefixes tool names with the app name (e.g.
-    ``"store_files"`` → ``"Files___store_files"``) so the server can
-    find them via the bypass lookup regardless of transforms.
+    The resolver prefixes peer-tool references with a deterministic hash
+    derived from the app name + tool name. The dispatcher recognizes that
+    format and routes calls via ``get_tool_by_hash`` which walks the
+    provider tree recursively — same pattern as the old ``get_app_tool``.
     """
     data = app.to_json(tool_resolver=_get_tool_resolver(fastmcp_app_name))
     return data
