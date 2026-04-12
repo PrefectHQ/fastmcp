@@ -167,7 +167,7 @@ class ParsedFunction:
 
         # collect name and docstring before we potentially modify the function
         fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
-        fn_description, docstring_params = parse_docstring(fn)
+        parsed_docstring = parse_docstring(fn)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
@@ -199,9 +199,9 @@ class ParsedFunction:
         # Inject parameter descriptions from the docstring into the schema.
         # Explicit annotations (Field(description=...), Annotated[x, "..."])
         # already have a "description" key and take precedence.
-        if docstring_params:
+        if parsed_docstring.parameters:
             properties = input_schema.get("properties", {})
-            for param_name, param_desc in docstring_params.items():
+            for param_name, param_desc in parsed_docstring.parameters.items():
                 if (
                     param_name in properties
                     and "description" not in properties[param_name]
@@ -295,7 +295,7 @@ class ParsedFunction:
         return cls(
             fn=fn,
             name=fn_name,
-            description=fn_description,
+            description=parsed_docstring.description,
             input_schema=input_schema,
             output_schema=output_schema or None,
             return_type=original_output_type,

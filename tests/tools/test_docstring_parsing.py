@@ -21,9 +21,12 @@ class TestGoogleStyle:
             """
             return a + b
 
-        desc, params = parse_docstring(fn)
-        assert desc == "Add two numbers."
-        assert params == {"a": "The first number.", "b": "The second number."}
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Add two numbers."
+        assert parsed.parameters == {
+            "a": "The first number.",
+            "b": "The second number.",
+        }
 
     def test_with_inline_types(self):
         def fn(a: float, b: str) -> float:
@@ -35,9 +38,9 @@ class TestGoogleStyle:
             """
             return a
 
-        desc, params = parse_docstring(fn)
-        assert desc == "Do something."
-        assert params == {"a": "The number.", "b": "The string."}
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Do something."
+        assert parsed.parameters == {"a": "The number.", "b": "The string."}
 
     def test_returns_section_excluded(self):
         def fn(a: float) -> float:
@@ -51,9 +54,9 @@ class TestGoogleStyle:
             """
             return a
 
-        desc, params = parse_docstring(fn)
-        assert desc == "Summary."
-        assert params == {"a": "The input."}
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Summary."
+        assert parsed.parameters == {"a": "The input."}
 
     def test_raises_section_excluded(self):
         def fn(a: float) -> float:
@@ -67,9 +70,9 @@ class TestGoogleStyle:
             """
             return a
 
-        desc, params = parse_docstring(fn)
-        assert desc == "Summary."
-        assert params == {"a": "The input."}
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Summary."
+        assert parsed.parameters == {"a": "The input."}
 
     def test_example_section_excluded(self):
         def fn(a: str) -> str:
@@ -84,9 +87,9 @@ class TestGoogleStyle:
             """
             return a
 
-        desc, params = parse_docstring(fn)
-        assert desc == "Run some code."
-        assert params == {"a": "The input."}
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Run some code."
+        assert parsed.parameters == {"a": "The input."}
 
     def test_multiline_param_description(self):
         def fn(a: float) -> float:
@@ -98,9 +101,9 @@ class TestGoogleStyle:
             """
             return a
 
-        desc, params = parse_docstring(fn)
-        assert desc == "Summary."
-        assert "spans multiple lines" in params["a"]
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Summary."
+        assert "spans multiple lines" in parsed.parameters["a"]
 
 
 class TestNumpyStyle:
@@ -119,9 +122,12 @@ class TestNumpyStyle:
             """
             return x * y
 
-        desc, params = parse_docstring(fn)
-        assert desc == "Multiply."
-        assert params == {"x": "The first integer.", "y": "The second integer."}
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Multiply."
+        assert parsed.parameters == {
+            "x": "The first integer.",
+            "y": "The second integer.",
+        }
 
     def test_with_types(self):
         def fn(a: float, b: str) -> float:
@@ -136,9 +142,9 @@ class TestNumpyStyle:
             """
             return a
 
-        desc, params = parse_docstring(fn)
-        assert desc == "Do something."
-        assert params == {"a": "The number.", "b": "The string."}
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Do something."
+        assert parsed.parameters == {"a": "The number.", "b": "The string."}
 
 
 class TestSphinxStyle:
@@ -153,9 +159,12 @@ class TestSphinxStyle:
             """
             return f"{name} is {age}"
 
-        desc, params = parse_docstring(fn)
-        assert desc == "Format a greeting."
-        assert params == {"name": "The person's name.", "age": "The person's age."}
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Format a greeting."
+        assert parsed.parameters == {
+            "name": "The person's name.",
+            "age": "The person's age.",
+        }
 
     def test_with_type_directive(self):
         def fn(a: float, b: str) -> float:
@@ -168,9 +177,9 @@ class TestSphinxStyle:
             """
             return a
 
-        desc, params = parse_docstring(fn)
-        assert desc == "Summary."
-        assert params == {"a": "The number.", "b": "The string."}
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Summary."
+        assert parsed.parameters == {"a": "The number.", "b": "The string."}
 
 
 class TestEdgeCases:
@@ -180,18 +189,18 @@ class TestEdgeCases:
         def fn(a: int) -> int:
             return a
 
-        desc, params = parse_docstring(fn)
-        assert desc is None
-        assert params == {}
+        parsed = parse_docstring(fn)
+        assert parsed.description is None
+        assert parsed.parameters == {}
 
     def test_summary_only(self):
         def fn(a: int) -> int:
             """Just a summary."""
             return a
 
-        desc, params = parse_docstring(fn)
-        assert desc == "Just a summary."
-        assert params == {}
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Just a summary."
+        assert parsed.parameters == {}
 
     def test_multi_paragraph_description(self):
         def fn(a: float) -> float:
@@ -207,15 +216,15 @@ class TestEdgeCases:
             """
             return a
 
-        desc, params = parse_docstring(fn)
+        parsed = parse_docstring(fn)
         # Full description (summary + body) should be preserved
-        assert desc is not None
-        assert "Summary line." in desc
-        assert "More detailed explanation" in desc
-        assert "Another paragraph." in desc
+        assert parsed.description is not None
+        assert "Summary line." in parsed.description
+        assert "More detailed explanation" in parsed.description
+        assert "Another paragraph." in parsed.description
         # Args section should not bleed into description
-        assert "The number" not in desc
-        assert params == {"a": "The number."}
+        assert "The number" not in parsed.description
+        assert parsed.parameters == {"a": "The number."}
 
     def test_multiline_summary(self):
         def fn(a: float) -> float:
@@ -227,11 +236,11 @@ class TestEdgeCases:
             """
             return a
 
-        desc, params = parse_docstring(fn)
-        assert desc is not None
-        assert "Multi-line summary" in desc
-        assert "continues on next line" in desc
-        assert params == {"a": "The number."}
+        parsed = parse_docstring(fn)
+        assert parsed.description is not None
+        assert "Multi-line summary" in parsed.description
+        assert "continues on next line" in parsed.description
+        assert parsed.parameters == {"a": "The number."}
 
     def test_missing_colon_after_args_keyword(self):
         """Malformed: 'Args' without colon is not a valid section."""
@@ -244,9 +253,9 @@ class TestEdgeCases:
             """
             return a
 
-        desc, params = parse_docstring(fn)
+        parsed = parse_docstring(fn)
         # Parser shouldn't pick this up as an Args section
-        assert params == {}
+        assert parsed.parameters == {}
 
     def test_empty_args_section(self):
         def fn(a: float) -> float:
@@ -256,8 +265,8 @@ class TestEdgeCases:
             """
             return a
 
-        desc, params = parse_docstring(fn)
-        assert params == {}
+        parsed = parse_docstring(fn)
+        assert parsed.parameters == {}
 
     def test_param_name_not_in_function_signature(self):
         """Docstring documents a param that doesn't exist on the function."""
@@ -270,10 +279,10 @@ class TestEdgeCases:
             """
             return a
 
-        desc, params = parse_docstring(fn)
+        parsed = parse_docstring(fn)
         # parse_docstring returns whatever the docstring says —
         # filtering happens at the schema injection level
-        assert params == {"nonexistent": "Wrong param name."}
+        assert parsed.parameters == {"nonexistent": "Wrong param name."}
 
     def test_async_function(self):
         async def fn(a: float) -> float:
@@ -284,9 +293,9 @@ class TestEdgeCases:
             """
             return a
 
-        desc, params = parse_docstring(fn)
-        assert desc == "Async summary."
-        assert params == {"a": "The number."}
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Async summary."
+        assert parsed.parameters == {"a": "The number."}
 
 
 class TestParsedFunctionIntegration:
