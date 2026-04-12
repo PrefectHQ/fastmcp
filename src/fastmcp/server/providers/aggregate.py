@@ -43,6 +43,26 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+def _mcp_identity(item: object) -> str | None:
+    """Return the MCP-level identity a client would key on for *item*.
+
+    Tools and prompts are addressed by ``name``. Resources are addressed by
+    ``uri``, and resource templates by ``uri_template``. Using the right key
+    per type avoids false-positive/negative collision reports when two
+    providers expose, for example, differently-named resources at the same URI.
+    """
+    uri = getattr(item, "uri", None)
+    if uri is not None:
+        return str(uri)
+    uri_template = getattr(item, "uri_template", None)
+    if uri_template is not None:
+        return str(uri_template)
+    name = getattr(item, "name", None)
+    if name is not None:
+        return str(name)
+    return None
+
+
 class AggregateProvider(Provider):
     """Utility provider that combines multiple providers into one.
 
@@ -74,7 +94,6 @@ class AggregateProvider(Provider):
         """
         super().__init__()
         self.providers: list[Provider] = list(providers or [])
-        self._on_duplicate: str = "warn"
 
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider with optional namespace.
@@ -109,12 +128,15 @@ class AggregateProvider(Provider):
     ) -> list[T]:
         """Collect successful list results, logging any exceptions.
 
-        Detects duplicate component names across providers and applies
-        the on_duplicate behavior (error/warn/replace/ignore).
+        Emits a warning when the same MCP identity is returned by more than
+        one provider — surfaces composition mistakes to the server author.
+        This is always a warning: cross-provider collisions happen at runtime
+        (sometimes dynamically), so an errorable/strict mode would give the
+        author no way to react and would crash list calls in production.
         """
         collected: list[T] = []
-        # Track (name, provider_index) to allow version variants from same provider
-        seen_names: dict[str, int] = {}  # name -> provider index of first occurrence
+        # MCP-level identity per item: the value a client would key on.
+        seen_identity: dict[str, int] = {}
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 logger.warning(
@@ -123,27 +145,17 @@ class AggregateProvider(Provider):
                 )
                 continue
             for item in result:
-                # Extract identity key: name, uri, or uri_template
-                name = (
-                    getattr(item, "name", None)
-                    or getattr(item, "uri", None)
-                    or getattr(item, "uri_template", None)
-                )
-                if name is not None:
-                    name = str(name)
-                    if name in seen_names and seen_names[name] != i:
-                        # Duplicate from a DIFFERENT provider — flag it
-                        msg = (
-                            f"Duplicate {operation} component '{name}' "
+                identity = _mcp_identity(item)
+                if identity is not None and identity in seen_identity:
+                    first = seen_identity[identity]
+                    if first != i:
+                        logger.warning(
+                            f"Duplicate {operation} identity {identity!r} "
                             f"from provider {self.providers[i]} "
-                            f"(first seen from provider "
-                            f"{self.providers[seen_names[name]]})"
+                            f"(first seen from provider {self.providers[first]})"
                         )
-                        if self._on_duplicate == "error":
-                            raise ValueError(msg)
-                        elif self._on_duplicate == "warn":
-                            logger.warning(msg)
-                    seen_names.setdefault(name, i)
+                elif identity is not None:
+                    seen_identity[identity] = i
                 collected.append(item)
         return collected
 

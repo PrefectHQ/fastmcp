@@ -544,31 +544,17 @@ class TestPrefixConflictResolution:
 
 
 class TestCrossProviderDuplicateDetection:
-    """Test that on_duplicate catches duplicates across mounted providers."""
+    """Cross-provider collisions always log a warning — diagnostic signal only.
 
-    async def test_on_duplicate_error_raises_for_same_namespace(self):
-        """Mounting two servers with the same namespace and tool name raises."""
-        main = FastMCP("Main", on_duplicate="error")
-        sub1 = FastMCP("Sub1")
-        sub2 = FastMCP("Sub2")
+    `on_duplicate` is a registration-time setting for LocalProvider (two
+    decorators on the same server), not a knob for AggregateProvider
+    composition. Mounted-provider collisions happen at runtime (sometimes
+    dynamically), so an error mode would give the author no way to react.
+    """
 
-        @sub1.tool(name="greet")
-        def greet_v1() -> str:
-            return "from sub1"
-
-        @sub2.tool(name="greet")
-        def greet_v2() -> str:
-            return "from sub2"
-
-        main.mount(sub1, "ns")
-        main.mount(sub2, "ns")
-
-        with pytest.raises(ValueError, match="Duplicate"):
-            await main.list_tools()
-
-    async def test_on_duplicate_warn_logs_for_same_namespace(self, caplog):
-        """Mounting with on_duplicate='warn' logs a warning instead of raising."""
-        main = FastMCP("Main", on_duplicate="warn")
+    async def test_cross_provider_duplicate_warns(self, caplog):
+        """Two mounted providers exposing the same tool identity log a warning."""
+        main = FastMCP("Main")
         sub1 = FastMCP("Sub1")
         sub2 = FastMCP("Sub2")
 
@@ -589,8 +575,8 @@ class TestCrossProviderDuplicateDetection:
         assert any("Duplicate" in r.message for r in caplog.records)
 
     async def test_no_false_positive_for_different_names(self):
-        """Different tool names in the same namespace don't trigger duplicate."""
-        main = FastMCP("Main", on_duplicate="error")
+        """Different tool names in the same namespace don't trigger a warning."""
+        main = FastMCP("Main")
         sub1 = FastMCP("Sub1")
         sub2 = FastMCP("Sub2")
 
