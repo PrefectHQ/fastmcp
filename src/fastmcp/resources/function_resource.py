@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import functools
 import inspect
 import warnings
 from collections.abc import Callable
@@ -14,7 +13,7 @@ from pydantic import AnyUrl
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
-from fastmcp.decorators import resolve_task_config
+from fastmcp.decorators import resolve_task_config, set_fastmcp_meta
 from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.server.auth.authorization import AuthCheck
@@ -26,6 +25,11 @@ from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
+)
+from fastmcp.utilities.callable_utils import (
+    get_callable_name,
+    is_callable_object,
+    prepare_callable,
 )
 from fastmcp.utilities.mime import resolve_ui_mime_type
 
@@ -159,10 +163,7 @@ class FunctionResource(Resource):
 
         uri_obj = AnyUrl(metadata.uri)
 
-        # Get function name - use class name for callable objects
-        func_name = (
-            metadata.name or getattr(fn, "__name__", None) or fn.__class__.__name__
-        )
+        func_name = metadata.name or get_callable_name(fn)
 
         # Normalize task to TaskConfig and validate
         task_value = metadata.task
@@ -174,12 +175,7 @@ class FunctionResource(Resource):
             task_config = task_value
         task_config.validate_function(fn, func_name)
 
-        # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
-            fn = fn.__call__
-        # if the fn is a staticmethod, we need to work with the underlying function
-        if isinstance(fn, staticmethod):
-            fn = fn.__func__
+        fn = prepare_callable(fn)
 
         # Transform Context type annotations to Depends() for unified DI
         fn = transform_context_annotations(fn)
@@ -259,7 +255,7 @@ def resource(
     if isinstance(annotations, dict):
         annotations = Annotations(**annotations)
 
-    if inspect.isroutine(uri):
+    if is_callable_object(uri):
         raise TypeError(
             "The @resource decorator requires a URI. "
             "Use @resource('uri') instead of @resource"
@@ -325,8 +321,7 @@ def resource(
             task=task,
             auth=auth,
         )
-        target = fn.__func__ if hasattr(fn, "__func__") else fn
-        target.__fastmcp__ = metadata
+        set_fastmcp_meta(fn, metadata)
         return fn
 
     def decorator(fn: F) -> F:

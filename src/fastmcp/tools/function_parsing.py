@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import functools
 import inspect
 import types
 from collections.abc import Callable
@@ -18,6 +17,7 @@ from fastmcp.server.dependencies import (
     without_injected_parameters,
 )
 from fastmcp.tools.base import ToolResult
+from fastmcp.utilities.callable_utils import get_callable_name, prepare_callable
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
@@ -165,15 +165,10 @@ class ParsedFunction:
                         )
 
         # collect name and doc before we potentially modify the function
-        fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
+        fn_name = get_callable_name(fn)
         fn_doc = inspect.getdoc(fn)
 
-        # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
-            fn = fn.__call__
-        # if the fn is a staticmethod, we need to work with the underlying function
-        if isinstance(fn, staticmethod):
-            fn = fn.__func__
+        fn = prepare_callable(fn)
 
         # Transform Context type annotations to Depends() for unified DI
         fn = transform_context_annotations(fn)

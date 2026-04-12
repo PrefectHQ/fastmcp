@@ -27,11 +27,13 @@ import mcp.types
 from mcp.types import AnyFunction, ToolAnnotations
 
 import fastmcp
+from fastmcp.decorators import set_fastmcp_meta
 from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import Tool
 from fastmcp.tools.function_tool import FunctionTool
+from fastmcp.utilities.callable_utils import is_callable_object
 from fastmcp.utilities.types import NotSet, NotSetT
 
 try:
@@ -371,12 +373,11 @@ class ToolDecoratorMixin:
                     auth=auth,
                     enabled=enabled,
                 )
-                target = fn.__func__ if hasattr(fn, "__func__") else fn
-                target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                set_fastmcp_meta(fn, metadata)
                 tool_obj = self.add_tool(fn)
                 return fn
 
-        if inspect.isroutine(name_or_fn):
+        if is_callable_object(name_or_fn):
             return decorate_and_register(name_or_fn, name)
 
         elif isinstance(name_or_fn, str):

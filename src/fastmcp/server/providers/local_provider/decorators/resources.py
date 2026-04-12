@@ -14,11 +14,13 @@ import mcp.types
 from mcp.types import Annotations, AnyFunction
 
 import fastmcp
+from fastmcp.decorators import set_fastmcp_meta
 from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import resource as standalone_resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.utilities.callable_utils import is_callable_object
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider
@@ -159,7 +161,7 @@ class ResourceDecoratorMixin:
         if isinstance(annotations, dict):
             annotations = Annotations(**annotations)
 
-        if inspect.isroutine(uri):
+        if is_callable_object(uri):
             raise TypeError(
                 "The @resource decorator was used incorrectly. "
                 "It requires a URI as the first argument. "
@@ -234,8 +236,7 @@ class ResourceDecoratorMixin:
                     auth=auth,
                     enabled=enabled,
                 )
-                target = fn.__func__ if hasattr(fn, "__func__") else fn
-                target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                set_fastmcp_meta(fn, metadata)
                 self.add_resource(fn)
                 return fn
 

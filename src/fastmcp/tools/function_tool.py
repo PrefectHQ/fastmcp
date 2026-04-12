@@ -24,7 +24,7 @@ from pydantic import Field
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
-from fastmcp.decorators import resolve_task_config
+from fastmcp.decorators import resolve_task_config, set_fastmcp_meta
 from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import without_injected_parameters
@@ -39,6 +39,7 @@ from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.callable_utils import is_callable_object
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     NotSet,
@@ -447,8 +448,7 @@ def tool(
             timeout=timeout,
             auth=auth,
         )
-        target = fn.__func__ if hasattr(fn, "__func__") else fn
-        target.__fastmcp__ = metadata
+        set_fastmcp_meta(fn, metadata)
         return fn
 
     def decorator(fn: F, tool_name: str | None) -> F:
@@ -462,7 +462,7 @@ def tool(
             return create_tool(fn, tool_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn, tool_name)
 
-    if inspect.isroutine(name_or_fn):
+    if is_callable_object(name_or_fn):
         return decorator(name_or_fn, name)
     elif isinstance(name_or_fn, str):
         if name is not None:
