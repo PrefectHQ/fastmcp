@@ -207,8 +207,8 @@ def _test_provider(provider: str) -> ProviderResult:
             result.schemas += 1
 
             if use_alarm:
-                old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
-                signal.alarm(SCHEMA_TIMEOUT)
+                old_handler = signal.signal(signal.SIGALRM, _alarm_handler)  # type: ignore
+                signal.alarm(SCHEMA_TIMEOUT)  # type: ignore
             try:
                 T = json_schema_to_type(schema)
                 TypeAdapter(T)
@@ -224,8 +224,8 @@ def _test_provider(provider: str) -> ProviderResult:
                     result.other_errors += 1
             finally:
                 if use_alarm:
-                    signal.alarm(0)
-                    signal.signal(signal.SIGALRM, old_handler)
+                    signal.alarm(0)  # type: ignore
+                    signal.signal(signal.SIGALRM, old_handler)  # type: ignore
 
     return result
 

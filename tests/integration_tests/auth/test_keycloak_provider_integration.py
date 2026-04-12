@@ -53,15 +53,16 @@ class TestKeycloakProviderIntegration:
 
                 # Verify resource server metadata
                 assert resource_data["resource"] == f"{TEST_BASE_URL}/mcp"
-                # Minimal proxy: authorization_servers points to FastMCP (which proxies Keycloak)
-                assert f"{TEST_BASE_URL}/" in resource_data["authorization_servers"]
+                # authorization_servers points directly to the Keycloak realm
+                assert TEST_REALM_URL in [
+                    s.rstrip("/") for s in resource_data["authorization_servers"]
+                ]
 
-    async def test_dcr_proxy_fixes_token_endpoint_auth_method(self):
-        """Test that DCR proxy fixes Keycloak's token_endpoint_auth_method from client_secret_basic to client_secret_post.
+    async def test_no_register_proxy_route(self):
+        """Test that KeycloakAuthProvider does not expose a /register proxy route.
 
-        This test demonstrates Keycloak's known limitation: it ignores the client's
-        requested token_endpoint_auth_method and always returns "client_secret_basic",
-        but MCP requires "client_secret_post" per RFC 9110.
+        Keycloak 26.6.0+ handles DCR natively and correctly, so no proxy is needed.
+        MCP clients register directly with Keycloak's DCR endpoint.
         """
         provider = KeycloakAuthProvider(
             realm_url=TEST_REALM_URL,
@@ -72,63 +73,17 @@ class TestKeycloakProviderIntegration:
         mcp = FastMCP("test-server", auth=provider)
         mcp_http_app = mcp.http_app()
 
-        # Mock Keycloak's DCR response that always returns client_secret_basic
-        # Patch at the module level where KeycloakAuthProvider creates the client
-        with patch(
-            "fastmcp.server.auth.providers.keycloak.httpx.AsyncClient"
-        ) as mock_client_class:
-            # Create a mock client instance
-            mock_client_instance = AsyncMock()
-
-            # Simulate Keycloak's DCR response with client_secret_basic
-            mock_keycloak_response = Mock()
-            mock_keycloak_response.status_code = 201
-            mock_keycloak_response.json.return_value = {
-                "client_id": "test-client-id",
-                "client_secret": "test-secret",
-                "token_endpoint_auth_method": "client_secret_basic",  # Keycloak always returns this
-                "redirect_uris": ["http://localhost:8000/callback"],
-            }
-            mock_client_instance.post.return_value = mock_keycloak_response
-
-            # Set up the async context manager mock
-            mock_client_class.return_value.__aenter__.return_value = (
-                mock_client_instance
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=mcp_http_app),
+            base_url=TEST_BASE_URL,
+        ) as client:
+            response = await client.post(
+                "/register",
+                json={"client_name": "Test", "redirect_uris": ["http://localhost/cb"]},
+                headers={"Content-Type": "application/json"},
             )
-            mock_client_class.return_value.__aexit__.return_value = AsyncMock()
 
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=mcp_http_app),
-                base_url=TEST_BASE_URL,
-            ) as client:
-                # Client registers with request for client_secret_post
-                registration_request = {
-                    "client_name": "Test Client",
-                    "redirect_uris": ["http://localhost:8000/callback"],
-                    "token_endpoint_auth_method": "client_secret_post",  # Client requests this
-                }
-
-                response = await client.post(
-                    "/register",
-                    json=registration_request,
-                    headers={"Content-Type": "application/json"},
-                )
-
-                assert response.status_code == 201
-                client_info = response.json()
-
-                # Verify our proxy fixed the auth method
-                assert client_info["token_endpoint_auth_method"] == "client_secret_post"
-                assert client_info["client_id"] == "test-client-id"
-                assert client_info["client_secret"] == "test-secret"
-
-                # Verify the request was forwarded to Keycloak's DCR endpoint
-                mock_client_instance.post.assert_called_once()
-                call_args = mock_client_instance.post.call_args
-                assert (
-                    call_args[0][0]
-                    == f"{TEST_REALM_URL}/clients-registrations/openid-connect"
-                )
+            assert response.status_code == 404
 
     @pytest.mark.skip(
         reason="Mock conflicts with ASGI transport - verified working in production"
