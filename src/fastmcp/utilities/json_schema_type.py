@@ -350,23 +350,48 @@ def _return_Any() -> Any:
     return Any
 
 
+def _object_schema_to_type(
+    schema: Mapping[str, Any], schemas: Mapping[str, Any]
+) -> type:
+    """Convert an object schema to the appropriate Python type.
+
+    Handles three cases that mirror the top-level ``json_schema_to_type`` logic:
+    1. No ``properties`` with ``additionalProperties`` — return ``dict[str, T]``
+    2. No ``properties`` and no ``additionalProperties`` — return ``dict[str, Any]``
+    3. Has ``properties`` and ``additionalProperties is True`` — Pydantic model
+    4. Has ``properties`` — dataclass
+    """
+    has_properties = bool(schema.get("properties"))
+    additional_props = schema.get("additionalProperties")
+
+    if not has_properties and additional_props:
+        if additional_props is True:
+            return dict[str, Any]
+        value_type = _schema_to_type(additional_props, schemas)
+        return cast(type[Any], dict[str, value_type])  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
+
+    if not has_properties and not additional_props:
+        return dict[str, Any]
+
+    if has_properties and additional_props is True:
+        return _create_pydantic_model(schema, schema.get("title"), schemas)
+
+    return _create_dataclass(schema, schema.get("title"), schemas)
+
+
 def _get_from_type_handler(
     schema: Mapping[str, Any], schemas: Mapping[str, Any]
 ) -> Callable[..., Any]:
     """Get the appropriate type handler for the schema."""
 
-    type_handlers: dict[str, Callable[..., Any]] = {  # TODO
+    type_handlers: dict[str, Callable[..., Any]] = {
         "string": lambda s: _create_string_type(s),
         "integer": lambda s: _create_numeric_type(int, s),
         "number": lambda s: _create_numeric_type(float, s),
         "boolean": lambda _: bool,
         "null": lambda _: type(None),
         "array": lambda s: _create_array_type(s, schemas),
-        "object": lambda s: (
-            _create_pydantic_model(s, s.get("title"), schemas)
-            if s.get("properties") and s.get("additionalProperties") is True
-            else _create_dataclass(s, s.get("title"), schemas)
-        ),
+        "object": lambda s: _object_schema_to_type(s, schemas),
     }
     return type_handlers.get(schema.get("type", None), _return_Any)
 
