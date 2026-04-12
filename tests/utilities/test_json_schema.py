@@ -450,6 +450,45 @@ class TestCompressSchema:
         assert "title" not in compressed["properties"]["title"]
         assert "title" not in compressed["properties"]["type"]
 
+    def test_prune_titles_on_bare_metadata_node(self):
+        """Pydantic emits `{"title": "X"}` for Any-typed fields with no sibling
+        `type`/`properties`. Gemini 2.5 Flash rejects these with
+        MALFORMED_FUNCTION_CALL, so we need to strip the title even without a
+        schema keyword — as long as every remaining key is metadata."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "anyfield": {"title": "Anyfield"},
+                "described_any": {"title": "Described", "description": "anything"},
+            },
+        }
+
+        compressed = compress_schema(schema, prune_titles=True)
+
+        assert "title" not in compressed["properties"]["anyfield"]
+        assert "title" not in compressed["properties"]["described_any"]
+        # description survives — it's also metadata but prune_titles only
+        # targets "title" specifically
+        assert compressed["properties"]["described_any"]["description"] == "anything"
+
+    def test_prune_titles_does_not_recurse_into_default_values(self):
+        """A user default that happens to be a dict shaped like schema metadata
+        must not be corrupted — `default` holds literal values, not sub-schemas."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "default": {"title": "My Dashboard", "type": "vis"},
+                }
+            },
+        }
+
+        compressed = compress_schema(schema, prune_titles=True)
+
+        default = compressed["properties"]["config"]["default"]
+        assert default == {"title": "My Dashboard", "type": "vis"}
+
     def test_title_pruning_with_nested_properties(self):
         """Test that nested property structures are handled correctly."""
         schema = {

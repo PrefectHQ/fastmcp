@@ -304,6 +304,40 @@ def _prune_param(schema: dict[str, Any], param: str) -> dict[str, Any]:
     return schema
 
 
+# JSON Schema structural keywords — a node containing any of these is a
+# schema, so a string "title" sibling is metadata we can safely drop.
+_SCHEMA_KEYWORDS = frozenset(
+    {
+        "type",
+        "properties",
+        "$ref",
+        "items",
+        "allOf",
+        "oneOf",
+        "anyOf",
+        "required",
+    }
+)
+
+# Pure schema-metadata keys. A node containing only these (e.g. Pydantic's
+# `{"title": "X"}` for Any-typed fields) is also a schema, just one with no
+# structural keywords alongside — still safe to strip title from.
+_METADATA_KEYS = frozenset(
+    {
+        "title",
+        "description",
+        "deprecated",
+        "readOnly",
+        "writeOnly",
+    }
+)
+
+# Keywords whose values are literal user data, not sub-schemas. Skipping
+# recursion here prevents `default: {"title": "X"}` from losing the "title"
+# data value because it happens to look metadata-shaped.
+_LITERAL_KEYWORDS = frozenset({"default", "const", "examples", "enum"})
+
+
 def _single_pass_optimize(
     schema: dict[str, Any],
     prune_titles: bool = False,
@@ -389,27 +423,26 @@ def _single_pass_optimize(
                         root_refs.add(referenced_def)
 
             # Apply cleanups
-            # Only remove "title" if it's a schema metadata field
-            # Schema objects have keywords like "type", "properties", "$ref", etc.
-            # If we see these, then "title" is metadata, not a property name
-            if prune_titles and "title" in node:
-                # Only remove "title" if it's a string (schema metadata).
-                # In a "properties" dict, "title" would be a dict (a sub-schema
-                # for a parameter named "title"), which we must preserve.
-                if isinstance(node["title"], str) and any(  # type: ignore
-                    k in node
-                    for k in [
-                        "type",
-                        "properties",
-                        "$ref",
-                        "items",
-                        "allOf",
-                        "oneOf",
-                        "anyOf",
-                        "required",
-                    ]
-                ):
-                    node.pop("title")  # type: ignore
+            # Only remove "title" if it's a schema metadata field. "title" in
+            # a JSON Schema node is metadata when the node is a schema (has a
+            # schema keyword) OR when the node contains only metadata keys
+            # (e.g. Pydantic emits `{"title": "X"}` for Any-typed fields with
+            # no sibling type/properties — some LLM providers like Gemini 2.5
+            # Flash reject these with MALFORMED_FUNCTION_CALL).
+            #
+            # In a "properties" dict, a key literally named "title" maps to a
+            # dict (sub-schema), not a string, so isinstance(str) filters that
+            # out and we never delete the user's property by mistake.
+            if (
+                prune_titles
+                and "title" in node
+                and isinstance(node["title"], str)  # type: ignore
+                and (
+                    any(k in node for k in _SCHEMA_KEYWORDS)
+                    or all(k in _METADATA_KEYS for k in node)
+                )
+            ):
+                node.pop("title")  # type: ignore
 
             if (
                 prune_additional_properties
@@ -421,6 +454,12 @@ def _single_pass_optimize(
             for key, value in node.items():
                 if skip_defs_section and key == "$defs":
                     continue  # Skip $defs during main schema traversal
+
+                # Don't descend into keywords that carry literal data, not
+                # sub-schemas — `default: {"title": "X"}` is a user value, not
+                # schema metadata, and stripping "title" there would corrupt it.
+                if key in _LITERAL_KEYWORDS:
+                    continue
 
                 # Handle schema composition keywords with special traversal
                 if key in ["allOf", "oneOf", "anyOf"] and isinstance(value, list):
