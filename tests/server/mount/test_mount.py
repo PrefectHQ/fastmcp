@@ -300,18 +300,19 @@ class TestMultipleServerMount:
             prompt_names = [prompt.name for prompt in prompts]
             assert "working_working_prompt" in prompt_names
 
-        # Verify that errors were logged for the unreachable provider (at DEBUG level)
-        debug_messages = [
-            record.message for record in caplog.records if record.levelname == "DEBUG"
+        # Verify that errors were logged for the unreachable provider (at WARNING level)
+        warning_messages = [
+            record.message for record in caplog.records if record.levelname == "WARNING"
         ]
         assert any(
-            "Error during list_tools from provider" in msg for msg in debug_messages
+            "Error during list_tools from provider" in msg for msg in warning_messages
         )
         assert any(
-            "Error during list_resources from provider" in msg for msg in debug_messages
+            "Error during list_resources from provider" in msg
+            for msg in warning_messages
         )
         assert any(
-            "Error during list_prompts from provider" in msg for msg in debug_messages
+            "Error during list_prompts from provider" in msg for msg in warning_messages
         )
 
 
@@ -540,3 +541,111 @@ class TestPrefixConflictResolution:
         assert result.messages is not None
         assert isinstance(result.messages[0].content, TextContent)
         assert result.messages[0].content.text == "First app prompt"
+
+
+class TestCrossProviderDuplicateDetection:
+    """Test that on_duplicate catches duplicates across mounted providers."""
+
+    async def test_on_duplicate_error_raises_for_same_namespace(self):
+        """Mounting two servers with the same namespace and tool name raises."""
+        main = FastMCP("Main", on_duplicate="error")
+        sub1 = FastMCP("Sub1")
+        sub2 = FastMCP("Sub2")
+
+        @sub1.tool(name="greet")
+        def greet_v1() -> str:
+            return "from sub1"
+
+        @sub2.tool(name="greet")
+        def greet_v2() -> str:
+            return "from sub2"
+
+        main.mount(sub1, "ns")
+        main.mount(sub2, "ns")
+
+        with pytest.raises(ValueError, match="Duplicate"):
+            await main.list_tools()
+
+    async def test_on_duplicate_warn_logs_for_same_namespace(self, caplog):
+        """Mounting with on_duplicate='warn' logs a warning instead of raising."""
+        main = FastMCP("Main", on_duplicate="warn")
+        sub1 = FastMCP("Sub1")
+        sub2 = FastMCP("Sub2")
+
+        @sub1.tool(name="greet")
+        def greet_w1() -> str:
+            return "from sub1"
+
+        @sub2.tool(name="greet")
+        def greet_w2() -> str:
+            return "from sub2"
+
+        main.mount(sub1, "ns")
+        main.mount(sub2, "ns")
+
+        caplog.set_level(logging.WARNING, logger="fastmcp")
+        tools = await main.list_tools()
+        assert len([t for t in tools if t.name == "ns_greet"]) == 2
+        assert any("Duplicate" in r.message for r in caplog.records)
+
+    async def test_no_false_positive_for_different_names(self):
+        """Different tool names in the same namespace don't trigger duplicate."""
+        main = FastMCP("Main", on_duplicate="error")
+        sub1 = FastMCP("Sub1")
+        sub2 = FastMCP("Sub2")
+
+        @sub1.tool
+        def tool_a() -> str:
+            return "a"
+
+        @sub2.tool
+        def tool_b() -> str:
+            return "b"
+
+        main.mount(sub1, "ns")
+        main.mount(sub2, "ns")
+
+        tools = await main.list_tools()
+        assert len(tools) == 2
+
+
+class TestMaskErrorDetailsMismatchWarning:
+    """Test that mismatched mask_error_details is warned about at mount time."""
+
+    async def test_warns_when_parent_masked_child_not(self, caplog):
+        """Mounting an unmasked child into a masked parent logs a warning."""
+        caplog.set_level(logging.WARNING, logger="fastmcp")
+        parent = FastMCP("parent", mask_error_details=True)
+        child = FastMCP("child")
+
+        @child.tool
+        def my_tool() -> str:
+            return "ok"
+
+        parent.mount(child, "ns")
+        assert any("mask_error_details" in r.message for r in caplog.records)
+
+    async def test_no_warning_when_both_masked(self, caplog):
+        """No warning when both parent and child have masking enabled."""
+        caplog.set_level(logging.WARNING, logger="fastmcp")
+        parent = FastMCP("parent", mask_error_details=True)
+        child = FastMCP("child", mask_error_details=True)
+
+        @child.tool
+        def my_tool() -> str:
+            return "ok"
+
+        parent.mount(child, "ns")
+        assert not any("mask_error_details" in r.message for r in caplog.records)
+
+    async def test_child_not_mutated_by_mount(self):
+        """Mounting should not mutate the child server's mask setting."""
+        parent = FastMCP("parent", mask_error_details=True)
+        child = FastMCP("child")
+
+        @child.tool
+        def my_tool() -> str:
+            return "ok"
+
+        parent.mount(child, "ns")
+        assert child._mask_error_details is False

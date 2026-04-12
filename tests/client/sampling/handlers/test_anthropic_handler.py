@@ -8,14 +8,17 @@ from mcp.types import (
     AudioContent,
     CreateMessageResult,
     CreateMessageResultWithTools,
+    EmbeddedResource,
     ImageContent,
     ModelHint,
     ModelPreferences,
     SamplingMessage,
     TextContent,
+    TextResourceContents,
     ToolResultContent,
     ToolUseContent,
 )
+from pydantic import AnyUrl
 
 from fastmcp.client.sampling.handlers.anthropic import (
     AnthropicSamplingHandler,
@@ -372,3 +375,28 @@ def test_convert_messages_with_tool_result_content():
             "is_error": False,
         }
     ]
+
+
+def test_convert_messages_raises_on_unsupported_content_type():
+    """Unsupported content types should raise ValueError.
+
+    SamplingMessage validates content against a union of known types, so
+    we use model_construct to bypass validation and simulate a future
+    SDK content type that the handler doesn't know about yet.
+    """
+    embedded = EmbeddedResource(
+        type="resource",
+        resource=TextResourceContents(
+            uri=AnyUrl("file:///test.txt"), text="hello", mimeType="text/plain"
+        ),
+    )
+    # Must be inside a list content — single-content messages hit a
+    # different check.  Use model_construct to bypass Pydantic's
+    # union validation (EmbeddedResource is not in the content union).
+    msg = SamplingMessage.model_construct(
+        role="user",
+        content=[TextContent(type="text", text="prefix"), embedded],
+    )
+
+    with pytest.raises(ValueError, match="Unsupported content type for Anthropic"):
+        AnthropicSamplingHandler._convert_to_anthropic_messages([msg])

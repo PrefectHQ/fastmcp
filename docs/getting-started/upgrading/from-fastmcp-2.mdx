@@ -264,7 +264,7 @@ auth = GitHubProvider(
 
 The deprecated WebSocket client transport has been removed. Use `StreamableHttpTransport` instead:
 
-```python
+```python test="skip"
 # Before
 from fastmcp.client.transports import WSTransport
 transport = WSTransport("ws://localhost:8000/ws")
@@ -357,7 +357,7 @@ main.mount(subserver)
 
 The proxy and OpenAPI modules have moved under `providers` to reflect v3's provider-based architecture:
 
-```python
+```python test="skip"
 # Deprecated
 from fastmcp.server.proxy import FastMCPProxy
 from fastmcp.server.openapi import FastMCPOpenAPI
@@ -369,7 +369,7 @@ from fastmcp.server.providers.openapi import OpenAPIProvider
 
 `FastMCPOpenAPI` itself is deprecated — use `FastMCP` with an `OpenAPIProvider` instead:
 
-```python
+```python test="skip"
 # Deprecated
 from fastmcp.server.openapi import FastMCPOpenAPI
 server = FastMCPOpenAPI(spec, client)
@@ -408,7 +408,7 @@ proxy = create_proxy("http://example.com/mcp")
 
 The experimental OpenAPI parser is now standard. Update imports:
 
-```python
+```python test="skip"
 # Before
 from fastmcp.experimental.server.openapi import FastMCPOpenAPI
 

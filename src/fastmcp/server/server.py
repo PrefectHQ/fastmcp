@@ -208,6 +208,31 @@ def _is_model_visible(tool: Tool) -> bool:
     return "model" in visibility
 
 
+def _is_app_visible(tool: Tool) -> bool:
+    """Check whether a tool has explicitly opted into app-callable visibility.
+
+    Gates the dispatcher's hashed-name routing path: only tools whose
+    ``meta.ui.visibility`` list contains ``"app"`` can be reached via
+    ``<hash>_<local_name>`` calls. Tools without an explicit visibility
+    declaration are NOT app-callable — they must be reached by their
+    display name through the normal transform-aware resolution path.
+
+    This is the inverse of the "everything is dot-callable" trap: the
+    hashed-name path is an opt-in mechanism for FastMCPApp backend tools,
+    not a general bypass for arbitrary tools.
+    """
+    meta = tool.meta
+    if not meta:
+        return False
+    ui = meta.get("ui")
+    if not isinstance(ui, dict):
+        return False
+    visibility = ui.get("visibility")
+    if not isinstance(visibility, list):
+        return False
+    return "app" in visibility
+
+
 @asynccontextmanager
 async def default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]:
     """Default lifespan context manager that does nothing.
@@ -237,7 +262,7 @@ def _lifespan_proxy(
         if not fastmcp_server._lifespan_result_set:
             raise RuntimeError(
                 "FastMCP server has a lifespan defined but no lifespan result is set, which means the server's context manager was not entered. "
-                + " Are you running the server in a way that supports lifespans? If so, please file an issue at https://github.com/PrefectHQ/fastmcp/issues."
+                " Are you running the server in a way that supports lifespans? If so, please file an issue at https://github.com/PrefectHQ/fastmcp/issues."
             )
 
         yield fastmcp_server._lifespan_result  # ty:ignore[invalid-yield]
@@ -469,6 +494,24 @@ class FastMCP(
         """
         super().add_provider(provider, namespace=namespace)
 
+    def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
+        """Replace placeholder Prefab URIs with per-tool hashed ones.
+
+        For each tool whose ``meta.ui.resourceUri`` is the placeholder,
+        reads the tool's stored hash from ``meta.fastmcp._tool_hash``
+        and rewrites the URI to the per-tool form. Also strips CSP from
+        tool meta (it belongs on the resource). Produces ``model_copy``
+        views — originals are untouched.
+        """
+        from fastmcp.server.providers.prefab_synthesis import (
+            _is_prefab_tool,
+            rewrite_tool_meta_for_wire,
+        )
+
+        return [
+            rewrite_tool_meta_for_wire(t) if _is_prefab_tool(t) else t for t in tools
+        ]
+
     # -------------------------------------------------------------------------
     # Provider interface overrides - inherited from AggregateProvider
     # -------------------------------------------------------------------------
@@ -582,6 +625,13 @@ class FastMCP(
             tools = list(await super().list_tools())
             tools = await apply_session_transforms(tools)
             tools = [t for t in tools if is_enabled(t) and _is_model_visible(t)]
+
+            # Rewrite per-tool Prefab renderer URIs based on the tool's
+            # mount-point address. The walk pairs each tool with the
+            # provider that yielded it, computes the hashed URI, and
+            # produces a model_copy with the URI in place. Original
+            # Tool objects are not mutated.
+            tools = self._rewrite_prefab_uris(tools)
 
             skip_auth, token = _get_auth_context()
             authorized: list[Tool] = []
@@ -708,6 +758,15 @@ class FastMCP(
             resources = list(await super().list_resources())
             resources = await apply_session_transforms(resources)
             resources = [r for r in resources if is_enabled(r)]
+
+            # Append synthetic Prefab renderer resources — one per
+            # prefab tool, hashed by mount address. These don't live on
+            # any provider's storage; they're computed on demand.
+            from fastmcp.server.providers.prefab_synthesis import (
+                synthesize_prefab_resources,
+            )
+
+            resources.extend(await synthesize_prefab_resources(self))
 
             skip_auth, token = _get_auth_context()
             authorized: list[Resource] = []
@@ -1109,6 +1168,18 @@ class FastMCP(
         # For mounted servers, the parent's provider sets fn_key to the
         # namespaced key before delegating, ensuring correct Docket routing.
 
+        from fastmcp.server.providers.addressing import (
+            parse_hashed_backend_name,
+        )
+
+        # Two routing paths:
+        #   1. Hashed-name path — backend tools that opted into
+        #      app-callable visibility. Recognized by their
+        #      `<hash>_<local_name>` format and resolved via the
+        #      reverse-hash map. Address is known eagerly.
+        #   2. Display-name path — everything else. Goes through normal
+        #      `get_tool` aggregation/transforms. Address is determined
+        #      after resolution by walking the registry.
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext[CallToolRequestParams](
@@ -1131,28 +1202,35 @@ class FastMCP(
                     ),
                 )
 
-            # Core logic: find and execute tool (providers queried in parallel)
-            # Use get_tool to apply transforms and filter disabled
+            # Core logic: find and execute tool
             with server_span(
                 f"tools/call {name}", "tools/call", self.name, "tool", name
             ) as span:
-                # Try normal resolution first. If that fails and the name
-                # contains "___" (app tool prefix), parse out the app name
-                # and route via get_app_tool which bypasses transforms.
+                # Try normal display-name resolution first.
                 tool: Tool | None = await self.get_tool(name, version=version)
-                if tool is None and "___" in name:
-                    app_prefix, _, tool_suffix = name.partition("___")
-                    tool = await self.get_app_tool(app_prefix, tool_suffix)
-                    if tool is not None:
-                        # Auth still applies to app tools
-                        skip_auth, token = _get_auth_context()
-                        if not skip_auth and tool.auth is not None:
-                            try:
-                                ctx = AuthContext(token=token, component=tool)
-                                if not await run_auth_checks(tool.auth, ctx):
-                                    raise NotFoundError(f"Unknown tool: {name!r}")
-                            except AuthorizationError:
-                                raise NotFoundError(f"Unknown tool: {name!r}") from None
+
+                # If that fails, try hashed-name dispatch. This walks
+                # the provider tree recursively (same pattern as the old
+                # get_app_tool) looking for a tool whose stored hash
+                # matches the parsed prefix.
+                if tool is None:
+                    hashed = parse_hashed_backend_name(name)
+                    if hashed is not None:
+                        digest, local_name = hashed
+                        tool = await self.get_tool_by_hash(digest, local_name)
+                        if tool is not None:
+                            # Auth still applies on the bypass path.
+                            skip_auth, token = _get_auth_context()
+                            if not skip_auth and tool.auth is not None:
+                                try:
+                                    auth_ctx = AuthContext(token=token, component=tool)
+                                    if not await run_auth_checks(tool.auth, auth_ctx):
+                                        raise NotFoundError(f"Unknown tool: {name!r}")
+                                except AuthorizationError:
+                                    raise NotFoundError(
+                                        f"Unknown tool: {name!r}"
+                                    ) from None
+
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")
                 span.set_attributes(tool.get_span_attributes())
@@ -1270,6 +1348,18 @@ class FastMCP(
                 uri,
                 resource_uri=uri,
             ) as span:
+                # Intercept synthetic Prefab renderer URIs before normal
+                # resolution. The resource isn't stored anywhere — we
+                # build it on demand from the matching tool's CSP.
+                from fastmcp.server.providers.prefab_synthesis import (
+                    synthesize_prefab_resource_by_uri,
+                )
+
+                synthesized = await synthesize_prefab_resource_by_uri(self, uri)
+                if synthesized is not None:
+                    span.set_attributes(synthesized.get_span_attributes())
+                    return await synthesized._read(task_meta=task_meta)
+
                 # Try concrete resources first (transforms + auth via _get_resource)
                 resource = await self.get_resource(uri, version=version)
                 if resource is not None:
@@ -1983,6 +2073,15 @@ class FastMCP(
 
                 if not isinstance(server, FastMCPProxy):
                     server = FastMCP.as_proxy(server)
+
+        # Warn if parent masks errors but child doesn't (or vice versa)
+        if self._mask_error_details and not server._mask_error_details:
+            logger.warning(
+                f"Parent server {self.name!r} has mask_error_details=True but "
+                f"mounted server {server.name!r} does not. Error details from "
+                f"{server.name!r} may leak through to clients. Set "
+                f"mask_error_details=True on the child server to prevent this."
+            )
 
         # Create provider and add it with namespace
         provider: Provider = FastMCPProvider(server)

@@ -653,14 +653,8 @@ class TestPathTraversalPrevention:
         mcp.add_provider(SkillsDirectoryProvider(roots=skills_dir))
 
         async with Client(mcp) as client:
-            # Path traversal attempts should fail (either normalized away or blocked)
-            # The important thing is that SECRET DATA is never returned
+            # Path traversal attempts should fail — the secret must never be returned
             with pytest.raises(Exception):
-                result = await client.read_resource(
+                await client.read_resource(
                     AnyUrl("skill://test-skill/../../../secret.txt")
                 )
-                # If we somehow got here, ensure we didn't get the secret
-                if result:
-                    for content in result:
-                        if hasattr(content, "text"):
-                            assert "SECRET DATA" not in content.text
