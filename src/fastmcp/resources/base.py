@@ -337,7 +337,26 @@ class Resource(FastMCPComponent):
                 [ResourceContent(raw_value, mime_type=self.mime_type, meta=self.meta)]
             )
 
-        # ResourceResult.__init__ handles all other normalization
+        # For JSON-native types (dict, list, tuple, int, float, bool, None),
+        # serialize and wrap in ResourceContent with the component's meta,
+        # matching the str/bytes path above so CSP/permissions propagate.
+        if (
+            isinstance(raw_value, dict | list | tuple | int | float | bool)
+            or raw_value is None
+        ):
+            import json
+
+            return ResourceResult(
+                [
+                    ResourceContent(
+                        json.dumps(raw_value),
+                        mime_type="application/json",
+                        meta=self.meta,
+                    )
+                ]
+            )
+
+        # All other types fall through to ResourceResult for error handling
         return ResourceResult(raw_value)
 
     @overload

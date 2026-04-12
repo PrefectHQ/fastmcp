@@ -441,6 +441,13 @@ class Client(
         new_client._task_registry = {}
         new_client._submitted_task_ids = set()
 
+        # Rebind the message handler to the new client so task notifications
+        # are dispatched to the correct client's registry
+        new_client._session_kwargs = {**self._session_kwargs}  # type: ignore[typeddict-item]
+        new_client._session_kwargs["message_handler"] = TaskNotificationHandler(
+            new_client
+        )
+
         new_client.name += f":{secrets.token_hex(2)}"
 
         return new_client
