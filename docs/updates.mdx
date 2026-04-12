@@ -5,6 +5,26 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 3.1.1" description="March 14, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.1.1: 'Tis But a Patch"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.1.1"
+cta="Read the release notes"
+>
+Pins `pydantic-monty<0.0.8` to fix a breaking change in Monty that affects code mode.
+</Card>
+</Update>
+
+<Update label="FastMCP 3.1.0" description="March 3, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.1.0: Code to Joy"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.1.0"
+cta="Read the release notes"
+>
+The Code Mode release. Instead of loading the entire tool catalog into context, `CodeMode` gives LLMs meta-tools: search for relevant tools on demand, inspect their schemas, then write Python that chains `call_tool()` calls in a sandbox. Also ships search transforms, early Prefab Apps integration, `MultiAuth` for composing multiple token verification sources, and PropelAuth support.
+</Card>
+</Update>
+
 <Update label="FastMCP 3.0.2" description="February 22, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v3.0.2: Threecovery Mode II"
@@ -111,6 +131,16 @@ FastMCP 3.0 rebuilds the framework around three primitives: components, provider
 💾 **Session-Scoped State** persists across requests, with per-session visibility control.
 
 ⚡ **DX Improvements** include `--reload` for development, automatic threadpool dispatch, tool timeouts, pagination, and OpenTelemetry tracing.
+</Card>
+</Update>
+
+<Update label="FastMCP 2.14.6" description="March 27, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP 2.14.6: $Ref Dead Redemption"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v2.14.6"
+cta="Read the release notes"
+>
+v2.14.4 backported `dereference_refs()` but never wired it into the tool schema pipeline — `$ref` and `$defs` were still sent to MCP clients. Now fixed: schemas are fully inlined before reaching clients.
 </Card>
 </Update>
 

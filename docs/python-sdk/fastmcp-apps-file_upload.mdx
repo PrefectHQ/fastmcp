@@ -1,0 +1,144 @@
+---
+title: file_upload
+sidebarTitle: file_upload
+---
+
+# `fastmcp.apps.file_upload`
+
+
+FileUpload — a Provider that adds drag-and-drop file upload to any server.
+
+Lets users upload files directly to the server through an interactive UI,
+bypassing the LLM context window entirely. The LLM can then read and work
+with uploaded files through model-visible tools.
+
+Requires ``fastmcp[apps]`` (prefab-ui).
+
+Usage::
+
+    from fastmcp import FastMCP
+    from fastmcp.apps import FileUpload
+
+    mcp = FastMCP("My Server")
+    mcp.add_provider(FileUpload())
+
+For custom persistence, override the storage methods::
+
+    class S3Upload(FileUpload):
+        def on_store(self, files, ctx):
+            # write to S3, return summaries
+            ...
+
+        def on_list(self, ctx):
+            # list from S3
+            ...
+
+        def on_read(self, name, ctx):
+            # read from S3
+            ...
+
+
+## Classes
+
+### `FileUpload` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/file_upload.py#L102" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A Provider that adds file upload capabilities to a server.
+
+Registers a drag-and-drop UI tool, a backend storage tool, and
+model-visible tools for listing and reading uploaded files.
+
+Files are scoped by MCP session and stored in memory by default.
+Override ``on_store``, ``on_list``, and ``on_read`` for custom
+persistence (filesystem, S3, database, etc.). Each method receives
+the current ``Context``, giving access to session ID, auth tokens,
+and request metadata for partitioning and authorization.
+
+**Session scoping:** The default storage uses ``ctx.session_id`` to
+isolate files by session. This works with stdio, SSE, and stateful
+HTTP transports. In **stateless HTTP** mode, each request creates a
+new session, so files won't persist across requests. For stateless
+deployments, override the storage methods to partition by a stable
+identifier from the auth context::
+
+    class UserScopedUpload(FileUpload):
+        def on_store(self, files, ctx):
+            user_id = ctx.access_token["sub"]
+            ...
+
+Example::
+
+    from fastmcp import FastMCP
+    from fastmcp.apps.file_upload import FileUpload
+
+    mcp = FastMCP("My Server")
+    mcp.add_provider(FileUpload())
+
+
+**Methods:**
+
+#### `on_store` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/file_upload.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_store(self, files: list[dict[str, Any]], ctx: Context) -> list[dict[str, Any]]
+```
+
+Store uploaded files and return summaries.
+
+**Args:**
+- `files`: List of file dicts, each with ``name``, ``size``,
+``type``, and ``data`` (base64-encoded content).
+- `ctx`: The current request context. Use for session ID,
+auth tokens, or any metadata needed for partitioning.
+
+Override this method for custom persistence. The default
+implementation stores files in memory, scoped by
+``_get_scope_key(ctx)``.
+
+**Returns:**
+- List of file summary dicts (``name``, ``type``, ``size``,
+- ``size_display``, ``uploaded_at``).
+
+
+#### `on_list` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/file_upload.py#L216" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_list(self, ctx: Context) -> list[dict[str, Any]]
+```
+
+List all stored files.
+
+**Args:**
+- `ctx`: The current request context.
+
+Override this method for custom persistence. The default
+implementation returns files from the current scope.
+
+**Returns:**
+- List of file summary dicts.
+
+
+#### `on_read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/file_upload.py#L232" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_read(self, name: str, ctx: Context) -> dict[str, Any]
+```
+
+Read a file's contents by name.
+
+**Args:**
+- `name`: The filename to read.
+- `ctx`: The current request context.
+
+Override this method for custom persistence. The default
+implementation reads from the current scope's in-memory store.
+Text files are decoded from base64; binary files return a
+truncated base64 preview.
+
+**Returns:**
+- Dict with file metadata and ``content`` (text) or
+- ``content_base64`` (binary preview).
+
+**Raises:**
+- `ValueError`: If the file is not found.
+

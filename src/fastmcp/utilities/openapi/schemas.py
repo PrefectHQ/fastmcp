@@ -4,6 +4,7 @@ from typing import Any
 
 from fastmcp.utilities.logging import get_logger
 
+from .json_schema_converter import convert_openapi_schema_to_json_schema
 from .models import HTTPRoute, JsonSchema, ResponseInfo
 
 logger = get_logger(__name__)
@@ -246,7 +247,8 @@ def _combine_schemas_and_map_params(
         "header": set(),
         "cookie": set(),
     }
-    body_props = {}
+    body_schema: dict[str, Any] = {}
+    body_props: dict[str, Any] = {}
 
     for param in route.parameters:
         param_names_by_location[param.location].add(param.name)
@@ -451,6 +453,9 @@ def _combine_schemas_and_map_params(
             # From parser - already converted and pruned
             result["$defs"] = schema_defs
 
+    if route.openapi_version and route.openapi_version.startswith("3"):
+        result = convert_openapi_schema_to_json_schema(result, route.openapi_version)
+
     return result, parameter_map
 
 
@@ -555,8 +560,6 @@ def extract_output_schema_from_responses(
     if openapi_version and openapi_version.startswith("3"):
         # Convert OpenAPI 3.x schema to JSON Schema format for proper handling
         # of constructs like oneOf, anyOf, and nullable fields
-        from .json_schema_converter import convert_openapi_schema_to_json_schema
-
         output_schema = convert_openapi_schema_to_json_schema(
             output_schema, openapi_version
         )
@@ -584,8 +587,6 @@ def extract_output_schema_from_responses(
 
         # Convert OpenAPI schema definitions to JSON Schema format if needed
         if openapi_version and openapi_version.startswith("3"):
-            from .json_schema_converter import convert_openapi_schema_to_json_schema
-
             for def_name in list(processed_defs.keys()):
                 processed_defs[def_name] = convert_openapi_schema_to_json_schema(
                     processed_defs[def_name], openapi_version

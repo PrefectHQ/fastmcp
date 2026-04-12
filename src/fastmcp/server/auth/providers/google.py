@@ -57,8 +57,11 @@ def _normalize_google_scope(scope: str) -> str:
 class GoogleTokenVerifier(TokenVerifier):
     """Token verifier for Google OAuth tokens.
 
-    Google OAuth tokens are opaque (not JWTs), so we verify them
-    by calling Google's tokeninfo API to check if they're valid and get user info.
+    Google OAuth tokens are opaque (not JWTs), so we verify them by calling
+    Google's tokeninfo endpoint with the access token as a query parameter.
+    This returns the OAuth app ID (``aud``), granted scopes, and expiry time.
+    User profile data (name, picture, etc.) is fetched separately from the
+    v2 userinfo endpoint when the token is valid.
     """
 
     def __init__(
@@ -87,16 +90,23 @@ class GoogleTokenVerifier(TokenVerifier):
         self._http_client = http_client
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        """Verify Google OAuth token by calling Google's tokeninfo API."""
+        """Verify a Google OAuth token using the tokeninfo endpoint.
+
+        Calls ``https://oauth2.googleapis.com/tokeninfo?access_token=TOKEN``
+        to validate the token and retrieve the OAuth app ID (``aud``), granted
+        scopes, and expiry time.  On success, fetches user profile data from
+        the v2 userinfo endpoint to populate name, picture, and locale claims.
+        """
         try:
             async with (
                 contextlib.nullcontext(self._http_client)
                 if self._http_client is not None
                 else httpx.AsyncClient(timeout=self.timeout_seconds)
             ) as client:
-                # Use Google's tokeninfo endpoint to validate the token
+                # Step 1: Verify token via tokeninfo endpoint.
+                # Returns aud (OAuth app ID), scope (space-separated), expires_in, sub, email.
                 response = await client.get(
-                    "https://www.googleapis.com/oauth2/v1/tokeninfo",
+                    "https://oauth2.googleapis.com/tokeninfo",
                     params={"access_token": token},
                     headers={"User-Agent": "FastMCP-Google-OAuth"},
                 )
@@ -108,19 +118,23 @@ class GoogleTokenVerifier(TokenVerifier):
                     )
                     return None
 
-                token_info = response.json()
+                token_data = response.json()
 
-                # Check if token is expired
-                expires_in = token_info.get("expires_in")
-                if expires_in and int(expires_in) <= 0:
-                    logger.debug("Google token has expired")
+                # aud is the OAuth app ID (client_id / audience)
+                aud = token_data.get("aud")
+                if not aud:
+                    logger.debug("Google tokeninfo missing 'aud' claim")
                     return None
 
-                # Extract scopes from token info
-                scope_string = token_info.get("scope", "")
-                token_scopes = [
-                    scope.strip() for scope in scope_string.split(" ") if scope.strip()
-                ]
+                # sub is required (unique Google user ID)
+                sub = token_data.get("sub")
+                if not sub:
+                    logger.debug("Google tokeninfo missing 'sub' claim")
+                    return None
+
+                # Parse scopes directly from the tokeninfo response (space-separated)
+                scope_str = token_data.get("scope", "")
+                token_scopes = scope_str.split() if scope_str else []
 
                 # Check required scopes
                 if self.required_scopes:
@@ -134,46 +148,46 @@ class GoogleTokenVerifier(TokenVerifier):
                         )
                         return None
 
-                # Get additional user info if we have the right scopes
-                user_data = {}
-                if "openid" in token_scopes or "profile" in token_scopes:
-                    try:
-                        userinfo_response = await client.get(
-                            "https://www.googleapis.com/oauth2/v2/userinfo",
-                            headers={
-                                "Authorization": f"Bearer {token}",
-                                "User-Agent": "FastMCP-Google-OAuth",
-                            },
-                        )
-                        if userinfo_response.status_code == 200:
-                            user_data = userinfo_response.json()
-                    except Exception as e:
-                        logger.debug("Failed to fetch Google user info: %s", e)
+                # Compute expiry from expires_in (seconds until expiry)
+                expires_at: int | None = None
+                expires_in = token_data.get("expires_in")
+                if expires_in is not None:
+                    with contextlib.suppress(ValueError, TypeError):
+                        expires_at = int(time.time()) + int(expires_in)
 
-                # Calculate expiration time
-                expires_at = None
-                if expires_in:
-                    expires_at = int(time.time() + int(expires_in))
+                # Step 2: Fetch user profile from v2 userinfo endpoint.
+                # tokeninfo provides auth data; userinfo provides name, picture, locale.
+                user_data: dict = {}
+                try:
+                    userinfo_response = await client.get(
+                        "https://www.googleapis.com/oauth2/v2/userinfo",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "User-Agent": "FastMCP-Google-OAuth",
+                        },
+                    )
+                    if userinfo_response.status_code == 200:
+                        user_data = userinfo_response.json()
+                except Exception as e:
+                    logger.debug("Failed to fetch Google user profile: %s", e)
 
-                # Create AccessToken with Google user info
                 access_token = AccessToken(
                     token=token,
-                    client_id=token_info.get(
-                        "audience", "unknown"
-                    ),  # Use audience as client_id
+                    client_id=sub,
                     scopes=token_scopes,
                     expires_at=expires_at,
                     claims={
-                        "sub": user_data.get("id")
-                        or token_info.get("user_id", "unknown"),
-                        "email": user_data.get("email"),
+                        "sub": sub,
+                        "aud": aud,
+                        "email": token_data.get("email") or user_data.get("email"),
+                        "email_verified": token_data.get("email_verified")
+                        or user_data.get("verified_email"),
                         "name": user_data.get("name"),
                         "picture": user_data.get("picture"),
                         "given_name": user_data.get("given_name"),
                         "family_name": user_data.get("family_name"),
                         "locale": user_data.get("locale"),
-                        "google_user_data": user_data,
-                        "google_token_info": token_info,
+                        "google_user_data": user_data or None,
                     },
                 )
                 logger.debug("Google token verified successfully")
@@ -231,8 +245,10 @@ class GoogleProvider(OAuthProxy):
         jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool | Literal["external"] = True,
         consent_csp_policy: str | None = None,
+        forward_resource: bool = True,
         extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx.AsyncClient | None = None,
+        enable_cimd: bool = True,
     ):
         """Initialize Google OAuth provider.
 
@@ -277,6 +293,8 @@ class GoogleProvider(OAuthProxy):
             http_client: Optional httpx.AsyncClient for connection pooling in token verification.
                 When provided, the client is reused across verify_token calls and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
+            enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
+                client IDs (default True). Set to False to disable.
         """
         # Parse scopes if provided as string
         # Google requires at least one scope - openid is the minimal OIDC scope
@@ -330,8 +348,10 @@ class GoogleProvider(OAuthProxy):
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
             consent_csp_policy=consent_csp_policy,
+            forward_resource=forward_resource,
             extra_authorize_params=extra_authorize_params_final,
             valid_scopes=valid_scopes_final,
+            enable_cimd=enable_cimd,
         )
 
         logger.debug(

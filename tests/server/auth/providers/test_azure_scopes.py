@@ -3,12 +3,14 @@
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 
+from fastmcp.server.auth.auth import MultiAuth
 from fastmcp.server.auth.providers.azure import (
     OIDC_SCOPES,
     AzureJWTVerifier,
     AzureProvider,
+    _find_azure_provider,
 )
-from fastmcp.server.auth.providers.jwt import RSAKeyPair
+from fastmcp.server.auth.providers.jwt import RSAKeyPair, StaticTokenVerifier
 
 
 @pytest.fixture
@@ -411,7 +413,7 @@ class TestAzureJWTVerifier:
             == "https://login.microsoftonline.com/my-tenant-id/discovery/v2.0/keys"
         )
         assert verifier.issuer == "https://login.microsoftonline.com/my-tenant-id/v2.0"
-        assert verifier.audience == "my-client-id"
+        assert verifier.audience == ["my-client-id", "api://my-client-id"]
         assert verifier.algorithm == "RS256"
         assert verifier.required_scopes == ["access_as_user"]
 
@@ -429,12 +431,75 @@ class TestAzureJWTVerifier:
         token = key_pair.create_token(
             subject="test-user",
             issuer="https://login.microsoftonline.com/my-tenant-id/v2.0",
+            audience="api://my-client-id",
+            additional_claims={"scp": "access_as_user"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is not None
+        assert "access_as_user" in result.scopes
+
+    async def test_validates_token_with_client_id_audience(self):
+        """Azure AD v2 tokens use the bare client_id GUID as audience."""
+        key_pair = RSAKeyPair.generate()
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["access_as_user"],
+        )
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://login.microsoftonline.com/my-tenant-id/v2.0",
             audience="my-client-id",
             additional_claims={"scp": "access_as_user"},
         )
         result = await verifier.load_access_token(token)
         assert result is not None
         assert "access_as_user" in result.scopes
+
+    async def test_validates_token_with_custom_identifier_uri_audience(self):
+        """Custom identifier_uri (e.g. Bicep deployments) accepted as audience."""
+        key_pair = RSAKeyPair.generate()
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["read"],
+            identifier_uri="api://my-app-name",
+        )
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://login.microsoftonline.com/my-tenant-id/v2.0",
+            audience="api://my-app-name",
+            additional_claims={"scp": "read"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is not None
+        assert "read" in result.scopes
+
+    async def test_rejects_token_with_wrong_audience(self):
+        """Tokens for a different application must be rejected."""
+        key_pair = RSAKeyPair.generate()
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["read"],
+        )
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://login.microsoftonline.com/my-tenant-id/v2.0",
+            audience="some-other-app-id",
+            additional_claims={"scp": "read"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is None
 
     def test_scopes_supported_returns_prefixed_form(self):
         verifier = AzureJWTVerifier(
@@ -725,3 +790,42 @@ class TestAzureOBOIntegration:
 
         dep = _EntraOBOToken(["scope"])
         assert isinstance(dep, Dependency)
+
+
+class TestFindAzureProvider:
+    """Tests for _find_azure_provider helper used by EntraOBOToken."""
+
+    def test_returns_azure_provider_directly(self, memory_storage):
+        """When auth is an AzureProvider, return it directly."""
+        provider = AzureProvider(
+            tenant_id="test-tenant",
+            client_id="test-client",
+            client_secret="test-secret",
+            client_storage=memory_storage,
+            base_url="https://example.com",
+            required_scopes=["read"],
+        )
+        assert _find_azure_provider(provider) is provider
+
+    def test_unwraps_multiauth_with_azure_server(self, memory_storage):
+        """When auth is a MultiAuth wrapping an AzureProvider, return the inner provider."""
+        provider = AzureProvider(
+            tenant_id="test-tenant",
+            client_id="test-client",
+            client_secret="test-secret",
+            client_storage=memory_storage,
+            base_url="https://example.com",
+            required_scopes=["read"],
+        )
+        multi = MultiAuth(server=provider)
+        assert _find_azure_provider(multi) is provider
+
+    def test_returns_none_for_no_auth(self):
+        """When auth is None, return None."""
+        assert _find_azure_provider(None) is None
+
+    def test_returns_none_for_multiauth_without_azure_server(self):
+        """When MultiAuth has no server or a non-Azure server, return None."""
+        verifier = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
+        multi = MultiAuth(verifiers=[verifier])
+        assert _find_azure_provider(multi) is None

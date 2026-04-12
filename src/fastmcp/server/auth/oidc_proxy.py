@@ -226,6 +226,7 @@ class OIDCProxy(OAuthProxy):
         # Consent screen configuration
         require_authorization_consent: bool | Literal["external"] = True,
         consent_csp_policy: str | None = None,
+        forward_resource: bool = True,
         # Extra parameters
         extra_authorize_params: dict[str, str] | None = None,
         extra_token_params: dict[str, str] | None = None,
@@ -377,6 +378,7 @@ class OIDCProxy(OAuthProxy):
             "token_endpoint_auth_method": token_endpoint_auth_method,
             "require_authorization_consent": require_authorization_consent,
             "consent_csp_policy": consent_csp_policy,
+            "forward_resource": forward_resource,
             "fallback_access_token_expiry_seconds": fallback_access_token_expiry_seconds,
             "enable_cimd": enable_cimd,
         }

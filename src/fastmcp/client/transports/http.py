@@ -19,6 +19,7 @@ import fastmcp
 from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.transports.base import ClientTransport, SessionKwargs
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.utilities.timeout import normalize_timeout_to_timedelta
 
@@ -88,10 +89,12 @@ class StreamableHttpTransport(ClientTransport):
                     "The new streamable_http_client API does not support this parameter. "
                     "Use `read_timeout_seconds` in session_kwargs or configure timeout on "
                     "the httpx client via `httpx_client_factory` instead.",
-                    DeprecationWarning,
+                    FastMCPDeprecationWarning,
                     stacklevel=2,
                 )
         self.sse_read_timeout = normalize_timeout_to_timedelta(sse_read_timeout)
+
+        self.forward_incoming_headers: bool = False
 
         self._get_session_id_cb: Callable[[], str | None] | None = None
 
@@ -147,10 +150,14 @@ class StreamableHttpTransport(ClientTransport):
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
-        # Load headers from an active HTTP request, if available. This will only be true
-        # if the client is used in a FastMCP Proxy, in which case the MCP client headers
-        # need to be forwarded to the remote server.
-        headers = get_http_headers(include={"authorization"}) | self.headers
+        # When used in a proxy, forward the inbound request's authorization
+        # header to the upstream server. This is off by default so that a
+        # plain Client used inside a server tool handler doesn't accidentally
+        # leak the caller's credentials to an unrelated remote server.
+        if self.forward_incoming_headers:
+            headers = get_http_headers(include={"authorization"}) | self.headers
+        else:
+            headers = dict(self.headers)
 
         # Configure timeout if provided, preserving MCP's 30s connect default
         timeout: httpx.Timeout | None = None
@@ -169,7 +176,7 @@ class StreamableHttpTransport(ClientTransport):
             http_client = self.httpx_client_factory(
                 headers=headers,
                 auth=self.auth,
-                follow_redirects=True,  # type: ignore[call-arg]
+                follow_redirects=True,  # type: ignore[call-arg]  # ty:ignore[unknown-argument]
                 **({"timeout": timeout} if timeout else {}),
             )
         elif verify_factory is not None:

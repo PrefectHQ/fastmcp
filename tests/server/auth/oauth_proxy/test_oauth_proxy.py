@@ -63,6 +63,39 @@ class TestOAuthProxyInitialization:
         assert proxy.client_registration_options is not None
         assert proxy.client_registration_options.valid_scopes == ["custom", "scopes"]
 
+    def test_default_scope_str_prefers_valid_scopes(self, jwt_verifier):
+        """When valid_scopes is provided, _default_scope_str should use it
+        instead of required_scopes. This ensures CIMD clients (which bypass
+        RegistrationHandler) get registered with the full set of valid scopes."""
+        jwt_verifier.required_scopes = ["openid"]
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            valid_scopes=["openid", "email", "calendar"],
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+        assert proxy._default_scope_str == "openid email calendar"
+
+    def test_default_scope_str_falls_back_to_required_scopes(self, jwt_verifier):
+        """Without valid_scopes, _default_scope_str falls back to required_scopes."""
+        jwt_verifier.required_scopes = ["openid"]
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+        assert proxy._default_scope_str == "openid"
+
     def test_redirect_path_normalization(self, jwt_verifier):
         """Test that redirect_path is normalized with leading slash."""
         proxy = OAuthProxy(

@@ -14,6 +14,7 @@ import httpx
 from key_value.aio.protocols import AsyncKeyValue
 
 from fastmcp.dependencies import Dependency
+from fastmcp.server.auth.auth import MultiAuth
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.auth import decode_jwt_payload, parse_scopes
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
     from azure.identity.aio import OnBehalfOfCredential
     from mcp.server.auth.provider import AuthorizationParams
     from mcp.shared.auth import OAuthClientInformationFull
+
+    from fastmcp.server.auth.auth import AuthProvider
 
 logger = get_logger(__name__)
 
@@ -109,8 +112,10 @@ class AzureProvider(OAuthProxy):
         jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool | Literal["external"] = True,
         consent_csp_policy: str | None = None,
+        forward_resource: bool = True,
         base_authority: str = "login.microsoftonline.com",
         http_client: httpx.AsyncClient | None = None,
+        enable_cimd: bool = True,
     ) -> None:
         """Initialize Azure OAuth provider.
 
@@ -163,6 +168,8 @@ class AzureProvider(OAuthProxy):
             http_client: Optional httpx.AsyncClient for connection pooling in JWKS fetches.
                 When provided, the client is reused for JWT key fetches and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per fetch.
+            enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
+                client IDs (default True). Set to False to disable.
         """
         # Parse scopes if provided as string
         parsed_required_scopes = parse_scopes(required_scopes)
@@ -213,7 +220,7 @@ class AzureProvider(OAuthProxy):
         token_verifier = JWTVerifier(
             jwks_uri=jwks_uri,
             issuer=issuer,
-            audience=client_id,
+            audience=[client_id, self.identifier_uri],
             algorithm="RS256",
             required_scopes=validation_scopes,  # Only validate non-OIDC scopes
             http_client=http_client,
@@ -242,7 +249,9 @@ class AzureProvider(OAuthProxy):
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
             consent_csp_policy=consent_csp_policy,
+            forward_resource=forward_resource,
             valid_scopes=parsed_required_scopes,
+            enable_cimd=enable_cimd,
         )
 
         authority_info = ""
@@ -618,7 +627,7 @@ class AzureJWTVerifier(JWTVerifier):
         super().__init__(
             jwks_uri=f"https://{base_authority}/{tenant_id}/discovery/v2.0/keys",
             issuer=issuer,
-            audience=client_id,
+            audience=[client_id, self._identifier_uri],
             algorithm="RS256",
             required_scopes=required_scopes,
         )
@@ -659,6 +668,17 @@ def _require_azure_identity(feature: str) -> None:
         ) from e
 
 
+def _find_azure_provider(auth: AuthProvider | None) -> AzureProvider | None:
+    """Extract an AzureProvider from an auth provider, unwrapping MultiAuth if needed."""
+    if isinstance(auth, AzureProvider):
+        return auth
+
+    if isinstance(auth, MultiAuth) and isinstance(auth.server, AzureProvider):
+        return auth.server
+
+    return None
+
+
 class _EntraOBOToken(Dependency[str]):
     """Dependency that performs OBO token exchange for Microsoft Entra.
 
@@ -683,13 +703,14 @@ class _EntraOBOToken(Dependency[str]):
             )
 
         server = get_server()
-        if not isinstance(server.auth, AzureProvider):
+        azure_provider = _find_azure_provider(server.auth)
+        if azure_provider is None:
             raise RuntimeError(
                 "EntraOBOToken requires an AzureProvider as the auth provider. "
                 f"Current provider: {type(server.auth).__name__}"
             )
 
-        credential = await server.auth.get_obo_credential(
+        credential = await azure_provider.get_obo_credential(
             user_assertion=access_token.token,
         )
 

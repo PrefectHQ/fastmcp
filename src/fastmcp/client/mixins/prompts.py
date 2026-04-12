@@ -157,12 +157,12 @@ class ClientPromptsMixin:
                         name=name,
                         arguments=serialized_arguments,
                         task=mcp.types.TaskMetadata(**task_dict) if task_dict else None,
-                        _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias
+                        _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
                     )
                 )
                 result = await self._await_with_session_monitoring(
                     self.session.send_request(
-                        request=request,  # type: ignore[arg-type]
+                        request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                         result_type=mcp.types.GetPromptResult,
                     )
                 )
@@ -287,14 +287,14 @@ class ClientPromptsMixin:
                 name=name,
                 arguments=serialized_arguments,
                 task=mcp.types.TaskMetadata(ttl=ttl),
-                _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias
+                _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
             )
         )
 
         # Server returns CreateTaskResult (task accepted) or GetPromptResult (graceful degradation)
         wrapped_result = await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[arg-type]
+                request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                 result_type=PromptTaskResponseUnion,
             )
         )

@@ -168,6 +168,64 @@ class TestSecurityBypass:
         assert not matches_allowed_pattern("http://example.com:3000/callback", pattern)
 
 
+class TestLoopbackPortMatching:
+    """Test RFC 8252 §7.3: loopback URIs with no port in pattern match any port."""
+
+    def test_localhost_no_port_matches_any_port(self):
+        """Pattern http://localhost/callback should match any port on localhost."""
+        pattern = "http://localhost/callback"
+        assert matches_allowed_pattern("http://localhost:51353/callback", pattern)
+        assert matches_allowed_pattern("http://localhost:3000/callback", pattern)
+        assert matches_allowed_pattern("http://localhost:80/callback", pattern)
+
+    def test_localhost_no_port_no_path_matches_any_port(self):
+        """Pattern http://localhost should match any port on localhost."""
+        pattern = "http://localhost"
+        assert matches_allowed_pattern("http://localhost:51353", pattern)
+        assert matches_allowed_pattern("http://localhost:3000/callback", pattern)
+
+    def test_127_0_0_1_no_port_matches_any_port(self):
+        """Pattern http://127.0.0.1/callback should match any port on 127.0.0.1."""
+        pattern = "http://127.0.0.1/callback"
+        assert matches_allowed_pattern("http://127.0.0.1:51353/callback", pattern)
+        assert matches_allowed_pattern("http://127.0.0.1:3000/callback", pattern)
+
+    def test_ipv6_loopback_no_port_matches_any_port(self):
+        """Pattern http://[::1]/callback should match any port on [::1]."""
+        pattern = "http://[::1]/callback"
+        assert matches_allowed_pattern("http://[::1]:51353/callback", pattern)
+        assert matches_allowed_pattern("http://[::1]:3000/callback", pattern)
+
+    def test_non_loopback_no_port_requires_default_port(self):
+        """Non-loopback patterns without port should still require default port."""
+        pattern = "http://example.com/callback"
+        # Should only match port 80 (default for HTTP)
+        assert matches_allowed_pattern("http://example.com/callback", pattern)
+        assert matches_allowed_pattern("http://example.com:80/callback", pattern)
+        assert not matches_allowed_pattern("http://example.com:3000/callback", pattern)
+
+    def test_loopback_explicit_port_requires_exact_match(self):
+        """Loopback patterns with an explicit port should still require exact match."""
+        pattern = "http://localhost:8080/callback"
+        assert matches_allowed_pattern("http://localhost:8080/callback", pattern)
+        assert not matches_allowed_pattern("http://localhost:3000/callback", pattern)
+
+    def test_loopback_no_port_still_checks_scheme(self):
+        """Scheme must still match even for loopback URIs."""
+        pattern = "http://localhost/callback"
+        assert not matches_allowed_pattern("https://localhost:3000/callback", pattern)
+
+    def test_loopback_no_port_still_checks_host(self):
+        """Host must still match even for loopback URIs."""
+        pattern = "http://localhost/callback"
+        assert not matches_allowed_pattern("http://example.com:3000/callback", pattern)
+
+    def test_loopback_no_port_still_checks_path(self):
+        """Path must still match even for loopback URIs."""
+        pattern = "http://localhost/callback"
+        assert not matches_allowed_pattern("http://localhost:3000/other", pattern)
+
+
 class TestDefaultPatterns:
     """Test the default localhost patterns constant."""
 

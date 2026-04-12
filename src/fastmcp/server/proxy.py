@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import warnings
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
+
 warnings.warn(
     "fastmcp.server.proxy is deprecated. Use fastmcp.server.providers.proxy instead.",
-    DeprecationWarning,
+    FastMCPDeprecationWarning,
     stacklevel=2,
 )
 

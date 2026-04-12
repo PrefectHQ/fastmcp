@@ -277,6 +277,43 @@ mcp = FastMCP("distributed-app", session_state_store=RedisStore(...))
 
 Any backend compatible with the [py-key-value-aio](https://github.com/strawgate/py-key-value) `AsyncKeyValue` protocol works. See [Storage Backends](/servers/storage-backends) for more options including Redis, DynamoDB, and MongoDB.
 
+#### State and Mounted Servers
+
+Each `FastMCP` instance has its own session state store. When you `mount()` a child server, state set on the parent is not visible to tools on the child, and vice versa:
+
+```python
+from fastmcp import FastMCP, Context
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+
+parent = FastMCP("Parent")
+child = FastMCP("Child")
+parent.mount(child, namespace="child")
+
+class Stasher(Middleware):
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        await context.fastmcp_context.set_state("user", "alice")
+        return await call_next(context)
+
+parent.add_middleware(Stasher())
+
+@child.tool
+async def whoami(ctx: Context) -> str:
+    return await ctx.get_state("user") or "unknown"  # returns "unknown"
+```
+
+To share state across the mount boundary, pass the same store to both servers:
+
+```python
+from key_value.aio.stores.memory import MemoryStore
+
+store = MemoryStore()
+parent = FastMCP("Parent", session_state_store=store)
+child = FastMCP("Child", session_state_store=store)
+parent.mount(child, namespace="child")
+```
+
+Alternatively, state set with `serializable=False` lives on the request context and is inherited by mounted children automatically — use it when the value is request-scoped and does not need to persist across tool calls.
+
 #### State During Initialization
 
 State set during `on_initialize` middleware persists to subsequent tool calls when using the same session object (STDIO, SSE, single-server HTTP). For distributed/serverless HTTP deployments where different machines handle init and tool calls, state is isolated by the `mcp-session-id` header.

@@ -22,7 +22,8 @@ Prefab includes [bar, line, area, pie, radar, and radial charts](https://prefab.
 
 ```python
 from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Heading, BarChart, ChartSeries
+from prefab_ui.components import Column, Heading
+from prefab_ui.components.charts import BarChart, ChartSeries
 from fastmcp import FastMCP
 
 mcp = FastMCP("Charts")
@@ -61,7 +62,8 @@ Multiple `ChartSeries` entries plot different data keys. Add `stacked=True` to s
 
 ```python
 from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Heading, AreaChart, ChartSeries
+from prefab_ui.components import Column, Heading
+from prefab_ui.components.charts import AreaChart, ChartSeries
 from fastmcp import FastMCP
 
 mcp = FastMCP("Charts")
@@ -97,7 +99,8 @@ def usage_trend() -> PrefabApp:
 
 ```python
 from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Heading, PieChart
+from prefab_ui.components import Column, Heading
+from prefab_ui.components.charts import PieChart
 from fastmcp import FastMCP
 
 mcp = FastMCP("Charts")
@@ -159,7 +162,7 @@ def employee_directory() -> PrefabApp:
                 DataTableColumn(key="location", header="Office", sortable=True),
             ],
             rows=employees,
-            searchable=True,
+            search=True,
             paginated=True,
             page_size=15,
         )
@@ -224,8 +227,9 @@ These patterns use state and `Rx()` for client-side interactivity — no server 
 ### Feature Toggles
 
 ```python
-from prefab_ui.app import PrefabApp, set_initial_state
+from prefab_ui.app import PrefabApp
 from prefab_ui.components import Column, Heading, Switch, Alert, If, Separator
+from prefab_ui.rx import Rx
 from fastmcp import FastMCP
 
 mcp = FastMCP("Flags")
@@ -234,23 +238,21 @@ mcp = FastMCP("Flags")
 @mcp.tool(app=True)
 def feature_flags() -> PrefabApp:
     """Toggle feature flags with live preview."""
-    state = set_initial_state(dark_mode=False, beta=False)
-
     with Column(gap=4, css_class="p-6") as view:
         Heading("Feature Flags")
         Switch(name="dark_mode", label="Dark Mode")
         Switch(name="beta", label="Beta Features")
         Separator()
-        with If(state.dark_mode):
+        with If(Rx("dark_mode")):
             Alert(title="Dark mode enabled", description="UI will use dark theme.")
-        with If(state.beta):
+        with If(Rx("beta")):
             Alert(
                 title="Beta features active",
                 description="Experimental features are now visible.",
                 variant="warning",
             )
 
-    return PrefabApp(view=view)
+    return PrefabApp(view=view, state={"dark_mode": False, "beta": False})
 ```
 
 ### Tabs
@@ -361,7 +363,7 @@ from prefab_ui.actions.mcp import CallTool
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Badge, Button, Column, ForEach, Form, Heading,
-    Input, Muted, Row, Select, Separator, Text, Textarea,
+    Input, Muted, Row, Select, SelectOption, Separator, Text, Textarea,
 )
 from prefab_ui.rx import RESULT
 from fastmcp import FastMCP, FastMCPApp
@@ -408,11 +410,11 @@ def contact_form() -> PrefabApp:
         ):
             Input(name="name", label="Full Name", required=True)
             Input(name="email", label="Email", input_type="email", required=True)
-            Select(
-                name="category",
-                label="Category",
-                options=["Customer", "Vendor", "Partner", "Other"],
-            )
+            with Select(name="category", label="Category"):
+                SelectOption("Customer", value="Customer")
+                SelectOption("Vendor", value="Vendor")
+                SelectOption("Partner", value="Partner")
+                SelectOption("Other", value="Other")
             Textarea(name="notes", label="Notes", placeholder="Optional notes...")
             Button("Save Contact")
 

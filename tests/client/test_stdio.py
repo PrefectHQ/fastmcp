@@ -256,6 +256,279 @@ class TestKeepAlive:
                 pass
 
 
+@pytest.mark.timeout(15)
+class TestSubprocessCrashRecovery:
+    """Test that StdioTransport recovers after the subprocess crashes."""
+
+    # Use a short init_timeout so tests fail fast instead of hanging if
+    # stream-based dead-session detection is slow (e.g. on Windows where
+    # pipe cleanup can lag after process termination).
+    INIT_TIMEOUT = 3
+
+    @pytest.fixture
+    def stdio_script(self, tmp_path):
+        script = inspect.cleandoc('''
+            import os
+            from fastmcp import FastMCP
+
+            mcp = FastMCP()
+
+            @mcp.tool
+            def pid() -> int:
+                """Gets PID of server"""
+                return os.getpid()
+
+            if __name__ == "__main__":
+                mcp.run()
+            ''')
+        script_file = tmp_path / "stdio.py"
+        script_file.write_text(script)
+        return script_file
+
+    async def test_keep_alive_recovers_after_subprocess_crash(self, stdio_script):
+        """When keep_alive=True and the subprocess dies, the next connection should start a fresh subprocess."""
+        transport = PythonStdioTransport(script_path=stdio_script)
+        client = Client(transport=transport, init_timeout=self.INIT_TIMEOUT)
+        assert transport.keep_alive is True
+
+        # First connection: get the PID of the subprocess
+        async with client:
+            result1 = await client.call_tool("pid")
+            pid1: int = result1.data
+
+        # Kill the subprocess to simulate a crash
+        psutil.Process(pid1).kill()
+
+        # First attempt after crash fails — the stale session is
+        # detected and torn down so subsequent attempts succeed.
+        with pytest.raises(Exception):
+            async with client:
+                await client.call_tool("pid")
+
+        # Next connection starts a fresh subprocess
+        async with client:
+            result2 = await client.call_tool("pid")
+            pid2: int = result2.data
+
+        assert pid1 != pid2
+
+    async def test_keep_alive_false_recovers_after_subprocess_crash(self, stdio_script):
+        """When keep_alive=False, crash recovery works because disconnect() is always called."""
+        client = Client(
+            transport=PythonStdioTransport(script_path=stdio_script, keep_alive=False),
+            init_timeout=self.INIT_TIMEOUT,
+        )
+
+        async with client:
+            result1 = await client.call_tool("pid")
+            pid1: int = result1.data
+
+        # Process should already be dead (keep_alive=False), but kill to be sure
+        with pytest.raises(psutil.NoSuchProcess):
+            psutil.Process(pid1).kill()
+
+        # Next connection should work fine
+        async with client:
+            result2 = await client.call_tool("pid")
+            pid2: int = result2.data
+
+        assert pid1 != pid2
+
+    async def test_multiple_consecutive_crashes(self, stdio_script):
+        """Recovery works across multiple crash/reconnect cycles."""
+        client = Client(
+            transport=PythonStdioTransport(script_path=stdio_script),
+            init_timeout=self.INIT_TIMEOUT,
+        )
+        pids: list[int] = []
+
+        for _ in range(3):
+            async with client:
+                result = await client.call_tool("pid")
+                pid: int = result.data
+                pids.append(pid)
+
+            # Kill the subprocess
+            psutil.Process(pid).kill()
+
+            # Fail once to trigger cleanup
+            with pytest.raises(Exception):
+                async with client:
+                    await client.call_tool("pid")
+
+        # Each cycle should have started a new subprocess
+        assert len(set(pids)) == 3
+
+    async def test_crash_during_active_context(self, stdio_script):
+        """When subprocess dies while the client context is open, recovery works on the next attempt."""
+        client = Client(
+            transport=PythonStdioTransport(script_path=stdio_script),
+            init_timeout=self.INIT_TIMEOUT,
+        )
+        pid1: int = 0
+
+        with pytest.raises(Exception):
+            async with client:
+                result = await client.call_tool("pid")
+                pid1 = result.data
+                # Kill while the context is still open
+                psutil.Process(pid1).kill()
+                # This call hits the dead session
+                await client.call_tool("pid")
+
+        assert pid1 != 0, "First call should have succeeded before the crash"
+
+        # Recovery: next connection starts a fresh subprocess
+        async with client:
+            result = await client.call_tool("pid")
+            pid2: int = result.data
+
+        assert pid1 != pid2
+
+    async def test_proxy_recovers_after_stdio_crash(self, stdio_script):
+        """A proxy server wrapping a stdio backend recovers after the backend crashes."""
+        from fastmcp.server import create_proxy
+
+        backend_client = Client(
+            transport=PythonStdioTransport(script_path=stdio_script),
+            init_timeout=self.INIT_TIMEOUT,
+        )
+        proxy = create_proxy(target=backend_client, name="test-proxy")
+
+        # First call works
+        result1 = await proxy.call_tool("pid")
+        pid1 = int(result1.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
+        # Kill the backend subprocess
+        psutil.Process(pid1).kill()
+
+        # First call after crash fails
+        with pytest.raises(Exception):
+            await proxy.call_tool("pid")
+
+        # Second call recovers with a new subprocess
+        result2 = await proxy.call_tool("pid")
+        pid2 = int(result2.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
+        assert pid1 != pid2
+
+    async def test_concurrent_requests_during_crash(self, stdio_script):
+        """Multiple concurrent callers fail cleanly when subprocess dies, then recovery works."""
+        from fastmcp.server import create_proxy
+
+        backend_client = Client(
+            transport=PythonStdioTransport(script_path=stdio_script),
+            init_timeout=self.INIT_TIMEOUT,
+        )
+        proxy = create_proxy(target=backend_client, name="test-proxy")
+
+        # First call to get the PID
+        result = await proxy.call_tool("pid")
+        pid1 = int(result.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
+        # Kill the subprocess
+        psutil.Process(pid1).kill()
+
+        # Fire several concurrent requests — all should fail, none should hang
+        tasks = [proxy.call_tool("pid") for _ in range(5)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        errors = [r for r in results if isinstance(r, Exception)]
+        assert len(errors) > 0
+
+        # Recovery: a subsequent request should succeed
+        result = await proxy.call_tool("pid")
+        pid2 = int(result.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert pid1 != pid2
+
+    async def test_clean_exit_recovers(self, tmp_path):
+        """Recovery works when the subprocess exits cleanly (exit code 0), not just crashes."""
+        script = tmp_path / "exit_script.py"
+        script.write_text(
+            inspect.cleandoc('''
+            import os, sys, threading
+            from fastmcp import FastMCP
+
+            mcp = FastMCP()
+            call_count = 0
+
+            @mcp.tool
+            def pid_then_exit() -> int:
+                """Returns PID, exits cleanly after second call."""
+                global call_count
+                call_count += 1
+                pid = os.getpid()
+                if call_count >= 2:
+                    threading.Timer(0.1, lambda: os._exit(0)).start()
+                return pid
+
+            if __name__ == "__main__":
+                mcp.run()
+        ''')
+        )
+
+        client = Client(
+            transport=PythonStdioTransport(script_path=script),
+            init_timeout=self.INIT_TIMEOUT,
+        )
+
+        async with client:
+            result1 = await client.call_tool("pid_then_exit")
+            pid1: int = result1.data
+            # Second call triggers delayed clean exit
+            await client.call_tool("pid_then_exit")
+            await asyncio.sleep(0.3)
+
+        # Recovery after clean exit
+        async with client:
+            result2 = await client.call_tool("pid_then_exit")
+            pid2: int = result2.data
+
+        assert pid1 != pid2
+
+    async def test_crash_during_initialization(self, tmp_path):
+        """Recovery works when subprocess crashes during the first connection attempt."""
+        # Script that exits immediately — crashes before init completes
+        crash_script = tmp_path / "crash_init.py"
+        crash_script.write_text(
+            inspect.cleandoc("""
+            import sys
+            sys.exit(1)
+        """)
+        )
+
+        client = Client(
+            transport=PythonStdioTransport(script_path=crash_script),
+            init_timeout=self.INIT_TIMEOUT,
+        )
+
+        with pytest.raises(Exception):
+            async with client:
+                pass
+
+        # Write a working script to the same path
+        crash_script.write_text(
+            inspect.cleandoc("""
+            import os
+            from fastmcp import FastMCP
+
+            mcp = FastMCP()
+
+            @mcp.tool
+            def pid() -> int:
+                return os.getpid()
+
+            if __name__ == "__main__":
+                mcp.run()
+        """)
+        )
+
+        # Recovery with the now-working script
+        async with client:
+            result = await client.call_tool("pid")
+            assert isinstance(result.data, int)
+
+
 class TestLogFile:
     @pytest.fixture
     def stdio_script_with_stderr(self, tmp_path):

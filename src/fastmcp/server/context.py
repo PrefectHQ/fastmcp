@@ -272,16 +272,18 @@ class Context:
 
         self._server_token = _current_server.set(weakref.ref(self.fastmcp))
 
-        # Set docket/worker from server instance for this request's context.
-        # This ensures ContextVars work even in ASGI environments (Lambda, FastAPI mount)
-        # where lifespan ContextVars don't propagate to request handlers.
-        server = self.fastmcp
+        # Re-set docket/worker from the server instance so mounted children
+        # inherit the parent's Docket via the ContextVar. Only servers that
+        # own the Docket (the parent) have _docket set; children skip this,
+        # leaving the parent's value in place.
         if is_docket_available():
+            server = self.fastmcp
             if server._docket is not None:
                 self._docket_token = _current_docket.set(server._docket)
             if server._worker is not None:
                 self._worker_token = _current_worker.set(server._worker)
-        else:
+
+        if not is_docket_available():
             # Without docket, the lifespan won't provide a SharedContext,
             # so create one scoped to this Context for Shared() dependencies.
             self._shared_context = SharedContext()
@@ -297,7 +299,6 @@ class Context:
             _current_worker,
         )
 
-        # Mirror __aenter__: clean up docket/worker tokens or SharedContext
         if hasattr(self, "_worker_token"):
             _current_worker.reset(self._worker_token)
             del self._worker_token
@@ -432,7 +433,7 @@ class Context:
             delta = current - last
             if delta > 0:
                 await execution.progress.increment(delta)
-            execution._fastmcp_last_progress = current  # type: ignore[attr-defined]
+            execution._fastmcp_last_progress = current  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
             if message is not None:
                 await execution.progress.set_message(message)
@@ -587,7 +588,7 @@ class Context:
 
         Example::
 
-            from fastmcp.server.apps import UI_EXTENSION_ID
+            from fastmcp.apps.config import UI_EXTENSION_ID
 
             @mcp.tool
             async def my_tool(ctx: Context) -> str:
@@ -679,7 +680,7 @@ class Context:
             session_id = str(uuid4())
 
         # Cache on session for consistency
-        session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]
+        session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         return session_id
 
     @property
@@ -998,7 +999,7 @@ class Context:
             session.create_message() API directly.
         """
         # TODO: Add background task support similar to elicit() when is_background_task
-        return await sample_impl(
+        return await sample_impl(  # ty: ignore[invalid-return-type]
             self,
             messages=messages,
             system_prompt=system_prompt,
@@ -1181,7 +1182,7 @@ class Context:
         from fastmcp.server.tasks.elicitation import elicit_for_task
 
         return await elicit_for_task(
-            task_id=self._task_id,  # type: ignore[arg-type]
+            task_id=self._task_id,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             session=self._session,
             message=message,
             schema=schema,

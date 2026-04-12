@@ -36,7 +36,6 @@ import sys
 import tarfile
 import tempfile
 import time
-import urllib.request
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -372,6 +371,8 @@ _HOST_HTML_TEMPLATE = """\
         await bridge.sendToolResult(result);
         status.style.display = "none";
         iframe.style.display = "block";
+        // Prevent horizontal scrollbar when vertical scrollbar appears
+        try {{ iframe.contentDocument.documentElement.style.overflowX = "hidden"; }} catch(e) {{}}
       }};
 
       // Start listening before the iframe loads
@@ -415,8 +416,8 @@ _LOG_PANEL_HTML = """\
   }
   #mcp-log-panel.hidden { display: none; }
   #app-frame {
-    width: calc(100% - 360px) !important; height: 100% !important;
-    margin-left: 360px !important;
+    width: 100% !important; height: 100% !important;
+    margin-left: 0 !important;
   }
   #mcp-log-resize {
     position: absolute; right: -3px; top: 0; bottom: 0; width: 6px;
@@ -507,7 +508,7 @@ _LOG_PANEL_HTML = """\
     background: #181825; color: #cdd6f4; border: 1px solid #45475a;
     padding: 6px 12px; border-radius: 6px; cursor: pointer;
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-    font-size: 11px; display: none;
+    font-size: 11px; display: block;
   }
   #mcp-log-open:hover { background: #313244; }
   #mcp-log-filters {
@@ -553,7 +554,7 @@ _LOG_PANEL_HTML = """\
   .log-level-alert { background: rgba(243, 139, 168, 0.25); color: #f38ba8; }
   .log-level-emergency { background: rgba(243, 139, 168, 0.3); color: #f38ba8; }
 </style>
-<div id="mcp-log-panel">
+<div id="mcp-log-panel" class="hidden">
   <div id="mcp-log-resize"></div>
   <div id="mcp-log-header">
     <div id="mcp-log-brand">
@@ -562,6 +563,8 @@ _LOG_PANEL_HTML = """\
       <span id="mcp-log-count-badge">\u00b7 <span id="mcp-log-count">0</span></span>
     </div>
     <div id="mcp-log-actions">
+      <button id="mcp-log-reset" onclick="window.location.href='/'">&#8592; Back</button>
+      <script>if (window.location.pathname === "/") document.getElementById("mcp-log-reset").style.display = "none";</script>
       <button id="mcp-log-clear">Clear</button>
       <button id="mcp-log-close">\u00d7</button>
     </div>
@@ -593,6 +596,33 @@ _LOG_PANEL_HTML = """\
   var countEl = document.getElementById("mcp-log-count");
   var openBtn = document.getElementById("mcp-log-open");
   var resizeHandle = document.getElementById("mcp-log-resize");
+  var allFilterKeys = ["tools", "notifications", "bridge", "errors"];
+
+  function syncURL() {
+    var params = new URLSearchParams(window.location.search);
+    if (!panel.classList.contains("hidden")) {
+      params.set("log", "open");
+    } else {
+      params.delete("log");
+    }
+    var on = [];
+    for (var i = 0; i < allFilterKeys.length; i++) {
+      if (activeFilters[allFilterKeys[i]]) on.push(allFilterKeys[i]);
+    }
+    if (on.length === allFilterKeys.length) {
+      params.delete("filters");
+    } else {
+      params.set("filters", on.join(","));
+    }
+    if (minLevel === 0) {
+      params.delete("level");
+    } else {
+      params.set("level", levelOrder[minLevel]);
+    }
+    var qs = params.toString();
+    var url = window.location.pathname + (qs ? "?" + qs : "");
+    history.replaceState(null, "", url);
+  }
 
   function setFrameLayout(w) {
     var frame = document.getElementById("app-frame");
@@ -605,12 +635,15 @@ _LOG_PANEL_HTML = """\
     panel.classList.add("hidden");
     openBtn.style.display = "block";
     setFrameLayout("100%");
+    syncURL();
   });
 
   openBtn.addEventListener("click", function() {
     panel.classList.remove("hidden");
     openBtn.style.display = "none";
     setFrameLayout("calc(100% - " + panelWidth + "px)");
+    entries.scrollTop = entries.scrollHeight;
+    syncURL();
   });
 
   resizeHandle.addEventListener("mousedown", function(e) {
@@ -648,6 +681,34 @@ _LOG_PANEL_HTML = """\
   var levelOrder = ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"];
   var minLevel = 0;
 
+  // Restore state from URL params
+  (function restoreURL() {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get("log") === "open") {
+      panel.classList.remove("hidden");
+      openBtn.style.display = "none";
+      setFrameLayout("calc(100% - " + panelWidth + "px)");
+    }
+    var fp = params.get("filters");
+    if (fp !== null) {
+      var on = fp ? fp.split(",") : [];
+      for (var i = 0; i < allFilterKeys.length; i++) {
+        var k = allFilterKeys[i];
+        activeFilters[k] = on.indexOf(k) !== -1;
+        var btn = document.querySelector("[data-filter='" + k + "']");
+        if (btn) btn.classList.toggle("active", activeFilters[k]);
+      }
+    }
+    var lp = params.get("level");
+    if (lp) {
+      var idx = levelOrder.indexOf(lp);
+      if (idx >= 0) {
+        minLevel = idx;
+        document.getElementById("mcp-log-level-select").value = lp;
+      }
+    }
+  })();
+
   document.getElementById("mcp-log-filters").addEventListener("click", function(e) {
     var btn = e.target.closest("[data-filter]");
     if (!btn) return;
@@ -655,11 +716,13 @@ _LOG_PANEL_HTML = """\
     activeFilters[f] = !activeFilters[f];
     btn.classList.toggle("active", activeFilters[f]);
     applyFilters();
+    syncURL();
   });
 
   document.getElementById("mcp-log-level-select").addEventListener("change", function(e) {
     minLevel = levelOrder.indexOf(e.target.value);
     applyFilters();
+    syncURL();
   });
 
   function shouldShow(el) {
@@ -795,6 +858,7 @@ _LOG_PANEL_HTML = """\
   }
 
   var polling = false;
+  var firstPoll = true;
   function poll() {
     if (polling) return;
     polling = true;
@@ -805,14 +869,16 @@ _LOG_PANEL_HTML = """\
         lastId = data[data.length - 1].id;
         totalCount += data.length;
         countEl.textContent = String(totalCount);
-        var atBottom = entries.scrollHeight - entries.scrollTop - entries.clientHeight < 40;
+        var panelVisible = !panel.classList.contains("hidden");
+        var atBottom = !panelVisible || entries.scrollHeight - entries.scrollTop - entries.clientHeight < 40;
         for (var i = 0; i < data.length; i++) {
           var el = renderEntry(data[i]);
           el.classList.add("new");
           if (!shouldShow(el)) el.style.display = "none";
           entries.appendChild(el);
         }
-        if (atBottom) entries.scrollTop = entries.scrollHeight;
+        if (atBottom || (firstPoll && panelVisible)) entries.scrollTop = entries.scrollHeight;
+        firstPoll = false;
       })
       .catch(function() {})
       .finally(function() { polling = false; });
@@ -871,6 +937,32 @@ def _model_from_schema(tool_name: str, input_schema: dict[str, Any]) -> type[Any
     field_definitions: dict[str, Any] = {}
     for prop_name, prop in properties.items():
         json_type = prop.get("type", "string")
+
+        # Handle anyOf / oneOf (union types like str | dict | None)
+        for key in ("anyOf", "oneOf"):
+            if key in prop:
+                non_null = [
+                    t
+                    for t in prop[key]
+                    if isinstance(t, dict) and t.get("type") != "null"
+                ]
+                if non_null:
+                    types = [t.get("type") for t in non_null if "type" in t]
+                    # Prefer object/array (need textarea for JSON editing),
+                    # then string (most versatile text input), then scalars.
+                    for candidate in (
+                        "object",
+                        "array",
+                        "string",
+                        "integer",
+                        "number",
+                        "boolean",
+                    ):
+                        if candidate in types:
+                            json_type = candidate
+                            break
+                break
+
         match json_type:
             case "integer":
                 py_type: type = int
@@ -878,6 +970,9 @@ def _model_from_schema(tool_name: str, input_schema: dict[str, Any]) -> type[Any
                 py_type = float
             case "boolean":
                 py_type = bool
+            case "object" | "array":
+                # Render as a string textarea; api_launch parses JSON later
+                py_type = str
             case _:
                 py_type = str
 
@@ -890,17 +985,27 @@ def _model_from_schema(tool_name: str, input_schema: dict[str, Any]) -> type[Any
             default = prop["default"]
         else:
             default = None
-            py_type = py_type | None  # type: ignore[assignment]
+            py_type = py_type | None  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
 
         extra: dict[str, Any] = {}
         if prop.get("enum"):
             from typing import Literal
 
-            py_type = Literal[tuple(prop["enum"])]  # type: ignore[assignment]
-        if prop.get("format") == "textarea" or (
-            isinstance(prop.get("json_schema_extra"), dict)
-            and prop["json_schema_extra"].get("ui", {}).get("type") == "textarea"
-        ):
+            py_type = Literal[tuple(prop["enum"])]  # type: ignore[assignment]  # ty:ignore[invalid-type-form]
+
+        # Textarea detection:
+        # 1. Explicit format: "textarea" in JSON schema
+        # 2. UI annotation: {"ui": {"type": "textarea"}} (json_schema_extra merged flat)
+        # 3. Object/array types need multiline JSON editing
+        use_textarea = (
+            prop.get("format") == "textarea"
+            or (
+                isinstance(prop.get("ui"), dict)
+                and prop["ui"].get("type") == "textarea"
+            )
+            or json_type in ("object", "array")
+        )
+        if use_textarea:
             extra["json_schema_extra"] = {"ui": {"type": "textarea"}}
 
         field_definitions[prop_name] = (
@@ -929,6 +1034,7 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
             Pages,
             Select,
             SelectOption,
+            Textarea,
         )
         from prefab_ui.components.form import Form
         from prefab_ui.rx import RESULT, Rx
@@ -948,7 +1054,7 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
     def _tool_title(tool: dict[str, Any]) -> str:
         return tool.get("title") or tool["name"]
 
-    with Column(gap=6, css_class="p-8 max-w-lg mx-auto") as view:
+    with Column(gap=6, css_class="p-8 max-w-2xl mx-auto") as view:
         Heading("FastMCP Apps")
 
         if len(tools) > 1:
@@ -974,27 +1080,107 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
                 input_schema: dict[str, Any] = tool.get("inputSchema") or {}
                 model = _model_from_schema(name, input_schema)
 
-                body: dict[str, Any] = {"tool": name}
+                form_body: dict[str, Any] = {"tool": name}
                 for field_name in model.model_fields:
-                    body[field_name] = Rx(field_name)
+                    form_body[field_name] = Rx(field_name)
 
+                json_body: dict[str, Any] = {
+                    "tool": name,
+                    "__json_args__": Rx("__json_args__"),
+                }
+
+                on_error = ShowToast(Rx("$error"), variant="error")  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+
+                input_mode = f"_mode_{name}"
+                _desc_max_lines = 10
                 with Page(name, value=name), Column(gap=4):
                     if desc:
-                        Muted(desc, css_class="pb-2")
-                    with Form(
-                        on_submit=Fetch.post(
-                            "/api/launch",
-                            body=body,
-                            on_success=OpenLink(RESULT),
-                            on_error=ShowToast(Rx("$error"), variant="error"),  # type: ignore[arg-type]
-                        ),
-                    ):
-                        Form.from_model(model, fields_only=True)
-                        Button(
-                            "Launch",
-                            variant="success",
-                            button_type="submit",
-                        )
+                        lines = desc.split("\n")
+                        md_css = "text-sm text-muted-foreground"
+                        if len(lines) <= _desc_max_lines:
+                            Markdown(desc, css_class=md_css)
+                        else:
+                            desc_state = f"_desc_{name}"
+                            short = "\n".join(lines[:_desc_max_lines])
+                            with Pages(name=desc_state, value="short"):
+                                with (
+                                    Page("short", value="short"),
+                                    Column(gap=1, css_class="items-start"),
+                                ):
+                                    Markdown(short, css_class=md_css)
+                                    Button(
+                                        "Show more \u25be",
+                                        variant="link",
+                                        size="xs",
+                                        on_click=SetState(desc_state, "full"),
+                                        css_class="text-muted-foreground p-0 h-auto",
+                                    )
+                                with (
+                                    Page("full", value="full"),
+                                    Column(gap=1, css_class="items-start"),
+                                ):
+                                    Markdown(desc, css_class=md_css)
+                                    Button(
+                                        "Show less \u25b4",
+                                        variant="link",
+                                        size="xs",
+                                        on_click=SetState(desc_state, "short"),
+                                        css_class="text-muted-foreground p-0 h-auto",
+                                    )
+
+                    with Pages(name=input_mode, value="form"):
+                        with Page("form", value="form"), Column(gap=4):
+                            with Column(gap=1, css_class="items-start"):
+                                Heading("Arguments", level=3)
+                                Button(
+                                    "Edit as JSON",
+                                    variant="link",
+                                    size="xs",
+                                    on_click=SetState(input_mode, "json"),
+                                    css_class="text-muted-foreground p-0 h-auto",
+                                )
+                            with Form(
+                                on_submit=Fetch.post(
+                                    "/api/launch",
+                                    body=form_body,
+                                    on_success=OpenLink(RESULT),
+                                    on_error=on_error,
+                                ),
+                            ):
+                                Form.from_model(model, fields_only=True)
+                                Button(
+                                    "Launch",
+                                    variant="success",
+                                    button_type="submit",
+                                )
+                        with Page("json", value="json"), Column(gap=4):
+                            with Column(gap=1, css_class="items-start"):
+                                Heading("Arguments", level=3)
+                                Button(
+                                    "Use form",
+                                    variant="link",
+                                    size="xs",
+                                    on_click=SetState(input_mode, "form"),
+                                    css_class="text-muted-foreground p-0 h-auto",
+                                )
+                            with Form(
+                                on_submit=Fetch.post(
+                                    "/api/launch",
+                                    body=json_body,
+                                    on_success=OpenLink(RESULT),
+                                    on_error=on_error,
+                                ),
+                            ):
+                                Textarea(
+                                    name="__json_args__",
+                                    placeholder='{"key": "value"}',
+                                    rows=8,
+                                )
+                                Button(
+                                    "Launch",
+                                    variant="success",
+                                    button_type="submit",
+                                )
 
         Markdown(
             "Generated by [Prefab](https://prefab.prefect.io) 🎨",
@@ -1090,8 +1276,10 @@ def _fetch_app_bridge_bundle_sync(
 
     # -- Download and patch app-bridge.js -----------------------------------
     npm_url = f"https://registry.npmjs.org/@modelcontextprotocol/ext-apps/-/ext-apps-{version}.tgz"
-    with urllib.request.urlopen(npm_url) as resp:
-        data = resp.read()
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.get(npm_url, follow_redirects=True)
+        resp.raise_for_status()
+        data = resp.content
 
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         member = tar.extractfile("package/dist/src/app-bridge.js")
@@ -1113,8 +1301,10 @@ def _fetch_app_bridge_bundle_sync(
     # version-specific v4.mjs (e.g. /zod@4.3.6/es2022/v4.mjs) which is
     # broken.  We fetch the wrapper to discover the exact version.
     types_url = f"{sdk_base}/types.js"
-    with urllib.request.urlopen(types_url) as resp:
-        types_content = resp.read().decode()
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.get(types_url, follow_redirects=True)
+        resp.raise_for_status()
+        types_content = resp.text
 
     # Extract the zod/v4?target=es2022 path from the types.js redirect
     zod_wrapper_match = re.search(r'import "(/zod@[^"]*v4[^"]*)"', types_content)
@@ -1125,8 +1315,10 @@ def _fetch_app_bridge_bundle_sync(
     zod_wrapper_path = zod_wrapper_match.group(1)  # e.g. /zod@^4.3.5/v4?target=es2022
 
     zod_wrapper_url = f"https://esm.sh{zod_wrapper_path}"
-    with urllib.request.urlopen(zod_wrapper_url) as resp:
-        wrapper_content = resp.read().decode()
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.get(zod_wrapper_url, follow_redirects=True)
+        resp.raise_for_status()
+        wrapper_content = resp.text
 
     # The wrapper does: export * from "/zod@4.3.6/es2022/v4.mjs"
     broken_match = re.search(
@@ -1219,8 +1411,53 @@ def _make_dev_app(
         """Picker form submits here; returns a /launch URL string for OpenLink."""
         data = await request.json()
         tool = data.pop("tool", "")
-        # Remaining keys are tool arguments; pass all including empty optionals
-        tool_args = dict(data)
+
+        # JSON mode: the entire argument dict arrives as a raw JSON string.
+        # Key uses a dunder prefix to avoid collisions with real tool params.
+        raw_json_args = data.pop("__json_args__", None)
+        if raw_json_args is not None:
+            if not raw_json_args.strip():
+                tool_args = {}
+            else:
+                try:
+                    tool_args = json.loads(raw_json_args)
+                except json.JSONDecodeError as exc:
+                    return Response(
+                        content=json.dumps({"error": f"Invalid JSON: {exc}"}),
+                        status_code=400,
+                        media_type="application/json",
+                    )
+                if not isinstance(tool_args, dict):
+                    return Response(
+                        content=json.dumps(
+                            {
+                                "error": "JSON must be an object, not "
+                                + type(tool_args).__name__
+                            }
+                        ),
+                        status_code=400,
+                        media_type="application/json",
+                    )
+        else:
+            # Form mode: inputs are always strings — try to parse values
+            # that look like JSON objects or arrays.
+            tool_args = {}
+            for k, v in data.items():
+                if isinstance(v, str):
+                    stripped = v.strip()
+                    # Skip empty strings — the form sends them for
+                    # unfilled optional fields, but they'll fail
+                    # validation against non-string types.
+                    if not stripped:
+                        continue
+                    if stripped[0] in ("{", "["):
+                        try:
+                            parsed = json.loads(stripped)
+                            if isinstance(parsed, (dict, list)):
+                                v = parsed
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                tool_args[k] = v
         args_json = quote(json.dumps(tool_args))
         url = f"/launch?tool={tool}&args={args_json}"
         return Response(
@@ -1275,7 +1512,9 @@ def _make_dev_app(
             if k.lower() not in ("host", "content-length")
         }
 
-        client = httpx.AsyncClient(timeout=None)
+        # Use a reasonable default timeout to prevent the proxy from hanging
+        # if the backend server is unresponsive.
+        client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=None))
 
         async def _stream_and_cleanup(resp: httpx.Response) -> Any:
             is_sse = "text/event-stream" in resp.headers.get("content-type", "")
@@ -1304,6 +1543,7 @@ def _make_dev_app(
             except (
                 httpx.RemoteProtocolError,
                 httpx.ReadError,
+                httpx.ReadTimeout,
                 httpcore.RemoteProtocolError,
             ):
                 pass  # Connection closed during shutdown — not an error
@@ -1344,7 +1584,7 @@ def _make_dev_app(
                 headers=fwd_headers,
                 media_type=content_type or "application/octet-stream",
             )
-        except httpx.ConnectError:
+        except (httpx.ConnectError, httpx.ConnectTimeout):
             await client.aclose()
             return Response(
                 content=json.dumps({"error": "MCP server not reachable"}).encode(),
@@ -1468,6 +1708,32 @@ async def run_dev_apps(
     async def _body() -> None:
         nonlocal user_proc
 
+        # Check ports before starting anything
+        import socket
+
+        for port, label, flag in [
+            (mcp_port, "MCP server", "--mcp-port"),
+            (dev_port, "dev UI", "--dev-port"),
+        ]:
+            in_use = False
+            for family, addr in (
+                (socket.AF_INET, ("127.0.0.1", port)),
+                (socket.AF_INET6, ("::1", port, 0, 0)),
+            ):
+                try:
+                    with socket.socket(family, socket.SOCK_STREAM) as s:
+                        if s.connect_ex(addr) == 0:
+                            in_use = True
+                            break
+                except OSError:
+                    continue
+            if in_use:
+                logger.error(
+                    f"Port {port} ({label}) is already in use. "
+                    f"Try {flag} to use a different port."
+                )
+                sys.exit(1)
+
         logger.info(f"Starting user server on port {mcp_port}…")
         logger.info("Fetching app-bridge.js from npm…")
 
@@ -1500,7 +1766,7 @@ async def run_dev_apps(
         server = uvicorn.Server(config)
         # Suppress uvicorn's own signal handlers — they use signal.signal() which
         # conflicts with asyncio and causes hangs.  We cancel the task instead.
-        server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
+        server.install_signal_handlers = lambda: None  # type: ignore[method-assign]  # ty:ignore[unresolved-attribute]
 
         async def _open_browser() -> None:
             await asyncio.sleep(0.8)

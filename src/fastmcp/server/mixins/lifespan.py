@@ -90,14 +90,12 @@ class LifespanMixin:
                 name=settings.docket.name,
                 url=settings.docket.url,
             ) as docket:
-                # Store on server instance for cross-task access (FastMCPTransport)
                 self._docket = docket
 
                 # Register task-enabled components with Docket
                 for component in task_components:
                     component.register_with_docket(docket)
 
-                # Set Docket in ContextVar so CurrentDocket can access it
                 docket_token = _current_docket.set(docket)
                 try:
                     # Build worker kwargs from settings
@@ -112,9 +110,7 @@ class LifespanMixin:
 
                     # Create and start Worker
                     async with Worker(docket, **worker_kwargs) as worker:
-                        # Store on server instance for cross-context access
                         self._worker = worker
-                        # Set Worker in ContextVar so CurrentWorker can access it
                         worker_token = _current_worker.set(worker)
                         try:
                             worker_task = asyncio.create_task(worker.run_forever())
@@ -128,9 +124,7 @@ class LifespanMixin:
                             _current_worker.reset(worker_token)
                             self._worker = None
                 finally:
-                    # Reset ContextVar
                     _current_docket.reset(docket_token)
-                    # Clear instance attribute
                     self._docket = None
         finally:
             # Reset server ContextVar

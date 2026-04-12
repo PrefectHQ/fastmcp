@@ -115,7 +115,7 @@ class TestPromptDecorator:
         """@prompt should raise if both positional and keyword name are given."""
         with pytest.raises(TypeError, match="Cannot specify.*both.*argument.*keyword"):
 
-            @prompt("name1", name="name2")  # type: ignore[call-overload]
+            @prompt("name1", name="name2")  # type: ignore[call-overload]  # ty:ignore[invalid-argument-type]
             def my_prompt() -> str:
                 return "hello"
 

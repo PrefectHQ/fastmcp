@@ -1,10 +1,16 @@
-// Load Unify intent tag on authentication pages only
+// Load Unify intent tag on selected pages
 (function () {
   if (typeof window === "undefined") return;
 
-  function isAuthPage() {
+  function isTaggedPage() {
     var path = window.location.pathname;
-    return path.includes("/servers/auth/") || path.includes("/clients/auth/");
+    return (
+      path.includes("/servers/auth/") ||
+      path.includes("/clients/auth/") ||
+      path.includes("/deployment/running-server") ||
+      path.includes("/deployment/http") ||
+      path.includes("/deployment/prefect-horizon")
+    );
   }
 
   function loadUnify() {
@@ -45,9 +51,9 @@
   }
 
   function update() {
-    if (isAuthPage() && !document.getElementById("unifytag")) {
+    if (isTaggedPage() && !document.getElementById("unifytag")) {
       loadUnify();
-    } else if (!isAuthPage() && document.getElementById("unifytag")) {
+    } else if (!isTaggedPage() && document.getElementById("unifytag")) {
       document.getElementById("unifytag").remove();
     }
   }

@@ -63,7 +63,7 @@ def _image_content_to_anthropic_block(content: ImageContent) -> ImageBlockParam:
         type="image",
         source=Base64ImageSourceParam(
             type="base64",
-            media_type=content.mimeType,  # type: ignore[arg-type]
+            media_type=content.mimeType,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             data=content.data,
         ),
     )
@@ -234,6 +234,10 @@ class AnthropicSamplingHandler:
                                 content=result_content,
                                 is_error=item.isError if item.isError else False,
                             )
+                        )
+                    else:
+                        raise ValueError(
+                            f"Unsupported content type for Anthropic: {type(item).__name__}"
                         )
 
                 if content_blocks:

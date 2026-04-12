@@ -20,7 +20,7 @@ class TestOAuthProxyAuthorization:
             client_id="test-client",
             client_secret="test-secret",
             redirect_uris=[AnyUrl("http://localhost:54321/callback")],
-            jwt_signing_key="test-secret",  # type: ignore[call-arg]  # Optional field in MCP SDK
+            jwt_signing_key="test-secret",  # type: ignore[call-arg]  # Optional field in MCP SDK  # ty:ignore[unknown-argument]
         )
 
         # Register client first (required for consent flow)

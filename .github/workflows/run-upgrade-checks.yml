@@ -38,7 +38,7 @@ jobs:
           resolution: upgrade
 
       - name: Run prek
-        uses: j178/prek-action@v1
+        uses: j178/prek-action@v2
         env:
           SKIP: no-commit-to-branch
 

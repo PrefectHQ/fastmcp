@@ -217,15 +217,12 @@ class MCPOperationsMixin:
             # fn_key is set by call_tool() after finding the tool.
             version_str: str | None = None
             task_meta: TaskMeta | None = None
-            app_name: str | None = None
             try:
                 ctx = server._mcp_server.request_context
-                # Extract version and app name from _meta.fastmcp
+                # Extract version from _meta.fastmcp
                 if ctx.meta:
                     meta_dict = ctx.meta.model_dump(exclude_none=True)
-                    fastmcp_meta = meta_dict.get("fastmcp", {})
-                    version_str = fastmcp_meta.get("version")
-                    app_name = fastmcp_meta.get("app")
+                    version_str = meta_dict.get("fastmcp", {}).get("version")
                 # Extract SEP-1686 task metadata
                 if ctx.experimental.is_task:
                     mcp_task_meta = ctx.experimental.task_metadata
@@ -236,7 +233,7 @@ class MCPOperationsMixin:
 
             version = VersionSpec(eq=version_str) if version_str else None
             result = await server.call_tool(
-                key, arguments, version=version, task_meta=task_meta, app_name=app_name
+                key, arguments, version=version, task_meta=task_meta
             )
 
             if isinstance(result, mcp.types.CreateTaskResult):

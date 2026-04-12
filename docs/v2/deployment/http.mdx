@@ -650,17 +650,17 @@ FASTMCP_STATELESS_HTTP=true uvicorn app:app --host 0.0.0.0 --port 8000 --workers
 
 Production deployments should never hardcode sensitive information like API keys or authentication tokens. Instead, use environment variables to configure your server at runtime. This keeps your code secure and makes it easy to deploy the same code to different environments with different configurations.
 
-Here's an example using bearer token authentication (though OAuth is recommended for production):
+Here's an example using static token authentication for development (OAuth is recommended for production):
 
 ```python
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth import BearerTokenAuth
+from fastmcp.server.auth import StaticTokenVerifier
 
 # Read configuration from environment
 auth_token = os.environ.get("MCP_AUTH_TOKEN")
 if auth_token:
-    auth = BearerTokenAuth(token=auth_token)
+    auth = StaticTokenVerifier(tokens={auth_token: {"sub": "admin", "client_id": "cli"}})
     mcp = FastMCP("Production Server", auth=auth)
 else:
     mcp = FastMCP("Production Server")

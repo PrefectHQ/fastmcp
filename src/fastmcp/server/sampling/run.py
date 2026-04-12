@@ -46,8 +46,15 @@ if TYPE_CHECKING:
 
 ResultT = TypeVar("ResultT")
 
+# Maximum number of consecutive final_response validation retries (not
+# counting the initial attempt) before aborting.  Total attempts = N + 1.
+_MAX_VALIDATION_RETRIES = 3
+
 # Simplified tool choice type - just the mode string instead of the full MCP object
 ToolChoiceOption = Literal["auto", "required", "none"]
+
+# How many times we retry when the LLM returns text instead of calling final_response
+_MAX_TEXT_RESPONSE_RETRIES = 3
 
 
 @dataclass
@@ -611,6 +618,9 @@ async def sample_impl(
     # Convert messages for the loop
     current_messages: str | Sequence[str | SamplingMessage] = messages
 
+    text_response_retries = 0
+    consecutive_validation_failures = 0
+
     for _iteration in range(max_iterations):
         step = await sample_step_impl(
             context,
@@ -626,9 +636,11 @@ async def sample_impl(
         )
 
         # Check for final_response tool call for structured output
+        had_final_response = False
         if result_type is not None and result_type is not str and step.is_tool_use:
             for tool_call in step.tool_calls:
                 if tool_call.name == "final_response":
+                    had_final_response = True
                     # Validate and return the structured result
                     type_adapter = get_cached_typeadapter(result_type)
 
@@ -655,6 +667,13 @@ async def sample_impl(
                             history=step.history,
                         )
                     except ValidationError as e:
+                        consecutive_validation_failures += 1
+                        if consecutive_validation_failures > _MAX_VALIDATION_RETRIES:
+                            raise RuntimeError(
+                                f"Structured output validation failed "
+                                f"{consecutive_validation_failures} consecutive "
+                                f"times for type {result_type.__name__}: {e}"
+                            ) from e
                         # Validation failed - add error as tool result
                         step.history.append(
                             SamplingMessage(
@@ -678,15 +697,36 @@ async def sample_impl(
                             )
                         )
 
+        # The LLM called tools but not final_response — reset validation counter
+        if not had_final_response:
+            consecutive_validation_failures = 0
+
         # If not a tool use response, we're done
         if not step.is_tool_use:
             # For structured output, the LLM must use the final_response tool
             if result_type is not None and result_type is not str:
-                raise RuntimeError(
-                    f"Expected structured output of type {result_type.__name__}, "
-                    "but the LLM returned a text response instead of calling "
-                    "the final_response tool."
+                text_response_retries += 1
+                if text_response_retries > _MAX_TEXT_RESPONSE_RETRIES:
+                    raise RuntimeError(
+                        f"Expected structured output of type {result_type.__name__}, "
+                        "but the LLM returned a text response instead of calling "
+                        f"the final_response tool ({text_response_retries} attempts)."
+                    )
+                # Nudge the LLM to use the tool
+                step.history.append(
+                    SamplingMessage(
+                        role="user",
+                        content=TextContent(
+                            type="text",
+                            text=(
+                                "You must call the `final_response` tool to provide "
+                                "your answer. Do not respond with text — use the tool."
+                            ),
+                        ),
+                    )
                 )
+                current_messages = step.history
+                continue
             return SamplingResult(
                 text=step.text,
                 result=cast(ResultT, step.text if step.text else ""),

@@ -37,7 +37,7 @@ class TestParseModelPreferences:
 
     def test_parse_model_preferences_invalid_type(self, context):
         with pytest.raises(ValueError):
-            _parse_model_preferences(model_preferences=123)  # pyright: ignore[reportArgumentType] # type: ignore[invalid-argument-type]
+            _parse_model_preferences(model_preferences=123)  # pyright: ignore[reportArgumentType] # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type]
 
 
 class TestSessionId:

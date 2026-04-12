@@ -22,7 +22,7 @@ class TestResourceDecorator:
         """@resource should require a URI argument."""
         with pytest.raises(TypeError, match="requires a URI|was used incorrectly"):
 
-            @resource  # type: ignore[arg-type]
+            @resource  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             def get_config() -> str:
                 return "{}"
 

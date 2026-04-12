@@ -18,6 +18,7 @@ from typing import Any
 
 import httpx
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.providers.openapi import (
     ComponentFn,
     OpenAPIProvider,
@@ -90,7 +91,7 @@ class FastMCPOpenAPI(FastMCP):
             "FastMCPOpenAPI is deprecated. Use FastMCP with OpenAPIProvider instead:\n"
             "    provider = OpenAPIProvider(openapi_spec=spec, client=client)\n"
             "    mcp = FastMCP('name', providers=[provider])",
-            DeprecationWarning,
+            FastMCPDeprecationWarning,
             stacklevel=2,
         )
 

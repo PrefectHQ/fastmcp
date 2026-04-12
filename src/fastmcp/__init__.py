@@ -10,7 +10,7 @@ from fastmcp.utilities.logging import configure_logging as _configure_logging
 
 if TYPE_CHECKING:
     from fastmcp.client import Client as Client
-    from fastmcp.server.app import FastMCPApp as FastMCPApp
+    from fastmcp.apps.app import FastMCPApp as FastMCPApp
 
 settings = Settings()
 if settings.log_enabled:
@@ -19,16 +19,15 @@ if settings.log_enabled:
         enable_rich_tracebacks=settings.enable_rich_tracebacks,
     )
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.server import FastMCP
 from fastmcp.server.context import Context
 import fastmcp.server
 
 __version__ = _version("fastmcp")
 
-
-# ensure deprecation warnings are displayed by default
 if settings.deprecation_warnings:
-    warnings.simplefilter("default", DeprecationWarning)
+    warnings.simplefilter("default", FastMCPDeprecationWarning)
 
 
 # --- Lazy imports for performance (see #3292) ---
@@ -42,7 +41,7 @@ def __getattr__(name: str) -> object:
 
         return Client
     if name == "FastMCPApp":
-        from fastmcp.server.app import FastMCPApp
+        from fastmcp.apps.app import FastMCPApp
 
         return FastMCPApp
     if name == "client":
@@ -55,5 +54,6 @@ __all__ = [
     "Context",
     "FastMCP",
     "FastMCPApp",
+    "FastMCPDeprecationWarning",
     "settings",
 ]

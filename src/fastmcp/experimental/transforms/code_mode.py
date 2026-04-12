@@ -1,7 +1,10 @@
 import importlib
 import json
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Annotated, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
+
+if TYPE_CHECKING:
+    from pydantic_monty import ResourceLimits
 
 from mcp.types import TextContent
 from pydantic import Field
@@ -102,7 +105,7 @@ class MontySandboxProvider:
     def __init__(
         self,
         *,
-        limits: dict[str, Any] | None = None,
+        limits: "ResourceLimits | None" = None,
     ) -> None:
         self.limits = limits
 
@@ -127,16 +130,12 @@ class MontySandboxProvider:
             for key, value in (external_functions or {}).items()
         }
 
-        monty = pydantic_monty.Monty(
-            code,
-            inputs=list(inputs.keys()),
+        monty = pydantic_monty.Monty(code, inputs=list(inputs))
+        return await monty.run_async(
+            inputs=inputs or None,
+            external_functions=async_functions or None,
+            limits=self.limits,
         )
-        run_kwargs: dict[str, Any] = {"external_functions": async_functions}
-        if inputs:
-            run_kwargs["inputs"] = inputs
-        if self.limits is not None:
-            run_kwargs["limits"] = self.limits
-        return await pydantic_monty.run_monty_async(monty, **run_kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +227,7 @@ class Search:
                 int | None,
                 "Maximum number of results to return",
             ] = default_limit,
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str:
             """Search for available tools by query.
 
@@ -291,7 +290,7 @@ class GetSchemas:
                 ToolDetailLevel,
                 "'brief' for names and descriptions, 'detailed' for parameter schemas as markdown, 'full' for complete JSON schemas",
             ] = default_detail,
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str:
             """Get parameter schemas for specific tools.
 
@@ -349,7 +348,7 @@ class GetTags:
                 Literal["brief", "full"],
                 "Level of detail: 'brief' for tag names and counts, 'full' for tools listed under each tag",
             ] = default_detail,
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str:
             """List available tool tags.
 
@@ -414,7 +413,7 @@ class ListTools:
                 ToolDetailLevel,
                 "'brief' for names and descriptions, 'detailed' for parameter schemas as markdown, 'full' for complete JSON schemas",
             ] = default_detail,
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str:
             """List all available tools.
 
@@ -537,7 +536,7 @@ class CodeMode(CatalogTransform):
                     )
                 ),
             ],
-            ctx: Context = None,  # type: ignore[assignment]
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> Any:
             """Execute tool calls using Python code."""
 

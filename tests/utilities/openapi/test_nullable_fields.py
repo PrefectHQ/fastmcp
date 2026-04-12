@@ -1,8 +1,12 @@
 """Tests for nullable field handling in OpenAPI schemas."""
 
+import httpx
 import pytest
 from jsonschema import ValidationError, validate
 
+from fastmcp import FastMCP
+from fastmcp.client import Client
+from fastmcp.server.providers.openapi import OpenAPIProvider
 from fastmcp.utilities.openapi.json_schema_converter import (
     convert_openapi_schema_to_json_schema,
 )
@@ -350,6 +354,70 @@ class TestHandleNullableFields:
         result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
         assert result == expected
 
+    def test_nullable_in_definitions(self):
+        """Test nullable field inside $defs."""
+        input_schema = {
+            "type": "object",
+            "properties": {"user": {"$ref": "#/$defs/User"}},
+            "$defs": {
+                "User": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "bio": {"type": "string", "nullable": True},
+                    },
+                }
+            },
+        }
+        expected = {
+            "type": "object",
+            "properties": {"user": {"$ref": "#/$defs/User"}},
+            "$defs": {
+                "User": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "bio": {"type": ["string", "null"]},
+                    },
+                }
+            },
+        }
+        result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
+        assert result == expected
+
+    def test_nullable_in_nested_properties(self):
+        """Test nullable field in deeply nested properties."""
+        input_schema = {
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "object",
+                    "properties": {
+                        "b": {
+                            "type": "object",
+                            "properties": {"c": {"type": "string", "nullable": True}},
+                        }
+                    },
+                }
+            },
+        }
+        expected = {
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "object",
+                    "properties": {
+                        "b": {
+                            "type": "object",
+                            "properties": {"c": {"type": ["string", "null"]}},
+                        }
+                    },
+                }
+            },
+        }
+        result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
+        assert result == expected
+
 
 class TestNullableFieldValidation:
     """Test that converted schemas validate correctly with jsonschema."""
@@ -383,3 +451,108 @@ class TestNullableFieldValidation:
         # Invalid values should fail
         with pytest.raises(ValidationError):
             validate(instance="INVALID", schema=json_schema)
+
+
+class TestNullableInputSchemaIntegration:
+    """Test that nullable fields are converted in tool input schemas end-to-end.
+
+    These tests exercise the full pipeline: OpenAPI spec -> OpenAPIProvider ->
+    tool.inputSchema, verifying that `nullable: true` doesn't leak through.
+    """
+
+    async def test_nullable_query_param_converted_in_tool_input_schema(self):
+        """Nullable query parameter should produce type union in tool input schema."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/search": {
+                    "get": {
+                        "operationId": "search",
+                        "parameters": [
+                            {
+                                "name": "query",
+                                "in": "query",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "category",
+                                "in": "query",
+                                "schema": {"type": "string", "nullable": True},
+                            },
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+            provider = OpenAPIProvider(openapi_spec=spec, client=client)
+            mcp = FastMCP("test")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
+                tools = await mcp_client.list_tools()
+                assert len(tools) == 1
+                schema = tools[0].inputSchema
+                category_prop = schema["properties"]["category"]
+                assert "nullable" not in category_prop
+                assert category_prop["type"] == ["string", "null"]
+
+    async def test_nullable_in_request_body_defs_converted(self):
+        """Nullable field inside $defs referenced by request body should be converted."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/users": {
+                    "post": {
+                        "operationId": "create_user",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/CreateUser"
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "CreateUser": {
+                        "type": "object",
+                        "required": ["name"],
+                        "properties": {
+                            "name": {"type": "string"},
+                            "bio": {"type": "string", "nullable": True},
+                        },
+                    }
+                }
+            },
+        }
+        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+            provider = OpenAPIProvider(openapi_spec=spec, client=client)
+            mcp = FastMCP("test")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
+                tools = await mcp_client.list_tools()
+                assert len(tools) == 1
+                schema = tools[0].inputSchema
+
+                # Find the bio property — it may be inline or in $defs
+                if "$defs" in schema:
+                    # Resolve through $defs
+                    user_schema = next(iter(schema["$defs"].values()))
+                    bio_prop = user_schema["properties"]["bio"]
+                else:
+                    bio_prop = schema["properties"]["bio"]
+
+                assert "nullable" not in bio_prop
+                assert bio_prop["type"] == ["string", "null"]

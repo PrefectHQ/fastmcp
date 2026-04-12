@@ -2,11 +2,13 @@
 
 import warnings
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
+
 # Deprecated in 2.14 when OpenAPI support was promoted out of experimental
 warnings.warn(
     "Importing from fastmcp.experimental.server.openapi is deprecated. "
     "Import from fastmcp.server.providers.openapi instead.",
-    DeprecationWarning,
+    FastMCPDeprecationWarning,
     stacklevel=2,
 )
 

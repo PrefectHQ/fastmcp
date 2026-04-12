@@ -248,6 +248,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         valid_scopes: list[str] | None = None,
         # PKCE configuration
         forward_pkce: bool = True,
+        # Resource indicator (RFC 8707)
+        forward_resource: bool = True,
         # Token endpoint authentication
         token_endpoint_auth_method: str | None = None,
         # Extra parameters to forward to authorization endpoint
@@ -358,7 +360,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             else None
         )
         self._upstream_revocation_endpoint: str | None = upstream_revocation_endpoint
-        self._default_scope_str: str = " ".join(self.required_scopes or [])
+        self._default_scope_str: str = " ".join(
+            valid_scopes or self.required_scopes or []
+        )
 
         # Store redirect configuration
         if not redirect_path:
@@ -374,7 +378,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         ):
             logger.warning(
                 "allowed_client_redirect_uris is empty list; no redirect URIs will be accepted. "
-                + "This will block all OAuth clients."
+                "This will block all OAuth clients."
             )
         self._allowed_client_redirect_uris: list[str] | None = (
             allowed_client_redirect_uris
@@ -382,6 +386,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         # PKCE configuration
         self._forward_pkce: bool = forward_pkce
+        # Resource indicator (RFC 8707)
+        self._forward_resource: bool = forward_resource
 
         # Token endpoint authentication
         self._token_endpoint_auth_method: str | None = token_endpoint_auth_method
@@ -398,7 +404,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         elif not require_authorization_consent:
             logger.warning(
                 "Authorization consent screen disabled - only use for local development or testing. "
-                + "In production, this screen protects against confused deputy attacks."
+                "In production, this screen protects against confused deputy attacks."
             )
 
         # Extra parameters for authorization and token endpoints
@@ -425,7 +431,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if len(jwt_signing_key) < 12:
                 logger.warning(
                     "jwt_signing_key is less than 12 characters; it is recommended to use a longer. "
-                    + "string for the key derivation."
+                    "string for the key derivation."
                 )
             jwt_signing_key = derive_jwt_key(
                 low_entropy_material=jwt_signing_key,
@@ -658,7 +664,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         client = await self._client_store.get(key=client_id)
 
         if client is not None:
-            if client.allowed_redirect_uri_patterns is None:
+            if self._allowed_client_redirect_uris is not None:
                 client.allowed_redirect_uri_patterns = (
                     self._allowed_client_redirect_uris
                 )
@@ -794,7 +800,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     self._resource_url,
                 )
                 raise AuthorizeError(
-                    error="invalid_target",  # type: ignore[arg-type]
+                    error="invalid_target",  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                     error_description="Resource does not match this server",
                 )
 
@@ -814,7 +820,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Store transaction data for IdP callback processing
         if client.client_id is None:
             raise AuthorizeError(
-                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type
+                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type  # ty:ignore[invalid-argument-type]
                 error_description="Client ID is required",
             )
         transaction = OAuthTransaction(
@@ -897,7 +903,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Create authorization code object with PKCE challenge
         if client.client_id is None:
             raise AuthorizeError(
-                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type
+                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type  # ty:ignore[invalid-argument-type]
                 error_description="Client ID is required",
             )
         return AuthorizationCode(
@@ -1549,7 +1555,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         return upstream_token_set
 
-    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
+    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """Validate FastMCP JWT by swapping for upstream token.
 
         This implements the token swap pattern:
@@ -1567,6 +1573,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             # 1. Verify FastMCP JWT signature and claims
             payload = self.jwt_issuer.verify_token(token)
             jti = payload["jti"]
+            upstream_claims = payload.get("upstream_claims")
 
             # 2. Look up upstream token via JTI mapping
             jti_mapping = await self._jti_mapping_store.get(key=jti)
@@ -1688,6 +1695,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "expires_at": int(upstream_token_set.expires_at),
                     }
                 )
+
+            # Propagate upstream claims from the verified FastMCP JWT into the
+            # final AccessToken object. This allows subclasses to access custom
+            # identity data extracted during the initial authorization flow.
+            # We perform a model copy to avoid mutating a potentially cached
+            # reference shared across concurrent requests.
+            if validated and upstream_claims:
+                validated = validated.model_copy(deep=True)
+                if validated.claims is None:
+                    validated.claims = {}
+                validated.claims["upstream_claims"] = upstream_claims
 
             logger.debug(
                 "Token swap successful for JTI=%s (upstream validated)", jti[:8]

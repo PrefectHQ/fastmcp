@@ -27,6 +27,7 @@ import mcp.types
 from mcp.types import AnyFunction, ToolAnnotations
 
 import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import Tool
@@ -72,60 +73,31 @@ def _has_prefab_return_type(tool: Tool) -> bool:
     return _is_prefab_type(rt)
 
 
-def _ensure_prefab_renderer(provider: LocalProvider) -> None:
-    """Lazily register the shared prefab renderer as a ui:// resource."""
-    from prefab_ui.renderer import get_renderer_csp, get_renderer_html
+def _stamp_prefab_marker(tool: Tool) -> None:
+    """Mark a tool as needing a Prefab renderer resource.
 
-    from fastmcp.resources.types import TextResource
-    from fastmcp.server.apps import (
-        UI_MIME_TYPE,
-        AppConfig,
-        ResourceCSP,
-        app_config_to_meta_dict,
-    )
+    Sets ``meta["ui"]["resourceUri"]`` to a placeholder URI. The server
+    recognizes the placeholder at list_tools / list_resources / read_resource
+    time and synthesizes a per-tool resource on the fly with a hashed URI
+    derived from the tool's mount-point address. Nothing is stored — the
+    renderer HTML and CSP are generated on demand from the tool's own meta.
+    """
+    from fastmcp.apps.config import AppConfig, app_config_to_meta_dict
 
-    renderer_key = f"resource:{PREFAB_RENDERER_URI}@"
-    if renderer_key in provider._components:
-        return
-
-    csp = get_renderer_csp()
-    resource_app = AppConfig(
-        csp=ResourceCSP(
-            resource_domains=csp.get("resource_domains"),
-            connect_domains=csp.get("connect_domains"),
-        )
-    )
-    resource = TextResource(
-        uri=PREFAB_RENDERER_URI,  # type: ignore[arg-type]  # AnyUrl accepts ui:// scheme at runtime
-        name="Prefab Renderer",
-        text=get_renderer_html(),
-        mime_type=UI_MIME_TYPE,
-        meta={"ui": app_config_to_meta_dict(resource_app)},
-    )
-    provider._add_component(resource)
-
-
-def _expand_prefab_ui_meta(tool: Tool) -> None:
-    """Expand meta["ui"] = True into the full AppConfig dict for a prefab tool."""
-    from prefab_ui.renderer import get_renderer_csp
-
-    from fastmcp.server.apps import AppConfig, ResourceCSP, app_config_to_meta_dict
-
-    csp = get_renderer_csp()
-    app_config = AppConfig(
-        resource_uri=PREFAB_RENDERER_URI,
-        csp=ResourceCSP(
-            resource_domains=csp.get("resource_domains"),
-            connect_domains=csp.get("connect_domains"),
-        ),
-    )
+    app_config = AppConfig(resource_uri=PREFAB_RENDERER_URI)
     meta = dict(tool.meta) if tool.meta else {}
     meta["ui"] = app_config_to_meta_dict(app_config)
     tool.meta = meta
 
 
 def _maybe_apply_prefab_ui(provider: LocalProvider, tool: Tool) -> None:
-    """Auto-wire prefab UI metadata and renderer resource if needed."""
+    """Mark a tool as a Prefab tool if its config or return type implies it.
+
+    Per-tool renderer resources are synthesized lazily at list/read time;
+    here we only normalize the tool's meta so the synthesis pass can spot
+    it. ``app=True``, return-type inference, and ``PrefabAppConfig`` all
+    funnel through the same placeholder marker.
+    """
     if not _HAS_PREFAB:
         return
 
@@ -133,14 +105,14 @@ def _maybe_apply_prefab_ui(provider: LocalProvider, tool: Tool) -> None:
     ui = meta.get("ui")
 
     if ui is True:
-        # Explicit app=True: expand to full AppConfig and register renderer
-        _ensure_prefab_renderer(provider)
-        _expand_prefab_ui_meta(tool)
+        # Explicit app=True: stamp the placeholder so the synthesizer finds it.
+        _stamp_prefab_marker(tool)
     elif ui is None and _has_prefab_return_type(tool):
-        # Inference: return type is a prefab type, auto-wire
-        _ensure_prefab_renderer(provider)
-        _expand_prefab_ui_meta(tool)
-    # If ui is a dict, it's already manually configured — leave it alone
+        # Inference: return type is a prefab type, stamp the placeholder.
+        _stamp_prefab_marker(tool)
+    # Otherwise the tool either has no ui meta at all (not a prefab tool)
+    # or it already has a fully-formed dict from FastMCP.tool(app=...) — the
+    # synthesizer picks up both flavors by looking for the placeholder URI.
 
 
 class ToolDecoratorMixin:
@@ -169,7 +141,7 @@ class ToolDecoratorMixin:
                 # Merge ToolMeta.app into the meta dict
                 tool_meta = fmeta.meta
                 if fmeta.app is not None:
-                    from fastmcp.server.apps import app_config_to_meta_dict
+                    from fastmcp.apps.config import app_config_to_meta_dict
 
                     tool_meta = dict(tool_meta) if tool_meta else {}
                     if fmeta.app is True:
@@ -319,7 +291,7 @@ class ToolDecoratorMixin:
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         if isinstance(annotations, dict):
@@ -400,7 +372,7 @@ class ToolDecoratorMixin:
                     enabled=enabled,
                 )
                 target = fn.__func__ if hasattr(fn, "__func__") else fn
-                target.__fastmcp__ = metadata  # type: ignore[attr-defined]
+                target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
                 tool_obj = self.add_tool(fn)
                 return fn
 

@@ -284,7 +284,7 @@ class InMemoryOAuthProvider(OAuthProvider):
             scope=" ".join(scopes),
         )
 
-    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
+    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         token_obj = self.access_tokens.get(token)
         if token_obj:
             if token_obj.expires_at is not None and token_obj.expires_at < time.time():
@@ -295,7 +295,7 @@ class InMemoryOAuthProvider(OAuthProvider):
             return token_obj
         return None
 
-    async def verify_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
+    async def verify_token(self, token: str) -> AccessToken | None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """
         Verify a bearer token and return access info if valid.
 

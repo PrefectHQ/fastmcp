@@ -16,8 +16,13 @@ from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.tools.base import Tool, ToolResult, _convert_to_content
 from fastmcp.tools.function_parsing import ParsedFunction
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.components import _convert_set_default_none
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -309,7 +314,12 @@ class TransformedTool(Tool):
 
         token = _current_tool.set(self)
         try:
-            result = await self.fn(**arguments)
+            if is_coroutine_function(self.fn):
+                result = await self.fn(**arguments)
+            else:
+                result = await call_sync_fn_in_threadpool(self.fn, **arguments)
+                if inspect.isawaitable(result):
+                    result = await result
 
             # If transform function returns ToolResult, respect our output_schema setting
             if isinstance(result, ToolResult):
@@ -384,17 +394,14 @@ class TransformedTool(Tool):
             version: New version for the tool. Defaults to parent tool's version.
             title: New title for the tool. Defaults to parent tool's title.
             transform_args: Optional transformations for parent tool arguments.
-                Only specified arguments are transformed, others pass through unchanged:
-                - Simple rename (str)
-                - Complex transformation (rename/description/default/drop) (ArgTransform)
-                - Drop the argument (None)
+                Only specified arguments are transformed, others pass through unchanged.
+                Use ArgTransform for rename, description, default, or hide operations.
             description: New description. Defaults to parent's description.
             tags: New tags. Defaults to parent's tags.
             annotations: New annotations. Defaults to parent's annotations.
             output_schema: Control output schema for structured outputs:
                 - None (default): Inherit from transform_fn if available, then parent tool
                 - dict: Use custom output schema
-                - False: Disable output schema and structured outputs
             serializer: Deprecated. Return ToolResult from your tools for full control over serialization.
             meta: Control meta information:
                 - NotSet (default): Inherit from parent tool
@@ -459,7 +466,7 @@ class TransformedTool(Tool):
                 "The `serializer` parameter is deprecated. "
                 "Return ToolResult from your tools for full control over serialization. "
                 "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         transform_args = transform_args or {}
@@ -628,9 +635,9 @@ class TransformedTool(Tool):
         """
 
         # Build transformed schema and mapping
-        # Deep copy to prevent compress_schema from mutating parent tool's $defs
+        # Deep copy to prevent mutations from corrupting the parent tool's schema
         parent_defs = deepcopy(parent_tool.parameters.get("$defs", {}))
-        parent_props = parent_tool.parameters.get("properties", {}).copy()
+        parent_props = deepcopy(parent_tool.parameters.get("properties", {}))
         parent_required = set(parent_tool.parameters.get("required", []))
 
         new_props = {}

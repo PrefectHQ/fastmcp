@@ -104,6 +104,7 @@ class FastMCPProviderTool(Tool):
             tags=tool.tags,
             annotations=tool.annotations,
             task_config=tool.task_config,
+            execution=tool.execution,
             meta=tool.get_meta(),
             title=tool.title,
             icons=tool.icons,
@@ -141,7 +142,10 @@ class FastMCPProviderTool(Tool):
             self._original_name or "", "FastMCPProvider", self._original_name or ""
         ):
             return await self._server.call_tool(
-                self._original_name, arguments, version=version, task_meta=task_meta
+                self._original_name,
+                arguments,
+                version=version,
+                task_meta=task_meta,
             )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
@@ -561,6 +565,26 @@ class FastMCPProvider(Provider):
         if raw_tool is None:
             return None
         return FastMCPProviderTool.wrap(self.server, raw_tool)
+
+    async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
+        """Delegate to nested server's get_app_tool, wrapping for middleware."""
+        raw_tool = await self.server.get_app_tool(app_name, tool_name)
+        if raw_tool is None:
+            return None
+        wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
+        from fastmcp.server.providers.addressing import hashed_backend_name
+
+        wrapped._original_name = hashed_backend_name(app_name, tool_name)
+        return wrapped
+
+    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Delegate to nested server's get_tool_by_hash, wrapping for middleware."""
+        raw_tool = await self.server.get_tool_by_hash(tool_hash, tool_name)
+        if raw_tool is None:
+            return None
+        wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
+        wrapped._original_name = f"{tool_hash}_{tool_name}"
+        return wrapped
 
     # -------------------------------------------------------------------------
     # Resource methods

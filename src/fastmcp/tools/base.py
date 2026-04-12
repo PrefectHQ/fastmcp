@@ -26,6 +26,7 @@ from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.utilities.components import FastMCPComponent
@@ -129,7 +130,7 @@ class ToolResult(BaseModel):
             return CallToolResult(
                 structuredContent=self.structured_content,
                 content=self.content,
-                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
             )
         if self.structured_content is None:
             return self.content
@@ -190,7 +191,7 @@ class Tool(FastMCPComponent):
         elif self.annotations and self.annotations.title:
             title = self.annotations.title
 
-        return MCPTool(
+        mcp_tool = MCPTool(
             name=overrides.get("name", self.name),
             title=overrides.get("title", title),
             description=overrides.get("description", self.description),
@@ -201,8 +202,17 @@ class Tool(FastMCPComponent):
             execution=overrides.get("execution", self.execution),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta()
-            ),
+            ),  # ty:ignore[unknown-argument]
         )
+
+        if (
+            self.task_config.supports_tasks()
+            and "execution" not in overrides
+            and not self.execution
+        ):
+            mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
+
+        return mcp_tool
 
     @classmethod
     def from_function(
@@ -280,6 +290,10 @@ class Tool(FastMCPComponent):
 
         content = _convert_to_content(raw_value, serializer=self.serializer)
 
+        # Bytes can't be represented as structured JSON content
+        if isinstance(raw_value, bytes):
+            return ToolResult(content=content)
+
         # Skip structured content for ContentBlock types only if no output_schema
         # (if output_schema exists, MCP SDK requires structured_content)
         if self.output_schema is None and (
@@ -293,7 +307,7 @@ class Tool(FastMCPComponent):
 
         try:
             structured = pydantic_core.to_jsonable_python(raw_value)
-        except pydantic_core.PydanticSerializationError:
+        except (pydantic_core.PydanticSerializationError, UnicodeDecodeError):
             return ToolResult(content=content)
 
         if self.output_schema is None:
@@ -482,33 +496,39 @@ def _convert_to_single_content_block(
     if isinstance(item, str):
         return TextContent(type="text", text=item)
 
+    if isinstance(item, bytes):
+        try:
+            return TextContent(type="text", text=item.decode("utf-8"))
+        except UnicodeDecodeError:
+            import base64
+
+            return TextContent(type="text", text=base64.b64encode(item).decode("ascii"))
+
     return TextContent(type="text", text=_serialize_with_fallback(item, serializer))
 
 
 _PREFAB_TEXT_FALLBACK = "[Rendered Prefab UI]"
 
 
-def _get_tool_resolver() -> Callable[..., str] | None:
-    """Get the FastMCPApp callable resolver, if available."""
+def _get_tool_resolver(app_name: str | None = None) -> Callable[..., str] | None:
+    """Get the Prefab peer-reference resolver bound to an app name."""
     try:
-        from fastmcp.server.app import _resolve_tool_ref
+        from fastmcp.apps.app import _make_resolver
 
-        return _resolve_tool_ref
+        return _make_resolver(app_name)
     except ImportError:
         return None
 
 
 def _prefab_to_json(app: Any, fastmcp_app_name: str | None = None) -> dict[str, Any]:
-    """Call PrefabApp.to_json() with the FastMCPApp callable resolver.
+    """Call PrefabApp.to_json() with the hash-based resolver.
 
-    If ``fastmcp_app_name`` is set, injects ``_meta.fastmcp.app`` into the
-    serialized output so the renderer can tag subsequent tool calls with the
-    app identity for direct routing.
+    The resolver prefixes peer-tool references with a deterministic hash
+    derived from the app name + tool name. The dispatcher recognizes that
+    format and routes calls via ``get_tool_by_hash`` which walks the
+    provider tree recursively — same pattern as the old ``get_app_tool``.
     """
-    data = app.to_json(tool_resolver=_get_tool_resolver())
-    if fastmcp_app_name is not None:
-        meta = data.setdefault("_meta", {})
-        meta.setdefault("fastmcp", {})["app"] = fastmcp_app_name
+    data = app.to_json(tool_resolver=_get_tool_resolver(fastmcp_app_name))
     return data
 
 
@@ -580,7 +600,7 @@ def __getattr__(name: str) -> Any:
             warnings.warn(
                 f"Importing {name} from fastmcp.tools.tool is deprecated. "
                 f"Import from fastmcp.tools.function_tool instead.",
-                DeprecationWarning,
+                FastMCPDeprecationWarning,
                 stacklevel=2,
             )
         from fastmcp.tools import function_tool

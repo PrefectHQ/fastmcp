@@ -14,8 +14,8 @@ from prefab_ui.components import Column, Heading, Text
 from prefab_ui.components.base import Component
 
 from fastmcp import Client, FastMCP
+from fastmcp.apps import UI_MIME_TYPE, AppConfig
 from fastmcp.resources.types import TextResource
-from fastmcp.server.apps import UI_MIME_TYPE, AppConfig
 from fastmcp.server.providers.local_provider.decorators.tools import (
     PREFAB_RENDERER_URI,
 )
@@ -39,9 +39,13 @@ class TestConvertResult:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "[Rendered Prefab UI]"
         assert result.structured_content is not None
-        assert result.structured_content["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == "0.2"
         assert result.structured_content["state"] == {"name": "Alice"}
-        assert result.structured_content["view"]["type"] == "Column"
+        # PrefabApp wraps view in a pf-app-root Div
+        root = result.structured_content["view"]
+        assert root["type"] == "Div"
+        assert root["cssClass"] == "pf-app-root"
+        assert root["children"][0]["type"] == "Column"
 
     def test_bare_component(self):
         heading = Heading("World")
@@ -51,8 +55,9 @@ class TestConvertResult:
 
         assert isinstance(result, ToolResult)
         assert result.structured_content is not None
-        assert result.structured_content["version"] == "0.2"
-        assert result.structured_content["view"]["type"] == "Heading"
+        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["view"]["type"] == "Div"
+        assert result.structured_content["view"]["children"][0]["type"] == "Heading"
 
     def test_tool_result_with_prefab_structured_content(self):
         """ToolResult with PrefabApp as structured_content preserves custom text."""
@@ -66,8 +71,9 @@ class TestConvertResult:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "Custom fallback text"
         assert result.structured_content is not None
-        assert result.structured_content["version"] == "0.2"
-        assert result.structured_content["view"]["type"] == "Heading"
+        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["view"]["type"] == "Div"
+        assert result.structured_content["view"]["children"][0]["type"] == "Heading"
 
     def test_tool_result_with_component_structured_content(self):
         """ToolResult with bare Component as structured_content."""
@@ -79,8 +85,9 @@ class TestConvertResult:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "My text"
         assert result.structured_content is not None
-        assert result.structured_content["version"] == "0.2"
-        assert result.structured_content["view"]["type"] == "Heading"
+        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["view"]["type"] == "Div"
+        assert result.structured_content["view"]["children"][0]["type"] == "Heading"
 
     def test_tool_result_passthrough(self):
         """ToolResult without prefab structured_content passes through unchanged."""
@@ -112,42 +119,49 @@ class TestAppTrue:
         assert "ui" in tool.meta
         assert tool.meta["ui"]["resourceUri"] == PREFAB_RENDERER_URI
 
-    def test_app_true_registers_renderer_resource(self):
+    async def test_app_true_synthesizes_renderer_resource(self):
+        """Each prefab tool gets a per-tool renderer resource synthesized
+        on demand at list_resources time. Resources don't live on any
+        provider's storage — they're computed from the registry walk."""
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)
         def my_tool() -> str:
             return "hello"
 
-        renderer_key = f"resource:{PREFAB_RENDERER_URI}@"
-        assert renderer_key in mcp._local_provider._components
+        resources = list(await mcp.list_resources())
+        prefab_resources = [r for r in resources if "prefab/tool" in str(r.uri)]
+        assert len(prefab_resources) == 1
+        assert "renderer.html" in str(prefab_resources[0].uri)
 
-    def test_renderer_resource_has_correct_mime_type(self):
+    async def test_renderer_resource_has_correct_mime_type(self):
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)
         def my_tool() -> str:
             return "hello"
 
-        renderer_key = f"resource:{PREFAB_RENDERER_URI}@"
-        resource = mcp._local_provider._components[renderer_key]
-        assert isinstance(resource, TextResource)
-        assert resource.mime_type == UI_MIME_TYPE
+        resources = list(await mcp.list_resources())
+        renderer = next(r for r in resources if "prefab/tool" in str(r.uri))
+        assert isinstance(renderer, TextResource)
+        assert renderer.mime_type == UI_MIME_TYPE
 
-    def test_renderer_resource_has_csp(self):
+    async def test_renderer_resource_has_csp(self):
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)
         def my_tool() -> str:
             return "hello"
 
-        renderer_key = f"resource:{PREFAB_RENDERER_URI}@"
-        resource = mcp._local_provider._components[renderer_key]
-        assert resource.meta is not None
-        assert "ui" in resource.meta
-        assert "csp" in resource.meta["ui"]
+        resources = list(await mcp.list_resources())
+        renderer = next(r for r in resources if "prefab/tool" in str(r.uri))
+        assert renderer.meta is not None
+        assert "ui" in renderer.meta
+        assert "csp" in renderer.meta["ui"]
 
-    def test_multiple_tools_share_renderer(self):
+    async def test_multiple_tools_get_dedicated_resources(self):
+        """Each prefab tool gets its own resource at a distinct hashed
+        URI — no shared singleton, so per-tool CSP becomes possible."""
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)
@@ -158,10 +172,9 @@ class TestAppTrue:
         def tool_b() -> str:
             return "b"
 
-        renderer_keys = [
-            k for k in mcp._local_provider._components if k.startswith("resource:ui://")
-        ]
-        assert len(renderer_keys) == 1
+        resources = list(await mcp.list_resources())
+        prefab_uris = {str(r.uri) for r in resources if "prefab/tool" in str(r.uri)}
+        assert len(prefab_uris) == 2
 
     def test_explicit_app_config_not_overridden(self):
         mcp = FastMCP("test")
@@ -378,7 +391,7 @@ class TestIntegration:
             result = await client.call_tool("greet", {"name": "Alice"})
 
         assert result.structured_content is not None
-        assert result.structured_content["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == "0.2"
         assert result.structured_content["state"] == {"name": "Alice"}
 
     async def test_tool_call_with_custom_text(self):
@@ -399,7 +412,7 @@ class TestIntegration:
             "Greeting for Alice" in c.text for c in result.content if hasattr(c, "text")
         )
         assert result.structured_content is not None
-        assert result.structured_content["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == "0.2"
 
     async def test_tools_list_includes_app_meta(self):
         mcp = FastMCP("test")
@@ -414,7 +427,9 @@ class TestIntegration:
         tool = next(t for t in tools if t.name == "my_tool")
         meta = tool.meta or {}
         assert "ui" in meta
-        assert meta["ui"]["resourceUri"] == PREFAB_RENDERER_URI
+        # URI is the per-tool hashed form, not the singleton.
+        assert meta["ui"]["resourceUri"].startswith("ui://prefab/tool/")
+        assert meta["ui"]["resourceUri"].endswith("/renderer.html")
 
     async def test_renderer_resource_readable(self):
         mcp = FastMCP("test")
@@ -424,7 +439,13 @@ class TestIntegration:
             return "hello"
 
         async with Client(mcp) as client:
-            contents = await client.read_resource(PREFAB_RENDERER_URI)
+            # Look up the URI by listing first — the hash isn't
+            # computable from outside without the address registry.
+            tools = await client.list_tools()
+            uri = next(t for t in tools if t.name == "my_tool").meta["ui"][
+                "resourceUri"
+            ]
+            contents = await client.read_resource(uri)
 
         assert len(contents) > 0
         text = contents[0].text if hasattr(contents[0], "text") else ""

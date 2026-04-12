@@ -108,6 +108,7 @@ class ProxyTool(Tool):
             icons=mcp_tool.icons,
             meta=mcp_tool.meta,
             tags=get_fastmcp_metadata(mcp_tool.meta).get("tags", []),
+            execution=mcp_tool.execution,
         )
 
     async def run(
@@ -308,7 +309,7 @@ class ProxyTemplate(ResourceTemplate):
     @classmethod
     def from_mcp_template(  # type: ignore[override]
         cls, client_factory: ClientFactoryT, mcp_template: mcp.types.ResourceTemplate
-    ) -> ProxyTemplate:
+    ) -> ProxyTemplate:  # ty:ignore[invalid-method-override]
         """Factory method to create a ProxyTemplate from a raw MCP template schema."""
 
         return cls(
@@ -445,7 +446,7 @@ class ProxyPrompt(Prompt):
             task_config=TaskConfig(mode="forbidden"),
         )
 
-    async def render(self, arguments: dict[str, Any]) -> PromptResult:  # type: ignore[override]
+    async def render(self, arguments: dict[str, Any]) -> PromptResult:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """Render the prompt by making a call through the client."""
         backend_name = self._backend_name or self.name
         with client_span(
@@ -594,7 +595,7 @@ class ProxyProvider(Provider):
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     # -------------------------------------------------------------------------
     # Resource methods
@@ -631,7 +632,7 @@ class ProxyProvider(Provider):
             matching = [r for r in matching if version.matches(r.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     # -------------------------------------------------------------------------
     # Resource template methods
@@ -668,7 +669,7 @@ class ProxyProvider(Provider):
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     # -------------------------------------------------------------------------
     # Prompt methods
@@ -705,7 +706,7 @@ class ProxyProvider(Provider):
             matching = [p for p in matching if version.matches(p.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]
+        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
 
     # -------------------------------------------------------------------------
     # Task methods
@@ -751,6 +752,15 @@ def _create_client_factory(
     """
     if isinstance(target, Client):
         client = target
+
+        # Plain Clients used as proxy backends also need header forwarding,
+        # same as ProxyClient (which sets this in __init__).
+        from fastmcp.client.transports.http import StreamableHttpTransport
+        from fastmcp.client.transports.sse import SSETransport
+
+        if isinstance(client.transport, StreamableHttpTransport | SSETransport):
+            client.transport.forward_incoming_headers = True
+
         if client.is_connected() and type(client) is ProxyClient:
             logger.info(
                 "Proxy detected connected ProxyClient - creating fresh sessions for each "
@@ -996,6 +1006,15 @@ class ProxyClient(Client[ClientTransportT]):
             kwargs["progress_handler"] = default_proxy_progress_handler
         super().__init__(**kwargs | {"transport": transport})
 
+        # Enable forwarding of inbound HTTP headers (e.g. authorization) to
+        # the upstream server. This is only appropriate for proxy clients,
+        # where the caller's credentials should be propagated.
+        from fastmcp.client.transports.http import StreamableHttpTransport
+        from fastmcp.client.transports.sse import SSETransport
+
+        if isinstance(self.transport, StreamableHttpTransport | SSETransport):
+            self.transport.forward_incoming_headers = True
+
 
 class StatefulProxyClient(ProxyClient[ClientTransportT]):
     """A proxy client that provides a stateful client factory for the proxy server.
@@ -1042,7 +1061,7 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
         super().__init__(*args, **kwargs)
         self._caches: dict[ServerSession, Client[ClientTransportT]] = {}
 
-    async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # type: ignore[override]
+    async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """The stateful proxy client will be forced disconnected when the session is exited.
 
         So we do nothing here.

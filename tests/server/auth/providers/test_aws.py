@@ -103,8 +103,8 @@ class TestAWSCognitoProvider:
             assert provider._upstream_token_endpoint is not None
             assert "amazoncognito.com" in provider._upstream_authorization_endpoint
 
-    def test_token_verifier_defaults_audience_to_client_id(self):
-        """Test Cognito token verifier enforces the configured client ID by default."""
+    def test_token_verifier_checks_client_id_not_aud(self):
+        """Cognito verifier should check client_id claim, not aud."""
         with mock_cognito_oidc_discovery():
             provider = AWSCognitoProvider(
                 user_pool_id="us-east-1_XXXXXXXXX",
@@ -116,10 +116,11 @@ class TestAWSCognitoProvider:
 
             verifier = provider.get_token_verifier()
 
-            assert verifier.audience == "test_client"
+            assert verifier._expected_client_id == "test_client"
+            assert verifier.audience is None
 
     def test_token_verifier_supports_audience_override(self):
-        """Test Cognito token verifier still allows explicit audience overrides."""
+        """Audience param maps to client_id validation in Cognito verifier."""
         with mock_cognito_oidc_discovery():
             provider = AWSCognitoProvider(
                 user_pool_id="us-east-1_XXXXXXXXX",
@@ -131,7 +132,8 @@ class TestAWSCognitoProvider:
 
             verifier = provider.get_token_verifier(audience="custom-audience")
 
-            assert verifier.audience == "custom-audience"
+            assert verifier._expected_client_id == "custom-audience"
+            assert verifier.audience is None
 
 
 # Token verification functionality is now tested as part of the OIDC provider integration

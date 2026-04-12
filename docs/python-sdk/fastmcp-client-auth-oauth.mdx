@@ -32,37 +32,43 @@ Raised when OAuth client credentials are not found on the server.
 
 **Methods:**
 
-#### `clear` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `clear` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L102" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 clear(self) -> None
 ```
 
-#### `get_tokens` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L104" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tokens` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tokens(self) -> OAuthToken | None
 ```
 
-#### `set_tokens` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L108" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_tokens` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L115" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_tokens(self, tokens: OAuthToken) -> None
 ```
 
-#### `get_client_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L119" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_token_expiry` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L135" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_token_expiry(self) -> float | None
+```
+
+#### `get_client_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L145" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_client_info(self) -> OAuthClientInformationFull | None
 ```
 
-#### `set_client_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_client_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L151" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_client_info(self, client_info: OAuthClientInformationFull) -> None
 ```
 
-### `OAuth` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L138" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `OAuth` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L164" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth client provider for MCP servers with browser-based authentication.
@@ -73,7 +79,7 @@ a browser for user authorization and running a local callback server.
 
 **Methods:**
 
-#### `redirect_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L290" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `redirect_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L320" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 redirect_handler(self, authorization_url: str) -> None
@@ -82,7 +88,7 @@ redirect_handler(self, authorization_url: str) -> None
 Open browser for authorization, with pre-flight check for invalid client.
 
 
-#### `callback_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L311" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `callback_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L341" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 callback_handler(self) -> tuple[str, str | None]
@@ -91,7 +97,7 @@ callback_handler(self) -> tuple[str, str | None]
 Handle OAuth callback and return (auth_code, state).
 
 
-#### `async_auth_flow` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L350" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `async_auth_flow` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L380" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]

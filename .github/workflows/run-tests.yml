@@ -73,6 +73,29 @@ jobs:
         with:
           test-type: client_process
 
+  run_conformance_tests:
+    name: "MCP conformance tests"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup uv
+        uses: ./.github/actions/setup-uv
+        with:
+          resolution: locked
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Run conformance tests
+        uses: ./.github/actions/run-pytest
+        with:
+          test-type: conformance
+
   run_integration_tests:
     name: "Integration tests"
     runs-on: ubuntu-latest

@@ -22,7 +22,7 @@ from fastmcp.server.providers import FileSystemProvider
 # Functions decorated with @tool, @resource, or @prompt are registered.
 # Directory structure is purely organizational - decorators determine type.
 provider = FileSystemProvider(
-    root=Path(__file__).parent / "mcp",
+    root=Path(__file__).parent / "components",
     reload=True,  # Set True for dev mode (re-scan on every request)
 )
 

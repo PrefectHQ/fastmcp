@@ -41,7 +41,7 @@ class ElicitationJsonSchema(GenerateJsonSchema):
     Optionally adds enumNames for better UI display when available.
     """
 
-    def generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue:  # type: ignore[override]
+    def generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """Override to prevent ref generation for enums and handle list schemas."""
         # For enum schemas, bypass the ref mechanism entirely
         if schema["type"] == "enum":
@@ -61,7 +61,7 @@ class ElicitationJsonSchema(GenerateJsonSchema):
         # Check if items are enum/Literal
         if items_schema and items_schema.get("type") == "enum":
             # Generate array with enum items
-            items = self.enum_schema(items_schema)  # type: ignore[arg-type]
+            items = self.enum_schema(items_schema)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             # If items have oneOf pattern, convert to anyOf for multi-select per SEP-1330
             if "oneOf" in items:
                 items = {"anyOf": items["oneOf"]}
@@ -231,8 +231,8 @@ def _parse_list_syntax(lst: list[Any]) -> ElicitConfig:
     if lst and all(isinstance(item, str) for item in lst):
         # Construct Literal type from tuple - use cast since we can't construct Literal dynamically
         # but we know the values are all strings
-        choice_literal: type[Any] = cast(type[Any], Literal[tuple(lst)])  # type: ignore[valid-type]
-        wrapped = ScalarElicitationType[choice_literal]  # type: ignore[valid-type]
+        choice_literal: type[Any] = cast(type[Any], Literal[tuple(lst)])  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
+        wrapped = ScalarElicitationType[choice_literal]  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
         return ElicitConfig(
             schema=get_elicitation_schema(wrapped),
             response_type=wrapped,
