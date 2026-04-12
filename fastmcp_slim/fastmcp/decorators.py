@@ -39,3 +39,13 @@ def get_fastmcp_meta(fn: Any) -> Any | None:
     except ValueError:
         pass
     return None
+
+
+def set_fastmcp_meta(fn: Any, metadata: Any) -> None:
+    """Attach FastMCP metadata to a function, handling bound methods.
+
+    For bound methods and staticmethods, the metadata is attached to the
+    underlying ``__func__`` so that ``get_fastmcp_meta`` can find it.
+    """
+    target = fn.__func__ if hasattr(fn, "__func__") else fn
+    target.__fastmcp__ = metadata
