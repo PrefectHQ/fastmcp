@@ -70,7 +70,7 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 </ParamField>
 
 <ParamField body="description" type="str | None">
-  Provides the description exposed via MCP. If set, the function's docstring is ignored for this purpose
+  Provides the description exposed via MCP. If set, the function's docstring is ignored for the tool description, though docstring-derived parameter descriptions still apply (see [Docstring Descriptions](#docstring-descriptions)).
 </ParamField>
 
 <ParamField body="tags" type="set[str] | None">
@@ -291,6 +291,8 @@ You can provide additional metadata about parameters in several ways:
 
 #### Docstring Descriptions
 
+<VersionBadge version="3.2.4" />
+
 FastMCP parses your function's docstring to extract both the tool description and per-parameter descriptions. Google, NumPy, and Sphinx docstring styles are all supported — the parser tries each and uses whichever finds parameter descriptions:
 
 ```python
@@ -310,7 +312,7 @@ def process_image(
     # Implementation...
 ```
 
-The summary line becomes the tool description, and each parameter's docstring entry becomes the description for that parameter in the generated schema. Sections like `Returns`, `Raises`, and `Example` are excluded from the description but otherwise ignored.
+The free-form text above the `Args` section — whether a single line or multiple paragraphs — becomes the tool description, and each parameter's docstring entry becomes the description for that parameter in the generated schema. Sections like `Returns`, `Raises`, and `Example` are excluded from the description but otherwise ignored.
 
 If a parameter already has an explicit description — via `Annotated[x, "..."]` or `Field(description=...)` — that description takes precedence over the docstring. This makes it safe to adopt docstring-based descriptions incrementally: existing annotations keep working, and docstrings fill in the gaps.
 

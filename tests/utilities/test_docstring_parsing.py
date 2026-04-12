@@ -4,8 +4,8 @@ from typing import Annotated
 
 from pydantic import Field
 
-from fastmcp.tools.docstring_parsing import parse_docstring
 from fastmcp.tools.function_parsing import ParsedFunction
+from fastmcp.utilities.docstring_parsing import parse_docstring
 
 
 class TestGoogleStyle:

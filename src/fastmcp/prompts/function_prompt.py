@@ -36,6 +36,7 @@ from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.docstring_parsing import parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
@@ -152,10 +153,11 @@ class FunctionPrompt(Prompt):
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as prompts")
 
+        parsed_docstring = parse_docstring(fn)
         description = (
             metadata.description
             if metadata.description is not None
-            else inspect.getdoc(fn)
+            else parsed_docstring.description
         )
 
         # Normalize task to TaskConfig and validate
@@ -183,6 +185,18 @@ class FunctionPrompt(Prompt):
         type_adapter = get_cached_typeadapter(wrapped_fn)
         parameters = type_adapter.json_schema()
         parameters = compress_schema(parameters, prune_titles=True)
+
+        # Inject parameter descriptions from the docstring into the schema.
+        # Explicit annotations (Field(description=...), Annotated[x, "..."])
+        # already have a "description" key and take precedence.
+        if parsed_docstring.parameters:
+            properties = parameters.get("properties", {})
+            for param_name, param_desc in parsed_docstring.parameters.items():
+                if (
+                    param_name in properties
+                    and "description" not in properties[param_name]
+                ):
+                    properties[param_name]["description"] = param_desc
 
         # Convert parameters to PromptArguments
         arguments: list[PromptArgument] = []

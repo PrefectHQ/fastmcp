@@ -18,7 +18,7 @@ from fastmcp.server.dependencies import (
     without_injected_parameters,
 )
 from fastmcp.tools.base import ToolResult
-from fastmcp.tools.docstring_parsing import parse_docstring
+from fastmcp.utilities.docstring_parsing import parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
