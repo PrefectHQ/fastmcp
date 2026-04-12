@@ -212,7 +212,8 @@ The `route_map_fn` is called on all routes, even those that matched `MCPType.EXC
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.openapi import RouteMap, MCPType, HTTPRoute
+from fastmcp.server.providers.openapi import RouteMap, MCPType
+from fastmcp.utilities.openapi import HTTPRoute
 
 def custom_route_mapper(route: HTTPRoute, mcp_type: MCPType) -> MCPType | None:
     """Advanced route type mapping."""
@@ -368,12 +369,12 @@ Your `mcp_component_fn` is expected to modify the component in-place, not to ret
 </Tip>
 
 ```python
-from fastmcp.server.openapi import (
-    HTTPRoute,
+from fastmcp.server.providers.openapi import (
     OpenAPITool,
     OpenAPIResource,
     OpenAPIResourceTemplate,
 )
+from fastmcp.utilities.openapi import HTTPRoute
 
 def customize_components(
     route: HTTPRoute, 

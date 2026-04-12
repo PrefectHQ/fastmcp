@@ -660,7 +660,7 @@ from fastmcp.server.auth import StaticTokenVerifier
 # Read configuration from environment
 auth_token = os.environ.get("MCP_AUTH_TOKEN")
 if auth_token:
-    auth = StaticTokenVerifier(tokens={auth_token: {"sub": "admin"}})
+    auth = StaticTokenVerifier(tokens={auth_token: {"sub": "admin", "client_id": "cli"}})
     mcp = FastMCP("Production Server", auth=auth)
 else:
     mcp = FastMCP("Production Server")
