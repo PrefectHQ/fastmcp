@@ -174,13 +174,17 @@ class FunctionPrompt(Prompt):
         if isinstance(fn, staticmethod):
             fn = fn.__func__
 
-        # For callable classes, argument descriptions live on __call__'s
-        # docstring (where the parameters are actually declared), while the
-        # prompt description comes from the outer class docstring.
+        # For callable classes, argument descriptions must come from
+        # __call__'s docstring — where the exposed parameters are actually
+        # declared. The class docstring's Args section, if any, typically
+        # describes __init__, so falling back to it would risk injecting
+        # constructor docs into __call__'s arguments on overlapping names.
+        # The description, however, comes from the class docstring (which
+        # describes what the prompt IS) when present.
         inner_docstring = parse_docstring(fn)
         parsed_docstring = ParsedDocstring(
             description=outer_docstring.description or inner_docstring.description,
-            parameters=inner_docstring.parameters or outer_docstring.parameters,
+            parameters=inner_docstring.parameters,
         )
         description = (
             metadata.description

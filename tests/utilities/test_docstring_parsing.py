@@ -522,6 +522,29 @@ class TestParsedFunctionIntegration:
         # __call__'s Args wins for the parameter description
         assert p.input_schema["properties"]["x"]["description"] == "From call."
 
+    def test_callable_class_does_not_inherit_class_param_descriptions(self):
+        """The class docstring's Args section typically describes __init__.
+        Even when param names overlap with __call__, those descriptions must
+        not leak into __call__'s parameter schema."""
+
+        class MyTool:
+            """Describes what the tool does.
+
+            Args:
+                x: Constructor argument (should NOT appear on __call__'s x).
+            """
+
+            def __init__(self, x: str) -> None:
+                self.x = x
+
+            def __call__(self, x: int) -> int:
+                return x
+
+        p = ParsedFunction.from_function(MyTool("config"))
+        assert p.description == "Describes what the tool does."
+        # x's description does NOT come from the class's constructor-focused Args
+        assert "description" not in p.input_schema["properties"]["x"]
+
     def test_callable_class_falls_back_to_call_description(self):
         """If the class has no docstring, fall back to __call__'s description."""
 
