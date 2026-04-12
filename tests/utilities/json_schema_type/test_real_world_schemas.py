@@ -12,8 +12,10 @@ Marked as an integration test — skipped by default, run with:
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
+import shutil
 import signal
 import subprocess
 from dataclasses import asdict, dataclass
@@ -76,51 +78,78 @@ def _is_openapi_directory_clone(path: Path) -> bool:
 
 
 def _ensure_repo() -> Path:
-    """Clone the openapi-directory repo if not already present at the pinned commit."""
-    if CLONE_DIR.exists() and (CLONE_DIR / ".git").is_dir():
-        result = subprocess.run(
-            ["git", "-C", str(CLONE_DIR), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-        )
-        if result.stdout.strip() == OPENAPI_DIRECTORY_COMMIT:
-            return CLONE_DIR
+    """Clone the openapi-directory repo if not already present at the pinned commit.
 
-    if CLONE_DIR.exists():
-        if not _is_openapi_directory_clone(CLONE_DIR):
-            raise RuntimeError(
-                f"{CLONE_DIR} exists but is not an openapi-directory clone. "
-                f"Remove it manually or set OPENAPI_DIRECTORY_PATH to a different path."
+    Safe under pytest-xdist: a file lock serializes the rmtree/reclone path so
+    concurrent workers don't race on the shared CLONE_DIR.
+    """
+    # Fast-path check without a lock — if HEAD already matches, skip locking entirely.
+    if _head_matches_pinned():
+        return CLONE_DIR
+
+    lock_path = CLONE_DIR.with_suffix(".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w") as lf:
+        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+        try:
+            # Re-check under the lock in case another worker already fixed it.
+            if _head_matches_pinned():
+                return CLONE_DIR
+
+            if CLONE_DIR.exists():
+                if not _is_openapi_directory_clone(CLONE_DIR):
+                    raise RuntimeError(
+                        f"{CLONE_DIR} exists but is not an openapi-directory clone. "
+                        f"Remove it manually or set OPENAPI_DIRECTORY_PATH to a different path."
+                    )
+                shutil.rmtree(CLONE_DIR)
+
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    OPENAPI_DIRECTORY_REPO,
+                    str(CLONE_DIR),
+                ],
+                check=True,
+                capture_output=True,
             )
-        import shutil
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(CLONE_DIR),
+                    "fetch",
+                    "--depth",
+                    "1",
+                    "origin",
+                    OPENAPI_DIRECTORY_COMMIT,
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(CLONE_DIR), "checkout", OPENAPI_DIRECTORY_COMMIT],
+                check=True,
+                capture_output=True,
+            )
+            return CLONE_DIR
+        finally:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
 
-        shutil.rmtree(CLONE_DIR)
 
-    subprocess.run(
-        ["git", "clone", "--depth", "1", OPENAPI_DIRECTORY_REPO, str(CLONE_DIR)],
-        check=True,
+def _head_matches_pinned() -> bool:
+    """Return True when CLONE_DIR is already checked out at the pinned commit."""
+    if not (CLONE_DIR.exists() and (CLONE_DIR / ".git").is_dir()):
+        return False
+    result = subprocess.run(
+        ["git", "-C", str(CLONE_DIR), "rev-parse", "HEAD"],
         capture_output=True,
+        text=True,
     )
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(CLONE_DIR),
-            "fetch",
-            "--depth",
-            "1",
-            "origin",
-            OPENAPI_DIRECTORY_COMMIT,
-        ],
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(CLONE_DIR), "checkout", OPENAPI_DIRECTORY_COMMIT],
-        check=True,
-        capture_output=True,
-    )
-    return CLONE_DIR
+    return result.stdout.strip() == OPENAPI_DIRECTORY_COMMIT
 
 
 def _load_spec(spec_file: Path) -> dict | None:
