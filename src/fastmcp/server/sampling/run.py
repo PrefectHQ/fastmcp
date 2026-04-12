@@ -46,8 +46,8 @@ if TYPE_CHECKING:
 
 ResultT = TypeVar("ResultT")
 
-# Maximum number of consecutive final_response validation failures before
-# we abort instead of burning more tokens on a model that can't satisfy the schema.
+# Maximum number of consecutive final_response validation retries (not
+# counting the initial attempt) before aborting.  Total attempts = N + 1.
 _MAX_VALIDATION_RETRIES = 3
 
 # Simplified tool choice type - just the mode string instead of the full MCP object
@@ -668,7 +668,7 @@ async def sample_impl(
                         )
                     except ValidationError as e:
                         consecutive_validation_failures += 1
-                        if consecutive_validation_failures >= _MAX_VALIDATION_RETRIES:
+                        if consecutive_validation_failures > _MAX_VALIDATION_RETRIES:
                             raise RuntimeError(
                                 f"Structured output validation failed "
                                 f"{consecutive_validation_failures} consecutive "

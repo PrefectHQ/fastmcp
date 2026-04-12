@@ -639,7 +639,8 @@ class TestValidationRetryCap:
             with pytest.raises(ToolError, match="consecutive"):
                 await client.call_tool("t", {})
 
-        assert call_count == _MAX_VALIDATION_RETRIES
+        # 1 initial attempt + _MAX_VALIDATION_RETRIES retries
+        assert call_count == _MAX_VALIDATION_RETRIES + 1
 
     async def test_validation_counter_resets_after_other_tool_call(self):
         """A tool call between validation failures resets the counter."""
