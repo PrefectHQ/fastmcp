@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import functools
 import inspect
 import re
 from collections.abc import Callable
@@ -30,6 +29,7 @@ from fastmcp.server.dependencies import (
     without_injected_parameters,
 )
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
+from fastmcp.utilities.callable_utils import get_callable_name, prepare_callable
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.mime import resolve_ui_mime_type
@@ -488,7 +488,7 @@ class FunctionResourceTemplate(ResourceTemplate):
     ) -> FunctionResourceTemplate:
         """Create a template from a function."""
 
-        func_name = name or getattr(fn, "__name__", None) or fn.__class__.__name__
+        func_name = name or get_callable_name(fn)
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
@@ -564,12 +564,7 @@ class FunctionResourceTemplate(ResourceTemplate):
             task_config = task
         task_config.validate_function(fn, func_name)
 
-        # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
-            fn = fn.__call__
-        # if the fn is a staticmethod, we need to work with the underlying function
-        if isinstance(fn, staticmethod):
-            fn = fn.__func__
+        fn = prepare_callable(fn)
 
         # Transform Context type annotations to Depends() for unified DI
         fn = transform_context_annotations(fn)

@@ -27,7 +27,6 @@ Usage::
 
 from __future__ import annotations
 
-import inspect
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager, suppress
 from typing import Any, Literal, TypeVar, overload
@@ -38,6 +37,7 @@ from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.local_provider import LocalProvider
 from fastmcp.tools.base import Tool
+from fastmcp.utilities.callable_utils import is_callable_object
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -100,7 +100,7 @@ def _dispatch_decorator(
     decorator_name: str,
 ) -> Any:
     """Shared dispatch logic for @app.tool() and @app.ui() calling patterns."""
-    if inspect.isroutine(name_or_fn):
+    if is_callable_object(name_or_fn):
         return register(name_or_fn, name)
 
     if isinstance(name_or_fn, str):
