@@ -2074,6 +2074,15 @@ class FastMCP(
                 if not isinstance(server, FastMCPProxy):
                     server = FastMCP.as_proxy(server)
 
+        # Warn if parent masks errors but child doesn't (or vice versa)
+        if self._mask_error_details and not server._mask_error_details:
+            logger.warning(
+                f"Parent server {self.name!r} has mask_error_details=True but "
+                f"mounted server {server.name!r} does not. Error details from "
+                f"{server.name!r} may leak through to clients. Set "
+                f"mask_error_details=True on the child server to prevent this."
+            )
+
         # Create provider and add it with namespace
         provider: Provider = FastMCPProvider(server)
 

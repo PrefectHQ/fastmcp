@@ -146,6 +146,7 @@ class TestPydanticModelArguments:
             )
 
             # This test verifies whether we handle stringified JSON
+            error_msg = ""
             try:
                 result = await client.call_tool("create_user", {"profile": stringified})
                 # If this succeeds, we're handling stringified JSON

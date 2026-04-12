@@ -74,6 +74,7 @@ class AggregateProvider(Provider):
         """
         super().__init__()
         self.providers: list[Provider] = list(providers or [])
+        self._on_duplicate: str = "warn"
 
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider with optional namespace.
@@ -106,16 +107,44 @@ class AggregateProvider(Provider):
     def _collect_list_results(
         self, results: list[Sequence[T] | BaseException], operation: str
     ) -> list[T]:
-        """Collect successful list results, logging any exceptions."""
+        """Collect successful list results, logging any exceptions.
+
+        Detects duplicate component names across providers and applies
+        the on_duplicate behavior (error/warn/replace/ignore).
+        """
         collected: list[T] = []
+        # Track (name, provider_index) to allow version variants from same provider
+        seen_names: dict[str, int] = {}  # name -> provider index of first occurrence
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
-                logger.debug(
+                logger.warning(
                     f"Error during {operation} from provider "
                     f"{self.providers[i]}: {result}"
                 )
                 continue
-            collected.extend(result)
+            for item in result:
+                # Extract identity key: name, uri, or uri_template
+                name = (
+                    getattr(item, "name", None)
+                    or getattr(item, "uri", None)
+                    or getattr(item, "uri_template", None)
+                )
+                if name is not None:
+                    name = str(name)
+                    if name in seen_names and seen_names[name] != i:
+                        # Duplicate from a DIFFERENT provider — flag it
+                        msg = (
+                            f"Duplicate {operation} component '{name}' "
+                            f"from provider {self.providers[i]} "
+                            f"(first seen from provider "
+                            f"{self.providers[seen_names[name]]})"
+                        )
+                        if self._on_duplicate == "error":
+                            raise ValueError(msg)
+                        elif self._on_duplicate == "warn":
+                            logger.warning(msg)
+                    seen_names.setdefault(name, i)
+                collected.append(item)
         return collected
 
     def _get_highest_version_result(
@@ -132,7 +161,7 @@ class AggregateProvider(Provider):
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 if not isinstance(result, NotFoundError):
-                    logger.debug(
+                    logger.warning(
                         f"Error during {operation} from provider "
                         f"{self.providers[i]}: {result}"
                     )
