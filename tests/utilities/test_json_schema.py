@@ -116,6 +116,42 @@ class TestDereferenceRefs:
         assert result.get("type") == "object"
         assert "$defs" in result  # $defs preserved for circular refs
 
+    def test_falls_back_for_circular_json_pointer_refs(self):
+        """Test that circular JSON Pointer $ref (non-$defs) does not crash.
+
+        .NET/System.Text.Json emits $ref with JSON Pointer paths like
+        #/properties/nodes/items instead of $defs-based references.
+        Circular pointers must not cause a RecursionError.
+        """
+        schema = {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "value": {"type": "string"},
+                            "children": {
+                                "type": "array",
+                                "items": {"$ref": "#/properties/nodes/items"},
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        result = dereference_refs(schema)
+
+        # Should return the schema without crashing; circular refs stay unresolved
+        assert result["type"] == "object"
+        assert "properties" in result
+        # The circular $ref should be preserved (not inlined)
+        children_items = result["properties"]["nodes"]["items"]["properties"][
+            "children"
+        ]["items"]
+        assert "$ref" in children_items
+
     def test_preserves_sibling_keywords(self):
         """Test that sibling keywords (default, description) are preserved.
 

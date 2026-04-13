@@ -171,8 +171,11 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
 
         return dereferenced
 
-    except JsonRefError:
-        # Self-referencing/circular schemas can't be fully dereferenced
+    except (JsonRefError, RecursionError):
+        # Self-referencing/circular schemas can't be fully dereferenced.
+        # RecursionError covers circular $ref using JSON Pointer paths
+        # (e.g. "#/properties/nodes/items") that bypass $defs-based cycle
+        # detection — common in schemas from .NET/System.Text.Json.
         # Fall back to resolving only root-level $ref (for MCP spec compliance)
         return resolve_root_ref(schema)
 
