@@ -93,7 +93,7 @@ def _ensure_repo() -> Path:
     lock_path = CLONE_DIR.with_suffix(".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with open(lock_path, "w") as lf:
-        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)  # ty: ignore[unresolved-attribute]
+        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
         try:
             # Re-check under the lock in case another worker already fixed it.
             if _head_matches_pinned():
@@ -241,8 +241,8 @@ def _test_provider(provider: str) -> ProviderResult:
 
             old_handler = signal.SIG_DFL
             if use_alarm:
-                old_handler = signal.signal(signal.SIGALRM, _alarm_handler)  # type: ignore
-                signal.alarm(SCHEMA_TIMEOUT)  # type: ignore
+                old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
+                signal.alarm(SCHEMA_TIMEOUT)
             try:
                 T = json_schema_to_type(schema)
                 TypeAdapter(T)
@@ -258,8 +258,8 @@ def _test_provider(provider: str) -> ProviderResult:
                     result.other_errors += 1
             finally:
                 if use_alarm:
-                    signal.alarm(0)  # type: ignore
-                    signal.signal(signal.SIGALRM, old_handler)  # type: ignore
+                    signal.alarm(0)
+                    signal.signal(signal.SIGALRM, old_handler)
 
     return result
 

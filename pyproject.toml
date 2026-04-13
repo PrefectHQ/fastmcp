@@ -90,7 +90,6 @@ dev = [
     "prek>=0.2.12",
     "loq>=0.1.0a3",
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
-    "pre-commit>=4.5.1",
     "pytest-examples>=0.0.18",
 ]
 
