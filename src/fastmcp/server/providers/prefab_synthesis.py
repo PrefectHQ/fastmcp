@@ -173,9 +173,11 @@ def _walk_prefab_tools(server: FastMCP) -> list[Tool]:
         if isinstance(inner, FastMCPApp):
             sources.append(inner._local)
         for src in sources:
-            for component in src._components.values():
-                if isinstance(component, Tool) and _is_prefab_tool(component):
-                    results.append(component)
+            results.extend(
+                component
+                for component in src._components.values()
+                if isinstance(component, Tool) and _is_prefab_tool(component)
+            )
 
         # Recurse into aggregate children
         from fastmcp.server.providers.aggregate import AggregateProvider
