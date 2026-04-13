@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, overload
 
@@ -193,8 +194,6 @@ class ResourceResult(pydantic.BaseModel):
             isinstance(contents, dict | list | tuple | int | float | bool)
             or contents is None
         ):
-            import json
-
             return [ResourceContent(json.dumps(contents), mime_type="application/json")]
         raise TypeError(
             f"contents must be str, bytes, or list[ResourceContent], got {type(contents).__name__}"
@@ -344,8 +343,6 @@ class Resource(FastMCPComponent):
             isinstance(raw_value, dict | list | tuple | int | float | bool)
             or raw_value is None
         ):
-            import json
-
             return ResourceResult(
                 [
                     ResourceContent(

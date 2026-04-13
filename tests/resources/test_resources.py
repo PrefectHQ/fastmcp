@@ -357,3 +357,16 @@ class TestResourceMetaPropagation:
             result = await client.read_resource_mcp("test://both-meta")
             assert result.meta == {"result_key": "result_val"}
             assert result.contents[0].meta == {"item_key": "item_val"}
+
+    async def test_json_native_return_preserves_component_meta(self):
+        """JSON-native returns should propagate component-level meta to content."""
+        mcp = FastMCP()
+
+        @mcp.resource("test://json-meta", meta={"csp": "default-src 'none'"})
+        def json_resource() -> dict[str, str]:
+            return {"hello": "world"}
+
+        async with Client(mcp) as client:
+            result = await client.read_resource_mcp("test://json-meta")
+            assert len(result.contents) == 1
+            assert result.contents[0].meta == {"csp": "default-src 'none'"}

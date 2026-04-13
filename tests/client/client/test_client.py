@@ -13,6 +13,7 @@ from pydantic import AnyUrl
 
 import fastmcp
 from fastmcp.client import Client
+from fastmcp.client.tasks import TaskNotificationHandler
 from fastmcp.client.transports import (
     ClientTransport,
     FastMCPTransport,
@@ -767,3 +768,34 @@ async def test_client_list_dict_return_type():
     async with client:
         result = await client.call_tool("get_temperatures", {})
         assert result.data == [{"city": "NYC", "temp": 72}, {"city": "LA", "temp": 85}]
+
+
+def test_client_new_resets_mutable_task_state(fastmcp_server):
+    """Client.new() should not share mutable task tracking structures."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    client._task_registry["task-1"] = lambda: None  # type: ignore[assignment]
+    client._submitted_task_ids.add("task-1")
+
+    clone = client.new()
+
+    assert clone is not client
+    assert clone._task_registry == {}
+    assert clone._submitted_task_ids == set()
+    assert clone._task_registry is not client._task_registry
+    assert clone._submitted_task_ids is not client._submitted_task_ids
+
+
+def test_client_new_rebinds_default_task_notification_handler(fastmcp_server):
+    """Client.new() should bind the default task handler to the cloned client."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    handler = client._session_kwargs.get("message_handler")
+    assert isinstance(handler, TaskNotificationHandler)
+
+    clone = client.new()
+
+    clone_handler = clone._session_kwargs.get("message_handler")
+    assert isinstance(clone_handler, TaskNotificationHandler)
+    assert clone_handler is not handler
+    assert clone_handler._client_ref() is clone

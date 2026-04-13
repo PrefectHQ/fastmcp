@@ -433,9 +433,9 @@ class Client(
         """
         new_client = copy.copy(self)
 
-        if not isinstance(self.transport, StdioTransport):
-            # Reset session state to fresh state
-            new_client._session_state = ClientSessionState()
+        # Always reset session state so cloned clients start disconnected and do not
+        # share lifecycle state with the original instance.
+        new_client._session_state = ClientSessionState()
 
         # Reset mutable task tracking state so new client is independent
         new_client._task_registry = {}
