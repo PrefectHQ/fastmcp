@@ -16,7 +16,7 @@ from docket.execution import ExecutionState
 from mcp.types import TaskStatusNotification, TaskStatusNotificationParams
 
 from fastmcp.server.tasks.config import DEFAULT_TTL_MS
-from fastmcp.server.tasks.keys import parse_task_key
+from fastmcp.server.tasks.keys import parse_task_key, task_redis_prefix
 from fastmcp.server.tasks.requests import DOCKET_TO_MCP_STATE
 from fastmcp.utilities.logging import get_logger
 
@@ -115,11 +115,11 @@ async def _send_status_notification(
     state_map = DOCKET_TO_MCP_STATE
     mcp_status = state_map.get(state, "failed")
 
-    # Extract session_id from task_key for Redis lookup
+    # Extract task_scope from task_key for Redis lookup
     key_parts = parse_task_key(task_key)
-    session_id = key_parts["session_id"]
+    task_scope = key_parts["task_scope"]
 
-    created_at_key = docket.key(f"fastmcp:task:{session_id}:{task_id}:created_at")
+    created_at_key = docket.key(f"{task_redis_prefix(task_scope)}:{task_id}:created_at")
     async with docket.redis() as redis:
         created_at_bytes = await redis.get(created_at_key)
 
@@ -189,11 +189,11 @@ async def _send_progress_notification(
     state_map = DOCKET_TO_MCP_STATE
     mcp_status = state_map.get(execution.state, "failed")
 
-    # Extract session_id from task_key for Redis lookup
+    # Extract task_scope from task_key for Redis lookup
     key_parts = parse_task_key(task_key)
-    session_id = key_parts["session_id"]
+    task_scope = key_parts["task_scope"]
 
-    created_at_key = docket.key(f"fastmcp:task:{session_id}:{task_id}:created_at")
+    created_at_key = docket.key(f"{task_redis_prefix(task_scope)}:{task_id}:created_at")
     async with docket.redis() as redis:
         created_at_bytes = await redis.get(created_at_key)
 
