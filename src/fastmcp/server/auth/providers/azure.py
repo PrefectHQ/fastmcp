@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from azure.identity.aio import OnBehalfOfCredential
     from mcp.server.auth.provider import AuthorizationParams
     from mcp.shared.auth import OAuthClientInformationFull
+    from pydantic import AnyHttpUrl
 
     from fastmcp.server.auth.auth import AuthProvider
 
@@ -103,7 +104,7 @@ class AzureProvider(OAuthProxy):
         tenant_id: str,
         required_scopes: list[str],
         base_url: str,
-        resource_base_url: str | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
         identifier_uri: str | None = None,
         issuer_url: str | None = None,
         redirect_path: str | None = None,

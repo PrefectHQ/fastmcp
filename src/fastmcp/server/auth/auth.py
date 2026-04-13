@@ -343,6 +343,9 @@ class AuthProvider(TokenVerifierProtocol):
     def _get_resource_url(self, path: str | None = None) -> AnyHttpUrl | None:
         """Get the actual resource URL being protected.
 
+        Uses ``resource_base_url`` if set; otherwise falls back to
+        ``base_url``.
+
         Args:
             path: The path where the resource endpoint is mounted (e.g., "/mcp")
 
