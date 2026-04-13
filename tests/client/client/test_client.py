@@ -774,7 +774,7 @@ def test_client_new_resets_mutable_task_state(fastmcp_server):
     """Client.new() should not share mutable task tracking structures."""
     client = Client(transport=FastMCPTransport(fastmcp_server))
 
-    client._task_registry["task-1"] = lambda: None  # type: ignore[assignment]
+    client._task_registry["task-1"] = lambda: None  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
     client._submitted_task_ids.add("task-1")
 
     clone = client.new()
