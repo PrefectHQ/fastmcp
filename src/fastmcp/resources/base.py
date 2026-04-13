@@ -347,7 +347,7 @@ class Resource(FastMCPComponent):
                 [
                     ResourceContent(
                         json.dumps(raw_value),
-                        mime_type="application/json",
+                        mime_type=self.mime_type or "application/json",
                         meta=self.meta,
                     )
                 ]
