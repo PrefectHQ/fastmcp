@@ -277,7 +277,8 @@ class AuthKitProvider(RemoteAuthProvider):
     For detailed setup instructions, see:
     https://workos.com/docs/authkit/mcp/integrating/token-verification
 
-    Token audience is bound to this server automatically: at startup,
+    Token audience is bound to this server automatically: when the MCP
+    mount path becomes known (typically at ``http_app()`` construction),
     ``JWTVerifier.audience`` is set to the resource URL advertised in
     ``.well-known/oauth-protected-resource``. Enable Resource Indicators
     (RFC 8707) in your WorkOS Dashboard and list that same URL — AuthKit

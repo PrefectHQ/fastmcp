@@ -419,13 +419,16 @@ class JWTVerifier(TokenVerifier):
                 or "unknown"
             )
 
-            # Validate expiration
+            # Validate expiration. Kept at INFO (not WARNING like issuer/
+            # audience/scope mismatches below) — expiry is expected-path noise
+            # from normal token rotation, not a configuration error worth
+            # surfacing by default.
             exp = claims.get("exp")
             if exp is not None and exp < time.time():
-                self.logger.debug(
-                    "Token validation failed: expired token for client %s", client_id
+                self.logger.info(
+                    "Bearer token rejected for client %s: token expired",
+                    client_id,
                 )
-                self.logger.info("Bearer token rejected for client %s", client_id)
                 return None
 
             # Validate issuer - note we use issuer instead of issuer_url here because

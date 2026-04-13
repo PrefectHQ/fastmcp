@@ -9,6 +9,7 @@ from pytest_httpx import HTTPXMock
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.auth.providers.workos import (
     AuthKitProvider,
     WorkOSProvider,
@@ -184,8 +185,6 @@ class TestAuthKitAudienceBinding:
     """
 
     def test_audience_binds_to_resource_url_on_set_mcp_path(self):
-        from fastmcp.server.auth.providers.jwt import JWTVerifier
-
         provider = AuthKitProvider(
             authkit_domain="https://test.authkit.app",
             base_url="http://127.0.0.1:8000",
@@ -203,11 +202,24 @@ class TestAuthKitAudienceBinding:
         assert verifier.audience == expected
         assert expected == "http://127.0.0.1:8000/mcp"
 
+    def test_set_mcp_path_none_binds_to_base_url(self):
+        """When no MCP path is provided, the resource URL is ``base_url``
+        itself (an MCP-at-root server) and the audience binds to that."""
+        provider = AuthKitProvider(
+            authkit_domain="https://test.authkit.app",
+            base_url="http://127.0.0.1:8000",
+        )
+
+        provider.set_mcp_path(None)
+
+        verifier = provider.token_verifier
+        assert isinstance(verifier, JWTVerifier)
+        # Matches _get_resource_url(None) which returns base_url unchanged.
+        assert verifier.audience == "http://127.0.0.1:8000/"
+
     def test_audience_respects_resource_base_url(self):
         """When ``resource_base_url`` differs from ``base_url``, the audience
         follows the advertised resource URL, not the OAuth-surface URL."""
-        from fastmcp.server.auth.providers.jwt import JWTVerifier
-
         provider = AuthKitProvider(
             authkit_domain="https://test.authkit.app",
             base_url="https://oauth.example.com",
@@ -222,8 +234,6 @@ class TestAuthKitAudienceBinding:
     def test_custom_token_verifier_audience_not_overwritten(self):
         """If the caller supplies their own verifier, we treat its audience
         as intentional and do not touch it."""
-        from fastmcp.server.auth.providers.jwt import JWTVerifier
-
         custom_audience = "https://some-other-resource.example.com"
         custom = JWTVerifier(
             jwks_uri="https://test.authkit.app/oauth2/jwks",
@@ -243,8 +253,6 @@ class TestAuthKitAudienceBinding:
     def test_audience_binds_through_http_app(self):
         """End-to-end: mounting a FastMCP server triggers the lifecycle hook
         that populates ``JWTVerifier.audience``."""
-        from fastmcp.server.auth.providers.jwt import JWTVerifier
-
         auth = AuthKitProvider(
             authkit_domain="https://test.authkit.app",
             base_url="http://127.0.0.1:8000",
