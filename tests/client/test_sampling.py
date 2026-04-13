@@ -344,3 +344,85 @@ class TestSamplingWithTools:
         assert "auto" in choices
         assert "required" in choices
         assert "none" in choices
+
+
+class TestSetCallbackLiveSession:
+    """Tests that set_sampling_callback and set_elicitation_callback propagate
+    to the live session immediately when the client is already connected (issue #3715)."""
+
+    async def test_set_sampling_callback_updates_live_session(self):
+        """set_sampling_callback called while connected should take effect immediately."""
+        server = FastMCP()
+
+        first_handler = AsyncMock(return_value="first")
+        second_handler = AsyncMock(return_value="second")
+
+        @server.tool
+        async def sample_tool(context: Context) -> str:
+            result = await context.sample("hello")
+            return result.text or ""
+
+        async with Client(server, sampling_handler=first_handler) as client:
+            # Replace the callback while connected
+            client.set_sampling_callback(second_handler)
+
+            # The live session should use the new callback
+            result = await client.call_tool("sample_tool")
+
+        assert result.data == "second"
+        second_handler.assert_called_once()
+        first_handler.assert_not_called()
+
+    async def test_set_elicitation_callback_updates_live_session(self):
+        """set_elicitation_callback called while connected should take effect immediately."""
+        from fastmcp.client.elicitation import ElicitResult
+
+        server = FastMCP()
+
+        first_called = False
+        second_called = False
+
+        async def first_handler(message, response_type, params, ctx):
+            nonlocal first_called
+            first_called = True
+            return ElicitResult(action="cancel")
+
+        async def second_handler(message, response_type, params, ctx):
+            nonlocal second_called
+            second_called = True
+            return ElicitResult(action="cancel")
+
+        @server.tool
+        async def elicit_tool(context: Context) -> str:
+            result = await context.elicit("Pick a color", str)
+            return result.action
+
+        async with Client(server, elicitation_handler=first_handler) as client:
+            # Replace the callback while connected
+            client.set_elicitation_callback(second_handler)
+
+            result = await client.call_tool("elicit_tool")
+
+        assert result.data == "cancel"
+        assert second_called
+        assert not first_called
+
+    async def test_set_sampling_callback_before_connect_takes_effect(self):
+        """set_sampling_callback called before connecting should still work on next connect."""
+        server = FastMCP()
+
+        handler = AsyncMock(return_value="response")
+
+        @server.tool
+        async def sample_tool(context: Context) -> str:
+            result = await context.sample("hello")
+            return result.text or ""
+
+        client = Client(server)
+        client.set_sampling_callback(handler)
+
+        async with client:
+            result = await client.call_tool("sample_tool")
+
+        assert result.data == "response"
+        handler.assert_called_once()

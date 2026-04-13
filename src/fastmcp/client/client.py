@@ -391,23 +391,35 @@ class Client(
         sampling_callback: SamplingHandler,
         sampling_capabilities: mcp.types.SamplingCapability | None = None,
     ) -> None:
-        """Set the sampling callback for the client."""
-        self._session_kwargs["sampling_callback"] = create_sampling_callback(
-            sampling_callback
-        )
-        self._session_kwargs["sampling_capabilities"] = (
+        """Set the sampling callback for the client.
+
+        If the client is currently connected, the callback takes effect immediately
+        on the live session without requiring a reconnect.
+        """
+        callback = create_sampling_callback(sampling_callback)
+        capabilities = (
             sampling_capabilities
             if sampling_capabilities is not None
             else mcp.types.SamplingCapability()
         )
+        self._session_kwargs["sampling_callback"] = callback
+        self._session_kwargs["sampling_capabilities"] = capabilities
+        if self.is_connected():
+            self.session._sampling_callback = callback
+            self.session._sampling_capabilities = capabilities
 
     def set_elicitation_callback(
         self, elicitation_callback: ElicitationHandler
     ) -> None:
-        """Set the elicitation callback for the client."""
-        self._session_kwargs["elicitation_callback"] = create_elicitation_callback(
-            elicitation_callback
-        )
+        """Set the elicitation callback for the client.
+
+        If the client is currently connected, the callback takes effect immediately
+        on the live session without requiring a reconnect.
+        """
+        callback = create_elicitation_callback(elicitation_callback)
+        self._session_kwargs["elicitation_callback"] = callback
+        if self.is_connected():
+            self.session._elicitation_callback = callback
 
     def is_connected(self) -> bool:
         """Check if the client is currently connected."""
