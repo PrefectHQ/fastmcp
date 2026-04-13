@@ -752,6 +752,15 @@ def _create_client_factory(
     """
     if isinstance(target, Client):
         client = target
+
+        # Plain Clients used as proxy backends also need header forwarding,
+        # same as ProxyClient (which sets this in __init__).
+        from fastmcp.client.transports.http import StreamableHttpTransport
+        from fastmcp.client.transports.sse import SSETransport
+
+        if isinstance(client.transport, StreamableHttpTransport | SSETransport):
+            client.transport.forward_incoming_headers = True
+
         if client.is_connected() and type(client) is ProxyClient:
             logger.info(
                 "Proxy detected connected ProxyClient - creating fresh sessions for each "
@@ -996,6 +1005,15 @@ class ProxyClient(Client[ClientTransportT]):
         if "progress_handler" not in kwargs:
             kwargs["progress_handler"] = default_proxy_progress_handler
         super().__init__(**kwargs | {"transport": transport})
+
+        # Enable forwarding of inbound HTTP headers (e.g. authorization) to
+        # the upstream server. This is only appropriate for proxy clients,
+        # where the caller's credentials should be propagated.
+        from fastmcp.client.transports.http import StreamableHttpTransport
+        from fastmcp.client.transports.sse import SSETransport
+
+        if isinstance(self.transport, StreamableHttpTransport | SSETransport):
+            self.transport.forward_incoming_headers = True
 
 
 class StatefulProxyClient(ProxyClient[ClientTransportT]):

@@ -18,6 +18,7 @@ from fastmcp.server.dependencies import (
     without_injected_parameters,
 )
 from fastmcp.tools.base import ToolResult
+from fastmcp.utilities.docstring_parsing import ParsedDocstring, parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
@@ -37,6 +38,16 @@ try:
     _PREFAB_TYPES: tuple[type, ...] = (_PrefabApp, _PrefabComponent)
 except ImportError:
     _PREFAB_TYPES = ()
+
+
+def _contains_bytes_type(tp: Any) -> bool:
+    """Check if *tp* is or contains bytes, recursing through unions and Annotated."""
+    if tp is bytes:
+        return True
+    origin = get_origin(tp)
+    if origin is Union or origin is types.UnionType or origin is Annotated:
+        return any(_contains_bytes_type(a) for a in get_args(tp))
+    return False
 
 
 def _contains_prefab_type(tp: Any) -> bool:
@@ -154,9 +165,9 @@ class ParsedFunction:
                             f"Parameter '{arg_name}' in exclude_args must have a default value."
                         )
 
-        # collect name and doc before we potentially modify the function
+        # collect name and description before we potentially modify the function
         fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
-        fn_doc = inspect.getdoc(fn)
+        outer_docstring = parse_docstring(fn)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
@@ -164,6 +175,19 @@ class ParsedFunction:
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
             fn = fn.__func__
+
+        # For callable classes, parameter descriptions must come from
+        # __call__'s docstring — where the exposed parameters are actually
+        # declared. The class docstring's Args section, if any, typically
+        # describes __init__, so falling back to it would risk injecting
+        # constructor docs into __call__'s schema on overlapping names.
+        # The description, however, comes from the class docstring (which
+        # describes what the tool IS) when present.
+        inner_docstring = parse_docstring(fn)
+        parsed_docstring = ParsedDocstring(
+            description=outer_docstring.description or inner_docstring.description,
+            parameters=inner_docstring.parameters,
+        )
 
         # Transform Context type annotations to Depends() for unified DI
         fn = transform_context_annotations(fn)
@@ -185,6 +209,18 @@ class ParsedFunction:
             input_schema, prune_params=prune_params, prune_titles=True
         )
 
+        # Inject parameter descriptions from the docstring into the schema.
+        # Explicit annotations (Field(description=...), Annotated[x, "..."])
+        # already have a "description" key and take precedence.
+        if parsed_docstring.parameters:
+            properties = input_schema.get("properties", {})
+            for param_name, param_desc in parsed_docstring.parameters.items():
+                if (
+                    param_name in properties
+                    and "description" not in properties[param_name]
+                ):
+                    properties[param_name]["description"] = param_desc
+
         output_schema = None
         # Get the return annotation from the signature
         sig = inspect.signature(fn)
@@ -205,6 +241,10 @@ class ParsedFunction:
         original_output_type = output_type
 
         if output_type not in (inspect._empty, None, Any, ...):
+            # bytes can't be represented as structured JSON output — skip schema
+            if _contains_bytes_type(output_type):
+                output_type = _UnserializableType
+
             # Prefab component subclasses (Column, Card, etc.) shouldn't
             # produce output schemas — replace_type only does exact matching,
             # so we handle subclass matching explicitly here.  We also need
@@ -268,7 +308,7 @@ class ParsedFunction:
         return cls(
             fn=fn,
             name=fn_name,
-            description=fn_doc,
+            description=parsed_docstring.description,
             input_schema=input_schema,
             output_schema=output_schema or None,
             return_type=original_output_type,

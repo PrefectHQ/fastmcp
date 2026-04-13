@@ -37,6 +37,7 @@ class InMemoryOAuthProvider(OAuthProvider):
     def __init__(
         self,
         base_url: AnyHttpUrl | str | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
         service_documentation_url: AnyHttpUrl | str | None = None,
         client_registration_options: ClientRegistrationOptions | None = None,
         revocation_options: RevocationOptions | None = None,
@@ -44,6 +45,7 @@ class InMemoryOAuthProvider(OAuthProvider):
     ):
         super().__init__(
             base_url=base_url or "http://fastmcp.example.com",
+            resource_base_url=resource_base_url,
             service_documentation_url=service_documentation_url,
             client_registration_options=client_registration_options,
             revocation_options=revocation_options,

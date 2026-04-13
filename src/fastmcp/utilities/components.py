@@ -147,6 +147,13 @@ class FastMCPComponent(FastMCPBaseModel):
 
         Subclasses should override this to use their specific identifier.
         Base implementation uses name.
+
+        Prefer `.key` over ad-hoc `name or uri or uri_template` logic for any
+        cross-component identity work (dedupe, grouping, collision detection,
+        lookup tables). It encodes type, identifier, and version, so variants
+        of the same component don't falsely collide with each other, and
+        cross-type identifiers (e.g. a tool and a resource both named "foo")
+        can't clash.
         """
         base_key = self.make_key(self.name)
         return f"{base_key}@{self.version or ''}"

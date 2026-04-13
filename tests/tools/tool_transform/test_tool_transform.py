@@ -618,3 +618,41 @@ class TestProxy:
             result = await client.call_tool("add_transformed", {"new_x": 1, "old_y": 2})
             assert isinstance(result.content[0], TextContent)
             assert result.content[0].text == "3"
+
+
+async def test_sync_transform_fn():
+    """Sync transform_fn should not crash when called (was unconditionally awaited)."""
+
+    @Tool.from_function
+    def parent(x: int, y: int = 10) -> int:
+        return x + y
+
+    def sync_transform(x: int, **kwargs) -> str:
+        return f"transformed: {x}"
+
+    transformed = Tool.from_tool(parent, transform_fn=sync_transform)
+    result = await transformed.run(arguments={"x": 7})
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "transformed: 7"
+
+
+async def test_transform_args_do_not_mutate_parent_schema():
+    """Mutating a transformed tool's schema must not corrupt the parent's schema."""
+
+    @Tool.from_function
+    def parent(x: int, y: int = 10) -> int:
+        return x + y
+
+    parent_props_before = {
+        k: dict(v) for k, v in parent.parameters["properties"].items()
+    }
+
+    transformed = Tool.from_tool(
+        parent,
+        transform_args={"x": ArgTransform(name="a")},
+    )
+
+    transformed.parameters["properties"]["a"]["description"] = "INJECTED"
+
+    parent_props_after = parent.parameters["properties"]
+    assert parent_props_after == parent_props_before

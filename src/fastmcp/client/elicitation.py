@@ -61,10 +61,18 @@ def create_elicitation_callback(
                 result = ElicitResult(action="accept", content=result)
             content = to_jsonable_python(result.content)
             if not isinstance(content, dict | None):
-                raise ValueError(
-                    "Elicitation responses must be serializable as a JSON object (dict). Received: "
-                    f"{result.content!r}"
-                )
+                # Auto-wrap scalar values for ScalarElicitationType schemas
+                # (single "value" property). This lets handlers return T directly
+                # for ctx.elicit("msg", str/int/float/bool).
+                if isinstance(params, ElicitRequestFormParams) and set(
+                    params.requestedSchema.get("properties", {}).keys()
+                ) == {"value"}:
+                    content = {"value": content}
+                else:
+                    raise ValueError(
+                        "Elicitation responses must be serializable as a JSON object (dict). Received: "
+                        f"{result.content!r}"
+                    )
             return MCPElicitResult(
                 _meta=result.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
                 action=result.action,

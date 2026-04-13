@@ -117,6 +117,12 @@ mcp = FastMCP(name="My Server", auth=auth)
   This URL is used to construct OAuth callback URLs and operational endpoints. When mounting under a path prefix, include that prefix in `base_url`. Use `issuer_url` separately to specify where auth server metadata is located (typically at root level).
 </ParamField>
 
+<ParamField body="resource_base_url" type="AnyHttpUrl | str | None">
+  Optional public base URL for the protected resource metadata and token audience.
+
+  Use this when your OAuth callbacks and operational endpoints need to live under one public URL, but the protected MCP resource should be advertised under another. FastMCP will still append the MCP mount path (for example, `/mcp`) to this base URL.
+</ParamField>
+
 <ParamField body="redirect_path" type="str" default="/auth/callback">
   Path for OAuth callbacks. Must match the redirect URI configured in your OAuth
   application
@@ -163,6 +169,14 @@ mcp = FastMCP(name="My Server", auth=auth)
   and proxy-to-upstream). - `True` (default): Forward PKCE for providers that
   support it (Google, Azure, AWS, GitHub, etc.) - `False`: Disable only if upstream
   provider doesn't support PKCE
+</ParamField>
+
+<ParamField body="forward_resource" type="bool" default="True">
+  Whether to forward RFC 8707 `resource` parameters from MCP clients to the
+  upstream OAuth provider. When enabled, the proxy includes the resource indicator
+  in authorization requests, allowing providers that support RFC 8707 to scope
+  tokens to specific resources. Disable for providers that reject unknown
+  parameters.
 </ParamField>
 
 <ParamField body="token_endpoint_auth_method" type="str | None">
@@ -386,7 +400,7 @@ auth = OAuthProxy(
 )
 ```
 
-The proxy also automatically forwards RFC 8707 `resource` parameters from MCP clients to upstream providers that support them.
+The proxy also forwards RFC 8707 `resource` parameters from MCP clients to upstream providers that support them. This is enabled by default via the `forward_resource` parameter. Disable it for providers that reject unknown parameters.
 
 ## OAuth Flow
 

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from azure.identity.aio import OnBehalfOfCredential
     from mcp.server.auth.provider import AuthorizationParams
     from mcp.shared.auth import OAuthClientInformationFull
+    from pydantic import AnyHttpUrl
 
     from fastmcp.server.auth.auth import AuthProvider
 
@@ -103,6 +104,7 @@ class AzureProvider(OAuthProxy):
         tenant_id: str,
         required_scopes: list[str],
         base_url: str,
+        resource_base_url: AnyHttpUrl | str | None = None,
         identifier_uri: str | None = None,
         issuer_url: str | None = None,
         redirect_path: str | None = None,
@@ -131,6 +133,8 @@ class AzureProvider(OAuthProxy):
                 Example: identifier_uri="api://my-api" + required_scopes=["read"]
                 → tokens validated for "api://my-api/read"
             base_url: Public URL where OAuth endpoints will be accessible (includes any mount path)
+            resource_base_url: Optional public base URL for the protected resource metadata
+                and token audience. Defaults to ``base_url``.
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.
             redirect_path: Redirect path configured in Azure App registration (defaults to "/auth/callback")
@@ -220,7 +224,7 @@ class AzureProvider(OAuthProxy):
         token_verifier = JWTVerifier(
             jwks_uri=jwks_uri,
             issuer=issuer,
-            audience=client_id,
+            audience=[client_id, self.identifier_uri],
             algorithm="RS256",
             required_scopes=validation_scopes,  # Only validate non-OIDC scopes
             http_client=http_client,
@@ -242,6 +246,7 @@ class AzureProvider(OAuthProxy):
             upstream_client_secret=client_secret,
             token_verifier=token_verifier,
             base_url=base_url,
+            resource_base_url=resource_base_url,
             redirect_path=redirect_path,
             issuer_url=issuer_url or base_url,  # Default to base_url if not specified
             allowed_client_redirect_uris=allowed_client_redirect_uris,
@@ -627,7 +632,7 @@ class AzureJWTVerifier(JWTVerifier):
         super().__init__(
             jwks_uri=f"https://{base_authority}/{tenant_id}/discovery/v2.0/keys",
             issuer=issuer,
-            audience=client_id,
+            audience=[client_id, self._identifier_uri],
             algorithm="RS256",
             required_scopes=required_scopes,
         )

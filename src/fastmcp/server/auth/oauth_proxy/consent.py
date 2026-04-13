@@ -29,6 +29,10 @@ from fastmcp.utilities.ui import create_secure_html_response
 if TYPE_CHECKING:
     from fastmcp.server.auth.oauth_proxy.proxy import OAuthProxy
 
+# Maximum number of remembered client approvals/denials stored in cookies.
+# Keeps the Cookie header bounded to avoid hitting reverse proxy header limits.
+_MAX_REMEMBERED_CLIENTS = 25
+
 logger = get_logger(__name__)
 
 
@@ -462,10 +466,12 @@ class ConsentMixin:
         client_key = self._make_client_key(txn["client_id"], txn["client_redirect_uri"])
 
         if action == "approve":
-            approved = set(self._decode_list_cookie(request, "MCP_APPROVED_CLIENTS"))
-            if client_key not in approved:
-                approved.add(client_key)
-            approved_b64 = self._encode_list_cookie(sorted(approved))
+            approved = list(self._decode_list_cookie(request, "MCP_APPROVED_CLIENTS"))
+            if client_key in approved:
+                approved.remove(client_key)
+            approved.append(client_key)
+            approved = approved[-_MAX_REMEMBERED_CLIENTS:]
+            approved_b64 = self._encode_list_cookie(approved)
 
             consent_token = secrets.token_urlsafe(32)
             txn_model.consent_token = consent_token
@@ -484,10 +490,12 @@ class ConsentMixin:
             return response
 
         elif action == "deny":
-            denied = set(self._decode_list_cookie(request, "MCP_DENIED_CLIENTS"))
-            if client_key not in denied:
-                denied.add(client_key)
-            denied_b64 = self._encode_list_cookie(sorted(denied))
+            denied = list(self._decode_list_cookie(request, "MCP_DENIED_CLIENTS"))
+            if client_key in denied:
+                denied.remove(client_key)
+            denied.append(client_key)
+            denied = denied[-_MAX_REMEMBERED_CLIENTS:]
+            denied_b64 = self._encode_list_cookie(denied)
 
             callback_params = {
                 "error": "access_denied",

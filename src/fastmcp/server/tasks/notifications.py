@@ -211,10 +211,18 @@ async def _send_mcp_notification(
                     "input_required notification missing taskId, skipping relay"
                 )
                 return
+            if "task_scope" not in related_task:
+                logger.warning(
+                    "input_required notification for task %s missing task_scope "
+                    "metadata, skipping elicitation relay",
+                    task_id,
+                )
+                return
+            task_scope = related_task["task_scope"]
             from fastmcp.server.tasks.elicitation import relay_elicitation
 
             task = asyncio.create_task(
-                relay_elicitation(session, session_id, task_id, elicitation, fastmcp),
+                relay_elicitation(session, task_scope, task_id, elicitation, fastmcp),
                 name=f"elicitation-relay-{task_id[:8]}",
             )
             _background_tasks.add(task)

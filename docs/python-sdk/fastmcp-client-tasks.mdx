@@ -114,8 +114,8 @@ with fallback to polling (reliable). Optimally wakes up immediately
 on status changes when server sends notifications/tasks/status.
 
 **Args:**
-- `state`: Desired state ('submitted', 'working', 'completed', 'failed').
-   If None, waits for any terminal state (completed/failed)
+- `state`: Desired state ('working', 'input_required', 'completed', 'failed', 'cancelled').
+   If None, waits until the task exits the 'working' state (completed, failed, cancelled, input_required, etc.)
 - `timeout`: Maximum time to wait in seconds
 
 **Returns:**
@@ -125,7 +125,7 @@ on status changes when server sends notifications/tasks/status.
 - `TimeoutError`: If desired state not reached within timeout
 
 
-#### `cancel` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L272" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `cancel` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L287" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 cancel(self) -> None
@@ -140,7 +140,7 @@ Note: If server executed immediately (graceful degradation), this is a no-op
 as there's no server-side task to cancel.
 
 
-### `ToolTask` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L294" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ToolTask` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L309" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Represents a tool call that may execute in background or immediately.
@@ -151,7 +151,7 @@ or executes synchronously (graceful degradation per SEP-1686).
 
 **Methods:**
 
-#### `result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L336" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L351" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 result(self) -> CallToolResult
@@ -166,7 +166,7 @@ Otherwise waits for background task to complete and retrieves result.
 - The parsed tool result (same as call_tool returns)
 
 
-### `PromptTask` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L396" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `PromptTask` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L411" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Represents a prompt call that may execute in background or immediately.
@@ -177,7 +177,7 @@ or executes synchronously (graceful degradation per SEP-1686).
 
 **Methods:**
 
-#### `result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L427" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L442" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 result(self) -> mcp.types.GetPromptResult
@@ -192,7 +192,7 @@ Otherwise waits for background task to complete and retrieves result.
 - The prompt result with messages and description
 
 
-### `ResourceTask` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L461" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResourceTask` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L476" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Represents a resource read that may execute in background or immediately.
@@ -203,7 +203,7 @@ or executes synchronously (graceful degradation per SEP-1686).
 
 **Methods:**
 
-#### `result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L497" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/tasks.py#L512" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 result(self) -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]
