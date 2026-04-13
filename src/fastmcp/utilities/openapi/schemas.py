@@ -247,7 +247,8 @@ def _combine_schemas_and_map_params(
         "header": set(),
         "cookie": set(),
     }
-    body_props = {}
+    body_schema: dict[str, Any] = {}
+    body_props: dict[str, Any] = {}
 
     for param in route.parameters:
         param_names_by_location[param.location].add(param.name)

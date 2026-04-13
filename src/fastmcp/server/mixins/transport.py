@@ -263,9 +263,11 @@ class TransportMixin:
         if stateless_http and transport == "sse":
             raise ValueError("SSE transport does not support stateless mode")
 
-        host = host or fastmcp.settings.host
-        port = port or fastmcp.settings.port
-        default_log_level_to_use = (log_level or fastmcp.settings.log_level).lower()
+        host = host if host is not None else fastmcp.settings.host
+        port = port if port is not None else fastmcp.settings.port
+        default_log_level_to_use = (
+            log_level if log_level is not None else fastmcp.settings.log_level
+        ).lower()
 
         app = self.http_app(
             path=path,
@@ -335,7 +337,9 @@ class TransportMixin:
         if transport in ("streamable-http", "http"):
             return create_streamable_http_app(
                 server=self,
-                streamable_http_path=path or fastmcp.settings.streamable_http_path,
+                streamable_http_path=path
+                if path is not None
+                else fastmcp.settings.streamable_http_path,
                 event_store=event_store,
                 retry_interval=retry_interval,
                 auth=self.auth,
@@ -356,7 +360,7 @@ class TransportMixin:
             return create_sse_app(
                 server=self,
                 message_path=fastmcp.settings.message_path,
-                sse_path=path or fastmcp.settings.sse_path,
+                sse_path=path if path is not None else fastmcp.settings.sse_path,
                 auth=self.auth,
                 debug=fastmcp.settings.debug,
                 middleware=middleware,

@@ -219,7 +219,16 @@ get_app_tool(self, app_name: str, tool_name: str) -> Tool | None
 Delegate to nested server's get_app_tool, wrapping for middleware.
 
 
-#### `get_tasks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L671" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool_by_hash` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L580" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None
+```
+
+Delegate to nested server's get_tool_by_hash, wrapping for middleware.
+
+
+#### `get_tasks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L679" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tasks(self) -> Sequence[FastMCPComponent]
@@ -233,7 +242,7 @@ server's transforms applied, then applies this provider's transforms
 for correct registration keys.
 
 
-#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L712" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L720" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 lifespan(self) -> AsyncIterator[None]

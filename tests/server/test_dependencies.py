@@ -757,11 +757,108 @@ class TestDependencyInjection:
 
         assert is_docket_available() is True
 
+    def test_is_docket_available_false_when_pydocket_too_old(self, monkeypatch):
+        """``is_docket_available()`` must treat pre-0.19.0 pydocket as unavailable.
+
+        Older pydocket versions (e.g. 0.16.x, pulled in transitively by
+        packages like prefect) import cleanly but lack the APIs fastmcp
+        uses (``docket.dependencies.current_execution``, etc.). Without a
+        version floor, the check would report available and then crash at
+        runtime. Simulate by forcing ``importlib.metadata`` to report an
+        old version.
+        """
+        import importlib.metadata
+
+        from fastmcp.server import dependencies
+
+        original_version = importlib.metadata.version
+
+        def fake_version(name: str) -> str:
+            if name == "pydocket":
+                return "0.16.6"
+            return original_version(name)
+
+        monkeypatch.setattr(dependencies, "_DOCKET_AVAILABLE", None)
+        monkeypatch.setattr(importlib.metadata, "version", fake_version)
+
+        assert dependencies.is_docket_available() is False
+        # The wrapper that actually failed in #3803 must now return None
+        # instead of raising ImportError on the inner import.
+        assert dependencies.get_task_context() is None
+
+    def test_is_docket_available_false_when_pydocket_not_installed(self, monkeypatch):
+        """``is_docket_available()`` returns False when pydocket is absent."""
+        import importlib.metadata
+
+        from fastmcp.server import dependencies
+
+        original_version = importlib.metadata.version
+
+        def fake_version(name: str) -> str:
+            if name == "pydocket":
+                raise importlib.metadata.PackageNotFoundError(name)
+            return original_version(name)
+
+        monkeypatch.setattr(dependencies, "_DOCKET_AVAILABLE", None)
+        monkeypatch.setattr(importlib.metadata, "version", fake_version)
+
+        assert dependencies.is_docket_available() is False
+
+    def test_is_docket_available_false_when_import_broken(self, monkeypatch):
+        """Metadata says installed but ``import docket`` fails — treat as unavailable.
+
+        Catches the broken/partial-install case where ``importlib.metadata``
+        still reports a usable version but the package itself isn't actually
+        importable (corrupted wheel, sys.path weirdness, etc.). Without the
+        import probe, fastmcp would later crash on its first ``from docket
+        ...`` instead of falling back gracefully.
+        """
+        import builtins
+
+        from fastmcp.server import dependencies
+
+        original_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "docket" or name.startswith("docket."):
+                raise ImportError("simulated broken docket install")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(dependencies, "_DOCKET_AVAILABLE", None)
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        assert dependencies.is_docket_available() is False
+
     def test_require_docket_passes_when_installed(self):
         """Test require_docket doesn't raise when docket is installed."""
         from fastmcp.server.dependencies import require_docket
 
         require_docket("test feature")
+
+    def test_require_docket_error_mentions_version_when_too_old(self, monkeypatch):
+        """``require_docket()`` distinguishes "missing" from "too old".
+
+        When pydocket is installed but pinned below the floor, the install
+        instructions in the error must point at upgrading pydocket — not at
+        installing the ``tasks`` extra (which the resolver will treat as a
+        no-op as long as the lower pin is held by another package).
+        """
+        import importlib.metadata
+
+        from fastmcp.server import dependencies
+
+        original_version = importlib.metadata.version
+
+        def fake_version(name: str) -> str:
+            if name == "pydocket":
+                return "0.16.6"
+            return original_version(name)
+
+        monkeypatch.setattr(dependencies, "_DOCKET_AVAILABLE", None)
+        monkeypatch.setattr(importlib.metadata, "version", fake_version)
+
+        with pytest.raises(ImportError, match="pydocket 0.16.6 is installed"):
+            dependencies.require_docket("CurrentDocket()")
 
     def test_dependency_class_exists(self):
         """Test Dependency and Depends are importable from fastmcp."""

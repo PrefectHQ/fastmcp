@@ -8,6 +8,7 @@ CurrentWorker) and background task execution require fastmcp[tasks].
 from __future__ import annotations
 
 import contextlib
+import importlib.metadata
 import inspect
 import json
 import logging
@@ -30,6 +31,7 @@ from mcp.server.auth.provider import (
     AccessToken as _SDKAccessToken,
 )
 from mcp.server.lowlevel.server import request_ctx
+from packaging.version import Version
 from starlette.requests import Request
 from uncalled_for import Dependency, get_dependency_parameters
 from uncalled_for.resolution import _Depends
@@ -420,15 +422,34 @@ def _get_sync_redis(url: str) -> Any:
 _DOCKET_AVAILABLE: bool | None = None
 
 
+_MIN_DOCKET_VERSION = Version("0.19.0")
+
+
 def is_docket_available() -> bool:
-    """Check if pydocket is installed."""
+    """Check if a compatible pydocket (>= 0.19.0) is installed and importable.
+
+    Three things have to be true for fastmcp's task features to work:
+      1. pydocket distribution metadata is discoverable
+      2. its version is at least ``_MIN_DOCKET_VERSION`` (older versions are
+         missing symbols like ``docket.dependencies.current_execution``,
+         which fastmcp imports on the request hot path)
+      3. the package actually imports — guards against broken/partial
+         installs where metadata exists but ``import docket`` blows up
+
+    Any of those failing means we treat docket as unavailable and fall back
+    to the no-tasks code paths instead of crashing deep inside a request.
+    """
     global _DOCKET_AVAILABLE
     if _DOCKET_AVAILABLE is None:
         try:
-            import docket  # noqa: F401
+            installed = Version(importlib.metadata.version("pydocket"))
+            if installed < _MIN_DOCKET_VERSION:
+                _DOCKET_AVAILABLE = False
+            else:
+                import docket  # noqa: F401
 
-            _DOCKET_AVAILABLE = True
-        except ImportError:
+                _DOCKET_AVAILABLE = True
+        except (importlib.metadata.PackageNotFoundError, ImportError):
             _DOCKET_AVAILABLE = False
     return _DOCKET_AVAILABLE
 
@@ -440,12 +461,27 @@ def require_docket(feature: str) -> None:
         feature: Description of what requires docket (e.g., "`task=True`",
                  "CurrentDocket()"). Will be included in the error message.
     """
-    if not is_docket_available():
-        raise ImportError(
-            f"FastMCP background tasks require the `tasks` extra. "
-            f"Install with: pip install 'fastmcp[tasks]'. "
-            f"(Triggered by {feature})"
+    if is_docket_available():
+        return
+
+    try:
+        installed = importlib.metadata.version("pydocket")
+    except importlib.metadata.PackageNotFoundError:
+        installed = None
+
+    if installed is None:
+        detail = (
+            "FastMCP background tasks require the `tasks` extra. "
+            "Install with: pip install 'fastmcp[tasks]'."
         )
+    else:
+        detail = (
+            f"FastMCP background tasks require pydocket>={_MIN_DOCKET_VERSION}, "
+            f"but pydocket {installed} is installed (likely pulled in by another "
+            f"package). Upgrade with: pip install -U 'pydocket>={_MIN_DOCKET_VERSION}'."
+        )
+
+    raise ImportError(f"{detail} (Triggered by {feature})")
 
 
 # Import Progress separately — it's docket-specific, not part of uncalled-for
@@ -731,7 +767,7 @@ def get_http_headers(
         }
         if include:
             exclude_headers -= {h.lower() for h in include}
-        # (just in case)
+        # Sanity check: all entries must already be lowercase
         if not all(h.lower() == h for h in exclude_headers):
             raise ValueError("Excluded headers must be lowercase")
     headers: dict[str, str] = {}

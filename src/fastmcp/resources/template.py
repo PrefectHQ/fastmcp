@@ -553,7 +553,7 @@ class FunctionResourceTemplate(ResourceTemplate):
                     f"URI parameters {all_uri_params} must be a subset of the function arguments: {func_params}"
                 )
 
-        description = description or inspect.getdoc(fn)
+        description = description if description is not None else inspect.getdoc(fn)
 
         # Normalize task to TaskConfig and validate
         if task is None:

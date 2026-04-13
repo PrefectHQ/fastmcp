@@ -235,6 +235,10 @@ class AnthropicSamplingHandler:
                                 is_error=item.isError if item.isError else False,
                             )
                         )
+                    else:
+                        raise ValueError(
+                            f"Unsupported content type for Anthropic: {type(item).__name__}"
+                        )
 
                 if content_blocks:
                     anthropic_messages.append(

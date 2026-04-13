@@ -749,3 +749,21 @@ async def test_client_does_not_unwrap_dict_result():
         assert result.structured_content == {"a": 1}
         assert result.data == {"a": 1}
         assert result.meta is None
+
+
+async def test_client_list_dict_return_type():
+    """list[dict] return type should produce list of dicts, not Root() objects (issue #3867)."""
+    server = FastMCP()
+
+    @server.tool
+    def get_temperatures() -> list[dict]:
+        """Get current temperatures for all cities"""
+        return [
+            {"city": "NYC", "temp": 72},
+            {"city": "LA", "temp": 85},
+        ]
+
+    client = Client(transport=FastMCPTransport(server))
+    async with client:
+        result = await client.call_tool("get_temperatures", {})
+        assert result.data == [{"city": "NYC", "temp": 72}, {"city": "LA", "temp": 85}]

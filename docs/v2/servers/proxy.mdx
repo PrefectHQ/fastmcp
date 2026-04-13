@@ -52,7 +52,7 @@ The recommended way to create a proxy is using `ProxyClient`, which provides ful
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.proxy import ProxyClient
+from fastmcp.server.providers.proxy import ProxyClient
 
 # Create a proxy with full MCP feature support
 proxy = FastMCP.as_proxy(
@@ -86,7 +86,7 @@ FastMCP proxies provide session isolation to ensure safe concurrent operations. 
 When you pass a disconnected client (which is the normal case), each request gets its own isolated backend session:
 
 ```python
-from fastmcp.server.proxy import ProxyClient
+from fastmcp.server.providers.proxy import ProxyClient
 
 # Each request creates a fresh backend session (recommended)
 proxy = FastMCP.as_proxy(ProxyClient("backend_server.py"))
@@ -121,7 +121,7 @@ A common use case is bridging transports - exposing a server running on one tran
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.proxy import ProxyClient
+from fastmcp.server.providers.proxy import ProxyClient
 
 # Bridge remote SSE server to local stdio
 remote_proxy = FastMCP.as_proxy(
@@ -164,7 +164,7 @@ if __name__ == "__main__":
 - **Progress**: Forwards progress notifications during long operations
 
 ```python
-from fastmcp.server.proxy import ProxyClient
+from fastmcp.server.providers.proxy import ProxyClient
 
 # ProxyClient automatically handles all these features
 backend = ProxyClient("advanced_backend.py")
@@ -304,7 +304,7 @@ Internally, `FastMCP.as_proxy()` uses the `FastMCPProxy` class. You generally do
 ### Direct Usage
 
 ```python
-from fastmcp.server.proxy import FastMCPProxy, ProxyClient
+from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 
 # Provide a client factory for explicit session control
 def create_client():

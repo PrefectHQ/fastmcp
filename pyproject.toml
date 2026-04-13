@@ -25,6 +25,7 @@ dependencies = [
     "jsonref>=1.1.0",
     "uncalled-for>=0.2.0",
     "watchfiles>=1.0.0",
+    "griffelib>=2.0.0",
 ]
 
 requires-python = ">=3.10"
@@ -56,13 +57,10 @@ anthropic = ["anthropic>=0.48.0"]
 apps = ["prefab-ui>=0.18.0"]
 # PyJWT floor: transitive via msal; CVE-2026-32597 affects <= 2.11.0
 azure = ["azure-identity>=1.16.0", "PyJWT>=2.12.0"]
-code-mode = ["pydantic-monty==0.0.9"]
+code-mode = ["pydantic-monty==0.0.11"]
 gemini = ["google-genai>=1.18.0"]
 openai = ["openai>=1.102.0"]
-# fakeredis 2.35.0 renamed FakeConnection, which breaks pydocket's memory://
-# backend. Remove the ceiling once a fixed pydocket release ships.
-# See https://github.com/chrisguidry/docket/pull/382
-tasks = ["pydocket>=0.18.0", "fakeredis[lua]<2.35.0"]
+tasks = ["pydocket>=0.19.0"]
 
 [dependency-groups]
 dev = [
@@ -92,6 +90,7 @@ dev = [
     "prek>=0.2.12",
     "loq>=0.1.0a3",
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
+    "pytest-examples>=0.0.18",
 ]
 
 [project.scripts]
@@ -165,6 +164,15 @@ python-version = "3.10"
 # Some code uses `# ty: ignore[invalid-argument-type]` for this limitation.
 # TODO: Remove these ignores once ty supports union narrowing
 
+# Promote rules from default-ignore to warn (becomes error via error-on-warning)
+division-by-zero = "warn"
+possibly-missing-attribute = "warn"
+possibly-missing-import = "warn"
+possibly-unresolved-reference = "warn"
+unsupported-dynamic-base = "warn"
+unsupported-operator = "warn"
+unused-ignore-comment = "warn"
+
 [tool.ty.terminal]
 error-on-warning = true
 
@@ -176,13 +184,24 @@ ignore = [
     "SIM102",  # Dont require combining if statements
 ]
 extend-select = [
-    "B",   # flake8-bugbear: Catches actual bugs like mutable default arguments
-    "C4",  # flake8-comprehensions: More efficient/readable comprehensions
-    "I",   # flake8-builtins: Catches builtins that are not explicitly imported
-    "PIE", # flake8-pie: More idiomatic Python code
-    "RUF", # Ruff-specific: Modern best practices unique to Ruff
-    "SIM", # flake8-simplify: Simplifies verbose code patterns
-    "UP",  # flake8-unused-imports: Catches unused imports
+    "B",    # flake8-bugbear: Catches actual bugs like mutable default arguments
+    "C4",   # flake8-comprehensions: More efficient/readable comprehensions
+    "DTZ",  # flake8-datetimez: Enforce timezone-aware datetime usage
+    "ERA",  # eradicate: Detect commented-out code
+    "FA",   # flake8-future-annotations: Enforce from __future__ import annotations
+    "FLY",  # flynt: Static string joins that should be f-strings
+    "I",    # isort: Import sorting
+    "INP",  # flake8-no-pep420: Require __init__.py in namespace packages
+    "ISC",  # flake8-implicit-str-concat: Prevent accidental string concatenation
+    "LOG",  # flake8-logging: Catches logging module misuse
+    "PIE",  # flake8-pie: More idiomatic Python code
+    "PLE",  # pylint-error: Catches actual errors (invalid operations, syntax issues)
+    "RSE",  # flake8-raise: Unnecessary parentheses on raise
+    "RUF",  # Ruff-specific: Modern best practices unique to Ruff
+    "SIM",  # flake8-simplify: Simplifies verbose code patterns
+    "SLOT", # flake8-slots: Enforce __slots__ where applicable
+    "TID",  # flake8-tidy-imports: Banned imports and relative import enforcement
+    "UP",   # pyupgrade: Modernize syntax for newer Python versions
 ]
 
 [tool.ruff.lint.isort]
@@ -193,11 +212,22 @@ known-first-party = ["fastmcp"]
 # allow imports not at the top of the file
 "src/fastmcp/__init__.py" = ["E402"]
 "!src/**.py" = [ # Only enforce extended ruff rules for code in src/
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "PIE", # flake8-pie
-    "RUF", # Ruff-specific
-    "SIM", # flake8-simplify
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "DTZ",  # flake8-datetimez
+    "ERA",  # eradicate
+    "FA",   # flake8-future-annotations
+    "FLY",  # flynt
+    "INP",  # flake8-no-pep420
+    "ISC",  # flake8-implicit-str-concat
+    "LOG",  # flake8-logging
+    "PIE",  # flake8-pie
+    "PLE",  # pylint-error
+    "RSE",  # flake8-raise
+    "RUF",  # Ruff-specific
+    "SIM",  # flake8-simplify
+    "SLOT", # flake8-slots
+    "TID",  # flake8-tidy-imports
 ]
 
 
