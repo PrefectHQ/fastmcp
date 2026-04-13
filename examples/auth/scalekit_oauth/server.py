@@ -8,7 +8,7 @@ Required environment variables:
 
 Optional:
 - SCALEKIT_REQUIRED_SCOPES: Comma-separated scopes tokens must include
-- BASE_URL: Public URL where the FastMCP server is exposed (defaults to `http://localhost:8000/`)
+- BASE_URL: Public URL where the FastMCP server is exposed (defaults to `http://127.0.0.1:8000/`)
 
 To run:
     python server.py
@@ -30,7 +30,7 @@ auth = ScalekitProvider(
     environment_url=os.getenv("SCALEKIT_ENVIRONMENT_URL")
     or "https://your-env.scalekit.com",
     resource_id=os.getenv("SCALEKIT_RESOURCE_ID") or "",
-    base_url=os.getenv("BASE_URL", "http://localhost:8000/"),
+    base_url=os.getenv("BASE_URL", "http://127.0.0.1:8000/"),
     required_scopes=required_scopes,
 )
 

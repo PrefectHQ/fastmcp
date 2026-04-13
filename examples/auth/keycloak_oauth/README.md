@@ -6,7 +6,7 @@ Demonstrates FastMCP server protection with Keycloak OAuth.
 
 ## Setup
 
-1. Configure a Keycloak realm with Dynamic Client Registration enabled and a trusted host policy for your server URL (e.g. `http://localhost:8000/*`).
+1. Configure a Keycloak realm with Dynamic Client Registration enabled and a trusted host policy for your server URL (e.g. `http://127.0.0.1:8000/*`).
 
 2. Set environment variables:
 
