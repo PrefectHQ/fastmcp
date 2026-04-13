@@ -30,7 +30,7 @@ from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.tasks.config import DEFAULT_POLL_INTERVAL_MS, DEFAULT_TTL_MS
 from fastmcp.server.tasks.context import get_task_scope
-from fastmcp.server.tasks.keys import parse_task_key
+from fastmcp.server.tasks.keys import parse_task_key, task_redis_prefix
 from fastmcp.tools.base import Tool
 from fastmcp.utilities.versions import VersionSpec
 
@@ -71,7 +71,7 @@ def _parse_key_version(key_suffix: str) -> tuple[str, str | None]:
 
 async def _lookup_task_execution(
     docket: Any,
-    task_scope: str,
+    task_scope: str | None,
     client_task_id: str,
 ) -> tuple[Any, str | None, int]:
     """Look up task execution and metadata from Redis.
@@ -90,13 +90,10 @@ async def _lookup_task_execution(
     Raises:
         McpError: If task not found or execution not found
     """
-    task_meta_key = docket.key(f"fastmcp:task:{task_scope}:{client_task_id}")
-    created_at_key = docket.key(
-        f"fastmcp:task:{task_scope}:{client_task_id}:created_at"
-    )
-    poll_interval_key = docket.key(
-        f"fastmcp:task:{task_scope}:{client_task_id}:poll_interval"
-    )
+    prefix = task_redis_prefix(task_scope)
+    task_meta_key = docket.key(f"{prefix}:{client_task_id}")
+    created_at_key = docket.key(f"{prefix}:{client_task_id}:created_at")
+    poll_interval_key = docket.key(f"{prefix}:{client_task_id}:poll_interval")
 
     # Fetch metadata (single round-trip with mget)
     async with docket.redis() as redis:
@@ -255,7 +252,7 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
             )
 
         # Look up full task key from Redis
-        task_meta_key = docket.key(f"fastmcp:task:{task_scope}:{client_task_id}")
+        task_meta_key = docket.key(f"{task_redis_prefix(task_scope)}:{client_task_id}")
         async with docket.redis() as redis:
             task_key_bytes = await redis.get(task_meta_key)
 

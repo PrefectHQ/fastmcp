@@ -25,6 +25,7 @@ import mcp.types
 from mcp import ServerSession
 
 from fastmcp.server.tasks.context import get_task_context, get_task_session_id
+from fastmcp.server.tasks.keys import task_redis_prefix
 from fastmcp.server.tasks.notifications import push_notification
 
 logger = logging.getLogger(__name__)
@@ -33,13 +34,14 @@ if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 
-# Redis key patterns for task elicitation state
-ELICIT_REQUEST_KEY = "fastmcp:task:{task_scope}:{task_id}:elicit:request"
-ELICIT_RESPONSE_KEY = "fastmcp:task:{task_scope}:{task_id}:elicit:response"
-ELICIT_STATUS_KEY = "fastmcp:task:{task_scope}:{task_id}:elicit:status"
-
 # TTL for elicitation state (1 hour)
 ELICIT_TTL_SECONDS = 3600
+
+
+def _elicit_keys(task_scope: str | None, task_id: str) -> tuple[str, str, str]:
+    """Build (request, response, status) Redis keys for a task's elicitation."""
+    prefix = f"{task_redis_prefix(task_scope)}:{task_id}:elicit"
+    return f"{prefix}:request", f"{prefix}:response", f"{prefix}:status"
 
 
 async def elicit_for_task(
@@ -93,9 +95,7 @@ async def elicit_for_task(
         )
 
     # Store elicitation request in Redis
-    request_key = ELICIT_REQUEST_KEY.format(task_scope=task_scope, task_id=task_id)
-    response_key = ELICIT_RESPONSE_KEY.format(task_scope=task_scope, task_id=task_id)
-    status_key = ELICIT_STATUS_KEY.format(task_scope=task_scope, task_id=task_id)
+    request_key, response_key, status_key = _elicit_keys(task_scope, task_id)
 
     elicit_request = {
         "request_id": request_id,
@@ -238,7 +238,7 @@ async def elicit_for_task(
 
 async def relay_elicitation(
     session: ServerSession,
-    task_scope: str,
+    task_scope: str | None,
     task_id: str,
     elicitation: dict[str, Any],
     fastmcp: FastMCP,
@@ -294,7 +294,7 @@ async def relay_elicitation(
 
 async def handle_task_input(
     task_id: str,
-    task_scope: str,
+    task_scope: str | None,
     action: str,
     content: dict[str, Any] | None,
     fastmcp: FastMCP,
@@ -318,8 +318,7 @@ async def handle_task_input(
     if docket is None:
         return False
 
-    response_key = ELICIT_RESPONSE_KEY.format(task_scope=task_scope, task_id=task_id)
-    status_key = ELICIT_STATUS_KEY.format(task_scope=task_scope, task_id=task_id)
+    _, response_key, status_key = _elicit_keys(task_scope, task_id)
 
     response = {
         "action": action,

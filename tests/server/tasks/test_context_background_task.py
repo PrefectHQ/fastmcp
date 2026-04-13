@@ -36,6 +36,9 @@ from fastmcp.server.tasks.context import (
     get_task_scope,
 )
 from fastmcp.server.tasks.elicitation import handle_task_input
+from fastmcp.server.tasks.keys import (
+    task_redis_prefix,
+)
 
 # =============================================================================
 # Unit tests: Context API surface (no Redis/Docket needed)
@@ -264,7 +267,7 @@ class TestBackgroundTaskIntegration:
 
             # Verify the snapshot in Redis contains the same value
             task_scope = get_task_scope()
-            key = docket.key(f"fastmcp:task:{task_scope}:{ctx.task_id}:snapshot")
+            key = docket.key(f"{task_redis_prefix(task_scope)}:{ctx.task_id}:snapshot")
             async with docket.redis() as redis:
                 raw = await redis.get(key)
 

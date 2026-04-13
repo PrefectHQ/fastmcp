@@ -16,7 +16,7 @@ from docket.execution import ExecutionState
 from mcp.types import TaskStatusNotification, TaskStatusNotificationParams
 
 from fastmcp.server.tasks.config import DEFAULT_TTL_MS
-from fastmcp.server.tasks.keys import parse_task_key
+from fastmcp.server.tasks.keys import parse_task_key, task_redis_prefix
 from fastmcp.server.tasks.requests import DOCKET_TO_MCP_STATE
 from fastmcp.utilities.logging import get_logger
 
@@ -119,7 +119,7 @@ async def _send_status_notification(
     key_parts = parse_task_key(task_key)
     task_scope = key_parts["task_scope"]
 
-    created_at_key = docket.key(f"fastmcp:task:{task_scope}:{task_id}:created_at")
+    created_at_key = docket.key(f"{task_redis_prefix(task_scope)}:{task_id}:created_at")
     async with docket.redis() as redis:
         created_at_bytes = await redis.get(created_at_key)
 
@@ -193,7 +193,7 @@ async def _send_progress_notification(
     key_parts = parse_task_key(task_key)
     task_scope = key_parts["task_scope"]
 
-    created_at_key = docket.key(f"fastmcp:task:{task_scope}:{task_id}:created_at")
+    created_at_key = docket.key(f"{task_redis_prefix(task_scope)}:{task_id}:created_at")
     async with docket.redis() as redis:
         created_at_bytes = await redis.get(created_at_key)
 

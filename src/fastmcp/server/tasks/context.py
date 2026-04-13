@@ -15,9 +15,8 @@ from collections import OrderedDict
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
-from urllib.parse import quote
 
-from fastmcp.server.tasks.keys import parse_task_key
+from fastmcp.server.tasks.keys import parse_task_key, task_redis_prefix
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -28,19 +27,29 @@ if TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 
-def get_task_scope() -> str:
+def get_task_scope() -> str | None:
     """Get the authorization scope for task isolation.
 
-    Returns the URL-encoded ``client_id`` from the current access token when
-    auth is configured, or the ``"_"`` sentinel when no auth is present.
-    The value is safe to use directly in Redis keys and Docket task keys.
+    Returns the raw scope identifier for the current access token, or
+    ``None`` when no auth context is present (anonymous tasks).
+
+    The scope is composed as ``client_id|sub`` when the token carries a
+    ``sub`` claim — necessary for fixed-OAuth servers where ``client_id`` is
+    shared across all users — and falls back to ``client_id`` alone for
+    DCR/CIMD flows where the client identity is already per-user.
+
+    Encoding for Redis/Docket keys happens at the boundary in ``keys.py``;
+    this function returns the raw value.
     """
     from fastmcp.server.dependencies import get_access_token
 
     token = get_access_token()
-    if token is not None:
-        return quote(token.client_id, safe="")
-    return "_"
+    if token is None:
+        return None
+    sub = token.claims.get("sub") if token.claims else None
+    if sub:
+        return f"{token.client_id}|{sub}"
+    return token.client_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,8 +63,8 @@ class TaskContextInfo:
     task_id: str
     """The MCP task ID (server-generated UUID)."""
 
-    task_scope: str
-    """The authorization scope that owns this task."""
+    task_scope: str | None
+    """The authorization scope that owns this task, or ``None`` if anonymous."""
 
 
 def get_task_context() -> TaskContextInfo | None:
@@ -156,12 +165,12 @@ class TaskContextSnapshot:
     async def save(
         self,
         docket: Docket,
-        task_scope: str,
+        task_scope: str | None,
         task_id: str,
         ttl_seconds: int,
     ) -> None:
         """Store this snapshot as a single Redis key."""
-        key = docket.key(f"fastmcp:task:{task_scope}:{task_id}:snapshot")
+        key = docket.key(_snapshot_redis_key(task_scope, task_id))
         async with docket.redis() as redis:
             await redis.set(key, self.to_json(), ex=ttl_seconds)
 
@@ -188,13 +197,13 @@ def _get_cached_snapshot(task_id: str) -> TaskContextSnapshot | None:
     return None
 
 
-def _snapshot_redis_key(task_scope: str, task_id: str) -> str:
+def _snapshot_redis_key(task_scope: str | None, task_id: str) -> str:
     """Build the Redis key suffix for a task snapshot."""
-    return f"fastmcp:task:{task_scope}:{task_id}:snapshot"
+    return f"{task_redis_prefix(task_scope)}:{task_id}:snapshot"
 
 
 async def _load_task_snapshot_async(
-    task_scope: str, task_id: str
+    task_scope: str | None, task_id: str
 ) -> TaskContextSnapshot | None:
     """Load task context snapshot from Redis (async) and cache it.
 
@@ -263,7 +272,7 @@ def _get_task_snapshot_sync() -> TaskContextSnapshot | None:
 
 
 def _load_task_snapshot_sync(
-    task_scope: str, task_id: str
+    task_scope: str | None, task_id: str
 ) -> TaskContextSnapshot | None:
     """Load snapshot via sync Redis.
 

@@ -25,7 +25,7 @@ from fastmcp.server.tasks.context import (
     register_task_server,
     register_task_session,
 )
-from fastmcp.server.tasks.keys import build_task_key
+from fastmcp.server.tasks.keys import build_task_key, task_redis_prefix
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -75,7 +75,7 @@ async def submit_to_docket(
 
     ctx = get_context()
 
-    # Authorization scope for task isolation (auth identity or "_")
+    # Authorization scope for task isolation (auth identity, or None for anonymous)
     task_scope = get_task_scope()
 
     # Transport session ID for notification delivery
@@ -112,13 +112,10 @@ async def submit_to_docket(
     ttl_seconds = int(ttl_ms / 1000) + TASK_MAPPING_TTL_BUFFER_SECONDS
 
     # Store task metadata in Redis for protocol handlers
-    task_meta_key = docket.key(f"fastmcp:task:{task_scope}:{server_task_id}")
-    created_at_key = docket.key(
-        f"fastmcp:task:{task_scope}:{server_task_id}:created_at"
-    )
-    poll_interval_key = docket.key(
-        f"fastmcp:task:{task_scope}:{server_task_id}:poll_interval"
-    )
+    prefix = task_redis_prefix(task_scope)
+    task_meta_key = docket.key(f"{prefix}:{server_task_id}")
+    created_at_key = docket.key(f"{prefix}:{server_task_id}:created_at")
+    poll_interval_key = docket.key(f"{prefix}:{server_task_id}:poll_interval")
     poll_interval_ms = int(component.task_config.poll_interval.total_seconds() * 1000)
 
     # Snapshot all context (access token, headers, origin request ID,
