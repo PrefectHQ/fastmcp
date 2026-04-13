@@ -642,10 +642,19 @@ class Client(
             # stop the active session
             if self._session_state.session_task is None:
                 return
+            session_task = self._session_state.session_task
             self._session_state.stop_event.set()
             # wait for session to finish to ensure state has been reset
-            await self._session_state.session_task
-            self._session_state.session_task = None
+            try:
+                if force:
+                    with anyio.CancelScope(shield=True):
+                        with anyio.move_on_after(self._disconnect_timeout):
+                            with suppress(asyncio.CancelledError):
+                                await session_task
+                else:
+                    await session_task
+            finally:
+                self._session_state.session_task = None
 
     async def _session_runner(self):
         """
