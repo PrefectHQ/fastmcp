@@ -79,6 +79,12 @@ mcp = FastMCP(name="My Server", auth=auth)
   Public URL of your FastMCP server (e.g., `https://your-server.com`)
 </ParamField>
 
+<ParamField body="resource_base_url" type="AnyHttpUrl | str | None">
+  Optional public base URL for the protected resource metadata and token audience.
+
+  Use this when your OAuth callbacks and operational endpoints need to live under one public URL, but the protected MCP resource should be advertised under another. FastMCP will still append the MCP mount path (for example, `/mcp`) to this base URL.
+</ParamField>
+
 <ParamField body="strict" type="bool | None">
   Strict flag for configuration validation. When True, requires all OIDC
   mandatory fields.

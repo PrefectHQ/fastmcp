@@ -150,6 +150,20 @@ class TestRemoteAuthProvider:
             "https://api.example.com/.well-known/oauth-protected-resource/mcp"
         )
 
+    def test_get_resource_url_uses_resource_base_url_when_provided(self, test_tokens):
+        """Test protected resource URLs are derived from resource_base_url when provided."""
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        provider = RemoteAuthProvider(
+            token_verifier=token_verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://auth.example.com/proxy",
+            resource_base_url="https://api.example.com",
+        )
+
+        assert provider._get_resource_url("/mcp") == AnyHttpUrl(
+            "https://api.example.com/mcp"
+        )
+
 
 class TestRemoteAuthProviderIntegration:
     """Integration tests for RemoteAuthProvider with FastMCP server."""

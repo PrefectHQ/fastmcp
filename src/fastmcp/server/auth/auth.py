@@ -216,6 +216,7 @@ class AuthProvider(TokenVerifierProtocol):
     def __init__(
         self,
         base_url: AnyHttpUrl | str | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
     ):
         """
@@ -224,11 +225,18 @@ class AuthProvider(TokenVerifierProtocol):
         Args:
             base_url: The base URL of this server (e.g., http://localhost:8000).
                 This is used for constructing .well-known endpoints and OAuth metadata.
+            resource_base_url: Optional public base URL for the protected resource.
+                When provided, resource metadata and audience checks are derived from
+                this URL instead of ``base_url`` while operational OAuth routes remain
+                rooted at ``base_url``.
             required_scopes: List of OAuth scopes required for all requests.
         """
         if isinstance(base_url, str):
             base_url = AnyHttpUrl(base_url)
+        if isinstance(resource_base_url, str):
+            resource_base_url = AnyHttpUrl(resource_base_url)
         self.base_url = base_url
+        self.resource_base_url = resource_base_url
         self.required_scopes = required_scopes or []
         self._mcp_path: str | None = None
         self._resource_url: AnyHttpUrl | None = None
@@ -338,14 +346,15 @@ class AuthProvider(TokenVerifierProtocol):
         Returns:
             The full URL of the protected resource
         """
-        if self.base_url is None:
+        resource_base_url = self.resource_base_url or self.base_url
+        if resource_base_url is None:
             return None
 
         if path:
-            prefix = str(self.base_url).rstrip("/")
+            prefix = str(resource_base_url).rstrip("/")
             suffix = path.lstrip("/")
             return AnyHttpUrl(f"{prefix}/{suffix}")
-        return self.base_url
+        return resource_base_url
 
 
 class TokenVerifier(AuthProvider):
@@ -358,6 +367,7 @@ class TokenVerifier(AuthProvider):
     def __init__(
         self,
         base_url: AnyHttpUrl | str | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
     ):
         """
@@ -365,9 +375,14 @@ class TokenVerifier(AuthProvider):
 
         Args:
             base_url: The base URL of this server
+            resource_base_url: Optional public base URL for the protected resource.
             required_scopes: Scopes that are required for all requests
         """
-        super().__init__(base_url=base_url, required_scopes=required_scopes)
+        super().__init__(
+            base_url=base_url,
+            resource_base_url=resource_base_url,
+            required_scopes=required_scopes,
+        )
 
     @property
     def scopes_supported(self) -> list[str]:
@@ -405,6 +420,7 @@ class RemoteAuthProvider(AuthProvider):
         token_verifier: TokenVerifier,
         authorization_servers: list[AnyHttpUrl],
         base_url: AnyHttpUrl | str,
+        resource_base_url: AnyHttpUrl | str | None = None,
         scopes_supported: list[str] | None = None,
         resource_name: str | None = None,
         resource_documentation: AnyHttpUrl | None = None,
@@ -415,6 +431,7 @@ class RemoteAuthProvider(AuthProvider):
             token_verifier: TokenVerifier instance for token validation
             authorization_servers: List of authorization servers that issue valid tokens
             base_url: The base URL of this server
+            resource_base_url: Optional public base URL for the protected resource.
             scopes_supported: Scopes to advertise in OAuth metadata. If None,
                 uses the token verifier's scopes_supported property. Use this
                 when the scopes clients request differ from the scopes that
@@ -424,6 +441,7 @@ class RemoteAuthProvider(AuthProvider):
         """
         super().__init__(
             base_url=base_url,
+            resource_base_url=resource_base_url,
             required_scopes=token_verifier.required_scopes,
         )
         self.token_verifier = token_verifier
@@ -593,6 +611,7 @@ class OAuthProvider(
         self,
         *,
         base_url: AnyHttpUrl | str,
+        resource_base_url: AnyHttpUrl | str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
         service_documentation_url: AnyHttpUrl | str | None = None,
         client_registration_options: ClientRegistrationOptions | None = None,
@@ -604,6 +623,9 @@ class OAuthProvider(
 
         Args:
             base_url: The public URL of this FastMCP server
+            resource_base_url: Optional public base URL for the protected resource.
+                When provided, the protected resource metadata and token audience are
+                derived from this URL instead of ``base_url``.
             issuer_url: The issuer URL for OAuth metadata (defaults to base_url)
             service_documentation_url: The URL of the service documentation.
             client_registration_options: The client registration options.
@@ -611,7 +633,11 @@ class OAuthProvider(
             required_scopes: Scopes that are required for all requests.
         """
 
-        super().__init__(base_url=base_url, required_scopes=required_scopes)
+        super().__init__(
+            base_url=base_url,
+            resource_base_url=resource_base_url,
+            required_scopes=required_scopes,
+        )
 
         if issuer_url is None:
             self.issuer_url = self.base_url

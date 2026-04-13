@@ -240,6 +240,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         token_verifier: TokenVerifier,
         # FastMCP server configuration
         base_url: AnyHttpUrl | str,
+        resource_base_url: AnyHttpUrl | str | None = None,
         redirect_path: str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
         service_documentation_url: AnyHttpUrl | str | None = None,
@@ -281,6 +282,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             token_verifier: Token verifier for validating access tokens
             base_url: Public URL of the server that exposes this FastMCP server; redirect path is
                 relative to this URL
+            resource_base_url: Optional public base URL for the protected resource metadata
+                and token audience. Defaults to ``base_url``.
             redirect_path: Redirect path configured in upstream OAuth app (defaults to "/auth/callback")
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url)
             service_documentation_url: Optional service documentation URL
@@ -343,6 +346,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         super().__init__(
             base_url=base_url,
+            resource_base_url=resource_base_url,
             issuer_url=issuer_url,
             service_documentation_url=service_documentation_url,
             client_registration_options=client_registration_options,
