@@ -339,9 +339,15 @@ class Resource(FastMCPComponent):
         # For JSON-native types (dict, list, tuple, int, float, bool, None),
         # serialize and wrap in ResourceContent with the component's meta,
         # matching the str/bytes path above so CSP/permissions propagate.
+        # Exclude list[ResourceContent] which should go through ResourceResult
+        # normalization below.
         if (
             isinstance(raw_value, dict | list | tuple | int | float | bool)
             or raw_value is None
+        ) and not (
+            isinstance(raw_value, list)
+            and raw_value
+            and isinstance(raw_value[0], ResourceContent)
         ):
             return ResourceResult(
                 [
