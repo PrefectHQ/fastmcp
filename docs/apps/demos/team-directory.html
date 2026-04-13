@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Prefab</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@latest/dist/app/renderer.css">
+  <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@latest/dist/app/renderer.js"></script>
+</head>
+<body>
+  <div id="root" style="max-width:64rem;margin:0 auto;padding:2rem"></div>
+  <script id="prefab:initial-data" type="application/json">{
+  "$prefab": {
+    "version": "0.2"
+  },
+  "view": {
+    "cssClass": "pf-app-root",
+    "type": "Div",
+    "children": [
+      {
+        "cssClass": "gap-4 p-6",
+        "type": "Column",
+        "children": [
+          {
+            "cssClass": "gap-4",
+            "type": "Grid",
+            "columnTemplate": "1fr 2fr",
+            "children": [
+              {
+                "type": "PieChart",
+                "data": [
+                  {
+                    "office": "San Francisco",
+                    "count": 3
+                  },
+                  {
+                    "office": "New York",
+                    "count": 2
+                  },
+                  {
+                    "office": "London",
+                    "count": 1
+                  },
+                  {
+                    "office": "Berlin",
+                    "count": 1
+                  }
+                ],
+                "dataKey": "count",
+                "nameKey": "office",
+                "height": 300,
+                "innerRadius": 0,
+                "showLabel": false,
+                "paddingAngle": 0,
+                "showLegend": true,
+                "showTooltip": true,
+                "animate": true
+              },
+              {
+                "type": "DataTable",
+                "columns": [
+                  {
+                    "key": "name",
+                    "header": "Name",
+                    "sortable": true
+                  },
+                  {
+                    "key": "role",
+                    "header": "Role",
+                    "sortable": true
+                  },
+                  {
+                    "key": "office",
+                    "header": "Office",
+                    "sortable": true
+                  }
+                ],
+                "rows": [
+                  {
+                    "name": "Alice Chen",
+                    "role": "Staff Engineer",
+                    "office": "San Francisco"
+                  },
+                  {
+                    "name": "Bob Martinez",
+                    "role": "Lead Designer",
+                    "office": "New York"
+                  },
+                  {
+                    "name": "Carol Johnson",
+                    "role": "Senior Engineer",
+                    "office": "London"
+                  },
+                  {
+                    "name": "David Kim",
+                    "role": "Product Manager",
+                    "office": "San Francisco"
+                  },
+                  {
+                    "name": "Eva Mueller",
+                    "role": "Engineer",
+                    "office": "Berlin"
+                  },
+                  {
+                    "name": "Frank Lee",
+                    "role": "Data Scientist",
+                    "office": "San Francisco"
+                  },
+                  {
+                    "name": "Grace Park",
+                    "role": "Engineering Manager",
+                    "office": "New York"
+                  }
+                ],
+                "search": true,
+                "paginated": false,
+                "pageSize": 10
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}</script>
+</body>
+</html>

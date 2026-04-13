@@ -1,45 +1,40 @@
 ---
 title: FastMCPApp
 sidebarTitle: FastMCPApp
-description: Managed tool binding, visibility, and composition for apps with heavy server interaction.
+description: Wire an interactive UI to backend tools with managed visibility and composition safety.
 icon: puzzle-piece
 tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
+import PrefabPinWarning from '/snippets/prefab-pin-warning.mdx'
 
 <VersionBadge version="3.2.0" />
 
-<Tip>
-[Prefab](https://prefab.prefect.io) is in early, active development — its API changes frequently and breaking changes can occur with any release. Always pin `prefab-ui` to a specific version in your dependencies.
-</Tip>
+<PrefabPinWarning />
 
-Any [Prefab app](/apps/prefab) can call server tools — there's nothing stopping you from using `CallTool("tool_name")` in a regular `@mcp.tool(app=True)`. But once you have multiple backend tools, the management overhead adds up: Which tools should the model see vs. only the UI? What happens to string-based tool references when servers are composed under namespaces? How do you keep things wired correctly as the app grows?
+<iframe src="/apps/demos/contacts.html" style={{width:"100%", height:"650px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
 
-`FastMCPApp` is a class that solves these problems. It gives you two decorators that work together:
+Search a list, fill out a form, click save, the list updates. That pattern — UI that reads and writes data on the server — needs two things: backend tools that actually do the work, and a way to call them from the UI. `FastMCPApp` handles the wiring.
 
-- **`@app.ui()`** — entry-point tools the model calls to open the app. These return a Prefab UI.
-- **`@app.tool()`** — backend tools the UI calls via `CallTool`. These do the work.
+You'll build up to the contacts app above by the end of this page. Let's start with something smaller.
 
-Backend tools get globally stable identifiers that survive namespacing. Visibility is managed automatically — the model sees entry points, the UI sees backends. And `CallTool` accepts function references instead of strings, so references are refactorable and composition-safe.
+## A minimal interactive app
 
-## Your First Interactive App
-
-Here's a minimal app with a form that saves data:
+The smallest interactive app: a form that saves a note, and a list that updates when the user submits.
 
 ```python
 from prefab_ui.actions import SetState, ShowToast
 from prefab_ui.actions.mcp import CallTool
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
-    Badge, Button, Column, ForEach, Form,
-    Heading, Input, Row, Separator, Text,
+    Badge, Button, Column, ForEach, Form, Heading,
+    Input, Row, Separator, Text,
 )
 from prefab_ui.rx import RESULT
 from fastmcp import FastMCP, FastMCPApp
 
 app = FastMCPApp("Notes")
-
 notes_db: list[dict] = []
 
 
@@ -83,13 +78,23 @@ def notes_app() -> PrefabApp:
 mcp = FastMCP("Notes Server", providers=[app])
 ```
 
-When the model calls `notes_app`, the user sees a form. Submitting it calls `add_note` on the server, updates the state with the result, and shows a toast — all without leaving the UI.
+The model sees one tool: `notes_app`. Calling it opens the UI. When the user submits the form, `CallTool("add_note")` fires, the server saves the note, returns the updated list, and `SetState("notes", RESULT)` writes that list back into state. `ForEach("notes")` re-renders. The model never sees `add_note` — it's UI-only.
 
-Let's break down the key concepts.
+## Why not just `@mcp.tool(app=True)`?
 
-## Entry Points: @app.ui()
+A fair question. Any [Interactive Tool](/apps/prefab) can call a server tool — there's nothing stopping you from putting `CallTool("add_note")` inside a regular `@mcp.tool(app=True)`. It works for one or two tools. Things get harder once the app grows:
 
-Entry points are what the model sees and calls to open your app. They return a Prefab UI, just like display tools:
+- Which tools should the model see, and which are UI-only?
+- What happens to `CallTool("add_note")` when you mount this server under a namespace and the tool becomes `notes_add_note`?
+- How do you keep it all wired correctly as you compose servers?
+
+`FastMCPApp` owns these concerns. Entry points register as model-visible. Backend tools register as UI-only by default. Backend tools get globally stable identifiers that survive namespacing, and `CallTool` accepts function references, so references stay valid when you compose servers.
+
+The rest of this page covers each piece in turn.
+
+## `@app.ui()` — entry points
+
+Entry points are what the model sees. They return a `PrefabApp` and default to `visibility=["model"]`, showing up in the LLM tool list but not callable from within the UI.
 
 ```python
 @app.ui()
@@ -97,21 +102,15 @@ def dashboard() -> PrefabApp:
     """The model calls this to open the dashboard."""
     with Column(gap=4, css_class="p-6") as view:
         Heading("Dashboard")
-        # ... build UI ...
+        ...
     return PrefabApp(view=view)
 ```
 
-Entry points default to `visibility=["model"]` — they show up in the tool list for the LLM but aren't callable from within the app UI. They support the same options as `@mcp.tool`: `name`, `description`, `title`, `tags`, `icons`, `auth`, and `timeout`.
+`@app.ui()` supports the same options as `@mcp.tool`: `name`, `description`, `title`, `tags`, `icons`, `auth`, and `timeout`.
 
-```python
-@app.ui(title="Contact Manager", description="Open the contact management interface")
-def contact_manager() -> PrefabApp:
-    ...
-```
+## `@app.tool()` — backend tools
 
-## Backend Tools: @app.tool()
-
-Backend tools do the work. The UI calls them via `CallTool`; they run on the server and return data:
+Backend tools do the work. By default they're visible only to the UI (`visibility=["app"]`), not the model.
 
 ```python
 @app.tool()
@@ -121,7 +120,7 @@ def save_contact(name: str, email: str) -> list[dict]:
     return list(db)
 ```
 
-By default, backend tools are only visible to the app UI (`visibility=["app"]`). The model doesn't see them in the tool list. If you want a tool callable by both the model and the UI, pass `model=True`:
+If you want a tool callable by both the model and the UI, pass `model=True`:
 
 ```python
 @app.tool(model=True)
@@ -130,37 +129,32 @@ def list_contacts() -> list[dict]:
     return list(db)
 ```
 
-Backend tools support `name`, `description`, `auth`, and `timeout`:
+Backend tools support `name`, `description`, `auth`, and `timeout`.
 
-```python
-@app.tool(description="Search contacts by name or email", timeout=10.0)
-def search(query: str) -> list[dict]:
-    ...
-```
+## `CallTool` — UI → backend
 
-## Connecting UI to Backend: CallTool
-
-`CallTool` is the bridge between the UI and the server. Pass the name of a backend tool registered with `@app.tool()`:
+`CallTool` is how the UI invokes a backend tool. Pass the tool's name (or a direct function reference):
 
 ```python
 from prefab_ui.actions.mcp import CallTool
 
-# Reference a backend tool by name
 CallTool("save_contact", arguments={"name": "Alice", "email": "alice@example.com"})
 
-# Arguments can reference state with Rx
+# Or a function reference — resolves to a stable global key
+CallTool(save_contact, arguments={...})
+```
+
+Arguments can reference state with `Rx`:
+
+```python
 from prefab_ui.rx import STATE
 
 CallTool("search", arguments={"query": STATE.search_term})
 ```
 
-FastMCPApp resolves the name to the tool's stable global key automatically, so `CallTool("save_contact")` keeps working even when the server is mounted under a namespace.
+### Handling results
 
-You can also pass the function directly — `CallTool(save_contact)` — which can be convenient when the tool is defined in the same file. Both forms resolve identically.
-
-### Handling Results
-
-Server calls are asynchronous. Use `on_success` and `on_error` callbacks to handle outcomes:
+Server calls are async. Use `on_success` and `on_error` callbacks:
 
 ```python
 from prefab_ui.actions import SetState, ShowToast
@@ -176,78 +170,54 @@ CallTool(
 )
 ```
 
-`RESULT` is a reactive reference to the value the tool returned — available inside `on_success` callbacks. Similarly, `ERROR` (from `prefab_ui.rx`) is available inside `on_error`.
+`RESULT` is a reactive reference to the tool's return value, available inside `on_success`. `ERROR` (from `prefab_ui.rx`) is the counterpart inside `on_error`. Callbacks can be a single action or a list; they execute in order and short-circuit on error.
 
-Callbacks can be a single action or a list of actions. They execute in order, and an error in any action short-circuits the rest.
+### `result_key` shorthand
 
-### result_key Shorthand
-
-When a tool returns data that should replace a state key, `result_key` is a convenient shorthand for `on_success=SetState(key, RESULT)`:
+When a tool's return value should replace a state key, use `result_key`:
 
 ```python
 CallTool("list_contacts", result_key="contacts")
 
-# equivalent to:
-CallTool(
-    "list_contacts",
-    on_success=SetState("contacts", RESULT),
-)
+# same as:
+CallTool("list_contacts", on_success=SetState("contacts", RESULT))
 ```
 
 ## Actions
 
-`CallTool` is one of several actions available in Prefab. Actions are events attached to component handlers like `on_click`, `on_submit`, and `on_change`.
+`CallTool` is one of several actions. Actions attach to handlers like `on_click`, `on_submit`, and `on_change`.
 
-### Client Actions
-
-These run instantly in the browser — no server round-trip:
+Client-side actions run instantly in the browser, no server round-trip:
 
 ```python
 from prefab_ui.actions import SetState, ToggleState, AppendState, PopState, ShowToast
 
-# Set a value
 SetState("count", 42)
-
-# Toggle a boolean
 ToggleState("expanded")
-
-# Append to a list
 AppendState("items", {"name": "New Item"})
-
-# Remove by index
 PopState("items", 0)
-
-# Show a notification
 ShowToast("Done!", variant="success")
 ```
 
-### Chaining Actions
-
-Pass a list to execute multiple actions in sequence:
+Pass a list to chain actions:
 
 ```python
-from prefab_ui.components import Button
-from prefab_ui.actions import SetState, ShowToast
-
 Button(
     "Reset",
     on_click=[
         SetState("query", ""),
         SetState("results", []),
-        ShowToast("Cleared", variant="default"),
+        ShowToast("Cleared"),
     ],
 )
 ```
 
-### Loading States
+### Loading states
 
-A common pattern: show a loading indicator while a server call is in flight.
+A common pattern: disable a button and show a spinner while a call is in flight.
 
 ```python
-from prefab_ui.actions import SetState, ShowToast
-from prefab_ui.actions.mcp import CallTool
-from prefab_ui.components import Button
-from prefab_ui.rx import RESULT, Rx
+from prefab_ui.rx import Rx
 
 saving = Rx("saving")
 
@@ -271,21 +241,17 @@ Button(
     ],
 )
 
-# Pass state={"saving": False} to PrefabApp when returning
+# PrefabApp(view=view, state={"saving": False, ...})
 ```
 
 ## Forms
 
-Forms are the most common way to collect input and send it to the server. When a form submits, all named input values are gathered and passed as arguments to the `CallTool` action.
+Forms collect input and submit it to a tool. When submitted, named input values become the tool's arguments.
 
-### Manual Forms
-
-Build forms with individual input components:
+### Manual forms
 
 ```python
 from prefab_ui.components import Form, Input, Select, SelectOption, Textarea, Button
-from prefab_ui.actions.mcp import CallTool
-from prefab_ui.actions import ShowToast
 
 with Form(
     on_submit=CallTool(
@@ -298,26 +264,19 @@ with Form(
         SelectOption("Low", value="low")
         SelectOption("Medium", value="medium")
         SelectOption("High", value="high")
-        SelectOption("Critical", value="critical")
     Textarea(name="description", label="Description")
     Button("Create Ticket")
 ```
 
-When submitted, the CallTool receives `{"title": "...", "priority": "...", "description": "..."}` as arguments to `create_ticket`.
+On submit, `CallTool` receives `{"title": ..., "priority": ..., "description": ...}`.
 
-### Pydantic Model Forms
+### Forms from Pydantic models
 
-For structured data, `Form.from_model()` generates the entire form from a Pydantic model — inputs, labels, and submit wiring:
+For structured input, `Form.from_model()` generates the whole form — inputs, labels, validation:
 
 ```python
 from typing import Literal
-
 from pydantic import BaseModel, Field
-from prefab_ui.components import Column, Heading, Form
-from prefab_ui.actions.mcp import CallTool
-from prefab_ui.actions import SetState, ShowToast
-from prefab_ui.app import PrefabApp
-from prefab_ui.rx import RESULT
 
 class BugReport(BaseModel):
     title: str = Field(title="Bug Title")
@@ -329,7 +288,6 @@ class BugReport(BaseModel):
 
 @app.ui()
 def report_bug() -> PrefabApp:
-    """File a bug report."""
     with Column(gap=4, css_class="p-6") as view:
         Heading("Report a Bug")
         Form.from_model(
@@ -337,7 +295,6 @@ def report_bug() -> PrefabApp:
             on_submit=CallTool(
                 "create_bug",
                 on_success=ShowToast("Bug filed!", variant="success"),
-                on_error=ShowToast("Failed to submit", variant="error"),
             ),
         )
     return PrefabApp(view=view)
@@ -345,69 +302,47 @@ def report_bug() -> PrefabApp:
 
 @app.tool()
 def create_bug(data: BugReport) -> str:
-    """Create a bug report."""
-    # save to database...
     return f"Created: {data.title}"
 ```
 
-`str` fields become text inputs, `Literal` becomes a select dropdown, `bool` becomes a checkbox. Field titles and defaults are respected.
+`str` becomes a text input, `Literal` becomes a select, `bool` becomes a checkbox. Field titles and defaults are respected.
 
-## Composition and Namespacing
+## Composition and namespacing
 
-The reason `FastMCPApp` exists — and why you'd use it instead of plain `@mcp.tool(app=True)` with `CallTool("tool_name")` — is composition safety.
+The reason `FastMCPApp` exists — and why you'd pick it over plain `@mcp.tool(app=True)` with string-based `CallTool` — is composition safety.
 
 When you mount a server under a namespace, tool names get prefixed:
 
 ```python
-from fastmcp import FastMCP
-
 platform = FastMCP("Platform")
 platform.mount("contacts", contacts_server)
 
 # "save_contact" becomes "contacts_save_contact"
 ```
 
-If your UI used `CallTool("save_contact")`, it would break — the tool is now named `contacts_save_contact`. But `CallTool(save_contact)` with a function reference resolves to a globally stable key (like `save_contact-a1b2c3d4`) that bypasses the namespace entirely.
+`CallTool("save_contact")` would now be broken. But `CallTool(save_contact)` with a function reference resolves to a globally stable identifier that bypasses the namespace. Your app works the same whether standalone or mounted.
 
-This is why `FastMCPApp` assigns global keys to backend tools, and why `CallTool` accepts function references. Your app works the same whether it's running standalone or mounted inside a larger platform.
-
-### Mounting an App
+### Mounting
 
 `FastMCPApp` is a Provider. Add it to a server with `providers=` or `add_provider`:
 
 ```python
-from fastmcp import FastMCP, FastMCPApp
-
-app = FastMCPApp("Contacts")
-
-@app.ui()
-def contact_manager() -> PrefabApp:
-    ...
-
-@app.tool()
-def save_contact(name: str, email: str) -> dict:
-    ...
-
-
-# Option 1: providers list
 mcp = FastMCP("Platform", providers=[app])
 
-# Option 2: add_provider
+# or
 mcp = FastMCP("Platform")
 mcp.add_provider(app)
 ```
 
-Multiple apps can coexist on the same server:
+Multiple apps can coexist; each gets its own global keys, so there's no collision even if two apps have a tool named `save`.
 
 ```python
 mcp = FastMCP("Platform", providers=[contacts_app, inventory_app, billing_app])
 ```
 
-Each app's backend tools have their own global keys, so there's no collision even if two apps have a tool named `save`.
+### Running standalone
 
-### Running Standalone
-
-For development, `FastMCPApp` has a convenience `run()` method that wraps itself in a temporary `FastMCP` server:
+For development, `FastMCPApp` has a `run()` shortcut that wraps itself in a temporary `FastMCP` server:
 
 ```python
 app = FastMCPApp("Contacts")
@@ -417,9 +352,9 @@ if __name__ == "__main__":
     app.run()
 ```
 
-## Complete Example: Contact Manager
+## A full example: contact manager
 
-This pulls together everything — entry points, backend tools, callable references, forms (both manual and Pydantic), state management, and actions:
+This brings everything together — entry point, backend tools, Pydantic form, manual form, state, actions, and multi-visibility.
 
 ```python expandable
 from __future__ import annotations
@@ -437,8 +372,6 @@ from prefab_ui.rx import RESULT, Rx
 from pydantic import BaseModel, Field
 from fastmcp import FastMCP, FastMCPApp
 
-# Data
-
 contacts_db: list[dict] = [
     {"name": "Arthur Dent", "email": "arthur@earth.com", "category": "Customer"},
     {"name": "Ford Prefect", "email": "ford@betelgeuse.org", "category": "Partner"},
@@ -450,8 +383,6 @@ class ContactModel(BaseModel):
     email: str = Field(title="Email")
     category: Literal["Customer", "Vendor", "Partner", "Other"] = "Other"
 
-
-# App
 
 app = FastMCPApp("Contacts")
 
@@ -528,11 +459,11 @@ if __name__ == "__main__":
     mcp.run()
 ```
 
-This example is also available as a runnable server at `examples/apps/contacts/contacts_server.py`.
+Also available as a runnable server at `examples/apps/contacts/contacts_server.py`.
 
-## Next Steps
+## Next steps
 
-- **[Prefab Apps](/apps/prefab)** — Components, state, and reactive displays (the building blocks)
-- **[Patterns](/apps/patterns)** — Copy-paste examples for common UIs
-- **[Development](/apps/development)** — Preview and test app tools locally
-- **[Prefab UI Docs](https://prefab.prefect.io)** — Full component reference and advanced patterns
+- **[Interactive Tools](/apps/prefab)** — the building blocks: charts, tables, dashboards, reactive state
+- **[Examples](/apps/examples)** — complete working servers
+- **[Development](/apps/development)** — preview and test app tools locally
+- **[Prefab UI docs](https://prefab.prefect.io)** — full component reference

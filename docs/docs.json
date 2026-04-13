@@ -197,19 +197,10 @@
                 "pages": [
                   "apps/overview",
                   "apps/quickstart",
-                  "apps/examples",
-                  {
-                    "collapsed": true,
-                    "group": "Building Apps",
-                    "icon": "hammer",
-                    "pages": [
-                      "apps/prefab",
-                      "apps/interactive-apps",
-                      "apps/generative",
-                      "apps/patterns"
-                    ],
-                    "tag": "NEW"
-                  },
+                  "apps/prefab",
+                  "apps/interactive-apps",
+                  "apps/generative",
+                  "apps/low-level",
                   {
                     "collapsed": true,
                     "group": "Providers",
@@ -218,21 +209,19 @@
                       "apps/providers/approval",
                       "apps/providers/choice",
                       "apps/providers/file-upload",
-                      "apps/providers/form",
-                      "apps/providers/generative"
+                      "apps/providers/form"
                     ],
                     "tag": "NEW"
                   },
                   {
                     "collapsed": true,
-                    "group": "Advanced",
-                    "icon": "gear",
+                    "group": "Reference",
+                    "icon": "book",
                     "pages": [
                       "apps/development",
-                      "apps/architecture",
-                      "apps/low-level"
-                    ],
-                    "tag": "NEW"
+                      "apps/examples",
+                      "apps/architecture"
+                    ]
                   }
                 ]
               },
@@ -413,6 +402,10 @@
     ]
   },
   "redirects": [
+    {
+      "destination": "/apps/generative",
+      "source": "/apps/providers/generative"
+    },
     {
       "destination": "/cli/overview",
       "source": "/patterns/cli"
