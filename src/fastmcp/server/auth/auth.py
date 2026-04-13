@@ -568,6 +568,12 @@ class MultiAuth(AuthProvider):
         self.server = server
         self.verifiers = list(verifiers)
 
+        # If an explicit resource_base_url override was passed to MultiAuth,
+        # propagate it to the wrapped server so its routes advertise metadata
+        # consistent with the outer auth challenge URL.
+        if resource_base_url is not None and self.server is not None:
+            self.server.resource_base_url = self.resource_base_url
+
         self._sources: list[AuthProvider] = []
         if self.server is not None:
             self._sources.append(self.server)
