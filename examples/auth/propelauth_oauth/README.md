@@ -36,7 +36,7 @@ Create a `.env` file:
 PROPELAUTH_AUTH_URL=https://auth.yourdomain.com
 PROPELAUTH_INTROSPECTION_CLIENT_ID=your-client-id
 PROPELAUTH_INTROSPECTION_CLIENT_SECRET=your-client-secret
-BASE_URL=http://localhost:8000/
+BASE_URL=http://127.0.0.1:8000/
 # Optional: additional scopes tokens must include (comma-separated)
 # PROPELAUTH_REQUIRED_SCOPES=read:user_data
 ```
@@ -50,7 +50,7 @@ Start the server:
 uv run python server.py
 ```
 
-The server will start on `http://localhost:8000/mcp` with PropelAuth OAuth authentication enabled.
+The server will start on `http://127.0.0.1:8000/mcp` with PropelAuth OAuth authentication enabled.
 
 Test with client:
 

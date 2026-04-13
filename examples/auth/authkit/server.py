@@ -1,9 +1,11 @@
-"""AuthKit DCR server example for FastMCP.
+"""AuthKit server example for FastMCP.
 
-This example demonstrates how to protect a FastMCP server with AuthKit DCR.
+Demonstrates an MCP server secured by WorkOS AuthKit. FastMCP binds the JWT
+audience to this server's resource URL automatically; you configure the same
+URL as an MCP resource indicator in the WorkOS Dashboard.
 
 Required environment variables:
-- FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_AUTHKIT_DOMAIN: Your AuthKit domain (e.g., "https://your-app.authkit.app")
+- AUTHKIT_DOMAIN: Your AuthKit domain (e.g., "https://your-app.authkit.app")
 
 To run:
     python server.py
@@ -16,10 +18,10 @@ from fastmcp.server.auth.providers.workos import AuthKitProvider
 
 auth = AuthKitProvider(
     authkit_domain=os.getenv("AUTHKIT_DOMAIN") or "",
-    base_url="http://localhost:8000",
+    base_url="http://127.0.0.1:8000",
 )
 
-mcp = FastMCP("AuthKit DCR Example Server", auth=auth)
+mcp = FastMCP("AuthKit Example Server", auth=auth)
 
 
 @mcp.tool

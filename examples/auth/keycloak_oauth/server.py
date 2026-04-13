@@ -16,8 +16,8 @@ from fastmcp.server.dependencies import get_access_token
 
 auth = KeycloakAuthProvider(
     realm_url=os.getenv("KEYCLOAK_REALM_URL") or "http://localhost:8080/realms/fastmcp",
-    base_url="http://localhost:8000",
-    # audience="http://localhost:8000",  # Recommended for production
+    base_url="http://127.0.0.1:8000",
+    # audience="http://127.0.0.1:8000",  # Recommended for production
 )
 
 mcp = FastMCP("Keycloak Example Server", auth=auth)

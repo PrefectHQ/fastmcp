@@ -477,6 +477,12 @@ class RemoteAuthProvider(AuthProvider):
 
         Creates protected resource metadata routes (RFC 9728).
         """
+        # Lifecycle hook: let subclasses react to the mcp_path becoming known
+        # (e.g., bind token audience to the resource URL). Mirrors the call in
+        # OAuthAuthorizationServerProvider.get_routes so all providers see the
+        # path at the same point in their lifecycle.
+        self.set_mcp_path(mcp_path)
+
         routes = []
 
         # Get the resource URL based on the MCP path

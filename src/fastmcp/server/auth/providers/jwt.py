@@ -443,11 +443,13 @@ class JWTVerifier(TokenVerifier):
                     issuer_valid = iss == self.issuer
 
                 if not issuer_valid:
-                    self.logger.debug(
-                        "Token validation failed: issuer mismatch for client %s",
+                    self.logger.warning(
+                        "Bearer token rejected for client %s: issuer mismatch "
+                        "(got %r, expected %r)",
                         client_id,
+                        iss,
+                        self.issuer,
                     )
-                    self.logger.info("Bearer token rejected for client %s", client_id)
                     return None
 
             # Validate audience if configured
@@ -474,11 +476,13 @@ class JWTVerifier(TokenVerifier):
                         audience_valid = aud == self.audience
 
                 if not audience_valid:
-                    self.logger.debug(
-                        "Token validation failed: audience mismatch for client %s",
+                    self.logger.warning(
+                        "Bearer token rejected for client %s: audience mismatch "
+                        "(got %r, expected %r)",
                         client_id,
+                        aud,
+                        self.audience,
                     )
-                    self.logger.info("Bearer token rejected for client %s", client_id)
                     return None
 
             # Extract scopes
@@ -489,12 +493,13 @@ class JWTVerifier(TokenVerifier):
                 token_scopes = set(scopes)
                 required_scopes = set(self.required_scopes)
                 if not required_scopes.issubset(token_scopes):
-                    self.logger.debug(
-                        "Token missing required scopes. Has: %s, Required: %s",
-                        token_scopes,
-                        required_scopes,
+                    self.logger.warning(
+                        "Bearer token rejected for client %s: missing required "
+                        "scopes (has %s, requires %s)",
+                        client_id,
+                        sorted(token_scopes),
+                        sorted(required_scopes),
                     )
-                    self.logger.info("Bearer token rejected for client %s", client_id)
                     return None
 
             return AccessToken(
