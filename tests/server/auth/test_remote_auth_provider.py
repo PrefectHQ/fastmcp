@@ -164,6 +164,22 @@ class TestRemoteAuthProvider:
             "https://api.example.com/mcp"
         )
 
+    def test_init_preserves_legacy_positional_scopes_supported_slot(self, test_tokens):
+        """Legacy positional scopes_supported should not bind to resource_base_url."""
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        provider = RemoteAuthProvider(
+            token_verifier,
+            [AnyHttpUrl("https://auth.example.com")],
+            "https://api.example.com",
+            ["read"],
+        )
+
+        assert provider._scopes_supported == ["read"]
+        assert provider.resource_base_url is None
+        assert provider._get_resource_url("/mcp") == AnyHttpUrl(
+            "https://api.example.com/mcp"
+        )
+
 
 class TestRemoteAuthProviderIntegration:
     """Integration tests for RemoteAuthProvider with FastMCP server."""

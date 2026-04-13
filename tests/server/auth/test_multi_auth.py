@@ -410,6 +410,10 @@ class TestMultiAuthIntegration:
             )
             assert metadata_response.status_code == 200
             assert metadata_response.json()["resource"] == "https://api.example.com/mcp"
+            old_path_response = await client.get(
+                "/.well-known/oauth-protected-resource/proxy/mcp"
+            )
+            assert old_path_response.status_code == 404
 
     async def test_multi_auth_accepts_valid_verifier_token(self):
         """MultiAuth accepts tokens from verifiers (not just the server).

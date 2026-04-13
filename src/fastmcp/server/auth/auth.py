@@ -216,8 +216,8 @@ class AuthProvider(TokenVerifierProtocol):
     def __init__(
         self,
         base_url: AnyHttpUrl | str | None = None,
-        resource_base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
     ):
         """
         Initialize the auth provider.
@@ -373,8 +373,8 @@ class TokenVerifier(AuthProvider):
     def __init__(
         self,
         base_url: AnyHttpUrl | str | None = None,
-        resource_base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
     ):
         """
         Initialize the token verifier.
@@ -430,8 +430,8 @@ class RemoteAuthProvider(AuthProvider):
         token_verifier: TokenVerifier,
         authorization_servers: list[AnyHttpUrl],
         base_url: AnyHttpUrl | str,
-        resource_base_url: AnyHttpUrl | str | None = None,
         scopes_supported: list[str] | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
         resource_name: str | None = None,
         resource_documentation: AnyHttpUrl | None = None,
     ):
