@@ -515,6 +515,7 @@ class MultiAuth(AuthProvider):
         server: AuthProvider | None = None,
         verifiers: list[TokenVerifier] | TokenVerifier | None = None,
         base_url: AnyHttpUrl | str | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
     ):
         """Initialize the multi-auth provider.
@@ -525,6 +526,8 @@ class MultiAuth(AuthProvider):
                 the first verifier tried.
             verifiers: One or more token verifiers to try after the server.
             base_url: Override the base URL. Defaults to the server's base_url.
+            resource_base_url: Override the protected resource base URL. Defaults
+                to the server's resource_base_url when available.
             required_scopes: Override required scopes. Defaults to the server's.
         """
         if verifiers is None:
@@ -536,13 +539,20 @@ class MultiAuth(AuthProvider):
             raise ValueError("MultiAuth requires at least a server or one verifier")
 
         effective_base_url = base_url or (server.base_url if server else None)
+        effective_resource_base_url = resource_base_url or (
+            server.resource_base_url if server else None
+        )
         effective_scopes = (
             required_scopes
             if required_scopes is not None
             else (server.required_scopes if server else None)
         )
 
-        super().__init__(base_url=effective_base_url, required_scopes=effective_scopes)
+        super().__init__(
+            base_url=effective_base_url,
+            resource_base_url=effective_resource_base_url,
+            required_scopes=effective_scopes,
+        )
         self.server = server
         self.verifiers = list(verifiers)
 
