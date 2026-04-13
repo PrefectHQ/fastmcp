@@ -647,15 +647,14 @@ class Client(
             # wait for session to finish to ensure state has been reset
             try:
                 if force:
-                    await asyncio.shield(session_task)
+                    with anyio.CancelScope(shield=True):
+                        with anyio.move_on_after(self._disconnect_timeout):
+                            with suppress(asyncio.CancelledError):
+                                await session_task
                 else:
                     await session_task
-            except asyncio.CancelledError:
-                if not force or not session_task.cancelled():
-                    raise
             finally:
-                if session_task.done():
-                    self._session_state.session_task = None
+                self._session_state.session_task = None
 
     async def _session_runner(self):
         """
