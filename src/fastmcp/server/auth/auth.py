@@ -226,9 +226,12 @@ class AuthProvider(TokenVerifierProtocol):
             base_url: The base URL of this server (e.g., http://localhost:8000).
                 This is used for constructing .well-known endpoints and OAuth metadata.
             resource_base_url: Optional public base URL for the protected resource.
-                When provided, resource metadata and audience checks are derived from
-                this URL instead of ``base_url`` while operational OAuth routes remain
-                rooted at ``base_url``.
+                When provided, the resource URL advertised in protected resource
+                metadata (RFC 9728) is derived from this URL instead of ``base_url``,
+                while operational OAuth routes remain rooted at ``base_url``.
+                Providers that mint their own downstream tokens (e.g. ``OAuthProxy``)
+                also use this as the minted token audience. Upstream token audience
+                validation is configured separately on the token verifier.
             required_scopes: List of OAuth scopes required for all requests.
         """
         if isinstance(base_url, str):
@@ -376,6 +379,10 @@ class TokenVerifier(AuthProvider):
         Args:
             base_url: The base URL of this server
             resource_base_url: Optional public base URL for the protected resource.
+                When provided, the resource URL advertised in protected resource
+                metadata is derived from this URL instead of ``base_url``. Does not
+                configure upstream token audience validation — set ``audience`` on
+                your verifier to match.
             required_scopes: Scopes that are required for all requests
         """
         super().__init__(
@@ -432,6 +439,11 @@ class RemoteAuthProvider(AuthProvider):
             authorization_servers: List of authorization servers that issue valid tokens
             base_url: The base URL of this server
             resource_base_url: Optional public base URL for the protected resource.
+                When provided, the resource URL advertised in protected resource
+                metadata is derived from this URL instead of ``base_url``. Does not
+                configure the token verifier's audience — set ``audience`` on the
+                verifier to match if you want validated tokens bound to the same
+                resource.
             scopes_supported: Scopes to advertise in OAuth metadata. If None,
                 uses the token verifier's scopes_supported property. Use this
                 when the scopes clients request differ from the scopes that
