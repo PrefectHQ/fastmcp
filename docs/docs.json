@@ -296,6 +296,7 @@
                       "integrations/eunomia-authorization",
                       "integrations/github",
                       "integrations/google",
+                      "integrations/keycloak",
                       "integrations/oci",
                       "integrations/permit",
                       "integrations/propelauth",

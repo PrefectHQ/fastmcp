@@ -54,6 +54,23 @@ class TestResourcesAndTemplates:
         assert profile["id"] == "123"
         assert profile["name"] == "User 123"
 
+    async def test_mount_with_wildcard_resource_template(self):
+        """Wildcard `{name*}` params must survive round-trip through a namespaced mount."""
+        main_app = FastMCP("MainApp")
+        sub_app = FastMCP("SubApp")
+
+        @sub_app.resource("resource://multi/{extra*}")
+        def multi(extra: str) -> str:
+            return extra
+
+        main_app.mount(sub_app, namespace="sub")
+
+        result = await main_app.read_resource("resource://sub/multi/abc/def")
+        assert result.contents[0].content == "abc/def"
+
+        result = await main_app.read_resource("resource://sub/multi/abc")
+        assert result.contents[0].content == "abc"
+
     async def test_adding_resource_after_mounting(self):
         """Test adding a resource after mounting."""
         main_app = FastMCP("MainApp")

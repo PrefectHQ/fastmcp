@@ -211,24 +211,7 @@ def json_schema_to_type(
 
     # Always use the top-level schema for references
     if schema.get("type") == "object":
-        # If no properties defined but has additionalProperties, return typed dict
-        if not schema.get("properties") and schema.get("additionalProperties"):
-            additional_props = schema["additionalProperties"]
-            if additional_props is True:
-                return dict[str, Any]
-            else:
-                # Handle typed dictionaries like dict[str, str]
-                value_type = _schema_to_type(additional_props, schemas=schema)
-                # value_type might be ForwardRef or type - cast to Any for dynamic type construction
-                return cast(type[Any], dict[str, value_type])  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
-        # If no properties and no additionalProperties, default to dict[str, Any] for safety
-        elif not schema.get("properties") and not schema.get("additionalProperties"):
-            return dict[str, Any]
-        # If has properties AND additionalProperties is True, use Pydantic BaseModel
-        elif schema.get("properties") and schema.get("additionalProperties") is True:
-            return _create_pydantic_model(schema, name, schemas=schema)
-        # Otherwise use fast dataclass
-        return _create_dataclass(schema, name, schemas=schema)
+        return _object_schema_to_type(schema, schemas=schema, name=name)
     elif name:
         raise ValueError(f"Can not apply name to non-object schema: {name}")
     result = _schema_to_type(schema, schemas=schema)
@@ -351,18 +334,29 @@ def _return_Any() -> Any:
 
 
 def _object_schema_to_type(
-    schema: Mapping[str, Any], schemas: Mapping[str, Any]
+    schema: Mapping[str, Any],
+    schemas: Mapping[str, Any],
+    name: str | None = None,
 ) -> type:
     """Convert an object schema to the appropriate Python type.
 
-    Handles three cases that mirror the top-level ``json_schema_to_type`` logic:
-    1. No ``properties`` with ``additionalProperties`` — return ``dict[str, T]``
-    2. No ``properties`` and no ``additionalProperties`` — return ``dict[str, Any]``
+    Single source of truth for the four object-schema cases, used by both the
+    top-level ``json_schema_to_type`` entry point and the recursive
+    ``_schema_to_type`` path:
+
+    1. No ``properties`` with ``additionalProperties`` truthy — ``dict[str, T]``
+       (``T = Any`` when ``additionalProperties is True``, else the value schema's type)
+    2. No ``properties`` and no ``additionalProperties`` — ``dict[str, Any]``
     3. Has ``properties`` and ``additionalProperties is True`` — Pydantic model
-    4. Has ``properties`` — dataclass
+       (so ``extra="allow"`` can preserve unknown keys)
+    4. Has ``properties`` otherwise — dataclass
+
+    ``name`` is used as the generated class name for cases 3 and 4; it falls
+    back to the schema's ``title`` when not provided.
     """
     has_properties = bool(schema.get("properties"))
     additional_props = schema.get("additionalProperties")
+    class_name = name if name is not None else schema.get("title")
 
     if not has_properties and additional_props:
         if additional_props is True:
@@ -374,9 +368,9 @@ def _object_schema_to_type(
         return dict[str, Any]
 
     if has_properties and additional_props is True:
-        return _create_pydantic_model(schema, schema.get("title"), schemas)
+        return _create_pydantic_model(schema, class_name, schemas)
 
-    return _create_dataclass(schema, schema.get("title"), schemas)
+    return _create_dataclass(schema, class_name, schemas)
 
 
 def _get_from_type_handler(
@@ -431,23 +425,9 @@ def _schema_to_type(
 
     # Handle anyOf unions
     if "anyOf" in schema:
-        types: list[type | Any] = []
-        for subschema in schema["anyOf"]:
-            # Special handling for dict-like objects in unions
-            if (
-                subschema.get("type") == "object"
-                and not subschema.get("properties")
-                and subschema.get("additionalProperties")
-            ):
-                # This is a dict type, handle it directly
-                additional_props = subschema["additionalProperties"]
-                if additional_props is True:
-                    types.append(dict[str, Any])
-                else:
-                    value_type = _schema_to_type(additional_props, schemas)
-                    types.append(dict[str, value_type])  # type: ignore
-            else:
-                types.append(_schema_to_type(subschema, schemas))
+        types: list[type | Any] = [
+            _schema_to_type(subschema, schemas) for subschema in schema["anyOf"]
+        ]
 
         # Check if one of the types is None (null)
         has_null = type(None) in types

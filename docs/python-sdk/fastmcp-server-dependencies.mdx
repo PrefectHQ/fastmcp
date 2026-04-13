@@ -15,74 +15,7 @@ CurrentWorker) and background task execution require fastmcp[tasks].
 
 ## Functions
 
-### `get_task_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L107" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_task_context() -> TaskContextInfo | None
-```
-
-
-Get the current task context if running inside a background task worker.
-
-This function extracts task information from the Docket execution context.
-Returns None if not running in a task context (e.g., foreground execution).
-
-**Returns:**
-- TaskContextInfo with task_id and session_id, or None if not in a task.
-
-
-### `register_task_session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L145" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-register_task_session(session_id: str, session: ServerSession) -> None
-```
-
-
-Register a session for Context access in background tasks.
-
-Called automatically when a task is submitted to Docket. The session is
-stored as a weakref so it doesn't prevent garbage collection when the
-client disconnects.
-
-**Args:**
-- `session_id`: The session identifier
-- `session`: The ServerSession instance
-
-
-### `get_task_session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L159" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_task_session(session_id: str) -> ServerSession | None
-```
-
-
-Get a registered session by ID if still alive.
-
-**Args:**
-- `session_id`: The session identifier
-
-**Returns:**
-- The ServerSession if found and alive, None otherwise
-
-
-### `register_task_server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L194" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-register_task_server(task_id: str, server: FastMCP) -> None
-```
-
-
-Register the server for a background task.
-
-Called at task-submission time (inside the child server's call_tool
-context) so that background workers can resolve CurrentFastMCP() and
-ctx.fastmcp to the child server for mounted tasks.
-
-The map is bounded to avoid unbounded growth in long-lived servers.
-Evicted entries fall back to the ContextVar (parent server).
-
-
-### `is_docket_available` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L428" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `is_docket_available` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L114" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_docket_available() -> bool
@@ -103,7 +36,7 @@ Any of those failing means we treat docket as unavailable and fall back
 to the no-tasks code paths instead of crashing deep inside a request.
 
 
-### `require_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L457" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `require_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L143" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 require_docket(feature: str) -> None
@@ -117,7 +50,7 @@ Raise ImportError with install instructions if docket not available.
      "CurrentDocket()"). Will be included in the error message.
 
 
-### `transform_context_annotations` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L497" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `transform_context_annotations` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]
@@ -143,7 +76,7 @@ allows them to have defaults in any order.
 - Function with modified signature (same function object, updated __signature__)
 
 
-### `get_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L638" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L324" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_context() -> Context
@@ -153,7 +86,7 @@ get_context() -> Context
 Get the current FastMCP Context instance directly.
 
 
-### `get_server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L648" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L334" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_server() -> FastMCP
@@ -173,7 +106,7 @@ started the worker).
 - `RuntimeError`: If no server in context
 
 
-### `get_http_request` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L682" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_http_request` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L364" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_http_request() -> Request
@@ -187,7 +120,7 @@ In background tasks, returns a synthetic request populated with the
 snapshotted headers from the originating HTTP request.
 
 
-### `get_http_headers` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L729" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_http_headers` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L411" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_http_headers(include_all: bool = False, include: set[str] | None = None) -> dict[str, str]
@@ -208,7 +141,7 @@ normally be excluded. This is useful for proxy transports that need to forward
 authorization headers to upstream MCP servers.
 
 
-### `get_access_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L786" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_access_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L468" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_access_token() -> AccessToken | None
@@ -227,7 +160,7 @@ token snapshot stored in Redis at task submission time.
 - The access token if an authenticated user is available, None otherwise.
 
 
-### `without_injected_parameters` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L857" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `without_injected_parameters` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L539" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]
@@ -252,7 +185,7 @@ Handles:
 - Async wrapper function without injected parameters
 
 
-### `resolve_dependencies` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1006" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resolve_dependencies` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L688" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_dependencies(fn: Callable[..., Any], arguments: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]
@@ -278,7 +211,7 @@ time, so all injection goes through the unified DI system.
       which will be filtered out)
 
 
-### `CurrentContext` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1144" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentContext` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L831" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentContext() -> Context
@@ -297,7 +230,7 @@ current MCP operation (tool/resource/prompt call).
 - `RuntimeError`: If no active context found (during resolution)
 
 
-### `OptionalCurrentContext` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1169" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `OptionalCurrentContext` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L856" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 OptionalCurrentContext() -> Context | None
@@ -307,7 +240,7 @@ OptionalCurrentContext() -> Context | None
 Get the current FastMCP Context, or None when no context is active.
 
 
-### `CurrentDocket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentDocket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L891" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentDocket() -> Docket
@@ -327,7 +260,7 @@ automatically creates for background task scheduling.
 - `ImportError`: If fastmcp[tasks] not installed
 
 
-### `CurrentWorker` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1260" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentWorker` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L947" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentWorker() -> Worker
@@ -347,7 +280,7 @@ automatically creates for background task processing.
 - `ImportError`: If fastmcp[tasks] not installed
 
 
-### `CurrentFastMCP` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1301" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentFastMCP` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L988" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentFastMCP() -> FastMCP
@@ -365,7 +298,7 @@ This dependency provides access to the active FastMCP server.
 - `RuntimeError`: If no server in context (during resolution)
 
 
-### `CurrentRequest` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1341" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentRequest` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1028" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentRequest() -> Request
@@ -385,7 +318,7 @@ current HTTP request. Only available when running over HTTP transports
 - `RuntimeError`: If no HTTP request in context (e.g., STDIO transport)
 
 
-### `CurrentHeaders` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1382" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentHeaders` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1069" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentHeaders() -> dict[str, str]
@@ -403,7 +336,7 @@ transport.
 - A dependency that resolves to a dictionary of header name -> value
 
 
-### `CurrentAccessToken` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1600" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CurrentAccessToken` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1287" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 CurrentAccessToken() -> AccessToken
@@ -422,7 +355,7 @@ authenticated request. Raises an error if no authentication is present.
 - `RuntimeError`: If no authenticated user (use get_access_token() for optional)
 
 
-### `TokenClaim` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1657" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `TokenClaim` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1344" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 TokenClaim(name: str) -> str
@@ -447,62 +380,7 @@ without needing the full token object.
 
 ## Classes
 
-### `TaskContextInfo` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-
-Information about the current background task context.
-
-Returned by ``get_task_context()`` when running inside a Docket worker.
-Contains identifiers needed to communicate with the MCP session.
-
-
-### `TaskContextSnapshot` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L217" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-
-All context data snapshotted at task-submission time.
-
-Stored as a single Redis key per task, restored once in the worker.
-
-
-**Methods:**
-
-#### `capture` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L228" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-capture(cls) -> TaskContextSnapshot
-```
-
-Capture current context for background task execution.
-
-
-#### `from_json` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L244" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-from_json(cls, raw: str | bytes) -> TaskContextSnapshot
-```
-
-Deserialize from JSON stored in Redis.
-
-
-#### `to_json` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L258" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-to_json(self) -> str
-```
-
-Serialize to JSON for Redis storage.
-
-
-#### `save` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L268" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-save(self, docket: Docket, session_id: str, task_id: str, ttl_seconds: int) -> None
-```
-
-Store this snapshot as a single Redis key.
-
-
-### `ProgressLike` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1410" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ProgressLike` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1097" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Protocol for progress tracking interface.
@@ -513,7 +391,7 @@ and Docket's Progress (worker context).
 
 **Methods:**
 
-#### `current` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1418" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `current` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 current(self) -> int | None
@@ -522,7 +400,7 @@ current(self) -> int | None
 Current progress value.
 
 
-#### `total` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1423" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `total` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 total(self) -> int
@@ -531,7 +409,7 @@ total(self) -> int
 Total/target progress value.
 
 
-#### `message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1428" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1115" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 message(self) -> str | None
@@ -540,7 +418,7 @@ message(self) -> str | None
 Current progress message.
 
 
-#### `set_total` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1432" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_total` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1119" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_total(self, total: int) -> None
@@ -549,7 +427,7 @@ set_total(self, total: int) -> None
 Set the total/target value for progress tracking.
 
 
-#### `increment` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1436" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `increment` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1123" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 increment(self, amount: int = 1) -> None
@@ -558,7 +436,7 @@ increment(self, amount: int = 1) -> None
 Atomically increment the current progress value.
 
 
-#### `set_message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1440" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1127" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_message(self, message: str | None) -> None
@@ -567,7 +445,7 @@ set_message(self, message: str | None) -> None
 Update the progress status message.
 
 
-### `InMemoryProgress` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1445" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `InMemoryProgress` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 In-memory progress tracker for immediate tool execution.
@@ -579,25 +457,25 @@ progress doesn't need to be observable across processes.
 
 **Methods:**
 
-#### `current` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1470" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `current` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1157" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 current(self) -> int | None
 ```
 
-#### `total` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1474" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `total` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1161" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 total(self) -> int
 ```
 
-#### `message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1478" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1165" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 message(self) -> str | None
 ```
 
-#### `set_total` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1481" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_total` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_total(self, total: int) -> None
@@ -606,7 +484,7 @@ set_total(self, total: int) -> None
 Set the total/target value for progress tracking.
 
 
-#### `increment` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1487" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `increment` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1174" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 increment(self, amount: int = 1) -> None
@@ -615,7 +493,7 @@ increment(self, amount: int = 1) -> None
 Atomically increment the current progress value.
 
 
-#### `set_message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1496" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_message(self, message: str | None) -> None
@@ -624,7 +502,7 @@ set_message(self, message: str | None) -> None
 Update the progress status message.
 
 
-### `Progress` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1501" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Progress` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1188" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Progress dependency that works in both server and worker contexts.
@@ -639,7 +517,7 @@ share mutable state.
 
 **Methods:**
 
-#### `current` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1542" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `current` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1229" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 current(self) -> int | None
@@ -648,7 +526,7 @@ current(self) -> int | None
 Current progress value.
 
 
-#### `total` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1548" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `total` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1235" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 total(self) -> int
@@ -657,7 +535,7 @@ total(self) -> int
 Total/target progress value.
 
 
-#### `message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1554" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1241" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 message(self) -> str | None
@@ -666,7 +544,7 @@ message(self) -> str | None
 Current progress message.
 
 
-#### `set_total` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1559" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_total` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1246" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_total(self, total: int) -> None
@@ -675,7 +553,7 @@ set_total(self, total: int) -> None
 Set the total/target value for progress tracking.
 
 
-#### `increment` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1564" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `increment` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1251" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 increment(self, amount: int = 1) -> None
@@ -684,7 +562,7 @@ increment(self, amount: int = 1) -> None
 Atomically increment the current progress value.
 
 
-#### `set_message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1569" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L1256" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_message(self, message: str | None) -> None

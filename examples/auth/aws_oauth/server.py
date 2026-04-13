@@ -31,7 +31,7 @@ auth = AWSCognitoProvider(
     or "eu-central-1",
     client_id=os.getenv("FASTMCP_SERVER_AUTH_AWS_COGNITO_CLIENT_ID") or "",
     client_secret=os.getenv("FASTMCP_SERVER_AUTH_AWS_COGNITO_CLIENT_SECRET") or "",
-    base_url="http://localhost:8000",
+    base_url="http://127.0.0.1:8000",
     # redirect_path="/custom/callback"
 )
 

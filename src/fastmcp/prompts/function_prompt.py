@@ -363,7 +363,7 @@ class FunctionPrompt(Prompt):
             return self.convert_result(result)
         except Exception as e:
             logger.exception(f"Error rendering prompt {self.name}")
-            raise PromptError(f"Error rendering prompt {self.name}.") from e
+            raise PromptError(f"Error rendering prompt {self.name!r}: {e}") from e
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this prompt with docket for background execution."""

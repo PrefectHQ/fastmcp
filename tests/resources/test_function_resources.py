@@ -66,8 +66,8 @@ class TestFunctionResource:
         result = await resource._read()
         assert result.contents[0].content == b"Hello, world!"
 
-    async def test_dict_return_raises_type_error(self):
-        """Returning dict from read() raises TypeError - use ResourceResult."""
+    async def test_dict_return_auto_serializes(self):
+        """Returning dict from read() auto-serializes to JSON."""
 
         def get_data() -> dict:
             return {"key": "value"}
@@ -81,9 +81,10 @@ class TestFunctionResource:
         result = await resource.read()
         assert result == {"key": "value"}
 
-        # _read() raises TypeError - must return str, bytes, or ResourceResult
-        with pytest.raises(TypeError, match="must be str, bytes, or list"):
-            await resource._read()
+        # _read() auto-serializes dict to JSON text
+        resource_result = await resource._read()
+        assert len(resource_result.contents) == 1
+        assert '"key"' in str(resource_result.contents[0].content)
 
     async def test_error_handling(self):
         """Test error handling in FunctionResource."""

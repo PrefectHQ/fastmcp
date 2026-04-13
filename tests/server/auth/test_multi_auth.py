@@ -66,6 +66,34 @@ class TestMultiAuthInit:
         auth = MultiAuth(server=provider, base_url="https://override.example.com")
         assert auth.base_url == AnyHttpUrl("https://override.example.com/")
 
+    def test_resource_base_url_from_server(self):
+        verifier = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
+        provider = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://auth.example.com/proxy",
+            resource_base_url="https://api.example.com",
+        )
+        auth = MultiAuth(server=provider)
+        assert auth.resource_base_url == AnyHttpUrl("https://api.example.com/")
+
+    def test_resource_base_url_override(self):
+        verifier = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
+        provider = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://auth.example.com/proxy",
+            resource_base_url="https://api.example.com",
+        )
+        auth = MultiAuth(
+            server=provider,
+            resource_base_url="https://override.example.com",
+        )
+        assert auth.resource_base_url == AnyHttpUrl("https://override.example.com/")
+        # Override must propagate to the wrapped server so get_routes()
+        # serves metadata consistent with the outer auth challenge URL.
+        assert provider.resource_base_url == AnyHttpUrl("https://override.example.com/")
+
     def test_required_scopes_from_server(self):
         verifier = StaticTokenVerifier(
             tokens={"t": {"client_id": "c", "scopes": ["read"]}},
@@ -327,6 +355,65 @@ class TestMultiAuthIntegration:
             assert response.status_code == 200
             data = response.json()
             assert data["resource"] == "https://api.example.com/mcp"
+
+    async def test_multi_auth_uses_server_resource_base_url_in_auth_challenge(self):
+        """Auth challenges should advertise resource metadata from resource_base_url."""
+        verifier = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
+        server = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://auth.example.com/proxy",
+            resource_base_url="https://api.example.com",
+        )
+
+        auth = MultiAuth(server=server)
+        mcp = FastMCP("test", auth=auth)
+        app = mcp.http_app(path="/mcp")
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://localhost",
+        ) as client:
+            response = await client.get("/mcp")
+            assert response.status_code == 401
+            assert (
+                'resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/mcp"'
+                in response.headers["www-authenticate"]
+            )
+
+    async def test_multi_auth_override_propagates_to_served_metadata(self):
+        """Override on MultiAuth must propagate so served metadata matches the challenge."""
+        verifier = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
+        server = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://auth.example.com/proxy",
+        )
+
+        auth = MultiAuth(server=server, resource_base_url="https://api.example.com")
+        mcp = FastMCP("test", auth=auth)
+        app = mcp.http_app(path="/mcp")
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://localhost",
+        ) as client:
+            response = await client.get("/mcp")
+            assert response.status_code == 401
+            assert (
+                'resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/mcp"'
+                in response.headers["www-authenticate"]
+            )
+
+            metadata_response = await client.get(
+                "/.well-known/oauth-protected-resource/mcp"
+            )
+            assert metadata_response.status_code == 200
+            assert metadata_response.json()["resource"] == "https://api.example.com/mcp"
+            old_path_response = await client.get(
+                "/.well-known/oauth-protected-resource/proxy/mcp"
+            )
+            assert old_path_response.status_code == 404
 
     async def test_multi_auth_accepts_valid_verifier_token(self):
         """MultiAuth accepts tokens from verifiers (not just the server).

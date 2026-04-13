@@ -9,7 +9,7 @@ Demonstrates FastMCP server protection with Clerk OAuth.
    - Create or select an application
    - Go to Developers > OAuth Applications
    - Create an OAuth application
-   - Add Authorized redirect URI: `http://localhost:8000/auth/callback`
+   - Add Authorized redirect URI: `http://127.0.0.1:8000/auth/callback`
    - Copy the Client ID and Client Secret
    - Note your instance domain (e.g., `saving-primate-16.clerk.accounts.dev`)
 

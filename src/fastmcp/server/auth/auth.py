@@ -217,6 +217,7 @@ class AuthProvider(TokenVerifierProtocol):
         self,
         base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
     ):
         """
         Initialize the auth provider.
@@ -224,11 +225,21 @@ class AuthProvider(TokenVerifierProtocol):
         Args:
             base_url: The base URL of this server (e.g., http://localhost:8000).
                 This is used for constructing .well-known endpoints and OAuth metadata.
+            resource_base_url: Optional public base URL for the protected resource.
+                When provided, the resource URL advertised in protected resource
+                metadata (RFC 9728) is derived from this URL instead of ``base_url``,
+                while operational OAuth routes remain rooted at ``base_url``.
+                Providers that mint their own downstream tokens (e.g. ``OAuthProxy``)
+                also use this as the minted token audience. Upstream token audience
+                validation is configured separately on the token verifier.
             required_scopes: List of OAuth scopes required for all requests.
         """
         if isinstance(base_url, str):
             base_url = AnyHttpUrl(base_url)
+        if isinstance(resource_base_url, str):
+            resource_base_url = AnyHttpUrl(resource_base_url)
         self.base_url = base_url
+        self.resource_base_url = resource_base_url
         self.required_scopes = required_scopes or []
         self._mcp_path: str | None = None
         self._resource_url: AnyHttpUrl | None = None
@@ -332,20 +343,24 @@ class AuthProvider(TokenVerifierProtocol):
     def _get_resource_url(self, path: str | None = None) -> AnyHttpUrl | None:
         """Get the actual resource URL being protected.
 
+        Uses ``resource_base_url`` if set; otherwise falls back to
+        ``base_url``.
+
         Args:
             path: The path where the resource endpoint is mounted (e.g., "/mcp")
 
         Returns:
             The full URL of the protected resource
         """
-        if self.base_url is None:
+        resource_base_url = self.resource_base_url or self.base_url
+        if resource_base_url is None:
             return None
 
         if path:
-            prefix = str(self.base_url).rstrip("/")
+            prefix = str(resource_base_url).rstrip("/")
             suffix = path.lstrip("/")
             return AnyHttpUrl(f"{prefix}/{suffix}")
-        return self.base_url
+        return resource_base_url
 
 
 class TokenVerifier(AuthProvider):
@@ -359,15 +374,25 @@ class TokenVerifier(AuthProvider):
         self,
         base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
     ):
         """
         Initialize the token verifier.
 
         Args:
             base_url: The base URL of this server
+            resource_base_url: Optional public base URL for the protected resource.
+                When provided, the resource URL advertised in protected resource
+                metadata is derived from this URL instead of ``base_url``. Does not
+                configure upstream token audience validation — set ``audience`` on
+                your verifier to match.
             required_scopes: Scopes that are required for all requests
         """
-        super().__init__(base_url=base_url, required_scopes=required_scopes)
+        super().__init__(
+            base_url=base_url,
+            resource_base_url=resource_base_url,
+            required_scopes=required_scopes,
+        )
 
     @property
     def scopes_supported(self) -> list[str]:
@@ -406,6 +431,7 @@ class RemoteAuthProvider(AuthProvider):
         authorization_servers: list[AnyHttpUrl],
         base_url: AnyHttpUrl | str,
         scopes_supported: list[str] | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
         resource_name: str | None = None,
         resource_documentation: AnyHttpUrl | None = None,
     ):
@@ -415,6 +441,12 @@ class RemoteAuthProvider(AuthProvider):
             token_verifier: TokenVerifier instance for token validation
             authorization_servers: List of authorization servers that issue valid tokens
             base_url: The base URL of this server
+            resource_base_url: Optional public base URL for the protected resource.
+                When provided, the resource URL advertised in protected resource
+                metadata is derived from this URL instead of ``base_url``. Does not
+                configure the token verifier's audience — set ``audience`` on the
+                verifier to match if you want validated tokens bound to the same
+                resource.
             scopes_supported: Scopes to advertise in OAuth metadata. If None,
                 uses the token verifier's scopes_supported property. Use this
                 when the scopes clients request differ from the scopes that
@@ -424,6 +456,7 @@ class RemoteAuthProvider(AuthProvider):
         """
         super().__init__(
             base_url=base_url,
+            resource_base_url=resource_base_url,
             required_scopes=token_verifier.required_scopes,
         )
         self.token_verifier = token_verifier
@@ -444,6 +477,12 @@ class RemoteAuthProvider(AuthProvider):
 
         Creates protected resource metadata routes (RFC 9728).
         """
+        # Lifecycle hook: let subclasses react to the mcp_path becoming known
+        # (e.g., bind token audience to the resource URL). Mirrors the call in
+        # OAuthAuthorizationServerProvider.get_routes so all providers see the
+        # path at the same point in their lifecycle.
+        self.set_mcp_path(mcp_path)
+
         routes = []
 
         # Get the resource URL based on the MCP path
@@ -497,6 +536,7 @@ class MultiAuth(AuthProvider):
         server: AuthProvider | None = None,
         verifiers: list[TokenVerifier] | TokenVerifier | None = None,
         base_url: AnyHttpUrl | str | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
     ):
         """Initialize the multi-auth provider.
@@ -507,6 +547,8 @@ class MultiAuth(AuthProvider):
                 the first verifier tried.
             verifiers: One or more token verifiers to try after the server.
             base_url: Override the base URL. Defaults to the server's base_url.
+            resource_base_url: Override the protected resource base URL. Defaults
+                to the server's resource_base_url when available.
             required_scopes: Override required scopes. Defaults to the server's.
         """
         if verifiers is None:
@@ -518,15 +560,28 @@ class MultiAuth(AuthProvider):
             raise ValueError("MultiAuth requires at least a server or one verifier")
 
         effective_base_url = base_url or (server.base_url if server else None)
+        effective_resource_base_url = resource_base_url or (
+            server.resource_base_url if server else None
+        )
         effective_scopes = (
             required_scopes
             if required_scopes is not None
             else (server.required_scopes if server else None)
         )
 
-        super().__init__(base_url=effective_base_url, required_scopes=effective_scopes)
+        super().__init__(
+            base_url=effective_base_url,
+            resource_base_url=effective_resource_base_url,
+            required_scopes=effective_scopes,
+        )
         self.server = server
         self.verifiers = list(verifiers)
+
+        # If an explicit resource_base_url override was passed to MultiAuth,
+        # propagate it to the wrapped server so its routes advertise metadata
+        # consistent with the outer auth challenge URL.
+        if resource_base_url is not None and self.server is not None:
+            self.server.resource_base_url = self.resource_base_url
 
         self._sources: list[AuthProvider] = []
         if self.server is not None:
@@ -593,6 +648,7 @@ class OAuthProvider(
         self,
         *,
         base_url: AnyHttpUrl | str,
+        resource_base_url: AnyHttpUrl | str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
         service_documentation_url: AnyHttpUrl | str | None = None,
         client_registration_options: ClientRegistrationOptions | None = None,
@@ -604,6 +660,9 @@ class OAuthProvider(
 
         Args:
             base_url: The public URL of this FastMCP server
+            resource_base_url: Optional public base URL for the protected resource.
+                When provided, the protected resource metadata and token audience are
+                derived from this URL instead of ``base_url``.
             issuer_url: The issuer URL for OAuth metadata (defaults to base_url)
             service_documentation_url: The URL of the service documentation.
             client_registration_options: The client registration options.
@@ -611,7 +670,11 @@ class OAuthProvider(
             required_scopes: Scopes that are required for all requests.
         """
 
-        super().__init__(base_url=base_url, required_scopes=required_scopes)
+        super().__init__(
+            base_url=base_url,
+            resource_base_url=resource_base_url,
+            required_scopes=required_scopes,
+        )
 
         if issuer_url is None:
             self.issuer_url = self.base_url

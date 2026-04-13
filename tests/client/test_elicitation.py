@@ -144,6 +144,24 @@ async def test_elicitation_cancel_action():
 
 
 class TestScalarResponseTypes:
+    async def test_scalar_handler_return_is_auto_wrapped(self):
+        """Scalar handler returns are wrapped as {"value": ...} for scalar schemas."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        async def my_tool(context: Context) -> str:
+            result = await context.elicit(message="", response_type=str)
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, str)
+            return result.data
+
+        async def elicitation_handler(message, response_type, params, ctx):
+            return ElicitResult(action="accept", content="Alice")
+
+        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+            result = await client.call_tool("my_tool", {})
+            assert result.data == "Alice"
+
     async def test_elicitation_no_response(self):
         """Test elicitation with no response type."""
         mcp = FastMCP("TestServer")
