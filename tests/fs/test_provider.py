@@ -1,5 +1,6 @@
 """Tests for FileSystemProvider."""
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -295,8 +296,6 @@ def my_tool() -> str:
 
         provider = FileSystemProvider(tmp_path, reload=True)
         assert len(await provider._list_tools()) == 1
-
-        import asyncio
 
         observed_empty = False
 
