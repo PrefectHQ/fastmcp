@@ -10,7 +10,9 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.2.0" />
 
-Generative UI means the LLM writes the UI code at runtime. Instead of calling a pre-built tool with a fixed interface, the model writes Prefab Python code tailored to the current data and request. The user watches the UI build up in real time as the model generates code.
+<video src="/apps/images/generative-ui.mp4" autoPlay loop muted playsInline style={{width:"100%", borderRadius:"8px", marginBottom:"1rem"}} />
+
+With Generative UI, the LLM writes the UI code at runtime. Instead of calling a pre-built tool with a fixed shape, the model writes Prefab Python tailored to the current data and request. The user watches the UI stream in as the model generates it.
 
 ```python
 from fastmcp import FastMCP
@@ -20,15 +22,15 @@ mcp = FastMCP("Prefab Studio")
 mcp.add_provider(GenerativeUI())
 ```
 
-That's it. The `GenerativeUI` provider registers everything:
+One provider registers three things:
 
 - **`generate_prefab_ui`** — a tool that accepts Python code, executes it in a Pyodide sandbox, and renders the result as a Prefab app
-- **`search_prefab_components`** — a tool that lets the LLM search the Prefab component library to discover what's available
-- **The generative renderer** — a `ui://` resource with browser-side Pyodide for streaming progressive rendering
+- **`search_prefab_components`** — a tool the LLM uses to discover what components are available
+- **The streaming renderer** — a `ui://` resource with browser-side Pyodide that progressively renders partial code as the LLM generates it
 
-## How It Works
+## How it works
 
-When the LLM decides to call `generate_prefab_ui`, it writes Prefab Python code into the `code` argument. The MCP Apps protocol creates the renderer iframe in parallel with the tool call, so the app is already running when partial arguments start flowing.
+When the LLM calls `generate_prefab_ui`, it writes Prefab Python code into the `code` argument. The MCP Apps protocol creates the renderer iframe in parallel with the tool call, so the app is already running by the time partial arguments start flowing.
 
 As the LLM generates each token:
 
@@ -37,11 +39,11 @@ As the LLM generates each token:
 3. Browser-side Pyodide executes whatever compiles successfully
 4. The user sees components appear as they're written
 
-When the LLM finishes, the server runs the complete code in a server-side Pyodide sandbox for validation, and the renderer replaces the streaming preview with the final server-validated result.
+When the LLM finishes, the server runs the complete code in a server-side Pyodide sandbox for validation, and the renderer swaps the streaming preview for the final server-validated result.
 
-## What the LLM Writes
+## What the LLM writes
 
-The tool description includes code examples that teach the LLM the Prefab patterns. A typical generation looks like:
+The tool description includes examples that teach the model the Prefab patterns. A typical generation looks like:
 
 ```python
 from prefab_ui.components import Column, Row, Heading, Text, Badge, Card, CardContent
@@ -73,9 +75,9 @@ with PrefabApp() as app:
                     Badge("+18%", variant="success")
 ```
 
-The model writes real Python — loops, f-strings, computation, helper functions. Prefab's component library gives it charts, tables, forms, cards, badges, and layout primitives to work with.
+The model writes real Python — loops, f-strings, computation, helper functions. Prefab gives it charts, tables, forms, cards, badges, and layout primitives to compose.
 
-## The Component Search Tool
+## The component search tool
 
 Before writing code, the LLM can call `search_prefab_components` to discover what's available:
 
@@ -87,11 +89,11 @@ search_prefab_components("Chart")
   ...
 ```
 
-Passing `detail=True` returns full field descriptions and docstrings. The search tool introspects the actual Prefab classes at runtime, so it's always up to date with the installed version.
+Passing `detail=True` returns full field descriptions and docstrings. The search tool introspects Prefab classes at runtime, so it's always up to date with the installed version.
 
-## Passing Data
+## Passing data
 
-The `generate_prefab_ui` tool accepts a `data` parameter. Values passed here become global variables in the sandbox:
+The `generate_prefab_ui` tool accepts a `data` parameter. Values become global variables in the sandbox:
 
 ```python
 # The LLM can reference 'sales_data' directly in its code
@@ -101,11 +103,11 @@ result = await generate_prefab_ui(
 )
 ```
 
-This lets the model use real data from earlier in the conversation to build visualizations.
+This lets the model use data from earlier in the conversation to build visualizations.
 
 ## Configuration
 
-`GenerativeUI` accepts options for customizing tool names:
+`GenerativeUI` takes options for customizing tool names:
 
 ```python
 GenerativeUI(
@@ -117,12 +119,16 @@ GenerativeUI(
 
 ## Requirements
 
-Generative UI requires `fastmcp[apps]` which installs `prefab-ui`. The Pyodide sandbox (for server-side validation) requires Deno — it installs automatically on first use.
+Generative UI needs `fastmcp[apps]`, which pulls in `prefab-ui`. The server-side Pyodide sandbox (for final validation) requires Deno — it installs automatically on first use.
 
-The streaming renderer loads Pyodide from CDN in the browser. The CSP is configured automatically by the provider — no manual setup needed.
+The streaming renderer loads Pyodide from CDN in the browser. The CSP is configured automatically by the provider — no manual setup.
 
-## Next Steps
+## Sandbox limitations
 
-- **[Prefab UI](/apps/prefab)** — The component library and state system the LLM writes code against
-- **[Prefab Component Reference](https://prefab.prefect.io/docs/components)** — Full component library documentation
-- **[Development](/apps/development)** — Preview generative UI tools locally with `fastmcp dev apps`
+The Pyodide sandbox includes the Python standard library and Prefab. External packages (NumPy, pandas, requests, etc.) are **not available** — the LLM's code must work with only built-in Python and Prefab. If the LLM imports something unavailable, the sandbox raises `ImportError`.
+
+## Next steps
+
+- **[Interactive Tools](/apps/prefab)** — the component building blocks the LLM will use
+- **[Prefab component reference](https://prefab.prefect.io/docs/components)** — full component library
+- **[Development](/apps/development)** — preview generative tools locally with `fastmcp dev apps`

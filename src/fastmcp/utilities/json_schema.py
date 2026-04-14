@@ -73,6 +73,33 @@ def _strip_remote_refs(obj: Any) -> Any:
     return obj
 
 
+def _strip_discriminator(obj: Any) -> Any:
+    """Recursively remove OpenAPI ``discriminator`` keys from a schema.
+
+    Pydantic emits ``discriminator.mapping`` with values like
+    ``#/$defs/ClassName``.  After ``$defs`` are inlined and removed by
+    ``dereference_refs``, those mapping entries dangle.  The keyword is an
+    OpenAPI extension — the ``anyOf`` variants already carry ``const`` on
+    the discriminant field, so the mapping is redundant.
+
+    Only strips ``discriminator`` when it appears alongside ``anyOf`` or
+    ``oneOf``, which is where the OpenAPI keyword lives.  A property
+    *named* ``discriminator`` (inside ``properties``) is left alone.
+    """
+    if isinstance(obj, dict):
+        skip = "discriminator" in obj and ("anyOf" in obj or "oneOf" in obj)
+        # Keys that hold instance data, not sub-schemas — don't recurse.
+        _DATA_KEYS = {"default", "const", "examples", "enum"}
+        return {
+            k: (v if k in _DATA_KEYS else _strip_discriminator(v))
+            for k, v in obj.items()
+            if not (k == "discriminator" and skip)
+        }
+    if isinstance(obj, list):
+        return [_strip_discriminator(item) for item in obj]
+    return obj
+
+
 def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     """Resolve all $ref references in a JSON schema by inlining definitions.
 
@@ -134,6 +161,13 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         # Remove $defs since all references have been resolved
         if "$defs" in dereferenced:
             dereferenced = {k: v for k, v in dereferenced.items() if k != "$defs"}
+
+        # Strip `discriminator` keys — they contain `mapping` values that
+        # point at `#/$defs/...` entries we just removed.  `discriminator`
+        # is an OpenAPI extension; after inlining, the `anyOf` variants
+        # already carry `const` on the discriminant field, making the
+        # mapping redundant.
+        dereferenced = _strip_discriminator(dereferenced)
 
         return dereferenced
 
@@ -270,6 +304,85 @@ def _prune_param(schema: dict[str, Any], param: str) -> dict[str, Any]:
     return schema
 
 
+# JSON Schema structural keywords — a node containing any of these is a
+# schema, so a string "title" sibling is metadata we can safely drop.
+_SCHEMA_KEYWORDS = frozenset(
+    {
+        "type",
+        "properties",
+        "$ref",
+        "items",
+        "allOf",
+        "oneOf",
+        "anyOf",
+        "required",
+    }
+)
+
+# Pure schema-metadata keys. A node containing only these (e.g. Pydantic's
+# `{"title": "X"}` for Any-typed fields) is also a schema, just one with no
+# structural keywords alongside — still safe to strip title from.
+_METADATA_KEYS = frozenset(
+    {
+        "title",
+        "description",
+        "deprecated",
+        "readOnly",
+        "writeOnly",
+    }
+)
+
+# Keywords whose values are literal user data, not sub-schemas. Skipping
+# recursion here prevents `default: {"title": "X"}` from losing the "title"
+# data value because it happens to look metadata-shaped. Includes both
+# `examples` (JSON Schema draft 7+) and `example` (OpenAPI/Swagger 2.0).
+_LITERAL_KEYWORDS = frozenset({"default", "const", "examples", "example", "enum"})
+
+# Keys whose values are dicts of arbitrary-name -> sub-schema. When we see
+# these, we traverse into each sub-schema regardless of its name — the keys
+# are user property/definition names, not schema keywords, so a property
+# literally named "enum" or "default" must not be confused with the
+# schema keywords of the same name.
+#
+# `dependencies` is a draft-07 keyword whose values can be sub-schemas OR
+# lists of required property names; list values short-circuit in the list
+# branch, so including it here is safe for both shapes.
+_SUBSCHEMA_MAP_KEYS = frozenset(
+    {
+        "properties",
+        "patternProperties",
+        "$defs",
+        "definitions",
+        "dependentSchemas",
+        "dependencies",
+    }
+)
+
+# Keys whose values are a single sub-schema (not a dict of sub-schemas).
+# We traverse into them and treat the result as a schema node.
+# `additionalItems` is the draft-07 predecessor of `unevaluatedItems`.
+# `contentSchema` is a 2019-09+ keyword for typed string payloads.
+_SUBSCHEMA_VALUE_KEYS = frozenset(
+    {
+        "items",
+        "additionalItems",
+        "additionalProperties",
+        "contains",
+        "contentSchema",
+        "propertyNames",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+        "if",
+        "then",
+        "else",
+        "not",
+    }
+)
+
+# Keys whose values are LISTS of sub-schemas.
+_SUBSCHEMA_LIST_KEYS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
+
+
 def _single_pass_optimize(
     schema: dict[str, Any],
     prune_titles: bool = False,
@@ -336,13 +449,25 @@ def _single_pass_optimize(
         current_def_name: str | None = None,
         skip_defs_section: bool = False,
         depth: int = 0,
+        in_schema: bool = True,
     ) -> None:
-        """Traverse schema tree, collecting $ref info and applying cleanups."""
+        """Traverse schema tree, collecting $ref info and applying cleanups.
+
+        The `in_schema` flag tracks whether the current node is reached via a
+        known JSON-Schema-valued position (root, `properties` value, `items`,
+        `allOf` element, etc.). When False — e.g. we descended through a user
+        extension key like `x-ui` whose payload is opaque to us — we still
+        collect `$ref` references (they may point at `$defs` the user cares
+        about) but we skip all cleanups so we don't mutate user data that
+        happens to look metadata-shaped.
+        """
         if depth > 50:  # Prevent infinite recursion
             return
 
         if isinstance(node, dict):
-            # Collect $ref references for unused definition removal
+            # Collect $ref references for unused definition removal. We do
+            # this regardless of `in_schema` — a $ref in a user extension
+            # still pins the referenced $def as "used".
             if prune_defs:
                 ref = node.get("$ref")  # type: ignore
                 if isinstance(ref, str) and ref.startswith("#/$defs/"):
@@ -354,58 +479,111 @@ def _single_pass_optimize(
                         # We're in the main schema, so this is a root reference
                         root_refs.add(referenced_def)
 
-            # Apply cleanups
-            # Only remove "title" if it's a schema metadata field
-            # Schema objects have keywords like "type", "properties", "$ref", etc.
-            # If we see these, then "title" is metadata, not a property name
-            if prune_titles and "title" in node:
-                # Only remove "title" if it's a string (schema metadata).
-                # In a "properties" dict, "title" would be a dict (a sub-schema
-                # for a parameter named "title"), which we must preserve.
-                if isinstance(node["title"], str) and any(  # type: ignore
-                    k in node
-                    for k in [
-                        "type",
-                        "properties",
-                        "$ref",
-                        "items",
-                        "allOf",
-                        "oneOf",
-                        "anyOf",
-                        "required",
-                    ]
+            # Cleanups only run when we know this node is a schema, never on
+            # user extension payloads (`json_schema_extra={"x-ui": {...}}`).
+            if in_schema:
+                # Only remove "title" when it's schema metadata. A schema
+                # node is either (a) one containing a structural keyword or
+                # (b) one containing only metadata keys — Pydantic emits
+                # bare `{"title": "X"}` for Any-typed fields with no sibling
+                # type/properties, and Gemini 2.5 Flash rejects those with
+                # MALFORMED_FUNCTION_CALL. The `isinstance(str)` guard
+                # protects against deleting a user property literally named
+                # "title" (its value would be a dict, not a string).
+                if (
+                    prune_titles
+                    and "title" in node
+                    and isinstance(node["title"], str)  # type: ignore
+                    and (
+                        any(k in node for k in _SCHEMA_KEYWORDS)
+                        or all(k in _METADATA_KEYS for k in node)
+                    )
                 ):
                     node.pop("title")  # type: ignore
 
-            if (
-                prune_additional_properties
-                and node.get("additionalProperties") is False  # type: ignore
-            ):
-                node.pop("additionalProperties")  # type: ignore
+                if (
+                    prune_additional_properties
+                    and node.get("additionalProperties") is False  # type: ignore
+                ):
+                    node.pop("additionalProperties")  # type: ignore
 
             # Recursive traversal
             for key, value in node.items():
                 if skip_defs_section and key == "$defs":
                     continue  # Skip $defs during main schema traversal
 
-                # Handle schema composition keywords with special traversal
-                if key in ["allOf", "oneOf", "anyOf"] and isinstance(value, list):
+                # If we're not in a schema context, keep $ref-collecting but
+                # don't promote sub-values to schema context — user extension
+                # payloads can contain anything and must not be interpreted
+                # as schemas.
+                if not in_schema:
+                    traverse_and_clean(
+                        value, current_def_name, depth=depth + 1, in_schema=False
+                    )
+                    continue
+
+                # Arbitrary-key dicts of sub-schemas. The keys are user names
+                # (property/definition names), not schema keywords, so we
+                # must NOT apply the literal-keyword skip to them — a user
+                # property named "enum" or "default" still needs its
+                # sub-schema traversed (e.g. to collect $ref references).
+                if key in _SUBSCHEMA_MAP_KEYS and isinstance(value, dict):
+                    for sub_schema in value.values():
+                        traverse_and_clean(
+                            sub_schema,
+                            current_def_name,
+                            depth=depth + 1,
+                            in_schema=True,
+                        )
+                    continue
+
+                # Don't descend into keywords that carry literal data, not
+                # sub-schemas — `default: {"title": "X"}` is a user value,
+                # not schema metadata, and stripping "title" there would
+                # corrupt it.
+                if key in _LITERAL_KEYWORDS:
+                    continue
+
+                # Keywords whose values are sub-schemas (or lists thereof).
+                if key in _SUBSCHEMA_LIST_KEYS and isinstance(value, list):
                     for item in value:
-                        traverse_and_clean(item, current_def_name, depth=depth + 1)
-                else:
-                    traverse_and_clean(value, current_def_name, depth=depth + 1)
+                        traverse_and_clean(
+                            item,
+                            current_def_name,
+                            depth=depth + 1,
+                            in_schema=True,
+                        )
+                    continue
+
+                if key in _SUBSCHEMA_VALUE_KEYS:
+                    traverse_and_clean(
+                        value,
+                        current_def_name,
+                        depth=depth + 1,
+                        in_schema=True,
+                    )
+                    continue
+
+                # Unknown keys (user extensions like `x-ui`, vendor
+                # metadata, etc.) — descend for $ref collection but mark
+                # in_schema=False so cleanups don't touch user payloads.
+                traverse_and_clean(
+                    value, current_def_name, depth=depth + 1, in_schema=False
+                )
 
         elif isinstance(node, list):
             for item in node:
-                traverse_and_clean(item, current_def_name, depth=depth + 1)
+                traverse_and_clean(
+                    item, current_def_name, depth=depth + 1, in_schema=in_schema
+                )
 
     # Phase 2: Traverse main schema (excluding $defs section)
-    traverse_and_clean(schema, skip_defs_section=True)
+    traverse_and_clean(schema, skip_defs_section=True, in_schema=True)
 
     # Phase 3: Traverse $defs to find inter-definition references
     if prune_defs and defs:
         for def_name, def_schema in defs.items():
-            traverse_and_clean(def_schema, current_def_name=def_name)
+            traverse_and_clean(def_schema, current_def_name=def_name, in_schema=True)
 
         # Phase 4: Remove unused definitions
         def is_def_used(def_name: str, visiting: set[str] | None = None) -> bool:

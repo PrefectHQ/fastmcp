@@ -240,6 +240,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         token_verifier: TokenVerifier,
         # FastMCP server configuration
         base_url: AnyHttpUrl | str,
+        resource_base_url: AnyHttpUrl | str | None = None,
         redirect_path: str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
         service_documentation_url: AnyHttpUrl | str | None = None,
@@ -248,6 +249,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         valid_scopes: list[str] | None = None,
         # PKCE configuration
         forward_pkce: bool = True,
+        # Resource indicator (RFC 8707)
+        forward_resource: bool = True,
         # Token endpoint authentication
         token_endpoint_auth_method: str | None = None,
         # Extra parameters to forward to authorization endpoint
@@ -279,6 +282,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             token_verifier: Token verifier for validating access tokens
             base_url: Public URL of the server that exposes this FastMCP server; redirect path is
                 relative to this URL
+            resource_base_url: Optional public base URL for the protected resource metadata
+                and token audience. Defaults to ``base_url``.
             redirect_path: Redirect path configured in upstream OAuth app (defaults to "/auth/callback")
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url)
             service_documentation_url: Optional service documentation URL
@@ -341,6 +346,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         super().__init__(
             base_url=base_url,
+            resource_base_url=resource_base_url,
             issuer_url=issuer_url,
             service_documentation_url=service_documentation_url,
             client_registration_options=client_registration_options,
@@ -358,7 +364,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             else None
         )
         self._upstream_revocation_endpoint: str | None = upstream_revocation_endpoint
-        self._default_scope_str: str = " ".join(self.required_scopes or [])
+        self._default_scope_str: str = " ".join(
+            valid_scopes or self.required_scopes or []
+        )
 
         # Store redirect configuration
         if not redirect_path:
@@ -374,7 +382,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         ):
             logger.warning(
                 "allowed_client_redirect_uris is empty list; no redirect URIs will be accepted. "
-                + "This will block all OAuth clients."
+                "This will block all OAuth clients."
             )
         self._allowed_client_redirect_uris: list[str] | None = (
             allowed_client_redirect_uris
@@ -382,6 +390,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         # PKCE configuration
         self._forward_pkce: bool = forward_pkce
+        # Resource indicator (RFC 8707)
+        self._forward_resource: bool = forward_resource
 
         # Token endpoint authentication
         self._token_endpoint_auth_method: str | None = token_endpoint_auth_method
@@ -398,7 +408,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         elif not require_authorization_consent:
             logger.warning(
                 "Authorization consent screen disabled - only use for local development or testing. "
-                + "In production, this screen protects against confused deputy attacks."
+                "In production, this screen protects against confused deputy attacks."
             )
 
         # Extra parameters for authorization and token endpoints
@@ -425,7 +435,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if len(jwt_signing_key) < 12:
                 logger.warning(
                     "jwt_signing_key is less than 12 characters; it is recommended to use a longer. "
-                    + "string for the key derivation."
+                    "string for the key derivation."
                 )
             jwt_signing_key = derive_jwt_key(
                 low_entropy_material=jwt_signing_key,
@@ -658,7 +668,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         client = await self._client_store.get(key=client_id)
 
         if client is not None:
-            if client.allowed_redirect_uri_patterns is None:
+            if self._allowed_client_redirect_uris is not None:
                 client.allowed_redirect_uri_patterns = (
                     self._allowed_client_redirect_uris
                 )
@@ -1567,6 +1577,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             # 1. Verify FastMCP JWT signature and claims
             payload = self.jwt_issuer.verify_token(token)
             jti = payload["jti"]
+            upstream_claims = payload.get("upstream_claims")
 
             # 2. Look up upstream token via JTI mapping
             jti_mapping = await self._jti_mapping_store.get(key=jti)
@@ -1688,6 +1699,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "expires_at": int(upstream_token_set.expires_at),
                     }
                 )
+
+            # Propagate upstream claims from the verified FastMCP JWT into the
+            # final AccessToken object. This allows subclasses to access custom
+            # identity data extracted during the initial authorization flow.
+            # We perform a model copy to avoid mutating a potentially cached
+            # reference shared across concurrent requests.
+            if validated and upstream_claims:
+                validated = validated.model_copy(deep=True)
+                if validated.claims is None:
+                    validated.claims = {}
+                validated.claims["upstream_claims"] = upstream_claims
 
             logger.debug(
                 "Token swap successful for JTI=%s (upstream validated)", jti[:8]

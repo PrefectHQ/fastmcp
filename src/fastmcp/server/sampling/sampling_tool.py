@@ -116,7 +116,7 @@ class SamplingTool(FastMCPBaseModel):
 
         return cls(
             name=name or parsed.name,
-            description=description or parsed.description,
+            description=description if description is not None else parsed.description,
             parameters=parsed.input_schema,
             fn=parsed.fn,
             sequential=sequential,

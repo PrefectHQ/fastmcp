@@ -173,7 +173,7 @@ class GoogleTokenVerifier(TokenVerifier):
 
                 access_token = AccessToken(
                     token=token,
-                    client_id=aud,
+                    client_id=sub,
                     scopes=token_scopes,
                     expires_at=expires_at,
                     claims={
@@ -235,6 +235,7 @@ class GoogleProvider(OAuthProxy):
         client_id: str,
         client_secret: str | None = None,
         base_url: AnyHttpUrl | str,
+        resource_base_url: AnyHttpUrl | str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
         redirect_path: str | None = None,
         required_scopes: list[str] | None = None,
@@ -245,6 +246,7 @@ class GoogleProvider(OAuthProxy):
         jwt_signing_key: str | bytes | None = None,
         require_authorization_consent: bool | Literal["external"] = True,
         consent_csp_policy: str | None = None,
+        forward_resource: bool = True,
         extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx.AsyncClient | None = None,
         enable_cimd: bool = True,
@@ -257,6 +259,8 @@ class GoogleProvider(OAuthProxy):
                 Optional for PKCE public clients (e.g., native apps). When omitted,
                 jwt_signing_key must be provided.
             base_url: Public URL where OAuth endpoints will be accessible (includes any mount path)
+            resource_base_url: Optional public base URL for the protected resource metadata
+                and token audience. Defaults to ``base_url``.
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.
             redirect_path: Redirect path configured in Google OAuth app (defaults to "/auth/callback")
@@ -340,6 +344,7 @@ class GoogleProvider(OAuthProxy):
             upstream_client_secret=client_secret,
             token_verifier=token_verifier,
             base_url=base_url,
+            resource_base_url=resource_base_url,
             redirect_path=redirect_path,
             issuer_url=issuer_url or base_url,  # Default to base_url if not specified
             allowed_client_redirect_uris=allowed_client_redirect_uris,
@@ -347,6 +352,7 @@ class GoogleProvider(OAuthProxy):
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
             consent_csp_policy=consent_csp_policy,
+            forward_resource=forward_resource,
             extra_authorize_params=extra_authorize_params_final,
             valid_scopes=valid_scopes_final,
             enable_cimd=enable_cimd,

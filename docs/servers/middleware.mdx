@@ -84,6 +84,8 @@ parent.mount(child, namespace="child")
 
 Requests to `child_tool` flow through the parent's `AuthMiddleware` first, then through the child's `LoggingMiddleware`.
 
+Middleware-stored state does not automatically cross mount boundaries. If `AuthMiddleware` on the parent calls `ctx.set_state("user_id", ...)`, a tool on the child server calling `ctx.get_state("user_id")` will get `None` — each `FastMCP` instance owns its own session state store. To share state across the mount, either pass the same `session_state_store` to both servers or use `serializable=False` for request-scoped values. See [State and Mounted Servers](/servers/context#state-and-mounted-servers) for details.
+
 ## Hooks
 
 Rather than processing every message identically, FastMCP provides specialized hooks at different levels of specificity. Multiple hooks fire for a single request, going from general to specific:
@@ -421,11 +423,21 @@ Each settings class accepts:
 For persistence or distributed deployments, configure a different storage backend:
 
 ```python
+from pathlib import Path
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
-from key_value.aio.stores.disk import DiskStore
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1KeySanitizationStrategy,
+    FileTreeV1CollectionSanitizationStrategy,
+)
 
+cache_dir = Path("cache")
 mcp.add_middleware(ResponseCachingMiddleware(
-    cache_storage=DiskStore(directory="cache")
+    cache_storage=FileTreeStore(
+        data_directory=cache_dir,
+        key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(cache_dir),
+        collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(cache_dir),
+    )
 ))
 ```
 

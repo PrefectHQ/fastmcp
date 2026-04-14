@@ -24,19 +24,24 @@ from typing import TYPE_CHECKING, Any, cast
 import mcp.types
 from mcp import ServerSession
 
+from fastmcp.server.tasks.context import get_task_context, get_task_session_id
+from fastmcp.server.tasks.keys import task_redis_prefix
+from fastmcp.server.tasks.notifications import push_notification
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 
-# Redis key patterns for task elicitation state
-ELICIT_REQUEST_KEY = "fastmcp:task:{session_id}:{task_id}:elicit:request"
-ELICIT_RESPONSE_KEY = "fastmcp:task:{session_id}:{task_id}:elicit:response"
-ELICIT_STATUS_KEY = "fastmcp:task:{session_id}:{task_id}:elicit:status"
-
 # TTL for elicitation state (1 hour)
 ELICIT_TTL_SECONDS = 3600
+
+
+def _elicit_keys(task_scope: str | None, task_id: str) -> tuple[str, str, str]:
+    """Build (request, response, status) Redis keys for a task's elicitation."""
+    prefix = f"{task_redis_prefix(task_scope)}:{task_id}:elicit"
+    return f"{prefix}:request", f"{prefix}:response", f"{prefix}:status"
 
 
 async def elicit_for_task(
@@ -75,26 +80,22 @@ async def elicit_for_task(
     # Generate a unique request ID for this elicitation
     request_id = str(uuid.uuid4())
 
-    # Get session ID from task context (authoritative source for background tasks)
-    # This is extracted from the Docket execution key: {session_id}:{task_id}:...
-    from fastmcp.server.dependencies import get_task_context
-
     task_context = get_task_context()
     if task_context is not None:
-        session_id = task_context.session_id
+        task_scope = task_context.task_scope
+        # Prefer the live session's cached ID (always available in-process),
+        # fall back to the snapshot for distributed workers.
+        session_id = (
+            getattr(session, "_fastmcp_state_prefix", None) or get_task_session_id()
+        )
     else:
-        # Fallback: try to get from session attribute (shouldn't happen in background)
-        session_id = getattr(session, "_fastmcp_state_prefix", None)
-        if session_id is None:
-            raise RuntimeError(
-                "Cannot determine session_id for elicitation. "
-                "This typically means elicit_for_task() was called outside a Docket worker context."
-            )
+        raise RuntimeError(
+            "Cannot determine task scope for elicitation. "
+            "This typically means elicit_for_task() was called outside a Docket worker context."
+        )
 
     # Store elicitation request in Redis
-    request_key = ELICIT_REQUEST_KEY.format(session_id=session_id, task_id=task_id)
-    response_key = ELICIT_RESPONSE_KEY.format(session_id=session_id, task_id=task_id)
-    status_key = ELICIT_STATUS_KEY.format(session_id=session_id, task_id=task_id)
+    request_key, response_key, status_key = _elicit_keys(task_scope, task_id)
 
     elicit_request = {
         "request_id": request_id,
@@ -138,6 +139,7 @@ async def elicit_for_task(
                 "taskId": task_id,
                 "status": "input_required",
                 "statusMessage": message,
+                "task_scope": task_scope,
                 "elicitation": {
                     "requestId": request_id,
                     "message": message,
@@ -147,9 +149,12 @@ async def elicit_for_task(
         },
     }
 
-    # Push notification to Redis queue (works from any process)
-    # Server's subscriber loop will forward to client
-    from fastmcp.server.tasks.notifications import push_notification
+    if session_id is None:
+        logger.warning(
+            "No session_id available for task %s, cannot deliver elicitation notification",
+            task_id,
+        )
+        return mcp.types.ElicitResult(action="cancel", content=None)
 
     try:
         await push_notification(session_id, notification_dict, docket)
@@ -233,7 +238,7 @@ async def elicit_for_task(
 
 async def relay_elicitation(
     session: ServerSession,
-    session_id: str,
+    task_scope: str | None,
     task_id: str,
     elicitation: dict[str, Any],
     fastmcp: FastMCP,
@@ -247,7 +252,7 @@ async def relay_elicitation(
 
     Args:
         session: MCP ServerSession
-        session_id: Session identifier
+        task_scope: Authorization scope for Redis key construction
         task_id: Background task ID
         elicitation: Elicitation metadata (message, requestedSchema)
         fastmcp: FastMCP server instance
@@ -259,7 +264,7 @@ async def relay_elicitation(
         )
         await handle_task_input(
             task_id=task_id,
-            session_id=session_id,
+            task_scope=task_scope,
             action=result.action,
             content=result.content,
             fastmcp=fastmcp,
@@ -274,7 +279,7 @@ async def relay_elicitation(
         # Push a cancel response so the worker's BLPOP doesn't block forever
         success = await handle_task_input(
             task_id=task_id,
-            session_id=session_id,
+            task_scope=task_scope,
             action="cancel",
             content=None,
             fastmcp=fastmcp,
@@ -289,7 +294,7 @@ async def relay_elicitation(
 
 async def handle_task_input(
     task_id: str,
-    session_id: str,
+    task_scope: str | None,
     action: str,
     content: dict[str, Any] | None,
     fastmcp: FastMCP,
@@ -301,7 +306,7 @@ async def handle_task_input(
 
     Args:
         task_id: The background task ID
-        session_id: The MCP session ID
+        task_scope: Authorization scope for Redis key construction
         action: The elicitation action ("accept", "decline", "cancel")
         content: The response content (for "accept" action)
         fastmcp: The FastMCP server instance
@@ -313,8 +318,7 @@ async def handle_task_input(
     if docket is None:
         return False
 
-    response_key = ELICIT_RESPONSE_KEY.format(session_id=session_id, task_id=task_id)
-    status_key = ELICIT_STATUS_KEY.format(session_id=session_id, task_id=task_id)
+    _, response_key, status_key = _elicit_keys(task_scope, task_id)
 
     response = {
         "action": action,

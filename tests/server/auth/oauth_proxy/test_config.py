@@ -410,6 +410,44 @@ class TestResourceURLValidation:
 
         assert proxy.jwt_issuer.audience == "https://proxy.example.com/"
 
+    def test_set_mcp_path_uses_resource_base_url_for_audience(self, jwt_verifier):
+        """Test that resource_base_url controls the protected resource audience."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com/oauth",
+            resource_base_url="https://api.example.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+
+        proxy.set_mcp_path("/mcp")
+
+        assert proxy.jwt_issuer.issuer == "https://proxy.example.com/oauth"
+        assert proxy.jwt_issuer.audience == "https://api.example.com/mcp"
+
+    def test_set_mcp_path_none_uses_resource_base_url_for_audience(self, jwt_verifier):
+        """Test that resource_base_url is used as audience when mcp_path is None."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com/oauth",
+            resource_base_url="https://api.example.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+
+        proxy.set_mcp_path(None)
+
+        assert proxy.jwt_issuer.issuer == "https://proxy.example.com/oauth"
+        assert proxy.jwt_issuer.audience == "https://api.example.com/"
+
     def test_jwt_issuer_property_raises_if_not_initialized(self, jwt_verifier):
         """Test that jwt_issuer property raises if set_mcp_path not called."""
         proxy = OAuthProxy(

@@ -156,6 +156,28 @@ async def pick_a_boolean(ctx: Context) -> str:
 ```
 </CodeGroup>
 
+#### Customizing the Field Label
+
+<VersionBadge version="3.3.0" />
+
+When FastMCP wraps a scalar, `Literal`, `Enum`, or one of the constrained-option shorthands, the wrapper's `value` property is labelled `"Value"` by default — and some clients (including VS Code) render that label directly in the UI. Pass `response_title` and `response_description` to override it:
+
+```python
+@mcp.tool
+async def confirm_purchase(ctx: Context) -> str:
+    result = await ctx.elicit(
+        "Buy 1x Baguette?",
+        response_type=bool,
+        response_title="Confirm purchase",
+        response_description="Approve this transaction?",
+    )
+    if result.action == "accept":
+        return "Purchased" if result.data else "Declined"
+    return "No response"
+```
+
+These arguments only apply when FastMCP is adding the wrapper. For structured responses (`BaseModel`, dataclass, `TypedDict`), set the metadata on the individual fields via `Field(title=..., description=...)` — passing `response_title` or `response_description` alongside a model type raises `TypeError`.
+
 ### No Response
 
 Sometimes, the goal of an elicitation is to simply get a user to approve or reject an action. Pass `None` as the response type to indicate that no data is expected. The `data` field will be `None` when the user accepts.

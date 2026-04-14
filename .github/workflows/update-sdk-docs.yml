@@ -42,7 +42,7 @@ jobs:
         run: uv sync --python 3.12
 
       - name: Install just
-        uses: extractions/setup-just@v3
+        uses: extractions/setup-just@v4
 
       - name: Generate SDK documentation
         run: just api-ref-all

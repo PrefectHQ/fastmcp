@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Prefab</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.css">
+  <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.js"></script>
+</head>
+<body>
+  <div id="root" style="max-width:64rem;margin:0 auto;padding:2rem"></div>
+  <script id="prefab:initial-data" type="application/json">{
+  "$prefab": {
+    "version": "0.2"
+  },
+  "view": {
+    "cssClass": "pf-app-root",
+    "type": "Div",
+    "children": [
+      {
+        "cssClass": "gap-4 p-6",
+        "type": "Column",
+        "children": [
+          {
+            "cssClass": "gap-4",
+            "type": "Grid",
+            "columnTemplate": "1fr 2fr",
+            "children": [
+              {
+                "type": "PieChart",
+                "data": [
+                  {
+                    "office": "San Francisco",
+                    "count": 3
+                  },
+                  {
+                    "office": "New York",
+                    "count": 2
+                  },
+                  {
+                    "office": "London",
+                    "count": 1
+                  },
+                  {
+                    "office": "Berlin",
+                    "count": 1
+                  }
+                ],
+                "dataKey": "count",
+                "nameKey": "office",
+                "height": 300,
+                "innerRadius": 0,
+                "showLabel": false,
+                "paddingAngle": 0,
+                "showLegend": true,
+                "showTooltip": true,
+                "animate": true
+              },
+              {
+                "type": "DataTable",
+                "columns": [
+                  {
+                    "key": "name",
+                    "header": "Name",
+                    "sortable": true
+                  },
+                  {
+                    "key": "role",
+                    "header": "Role",
+                    "sortable": true
+                  },
+                  {
+                    "key": "office",
+                    "header": "Office",
+                    "sortable": true
+                  }
+                ],
+                "rows": [
+                  {
+                    "name": "Alice Chen",
+                    "role": "Staff Engineer",
+                    "office": "San Francisco",
+                    "email": "alice@company.com",
+                    "projects": 3
+                  },
+                  {
+                    "name": "Bob Martinez",
+                    "role": "Lead Designer",
+                    "office": "New York",
+                    "email": "bob@company.com",
+                    "projects": 5
+                  },
+                  {
+                    "name": "Carol Johnson",
+                    "role": "Senior Engineer",
+                    "office": "London",
+                    "email": "carol@company.com",
+                    "projects": 2
+                  },
+                  {
+                    "name": "David Kim",
+                    "role": "Product Manager",
+                    "office": "San Francisco",
+                    "email": "david@company.com",
+                    "projects": 7
+                  },
+                  {
+                    "name": "Eva Mueller",
+                    "role": "Engineer",
+                    "office": "Berlin",
+                    "email": "eva@company.com",
+                    "projects": 1
+                  },
+                  {
+                    "name": "Frank Lee",
+                    "role": "Data Scientist",
+                    "office": "San Francisco",
+                    "email": "frank@company.com",
+                    "projects": 4
+                  },
+                  {
+                    "name": "Grace Park",
+                    "role": "Engineering Manager",
+                    "office": "New York",
+                    "email": "grace@company.com",
+                    "projects": 6
+                  }
+                ],
+                "search": true,
+                "paginated": false,
+                "pageSize": 10,
+                "onRowClick": {
+                  "action": "setState",
+                  "key": "selected",
+                  "value": "{{ $event }}"
+                }
+              }
+            ]
+          },
+          {
+            "type": "Condition",
+            "cases": [
+              {
+                "when": "{{ selected }}",
+                "children": [
+                  {
+                    "type": "Card",
+                    "children": [
+                      {
+                        "type": "CardHeader",
+                        "children": [
+                          {
+                            "cssClass": "gap-2 items-center",
+                            "type": "Row",
+                            "children": [
+                              {
+                                "content": "{{ selected.name }}",
+                                "type": "H3"
+                              },
+                              {
+                                "type": "Badge",
+                                "label": "{{ selected.office }}",
+                                "variant": "default"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "CardContent",
+                        "children": [
+                          {
+                            "cssClass": "gap-4 grid-cols-3",
+                            "type": "Grid",
+                            "children": [
+                              {
+                                "cssClass": "gap-0",
+                                "type": "Column",
+                                "children": [
+                                  {
+                                    "content": "Role",
+                                    "type": "Small"
+                                  },
+                                  {
+                                    "content": "{{ selected.role }}",
+                                    "type": "Text"
+                                  }
+                                ]
+                              },
+                              {
+                                "cssClass": "gap-0",
+                                "type": "Column",
+                                "children": [
+                                  {
+                                    "content": "Email",
+                                    "type": "Small"
+                                  },
+                                  {
+                                    "content": "{{ selected.email }}",
+                                    "type": "Text"
+                                  }
+                                ]
+                              },
+                              {
+                                "cssClass": "gap-0",
+                                "type": "Column",
+                                "children": [
+                                  {
+                                    "content": "Active Projects",
+                                    "type": "Small"
+                                  },
+                                  {
+                                    "content": "{{ selected.projects }}",
+                                    "type": "Text"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "state": {
+    "selected": null
+  }
+}</script>
+</body>
+</html>

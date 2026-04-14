@@ -94,6 +94,8 @@ class StreamableHttpTransport(ClientTransport):
                 )
         self.sse_read_timeout = normalize_timeout_to_timedelta(sse_read_timeout)
 
+        self.forward_incoming_headers: bool = False
+
         self._get_session_id_cb: Callable[[], str | None] | None = None
 
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
@@ -148,10 +150,14 @@ class StreamableHttpTransport(ClientTransport):
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
-        # Load headers from an active HTTP request, if available. This will only be true
-        # if the client is used in a FastMCP Proxy, in which case the MCP client headers
-        # need to be forwarded to the remote server.
-        headers = get_http_headers(include={"authorization"}) | self.headers
+        # When used in a proxy, forward the inbound request's authorization
+        # header to the upstream server. This is off by default so that a
+        # plain Client used inside a server tool handler doesn't accidentally
+        # leak the caller's credentials to an unrelated remote server.
+        if self.forward_incoming_headers:
+            headers = get_http_headers(include={"authorization"}) | self.headers
+        else:
+            headers = dict(self.headers)
 
         # Configure timeout if provided, preserving MCP's 30s connect default
         timeout: httpx.Timeout | None = None

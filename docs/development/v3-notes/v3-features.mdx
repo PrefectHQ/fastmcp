@@ -29,7 +29,7 @@ FastMCP now includes a sampling handler for Google's Gemini models ([#2977](http
 
 ```python
 from fastmcp import Client
-from fastmcp.client.sampling.handlers import GoogleGenaiSamplingHandler
+from fastmcp.client.sampling.handlers.google_genai import GoogleGenaiSamplingHandler
 from google.genai import Client as GoogleGenaiClient
 
 # Initialize the handler
@@ -386,7 +386,7 @@ Support for [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.apps import AppConfig, ResourceCSP, ResourcePermissions
+from fastmcp.apps import AppConfig, ResourceCSP, ResourcePermissions
 
 mcp = FastMCP("My Server")
 
@@ -421,7 +421,7 @@ The `app=` parameter accepts `True` (enable with defaults), an `AppConfig` insta
 
 ```python
 from fastmcp import Context
-from fastmcp.server.apps import AppConfig, UI_EXTENSION_ID
+from fastmcp.apps import AppConfig, UI_EXTENSION_ID
 
 @mcp.tool(app=AppConfig(resource_uri="ui://dashboard"))
 async def dashboard(ctx: Context) -> dict:
@@ -575,15 +575,14 @@ provider.add_transform(ToolTransform({
 
 ```python
 from collections.abc import Sequence
-from fastmcp.server.transforms import Transform, ListToolsNext, GetToolNext
+from fastmcp.server.transforms import Transform, GetToolNext
 from fastmcp.tools import Tool
 
 class TagFilter(Transform):
     def __init__(self, required_tags: set[str]):
         self.required_tags = required_tags
 
-    async def list_tools(self, call_next: ListToolsNext) -> Sequence[Tool]:
-        tools = await call_next()  # Get tools from downstream
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         return [t for t in tools if t.tags & self.required_tags]
 
     async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:

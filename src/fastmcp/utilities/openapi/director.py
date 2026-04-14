@@ -259,6 +259,28 @@ class RequestDirector:
             param_info = param_lookup.get(key)
             if param_info is not None:
                 explode = param_info.explode if param_info.explode is not None else True
+                if isinstance(value, dict):
+                    if not value:
+                        continue
+                    if explode:
+                        # form,explode=true on objects: each property becomes
+                        # a separate query parameter.
+                        # e.g. {"R": 100, "G": 200} → R=100&G=200
+                        for k, v in value.items():
+                            serialized[_query_scalar_to_str(k)] = _query_scalar_to_str(
+                                v
+                            )
+                    else:
+                        style = param_info.style or "form"
+                        delimiter = self._STYLE_DELIMITERS.get(style, ",")
+                        # form,explode=false on objects: key,value pairs
+                        # e.g. {"R": 100, "G": 200} → "R,100,G,200"
+                        parts: list[str] = []
+                        for k, v in value.items():
+                            parts.append(_query_scalar_to_str(k))
+                            parts.append(_query_scalar_to_str(v))
+                        serialized[key] = delimiter.join(parts)
+                    continue
                 if not explode:
                     style = param_info.style or "form"
                     delimiter = self._STYLE_DELIMITERS.get(style, ",")
@@ -268,17 +290,6 @@ class RequestDirector:
                         serialized[key] = delimiter.join(
                             _query_scalar_to_str(v) for v in value
                         )
-                        continue
-                    elif isinstance(value, dict):
-                        if not value:
-                            continue
-                        # form,explode=false on objects: key,value pairs
-                        # e.g. {"R": 100, "G": 200} → "R,100,G,200"
-                        parts: list[str] = []
-                        for k, v in value.items():
-                            parts.append(_query_scalar_to_str(k))
-                            parts.append(_query_scalar_to_str(v))
-                        serialized[key] = delimiter.join(parts)
                         continue
             serialized[key] = value
         return serialized

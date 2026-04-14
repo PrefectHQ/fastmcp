@@ -10,7 +10,7 @@ import asyncio
 
 from fastmcp.client import Client, OAuth
 
-SERVER_URL = "http://localhost:8000/mcp"
+SERVER_URL = "http://127.0.0.1:8000/mcp"
 
 
 async def main():

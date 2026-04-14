@@ -117,6 +117,131 @@ async def test_elicitation_handler_parameters():
         assert captured_params["ctx"] is not None
 
 
+async def test_elicitation_response_title_and_description_on_scalar():
+    """response_title and response_description customize the wrapped `value` field."""
+    mcp = FastMCP("TestServer")
+    captured_schema: dict[str, Any] = {}
+
+    @mcp.tool
+    async def confirm_purchase(context: Context) -> str:
+        result = await context.elicit(
+            message="Buy 1x Baguette?",
+            response_type=bool,
+            response_title="Confirm purchase",
+            response_description="Approve this transaction?",
+        )
+        if isinstance(result, AcceptedElicitation):
+            return "confirmed" if result.data else "rejected"
+        return "no answer"
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        captured_schema.update(params.requestedSchema)
+        return ElicitResult(action="accept", content={"value": True})
+
+    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        await client.call_tool("confirm_purchase", {})
+
+    assert captured_schema["properties"]["value"]["title"] == "Confirm purchase"
+    assert (
+        captured_schema["properties"]["value"]["description"]
+        == "Approve this transaction?"
+    )
+    assert captured_schema["properties"]["value"]["type"] == "boolean"
+
+
+async def test_elicitation_response_title_on_dict_shorthand():
+    """response_title applies to the `value` property for dict shorthand."""
+    mcp = FastMCP("TestServer")
+    captured_schema: dict[str, Any] = {}
+
+    @mcp.tool
+    async def pick_priority(context: Context) -> str:
+        result = await context.elicit(
+            message="Priority?",
+            response_type={"low": {"title": "Low"}, "high": {"title": "High"}},
+            response_title="Priority level",
+        )
+        return "ok" if isinstance(result, AcceptedElicitation) else "none"
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        captured_schema.update(params.requestedSchema)
+        return ElicitResult(action="accept", content={"value": "low"})
+
+    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        await client.call_tool("pick_priority", {})
+
+    assert captured_schema["properties"]["value"]["title"] == "Priority level"
+
+
+async def test_elicitation_response_title_on_list_shorthand():
+    """response_title applies to the `value` property for list shorthand."""
+    mcp = FastMCP("TestServer")
+    captured_schema: dict[str, Any] = {}
+
+    @mcp.tool
+    async def pick_color(context: Context) -> str:
+        result = await context.elicit(
+            message="Color?",
+            response_type=["red", "green", "blue"],
+            response_title="Favorite color",
+        )
+        return "ok" if isinstance(result, AcceptedElicitation) else "none"
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        captured_schema.update(params.requestedSchema)
+        return ElicitResult(action="accept", content={"value": "red"})
+
+    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        await client.call_tool("pick_color", {})
+
+    assert captured_schema["properties"]["value"]["title"] == "Favorite color"
+
+
+async def test_elicitation_response_title_rejected_for_basemodel():
+    """response_title raises TypeError when response_type is a BaseModel."""
+    mcp = FastMCP("TestServer")
+
+    class Person(BaseModel):
+        name: str
+
+    @mcp.tool
+    async def ask(context: Context) -> str:
+        await context.elicit(
+            message="Name?",
+            response_type=Person,
+            response_title="Not allowed",
+        )
+        return "done"
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        return ElicitResult(action="accept", content={"name": "x"})
+
+    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        with pytest.raises(ToolError, match="response_title"):
+            await client.call_tool("ask", {})
+
+
+async def test_elicitation_response_title_rejected_for_none():
+    """response_title raises TypeError when response_type is None."""
+    mcp = FastMCP("TestServer")
+
+    @mcp.tool
+    async def ask(context: Context) -> str:
+        await context.elicit(
+            message="Confirm?",
+            response_type=None,
+            response_title="Not allowed",
+        )
+        return "done"
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        return ElicitResult(action="accept", content={})
+
+    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        with pytest.raises(ToolError, match="response_title"):
+            await client.call_tool("ask", {})
+
+
 async def test_elicitation_cancel_action():
     """Test user canceling elicitation request."""
     mcp = FastMCP("TestServer")
@@ -144,6 +269,24 @@ async def test_elicitation_cancel_action():
 
 
 class TestScalarResponseTypes:
+    async def test_scalar_handler_return_is_auto_wrapped(self):
+        """Scalar handler returns are wrapped as {"value": ...} for scalar schemas."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        async def my_tool(context: Context) -> str:
+            result = await context.elicit(message="", response_type=str)
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, str)
+            return result.data
+
+        async def elicitation_handler(message, response_type, params, ctx):
+            return ElicitResult(action="accept", content="Alice")
+
+        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+            result = await client.call_tool("my_tool", {})
+            assert result.data == "Alice"
+
     async def test_elicitation_no_response(self):
         """Test elicitation with no response type."""
         mcp = FastMCP("TestServer")

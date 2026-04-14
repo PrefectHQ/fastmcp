@@ -10,7 +10,7 @@ Demonstrates FastMCP server protection with AWS Cognito OAuth.
    - Create an App Client in your User Pool
    - Configure the App Client settings:
      - Enable "Authorization code grant" flow
-     - Add Callback URL: `http://localhost:8000/auth/callback`
+     - Add Callback URL: `http://127.0.0.1:8000/auth/callback`
      - Configure OAuth scopes (at minimum: `openid`)
    - Note your User Pool ID, App Client ID, Client Secret, and Cognito Domain Prefix
 

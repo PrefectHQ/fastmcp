@@ -41,3 +41,29 @@ class TestOAuthProxyClientRegistration:
         """Test that unregistered clients return None."""
         client = await oauth_proxy.get_client("unknown-client")
         assert client is None
+
+    async def test_enforcing_allowed_redirect_uris(self, oauth_proxy):
+        """Test enforcing allowed redirect uris configuration."""
+
+        oauth_proxy._allowed_client_redirect_uris = ["http://localhost:12345/callback"]
+
+        client_info = OAuthClientInformationFull(
+            client_id="original-client",
+            client_secret="original-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        await oauth_proxy.register_client(client_info)
+        retrieved = await oauth_proxy.get_client("original-client")
+        assert retrieved.allowed_redirect_uri_patterns == [
+            "http://localhost:12345/callback"
+        ]
+
+        oauth_proxy._allowed_client_redirect_uris = [
+            "http://localhost:12345/updated_callback"
+        ]
+
+        retrieved = await oauth_proxy.get_client("original-client")
+        assert retrieved.allowed_redirect_uri_patterns == [
+            "http://localhost:12345/updated_callback"
+        ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 import weakref
-from typing import TYPE_CHECKING, Any, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import mcp.types
 from pydantic import RootModel
@@ -386,9 +386,12 @@ async def _parse_call_tool_result(
 
     data = None
     if result.isError and raise_on_error:
-        msg = cast(mcp.types.TextContent, result.content[0]).text
+        if result.content and isinstance(result.content[0], mcp.types.TextContent):
+            msg = result.content[0].text
+        else:
+            msg = f"Tool '{name}' returned an error"
         raise ToolError(msg)
-    elif result.structuredContent:
+    elif result.structuredContent and not result.isError:
         try:
             raw_fastmcp_meta = (result.meta or {}).get("fastmcp")
             fastmcp_meta = (

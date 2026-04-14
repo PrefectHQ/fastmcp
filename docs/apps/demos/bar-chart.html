@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Prefab</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.css">
+  <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.js"></script>
+</head>
+<body>
+  <div id="root" style="max-width:64rem;margin:0 auto;padding:2rem"></div>
+  <script id="prefab:initial-data" type="application/json">{
+  "$prefab": {
+    "version": "0.2"
+  },
+  "view": {
+    "cssClass": "pf-app-root",
+    "type": "Div",
+    "children": [
+      {
+        "cssClass": "p-6",
+        "type": "Column",
+        "children": [
+          {
+            "type": "BarChart",
+            "data": [
+              {
+                "quarter": "Q1",
+                "revenue": 42000,
+                "costs": 28000
+              },
+              {
+                "quarter": "Q2",
+                "revenue": 51000,
+                "costs": 31000
+              },
+              {
+                "quarter": "Q3",
+                "revenue": 47000,
+                "costs": 29000
+              },
+              {
+                "quarter": "Q4",
+                "revenue": 63000,
+                "costs": 35000
+              }
+            ],
+            "series": [
+              {
+                "dataKey": "revenue",
+                "label": "Revenue"
+              },
+              {
+                "dataKey": "costs",
+                "label": "Costs"
+              }
+            ],
+            "xAxis": "quarter",
+            "height": 250,
+            "stacked": false,
+            "horizontal": false,
+            "barRadius": 4,
+            "showLegend": true,
+            "showTooltip": true,
+            "animate": true,
+            "showGrid": true,
+            "showYAxis": true,
+            "yAxisFormat": "auto"
+          }
+        ]
+      }
+    ]
+  }
+}</script>
+</body>
+</html>

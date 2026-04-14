@@ -181,8 +181,18 @@ class RetryMiddleware(Middleware):
         self.logger = logger or logging.getLogger("fastmcp.retry")
 
     def _should_retry(self, error: Exception) -> bool:
-        """Determine if an error should trigger a retry."""
-        return isinstance(error, self.retry_exceptions)
+        """Determine if an error should trigger a retry.
+
+        Checks both the error itself and its ``__cause__``, since FastMCP
+        wraps tool exceptions as ``ToolError(...) from original``. Only one
+        level of cause is inspected — middleware below this one must not
+        re-wrap errors with a new ``from`` clause, or the real type will be
+        hidden from the retry decision.
+        """
+        if isinstance(error, self.retry_exceptions):
+            return True
+        cause = error.__cause__
+        return cause is not None and isinstance(cause, self.retry_exceptions)
 
     def _calculate_delay(self, attempt: int) -> float:
         """Calculate delay for the given attempt number."""

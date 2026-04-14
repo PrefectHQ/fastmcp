@@ -3,18 +3,17 @@ title: Custom HTML Apps
 sidebarTitle: Custom HTML
 description: Build apps with your own HTML, CSS, and JavaScript using the MCP Apps extension directly.
 icon: code
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.0.0" />
 
-The [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) is an open protocol that lets tools return interactive UIs — an HTML page rendered in a sandboxed iframe inside the host client. [Prefab UI](/apps/prefab) builds on this protocol so you never have to think about it, but when you need full control — custom rendering, a specific JavaScript framework, maps, 3D, video — you can use the MCP Apps extension directly.
+Everything on this page is for when you want full control: your own HTML, your own JavaScript framework, a map library, a 3D viewer, custom video playback. [Interactive Tools](/apps/prefab) wrap the MCP Apps extension so you never have to think about it — this page is what you reach for when you need to think about it.
 
-This page covers how to write custom HTML apps and wire them up in FastMCP. You'll be working with the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) JavaScript SDK for host communication, and FastMCP's `AppConfig` for resource and CSP management.
+You'll be working with two things: the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) JavaScript SDK for host communication, and FastMCP's `AppConfig` for resources and CSP.
 
-## How It Works
+## How it works
 
 An MCP App has two parts:
 
@@ -66,7 +65,7 @@ def my_tool() -> str:
     return "result"
 ```
 
-### Tool Visibility
+### Tool visibility
 
 The `visibility` field controls where a tool appears:
 
@@ -88,7 +87,7 @@ def refresh_data() -> str:
     return fetch_latest()
 ```
 
-### AppConfig Fields
+### AppConfig fields
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -103,9 +102,9 @@ def refresh_data() -> str:
 On **resources**, `resource_uri` and `visibility` must not be set — the resource *is* the UI. Use `AppConfig` on resources only for `csp`, `permissions`, and other display settings.
 </Note>
 
-## UI Resources
+## UI resources
 
-Resources using the `ui://` scheme are automatically served with the MIME type `text/html;profile=mcp-app`. You don't need to set this manually.
+Resources using the `ui://` scheme are automatically served with the MIME type `text/html;profile=mcp-app`. No need to set it manually.
 
 ```python
 @mcp.resource("ui://my-app/view.html")
@@ -115,7 +114,7 @@ def my_view() -> str:
 
 The HTML can be anything — a full single-page app, a simple display, or a complex interactive tool. The host renders it in a sandboxed iframe and establishes a `postMessage` channel for communication.
 
-### Writing the App HTML
+### Writing the app HTML
 
 Your HTML app communicates with the host using the [`@modelcontextprotocol/ext-apps`](https://github.com/modelcontextprotocol/ext-apps) JavaScript SDK. The simplest approach is to load it from a CDN:
 
@@ -144,6 +143,8 @@ The `App` object provides:
 - **`app.callServerTool({name, arguments})`** — call a tool on the server from within the app
 - **`app.onhostcontextchanged`** — callback for host context changes (e.g., safe area insets)
 - **`app.getHostContext()`** — get current host context
+
+See the full [ext-apps SDK documentation](https://github.com/modelcontextprotocol/ext-apps) for the complete API reference.
 
 <Note>
 If your HTML loads external scripts, styles, or makes API calls, you need to declare those domains in the CSP configuration. See [Security](#security) below.
@@ -202,7 +203,7 @@ def my_view() -> str:
 
 Hosts may or may not grant these permissions. Your app should use JavaScript feature detection as a fallback.
 
-## Example: QR Code Server
+## Example: a QR code server
 
 This example creates a tool that generates QR codes and an app that renders them as images. It's based on the [official MCP Apps example](https://github.com/modelcontextprotocol/ext-apps/tree/main/examples/qr-server). Requires the `qrcode[pil]` package.
 
@@ -284,7 +285,7 @@ def view() -> str:
 
 The tool generates a QR code as a base64 PNG. The resource loads the MCP Apps JS SDK from unpkg (declared in the CSP), listens for tool results, and renders the image. The host wires them together — when the LLM calls `generate_qr`, the QR code appears in an interactive frame inside the conversation.
 
-## Checking Client Support
+## Checking client support
 
 Not all hosts support the Apps extension. You can check at runtime using the tool's [context](/servers/context):
 

@@ -36,6 +36,7 @@ from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.docstring_parsing import ParsedDocstring, parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
@@ -152,7 +153,9 @@ class FunctionPrompt(Prompt):
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as prompts")
 
-        description = metadata.description or inspect.getdoc(fn)
+        # Parse the outer docstring (before unwrapping) to preserve the class
+        # docstring as the prompt description for callable class instances.
+        outer_docstring = parse_docstring(fn)
 
         # Normalize task to TaskConfig and validate
         task_value = metadata.task
@@ -171,6 +174,24 @@ class FunctionPrompt(Prompt):
         if isinstance(fn, staticmethod):
             fn = fn.__func__
 
+        # For callable classes, argument descriptions must come from
+        # __call__'s docstring — where the exposed parameters are actually
+        # declared. The class docstring's Args section, if any, typically
+        # describes __init__, so falling back to it would risk injecting
+        # constructor docs into __call__'s arguments on overlapping names.
+        # The description, however, comes from the class docstring (which
+        # describes what the prompt IS) when present.
+        inner_docstring = parse_docstring(fn)
+        parsed_docstring = ParsedDocstring(
+            description=outer_docstring.description or inner_docstring.description,
+            parameters=inner_docstring.parameters,
+        )
+        description = (
+            metadata.description
+            if metadata.description is not None
+            else parsed_docstring.description
+        )
+
         # Transform Context type annotations to Depends() for unified DI
         fn = transform_context_annotations(fn)
 
@@ -179,6 +200,18 @@ class FunctionPrompt(Prompt):
         type_adapter = get_cached_typeadapter(wrapped_fn)
         parameters = type_adapter.json_schema()
         parameters = compress_schema(parameters, prune_titles=True)
+
+        # Inject parameter descriptions from the docstring into the schema.
+        # Explicit annotations (Field(description=...), Annotated[x, "..."])
+        # already have a "description" key and take precedence.
+        if parsed_docstring.parameters:
+            properties = parameters.get("properties", {})
+            for param_name, param_desc in parsed_docstring.parameters.items():
+                if (
+                    param_name in properties
+                    and "description" not in properties[param_name]
+                ):
+                    properties[param_name]["description"] = param_desc
 
         # Convert parameters to PromptArguments
         arguments: list[PromptArgument] = []
@@ -330,14 +363,10 @@ class FunctionPrompt(Prompt):
             return self.convert_result(result)
         except Exception as e:
             logger.exception(f"Error rendering prompt {self.name}")
-            raise PromptError(f"Error rendering prompt {self.name}.") from e
+            raise PromptError(f"Error rendering prompt {self.name!r}: {e}") from e
 
     def register_with_docket(self, docket: Docket) -> None:
-        """Register this prompt with docket for background execution.
-
-        FunctionPrompt registers the underlying function, which has the user's
-        Depends parameters for docket to resolve.
-        """
+        """Register this prompt with docket for background execution."""
         if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])

@@ -36,11 +36,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import keyword
 import re
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import MISSING, field, make_dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import (
     Annotated,
     Any,
@@ -53,6 +54,7 @@ from typing import (
 from pydantic import (
     AnyUrl,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     EmailStr,
     Field,
@@ -64,6 +66,36 @@ from typing_extensions import NotRequired, TypedDict
 
 __all__ = ["JSONSchema", "json_schema_to_type"]
 
+
+def _normalize_yaml_types(obj: Any) -> Any:
+    """Convert YAML-parsed types back to JSON-native types.
+
+    ``yaml.safe_load`` converts ISO date-time strings to ``datetime``/``date``
+    objects.  These crash ``json.dumps`` and produce wrong default values in
+    dataclass fields.  This function recursively normalises them to strings.
+    """
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {
+            str(k) if not isinstance(k, str) else k: _normalize_yaml_types(v)
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_normalize_yaml_types(v) for v in obj]
+    return obj
+
+
+def _reject_all(v: Any) -> Any:
+    """Validator that rejects every value, implementing JSON Schema `false`."""
+    raise ValueError("No value is valid against a false schema")
+
+
+# JSON Schema `false` means no value is valid. This type rejects everything
+# during Pydantic validation.
+_UnsatisfiableType = Annotated[Any, BeforeValidator(_reject_all)]
 
 FORMAT_TYPES: dict[str, Any] = {
     "date-time": datetime,
@@ -109,13 +141,14 @@ class JSONSchema(TypedDict):
 
 
 def json_schema_to_type(
-    schema: Mapping[str, Any],
+    schema: Mapping[str, Any] | bool,
     name: str | None = None,
 ) -> type:
     """Convert JSON schema to appropriate Python type with validation.
 
     Args:
-        schema: A JSON Schema dictionary defining the type structure and validation rules
+        schema: A JSON Schema dictionary defining the type structure and validation rules.
+            Boolean schemas are also accepted (``True`` = any type, ``False`` = unsatisfiable).
         name: Optional name for object schemas. Only allowed when schema type is "object".
             If not provided for objects, name will be inferred from schema's "title"
             property or default to "Root".
@@ -166,26 +199,19 @@ def json_schema_to_type(
             name: NameType
         ```
     """
+    # Boolean schemas (JSON Schema 2020-12 §4.3.2; also valid since draft-06)
+    if schema is True:
+        return Any
+    if schema is False:
+        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+
+    # Normalise YAML-parsed types (datetime/date → str, non-str keys → str)
+    # so that downstream json.dumps/hashing and default values work correctly.
+    schema = _normalize_yaml_types(schema)
+
     # Always use the top-level schema for references
     if schema.get("type") == "object":
-        # If no properties defined but has additionalProperties, return typed dict
-        if not schema.get("properties") and schema.get("additionalProperties"):
-            additional_props = schema["additionalProperties"]
-            if additional_props is True:
-                return dict[str, Any]
-            else:
-                # Handle typed dictionaries like dict[str, str]
-                value_type = _schema_to_type(additional_props, schemas=schema)
-                # value_type might be ForwardRef or type - cast to Any for dynamic type construction
-                return cast(type[Any], dict[str, value_type])  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
-        # If no properties and no additionalProperties, default to dict[str, Any] for safety
-        elif not schema.get("properties") and not schema.get("additionalProperties"):
-            return dict[str, Any]
-        # If has properties AND additionalProperties is True, use Pydantic BaseModel
-        elif schema.get("properties") and schema.get("additionalProperties") is True:
-            return _create_pydantic_model(schema, name, schemas=schema)
-        # Otherwise use fast dataclass
-        return _create_dataclass(schema, name, schemas=schema)
+        return _object_schema_to_type(schema, schemas=schema, name=name)
     elif name:
         raise ValueError(f"Can not apply name to non-object schema: {name}")
     result = _schema_to_type(schema, schemas=schema)
@@ -193,8 +219,19 @@ def json_schema_to_type(
 
 
 def _hash_schema(schema: Mapping[str, Any]) -> str:
-    """Generate a deterministic hash for schema caching."""
-    return hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
+    """Generate a deterministic hash for schema caching.
+
+    Handles non-JSON-native types (datetime, date, bool keys) that can
+    appear in schemas loaded from YAML, which auto-parses date strings.
+    Uses ``default=str`` for unserializable values and drops ``sort_keys``
+    to avoid ``TypeError`` when dicts mix ``bool`` and ``str`` keys.
+    """
+    try:
+        raw = json.dumps(schema, sort_keys=True, default=str)
+    except TypeError:
+        # Mixed key types (bool + str) can't be sorted; fall back
+        raw = json.dumps(schema, default=str)
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -255,6 +292,11 @@ def _create_numeric_type(
 
 def _create_enum(name: str, values: list[Any]) -> type:
     """Create enum type from list of values."""
+    if not values:
+        # Empty enum means no value is valid (same semantics as ``false``
+        # schema).  Return the unsatisfiable type instead of ``Literal[()]``
+        # which triggers an AssertionError in Pydantic.
+        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
     # Always return Literal for enum fields to preserve the literal nature
     return Literal[tuple(values)]  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
 
@@ -291,32 +333,76 @@ def _return_Any() -> Any:
     return Any
 
 
+def _object_schema_to_type(
+    schema: Mapping[str, Any],
+    schemas: Mapping[str, Any],
+    name: str | None = None,
+) -> type:
+    """Convert an object schema to the appropriate Python type.
+
+    Single source of truth for the four object-schema cases, used by both the
+    top-level ``json_schema_to_type`` entry point and the recursive
+    ``_schema_to_type`` path:
+
+    1. No ``properties`` with ``additionalProperties`` truthy — ``dict[str, T]``
+       (``T = Any`` when ``additionalProperties is True``, else the value schema's type)
+    2. No ``properties`` and no ``additionalProperties`` — ``dict[str, Any]``
+    3. Has ``properties`` and ``additionalProperties is True`` — Pydantic model
+       (so ``extra="allow"`` can preserve unknown keys)
+    4. Has ``properties`` otherwise — dataclass
+
+    ``name`` is used as the generated class name for cases 3 and 4; it falls
+    back to the schema's ``title`` when not provided.
+    """
+    has_properties = bool(schema.get("properties"))
+    additional_props = schema.get("additionalProperties")
+    class_name = name if name is not None else schema.get("title")
+
+    if not has_properties and additional_props:
+        if additional_props is True:
+            return dict[str, Any]
+        value_type = _schema_to_type(additional_props, schemas)
+        return cast(type[Any], dict[str, value_type])  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
+
+    if not has_properties and not additional_props:
+        return dict[str, Any]
+
+    if has_properties and additional_props is True:
+        return _create_pydantic_model(schema, class_name, schemas)
+
+    return _create_dataclass(schema, class_name, schemas)
+
+
 def _get_from_type_handler(
     schema: Mapping[str, Any], schemas: Mapping[str, Any]
 ) -> Callable[..., Any]:
     """Get the appropriate type handler for the schema."""
 
-    type_handlers: dict[str, Callable[..., Any]] = {  # TODO
+    type_handlers: dict[str, Callable[..., Any]] = {
         "string": lambda s: _create_string_type(s),
         "integer": lambda s: _create_numeric_type(int, s),
         "number": lambda s: _create_numeric_type(float, s),
         "boolean": lambda _: bool,
         "null": lambda _: type(None),
         "array": lambda s: _create_array_type(s, schemas),
-        "object": lambda s: (
-            _create_pydantic_model(s, s.get("title"), schemas)
-            if s.get("properties") and s.get("additionalProperties") is True
-            else _create_dataclass(s, s.get("title"), schemas)
-        ),
+        "object": lambda s: _object_schema_to_type(s, schemas),
     }
     return type_handlers.get(schema.get("type", None), _return_Any)
 
 
 def _schema_to_type(
-    schema: Mapping[str, Any],
+    schema: Mapping[str, Any] | bool,
     schemas: Mapping[str, Any],
 ) -> type | ForwardRef:
     """Convert schema to appropriate Python type."""
+    # Boolean schemas are valid in JSON Schema draft-06+:
+    # true means "any value is valid" (equivalent to {}),
+    # false means "no value is valid" (unsatisfiable).
+    if schema is True:
+        return Any
+    if schema is False:
+        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+
     if not schema:
         return object
 
@@ -339,23 +425,9 @@ def _schema_to_type(
 
     # Handle anyOf unions
     if "anyOf" in schema:
-        types: list[type | Any] = []
-        for subschema in schema["anyOf"]:
-            # Special handling for dict-like objects in unions
-            if (
-                subschema.get("type") == "object"
-                and not subschema.get("properties")
-                and subschema.get("additionalProperties")
-            ):
-                # This is a dict type, handle it directly
-                additional_props = subschema["additionalProperties"]
-                if additional_props is True:
-                    types.append(dict[str, Any])
-                else:
-                    value_type = _schema_to_type(additional_props, schemas)
-                    types.append(dict[str, value_type])  # type: ignore
-            else:
-                types.append(_schema_to_type(subschema, schemas))
+        types: list[type | Any] = [
+            _schema_to_type(subschema, schemas) for subschema in schema["anyOf"]
+        ]
 
         # Check if one of the types is None (null)
         has_null = type(None) in types
@@ -412,6 +484,9 @@ def _sanitize_name(name: str) -> str:
     # Step 5: only strip trailing underscores if they weren't in the original name
     if not original_name.endswith("_"):
         cleaned = cleaned.rstrip("_")
+    # Step 6: if result is a Python keyword, append an underscore (PEP 8 convention)
+    if keyword.iskeyword(cleaned):
+        cleaned = f"{cleaned}_"
     return cleaned
 
 
@@ -475,7 +550,13 @@ def _create_pydantic_model(
     defaults = {}
 
     for prop_name, prop_schema in properties.items():
-        field_type = _schema_to_type(prop_schema, schemas or {})
+        # Boolean schemas (JSON Schema draft-06+): resolve type directly,
+        # then use an empty dict for .get() calls below.
+        if isinstance(prop_schema, bool):
+            field_type = _schema_to_type(prop_schema, schemas or {})
+            prop_schema = {}
+        else:
+            field_type = _schema_to_type(prop_schema, schemas or {})
 
         # Handle defaults
         default_value = prop_schema.get("default", MISSING)
@@ -537,11 +618,25 @@ def _create_dataclass(
     required = schema.get("required", [])
 
     fields: list[tuple[Any, ...]] = []
+    used_field_names: set[str] = set()
     for prop_name, prop_schema in properties.items():
         field_name = _sanitize_name(prop_name)
+        # Deduplicate: if sanitized names collide (e.g. "foo-bar" and
+        # "foo_bar" both become "foo_bar"), append a numeric suffix.
+        base = field_name
+        counter = 2
+        while field_name in used_field_names:
+            field_name = f"{base}_{counter}"
+            counter += 1
+        used_field_names.add(field_name)
 
-        # Check for self-reference in property
-        if prop_schema.get("$ref") == "#":
+        # Boolean schemas (JSON Schema draft-06+): resolve type directly,
+        # then use an empty dict for .get() calls below.
+        if isinstance(prop_schema, bool):
+            field_type = _schema_to_type(prop_schema, schemas or {})
+            prop_schema = {}
+        elif prop_schema.get("$ref") == "#":
+            # Check for self-reference in property
             field_type = ForwardRef(sanitized_name)
         else:
             field_type = _schema_to_type(prop_schema, schemas or {})
@@ -623,6 +718,10 @@ def _merge_defaults(
 
     # For each property in the schema
     for prop_name, prop_schema in schema.get("properties", {}).items():
+        # Normalize boolean schemas (JSON Schema draft-06+)
+        if isinstance(prop_schema, bool):
+            continue
+
         # If property is missing, apply defaults in priority order
         if prop_name not in result:
             if parent_default and prop_name in parent_default:

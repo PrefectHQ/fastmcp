@@ -7,7 +7,7 @@ import inspect
 import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar, overload
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs, quote, unquote
 
 import mcp.types
 from mcp.types import Annotations, Icon
@@ -107,6 +107,38 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
                 params[name] = parsed_query[name][0]
 
     return params
+
+
+def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
+    """Expand a URI template with parameters — inverse of `match_uri_template`.
+
+    Supports the same RFC 6570 subset:
+    - Path params: `{var}`, `{var*}`
+    - Query params: `{?var1,var2}`
+    """
+    result = uri_template
+
+    # Replace {name} and {name*} path placeholders
+    for key, value in params.items():
+        value_str = str(value)
+        result = result.replace(f"{{{key}}}", value_str)
+        result = result.replace(f"{{{key}*}}", value_str)
+
+    # Expand {?param1,param2,...} query parameter blocks
+    def _expand_query_block(match: re.Match[str]) -> str:
+        names = [n.strip() for n in match.group(1).split(",")]
+        parts = [
+            f"{quote(name)}={quote(str(params[name]))}"
+            for name in names
+            if name in params
+        ]
+        if parts:
+            return "?" + "&".join(parts)
+        return ""
+
+    result = re.sub(r"\{\?([^}]+)\}", _expand_query_block, result)
+
+    return result
 
 
 class ResourceTemplate(FastMCPComponent):
@@ -312,7 +344,7 @@ class ResourceTemplate(FastMCPComponent):
         fn_key: str | None = None,
         task_key: str | None = None,
         **kwargs: Any,
-    ) -> Execution:  # ty:ignore[invalid-method-override]
+    ) -> Execution:
         """Schedule this template for background execution via docket.
 
         Args:
@@ -439,11 +471,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         return result
 
     def register_with_docket(self, docket: Docket) -> None:
-        """Register this template with docket for background execution.
-
-        FunctionResourceTemplate registers the underlying function, which has the
-        user's Depends parameters for docket to resolve.
-        """
+        """Register this template with docket for background execution."""
         if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])
@@ -557,7 +585,7 @@ class FunctionResourceTemplate(ResourceTemplate):
                     f"URI parameters {all_uri_params} must be a subset of the function arguments: {func_params}"
                 )
 
-        description = description or inspect.getdoc(fn)
+        description = description if description is not None else inspect.getdoc(fn)
 
         # Normalize task to TaskConfig and validate
         if task is None:

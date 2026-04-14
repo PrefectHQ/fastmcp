@@ -261,7 +261,7 @@ def _tool_function_source(tool: mcp.types.Tool) -> str:
 
     # Build call arguments, using parsed versions for JSON params
     call_arg_parts = []
-    for prop_name, _ in properties.items():
+    for prop_name in properties:
         safe_name = _to_python_identifier(prop_name)
         if any(pn == prop_name for pn, _ in json_params):
             call_arg_parts.append(f"{prop_name!r}: {safe_name}_parsed")
@@ -313,8 +313,7 @@ def generate_cli_script(
     lines.append("from rich.console import Console")
     lines.append("")
     lines.append("from fastmcp import Client")
-    for imp in sorted(extra_imports):
-        lines.append(imp)
+    lines.extend(sorted(extra_imports))
     lines.append("")
 
     # --- Transport config ---
@@ -506,8 +505,7 @@ def generate_cli_script(
             "# ---------------------------------------------------------------------------"
         )
 
-        for tool in tools:
-            lines.append(_tool_function_source(tool))
+        lines.extend(_tool_function_source(tool) for tool in tools)
 
     # --- Entry point ---
     lines.append("")

@@ -136,7 +136,7 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
     # Extract detailed prompt information
     prompt_infos = []
     for prompt in prompts_list:
-        prompt_infos.append(
+        prompt_infos.append(  # noqa: PERF401
             PromptInfo(
                 key=prompt.key,
                 name=prompt.name or prompt.key,
@@ -156,7 +156,7 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
     # Extract detailed resource information
     resource_infos = []
     for resource in resources_list:
-        resource_infos.append(
+        resource_infos.append(  # noqa: PERF401
             ResourceInfo(
                 key=resource.key,
                 uri=str(resource.uri),
@@ -178,7 +178,7 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
     # Extract detailed template information
     template_infos = []
     for template in templates_list:
-        template_infos.append(
+        template_infos.append(  # noqa: PERF401
             TemplateInfo(
                 key=template.key,
                 uri_template=template.uri_template,
@@ -258,7 +258,7 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
         # Extract detailed tool information from MCP Tool objects
         tool_infos = []
         for mcp_tool in mcp_tools:
-            tool_infos.append(
+            tool_infos.append(  # noqa: PERF401
                 ToolInfo(
                     key=mcp_tool.name,
                     name=mcp_tool.name,
@@ -301,7 +301,7 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
         # Extract detailed resource information from MCP Resource objects
         resource_infos = []
         for mcp_resource in mcp_resources:
-            resource_infos.append(
+            resource_infos.append(  # noqa: PERF401
                 ResourceInfo(
                     key=str(mcp_resource.uri),
                     uri=str(mcp_resource.uri),
@@ -321,7 +321,7 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
         # Extract detailed template information from MCP ResourceTemplate objects
         template_infos = []
         for mcp_template in mcp_templates:
-            template_infos.append(
+            template_infos.append(  # noqa: PERF401
                 TemplateInfo(
                     key=str(mcp_template.uriTemplate),
                     uri_template=str(mcp_template.uriTemplate),

@@ -35,7 +35,7 @@ Usage::
 
 ## Classes
 
-### `FastMCPApp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L122" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPApp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A Provider that represents an MCP application.
@@ -48,19 +48,19 @@ can find them by original name even when transforms have been applied.
 
 **Methods:**
 
-#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L144" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L164" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: F) -> F
 ```
 
-#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L156" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: str | None = None) -> Callable[[F], F]
 ```
 
-#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L167" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L187" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: str | AnyFunction | None = None) -> Any
@@ -83,19 +83,19 @@ Supports multiple calling patterns::
     def save(name: str): ...
 
 
-#### `ui` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L228" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `ui` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L252" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 ui(self, name_or_fn: F) -> F
 ```
 
-#### `ui` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L243" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `ui` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L267" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 ui(self, name_or_fn: str | None = None) -> Callable[[F], F]
 ```
 
-#### `ui` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L257" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `ui` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L281" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 ui(self, name_or_fn: str | AnyFunction | None = None) -> Any
@@ -119,7 +119,7 @@ Supports multiple calling patterns::
     def dashboard() -> Component: ...
 
 
-#### `add_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L346" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L355" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_tool(self, tool: Tool | Callable[..., Any]) -> Tool
@@ -130,13 +130,13 @@ Add a tool to this app programmatically.
 The tool is tagged with this app's name for routing.
 
 
-#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L397" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L409" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 lifespan(self) -> AsyncIterator[None]
 ```
 
-#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L405" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/app.py#L417" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, transport: Literal['stdio', 'http', 'sse', 'streamable-http'] | None = None, **kwargs: Any) -> None

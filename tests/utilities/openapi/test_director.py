@@ -832,6 +832,98 @@ class TestQueryParameterSerialization:
         # Should contain alternating key,value pairs
         assert "100" in url and "200" in url and "150" in url
 
+    def test_explode_true_dict_expands_to_separate_params(self, director):
+        """style=form, explode=true on objects expands each property as a query param."""
+        route = HTTPRoute(
+            path="/test",
+            method="GET",
+            operation_id="test_endpoint",
+            parameters=[
+                ParameterInfo(
+                    name="data",
+                    location="query",
+                    required=True,
+                    schema={
+                        "type": "object",
+                        "properties": {
+                            "myAttribute": {"type": "boolean"},
+                        },
+                    },
+                    explode=True,
+                )
+            ],
+            parameter_map={
+                "data": {"location": "query", "openapi_name": "data"},
+            },
+        )
+
+        request = director.build(
+            route, {"data": {"myAttribute": True}}, "https://example.com"
+        )
+        url = str(request.url)
+        # Should expand to myAttribute=true (not data={'myAttribute': True})
+        assert "myAttribute=true" in url
+        assert "data=" not in url
+
+    def test_explode_default_dict_expands_to_separate_params(self, director):
+        """Default explode (None → true) on objects expands properties."""
+        route = HTTPRoute(
+            path="/test",
+            method="GET",
+            operation_id="test_endpoint",
+            parameters=[
+                ParameterInfo(
+                    name="filter",
+                    location="query",
+                    required=True,
+                    schema={
+                        "type": "object",
+                        "properties": {
+                            "category": {"type": "string"},
+                            "active": {"type": "boolean"},
+                        },
+                    },
+                    # explode defaults to None → treated as true
+                )
+            ],
+            parameter_map={
+                "filter": {"location": "query", "openapi_name": "filter"},
+            },
+        )
+
+        request = director.build(
+            route,
+            {"filter": {"category": "electronics", "active": False}},
+            "https://example.com",
+        )
+        url = str(request.url)
+        assert "category=electronics" in url
+        assert "active=false" in url
+        assert "filter=" not in url
+
+    def test_explode_true_empty_dict_omitted(self, director):
+        """Empty dict with explode=true omits the parameter."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="filter",
+                    location="query",
+                    required=False,
+                    schema={"type": "object"},
+                    explode=True,
+                )
+            ],
+            parameter_map={
+                "filter": {"location": "query", "openapi_name": "filter"},
+            },
+        )
+
+        request = director.build(route, {"filter": {}}, "https://example.com")
+        assert "filter" not in str(request.url)
+
     def test_explode_false_empty_dict_omitted(self, director):
         """Empty dict with explode=false omits the parameter."""
         route = HTTPRoute(

@@ -196,7 +196,9 @@ class FunctionResource(Resource):
             name=func_name,
             version=str(metadata.version) if metadata.version is not None else None,
             title=metadata.title,
-            description=metadata.description or inspect.getdoc(fn),
+            description=metadata.description
+            if metadata.description is not None
+            else inspect.getdoc(fn),
             icons=metadata.icons,
             mime_type=resolved_mime or "text/plain",
             tags=metadata.tags or set(),
@@ -228,11 +230,7 @@ class FunctionResource(Resource):
         return result
 
     def register_with_docket(self, docket: Docket) -> None:
-        """Register this resource with docket for background execution.
-
-        FunctionResource registers the underlying function, which has the user's
-        Depends parameters for docket to resolve.
-        """
+        """Register this resource with docket for background execution."""
         if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])

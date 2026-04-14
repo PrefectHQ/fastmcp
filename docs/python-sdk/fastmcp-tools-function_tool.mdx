@@ -10,7 +10,7 @@ Standalone @tool decorator for FastMCP.
 
 ## Functions
 
-### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L360" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L381" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(name_or_fn: str | Callable[..., Any] | None = None) -> Any
@@ -57,7 +57,7 @@ individual parameters must not be passed.
 Cannot be used together with metadata parameter.
 
 
-#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L240" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, arguments: dict[str, Any]) -> ToolResult
@@ -66,7 +66,7 @@ run(self, arguments: dict[str, Any]) -> ToolResult
 Run the tool with arguments.
 
 
-#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L283" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L303" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_with_docket(self, docket: Docket) -> None
@@ -74,11 +74,12 @@ register_with_docket(self, docket: Docket) -> None
 
 Register this tool with docket for background execution.
 
-FunctionTool registers the underlying function, which has the user's
-Depends parameters for docket to resolve.
+Registers the raw function so Docket sees and resolves ALL
+dependencies — both FastMCP's (CurrentContext, Progress) and
+Docket-native ones (Retry, Timeout, ConcurrencyLimit).
 
 
-#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L293" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L314" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_to_docket(self, docket: Docket, arguments: dict[str, Any], **kwargs: Any) -> Execution

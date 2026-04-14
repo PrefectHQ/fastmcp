@@ -9,10 +9,10 @@ tag: NEW
 
 **[v3.1.1: 'Tis But a Patch](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.1.1)**
 
-Pins `pydantic-monty<0.0.8` to fix a breaking change in Monty that affects code mode. Monty 0.0.8 removed the `external_functions` constructor parameter, causing `MontySandboxProvider` to fail. This patch caps the version so existing installs work correctly.
+Pins `pydantic-monty` below 0.0.8 to fix a breaking change in Monty that affects code mode. Monty 0.0.8 removed the `external_functions` constructor parameter, causing `MontySandboxProvider` to fail. This patch caps the version so existing installs work correctly.
 
 ### Fixes 🐞
-* Pin pydantic-monty<0.0.8 to fix code mode by [@jlowin](https://github.com/jlowin) in [#3497](https://github.com/PrefectHQ/fastmcp/pull/3497)
+* Pin pydantic-monty below 0.0.8 to fix code mode by [@jlowin](https://github.com/jlowin) in [#3497](https://github.com/PrefectHQ/fastmcp/pull/3497)
 
 **Full Changelog**: [v3.1.0...v3.1.1](https://github.com/PrefectHQ/fastmcp/compare/v3.1.0...v3.1.1)
 
@@ -1947,7 +1947,7 @@ FastMCP 2.8.0 introduces powerful new ways to customize and control your MCP ser
 
 ### Tool Transformation
 
-The highlight of this release is first-class [**Tool Transformation**](/patterns/tool-transformation), a new feature that lets you create enhanced variations of existing tools. You can now easily rename arguments, hide parameters, modify descriptions, and even wrap tools with custom validation or post-processing logic—all without rewriting the original code. This makes it easier than ever to adapt generic tools for specific LLM use cases or to simplify complex APIs. Huge thanks to [@strawgate](https://github.com/strawgate) for partnering on this, starting with [#591](https://github.com/PrefectHQ/fastmcp/discussions/591) and [#599](https://github.com/PrefectHQ/fastmcp/pull/599) and continuing offline.
+The highlight of this release is first-class [**Tool Transformation**](/servers/transforms/tool-transformation), a new feature that lets you create enhanced variations of existing tools. You can now easily rename arguments, hide parameters, modify descriptions, and even wrap tools with custom validation or post-processing logic—all without rewriting the original code. This makes it easier than ever to adapt generic tools for specific LLM use cases or to simplify complex APIs. Huge thanks to [@strawgate](https://github.com/strawgate) for partnering on this, starting with [#591](https://github.com/PrefectHQ/fastmcp/discussions/591) and [#599](https://github.com/PrefectHQ/fastmcp/pull/599) and continuing offline.
 
 ### Component Control
 This release also gives you more granular control over which components are exposed to clients. With new [**tag-based filtering**](/servers/server#tag-based-filtering), you can selectively enable or disable tools, resources, and prompts based on tags, perfect for managing different environments or user permissions. Complementing this, every component now supports being [programmatically enabled or disabled](/servers/tools#disabling-tools), offering dynamic control over your server's capabilities.

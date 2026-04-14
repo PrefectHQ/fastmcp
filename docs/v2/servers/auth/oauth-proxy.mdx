@@ -115,6 +115,12 @@ mcp = FastMCP(name="My Server", auth=auth)
   This URL is used to construct OAuth callback URLs and operational endpoints. When mounting under a path prefix, include that prefix in `base_url`. Use `issuer_url` separately to specify where auth server metadata is located (typically at root level).
 </ParamField>
 
+<ParamField body="resource_base_url" type="AnyHttpUrl | str | None">
+  Optional public base URL for the protected resource metadata and token audience.
+
+  Use this when your OAuth callbacks and operational endpoints need to live under one public URL, but the protected MCP resource should be advertised under another. FastMCP will still append the MCP mount path (for example, `/mcp`) to this base URL.
+</ParamField>
+
 <ParamField body="redirect_path" type="str" default="/auth/callback">
   Path for OAuth callbacks. Must match the redirect URI configured in your OAuth
   application

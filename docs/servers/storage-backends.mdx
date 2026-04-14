@@ -64,7 +64,9 @@ store = FileTreeStore(
 middleware = ResponseCachingMiddleware(cache_storage=store)
 ```
 
-The sanitization strategies ensure keys and collection names are safe for the filesystem — alphanumeric names pass through as-is for readability, while special characters are hashed to prevent path traversal.
+<Warning>
+**Sanitization strategies are required** when using `FileTreeStore`. Without them, keys containing special characters (such as URL-based OAuth client IDs like `https://claude.ai/oauth/claude-code-client-metadata`) will be used as-is in filesystem paths, causing `FileNotFoundError` crashes. The V1 strategies shown above are safe defaults — alphanumeric names pass through as-is for readability, while special characters are hashed to prevent path errors and traversal attacks. Changing sanitization strategies after data has been written is a breaking change, so choose your strategy upfront.
+</Warning>
 
 **Characteristics:**
 - ✅ Data persists across restarts
@@ -246,7 +248,7 @@ The [FastMCP Client](/clients/client) uses storage for persisting OAuth tokens l
 
 ```python
 from pathlib import Path
-from fastmcp.client.auth import OAuthClientProvider
+from fastmcp.client.auth import OAuth
 from key_value.aio.stores.filetree import (
     FileTreeStore,
     FileTreeV1KeySanitizationStrategy,
@@ -261,7 +263,7 @@ token_storage = FileTreeStore(
     collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(token_dir),
 )
 
-oauth_provider = OAuthClientProvider(
+oauth_provider = OAuth(
     mcp_url="https://your-mcp-server.com/mcp/sse",
     token_storage=token_storage
 )

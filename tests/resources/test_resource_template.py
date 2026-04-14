@@ -7,7 +7,11 @@ from pydantic import BaseModel
 from fastmcp import Context, FastMCP
 from fastmcp.resources import ResourceTemplate
 from fastmcp.resources.function_resource import FunctionResource
-from fastmcp.resources.template import build_regex, match_uri_template
+from fastmcp.resources.template import (
+    build_regex,
+    expand_uri_template,
+    match_uri_template,
+)
 
 
 class TestResourceTemplate:
@@ -806,3 +810,86 @@ class TestMalformedURITemplates:
         assert match is not None
         assert match.group("name") == "foo"
         assert match.group("id") == "123"
+
+
+class TestExpandUriTemplate:
+    """Test expand_uri_template — the inverse of match_uri_template."""
+
+    @pytest.mark.parametrize(
+        "template, params, expected",
+        [
+            ("test://{x}", {"x": "foo"}, "test://foo"),
+            ("test://{x}/{y}", {"x": "foo", "y": "bar"}, "test://foo/bar"),
+            ("test://a/{x}/b", {"x": "mid"}, "test://a/mid/b"),
+        ],
+    )
+    def test_expand_simple_params(
+        self, template: str, params: dict[str, str], expected: str
+    ):
+        assert expand_uri_template(template, params) == expected
+
+    @pytest.mark.parametrize(
+        "template, params, expected",
+        [
+            ("test://{path*}", {"path": "a/b/c"}, "test://a/b/c"),
+            ("test://{path*}", {"path": "single"}, "test://single"),
+            ("test://pre/{rest*}", {"rest": "x/y"}, "test://pre/x/y"),
+            (
+                "test://{a*}/mid/{b*}",
+                {"a": "x/y", "b": "p/q"},
+                "test://x/y/mid/p/q",
+            ),
+            ("test://{x}/{path*}", {"x": "foo", "path": "a/b"}, "test://foo/a/b"),
+        ],
+    )
+    def test_expand_wildcard_params(
+        self, template: str, params: dict[str, str], expected: str
+    ):
+        assert expand_uri_template(template, params) == expected
+
+    def test_expand_query_params(self):
+        result = expand_uri_template(
+            "test://data{?format,verbose}",
+            {"format": "json", "verbose": "true"},
+        )
+        assert result in (
+            "test://data?format=json&verbose=true",
+            "test://data?verbose=true&format=json",
+        )
+
+    def test_expand_query_params_partial(self):
+        result = expand_uri_template(
+            "test://data{?format,verbose}",
+            {"format": "json"},
+        )
+        assert result == "test://data?format=json"
+
+    def test_expand_query_params_none(self):
+        result = expand_uri_template("test://data{?format,verbose}", {})
+        assert result == "test://data"
+
+    def test_expand_ignores_extra_params(self):
+        result = expand_uri_template("test://{x}", {"x": "foo", "unused": "bar"})
+        assert result == "test://foo"
+
+
+class TestMatchExpandRoundTrip:
+    """match_uri_template and expand_uri_template must agree on the template grammar."""
+
+    @pytest.mark.parametrize(
+        "template, uri",
+        [
+            ("test://{x}", "test://foo"),
+            ("test://{x}/{y}", "test://foo/bar"),
+            ("test://a/{x}/b", "test://a/mid/b"),
+            ("test://{path*}", "test://a/b/c"),
+            ("test://{path*}", "test://single"),
+            ("test://pre/{rest*}", "test://pre/x/y/z"),
+            ("test://{x}/{path*}", "test://foo/a/b/c"),
+        ],
+    )
+    def test_expand_then_match_is_identity(self, template: str, uri: str):
+        """Extracting params from a URI and expanding them back reproduces the URI."""
+        params = match_uri_template(uri, template)
+        assert params is not None
+        assert expand_uri_template(template, params) == uri

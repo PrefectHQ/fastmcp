@@ -8,7 +8,7 @@ import warnings
 
 from fastmcp.apps.app import FastMCPApp as FastMCPApp
 from fastmcp.apps.app import _dispatch_decorator as _dispatch_decorator
-from fastmcp.apps.app import _resolve_tool_ref as _resolve_tool_ref
+from fastmcp.apps.app import _make_resolver as _make_resolver
 from fastmcp.exceptions import FastMCPDeprecationWarning
 
 warnings.warn(

@@ -1,0 +1,1105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Prefab Showcase</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.css">
+  <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.js"></script>
+<style>html, body, #root { background: transparent !important; }</style></head>
+<body>
+  <div id="root" style="max-width:64rem;margin:0 auto;padding:2rem"></div>
+  <script id="prefab:initial-data" type="application/json">{
+  "$prefab": {
+    "version": "0.2"
+  },
+  "view": {
+    "cssClass": "pf-app-root",
+    "onMount": {
+      "action": "setInterval",
+      "duration": 400,
+      "onTick": {
+        "action": "setState",
+        "key": "ctx_tick",
+        "value": "{{ ctx_tick + 1 }}"
+      }
+    },
+    "type": "Div",
+    "children": [
+      {
+        "cssClass": "gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4",
+        "type": "Grid",
+        "children": [
+          {
+            "cssClass": "gap-4",
+            "type": "Column",
+            "children": [
+              {
+                "type": "Card",
+                "children": [
+                  {
+                    "type": "CardHeader",
+                    "children": [
+                      {
+                        "type": "CardTitle",
+                        "content": "Register Towel"
+                      },
+                      {
+                        "type": "CardDescription",
+                        "content": "The most important item in the galaxy"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "CardContent",
+                    "children": [
+                      {
+                        "cssClass": "gap-3",
+                        "type": "Column",
+                        "children": [
+                          {
+                            "name": "combobox_1",
+                            "type": "Combobox",
+                            "placeholder": "Type...",
+                            "searchPlaceholder": "Search types...",
+                            "disabled": false,
+                            "invalid": false,
+                            "children": [
+                              {
+                                "type": "ComboboxOption",
+                                "value": "bath",
+                                "label": "Bath",
+                                "disabled": false
+                              },
+                              {
+                                "type": "ComboboxOption",
+                                "value": "beach",
+                                "label": "Beach",
+                                "disabled": false
+                              },
+                              {
+                                "type": "ComboboxOption",
+                                "value": "interstellar",
+                                "label": "Interstellar",
+                                "disabled": false
+                              },
+                              {
+                                "type": "ComboboxOption",
+                                "value": "micro",
+                                "label": "Microfiber",
+                                "disabled": false
+                              }
+                            ]
+                          },
+                          {
+                            "name": "datepicker_1",
+                            "type": "DatePicker",
+                            "placeholder": "Registration date"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "CardFooter",
+                    "children": [
+                      {
+                        "cssClass": "gap-2",
+                        "type": "Row",
+                        "children": [
+                          {
+                            "type": "Dialog",
+                            "title": "Towel Registered!",
+                            "description": "Your towel has been added to the galactic registry.",
+                            "dismissible": true,
+                            "children": [
+                              {
+                                "type": "Button",
+                                "label": "Register",
+                                "variant": "default",
+                                "size": "default",
+                                "disabled": false
+                              },
+                              {
+                                "content": "Don't forget to bring it.",
+                                "type": "Text"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "Button",
+                            "label": "Cancel",
+                            "variant": "outline",
+                            "size": "default",
+                            "disabled": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "Condition",
+                "cases": [
+                  {
+                    "when": "{{ !pressed }}",
+                    "children": [
+                      {
+                        "type": "Button",
+                        "label": "This is probably the best button to press.",
+                        "variant": "success",
+                        "size": "default",
+                        "disabled": false,
+                        "onClick": {
+                          "action": "setState",
+                          "key": "pressed",
+                          "value": true
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "else": [
+                  {
+                    "type": "Button",
+                    "label": "Please do not press this button again.",
+                    "variant": "destructive",
+                    "size": "default",
+                    "disabled": false,
+                    "onClick": {
+                      "action": "setState",
+                      "key": "pressed",
+                      "value": false
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "Card",
+                "children": [
+                  {
+                    "type": "CardHeader",
+                    "children": [
+                      {
+                        "type": "CardTitle",
+                        "content": "Ship Status"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "CardContent",
+                    "children": [
+                      {
+                        "cssClass": "gap-3",
+                        "type": "Column",
+                        "children": [
+                          {
+                            "cssClass": "items-center justify-between",
+                            "type": "Row",
+                            "children": [
+                              {
+                                "content": "heart-of-gold",
+                                "type": "Text"
+                              },
+                              {
+                                "type": "HoverCard",
+                                "openDelay": 0,
+                                "closeDelay": 200,
+                                "children": [
+                                  {
+                                    "type": "Badge",
+                                    "label": "In Orbit",
+                                    "variant": "default"
+                                  },
+                                  {
+                                    "cssClass": "gap-2",
+                                    "type": "Column",
+                                    "children": [
+                                      {
+                                        "content": "heart-of-gold",
+                                        "type": "Text"
+                                      },
+                                      {
+                                        "content": "Deployed 2h ago",
+                                        "type": "Muted"
+                                      },
+                                      {
+                                        "type": "Progress",
+                                        "value": 100.0,
+                                        "max": 100.0,
+                                        "variant": "success",
+                                        "size": "default"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "cssClass": "pf-progress-flat",
+                            "type": "Progress",
+                            "value": 100.0,
+                            "max": 100.0,
+                            "variant": "default",
+                            "size": "default",
+                            "indicatorClass": "bg-yellow-400"
+                          },
+                          {
+                            "cssClass": "items-center justify-between",
+                            "type": "Row",
+                            "children": [
+                              {
+                                "content": "vogon-poetry",
+                                "type": "Text"
+                              },
+                              {
+                                "type": "Tooltip",
+                                "content": "64% \u2014 ETA 12 min",
+                                "delay": 0,
+                                "children": [
+                                  {
+                                    "type": "Badge",
+                                    "variant": "secondary",
+                                    "children": [
+                                      {
+                                        "type": "Loader",
+                                        "variant": "spin",
+                                        "size": "sm"
+                                      },
+                                      {
+                                        "content": "Deploying",
+                                        "type": "Text"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "Progress",
+                            "value": 64.0,
+                            "max": 100.0,
+                            "variant": "default",
+                            "size": "default"
+                          },
+                          {
+                            "cssClass": "items-center justify-between",
+                            "type": "Row",
+                            "children": [
+                              {
+                                "content": "deep-thought",
+                                "type": "Text"
+                              },
+                              {
+                                "type": "Tooltip",
+                                "content": "Computing... 7.5 million years remaining",
+                                "delay": 0,
+                                "children": [
+                                  {
+                                    "type": "Badge",
+                                    "variant": "outline",
+                                    "children": [
+                                      {
+                                        "type": "Loader",
+                                        "variant": "ios",
+                                        "size": "sm"
+                                      },
+                                      {
+                                        "content": "Soon...",
+                                        "type": "Text"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "Progress",
+                            "value": 12.0,
+                            "max": 100.0,
+                            "variant": "default",
+                            "size": "default"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "Card",
+                "children": [
+                  {
+                    "type": "CardHeader",
+                    "children": [
+                      {
+                        "type": "CardTitle",
+                        "content": "Planet Ratings"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "CardContent",
+                    "children": [
+                      {
+                        "type": "RadarChart",
+                        "data": [
+                          {
+                            "axis": "Views",
+                            "earth": 30,
+                            "mag": 95
+                          },
+                          {
+                            "axis": "Fjords",
+                            "earth": 65,
+                            "mag": 100
+                          },
+                          {
+                            "axis": "Pubs",
+                            "earth": 90,
+                            "mag": 10
+                          },
+                          {
+                            "axis": "Mice",
+                            "earth": 40,
+                            "mag": 85
+                          },
+                          {
+                            "axis": "Tea",
+                            "earth": 95,
+                            "mag": 15
+                          },
+                          {
+                            "axis": "Safety",
+                            "earth": 45,
+                            "mag": 70
+                          }
+                        ],
+                        "series": [
+                          {
+                            "dataKey": "earth",
+                            "label": "Earth"
+                          },
+                          {
+                            "dataKey": "mag",
+                            "label": "Magrathea"
+                          }
+                        ],
+                        "axisKey": "axis",
+                        "height": 200,
+                        "filled": true,
+                        "showDots": false,
+                        "showLegend": true,
+                        "showTooltip": true,
+                        "animate": true,
+                        "showGrid": true
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "cssClass": "gap-4",
+            "type": "Column",
+            "children": [
+              {
+                "type": "Card",
+                "children": [
+                  {
+                    "type": "CardHeader",
+                    "children": [
+                      {
+                        "type": "CardTitle",
+                        "content": "Survival Odds"
+                      }
+                    ]
+                  },
+                  {
+                    "cssClass": "w-fit mx-auto",
+                    "type": "CardContent",
+                    "children": [
+                      {
+                        "type": "Ring",
+                        "value": 42.0,
+                        "min": 0,
+                        "max": 100,
+                        "label": "42%",
+                        "variant": "info",
+                        "size": "lg",
+                        "thickness": 12.0,
+                        "indicatorClass": "group-hover:drop-shadow-[0_0_24px_rgba(59,130,246,0.9)]"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "Card",
+                "children": [
+                  {
+                    "type": "CardHeader",
+                    "children": [
+                      {
+                        "cssClass": "gap-2 items-center",
+                        "type": "Row",
+                        "children": [
+                          {
+                            "type": "CardTitle",
+                            "content": "Improbability Drive"
+                          },
+                          {
+                            "cssClass": "text-blue-500",
+                            "type": "Loader",
+                            "variant": "pulse",
+                            "size": "sm"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "CardContent",
+                    "children": [
+                      {
+                        "cssClass": "gap-2",
+                        "type": "Column",
+                        "children": [
+                          {
+                            "name": "improbability",
+                            "value": 42.0,
+                            "type": "Slider",
+                            "min": 0.0,
+                            "max": 100.0,
+                            "disabled": false,
+                            "size": "default"
+                          },
+                          {
+                            "cssClass": "items-center justify-between",
+                            "type": "Row",
+                            "children": [
+                              {
+                                "content": "Probable",
+                                "type": "Muted"
+                              },
+                              {
+                                "content": "Infinite",
+                                "type": "Muted"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "Carousel",
+                "visible": 1,
+                "gap": 16,
+                "direction": "up",
+                "loop": true,
+                "autoAdvance": 3000,
+                "continuous": false,
+                "speed": 2,
+                "effect": "slide",
+                "dimInactive": false,
+                "showControls": false,
+                "controlsPosition": "outside",
+                "showDots": false,
+                "pauseOnHover": true,
+                "align": "start",
+                "slidesToScroll": 1,
+                "drag": true,
+                "children": [
+                  {
+                    "type": "Alert",
+                    "variant": "success",
+                    "icon": "circle-check",
+                    "children": [
+                      {
+                        "type": "AlertTitle",
+                        "content": "Don't Panic"
+                      },
+                      {
+                        "type": "AlertDescription",
+                        "content": "Normality achieved."
+                      }
+                    ]
+                  },
+                  {
+                    "type": "Alert",
+                    "variant": "destructive",
+                    "icon": "triangle-alert",
+                    "children": [
+                      {
+                        "type": "AlertTitle",
+                        "content": "Display Department"
+                      },
+                      {
+                        "type": "AlertDescription",
+                        "content": "Beware of the leopard."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "Card",
+                "children": [
+                  {
+                    "type": "CardHeader",
+                    "children": [
+                      {
+                        "type": "CardTitle",
+                        "content": "Prefect Horizon Config"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "CardContent",
+                    "children": [
+                      {
+                        "cssClass": "gap-3",
+                        "type": "Column",
+                        "children": [
+                          {
+                            "name": "autoscale",
+                            "value": true,
+                            "type": "Switch",
+                            "label": "Auto-scale agents",
+                            "size": "default",
+                            "disabled": false,
+                            "required": false
+                          },
+                          {
+                            "type": "Separator",
+                            "orientation": "horizontal"
+                          },
+                          {
+                            "name": "code_mode",
+                            "value": true,
+                            "type": "Switch",
+                            "label": "Code Mode",
+                            "size": "default",
+                            "disabled": false,
+                            "required": false
+                          },
+                          {
+                            "type": "Separator",
+                            "orientation": "horizontal"
+                          },
+                          {
+                            "name": "cache",
+                            "value": false,
+                            "type": "Switch",
+                            "label": "Tool call caching",
+                            "size": "default",
+                            "disabled": false,
+                            "required": false
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "CardFooter",
+                    "children": [
+                      {
+                        "type": "Button",
+                        "label": "Save Preferences",
+                        "variant": "default",
+                        "size": "default",
+                        "disabled": false,
+                        "onClick": {
+                          "action": "showToast",
+                          "message": "Preferences saved!"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "Card",
+                "children": [
+                  {
+                    "type": "CardHeader",
+                    "children": [
+                      {
+                        "type": "CardTitle",
+                        "content": "Travel Class"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "CardContent",
+                    "children": [
+                      {
+                        "name": "travel_class",
+                        "type": "RadioGroup",
+                        "children": [
+                          {
+                            "name": "radio_1",
+                            "value": false,
+                            "type": "Radio",
+                            "option": "economy",
+                            "label": "Economy",
+                            "disabled": false,
+                            "required": false
+                          },
+                          {
+                            "name": "radio_2",
+                            "value": false,
+                            "type": "Radio",
+                            "option": "business",
+                            "label": "Business Class",
+                            "disabled": false,
+                            "required": false
+                          },
+                          {
+                            "name": "radio_3",
+                            "value": true,
+                            "type": "Radio",
+                            "option": "improbability",
+                            "label": "Infinite Improbability",
+                            "disabled": false,
+                            "required": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "cssClass": "md:col-span-2",
+            "type": "GridItem",
+            "colSpan": 1,
+            "rowSpan": 1,
+            "children": [
+              {
+                "cssClass": "gap-4",
+                "type": "Column",
+                "children": [
+                  {
+                    "cssClass": "gap-4 grid-cols-2 h-32",
+                    "type": "Grid",
+                    "children": [
+                      {
+                        "type": "Card",
+                        "children": [
+                          {
+                            "type": "CardHeader",
+                            "children": [
+                              {
+                                "type": "CardTitle",
+                                "content": "Context Window"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "CardContent",
+                            "children": [
+                              {
+                                "cssClass": "gap-6 justify-center h-full",
+                                "type": "Column",
+                                "children": [
+                                  {
+                                    "cssClass": "items-center justify-between",
+                                    "type": "Row",
+                                    "children": [
+                                      {
+                                        "content": "{{ ctx_tick % 20 * 3 + 20 }}% used",
+                                        "type": "Text"
+                                      },
+                                      {
+                                        "content": "{{ (ctx_tick % 20 * 3 + 20) * 2 }}k / 200k tokens",
+                                        "type": "Muted"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "type": "Tooltip",
+                                    "content": "Auto-compact buffer: 12%",
+                                    "delay": 0,
+                                    "children": [
+                                      {
+                                        "type": "Progress",
+                                        "value": "{{ ctx_tick % 20 * 3 + 20 }}",
+                                        "max": 100.0,
+                                        "variant": "{{ ctx_tick % 20 * 3 + 20 > 70 ? 'destructive' : (ctx_tick % 20 * 3 + 20 <= 33 ? 'success' : 'default') }}",
+                                        "size": "default"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "cssClass": "pb-0 gap-0",
+                        "type": "Card",
+                        "children": [
+                          {
+                            "type": "CardContent",
+                            "children": [
+                              {
+                                "type": "Metric",
+                                "label": "Fjords designed",
+                                "value": "1,847",
+                                "delta": "+3 coastlines"
+                              }
+                            ]
+                          },
+                          {
+                            "cssClass": "h-16",
+                            "type": "Sparkline",
+                            "data": [
+                              820,
+                              950,
+                              1100,
+                              980,
+                              1250,
+                              1400,
+                              1350,
+                              1500,
+                              1680,
+                              1847
+                            ],
+                            "variant": "success",
+                            "fill": true,
+                            "curve": "linear",
+                            "strokeWidth": 1.5
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "Card",
+                    "children": [
+                      {
+                        "type": "CardHeader",
+                        "children": [
+                          {
+                            "type": "CardTitle",
+                            "content": "Towel Incidents"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "CardContent",
+                        "children": [
+                          {
+                            "type": "BarChart",
+                            "data": [
+                              {
+                                "month": "Jan",
+                                "lost": 8,
+                                "found": 5
+                              },
+                              {
+                                "month": "Feb",
+                                "lost": 24,
+                                "found": 15
+                              },
+                              {
+                                "month": "Mar",
+                                "lost": 12,
+                                "found": 28
+                              },
+                              {
+                                "month": "Apr",
+                                "lost": 35,
+                                "found": 19
+                              },
+                              {
+                                "month": "May",
+                                "lost": 18,
+                                "found": 38
+                              },
+                              {
+                                "month": "Jun",
+                                "lost": 42,
+                                "found": 30
+                              }
+                            ],
+                            "series": [
+                              {
+                                "dataKey": "lost",
+                                "label": "Lost"
+                              },
+                              {
+                                "dataKey": "found",
+                                "label": "Found"
+                              }
+                            ],
+                            "xAxis": "month",
+                            "height": 200,
+                            "stacked": false,
+                            "horizontal": false,
+                            "barRadius": 4,
+                            "showLegend": true,
+                            "showTooltip": true,
+                            "animate": true,
+                            "showGrid": true,
+                            "showYAxis": true,
+                            "yAxisFormat": "auto"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "cssClass": "gap-4 grid-cols-2",
+                    "type": "Grid",
+                    "children": [
+                      {
+                        "cssClass": "gap-4",
+                        "type": "Column",
+                        "children": [
+                          {
+                            "type": "Card",
+                            "children": [
+                              {
+                                "type": "CardContent",
+                                "children": [
+                                  {
+                                    "cssClass": "gap-2",
+                                    "type": "Column",
+                                    "children": [
+                                      {
+                                        "name": "checkbox_1",
+                                        "value": true,
+                                        "type": "Checkbox",
+                                        "label": "Towel packed",
+                                        "disabled": false,
+                                        "required": false
+                                      },
+                                      {
+                                        "name": "checkbox_2",
+                                        "value": true,
+                                        "type": "Checkbox",
+                                        "label": "Guide charged",
+                                        "disabled": false,
+                                        "required": false
+                                      },
+                                      {
+                                        "name": "checkbox_3",
+                                        "value": false,
+                                        "type": "Checkbox",
+                                        "label": "Babel fish inserted",
+                                        "disabled": false,
+                                        "required": false
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "Card",
+                            "children": [
+                              {
+                                "type": "CardHeader",
+                                "children": [
+                                  {
+                                    "type": "CardTitle",
+                                    "content": "Marvin's Mood"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "CardContent",
+                                "children": [
+                                  {
+                                    "cssClass": "gap-3",
+                                    "type": "Column",
+                                    "children": [
+                                      {
+                                        "content": "How's life?",
+                                        "type": "P"
+                                      },
+                                      {
+                                        "cssClass": "gap-2",
+                                        "type": "Column",
+                                        "children": [
+                                          {
+                                            "type": "Button",
+                                            "label": "Meh",
+                                            "variant": "default",
+                                            "size": "default",
+                                            "disabled": false,
+                                            "onClick": {
+                                              "action": "showToast",
+                                              "message": "Noted. Enthusiasm levels nominal."
+                                            }
+                                          },
+                                          {
+                                            "type": "Button",
+                                            "label": "Depressed",
+                                            "variant": "info",
+                                            "size": "default",
+                                            "disabled": false,
+                                            "onClick": {
+                                              "action": "showToast",
+                                              "message": "I think you ought to know I'm feeling very depressed."
+                                            }
+                                          },
+                                          {
+                                            "type": "Button",
+                                            "label": "Don't talk to me about life",
+                                            "variant": "warning",
+                                            "size": "default",
+                                            "disabled": false,
+                                            "onClick": {
+                                              "action": "showToast",
+                                              "message": "Brain the size of a planet and they ask me to pick up a piece of paper."
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "cssClass": "gap-4",
+                        "type": "Column",
+                        "children": [
+                          {
+                            "type": "Card",
+                            "children": [
+                              {
+                                "type": "CardContent",
+                                "children": [
+                                  {
+                                    "cssClass": "gap-2 items-center",
+                                    "type": "Row",
+                                    "children": [
+                                      {
+                                        "type": "Loader",
+                                        "variant": "dots",
+                                        "size": "sm"
+                                      },
+                                      {
+                                        "content": "Marvin is thinking...",
+                                        "type": "Muted"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "Card",
+                            "children": [
+                              {
+                                "type": "CardContent",
+                                "children": [
+                                  {
+                                    "type": "DataTable",
+                                    "columns": [
+                                      {
+                                        "key": "crew",
+                                        "header": "Crew",
+                                        "sortable": true
+                                      },
+                                      {
+                                        "key": "species",
+                                        "header": "Species",
+                                        "sortable": true
+                                      },
+                                      {
+                                        "key": "towel",
+                                        "header": "Towel?",
+                                        "sortable": true
+                                      },
+                                      {
+                                        "key": "status",
+                                        "header": "Status",
+                                        "sortable": true
+                                      }
+                                    ],
+                                    "rows": [
+                                      {
+                                        "crew": "Arthur Dent",
+                                        "species": "Human",
+                                        "towel": "Yes",
+                                        "status": "Confused"
+                                      },
+                                      {
+                                        "crew": "Ford Prefect",
+                                        "species": "Betelgeusian",
+                                        "towel": "Always",
+                                        "status": "Drinking"
+                                      },
+                                      {
+                                        "crew": "Zaphod",
+                                        "species": "Betelgeusian",
+                                        "towel": "Lost it",
+                                        "status": "Presidential"
+                                      },
+                                      {
+                                        "crew": "Trillian",
+                                        "species": "Human",
+                                        "towel": "Yes",
+                                        "status": "Navigating"
+                                      },
+                                      {
+                                        "crew": "Marvin",
+                                        "species": "Android",
+                                        "towel": "No point",
+                                        "status": "Depressed"
+                                      },
+                                      {
+                                        "crew": "Slartibartfast",
+                                        "species": "Magrathean",
+                                        "towel": "Somewhere",
+                                        "status": "Designing"
+                                      }
+                                    ],
+                                    "search": true,
+                                    "paginated": false,
+                                    "pageSize": 10
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "state": {
+    "ctx_tick": 0,
+    "improbability": 42
+  }
+}</script>
+</body>
+</html>

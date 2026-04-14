@@ -216,12 +216,11 @@ class AnthropicSamplingHandler:
                         # Extract text content from the result
                         result_content: str | list[TextBlockParam] = ""
                         if item.content:
-                            text_blocks: list[TextBlockParam] = []
-                            for sub_item in item.content:
-                                if isinstance(sub_item, TextContent):
-                                    text_blocks.append(
-                                        TextBlockParam(type="text", text=sub_item.text)
-                                    )
+                            text_blocks: list[TextBlockParam] = [
+                                TextBlockParam(type="text", text=sub_item.text)
+                                for sub_item in item.content
+                                if isinstance(sub_item, TextContent)
+                            ]
                             if len(text_blocks) == 1:
                                 result_content = text_blocks[0]["text"]
                             elif text_blocks:
@@ -234,6 +233,10 @@ class AnthropicSamplingHandler:
                                 content=result_content,
                                 is_error=item.isError if item.isError else False,
                             )
+                        )
+                    else:
+                        raise ValueError(
+                            f"Unsupported content type for Anthropic: {type(item).__name__}"
                         )
 
                 if content_blocks:
@@ -266,12 +269,11 @@ class AnthropicSamplingHandler:
             if isinstance(content, ToolResultContent):
                 result_content_str: str | list[TextBlockParam] = ""
                 if content.content:
-                    text_parts: list[TextBlockParam] = []
-                    for item in content.content:
-                        if isinstance(item, TextContent):
-                            text_parts.append(
-                                TextBlockParam(type="text", text=item.text)
-                            )
+                    text_parts: list[TextBlockParam] = [
+                        TextBlockParam(type="text", text=item.text)
+                        for item in content.content
+                        if isinstance(item, TextContent)
+                    ]
                     if len(text_parts) == 1:
                         result_content_str = text_parts[0]["text"]
                     elif text_parts:

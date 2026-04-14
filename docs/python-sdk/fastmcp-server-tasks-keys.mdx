@@ -6,34 +6,40 @@ sidebarTitle: keys
 # `fastmcp.server.tasks.keys`
 
 
-Task key management for SEP-1686 background tasks.
+Docket and Redis key encoding for background tasks.
 
-Task keys encode security scoping and metadata in the Docket key format:
-    `{session_id}:{client_task_id}:{task_type}:{component_identifier}`
+The compound Docket task key embeds the auth boundary so that the parser can
+reject cross-scope access without consulting Redis.  Authenticated and
+anonymous tasks live in disjoint keyspaces:
 
-This format provides:
-- Session-based security scoping (prevents cross-session access)
-- Task type identification (tool/prompt/resource)
-- Component identification (name or URI for result conversion)
+    auth:{enc_scope}:{client_task_id}:{task_type}:{enc_identifier}
+    anon:{client_task_id}:{task_type}:{enc_identifier}
+
+The same `auth/anon` partition is used for the per-task Redis prefix
+(``fastmcp:task:auth:{enc_scope}`` vs ``fastmcp:task:anon``) — see
+``task_redis_prefix``.
+
+``task_scope`` is the raw scope identifier (typically derived from
+``client_id`` or ``client_id|sub``); encoding happens once, at the boundary,
+in this module.
 
 
 ## Functions
 
-### `build_task_key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `build_task_key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-build_task_key(session_id: str, client_task_id: str, task_type: str, component_identifier: str) -> str
+build_task_key(task_scope: str | None, client_task_id: str, task_type: str, component_identifier: str) -> str
 ```
 
 
 Build Docket task key with embedded metadata.
 
-Format: `{session_id}:{client_task_id}:{task_type}:{component_identifier}`
-
-The component_identifier is URI-encoded to handle special characters (colons, slashes, etc.).
+When ``task_scope`` is ``None`` the task is anonymous and lives in the
+``anon`` keyspace.  Otherwise it lives under ``auth:{enc_scope}``.
 
 **Args:**
-- `session_id`: Session ID for security scoping
+- `task_scope`: Raw authorization scope, or ``None`` for anonymous tasks
 - `client_task_id`: Client-provided task ID
 - `task_type`: Type of task ("tool", "prompt", "resource")
 - `component_identifier`: Tool name, prompt name, or resource URI
@@ -43,16 +49,18 @@ The component_identifier is URI-encoded to handle special characters (colons, sl
 
 **Examples:**
 
->>> build_task_key("session123", "task456", "tool", "my_tool")
-'session123:task456:tool:my_tool'
->>> build_task_key("session123", "task456", "resource", "file://data.txt")
-'session123:task456:resource:file%3A%2F%2Fdata.txt'
+>>> build_task_key("client-a", "task456", "tool", "my_tool")
+'auth:client-a:task456:tool:my_tool'
+>>> build_task_key(None, "task456", "tool", "my_tool")
+'anon:task456:tool:my_tool'
+>>> build_task_key("client-a", "task456", "resource", "file://data.txt")
+'auth:client-a:task456:resource:file%3A%2F%2Fdata.txt'
 
 
-### `parse_task_key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `parse_task_key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L80" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-parse_task_key(task_key: str) -> dict[str, str]
+parse_task_key(task_key: str) -> TaskKeyParts
 ```
 
 
@@ -62,17 +70,21 @@ Parse Docket task key to extract metadata.
 - `task_key`: Encoded task key from Docket
 
 **Returns:**
-- Dict with keys: session_id, client_task_id, task_type, component_identifier
+- Dict with keys: ``task_scope`` (``str | None``), ``client_task_id``,
+- ``task_type``, ``component_identifier``.
+
+**Raises:**
+- `ValueError`: If the key has an unrecognized tag or wrong segment count.
 
 **Examples:**
 
->>> parse_task_key("session123:task456:tool:my_tool")
-`{'session_id': 'session123', 'client_task_id': 'task456', 'task_type': 'tool', 'component_identifier': 'my_tool'}`
->>> parse_task_key("session123:task456:resource:file%3A%2F%2Fdata.txt")
-`{'session_id': 'session123', 'client_task_id': 'task456', 'task_type': 'resource', 'component_identifier': 'file://data.txt'}`
+>>> parse_task_key("auth:client-a:task456:tool:my_tool")
+`{'task_scope': 'client-a', 'client_task_id': 'task456', 'task_type': 'tool', 'component_identifier': 'my_tool'}`
+>>> parse_task_key("anon:task456:tool:my_tool")
+`{'task_scope': None, 'client_task_id': 'task456', 'task_type': 'tool', 'component_identifier': 'my_tool'}`
 
 
-### `get_client_task_id_from_key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_client_task_id_from_key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_client_task_id_from_key(task_key: str) -> str
@@ -85,5 +97,37 @@ Extract just the client task ID from a task key.
 - `task_key`: Full encoded task key
 
 **Returns:**
-- Client-provided task ID (second segment)
+- Client-provided task ID
+
+**Examples:**
+
+>>> get_client_task_id_from_key("auth:client-a:task456:tool:my_tool")
+'task456'
+>>> get_client_task_id_from_key("anon:task456:tool:my_tool")
+'task456'
+
+
+### `task_redis_prefix` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L156" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+task_redis_prefix(task_scope: str | None) -> str
+```
+
+
+Return the Redis key prefix that owns a given scope.
+
+Authenticated tasks live under ``fastmcp:task:auth:{enc_scope}``;
+anonymous tasks live under ``fastmcp:task:anon``.  Callers append
+``f":{task_id}:..."`` to compose the final key.
+
+
+## Classes
+
+### `TaskKeyParts` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/keys.py#L23" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Decoded segments of a Docket task key.
+
+``task_scope`` is ``None`` for anonymous tasks, the raw scope string
+otherwise.
 

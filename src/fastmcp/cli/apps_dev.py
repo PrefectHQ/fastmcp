@@ -36,7 +36,6 @@ import sys
 import tarfile
 import tempfile
 import time
-import urllib.request
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -597,6 +596,33 @@ _LOG_PANEL_HTML = """\
   var countEl = document.getElementById("mcp-log-count");
   var openBtn = document.getElementById("mcp-log-open");
   var resizeHandle = document.getElementById("mcp-log-resize");
+  var allFilterKeys = ["tools", "notifications", "bridge", "errors"];
+
+  function syncURL() {
+    var params = new URLSearchParams(window.location.search);
+    if (!panel.classList.contains("hidden")) {
+      params.set("log", "open");
+    } else {
+      params.delete("log");
+    }
+    var on = [];
+    for (var i = 0; i < allFilterKeys.length; i++) {
+      if (activeFilters[allFilterKeys[i]]) on.push(allFilterKeys[i]);
+    }
+    if (on.length === allFilterKeys.length) {
+      params.delete("filters");
+    } else {
+      params.set("filters", on.join(","));
+    }
+    if (minLevel === 0) {
+      params.delete("level");
+    } else {
+      params.set("level", levelOrder[minLevel]);
+    }
+    var qs = params.toString();
+    var url = window.location.pathname + (qs ? "?" + qs : "");
+    history.replaceState(null, "", url);
+  }
 
   function setFrameLayout(w) {
     var frame = document.getElementById("app-frame");
@@ -609,12 +635,15 @@ _LOG_PANEL_HTML = """\
     panel.classList.add("hidden");
     openBtn.style.display = "block";
     setFrameLayout("100%");
+    syncURL();
   });
 
   openBtn.addEventListener("click", function() {
     panel.classList.remove("hidden");
     openBtn.style.display = "none";
     setFrameLayout("calc(100% - " + panelWidth + "px)");
+    entries.scrollTop = entries.scrollHeight;
+    syncURL();
   });
 
   resizeHandle.addEventListener("mousedown", function(e) {
@@ -652,6 +681,34 @@ _LOG_PANEL_HTML = """\
   var levelOrder = ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"];
   var minLevel = 0;
 
+  // Restore state from URL params
+  (function restoreURL() {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get("log") === "open") {
+      panel.classList.remove("hidden");
+      openBtn.style.display = "none";
+      setFrameLayout("calc(100% - " + panelWidth + "px)");
+    }
+    var fp = params.get("filters");
+    if (fp !== null) {
+      var on = fp ? fp.split(",") : [];
+      for (var i = 0; i < allFilterKeys.length; i++) {
+        var k = allFilterKeys[i];
+        activeFilters[k] = on.indexOf(k) !== -1;
+        var btn = document.querySelector("[data-filter='" + k + "']");
+        if (btn) btn.classList.toggle("active", activeFilters[k]);
+      }
+    }
+    var lp = params.get("level");
+    if (lp) {
+      var idx = levelOrder.indexOf(lp);
+      if (idx >= 0) {
+        minLevel = idx;
+        document.getElementById("mcp-log-level-select").value = lp;
+      }
+    }
+  })();
+
   document.getElementById("mcp-log-filters").addEventListener("click", function(e) {
     var btn = e.target.closest("[data-filter]");
     if (!btn) return;
@@ -659,11 +716,13 @@ _LOG_PANEL_HTML = """\
     activeFilters[f] = !activeFilters[f];
     btn.classList.toggle("active", activeFilters[f]);
     applyFilters();
+    syncURL();
   });
 
   document.getElementById("mcp-log-level-select").addEventListener("change", function(e) {
     minLevel = levelOrder.indexOf(e.target.value);
     applyFilters();
+    syncURL();
   });
 
   function shouldShow(el) {
@@ -799,6 +858,7 @@ _LOG_PANEL_HTML = """\
   }
 
   var polling = false;
+  var firstPoll = true;
   function poll() {
     if (polling) return;
     polling = true;
@@ -809,14 +869,16 @@ _LOG_PANEL_HTML = """\
         lastId = data[data.length - 1].id;
         totalCount += data.length;
         countEl.textContent = String(totalCount);
-        var atBottom = entries.scrollHeight - entries.scrollTop - entries.clientHeight < 40;
+        var panelVisible = !panel.classList.contains("hidden");
+        var atBottom = !panelVisible || entries.scrollHeight - entries.scrollTop - entries.clientHeight < 40;
         for (var i = 0; i < data.length; i++) {
           var el = renderEntry(data[i]);
           el.classList.add("new");
           if (!shouldShow(el)) el.style.display = "none";
           entries.appendChild(el);
         }
-        if (atBottom) entries.scrollTop = entries.scrollHeight;
+        if (atBottom || (firstPoll && panelVisible)) entries.scrollTop = entries.scrollHeight;
+        firstPoll = false;
       })
       .catch(function() {})
       .finally(function() { polling = false; });
@@ -1214,8 +1276,10 @@ def _fetch_app_bridge_bundle_sync(
 
     # -- Download and patch app-bridge.js -----------------------------------
     npm_url = f"https://registry.npmjs.org/@modelcontextprotocol/ext-apps/-/ext-apps-{version}.tgz"
-    with urllib.request.urlopen(npm_url) as resp:
-        data = resp.read()
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.get(npm_url, follow_redirects=True)
+        resp.raise_for_status()
+        data = resp.content
 
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         member = tar.extractfile("package/dist/src/app-bridge.js")
@@ -1237,8 +1301,10 @@ def _fetch_app_bridge_bundle_sync(
     # version-specific v4.mjs (e.g. /zod@4.3.6/es2022/v4.mjs) which is
     # broken.  We fetch the wrapper to discover the exact version.
     types_url = f"{sdk_base}/types.js"
-    with urllib.request.urlopen(types_url) as resp:
-        types_content = resp.read().decode()
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.get(types_url, follow_redirects=True)
+        resp.raise_for_status()
+        types_content = resp.text
 
     # Extract the zod/v4?target=es2022 path from the types.js redirect
     zod_wrapper_match = re.search(r'import "(/zod@[^"]*v4[^"]*)"', types_content)
@@ -1249,8 +1315,10 @@ def _fetch_app_bridge_bundle_sync(
     zod_wrapper_path = zod_wrapper_match.group(1)  # e.g. /zod@^4.3.5/v4?target=es2022
 
     zod_wrapper_url = f"https://esm.sh{zod_wrapper_path}"
-    with urllib.request.urlopen(zod_wrapper_url) as resp:
-        wrapper_content = resp.read().decode()
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.get(zod_wrapper_url, follow_redirects=True)
+        resp.raise_for_status()
+        wrapper_content = resp.text
 
     # The wrapper does: export * from "/zod@4.3.6/es2022/v4.mjs"
     broken_match = re.search(
@@ -1377,7 +1445,12 @@ def _make_dev_app(
             for k, v in data.items():
                 if isinstance(v, str):
                     stripped = v.strip()
-                    if stripped and stripped[0] in ("{", "["):
+                    # Skip empty strings — the form sends them for
+                    # unfilled optional fields, but they'll fail
+                    # validation against non-string types.
+                    if not stripped:
+                        continue
+                    if stripped[0] in ("{", "["):
                         try:
                             parsed = json.loads(stripped)
                             if isinstance(parsed, (dict, list)):
@@ -1439,7 +1512,9 @@ def _make_dev_app(
             if k.lower() not in ("host", "content-length")
         }
 
-        client = httpx.AsyncClient(timeout=None)
+        # Use a reasonable default timeout to prevent the proxy from hanging
+        # if the backend server is unresponsive.
+        client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=None))
 
         async def _stream_and_cleanup(resp: httpx.Response) -> Any:
             is_sse = "text/event-stream" in resp.headers.get("content-type", "")
@@ -1468,6 +1543,7 @@ def _make_dev_app(
             except (
                 httpx.RemoteProtocolError,
                 httpx.ReadError,
+                httpx.ReadTimeout,
                 httpcore.RemoteProtocolError,
             ):
                 pass  # Connection closed during shutdown — not an error
@@ -1508,7 +1584,7 @@ def _make_dev_app(
                 headers=fwd_headers,
                 media_type=content_type or "application/octet-stream",
             )
-        except httpx.ConnectError:
+        except (httpx.ConnectError, httpx.ConnectTimeout):
             await client.aclose()
             return Response(
                 content=json.dumps({"error": "MCP server not reachable"}).encode(),
@@ -1635,7 +1711,10 @@ async def run_dev_apps(
         # Check ports before starting anything
         import socket
 
-        for port, label in [(mcp_port, "MCP server"), (dev_port, "dev UI")]:
+        for port, label, flag in [
+            (mcp_port, "MCP server", "--mcp-port"),
+            (dev_port, "dev UI", "--dev-port"),
+        ]:
             in_use = False
             for family, addr in (
                 (socket.AF_INET, ("127.0.0.1", port)),
@@ -1651,7 +1730,7 @@ async def run_dev_apps(
             if in_use:
                 logger.error(
                     f"Port {port} ({label}) is already in use. "
-                    f"Try --mcp-port or --dev-port to use different ports."
+                    f"Try {flag} to use a different port."
                 )
                 sys.exit(1)
 
