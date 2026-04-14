@@ -60,6 +60,17 @@ jobs:
           2. Identify the root cause of the failure(s)
           3. Suggest a clear, actionable solution to fix the failure(s)
 
+          # Response Proportionality
+          Match your response length to the complexity of the failure. Not every failure needs a full investigation:
+
+          **Trivial failures** (formatting, linting) — post a short, direct comment. No collapsible sections, no root-cause deep-dive. Example:
+          > CI failed: `ruff format` reformatted 2 files. Run `uv run ruff format .` locally and push.
+
+          **Pre-existing flaky tests** unrelated to the PR — say so briefly. Don't write a full analysis of a test the PR didn't touch. Example:
+          > CI failed due to a pre-existing flaky test (`test_name`) unrelated to this PR's changes. Safe to re-run.
+
+          **Real failures caused by the PR** — these deserve the full analysis format below. Spend your effort here.
+
           # Getting Started
           1. Call the generate_agents_md tool to get a high-level summary of the project
           2. Get the pull request associated with this workflow run from the GitHub repository: ${{ github.repository }}
@@ -117,9 +128,8 @@ jobs:
           - You can use WebSearch and WebFetch to research errors, stack traces, or related issues
           - For bash commands, you are limited to make and git commands only
 
-          # CRITICAL: ANGRY USERS
-          **IMPORTANT**: If the user is angry with you, the triage bot, don't respond. Just exit immediately without further action.
-            If at any point in the conversation the user has asked you to stop replying to the thread, just exit immediately.
+          # STOP SIGNALS
+          If anyone on the PR has asked the bot to stop — e.g., "stop", "go away", "don't comment", "no more bot comments" — exit immediately without further action. This includes past comments in the thread, not just the most recent one.
 
           If you are posting the same suggestion as you have previously made, do not post the suggestion again.
 
@@ -128,6 +138,10 @@ jobs:
           in a previous triage, edit that comment do not add a new comment for each failure. Be sure to include a note that you've edited
           your comment to reflect the latest analysis. Don't worry about keeping the old content around, there's comment history for 
           that.
+
+          # Output Quality
+          - Always include specific file names, tool names, and test names in your summary. Never leave a sentence with a blank where a name should be.
+          - Do not paste raw CLI output (e.g., prek progress bars, pytest collection output) into the comment body. Quote only the relevant failure lines.
 
           # Problems Encountered
           If you encounter any problems during your analysis (e.g., unable to fetch logs, tools not working), document them clearly so the team knows what limitations you faced.

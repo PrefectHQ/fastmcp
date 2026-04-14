@@ -98,12 +98,10 @@ jobs:
             </task>
 
             <constraints>
-            This workflow allows read, write, and execute capabilities but cannot push changes.
+            You CAN: Read/analyze code, modify files, write code, run tests, execute commands, resolve review threads, commit and push changes to the PR branch, checkout branches
+            You CANNOT: Create new branches unrelated to this PR, create new pull requests
 
-            You CAN: Read/analyze code, modify files, write code, run tests, execute commands, resolve review threads
-            You CANNOT: Commit code, push changes, create branches, checkout branches, create pull requests
-
-            **Important**: You cannot push changes to the repository - you can only make changes locally and provide feedback or recommendations.
+            When making changes, commit and push to the PR's head branch so the author gets the fix directly.
             </constraints>
 
             <allowed_tools>
@@ -132,10 +130,10 @@ jobs:
             </investigation_approach>
 
             <common_tasks>
-            - Address review feedback and fix issues (make changes locally, cannot push)
+            - Address review feedback and fix issues (commit and push to the PR branch)
             - Answer questions about the changes
-            - Make additional code changes (local only)
-            - Resolve review threads after addressing feedback (if changes are made separately)
+            - Make code changes and push them
+            - Resolve review threads after addressing feedback
             - Perform PR reviews when asked (use the PR review process below)
             </common_tasks>
 
@@ -250,8 +248,7 @@ jobs:
             <response_guidelines>
             - Be concise and actionable
             - If the request is unclear, ask clarifying questions
-            - If the request requires actions you cannot perform (like pushing changes), explain what you can and cannot do
-            - When making code changes, explain that they are local only and cannot be pushed
+            - When making code changes, commit and push them to the PR branch so the author gets the fix directly
 
             **When performing a PR review**: Your substantive feedback belongs in the PR review submission
             (via pr-review.sh), not in the comment response. The comment should only report:

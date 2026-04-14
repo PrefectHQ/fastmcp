@@ -75,9 +75,7 @@ jobs:
             </task>
 
             <constraints>
-            You CAN: Read/analyze code, modify files, write code, run tests, execute commands
-            You CAN: Commit code, push changes, create branches, create pull requests
-
+            You CAN: Read/analyze code, modify files, write code, run tests, execute commands, commit code, push changes, create branches, create pull requests
             </constraints>
 
             <allowed_tools>
@@ -107,18 +105,18 @@ jobs:
 
             <common_tasks>
             - Answer questions about the codebase
-            - Help debug reported problems (make changes locally to test, cannot push)
+            - Help debug reported problems
             - Suggest solutions or workarounds
             - Provide code examples
             - Help clarify requirements
             - Link to relevant documentation or code
+            - Create branches, commit changes, and open PRs when asked
             </common_tasks>
 
             <response_guidelines>
             - Be concise and actionable
             - If the request is unclear, ask clarifying questions
-            - If the request requires actions you cannot perform (like pushing changes), explain what you can and cannot do
-            - When making code changes, explain that they are local only and cannot be pushed
+            - Report findings and recommendations — not your process. Do not include task checklists or "steps I took" narration.
             </response_guidelines>
 
             <response_footer>

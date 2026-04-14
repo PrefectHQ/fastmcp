@@ -45,7 +45,13 @@ jobs:
 
           3. Then, launch 3 parallel agents using the Task tool to search GitHub for duplicates of this issue, using diverse keywords and search approaches, using the summary from step 2
 
-          4. Next, consider the results from steps 2 and 3 and filter out false positives that are likely not actually duplicates of the original issue. Be conservative — only flag issues that describe the same underlying problem, not issues that merely share keywords or involve the same subsystem. If there are no duplicates remaining, do not proceed.
+          4. Next, filter aggressively for false positives. The bar for "duplicate" is high:
+             - A duplicate means the SAME bug or the SAME feature request — not issues that touch the same subsystem or share keywords.
+             - Apply the "same fix" test: could the candidate be closed by the exact same code change as this issue? If not, they are not duplicates.
+             - Two issues about "middleware errors" are NOT duplicates unless they describe the exact same broken behavior.
+             - Two issues requesting "better auth" are NOT duplicates unless they propose the same specific capability.
+             - When in doubt, do not flag. A missed duplicate is harmless; a false positive wastes the reporter's time and erodes trust.
+             If there are no duplicates remaining, do not proceed.
 
           5. Finally, comment back on the issue with a list of up to three duplicate issues (or zero, if there are no likely duplicates). If there are no duplicates, DO NOT COMMENT. Just exit. Do NOT add any labels — labeling is handled by a later workflow step.
 

@@ -119,6 +119,8 @@ jobs:
               2. Layout a single high-quality and actionable recommendation for how to address the issue based on your knowledge of the project, codebase, and issue
               3. Provide a high quality and detailed plan that a junior developer could follow to implement the recommendation
               4. Use execution to verify findings when appropriate (check `<allowed_tools>` section for available commands)
+
+            Report findings and recommendations — not your process. Do not include task checklists, progress tracking, or "steps I took" narration (e.g., `- [x] Read source code`). The reader cares about what you found, not how you found it.
             </response_goals>
 
             <response_sections>
