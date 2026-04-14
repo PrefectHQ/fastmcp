@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from collections import defaultdict
 from typing import Any
 
@@ -287,6 +288,7 @@ def _prune_param(schema: dict[str, Any], param: str) -> dict[str, Any]:
     """Return a new schema with *param* removed from `properties`, `required`,
     and (if no longer referenced) `$defs`.
     """
+    schema = copy.deepcopy(schema)
 
     # ── 1. drop from properties/required ──────────────────────────────
     props = schema.get("properties", {})
