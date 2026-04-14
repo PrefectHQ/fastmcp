@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "fastmcp>=2.0.0",
-    "pytest>=8.3.3",
+    "pytest>=9.0.3",
     "pytest-asyncio>=1.2.0",
     "dirty-equals>=0.9.0",
 ]
