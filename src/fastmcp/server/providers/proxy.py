@@ -119,7 +119,10 @@ class ProxyTool(Tool):
         """Executes the tool by making a call through the client."""
         backend_name = self._backend_name or self.name
         with client_span(
-            f"tools/call {backend_name}", "tools/call", backend_name
+            f"tools/call {backend_name}",
+            "tools/call",
+            backend_name,
+            tool_name=backend_name,
         ) as span:
             span.set_attribute("fastmcp.provider.type", "ProxyProvider")
             client = await self._get_client()
@@ -450,7 +453,10 @@ class ProxyPrompt(Prompt):
         """Render the prompt by making a call through the client."""
         backend_name = self._backend_name or self.name
         with client_span(
-            f"prompts/get {backend_name}", "prompts/get", backend_name
+            f"prompts/get {backend_name}",
+            "prompts/get",
+            backend_name,
+            prompt_name=backend_name,
         ) as span:
             span.set_attribute("fastmcp.provider.type", "ProxyProvider")
             client = await self._get_client()
