@@ -28,7 +28,10 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from packaging.version import InvalidVersion, Version
+
 try:
+    import prefab_ui
     from prefab_ui.actions import SetState
     from prefab_ui.actions.mcp import CallTool, SendMessage
     from prefab_ui.app import PrefabApp
@@ -48,6 +51,13 @@ except ImportError as _exc:
     raise ImportError(
         "FormInput requires prefab-ui. Install with: pip install 'fastmcp[apps]'"
     ) from _exc
+
+# `defaults` kwarg on Form.from_model was added in prefab-ui 0.19.1. Gate on
+# version so that older prefab-ui keeps working — `default` silently no-ops.
+try:
+    _FORM_SUPPORTS_DEFAULTS = Version(prefab_ui.__version__) >= Version("0.19.1")
+except InvalidVersion:
+    _FORM_SUPPORTS_DEFAULTS = False
 
 import pydantic
 
@@ -161,6 +171,7 @@ class FormInput(FastMCPApp):
             prompt: str,
             title: str | None = None,
             submit_text: str | None = None,
+            default: dict[str, Any] | None = None,
         ) -> PrefabApp:
             """Collect structured input from the user.
 
@@ -168,6 +179,13 @@ class FormInput(FastMCPApp):
                 prompt: Tell the user what you need and why.
                 title: Optional heading for the form card.
                 submit_text: Optional label for the submit button.
+                default: Optional suggested response — a partial dict of form
+                    field values keyed by field name. The form renders with
+                    those values pre-filled so the user can confirm or edit
+                    rather than start from a blank form. Use this when you
+                    already know (or can infer) what the answer should be.
+                    Requires prefab-ui>=0.19.1; silently ignored on older
+                    versions.
             """
             _title = title or provider._title
             _submit = submit_text or provider._submit_text
@@ -188,16 +206,19 @@ class FormInput(FastMCPApp):
                             SendMessage(RESULT),  # ty:ignore[invalid-argument-type]
                         )
 
-                    Form.from_model(
-                        model,
-                        submit_label=_submit,
-                        on_submit=[
+                    from_model_kwargs: dict[str, Any] = {
+                        "submit_label": _submit,
+                        "on_submit": [
                             CallTool(
                                 "submit_form",
                                 on_success=on_success_actions,
                             ),
                         ],
-                    )
+                    }
+                    if default and _FORM_SUPPORTS_DEFAULTS:
+                        from_model_kwargs["defaults"] = default
+
+                    Form.from_model(model, **from_model_kwargs)
 
                 with CardFooter(), If(STATE.submitted):
                     Muted("Submitted.")
