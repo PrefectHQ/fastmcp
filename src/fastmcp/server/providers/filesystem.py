@@ -97,6 +97,8 @@ class FileSystemProvider(LocalProvider):
         self._warned_files: dict[Path, float] = {}
         # Lock for serializing reload operations (created lazily)
         self._reload_lock: asyncio.Lock | None = None
+        # Generation counter to deduplicate concurrent reloads
+        self._reload_generation: int = 0
 
         # Always load once at init to catch errors early
         self._load_components()
@@ -157,17 +159,16 @@ class FileSystemProvider(LocalProvider):
         else:
             logger.debug("Ignoring unknown component type: %r", type(component))
 
-    async def _maybe_reload(self) -> None:
-        """Reload components if needed. Caller must hold ``_reload_lock``."""
-        if self._reload or not self._loaded:
-            await asyncio.to_thread(self._load_components)
-
     async def _with_reload(self, coro_fn: Callable[..., Any], *args: Any) -> Any:
         """Acquire the reload lock, reload if needed, then run *coro_fn*.
 
         Holding the lock across both the reload and the read prevents
         concurrent readers from seeing a partially-rebuilt ``_components``
         dict (the ``clear()`` + re-register window).
+
+        A generation counter deduplicates concurrent reload requests:
+        if another caller already reloaded while we waited for the lock,
+        we skip the redundant reload.
         """
         if not self._reload and self._loaded:
             return await coro_fn(*args)
@@ -176,8 +177,14 @@ class FileSystemProvider(LocalProvider):
         if self._reload_lock is None:
             self._reload_lock = asyncio.Lock()
 
+        generation_before = self._reload_generation
+
         async with self._reload_lock:
-            await self._maybe_reload()
+            if not self._loaded or (
+                self._reload and self._reload_generation == generation_before
+            ):
+                await asyncio.to_thread(self._load_components)
+                self._reload_generation += 1
             return await coro_fn(*args)
 
     # Override provider methods to support reload mode
