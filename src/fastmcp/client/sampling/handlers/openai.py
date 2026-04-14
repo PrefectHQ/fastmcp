@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Iterator, Sequence
-from typing import Any, get_args
+from typing import Any, Literal, get_args
 
 from mcp import ClientSession, ServerSession
 from mcp.shared.context import LifespanContextT, RequestContext
@@ -48,7 +48,7 @@ except ImportError as e:
     ) from e
 
 # OpenAI only supports wav and mp3 for input audio
-_OPENAI_AUDIO_FORMATS: dict[str, str] = {
+_OPENAI_AUDIO_FORMATS: dict[str, Literal["wav", "mp3"]] = {
     "audio/wav": "wav",
     "audio/x-wav": "wav",
     "audio/mp3": "mp3",
