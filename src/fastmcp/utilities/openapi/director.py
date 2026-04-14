@@ -75,14 +75,19 @@ class RequestDirector:
         json_body: dict[str, Any] | list[Any] | None = None
         content: str | bytes | None = None
 
-        # Step 5: Determine the declared content type from the OpenAPI spec
+        # Step 5: Determine the declared content type from the OpenAPI spec.
+        # Strip parameters (e.g. "; charset=utf-8") for dispatch matching.
         declared_content_type: str | None = None
         if route.request_body and route.request_body.content_schema:
-            declared_content_type = next(iter(route.request_body.content_schema))
+            raw_ct = next(iter(route.request_body.content_schema))
+            declared_content_type = raw_ct.split(";")[0].strip().lower()
 
-        # httpx requires cookie values to be strings
+        # httpx requires cookie values to be strings; use OpenAPI-style
+        # serialization (e.g. true/false for booleans, not True/False)
         cookies = (
-            {k: str(v) for k, v in cookie_params.items()} if cookie_params else None
+            {k: _query_scalar_to_str(v) for k, v in cookie_params.items()}
+            if cookie_params
+            else None
         )
 
         # Step 6: Handle request body — dispatch on declared content type.

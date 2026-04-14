@@ -1403,7 +1403,7 @@ class TestCookieParameters:
         assert "xyz789" in request.headers.get("cookie", "")
 
     def test_cookie_non_string_value_stringified(self, director):
-        """Non-string cookie values (e.g. int) must be stringified for httpx."""
+        """Non-string cookie values (e.g. int, bool) use OpenAPI serialization."""
         route = HTTPRoute(
             path="/api",
             method="GET",
@@ -1415,11 +1415,20 @@ class TestCookieParameters:
                     required=True,
                     schema={"type": "integer"},
                 ),
+                ParameterInfo(
+                    name="debug",
+                    location="cookie",
+                    required=False,
+                    schema={"type": "boolean"},
+                ),
             ],
             parameter_map={
                 "version": {"location": "cookie", "openapi_name": "version"},
+                "debug": {"location": "cookie", "openapi_name": "debug"},
             },
         )
-        request = director.build(route, {"version": 3})
-        assert "version" in request.headers.get("cookie", "")
-        assert "3" in request.headers.get("cookie", "")
+        request = director.build(route, {"version": 3, "debug": True})
+        cookie = request.headers.get("cookie", "")
+        assert "version=3" in cookie
+        # Booleans use OpenAPI convention (true/false, not True/False)
+        assert "debug=true" in cookie
