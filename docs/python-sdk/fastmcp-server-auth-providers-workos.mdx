@@ -82,10 +82,31 @@ IMPORTANT SETUP REQUIREMENTS:
 For detailed setup instructions, see:
 https://workos.com/docs/authkit/mcp/integrating/token-verification
 
+Token audience is bound to this server automatically: when the MCP
+mount path becomes known (typically at ``http_app()`` construction),
+``JWTVerifier.audience`` is set to the resource URL advertised in
+``.well-known/oauth-protected-resource``. Enable Resource Indicators
+(RFC 8707) in your WorkOS Dashboard and list that same URL — AuthKit
+will then mint tokens with the matching ``aud`` claim.
+
 
 **Methods:**
 
-#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L357" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_mcp_path` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L362" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_mcp_path(self, mcp_path: str | None) -> None
+```
+
+Bind the default verifier's audience to this server's resource URL.
+
+AuthKit with Resource Indicators (RFC 8707) mints tokens whose ``aud``
+claim equals the resource URL the client requested — which is the URL
+we advertise in ``.well-known/oauth-protected-resource``. Binding the
+audience here keeps validation in lock-step with what clients are sent.
+
+
+#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L384" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_routes(self, mcp_path: str | None = None) -> list[Route]
