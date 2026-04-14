@@ -577,37 +577,37 @@ regardless of this setting.
 elicit(self, message: str, response_type: None) -> AcceptedElicitation[dict[str, Any]] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1028" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1031" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: type[T]) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1038" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1044" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: list[str]) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1048" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1057" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: dict[str, dict[str, str]]) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1058" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1070" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: list[list[str]]) -> AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1070" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1085" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: list[dict[str, dict[str, str]]]) -> AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1082" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: type[T] | list[str] | dict[str, dict[str, str]] | list[list[str]] | list[dict[str, dict[str, str]]] | None = None) -> AcceptedElicitation[T] | AcceptedElicitation[dict[str, Any]] | AcceptedElicitation[str] | AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
@@ -634,9 +634,17 @@ Clients must send an empty object ("{}")in response.
 - `response_type`: The type of the response, which should be a primitive
 type or dataclass or BaseModel. If it is a primitive type, an
 object schema with a single "value" field will be generated.
+- `response_title`: Optional label to display for the wrapped ``value``
+field when ``response_type`` is a scalar, Literal, Enum, or one
+of the dict/list shorthand forms. Overrides the auto-generated
+"Value" label. Raises ``TypeError`` if passed with a BaseModel,
+dataclass, or ``None`` response type (use ``Field(title=...)``
+on the model instead).
+- `response_description`: Optional description to attach to the wrapped
+``value`` field. Same scope rules as ``response_title``.
 
 
-#### `set_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1229" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_state(self, key: str, value: Any) -> None
@@ -657,7 +665,7 @@ requests.
 The key is automatically prefixed with the session identifier.
 
 
-#### `get_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1271" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_state(self, key: str) -> Any
@@ -671,7 +679,7 @@ then falls back to the session-scoped state store.
 Returns None if the key is not found.
 
 
-#### `delete_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1252" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `delete_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1285" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 delete_state(self, key: str) -> None
@@ -682,7 +690,7 @@ Delete a value from the state store.
 Removes from both request-scoped and session-scoped stores.
 
 
-#### `enable_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1273" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `enable_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1306" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 enable_components(self) -> None
@@ -706,7 +714,7 @@ ResourceListChangedNotification, and PromptListChangedNotification.
 - `match_all`: If True, matches all components regardless of other criteria.
 
 
-#### `disable_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1311" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `disable_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1344" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 disable_components(self) -> None
@@ -730,7 +738,7 @@ ResourceListChangedNotification, and PromptListChangedNotification.
 - `match_all`: If True, matches all components regardless of other criteria.
 
 
-#### `reset_visibility` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1349" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `reset_visibility` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1382" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 reset_visibility(self) -> None
