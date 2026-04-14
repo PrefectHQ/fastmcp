@@ -164,9 +164,7 @@ class ProxyTool(Tool):
                 elif first is None:
                     raise ToolError("Tool returned an error with no content")
                 else:
-                    raise ToolError(
-                        f"Tool returned an error ({type(first).__name__})"
-                    )
+                    raise ToolError(f"Tool returned an error ({type(first).__name__})")
             # Preserve backend's meta (includes task metadata for background tasks)
             return ToolResult(
                 content=result.content,
