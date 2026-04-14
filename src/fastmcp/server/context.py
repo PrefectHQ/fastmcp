@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 import weakref
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
@@ -26,6 +27,8 @@ from starlette.requests import Request
 from typing_extensions import TypeVar
 from uncalled_for import SharedContext
 
+import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.resources.base import ResourceResult
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
@@ -1130,9 +1133,11 @@ class Context:
         "value" field will be generated for the MCP interaction and
         automatically deconstructed into the primitive type upon response.
 
-        If the response_type is None, the generated schema will be that of an
-        empty object in order to comply with the MCP protocol requirements.
-        Clients must send an empty object ("{}")in response.
+        Passing ``response_type=None`` (or omitting it) is deprecated and will
+        be removed in a future version. The resulting empty-schema form-mode
+        request is ambiguous and causes some clients (e.g. VS Code) to hang on
+        an empty form. Pass an explicit ``response_type`` describing the data
+        you want back.
 
         Args:
             message: A human-readable message explaining what information is needed
@@ -1153,6 +1158,17 @@ class Context:
             contexts. In background task mode (SEP-1686), it will set the task
             status to "input_required" and wait for the client to provide input.
         """
+        if response_type is None and fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "Calling ctx.elicit() without a response_type is deprecated "
+                "and will be removed in a future version. The empty-schema "
+                "form-mode request is ambiguous under the current MCP spec "
+                "and causes some clients (e.g. VS Code) to render an empty, "
+                "non-functional form. Pass an explicit response_type "
+                "describing the data you expect back.",
+                FastMCPDeprecationWarning,
+                stacklevel=2,
+            )
         config = parse_elicit_response_type(
             response_type,
             response_title=response_title,
