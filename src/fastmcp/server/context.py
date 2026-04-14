@@ -1017,6 +1017,9 @@ class Context:
         self,
         message: str,
         response_type: None,
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> (
         AcceptedElicitation[dict[str, Any]] | DeclinedElicitation | CancelledElicitation
     ): ...
@@ -1029,6 +1032,9 @@ class Context:
         self,
         message: str,
         response_type: type[T],
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation: ...
 
     """When response_type is not None, the accepted elicitation will contain the
@@ -1039,6 +1045,9 @@ class Context:
         self,
         message: str,
         response_type: list[str],
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation: ...
 
     """When response_type is a list of strings, the accepted elicitation will
@@ -1049,6 +1058,9 @@ class Context:
         self,
         message: str,
         response_type: dict[str, dict[str, str]],
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation: ...
 
     """When response_type is a dict mapping keys to title dicts, the accepted
@@ -1059,6 +1071,9 @@ class Context:
         self,
         message: str,
         response_type: list[list[str]],
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> (
         AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
     ): ...
@@ -1071,6 +1086,9 @@ class Context:
         self,
         message: str,
         response_type: list[dict[str, dict[str, str]]],
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> (
         AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
     ): ...
@@ -1088,6 +1106,9 @@ class Context:
         | list[list[str]]
         | list[dict[str, dict[str, str]]]
         | None = None,
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> (
         AcceptedElicitation[T]
         | AcceptedElicitation[dict[str, Any]]
@@ -1118,13 +1139,25 @@ class Context:
             response_type: The type of the response, which should be a primitive
                 type or dataclass or BaseModel. If it is a primitive type, an
                 object schema with a single "value" field will be generated.
+            response_title: Optional label to display for the wrapped ``value``
+                field when ``response_type`` is a scalar, Literal, Enum, or one
+                of the dict/list shorthand forms. Overrides the auto-generated
+                "Value" label. Raises ``TypeError`` if passed with a BaseModel,
+                dataclass, or ``None`` response type (use ``Field(title=...)``
+                on the model instead).
+            response_description: Optional description to attach to the wrapped
+                ``value`` field. Same scope rules as ``response_title``.
 
         Note:
             This method works transparently in both request and background task
             contexts. In background task mode (SEP-1686), it will set the task
             status to "input_required" and wait for the client to provide input.
         """
-        config = parse_elicit_response_type(response_type)
+        config = parse_elicit_response_type(
+            response_type,
+            response_title=response_title,
+            response_description=response_description,
+        )
 
         if self.is_background_task:
             # Background task mode: use task-aware elicitation
