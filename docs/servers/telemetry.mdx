@@ -193,6 +193,10 @@ def risky_operation() -> str:
 
 ## Attributes Reference
 
+<Warning>
+**Migrating from v3.1 or earlier:** The `rpc.system`, `rpc.service`, and `rpc.method` span attributes were removed in favor of the [MCP semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/) listed below. If you have dashboards or alerts keyed on those `rpc.*` attributes, update them to use `mcp.method.name` and the `fastmcp.*` attributes instead.
+</Warning>
+
 ### MCP Semantic Conventions
 
 FastMCP implements the [OpenTelemetry MCP semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/):

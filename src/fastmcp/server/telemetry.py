@@ -7,6 +7,7 @@ from mcp.server.lowlevel.server import request_ctx
 from opentelemetry.context import Context
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
+from fastmcp.exceptions import ToolError as _ToolError
 from fastmcp.telemetry import extract_trace_context, get_tracer
 
 
@@ -95,8 +96,6 @@ def server_span(
             yield span
         except Exception as e:
             if span.is_recording():
-                from fastmcp.exceptions import ToolError as _ToolError
-
                 error_type = (
                     "tool_error" if isinstance(e, _ToolError) else type(e).__qualname__
                 )
@@ -132,8 +131,6 @@ def delegate_span(
             yield span
         except Exception as e:
             if span.is_recording():
-                from fastmcp.exceptions import ToolError as _ToolError
-
                 error_type = (
                     "tool_error" if isinstance(e, _ToolError) else type(e).__qualname__
                 )

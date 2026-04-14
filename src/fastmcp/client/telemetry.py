@@ -5,6 +5,7 @@ from contextlib import contextmanager
 
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
+from fastmcp.exceptions import ToolError as _ToolError
 from fastmcp.telemetry import get_tracer
 
 
@@ -44,8 +45,6 @@ def client_span(
             yield span
         except Exception as e:
             if span.is_recording():
-                from fastmcp.exceptions import ToolError as _ToolError
-
                 error_type = (
                     "tool_error" if isinstance(e, _ToolError) else type(e).__qualname__
                 )
