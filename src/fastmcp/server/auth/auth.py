@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from mcp.server.auth.handlers.token import TokenErrorResponse
@@ -789,7 +789,7 @@ class OAuthProvider(
             )
             protected_routes = create_protected_resource_routes(
                 resource_url=self._resource_url,
-                authorization_servers=[cast(AnyHttpUrl, self.issuer_url)],
+                authorization_servers=[self.issuer_url],
                 scopes_supported=supported_scopes,
             )
             oauth_routes.extend(protected_routes)

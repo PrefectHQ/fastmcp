@@ -130,6 +130,7 @@ class ClientPromptsMixin:
             "prompts/get",
             name,
             session_id=self.transport.get_session_id(),
+            prompt_name=name,
         ):
             logger.debug(f"[{self.name}] called get_prompt: {name}")
 

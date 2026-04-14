@@ -6,7 +6,11 @@ import pydantic
 import pytest
 
 from fastmcp import FastMCP
-from fastmcp.apps.form import FormInput, _backfill_boolean_defaults
+from fastmcp.apps.form import (
+    _FORM_SUPPORTS_DEFAULTS,
+    FormInput,
+    _backfill_boolean_defaults,
+)
 from fastmcp.server.providers.addressing import hashed_backend_name
 
 
@@ -142,6 +146,57 @@ class TestFormInputProvider:
         tool_names = [t.name for t in tools]
         assert "collect_contact" in tool_names
         assert "collect_address" in tool_names
+
+
+class TestCollectInputDefault:
+    """The `default` arg pre-fills the form for the user to confirm/edit."""
+
+    @pytest.mark.skipif(
+        not _FORM_SUPPORTS_DEFAULTS,
+        reason="prefab-ui<0.19.1 does not support Form.from_model(defaults=...)",
+    )
+    async def test_default_prefills_form_fields(self):
+        server = FastMCP("test", providers=[FormInput(model=Contact)])
+
+        result = await server.call_tool(
+            "collect_contact",
+            {
+                "prompt": "Confirm your details",
+                "default": {"name": "Alice", "email": "alice@example.com"},
+            },
+        )
+        # The form view should serialize with the prefilled values.
+        payload = json.dumps(result.structured_content)
+        assert "Alice" in payload
+        assert "alice@example.com" in payload
+
+    async def test_default_absent_still_renders_blank_form(self):
+        """Sanity: omitting `default` keeps the existing blank-form behavior."""
+        server = FastMCP("test", providers=[FormInput(model=Contact)])
+
+        result = await server.call_tool(
+            "collect_contact",
+            {"prompt": "Enter your details"},
+        )
+        assert result.structured_content is not None
+
+    async def test_default_silent_on_older_prefab(self):
+        """When the sniff says False, `default` is accepted but no-ops.
+
+        This test's real value is that `default` is part of the tool
+        signature regardless of prefab version, so agents can always pass
+        it without runtime errors.
+        """
+        server = FastMCP("test", providers=[FormInput(model=Contact)])
+
+        result = await server.call_tool(
+            "collect_contact",
+            {
+                "prompt": "Confirm your details",
+                "default": {"name": "Bob"},
+            },
+        )
+        assert result.structured_content is not None
 
 
 class TestBackfillBooleanDefaults:

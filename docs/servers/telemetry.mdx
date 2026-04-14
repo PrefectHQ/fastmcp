@@ -61,14 +61,14 @@ The server creates spans for each operation using [MCP semantic conventions](htt
 | Span Name | Description |
 |-----------|-------------|
 | `tools/call {name}` | Tool execution (e.g., `tools/call get_weather`) |
-| `resources/read {uri}` | Resource read (e.g., `resources/read config://database`) |
+| `resources/read` | Resource read (URI in `mcp.resource.uri` attribute, not span name) |
 | `prompts/get {name}` | Prompt render (e.g., `prompts/get greeting`) |
 
 For mounted servers, an additional `delegate {name}` span shows the delegation to the child server.
 
 ### Client Spans
 
-The FastMCP client creates spans for outgoing requests with the same naming pattern (`tools/call {name}`, `resources/read {uri}`, `prompts/get {name}`).
+The FastMCP client creates spans for outgoing requests with the same naming pattern (`tools/call {name}`, `resources/read`, `prompts/get {name}`).
 
 ### Span Hierarchy
 
@@ -186,21 +186,16 @@ def risky_operation() -> str:
     raise ValueError("Something went wrong")
 
 # The span will have:
-# - status = ERROR
+# - status = ERROR with exception message as description
+# - error.type = "tool_error" (or exception class name for non-tool errors)
 # - exception event with stack trace
 ```
 
 ## Attributes Reference
 
-### RPC Semantic Conventions
-
-Standard [RPC semantic conventions](https://opentelemetry.io/docs/specs/semconv/rpc/rpc-spans/):
-
-| Attribute | Value |
-|-----------|-------|
-| `rpc.system` | `"mcp"` |
-| `rpc.service` | Server name |
-| `rpc.method` | MCP protocol method |
+<Warning>
+**Migrating from v3.1 or earlier:** The `rpc.system`, `rpc.service`, and `rpc.method` span attributes were removed in favor of the [MCP semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/) listed below. If you have dashboards or alerts keyed on those `rpc.*` attributes, update them to use `mcp.method.name` and the `fastmcp.*` attributes instead.
+</Warning>
 
 ### MCP Semantic Conventions
 
@@ -211,6 +206,9 @@ FastMCP implements the [OpenTelemetry MCP semantic conventions](https://opentele
 | `mcp.method.name` | The MCP method being called (`tools/call`, `resources/read`, `prompts/get`) |
 | `mcp.session.id` | Session identifier for the MCP connection |
 | `mcp.resource.uri` | The resource URI (for resource operations) |
+| `gen_ai.tool.name` | Tool name (on `tools/call` spans) |
+| `gen_ai.prompt.name` | Prompt name (on `prompts/get` spans) |
+| `error.type` | Error classification (`tool_error` for ToolError, otherwise exception class name) |
 
 ### Auth Attributes
 

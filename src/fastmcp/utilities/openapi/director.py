@@ -1,5 +1,6 @@
 """Request director using openapi-core for stateless HTTP request building."""
 
+import io
 import json as _json
 from typing import Any, ClassVar
 from urllib.parse import quote, urljoin
@@ -54,8 +55,8 @@ class RequestDirector:
         )
 
         # Step 1: Un-flatten arguments into path, query, body, etc. using parameter map
-        path_params, query_params, header_params, body = self._unflatten_arguments(
-            route, flat_args
+        path_params, query_params, header_params, cookie_params, body = (
+            self._unflatten_arguments(route, flat_args)
         )
 
         logger.debug(
@@ -75,14 +76,53 @@ class RequestDirector:
         json_body: dict[str, Any] | list[Any] | None = None
         content: str | bytes | None = None
 
-        # Step 5: Determine the declared content type from the OpenAPI spec
+        # Step 5: Determine the declared content type from the OpenAPI spec.
+        # Use the raw value for outgoing Content-Type headers (preserves
+        # parameters like charset), but normalize for dispatch matching.
+        raw_content_type: str | None = None
         declared_content_type: str | None = None
         if route.request_body and route.request_body.content_schema:
-            declared_content_type = next(iter(route.request_body.content_schema))
+            raw_content_type = next(iter(route.request_body.content_schema))
+            declared_content_type = raw_content_type.split(";")[0].strip().lower()
 
-        # Step 6: Handle request body
+        # httpx requires cookie values to be strings; use OpenAPI-style
+        # serialization (e.g. true/false for booleans, not True/False)
+        cookies = (
+            {k: _query_scalar_to_str(v) for k, v in cookie_params.items()}
+            if cookie_params
+            else None
+        )
+
+        # Step 6: Handle request body — dispatch on declared content type.
+        # httpx body kwargs (json, content, data, files) are mutually exclusive
+        # but all accept None, so we set exactly one and pass all to Request().
+        files: dict[str, Any] | None = None
+        data: dict[str, Any] | None = None
         if body is not None:
-            if isinstance(body, dict | list):
+            if declared_content_type == "multipart/form-data" and isinstance(
+                body, dict
+            ):
+                # Wrap plain values as (None, stringified) tuples so httpx
+                # treats them as form fields. Scalars must be stringified
+                # because httpx rejects non-string/bytes values in files=.
+                # Use _query_scalar_to_str for booleans (true/false, not True/False).
+                files = {}
+                for k, v in body.items():
+                    if isinstance(v, tuple):
+                        files[k] = v
+                    elif isinstance(v, bytes | io.IOBase):
+                        # bytes and file-like objects are passed directly so
+                        # httpx can transmit them as binary parts without
+                        # stringifying to their Python repr.
+                        files[k] = (None, v)
+                    else:
+                        files[k] = (None, _query_scalar_to_str(v))
+            elif (
+                declared_content_type == "application/x-www-form-urlencoded"
+                and isinstance(body, dict)
+            ):
+                data = body
+            elif isinstance(body, dict | list):
                 if (
                     declared_content_type is not None
                     and declared_content_type != "application/json"
@@ -94,7 +134,7 @@ class RequestDirector:
                     # sets application/json.
                     content = _json.dumps(body, allow_nan=False).encode("utf-8")
                     headers = dict(headers) if headers else {}
-                    headers["Content-Type"] = declared_content_type
+                    headers["Content-Type"] = raw_content_type
                 else:
                     json_body = body
             else:
@@ -108,11 +148,14 @@ class RequestDirector:
             headers=headers,
             json=json_body,
             content=content,
+            data=data,
+            files=files,
+            cookies=cookies,
         )
 
     def _unflatten_arguments(
         self, route: HTTPRoute, flat_args: dict[str, Any]
-    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], Any]:
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], Any]:
         """
         Maps flat arguments back to their OpenAPI locations using the parameter map.
 
@@ -121,11 +164,12 @@ class RequestDirector:
             flat_args: Flat arguments from LLM call
 
         Returns:
-            Tuple of (path_params, query_params, header_params, body)
+            Tuple of (path_params, query_params, header_params, cookie_params, body)
         """
         path_params = {}
         query_params = {}
         header_params = {}
+        cookie_params = {}
         body_props = {}
 
         # Use parameter map to route arguments to correct locations
@@ -150,6 +194,8 @@ class RequestDirector:
                     query_params[openapi_name] = value
                 elif location == "header":
                     header_params[openapi_name] = value
+                elif location == "cookie":
+                    cookie_params[openapi_name] = value
                 elif location == "body":
                     body_props[openapi_name] = value
                 else:
@@ -173,13 +219,15 @@ class RequestDirector:
                 # Check if it's a suffixed parameter (e.g., id__path)
                 if "__" in arg_name:
                     base_name, location = arg_name.rsplit("__", 1)
-                    if location in ["path", "query", "header"]:
+                    if location in ["path", "query", "header", "cookie"]:
                         if location == "path":
                             path_params[base_name] = value
                         elif location == "query":
                             query_params[base_name] = value
                         elif location == "header":
                             header_params[base_name] = value
+                        elif location == "cookie":
+                            cookie_params[base_name] = value
                         continue
 
                 # Check if it's a known parameter
@@ -191,6 +239,8 @@ class RequestDirector:
                         query_params[arg_name] = value
                     elif location == "header":
                         header_params[arg_name] = value
+                    elif location == "cookie":
+                        cookie_params[arg_name] = value
                 else:
                     # Assume it's a body property
                     body_props[arg_name] = value
@@ -222,7 +272,7 @@ class RequestDirector:
             else:
                 body = body_props
 
-        return path_params, query_params, header_params, body
+        return path_params, query_params, header_params, cookie_params, body
 
     # Delimiter per OpenAPI style when explode=false
     _STYLE_DELIMITERS: ClassVar[dict[str, str]] = {

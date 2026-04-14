@@ -7,6 +7,7 @@ import weakref
 from typing import TYPE_CHECKING, Any, Literal, overload
 
 import mcp.types
+from opentelemetry.trace import Status, StatusCode
 from pydantic import RootModel
 
 if TYPE_CHECKING:
@@ -144,7 +145,8 @@ class ClientToolsMixin:
             "tools/call",
             name,
             session_id=self.transport.get_session_id(),
-        ):
+            tool_name=name,
+        ) as span:
             logger.debug(f"[{self.name}] called call_tool: {name}")
 
             # Inject trace context into meta for propagation to server
@@ -159,6 +161,18 @@ class ClientToolsMixin:
                     meta=propagated_meta if propagated_meta else None,
                 )
             )
+
+            # Reflect tool-level errors on the span so callers see ERROR
+            # status even though the MCP protocol call itself succeeded.
+            if result.isError and span.is_recording():
+                span.set_attribute("error.type", "tool_error")
+                description = ""
+                if result.content and isinstance(
+                    result.content[0], mcp.types.TextContent
+                ):
+                    description = result.content[0].text
+                span.set_status(Status(StatusCode.ERROR, description))
+
             return result
 
     async def _parse_call_tool_result(
