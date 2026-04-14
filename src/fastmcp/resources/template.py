@@ -110,7 +110,10 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
             if name in parsed_query:
                 # Take first value if multiple provided.
                 # Normalize hyphens to underscores to match Python param names.
-                params[name.replace("-", "_")] = parsed_query[name][0]
+                # Don't overwrite path params that were already extracted.
+                key = name.replace("-", "_")
+                if key not in params:
+                    params[key] = parsed_query[name][0]
 
     return params
 
