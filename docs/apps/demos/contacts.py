@@ -1,7 +1,8 @@
-from prefab_ui.actions import AppendState, SetState, ShowToast
+from prefab_ui.actions import ShowToast
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     H3,
+    Badge,
     Button,
     Column,
     DataTable,
@@ -13,7 +14,6 @@ from prefab_ui.components import (
     SelectOption,
     Separator,
 )
-from prefab_ui.rx import STATE
 
 contacts = [
     {"name": "Arthur Dent", "email": "arthur@earth.com", "category": "Customer"},
@@ -26,9 +26,23 @@ contacts = [
     {"name": "Zaphod Beeblebrox", "email": "zaphod@galaxy.gov", "category": "Vendor"},
 ]
 
-with PrefabApp(
-    state={"contacts": contacts, "name": "", "email": "", "category": "Customer"}
-) as app:
+rows = [
+    {
+        "name": c["name"],
+        "email": c["email"],
+        "category": Badge(
+            c["category"],
+            variant="success"
+            if c["category"] == "Customer"
+            else "secondary"
+            if c["category"] == "Partner"
+            else "outline",
+        ),
+    }
+    for c in contacts
+]
+
+with PrefabApp() as app:
     with Column(gap=4, css_class="p-6"):
         DataTable(
             columns=[
@@ -36,7 +50,7 @@ with PrefabApp(
                 DataTableColumn(key="email", header="Email"),
                 DataTableColumn(key="category", header="Category"),
             ],
-            rows=STATE.contacts,
+            rows=rows,
             search=True,
         )
 
@@ -44,19 +58,10 @@ with PrefabApp(
 
         H3("Add Contact")
         with Form(
-            on_submit=[
-                AppendState(
-                    "contacts",
-                    {
-                        "name": STATE.name,
-                        "email": STATE.email,
-                        "category": STATE.category,
-                    },
-                ),
-                SetState("name", ""),
-                SetState("email", ""),
-                ShowToast("Contact saved!", variant="success"),
-            ]
+            on_submit=ShowToast(
+                "Contact saved! (preview demo — no backend wired)",
+                variant="success",
+            ),
         ):
             with Row(gap=4):
                 Input(name="name", label="Name", placeholder="Full name", required=True)
