@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, Literal, cast
@@ -26,12 +27,14 @@ from mcp.types import (
 )
 from mcp.types import CreateMessageRequestParams as SamplingParams
 from mcp.types import Tool as SDKTool
+from opentelemetry.trace import SpanKind, Status, StatusCode
 from pydantic import ValidationError
 from typing_extensions import TypeVar
 
 from fastmcp import settings
 from fastmcp.exceptions import ToolError
 from fastmcp.server.sampling.sampling_tool import SamplingTool
+from fastmcp.telemetry import get_tracer
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.async_utils import gather
@@ -40,6 +43,10 @@ from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
+
+_CAPTURE_CONTENT = os.environ.get(
+    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "false"
+).lower() == "true"
 
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
@@ -281,49 +288,67 @@ async def execute_tools(
 
     async def _execute_single_tool(tool_use: ToolUseContent) -> ToolResultContent:
         """Execute a single tool and return its result."""
-        tool = tool_map.get(tool_use.name)
-        if tool is None:
-            return ToolResultContent(
-                type="tool_result",
-                toolUseId=tool_use.id,
-                content=[
-                    TextContent(
-                        type="text",
-                        text=f"Error: Unknown tool '{tool_use.name}'",
-                    )
-                ],
-                isError=True,
-            )
+        tracer = get_tracer()
+        with tracer.start_as_current_span(
+            f"sampling.execute_tool {tool_use.name}"
+        ) as tool_span:
+            if tool_span.is_recording():
+                tool_span.set_attributes({
+                    "gen_ai.tool.name": tool_use.name,
+                    "gen_ai.operation.name": "execute_tool",
+                })
 
-        try:
-            result_value = await tool.run(tool_use.input)
-            return ToolResultContent(
-                type="tool_result",
-                toolUseId=tool_use.id,
-                content=[TextContent(type="text", text=str(result_value))],
-            )
-        except ToolError as e:
-            # ToolError is the escape hatch - always pass message through
-            logger.exception(f"Error calling sampling tool '{tool_use.name}'")
-            return ToolResultContent(
-                type="tool_result",
-                toolUseId=tool_use.id,
-                content=[TextContent(type="text", text=str(e))],
-                isError=True,
-            )
-        except Exception as e:
-            # Generic exceptions - mask based on setting
-            logger.exception(f"Error calling sampling tool '{tool_use.name}'")
-            if mask_error_details:
-                error_text = f"Error executing tool '{tool_use.name}'"
-            else:
-                error_text = f"Error executing tool '{tool_use.name}': {e}"
-            return ToolResultContent(
-                type="tool_result",
-                toolUseId=tool_use.id,
-                content=[TextContent(type="text", text=error_text)],
-                isError=True,
-            )
+            tool = tool_map.get(tool_use.name)
+            if tool is None:
+                return ToolResultContent(
+                    type="tool_result",
+                    toolUseId=tool_use.id,
+                    content=[
+                        TextContent(
+                            type="text",
+                            text=f"Error: Unknown tool '{tool_use.name}'",
+                        )
+                    ],
+                    isError=True,
+                )
+
+            try:
+                result_value = await tool.run(tool_use.input)
+                return ToolResultContent(
+                    type="tool_result",
+                    toolUseId=tool_use.id,
+                    content=[TextContent(type="text", text=str(result_value))],
+                )
+            except ToolError as e:
+                # ToolError is the escape hatch - always pass message through
+                logger.exception(f"Error calling sampling tool '{tool_use.name}'")
+                if tool_span.is_recording():
+                    tool_span.set_attribute("error.type", type(e).__qualname__)
+                    tool_span.record_exception(e)
+                    tool_span.set_status(Status(StatusCode.ERROR, str(e)))
+                return ToolResultContent(
+                    type="tool_result",
+                    toolUseId=tool_use.id,
+                    content=[TextContent(type="text", text=str(e))],
+                    isError=True,
+                )
+            except Exception as e:
+                # Generic exceptions - mask based on setting
+                logger.exception(f"Error calling sampling tool '{tool_use.name}'")
+                if tool_span.is_recording():
+                    tool_span.set_attribute("error.type", type(e).__qualname__)
+                    tool_span.record_exception(e)
+                    tool_span.set_status(Status(StatusCode.ERROR, str(e)))
+                if mask_error_details:
+                    error_text = f"Error executing tool '{tool_use.name}'"
+                else:
+                    error_text = f"Error executing tool '{tool_use.name}': {e}"
+                return ToolResultContent(
+                    type="tool_result",
+                    toolUseId=tool_use.id,
+                    content=[TextContent(type="text", text=error_text)],
+                    isError=True,
+                )
 
     # Check if any tool requires sequential execution
     requires_sequential = any(
@@ -621,123 +646,197 @@ async def sample_impl(
     text_response_retries = 0
     consecutive_validation_failures = 0
 
-    for _iteration in range(max_iterations):
-        step = await sample_step_impl(
-            context,
-            messages=current_messages,
-            system_prompt=system_prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            model_preferences=model_preferences,
-            tools=sampling_tools,
-            tool_choice=tool_choice,
-            mask_error_details=mask_error_details,
-            tool_concurrency=tool_concurrency,
-        )
+    tracer = get_tracer()
+    result_type_name = (
+        result_type.__name__ if result_type and result_type is not str else "str"
+    )
+    n_tools = len(sampling_tools) if sampling_tools else 0
 
-        # Check for final_response tool call for structured output
-        had_final_response = False
-        if result_type is not None and result_type is not str and step.is_tool_use:
-            for tool_call in step.tool_calls:
-                if tool_call.name == "final_response":
-                    had_final_response = True
-                    # Validate and return the structured result
-                    type_adapter = get_cached_typeadapter(result_type)
+    with tracer.start_as_current_span(
+        "sampling/createMessage", kind=SpanKind.INTERNAL
+    ) as span:
+        if span.is_recording():
+            span.set_attributes({
+                "mcp.method.name": "sampling/createMessage",
+                "gen_ai.request.temperature": temperature or 0.0,
+                "gen_ai.request.max_tokens": max_tokens or 512,
+                "fastmcp.sampling.tool_count": n_tools,
+                "fastmcp.sampling.result_type": result_type_name,
+            })
 
-                    # Unwrap if we wrapped primitives (non-object schemas)
-                    input_data = tool_call.input
-                    original_schema = compress_schema(
-                        type_adapter.json_schema(), prune_titles=True
+            if _CAPTURE_CONTENT:
+                if system_prompt is not None:
+                    span.add_event(
+                        "gen_ai.system.message",
+                        {"gen_ai.system.message": system_prompt},
                     )
-                    if (
-                        original_schema.get("type") != "object"
-                        and isinstance(input_data, dict)
-                        and "value" in input_data
-                    ):
-                        input_data = input_data["value"]
-
-                    try:
-                        validated_result = type_adapter.validate_python(input_data)
-                        text = json.dumps(
-                            type_adapter.dump_python(validated_result, mode="json")
-                        )
-                        return SamplingResult(
-                            text=text,
-                            result=validated_result,
-                            history=step.history,
-                        )
-                    except ValidationError as e:
-                        consecutive_validation_failures += 1
-                        if consecutive_validation_failures > _MAX_VALIDATION_RETRIES:
-                            raise RuntimeError(
-                                f"Structured output validation failed "
-                                f"{consecutive_validation_failures} consecutive "
-                                f"times for type {result_type.__name__}: {e}"
-                            ) from e
-                        # Validation failed - add error as tool result
-                        step.history.append(
-                            SamplingMessage(
-                                role="user",
-                                content=[
-                                    ToolResultContent(
-                                        type="tool_result",
-                                        toolUseId=tool_call.id,
-                                        content=[
-                                            TextContent(
-                                                type="text",
-                                                text=(
-                                                    f"Validation error: {e}. "
-                                                    "Please try again with valid data."
-                                                ),
-                                            )
-                                        ],
-                                        isError=True,
-                                    )
-                                ],
-                            )
+                prepared = prepare_messages(messages)
+                for msg in prepared:
+                    content = msg.content
+                    if isinstance(content, TextContent):
+                        span.add_event(
+                            f"gen_ai.{msg.role}.message",
+                            {f"gen_ai.{msg.role}.message": content.text},
                         )
 
-        # The LLM called tools but not final_response — reset validation counter
-        if not had_final_response:
-            consecutive_validation_failures = 0
+        for _iteration in range(max_iterations):
+            with tracer.start_as_current_span(
+                "sampling/createMessage step"
+            ) as step_span:
+                if step_span.is_recording():
+                    step_span.set_attribute(
+                        "fastmcp.sampling.iteration", _iteration
+                    )
 
-        # If not a tool use response, we're done
-        if not step.is_tool_use:
-            # For structured output, the LLM must use the final_response tool
-            if result_type is not None and result_type is not str:
-                text_response_retries += 1
-                if text_response_retries > _MAX_TEXT_RESPONSE_RETRIES:
-                    raise RuntimeError(
-                        f"Expected structured output of type {result_type.__name__}, "
-                        "but the LLM returned a text response instead of calling "
-                        f"the final_response tool ({text_response_retries} attempts)."
-                    )
-                # Nudge the LLM to use the tool
-                step.history.append(
-                    SamplingMessage(
-                        role="user",
-                        content=TextContent(
-                            type="text",
-                            text=(
-                                "You must call the `final_response` tool to provide "
-                                "your answer. Do not respond with text — use the tool."
-                            ),
-                        ),
-                    )
+                step = await sample_step_impl(
+                    context,
+                    messages=current_messages,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    model_preferences=model_preferences,
+                    tools=sampling_tools,
+                    tool_choice=tool_choice,
+                    mask_error_details=mask_error_details,
+                    tool_concurrency=tool_concurrency,
                 )
-                current_messages = step.history
-                continue
-            return SamplingResult(
-                text=step.text,
-                result=cast(ResultT, step.text if step.text else ""),
-                history=step.history,
-            )
 
-        # Continue with the updated history
-        current_messages = step.history
+                if step_span.is_recording() and hasattr(step.response, "stopReason"):
+                    step_span.set_attribute(
+                        "fastmcp.sampling.stop_reason",
+                        step.response.stopReason or "unknown",
+                    )
 
-        # After first iteration, reset tool_choice to auto (unless structured output is required)
-        if result_type is None or result_type is str:
-            tool_choice = None
+            # Check for final_response tool call for structured output
+            had_final_response = False
+            if result_type is not None and result_type is not str and step.is_tool_use:
+                for tool_call in step.tool_calls:
+                    if tool_call.name == "final_response":
+                        had_final_response = True
+                        # Validate and return the structured result
+                        type_adapter = get_cached_typeadapter(result_type)
 
-    raise RuntimeError(f"Sampling exceeded maximum iterations ({max_iterations})")
+                        # Unwrap if we wrapped primitives (non-object schemas)
+                        input_data = tool_call.input
+                        original_schema = compress_schema(
+                            type_adapter.json_schema(), prune_titles=True
+                        )
+                        if (
+                            original_schema.get("type") != "object"
+                            and isinstance(input_data, dict)
+                            and "value" in input_data
+                        ):
+                            input_data = input_data["value"]
+
+                        try:
+                            validated_result = type_adapter.validate_python(input_data)
+                            text = json.dumps(
+                                type_adapter.dump_python(
+                                    validated_result, mode="json"
+                                )
+                            )
+                            if span.is_recording():
+                                span.set_attribute(
+                                    "fastmcp.sampling.iterations", _iteration + 1
+                                )
+                            return SamplingResult(
+                                text=text,
+                                result=validated_result,
+                                history=step.history,
+                            )
+                        except ValidationError as e:
+                            consecutive_validation_failures += 1
+                            if span.is_recording():
+                                span.add_event(
+                                    "sampling.validation_failure",
+                                    {
+                                        "fastmcp.sampling.consecutive_failures": consecutive_validation_failures,
+                                    },
+                                )
+                            if (
+                                consecutive_validation_failures
+                                > _MAX_VALIDATION_RETRIES
+                            ):
+                                raise RuntimeError(
+                                    f"Structured output validation failed "
+                                    f"{consecutive_validation_failures} consecutive "
+                                    f"times for type {result_type.__name__}: {e}"
+                                ) from e
+                            # Validation failed - add error as tool result
+                            step.history.append(
+                                SamplingMessage(
+                                    role="user",
+                                    content=[
+                                        ToolResultContent(
+                                            type="tool_result",
+                                            toolUseId=tool_call.id,
+                                            content=[
+                                                TextContent(
+                                                    type="text",
+                                                    text=(
+                                                        f"Validation error: {e}. "
+                                                        "Please try again with valid data."
+                                                    ),
+                                                )
+                                            ],
+                                            isError=True,
+                                        )
+                                    ],
+                                )
+                            )
+
+            # The LLM called tools but not final_response — reset validation counter
+            if not had_final_response:
+                consecutive_validation_failures = 0
+
+            # If not a tool use response, we're done
+            if not step.is_tool_use:
+                # For structured output, the LLM must use the final_response tool
+                if result_type is not None and result_type is not str:
+                    text_response_retries += 1
+                    if span.is_recording():
+                        span.add_event(
+                            "sampling.text_response_retry",
+                            {
+                                "fastmcp.sampling.retry_count": text_response_retries,
+                            },
+                        )
+                    if text_response_retries > _MAX_TEXT_RESPONSE_RETRIES:
+                        raise RuntimeError(
+                            f"Expected structured output of type {result_type.__name__}, "
+                            "but the LLM returned a text response instead of calling "
+                            f"the final_response tool ({text_response_retries} attempts)."
+                        )
+                    # Nudge the LLM to use the tool
+                    step.history.append(
+                        SamplingMessage(
+                            role="user",
+                            content=TextContent(
+                                type="text",
+                                text=(
+                                    "You must call the `final_response` tool to provide "
+                                    "your answer. Do not respond with text — use the tool."
+                                ),
+                            ),
+                        )
+                    )
+                    current_messages = step.history
+                    continue
+                if span.is_recording():
+                    span.set_attribute(
+                        "fastmcp.sampling.iterations", _iteration + 1
+                    )
+                return SamplingResult(
+                    text=step.text,
+                    result=cast(ResultT, step.text if step.text else ""),
+                    history=step.history,
+                )
+
+            # Continue with the updated history
+            current_messages = step.history
+
+            # After first iteration, reset tool_choice to auto (unless structured output is required)
+            if result_type is None or result_type is str:
+                tool_choice = None
+
+        raise RuntimeError(f"Sampling exceeded maximum iterations ({max_iterations})")

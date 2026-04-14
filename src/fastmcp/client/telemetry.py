@@ -22,23 +22,26 @@ def client_span(
     """
     tracer = get_tracer()
     with tracer.start_as_current_span(name, kind=SpanKind.CLIENT) as span:
-        attrs: dict[str, str] = {
-            # RPC semantic conventions
-            "rpc.system": "mcp",
-            "rpc.method": method,
-            # MCP semantic conventions
-            "mcp.method.name": method,
-            # FastMCP-specific attributes
-            "fastmcp.component.key": component_key,
-        }
-        if session_id:
-            attrs["mcp.session.id"] = session_id
-        if resource_uri:
-            attrs["mcp.resource.uri"] = resource_uri
-        span.set_attributes(attrs)
+        if span.is_recording():
+            attrs: dict[str, str] = {
+                # RPC semantic conventions
+                "rpc.system": "mcp",
+                "rpc.method": method,
+                # MCP semantic conventions
+                "mcp.method.name": method,
+                # FastMCP-specific attributes
+                "fastmcp.component.key": component_key,
+            }
+            if session_id:
+                attrs["mcp.session.id"] = session_id
+            if resource_uri:
+                attrs["mcp.resource.uri"] = resource_uri
+            span.set_attributes(attrs)
         try:
             yield span
         except Exception as e:
+            if span.is_recording():
+                span.set_attribute("error.type", type(e).__qualname__)
             span.record_exception(e)
             span.set_status(Status(StatusCode.ERROR))
             raise

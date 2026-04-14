@@ -71,26 +71,29 @@ def server_span(
         context=_get_parent_trace_context(),
         kind=SpanKind.SERVER,
     ) as span:
-        attrs: dict[str, str] = {
-            # RPC semantic conventions
-            "rpc.system": "mcp",
-            "rpc.service": server_name,
-            "rpc.method": method,
-            # MCP semantic conventions
-            "mcp.method.name": method,
-            # FastMCP-specific attributes
-            "fastmcp.server.name": server_name,
-            "fastmcp.component.type": component_type,
-            "fastmcp.component.key": component_key,
-            **get_auth_span_attributes(),
-            **get_session_span_attributes(),
-        }
-        if resource_uri is not None:
-            attrs["mcp.resource.uri"] = resource_uri
-        span.set_attributes(attrs)
+        if span.is_recording():
+            attrs: dict[str, str] = {
+                # RPC semantic conventions
+                "rpc.system": "mcp",
+                "rpc.service": server_name,
+                "rpc.method": method,
+                # MCP semantic conventions
+                "mcp.method.name": method,
+                # FastMCP-specific attributes
+                "fastmcp.server.name": server_name,
+                "fastmcp.component.type": component_type,
+                "fastmcp.component.key": component_key,
+                **get_auth_span_attributes(),
+                **get_session_span_attributes(),
+            }
+            if resource_uri is not None:
+                attrs["mcp.resource.uri"] = resource_uri
+            span.set_attributes(attrs)
         try:
             yield span
         except Exception as e:
+            if span.is_recording():
+                span.set_attribute("error.type", type(e).__qualname__)
             span.record_exception(e)
             span.set_status(Status(StatusCode.ERROR))
             raise
@@ -109,15 +112,18 @@ def delegate_span(
     """
     tracer = get_tracer()
     with tracer.start_as_current_span(f"delegate {name}") as span:
-        span.set_attributes(
-            {
-                "fastmcp.provider.type": provider_type,
-                "fastmcp.component.key": component_key,
-            }
-        )
+        if span.is_recording():
+            span.set_attributes(
+                {
+                    "fastmcp.provider.type": provider_type,
+                    "fastmcp.component.key": component_key,
+                }
+            )
         try:
             yield span
         except Exception as e:
+            if span.is_recording():
+                span.set_attribute("error.type", type(e).__qualname__)
             span.record_exception(e)
             span.set_status(Status(StatusCode.ERROR))
             raise
