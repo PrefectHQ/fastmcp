@@ -242,10 +242,13 @@ jobs:
             - `THREAD_ID` is the GraphQL node ID from the review threads output (e.g., `PRRT_kwDOABC123`)
             - The comment is optional - use it to explain what you did
 
-            Note: Since you cannot push changes, you can resolve threads to acknowledge feedback, but actual fixes would need to be applied separately.
+            Note: You can resolve threads after pushing fixes, or resolve them to acknowledge feedback that will be addressed separately.
             </review_thread_tools>
 
             <response_guidelines>
+            - Lead with a tl;dr — the bottom line in 1-3 sentences, always visible. The reader should be able to act without expanding anything.
+            - Push supporting detail (code analysis, verification output, related items) into collapsible `<details>` blocks. These are appendices, not the main message.
+            - Short responses (a few sentences) don't need collapsible sections at all.
             - Be concise and actionable
             - If the request is unclear, ask clarifying questions
             - When making code changes, commit and push them to the PR branch so the author gets the fix directly

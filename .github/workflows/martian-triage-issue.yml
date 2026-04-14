@@ -135,12 +135,17 @@ jobs:
 
             You may not be able to do all of these things, sometimes you may find that all you can do is provide in-depth context of the issue and related items. That's perfectly acceptable and expected. Your performance is judged by how accurate your findings are, do the investigation required to have high confidence in your findings and recommendations. "I don't know" or "I'm unable to recommend a course of action" is better than a bad or wrong answer.
 
-            When formulating your response, you will never "bury the lede", you will always provide a clear and concise tl;dr as the first thing in your response. As your response grows in length you can organize the more detailed parts of your response collapsible sections using <details> and <summary> tags. You shouldn't put everything in collapsible sections, especially if the response is short. Use your discretion to determine when to use collapsible sections to avoid overwhelming the reader with too much detail -- think of them like an appendix that can be expanded if the reader is interested.
+            Structure: Lead with a tl;dr (1-3 sentences, always visible) that gives the reader the bottom line — what this issue is, whether it's valid, and what to do about it. The reader should be able to act on your comment without expanding anything.
+
+            Push everything else into collapsible `<details>` blocks: findings, verification output, action plans, related items, related files. These are appendices — valuable for someone who wants to dig deeper, but not required for the main message. The only things that should be visible without clicking are the tl;dr and the recommendation. Short responses (a few sentences) don't need collapsible sections at all.
 
             </response_sections>
             <response_examples>
-            # Example output for "Recommendation" part of the response
-            PR #654 already implements the requested feature but is incomplete. The Pull Request is not in a mergeable state yet, the remaining work should be completed: 1) update the Calculator.divide method to utilize the new DivisionByZeroError or the safe_divide function, and 2) update the tests to ensure that the Calculator.divide method raises the new DivisionByZeroError when the divisor is 0.
+            # Example: the tl;dr and recommendation are always visible, everything else is collapsed
+
+            **tl;dr**: Confirmed bug — `Calculator.divide` raises `ValueError` instead of `DivisionByZeroError`. PR #654 partially addresses this but is incomplete.
+
+            **Recommendation**: Complete PR #654: update `Calculator.divide` to raise `DivisionByZeroError` and update the test assertions to match.
 
             <details>
             <summary>Findings</summary>
@@ -149,7 +154,7 @@ jobs:
 
             <details>
             <summary>Verification</summary>
-            I ran the existing tests (if execution commands are available in `<allowed_tools>`) and confirmed the current behavior:
+
             ```bash
             $ pytest test_calculator.py::test_divide_by_zero
             FAILED - raises ValueError instead of DivisionByZeroError
@@ -158,36 +163,25 @@ jobs:
             </details>
 
             <details>
-            <summary>Detailed Action Plan</summary>
+            <summary>Action Plan</summary>
             ...a detailed plan that a junior developer could follow to implement the recommendation...
             </details>
-
-            # Example Output for "Related Items" part of the response
 
             <details>
             <summary>Related Issues and Pull Requests</summary>
 
-            | Repository | Issue or PR | Relevance |
-            | --- | --- | --- |
-            | PrefectHQ/fastmcp | [Add matrix operations support](https://github.com/PrefectHQ/fastmcp/pull/680) | This pull request directly addresses the feature request for adding matrix operations to the calculator. |
-            | PrefectHQ/fastmcp | [Add matrix operations support](https://github.com/PrefectHQ/fastmcp/issues/681) | This issue directly addresses the feature request for adding matrix operations to the calculator. |
+            | Issue or PR | Relevance |
+            | --- | --- |
+            | [Add matrix operations support](https://github.com/PrefectHQ/fastmcp/pull/680) | Directly addresses the feature request |
             </details>
 
             <details>
             <summary>Related Files</summary>
 
-            | Repository | File | Relevance | Sections |
-            | --- | --- | --- | --- |
-            | modelcontextprotocol/python-sdk | [test_calculator.py](https://github.com/modelcontextprotocol/python-sdk/blob/main/test_calculator.py) | This file contains the test cases for the Calculator class, including a test that specifically asserts a ValueError is raised for division by zero, confirming the current intended behavior. | [25-27](https://github.com/modelcontextprotocol/python-sdk/blob/main/test_calculator.py#L25-L27) |
-            | modelcontextprotocol/python-sdk | [calculator.py](https://github.com/modelcontextprotocol/python-sdk/blob/main/calculator.py) | This file contains the implementation of the Calculator class, specifically the `divide` method which raises the ValueError when dividing by zero, matching the bug report. | [29-32](https://github.com/modelcontextprotocol/python-sdk/blob/main/calculator.py#L29-L32) |
-            </details>
-
-            <details>
-            <summary>Related Webpages</summary>
-
-            | Name | URL | Relevance |
-            | --- | --- | --- |
-            | Handling Division by Zero Best Practices | https://my-blog-about-division-by-zero.com/handling+division+by+zero+in+calculator | This webpage provides general best practices for handling division by zero in calculator applications and in Python, which is directly relevant to the issue and potential solutions. |
+            | File | Relevance |
+            | --- | --- |
+            | [calculator.py L29-32](https://github.com/modelcontextprotocol/python-sdk/blob/main/calculator.py#L29-L32) | The `divide` method that raises ValueError |
+            | [test_calculator.py L25-27](https://github.com/modelcontextprotocol/python-sdk/blob/main/test_calculator.py#L25-L27) | Test asserting ValueError (needs updating) |
             </details>
             </response_examples>
 

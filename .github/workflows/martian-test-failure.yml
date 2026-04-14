@@ -86,32 +86,28 @@ jobs:
           5. Search the codebase for relevant files, tests, and implementations
 
           # Your Response
-          Post a comment on the pull request with your analysis. Your comment should include:
+          Post a comment on the pull request with your analysis.
 
-          ## Test Failure Analysis
+          Lead with a tl;dr — 1-2 sentences that tell the developer what broke and what to do about it. This should be visible without expanding anything.
 
-          **Summary**: A brief 1-2 sentence summary of what failed.
+          Push supporting detail into collapsible `<details>` blocks. The reader should be able to act on your comment without expanding a single one. Think of details blocks as appendices — there if someone wants to dig deeper, not required for the main message.
 
-          **Root Cause**: A clear explanation of why the tests failed, based on your analysis of the logs and code.
+          For real (non-trivial) failures, use this structure:
 
-          **Suggested Solution**: Specific, actionable steps to fix the failure(s). Include:
-          - Which files need to be modified
-          - What changes are needed
-          - Why these changes will fix the issue
+          **tl;dr**: What failed and what to do (1-2 sentences, always visible)
+
+          **Root Cause**: Why it failed (a short paragraph, always visible)
+
+          **Fix**: Specific files and changes needed (always visible)
 
           <details>
-          <summary>Detailed Analysis</summary>
-
-          Include here:
-          - Relevant log excerpts showing the failure
-          - Code snippets that are causing the issue
-          - Any related issues or PRs that might be relevant
+          <summary>Log excerpts</summary>
+          Relevant failure output
           </details>
 
           <details>
-          <summary>Related Files</summary>
-
-          List files that are relevant to the failure with brief explanations of their relevance.
+          <summary>Related files</summary>
+          Files relevant to the failure
           </details>
 
           # Important Guidelines
