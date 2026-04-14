@@ -476,8 +476,7 @@ class FastMCP(
         return await chain(context)
 
     def add_middleware(self, middleware: Middleware) -> None:
-        if middleware not in self.middleware:
-            self.middleware.append(middleware)
+        self.middleware.append(middleware)
 
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider for dynamic tools, resources, and prompts.
@@ -2047,12 +2046,6 @@ class FastMCP(
         import warnings
 
         from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
-
-        if not isinstance(server, FastMCP):
-            raise TypeError(
-                f"mount() expected a FastMCP server as the first argument, got {type(server).__name__}. "
-                f"Usage: mount(server, namespace='...')"
-            )
 
         if server is self:
             raise ValueError("Cannot mount a server onto itself")
