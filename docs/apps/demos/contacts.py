@@ -1,7 +1,7 @@
+from prefab_ui.actions import AppendState, SetState, ShowToast
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     H3,
-    Badge,
     Button,
     Column,
     DataTable,
@@ -13,6 +13,7 @@ from prefab_ui.components import (
     SelectOption,
     Separator,
 )
+from prefab_ui.rx import STATE
 
 contacts = [
     {"name": "Arthur Dent", "email": "arthur@earth.com", "category": "Customer"},
@@ -25,23 +26,9 @@ contacts = [
     {"name": "Zaphod Beeblebrox", "email": "zaphod@galaxy.gov", "category": "Vendor"},
 ]
 
-rows = [
-    {
-        "name": c["name"],
-        "email": c["email"],
-        "category": Badge(
-            c["category"],
-            variant="success"
-            if c["category"] == "Customer"
-            else "secondary"
-            if c["category"] == "Partner"
-            else "outline",
-        ),
-    }
-    for c in contacts
-]
-
-with PrefabApp() as app:
+with PrefabApp(
+    state={"contacts": contacts, "name": "", "email": "", "category": "Customer"}
+) as app:
     with Column(gap=4, css_class="p-6"):
         DataTable(
             columns=[
@@ -49,17 +36,36 @@ with PrefabApp() as app:
                 DataTableColumn(key="email", header="Email"),
                 DataTableColumn(key="category", header="Category"),
             ],
-            rows=rows,
+            rows=STATE.contacts,
             search=True,
         )
 
         Separator()
 
         H3("Add Contact")
-        with Form():
+        with Form(
+            on_submit=[
+                AppendState(
+                    "contacts",
+                    {
+                        "name": STATE.name,
+                        "email": STATE.email,
+                        "category": STATE.category,
+                    },
+                ),
+                SetState("name", ""),
+                SetState("email", ""),
+                ShowToast("Contact saved!", variant="success"),
+            ]
+        ):
             with Row(gap=4):
-                Input(name="name", label="Name", placeholder="Full name")
-                Input(name="email", label="Email", placeholder="name@example.com")
+                Input(name="name", label="Name", placeholder="Full name", required=True)
+                Input(
+                    name="email",
+                    label="Email",
+                    placeholder="name@example.com",
+                    required=True,
+                )
             with Select(name="category", label="Category"):
                 SelectOption(value="Customer", label="Customer")
                 SelectOption(value="Partner", label="Partner")

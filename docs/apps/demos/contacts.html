@@ -40,44 +40,7 @@
                 "sortable": false
               }
             ],
-            "rows": [
-              {
-                "name": "Arthur Dent",
-                "email": "arthur@earth.com",
-                "category": {
-                  "type": "Badge",
-                  "label": "Customer",
-                  "variant": "success"
-                }
-              },
-              {
-                "name": "Ford Prefect",
-                "email": "ford@betelgeuse.org",
-                "category": {
-                  "type": "Badge",
-                  "label": "Partner",
-                  "variant": "secondary"
-                }
-              },
-              {
-                "name": "Trillian Astra",
-                "email": "trillian@heartofgold.com",
-                "category": {
-                  "type": "Badge",
-                  "label": "Customer",
-                  "variant": "success"
-                }
-              },
-              {
-                "name": "Zaphod Beeblebrox",
-                "email": "zaphod@galaxy.gov",
-                "category": {
-                  "type": "Badge",
-                  "label": "Vendor",
-                  "variant": "outline"
-                }
-              }
-            ],
+            "rows": "{{ contacts }}",
             "search": true,
             "paginated": false,
             "pageSize": 10
@@ -93,6 +56,32 @@
           {
             "cssClass": "gap-4",
             "type": "Form",
+            "onSubmit": [
+              {
+                "action": "appendState",
+                "key": "contacts",
+                "value": {
+                  "name": "{{ name }}",
+                  "email": "{{ email }}",
+                  "category": "{{ category }}"
+                }
+              },
+              {
+                "action": "setState",
+                "key": "name",
+                "value": ""
+              },
+              {
+                "action": "setState",
+                "key": "email",
+                "value": ""
+              },
+              {
+                "action": "showToast",
+                "message": "Contact saved!",
+                "variant": "success"
+              }
+            ],
             "children": [
               {
                 "cssClass": "gap-4",
@@ -105,7 +94,7 @@
                     "placeholder": "Full name",
                     "disabled": false,
                     "readOnly": false,
-                    "required": false
+                    "required": true
                   },
                   {
                     "name": "email",
@@ -114,7 +103,7 @@
                     "placeholder": "name@example.com",
                     "disabled": false,
                     "readOnly": false,
-                    "required": false
+                    "required": true
                   }
                 ]
               },
@@ -161,6 +150,33 @@
         ]
       }
     ]
+  },
+  "state": {
+    "contacts": [
+      {
+        "name": "Arthur Dent",
+        "email": "arthur@earth.com",
+        "category": "Customer"
+      },
+      {
+        "name": "Ford Prefect",
+        "email": "ford@betelgeuse.org",
+        "category": "Partner"
+      },
+      {
+        "name": "Trillian Astra",
+        "email": "trillian@heartofgold.com",
+        "category": "Customer"
+      },
+      {
+        "name": "Zaphod Beeblebrox",
+        "email": "zaphod@galaxy.gov",
+        "category": "Vendor"
+      }
+    ],
+    "name": "",
+    "email": "",
+    "category": "Customer"
   }
 }</script>
 </body>
