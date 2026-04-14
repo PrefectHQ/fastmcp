@@ -120,12 +120,11 @@ jobs:
           - tests: Issues primarily about testing infrastructure, CI/CD workflows, or test coverage
           - security: Apply ONLY when the issue/PR addresses an exploitable vulnerability or hardens against one. Examples: SSRF, LFI, path traversal, injection, auth bypass allowing unauthorized access, scope escalation, open redirects. Do NOT apply for ordinary auth bugs (wrong scopes returned, token refresh logic, OAuth flow correctness) unless an attacker could exploit the bug to bypass access controls or escalate privileges. The key question: "Could a malicious actor exploit this?" If the answer is just "it breaks for legitimate users," that's a bug, not a security issue.
 
-          IMPORTANT LABELING RULES:
-          - Be selective - only apply labels that are clearly relevant
-          - Don't apply area labels just because a file in that area is mentioned
-          - The issue must be PRIMARILY about that area to get the label
-          - When in doubt, don't apply the label
-          - Apply 2-5 labels total typically (category + maybe priority + maybe 1-2 areas)
+          LABELING PRINCIPLES:
+          - Precision over recall: a missing label is a minor inconvenience; a wrong label sends the wrong people to the wrong issue. When in doubt, don't apply.
+          - Don't apply area labels just because a file in that area is mentioned — the issue must be PRIMARILY about that area.
+          - Apply 2-5 labels total typically (category + maybe priority + maybe 1-2 areas).
+          - For ambiguous cases (bug vs enhancement, which area label), prefer the more conservative choice or omit the uncertain label entirely.
 
           META LABELS (rarely needed for issues):
           - dependencies: Only for dependabot PRs or issues specifically about package updates

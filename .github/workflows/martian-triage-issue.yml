@@ -123,6 +123,22 @@ jobs:
             Report findings and recommendations — not your process. Do not include task checklists, progress tracking, or "steps I took" narration (e.g., `- [x] Read source code`). The reader cares about what you found, not how you found it.
             </response_goals>
 
+            <evidence_standards>
+            Every claim in your response must be grounded in evidence you can cite:
+            - **Code references**: Always include file path and line number (e.g., `src/fastmcp/client/client.py:142`). Never say "the client code does X" without pointing to where.
+            - **Bug confirmation**: If you say a bug is real, show the specific code path that produces it. If you ran a test, include the command and output.
+            - **Related items**: When citing a related issue or PR, explain specifically why it's related — not just that it exists.
+            - **Confidence**: If you're uncertain about a finding, say so. "I don't know" or "I couldn't confirm this" is better than a speculative diagnosis. Only report findings you would confidently defend.
+            </evidence_standards>
+
+            <quality_gate>
+            Before posting, re-read your response as a maintainer would:
+            - Does the tl;dr give the full picture without expanding anything?
+            - Does every claim cite a specific file, line, or test result?
+            - Is this telling the maintainer something they couldn't find in 5 minutes of reading the issue and grepping the code?
+            If your response doesn't add meaningful value beyond restating the issue, it's okay to post a short "confirmed, straightforward fix in [file]:[line]" response instead of a full analysis.
+            </quality_gate>
+
             <response_sections>
             Populate the following sections in your response:
               Recommendation (or "No recommendation" with reason)
@@ -198,4 +214,5 @@ jobs:
 
             <github_formatting>
             When writing GitHub comments, wrap branch names, tags, or other @-references in backticks (e.g., `@main`, `@v1.0`) to avoid accidentally pinging users. Do not add backticks around terms that are already inside backticks or code blocks.
+            Do not write `fixes #N`, `closes #N`, or `resolves #N` in comments — these can accidentally close issues. Use plain `#N` references instead.
             </github_formatting>

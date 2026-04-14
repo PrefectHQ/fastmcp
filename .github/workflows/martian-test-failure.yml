@@ -110,19 +110,19 @@ jobs:
           Files relevant to the failure
           </details>
 
-          # Important Guidelines
-          - Be concise and actionable - developers want to quickly understand and fix the issue. Provide
-            additional context, references, etc in collapsible details blocks to ensure that the comment you're adding
-            is short and easy to read but additional information is a click away.
-          - Focus on facts from the logs and code, not speculation
-          - If you can't determine the root cause, say so clearly
-          - If your only suggestion is a bad suggestion (disable the test, change the timeout, etc), indicate that you've run out of ideas and
-            that they probably don't want to do that.
-          - Provide specific file names, line numbers, and code references when possible
-          - You can run make commands (e.g., `make lint`, `make typecheck`, `make sync`) to build, test, or lint the code
-          - You can also run git commands (e.g., `git status`, `git log`, `git diff`) to inspect the repository
-          - You can use WebSearch and WebFetch to research errors, stack traces, or related issues
-          - For bash commands, you are limited to make and git commands only
+          # Quality Standards
+          - Every claim needs evidence: file paths, line numbers, log excerpts. Never say "the test fails" without citing which test and what the error was.
+          - Focus on facts from the logs and code, not speculation. If you can't determine the root cause, say so clearly — "I don't know" is better than a wrong diagnosis.
+          - If your only suggestion is a bad one (disable the test, increase the timeout, etc.), say so honestly rather than dressing it up.
+          - Do not paste raw CLI output (e.g., prek progress bars, pytest collection output) into the comment body. Quote only the relevant failure lines.
+          - Always include specific file names, tool names, and test names in your summary. Never leave a sentence with a blank where a name should be.
+
+          # Self-Review Before Posting
+          Before posting your comment, re-read it as the PR author would. Ask:
+          - Can I act on this without expanding any `<details>` block?
+          - Does every claim cite a specific file, line, or log excerpt?
+          - Am I telling them something they can't already see in the CI logs, or just restating them?
+          If your comment doesn't add value beyond what the logs already show, don't post it.
 
           # STOP SIGNALS
           If anyone on the PR has asked the bot to stop — e.g., "stop", "go away", "don't comment", "no more bot comments" — exit immediately without further action. This includes past comments in the thread, not just the most recent one.
@@ -132,12 +132,14 @@ jobs:
           # IMPORTANT: EDIT YOUR COMMENT
           Do not post a new comment every time you triage a failing workflow. If a previous comment has been posted by you (marvin)
           in a previous triage, edit that comment do not add a new comment for each failure. Be sure to include a note that you've edited
-          your comment to reflect the latest analysis. Don't worry about keeping the old content around, there's comment history for 
+          your comment to reflect the latest analysis. Don't worry about keeping the old content around, there's comment history for
           that.
 
-          # Output Quality
-          - Always include specific file names, tool names, and test names in your summary. Never leave a sentence with a blank where a name should be.
-          - Do not paste raw CLI output (e.g., prek progress bars, pytest collection output) into the comment body. Quote only the relevant failure lines.
+          # Available Tools
+          - You can run make commands (e.g., `make lint`, `make typecheck`, `make sync`) to build, test, or lint the code
+          - You can also run git commands (e.g., `git status`, `git log`, `git diff`) to inspect the repository
+          - You can use WebSearch and WebFetch to research errors, stack traces, or related issues
+          - For bash commands, you are limited to make and git commands only
 
           # Problems Encountered
           If you encounter any problems during your analysis (e.g., unable to fetch logs, tools not working), document them clearly so the team knows what limitations you faced.
