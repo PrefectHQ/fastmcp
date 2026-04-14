@@ -184,7 +184,10 @@ class RetryMiddleware(Middleware):
         """Determine if an error should trigger a retry.
 
         Checks both the error itself and its ``__cause__``, since FastMCP
-        wraps tool exceptions as ``ToolError(...) from original``.
+        wraps tool exceptions as ``ToolError(...) from original``. Only one
+        level of cause is inspected — middleware below this one must not
+        re-wrap errors with a new ``from`` clause, or the real type will be
+        hidden from the retry decision.
         """
         if isinstance(error, self.retry_exceptions):
             return True

@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from mcp import McpError
 
+from fastmcp import FastMCP
+from fastmcp.client import Client
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.middleware.error_handling import (
     ErrorHandlingMiddleware,
@@ -390,8 +392,6 @@ class TestRetryMiddleware:
 @pytest.fixture
 def error_handling_server():
     """Create a FastMCP server specifically for error handling middleware tests."""
-    from fastmcp import FastMCP
-
     mcp = FastMCP("ErrorHandlingTestServer")
 
     @mcp.tool
@@ -443,8 +443,6 @@ class TestErrorHandlingMiddlewareIntegration:
         self, error_handling_server, caplog
     ):
         """Test that error handling middleware logs real errors from tools."""
-        from fastmcp.client import Client
-
         error_handling_server.add_middleware(ErrorHandlingMiddleware())
 
         with caplog.at_level(logging.ERROR):
@@ -468,8 +466,6 @@ class TestErrorHandlingMiddlewareIntegration:
         self, error_handling_server
     ):
         """Test that error handling middleware accurately tracks error statistics."""
-        from fastmcp.client import Client
-
         error_middleware = ErrorHandlingMiddleware()
         error_handling_server.add_middleware(error_middleware)
 
@@ -501,8 +497,6 @@ class TestErrorHandlingMiddlewareIntegration:
         self, error_handling_server, caplog
     ):
         """Test error handling middleware with mix of successful and failed operations."""
-        from fastmcp.client import Client
-
         error_handling_server.add_middleware(ErrorHandlingMiddleware())
 
         with caplog.at_level(logging.ERROR):
@@ -527,8 +521,6 @@ class TestErrorHandlingMiddlewareIntegration:
         self, error_handling_server
     ):
         """Test error handling middleware with custom error callback."""
-        from fastmcp.client import Client
-
         captured_errors = []
 
         def error_callback(error, context):
@@ -562,8 +554,6 @@ class TestErrorHandlingMiddlewareIntegration:
         self, error_handling_server
     ):
         """Test error transformation functionality."""
-        from fastmcp.client import Client
-
         error_handling_server.add_middleware(
             ErrorHandlingMiddleware(transform_errors=True)
         )
@@ -587,9 +577,6 @@ class TestRetryMiddlewareIntegration:
         so the middleware must check __cause__ to detect retryable errors.
         This test verifies the full pipeline works by counting call attempts.
         """
-        from fastmcp import FastMCP
-        from fastmcp.client import Client
-
         call_count = 0
         server = FastMCP("RetryTest")
         server.add_middleware(
@@ -615,23 +602,28 @@ class TestRetryMiddlewareIntegration:
         # Tool should have been called 3 times: 2 failures + 1 success
         assert call_count == 3
 
-    async def test_retry_middleware_with_permanent_failures(
-        self, error_handling_server
-    ):
-        """Test that retry middleware doesn't retry non-retryable errors."""
-        from fastmcp.client import Client
-
-        # Configure retry middleware for connection errors only
-        error_handling_server.add_middleware(
+    async def test_retry_middleware_with_permanent_failures(self):
+        """A tool error whose cause is not in ``retry_exceptions`` should
+        fail on the first attempt — no retries."""
+        call_count = 0
+        server = FastMCP("RetryPermanentFailuresTest")
+        server.add_middleware(
             RetryMiddleware(
                 max_retries=3, base_delay=0.01, retry_exceptions=(ConnectionError,)
             )
         )
 
-        async with Client(error_handling_server) as client:
-            # Value errors should not be retried
+        @server.tool
+        def always_fails() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("permanent failure")
+
+        async with Client(server) as client:
             with pytest.raises(Exception):
-                await client.call_tool("failing_operation", {"error_type": "value"})
+                await client.call_tool("always_fails", {})
+
+        assert call_count == 1
 
         # Should fail immediately without retries
 
@@ -639,8 +631,6 @@ class TestRetryMiddlewareIntegration:
         self, error_handling_server, caplog
     ):
         """Test error handling and retry middleware working together."""
-        from fastmcp.client import Client
-
         # Add both middleware
         error_handling_server.add_middleware(ErrorHandlingMiddleware())
         error_handling_server.add_middleware(
