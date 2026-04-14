@@ -407,6 +407,10 @@
       "source": "/apps/providers/generative"
     },
     {
+      "destination": "/apps/prefab",
+      "source": "/apps/patterns"
+    },
+    {
       "destination": "/cli/overview",
       "source": "/patterns/cli"
     },
