@@ -929,7 +929,7 @@ requires-dist = [
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], specifier = ">=0.4.4,<0.5.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pydantic-monty", marker = "extra == 'code-mode'", specifier = "==0.0.11" },
-    { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.19.0" },
+    { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.19.1" },
     { name = "pyjwt", marker = "extra == 'azure'", specifier = ">=2.12.0" },
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
@@ -2287,7 +2287,7 @@ wheels = [
 
 [[package]]
 name = "pydocket"
-version = "0.19.0"
+version = "0.19.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cloudpickle" },
@@ -2306,9 +2306,9 @@ dependencies = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "uncalled-for" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/98/6e/0db603ce4d82072b1a61798340e408ec04b3a77647f537881ff5b93c31f6/pydocket-0.19.0.tar.gz", hash = "sha256:00bff620d80cd2fad34ccbbe526dce24a9de8cdc1d2b94d305739668a98e308a", size = 355531, upload-time = "2026-04-10T17:25:38.112Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dd/6e/cdfef4cf65c568deea932fc0c9b521b0287c62cb36a25f66739da5f7528d/pydocket-0.19.1.tar.gz", hash = "sha256:83135a2c171f6600c6ab6d4e0739bf76496b87383ab9a2172e3bdfcd52bc8b05", size = 363300, upload-time = "2026-04-15T21:10:47.16Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/55/46/7bed93ecff9015c4a8dcabfaab3d490b45ec8e5847b30ac9671b9c01def8/pydocket-0.19.0-py3-none-any.whl", hash = "sha256:8531e64b989673a17d055ee4498ca8c3505310c5af4e7fd09c7b00fb2f29aa19", size = 99271, upload-time = "2026-04-10T17:25:36.657Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/e1/488d5e35b69e1d0c222dea76f3ed63f7237aff8b995d1d7a2d869b929bd0/pydocket-0.19.1-py3-none-any.whl", hash = "sha256:ec17f73452856482959ab90265ac8630347f2cbd21f0edb782016ae57faad1d1", size = 100981, upload-time = "2026-04-15T21:10:45.551Z" },
 ]
 
 [[package]]

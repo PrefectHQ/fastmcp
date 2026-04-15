@@ -81,13 +81,10 @@ __all__ = [
 
 # Task context lives in fastmcp.server.tasks.context; public symbols are
 # re-exported here so existing imports from dependencies continue to work.
-# _get_task_snapshot_sync and _load_task_snapshot_async are not re-exported
-# but are used internally by get_access_token / get_http_request / get_server.
 from fastmcp.server.tasks.context import (
     TaskContextInfo,
     TaskContextSnapshot,
-    _get_task_snapshot_sync,
-    _load_task_snapshot_async,
+    _recall_snapshot,
     get_task_context,
     get_task_server,
     get_task_session,
@@ -378,10 +375,12 @@ def get_http_request() -> Request:
     if request is None:
         request = _current_http_request.get()
 
-    # In Docket workers, restore a minimal request from the snapshotted headers.
-    # Uses sync fallback chain: ContextVar → in-memory dict → sync Redis.
+    # In Docket workers, restore a minimal request from the snapshotted
+    # headers.  The snapshot is preloaded by restore_task_snapshot before
+    # user code runs, so this is a pure ContextVar read.
     if request is None:
-        snapshot = _get_task_snapshot_sync()
+        task_info = get_task_context()
+        snapshot = _recall_snapshot(task_info.task_id) if task_info else None
         task_headers = snapshot.http_headers if snapshot else None
         if task_headers:
             request = Request(
@@ -495,11 +494,12 @@ def get_access_token() -> AccessToken | None:
     if access_token is None:
         access_token = _sdk_get_access_token()
 
-    # Fall back to background task snapshot (#3095)
-    # In Docket workers, neither HTTP request nor SDK context var are available.
-    # Uses sync fallback chain: ContextVar → in-memory dict → sync Redis.
+    # Fall back to background task snapshot (#3095).  In Docket workers,
+    # neither the HTTP request nor the SDK context var is available; the
+    # snapshot is preloaded by restore_task_snapshot before user code runs.
     if access_token is None:
-        snapshot = _get_task_snapshot_sync()
+        task_info = get_task_context()
+        snapshot = _recall_snapshot(task_info.task_id) if task_info else None
         if snapshot is not None and snapshot.access_token_json is not None:
             task_token = AccessToken.model_validate_json(snapshot.access_token_json)
             if task_token.expires_at is not None:
@@ -757,10 +757,10 @@ class _CurrentContext(Dependency["Context"]):
         if task_info is not None:
             server = get_server()
 
-            # Load unified snapshot (sets _task_snapshot ContextVar)
-            snapshot = await _load_task_snapshot_async(
-                task_info.task_scope, task_info.task_id
-            )
+            # The snapshot is preloaded by restore_task_snapshot (worker-level
+            # Docket dependency) before any task code runs, so this is a pure
+            # ContextVar read — no Redis I/O here.
+            snapshot = _recall_snapshot(task_info.task_id)
             origin_request_id = snapshot.origin_request_id if snapshot else None
 
             # Session ID is stored in the snapshot for notification delivery

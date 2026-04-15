@@ -14,9 +14,22 @@ import weakref
 from collections import OrderedDict
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from fastmcp.server.tasks.keys import parse_task_key, task_redis_prefix
+
+try:
+    from docket import TaskKey
+except ImportError:
+
+    def TaskKey() -> str:  # type: ignore[no-redef]
+        raise NotImplementedError(
+            "docket is not installed; restore_task_snapshot only runs inside "
+            "a Docket worker, so the real docket.TaskKey sentinel will always "
+            "be present at call time. Install the fastmcp[tasks] extra to "
+            "enable background tasks."
+        )
+
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -170,7 +183,7 @@ class TaskContextSnapshot:
         ttl_seconds: int,
     ) -> None:
         """Store this snapshot as a single Redis key."""
-        key = docket.key(_snapshot_redis_key(task_scope, task_id))
+        key = docket.key(f"{task_redis_prefix(task_scope)}:{task_id}:snapshot")
         async with docket.redis() as redis:
             await redis.set(key, self.to_json(), ex=ttl_seconds)
 
@@ -182,13 +195,21 @@ _task_snapshot: ContextVar[tuple[str, TaskContextSnapshot] | None] = ContextVar(
 )
 
 
-def _set_cached_snapshot(task_id: str, snapshot: TaskContextSnapshot) -> None:
-    """Cache a snapshot keyed by task_id."""
+def _remember_snapshot(task_id: str, snapshot: TaskContextSnapshot) -> None:
+    """Bind a snapshot to the current asyncio context under ``task_id``.
+
+    Nothing outside this task's context sees it; stale entries left in a
+    reused context are ignored on recall.
+    """
     _task_snapshot.set((task_id, snapshot))
 
 
-def _get_cached_snapshot(task_id: str) -> TaskContextSnapshot | None:
-    """Get cached snapshot if it belongs to this task."""
+def _recall_snapshot(task_id: str) -> TaskContextSnapshot | None:
+    """Return the snapshot bound for ``task_id`` in the current context.
+
+    Returns ``None`` if nothing is bound, or if the bound entry belongs to
+    a different task (a stale leftover from a reused asyncio context).
+    """
     cached = _task_snapshot.get()
     if cached is not None:
         cached_task_id, snapshot = cached
@@ -197,21 +218,35 @@ def _get_cached_snapshot(task_id: str) -> TaskContextSnapshot | None:
     return None
 
 
-def _snapshot_redis_key(task_scope: str | None, task_id: str) -> str:
-    """Build the Redis key suffix for a task snapshot."""
-    return f"{task_redis_prefix(task_scope)}:{task_id}:snapshot"
+def get_task_session_id() -> str | None:
+    """Get the session_id for the current background task, if available.
 
-
-async def _load_task_snapshot_async(
-    task_scope: str | None, task_id: str
-) -> TaskContextSnapshot | None:
-    """Load task context snapshot from Redis (async) and cache it.
-
-    Idempotent — returns the cached value if already loaded for this task.
+    Reads the cached snapshot set by the worker-level restore dependency.
+    Returns None if not in a task context or the snapshot wasn't restored.
     """
-    cached = _get_cached_snapshot(task_id)
-    if cached is not None:
-        return cached
+    task_info = get_task_context()
+    if task_info is None:
+        return None
+    snapshot = _recall_snapshot(task_info.task_id)
+    return snapshot.session_id if snapshot else None
+
+
+async def restore_task_snapshot(key: str = TaskKey()) -> None:
+    """Worker-level Docket dependency that restores the task-context snapshot.
+
+    Runs before each fastmcp-owned task, populating the snapshot ContextVar
+    so user code — and any task-scoped dependency like ``_CurrentContext`` —
+    sees a ready snapshot without touching Redis itself.  All Redis I/O
+    goes through Docket's async client, so cluster URLs and the memory://
+    backend work transparently (#3897).  Failures are non-fatal: the task
+    still runs, and sync helpers return ``None`` as they would have before
+    the snapshot was captured.
+    """
+    try:
+        parts = parse_task_key(key)
+    except ValueError:
+        # Non-fastmcp key (e.g. docket scheduler internals) — nothing to do.
+        return
 
     from fastmcp.server.dependencies import _current_docket, get_server
 
@@ -222,109 +257,20 @@ async def _load_task_snapshot_async(
     if docket is None:
         docket = _current_docket.get()
     if docket is None:
-        return None
+        return
 
+    task_scope = parts["task_scope"]
+    task_id = parts["client_task_id"]
     try:
         async with docket.redis() as redis:
-            raw = await redis.get(docket.key(_snapshot_redis_key(task_scope, task_id)))
+            raw = await redis.get(
+                docket.key(f"{task_redis_prefix(task_scope)}:{task_id}:snapshot")
+            )
         if raw is None:
-            return None
-        snapshot = TaskContextSnapshot.from_json(raw)
-        _set_cached_snapshot(task_id, snapshot)
-        return snapshot
-    except (OSError, json.JSONDecodeError, KeyError, ValueError):
-        _logger.warning(
-            "Failed to load task snapshot for %s:%s",
-            task_scope,
-            task_id,
-            exc_info=True,
-        )
-        return None
-
-
-def get_task_session_id() -> str | None:
-    """Get the session_id for the current background task, if available.
-
-    Loads the task snapshot (from cache or Redis) and returns the session_id
-    that was captured at task submission time.  Returns None if not in a task
-    context or if the snapshot isn't available.
-    """
-    snapshot = _get_task_snapshot_sync()
-    return snapshot.session_id if snapshot else None
-
-
-def _get_task_snapshot_sync() -> TaskContextSnapshot | None:
-    """Get the task snapshot using only sync operations.
-
-    Fallback chain:
-    1. ContextVar cache (keyed by task_id, set by async or sync loaders)
-    2. Sync Redis GET (works for both memory:// and real Redis)
-    """
-    task_info = get_task_context()
-    if task_info is None:
-        return None
-
-    cached = _get_cached_snapshot(task_info.task_id)
-    if cached is not None:
-        return cached
-
-    return _load_task_snapshot_sync(task_info.task_scope, task_info.task_id)
-
-
-def _load_task_snapshot_sync(
-    task_scope: str | None, task_id: str
-) -> TaskContextSnapshot | None:
-    """Load snapshot via sync Redis.
-
-    For memory:// backends (fakeredis), shares the same FakeServer instance
-    that Docket uses so data is accessible. For real Redis, creates a standard
-    sync connection.
-    """
-    try:
-        from docket.dependencies import current_docket as _docket_cv
-
-        docket = _docket_cv.get()
-    except (LookupError, ImportError):
-        return None
-    if docket is None:
-        return None
-
-    try:
-        sync_redis = _get_sync_redis(docket.url)
-        raw = sync_redis.get(docket.key(_snapshot_redis_key(task_scope, task_id)))
-        if raw is None:
-            return None
-        snapshot = TaskContextSnapshot.from_json(raw)
-        _set_cached_snapshot(task_id, snapshot)
-        return snapshot
-    except (OSError, json.JSONDecodeError, KeyError, ValueError, ImportError):
-        _logger.warning(
-            "Failed to load task snapshot via sync Redis for %s:%s",
-            task_scope,
-            task_id,
-            exc_info=True,
-        )
-        return None
-
-
-def _get_sync_redis(url: str) -> Any:
-    """Get a sync Redis client that shares the same backend as Docket.
-
-    For memory:// URLs, connects to the same fakeredis FakeServer instance
-    so data written by the async Docket client is visible. For real Redis
-    URLs, creates a standard sync connection.
-    """
-    from docket._redis import get_memory_server
-
-    server = get_memory_server(url)
-    if server is not None:
-        from fakeredis import FakeRedis
-
-        return FakeRedis(server=server)
-
-    from redis import Redis
-
-    return Redis.from_url(url)
+            return
+        _remember_snapshot(task_id, TaskContextSnapshot.from_json(raw))
+    except Exception:
+        _logger.warning("Failed to restore task snapshot for %s", key, exc_info=True)
 
 
 # In-process optimization: when the Docket worker runs in the same process as

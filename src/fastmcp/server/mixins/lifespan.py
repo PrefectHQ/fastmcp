@@ -77,13 +77,14 @@ class LifespanMixin:
                 return
 
             # Docket is available AND there are task-enabled components
-            from docket import Docket, Worker
+            from docket import Depends, Docket, Worker
 
             from fastmcp import settings
             from fastmcp.server.dependencies import (
                 _current_docket,
                 _current_worker,
             )
+            from fastmcp.server.tasks.context import restore_task_snapshot
 
             # Create Docket instance using configured name and URL
             async with Docket(
@@ -108,8 +109,15 @@ class LifespanMixin:
                     if settings.docket.worker_name:
                         worker_kwargs["name"] = settings.docket.worker_name
 
-                    # Create and start Worker
-                    async with Worker(docket, **worker_kwargs) as worker:
+                    # Create and start Worker.  The restore_task_snapshot
+                    # worker-level dependency runs before every task so the
+                    # per-task snapshot ContextVar is populated before user
+                    # code or task-scoped dependencies observe it.
+                    async with Worker(
+                        docket,
+                        dependencies=[Depends(restore_task_snapshot)],
+                        **worker_kwargs,
+                    ) as worker:
                         self._worker = worker
                         worker_token = _current_worker.set(worker)
                         try:
