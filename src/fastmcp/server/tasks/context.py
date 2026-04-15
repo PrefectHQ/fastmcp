@@ -23,12 +23,11 @@ try:
 except ImportError:
 
     def TaskKey() -> str:  # type: ignore[no-redef]
-        raise NotImplementedError(
-            "docket is not installed; restore_task_snapshot only runs inside "
-            "a Docket worker, so the real docket.TaskKey sentinel will always "
-            "be present at call time. Install the fastmcp[tasks] extra to "
-            "enable background tasks."
-        )
+        # Stub so this module stays importable without the fastmcp[tasks]
+        # extra. ``restore_task_snapshot`` is only ever invoked inside a
+        # Docket worker, where the real ``docket.TaskKey`` sentinel is
+        # always present.
+        return ""
 
 
 if TYPE_CHECKING:
