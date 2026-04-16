@@ -328,21 +328,23 @@
                 ]
               },
               {
-                "group": "CLI",
-                "pages": [
-                  "cli/overview",
-                  "cli/running",
-                  "cli/install-mcp",
-                  "cli/inspecting",
-                  "cli/client",
-                  "cli/generate-cli",
-                  "cli/auth"
-                ]
-              },
-              {
                 "group": "More",
                 "pages": [
                   "more/settings",
+                  {
+                    "collapsed": true,
+                    "group": "CLI",
+                    "icon": "terminal",
+                    "pages": [
+                      "cli/overview",
+                      "cli/running",
+                      "cli/install-mcp",
+                      "cli/inspecting",
+                      "cli/client",
+                      "cli/generate-cli",
+                      "cli/auth"
+                    ]
+                  },
                   {
                     "collapsed": true,
                     "group": "Upgrading",
