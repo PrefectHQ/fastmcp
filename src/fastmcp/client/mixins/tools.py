@@ -288,7 +288,12 @@ class ClientToolsMixin:
 
         if task:
             return await self._call_tool_as_task(
-                name, arguments, task_id, ttl, meta=request_meta or None
+                name,
+                arguments,
+                task_id,
+                ttl,
+                raise_on_error=raise_on_error,
+                meta=request_meta or None,
             )
 
         result = await self.call_tool_mcp(
@@ -308,6 +313,7 @@ class ClientToolsMixin:
         arguments: dict[str, Any] | None = None,
         task_id: str | None = None,
         ttl: int = 60000,
+        raise_on_error: bool = True,
         meta: dict[str, Any] | None = None,
     ) -> ToolTask:
         """Call a tool for background execution (SEP-1686).
@@ -321,6 +327,7 @@ class ClientToolsMixin:
             arguments: Tool arguments
             task_id: Optional client-provided task ID (ignored, for backward compatibility)
             ttl: Time to keep results available in milliseconds (default 60s)
+            raise_on_error: Whether task.result() should raise ToolError on errors
             meta: Optional request metadata (e.g., version info)
 
         Returns:
@@ -356,7 +363,11 @@ class ClientToolsMixin:
             self._submitted_task_ids.add(server_task_id)
 
             task_obj = ToolTask(
-                self, server_task_id, tool_name=name, immediate_result=None
+                self,
+                server_task_id,
+                tool_name=name,
+                immediate_result=None,
+                raise_on_error=raise_on_error,
             )
             self._task_registry[server_task_id] = weakref.ref(task_obj)
             return task_obj
@@ -369,6 +380,7 @@ class ClientToolsMixin:
                 synthetic_task_id,
                 tool_name=name,
                 immediate_result=parsed_result,
+                raise_on_error=raise_on_error,
             )
 
 

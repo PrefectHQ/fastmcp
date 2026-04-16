@@ -15,6 +15,7 @@ import mcp.types
 from mcp.types import GetTaskResult, TaskStatusNotification
 
 from fastmcp.client.messages import Message, MessageHandler
+from fastmcp.exceptions import ToolError
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -335,6 +336,7 @@ class ToolTask(Task["CallToolResult"]):
         task_id: str,
         tool_name: str,
         immediate_result: CallToolResult | None = None,
+        raise_on_error: bool = True,
     ):
         """
         Create a ToolTask wrapper.
@@ -344,9 +346,11 @@ class ToolTask(Task["CallToolResult"]):
             task_id: The task identifier
             tool_name: Name of the tool being executed
             immediate_result: If server executed synchronously, the immediate result
+            raise_on_error: Whether task.result() should raise ToolError on errors
         """
         super().__init__(client, task_id, immediate_result)
         self._tool_name = tool_name
+        self._raise_on_error = raise_on_error
 
     async def result(self) -> CallToolResult:
         """Wait for and return the tool result.
@@ -364,6 +368,14 @@ class ToolTask(Task["CallToolResult"]):
         if self._is_immediate:
             assert self._immediate_result is not None  # Type narrowing
             result = self._immediate_result
+            if result.is_error and self._raise_on_error:
+                if result.content and isinstance(
+                    result.content[0], mcp.types.TextContent
+                ):
+                    msg = result.content[0].text
+                else:
+                    msg = f"Tool '{self._tool_name}' returned an error"
+                raise ToolError(msg)
         else:
             # Check client connected
             self._check_client_connected()
@@ -379,12 +391,16 @@ class ToolTask(Task["CallToolResult"]):
                 # Raw dict from get_task_result - parse as CallToolResult
                 mcp_result = mcp.types.CallToolResult.model_validate(raw_result)
                 result = await self._client._parse_call_tool_result(
-                    self._tool_name, mcp_result, raise_on_error=True
+                    self._tool_name,
+                    mcp_result,
+                    raise_on_error=self._raise_on_error,
                 )
             elif isinstance(raw_result, mcp.types.CallToolResult):
                 # Already a CallToolResult from MCP protocol - parse it
                 result = await self._client._parse_call_tool_result(
-                    self._tool_name, raw_result, raise_on_error=True
+                    self._tool_name,
+                    raw_result,
+                    raise_on_error=self._raise_on_error,
                 )
             else:
                 # Legacy ToolResult format - convert to MCP type
@@ -397,7 +413,9 @@ class ToolTask(Task["CallToolResult"]):
                         _meta=raw_result.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
                     )
                     result = await self._client._parse_call_tool_result(
-                        self._tool_name, mcp_result, raise_on_error=True
+                        self._tool_name,
+                        mcp_result,
+                        raise_on_error=self._raise_on_error,
                     )
                 else:
                     # Unknown type - just return it
