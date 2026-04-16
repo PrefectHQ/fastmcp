@@ -101,6 +101,7 @@
                     "icon": "toolbox",
                     "pages": [
                       "servers/tools",
+                      "servers/interactive-tools",
                       "servers/resources",
                       "servers/prompts",
                       "servers/context"
@@ -108,30 +109,22 @@
                   },
                   {
                     "collapsed": true,
-                    "group": "Features",
-                    "icon": "stars",
+                    "group": "Working with Tools",
+                    "icon": "wand-magic-sparkles",
                     "pages": [
-                      "servers/tasks",
-                      "servers/composition",
-                      "servers/dependency-injection",
-                      "servers/elicitation",
-                      "servers/icons",
-                      "servers/lifespan",
-                      "servers/logging",
-                      "servers/middleware",
-                      "servers/pagination",
-                      "servers/progress",
-                      "servers/sampling",
-                      "servers/storage-backends",
-                      "servers/telemetry",
-                      "servers/testing",
-                      "servers/versioning"
-                    ],
-                    "tag": "UPDATED"
+                      "servers/transforms/transforms",
+                      "servers/transforms/tool-transformation",
+                      "servers/transforms/code-mode",
+                      "servers/transforms/tool-search",
+                      "servers/transforms/namespace",
+                      "servers/visibility",
+                      "servers/transforms/resources-as-tools",
+                      "servers/transforms/prompts-as-tools"
+                    ]
                   },
                   {
                     "collapsed": true,
-                    "group": "Providers",
+                    "group": "MCP Providers",
                     "icon": "layer-group",
                     "pages": [
                       "servers/providers/overview",
@@ -139,22 +132,34 @@
                       "servers/providers/filesystem",
                       "servers/providers/proxy",
                       "servers/providers/skills",
+                      "servers/composition",
                       "servers/providers/custom"
                     ]
                   },
                   {
                     "collapsed": true,
-                    "group": "Transforms",
-                    "icon": "wand-magic-sparkles",
+                    "group": "Interactivity",
+                    "icon": "comments",
                     "pages": [
-                      "servers/transforms/transforms",
-                      "servers/transforms/namespace",
-                      "servers/transforms/tool-transformation",
-                      "servers/visibility",
-                      "servers/transforms/code-mode",
-                      "servers/transforms/tool-search",
-                      "servers/transforms/resources-as-tools",
-                      "servers/transforms/prompts-as-tools"
+                      "servers/elicitation",
+                      "servers/sampling",
+                      "servers/progress",
+                      "servers/logging",
+                      "servers/pagination",
+                      "servers/icons"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
+                    "group": "Extensibility",
+                    "icon": "puzzle-piece",
+                    "pages": [
+                      "servers/middleware",
+                      "servers/dependency-injection",
+                      "servers/lifespan",
+                      "servers/storage-backends",
+                      "servers/tasks",
+                      "servers/versioning"
                     ]
                   },
                   {
@@ -187,7 +192,9 @@
                       "deployment/running-server",
                       "deployment/http",
                       "deployment/prefect-horizon",
-                      "deployment/server-configuration"
+                      "deployment/server-configuration",
+                      "servers/testing",
+                      "servers/telemetry"
                     ]
                   }
                 ]
@@ -197,15 +204,12 @@
                 "pages": [
                   "apps/overview",
                   "apps/quickstart",
-                  "apps/prefab",
-                  "apps/interactive-apps",
-                  "apps/generative",
-                  "apps/low-level",
                   {
                     "collapsed": true,
-                    "group": "Providers",
-                    "icon": "layer-group",
+                    "group": "Prefab Apps",
+                    "icon": "cube",
                     "pages": [
+                      "apps/prefab",
                       "apps/providers/approval",
                       "apps/providers/choice",
                       "apps/providers/file-upload",
@@ -213,6 +217,8 @@
                     ],
                     "tag": "NEW"
                   },
+                  "apps/generative",
+                  "apps/low-level",
                   {
                     "collapsed": true,
                     "group": "Reference",
@@ -232,26 +238,19 @@
                   "clients/transports",
                   {
                     "collapsed": true,
-                    "group": "Core Operations",
+                    "group": "Operations",
                     "icon": "toolbox",
                     "pages": [
                       "clients/tools",
                       "clients/resources",
-                      "clients/prompts"
-                    ]
-                  },
-                  {
-                    "collapsed": true,
-                    "group": "Handlers",
-                    "icon": "hand",
-                    "pages": [
-                      "clients/notifications",
+                      "clients/prompts",
                       "clients/sampling",
                       "clients/elicitation",
                       "clients/tasks",
                       "clients/progress",
                       "clients/logging",
-                      "clients/roots"
+                      "clients/roots",
+                      "clients/notifications"
                     ],
                     "tag": "UPDATED"
                   },
@@ -402,6 +401,10 @@
     ]
   },
   "redirects": [
+    {
+      "destination": "/servers/interactive-tools",
+      "source": "/apps/interactive-apps"
+    },
     {
       "destination": "/apps/generative",
       "source": "/apps/providers/generative"
