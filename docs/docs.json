@@ -101,7 +101,6 @@
                     "icon": "toolbox",
                     "pages": [
                       "servers/tools",
-                      "servers/interactive-tools",
                       "servers/resources",
                       "servers/prompts",
                       "servers/context"
@@ -204,19 +203,8 @@
                 "pages": [
                   "apps/overview",
                   "apps/quickstart",
-                  {
-                    "collapsed": true,
-                    "group": "Prefab Apps",
-                    "icon": "cube",
-                    "pages": [
-                      "apps/prefab",
-                      "apps/providers/approval",
-                      "apps/providers/choice",
-                      "apps/providers/file-upload",
-                      "apps/providers/form"
-                    ],
-                    "tag": "NEW"
-                  },
+                  "apps/fastmcp-app",
+                  "apps/prefab",
                   "apps/generative",
                   "apps/low-level",
                   {
@@ -224,6 +212,17 @@
                     "group": "Reference",
                     "icon": "book",
                     "pages": [
+                      {
+                        "collapsed": true,
+                        "group": "Prefab Providers",
+                        "icon": "cube",
+                        "pages": [
+                          "apps/providers/approval",
+                          "apps/providers/choice",
+                          "apps/providers/file-upload",
+                          "apps/providers/form"
+                        ]
+                      },
                       "apps/development",
                       "apps/examples",
                       "apps/architecture"
@@ -402,7 +401,7 @@
   },
   "redirects": [
     {
-      "destination": "/servers/interactive-tools",
+      "destination": "/apps/fastmcp-app",
       "source": "/apps/interactive-apps"
     },
     {
