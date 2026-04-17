@@ -320,12 +320,18 @@ def _test_provider(provider: str) -> ProviderResult:
                 T = json_schema_to_type(schema)
                 TypeAdapter(T)
             except _SchemaTimeout as e:
+                if use_alarm:
+                    signal.alarm(0)
                 result.timeouts += 1
                 _record_failure("timeouts", _name, schema, e)
             except TypeError as e:
+                if use_alarm:
+                    signal.alarm(0)
                 result.type_errors += 1
                 _record_failure("type_errors", _name, schema, e)
             except Exception as e:
+                if use_alarm:
+                    signal.alarm(0)
                 err_type = type(e).__name__
                 if "SchemaError" in err_type or "schema" in str(e).lower()[:50]:
                     result.schema_errors += 1
