@@ -15,7 +15,7 @@ CurrentWorker) and background task execution require fastmcp[tasks].
 
 ## Functions
 
-### `is_docket_available` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L114" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `is_docket_available` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_docket_available() -> bool
@@ -36,7 +36,7 @@ Any of those failing means we treat docket as unavailable and fall back
 to the no-tasks code paths instead of crashing deep inside a request.
 
 
-### `require_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L143" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `require_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L140" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 require_docket(feature: str) -> None
@@ -50,7 +50,7 @@ Raise ImportError with install instructions if docket not available.
      "CurrentDocket()"). Will be included in the error message.
 
 
-### `transform_context_annotations` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `transform_context_annotations` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L180" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]
@@ -76,7 +76,7 @@ allows them to have defaults in any order.
 - Function with modified signature (same function object, updated __signature__)
 
 
-### `get_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L324" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L321" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_context() -> Context
@@ -86,7 +86,7 @@ get_context() -> Context
 Get the current FastMCP Context instance directly.
 
 
-### `get_server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L334" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L331" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_server() -> FastMCP
@@ -106,7 +106,7 @@ started the worker).
 - `RuntimeError`: If no server in context
 
 
-### `get_http_request` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L364" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_http_request` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L361" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_http_request() -> Request
@@ -120,7 +120,7 @@ In background tasks, returns a synthetic request populated with the
 snapshotted headers from the originating HTTP request.
 
 
-### `get_http_headers` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L411" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_http_headers` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L410" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_http_headers(include_all: bool = False, include: set[str] | None = None) -> dict[str, str]
@@ -141,7 +141,7 @@ normally be excluded. This is useful for proxy transports that need to forward
 authorization headers to upstream MCP servers.
 
 
-### `get_access_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L468" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_access_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/dependencies.py#L467" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_access_token() -> AccessToken | None

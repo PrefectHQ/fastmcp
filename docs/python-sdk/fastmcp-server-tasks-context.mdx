@@ -16,7 +16,7 @@ sessions and servers.
 
 ## Functions
 
-### `get_task_scope` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L30" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_task_scope` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_task_scope() -> str | None
@@ -37,7 +37,7 @@ Encoding for Redis/Docket keys happens at the boundary in ``keys.py``;
 this function returns the raw value.
 
 
-### `get_task_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L70" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_task_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L82" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_task_context() -> TaskContextInfo | None
@@ -53,7 +53,7 @@ Returns None if not running in a task context (e.g., foreground execution).
 - TaskContextInfo with task_id and task_scope, or None if not in a task.
 
 
-### `get_task_session_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L245" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_task_session_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L220" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_task_session_id() -> str | None
@@ -62,12 +62,29 @@ get_task_session_id() -> str | None
 
 Get the session_id for the current background task, if available.
 
-Loads the task snapshot (from cache or Redis) and returns the session_id
-that was captured at task submission time.  Returns None if not in a task
-context or if the snapshot isn't available.
+Reads the cached snapshot set by the worker-level restore dependency.
+Returns None if not in a task context or the snapshot wasn't restored.
 
 
-### `register_task_session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L341" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `restore_task_snapshot` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L233" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+restore_task_snapshot(key: str = TaskKey()) -> None
+```
+
+
+Worker-level Docket dependency that restores the task-context snapshot.
+
+Runs before each fastmcp-owned task, populating the snapshot ContextVar
+so user code — and any task-scoped dependency like ``_CurrentContext`` —
+sees a ready snapshot without touching Redis itself.  All Redis I/O
+goes through Docket's async client, so cluster URLs and the memory://
+backend work transparently (#3897).  Failures are non-fatal: the task
+still runs, and sync helpers return ``None`` as they would have before
+the snapshot was captured.
+
+
+### `register_task_session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L286" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_task_session(session_id: str, session: ServerSession) -> None
@@ -81,7 +98,7 @@ stored as a weakref so it doesn't prevent garbage collection when the
 client disconnects.
 
 
-### `get_task_session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L351" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_task_session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L296" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_task_session(session_id: str) -> ServerSession | None
@@ -94,7 +111,7 @@ Returns None in distributed workers where the session lives in another
 process — callers must handle this gracefully.
 
 
-### `register_task_server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L370" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `register_task_server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L315" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_task_server(task_id: str, server: FastMCP) -> None
@@ -107,7 +124,7 @@ Called at task-submission time so that background workers can resolve
 the correct (child) server for mounted tasks.
 
 
-### `get_task_server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L381" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_task_server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L326" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_task_server(task_id: str) -> FastMCP | None
@@ -119,7 +136,7 @@ Get the registered server for a background task, if still alive.
 
 ## Classes
 
-### `TaskContextInfo` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `TaskContextInfo` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Information about the current background task context.
@@ -128,7 +145,7 @@ Returned by ``get_task_context()`` when running inside a Docket worker.
 Contains identifiers needed to communicate with the MCP session.
 
 
-### `TaskContextSnapshot` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `TaskContextSnapshot` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 All context data snapshotted at task-submission time.
@@ -138,7 +155,7 @@ Stored as a single Redis key per task, restored once in the worker.
 
 **Methods:**
 
-#### `capture` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `capture` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L124" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 capture(cls) -> TaskContextSnapshot
@@ -147,7 +164,7 @@ capture(cls) -> TaskContextSnapshot
 Capture current context for background task execution.
 
 
-#### `from_json` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L139" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_json` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L151" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_json(cls, raw: str | bytes) -> TaskContextSnapshot
@@ -156,7 +173,7 @@ from_json(cls, raw: str | bytes) -> TaskContextSnapshot
 Deserialize from JSON stored in Redis.
 
 
-#### `to_json` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L154" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_json` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L166" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 to_json(self) -> str
@@ -165,7 +182,7 @@ to_json(self) -> str
 Serialize to JSON for Redis storage.
 
 
-#### `save` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L165" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `save` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/context.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 save(self, docket: Docket, task_scope: str | None, task_id: str, ttl_seconds: int) -> None
