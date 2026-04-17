@@ -48,12 +48,18 @@ class ClientResourcesMixin:
             RuntimeError: If called while the client is not connected.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        logger.debug(f"[{self.name}] called list_resources")
+        with client_span(
+            "resources/list",
+            "resources/list",
+            "",
+            session_id=self.transport.get_session_id(),
+        ):
+            logger.debug(f"[{self.name}] called list_resources")
 
-        result = await self._await_with_session_monitoring(
-            self.session.list_resources(cursor=cursor)
-        )
-        return result
+            result = await self._await_with_session_monitoring(
+                self.session.list_resources(cursor=cursor)
+            )
+            return result
 
     async def list_resources(
         self: Client,
@@ -118,12 +124,18 @@ class ClientResourcesMixin:
             RuntimeError: If called while the client is not connected.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        logger.debug(f"[{self.name}] called list_resource_templates")
+        with client_span(
+            "resources/templates/list",
+            "resources/templates/list",
+            "",
+            session_id=self.transport.get_session_id(),
+        ):
+            logger.debug(f"[{self.name}] called list_resource_templates")
 
-        result = await self._await_with_session_monitoring(
-            self.session.list_resource_templates(cursor=cursor)
-        )
-        return result
+            result = await self._await_with_session_monitoring(
+                self.session.list_resource_templates(cursor=cursor)
+            )
+            return result
 
     async def list_resource_templates(
         self: Client,

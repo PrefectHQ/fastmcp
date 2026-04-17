@@ -620,31 +620,33 @@ class FastMCP(
                     call_next=lambda context: self.list_tools(run_middleware=False),
                 )
 
-            # Get all tools, apply session transforms, then filter enabled
-            # and model-visible (app-only tools are hidden from the model).
-            tools = list(await super().list_tools())
-            tools = await apply_session_transforms(tools)
-            tools = [t for t in tools if is_enabled(t) and _is_model_visible(t)]
+            # Core logic: list tools
+            with server_span("tools/list", "tools/list", self.name, "tool", ""):
+                # Get all tools, apply session transforms, then filter enabled
+                # and model-visible (app-only tools are hidden from the model).
+                tools = list(await super().list_tools())
+                tools = await apply_session_transforms(tools)
+                tools = [t for t in tools if is_enabled(t) and _is_model_visible(t)]
 
-            # Rewrite per-tool Prefab renderer URIs based on the tool's
-            # mount-point address. The walk pairs each tool with the
-            # provider that yielded it, computes the hashed URI, and
-            # produces a model_copy with the URI in place. Original
-            # Tool objects are not mutated.
-            tools = self._rewrite_prefab_uris(tools)
+                # Rewrite per-tool Prefab renderer URIs based on the tool's
+                # mount-point address. The walk pairs each tool with the
+                # provider that yielded it, computes the hashed URI, and
+                # produces a model_copy with the URI in place. Original
+                # Tool objects are not mutated.
+                tools = self._rewrite_prefab_uris(tools)
 
-            skip_auth, token = _get_auth_context()
-            authorized: list[Tool] = []
-            for tool in tools:
-                if not skip_auth and tool.auth is not None:
-                    ctx = AuthContext(token=token, component=tool)
-                    try:
-                        if not await run_auth_checks(tool.auth, ctx):
+                skip_auth, token = _get_auth_context()
+                authorized: list[Tool] = []
+                for tool in tools:
+                    if not skip_auth and tool.auth is not None:
+                        ctx = AuthContext(token=token, component=tool)
+                        try:
+                            if not await run_auth_checks(tool.auth, ctx):
+                                continue
+                        except AuthorizationError:
                             continue
-                    except AuthorizationError:
-                        continue
-                authorized.append(tool)
-            return authorized
+                    authorized.append(tool)
+                return authorized
 
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -754,32 +756,36 @@ class FastMCP(
                     call_next=lambda context: self.list_resources(run_middleware=False),
                 )
 
-            # Get all resources, apply session transforms, then filter enabled
-            resources = list(await super().list_resources())
-            resources = await apply_session_transforms(resources)
-            resources = [r for r in resources if is_enabled(r)]
+            # Core logic: list resources
+            with server_span(
+                "resources/list", "resources/list", self.name, "resource", ""
+            ):
+                # Get all resources, apply session transforms, then filter enabled
+                resources = list(await super().list_resources())
+                resources = await apply_session_transforms(resources)
+                resources = [r for r in resources if is_enabled(r)]
 
-            # Append synthetic Prefab renderer resources — one per
-            # prefab tool, hashed by mount address. These don't live on
-            # any provider's storage; they're computed on demand.
-            from fastmcp.server.providers.prefab_synthesis import (
-                synthesize_prefab_resources,
-            )
+                # Append synthetic Prefab renderer resources — one per
+                # prefab tool, hashed by mount address. These don't live on
+                # any provider's storage; they're computed on demand.
+                from fastmcp.server.providers.prefab_synthesis import (
+                    synthesize_prefab_resources,
+                )
 
-            resources.extend(await synthesize_prefab_resources(self))
+                resources.extend(await synthesize_prefab_resources(self))
 
-            skip_auth, token = _get_auth_context()
-            authorized: list[Resource] = []
-            for resource in resources:
-                if not skip_auth and resource.auth is not None:
-                    ctx = AuthContext(token=token, component=resource)
-                    try:
-                        if not await run_auth_checks(resource.auth, ctx):
+                skip_auth, token = _get_auth_context()
+                authorized: list[Resource] = []
+                for resource in resources:
+                    if not skip_auth and resource.auth is not None:
+                        ctx = AuthContext(token=token, component=resource)
+                        try:
+                            if not await run_auth_checks(resource.auth, ctx):
+                                continue
+                        except AuthorizationError:
                             continue
-                    except AuthorizationError:
-                        continue
-                authorized.append(resource)
-            return authorized
+                    authorized.append(resource)
+                return authorized
 
     async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
@@ -887,23 +893,31 @@ class FastMCP(
                     ),
                 )
 
-            # Get all templates, apply session transforms, then filter enabled
-            templates = list(await super().list_resource_templates())
-            templates = await apply_session_transforms(templates)
-            templates = [t for t in templates if is_enabled(t)]
+            # Core logic: list resource templates
+            with server_span(
+                "resources/templates/list",
+                "resources/templates/list",
+                self.name,
+                "resource_template",
+                "",
+            ):
+                # Get all templates, apply session transforms, then filter enabled
+                templates = list(await super().list_resource_templates())
+                templates = await apply_session_transforms(templates)
+                templates = [t for t in templates if is_enabled(t)]
 
-            skip_auth, token = _get_auth_context()
-            authorized: list[ResourceTemplate] = []
-            for template in templates:
-                if not skip_auth and template.auth is not None:
-                    ctx = AuthContext(token=token, component=template)
-                    try:
-                        if not await run_auth_checks(template.auth, ctx):
+                skip_auth, token = _get_auth_context()
+                authorized: list[ResourceTemplate] = []
+                for template in templates:
+                    if not skip_auth and template.auth is not None:
+                        ctx = AuthContext(token=token, component=template)
+                        try:
+                            if not await run_auth_checks(template.auth, ctx):
+                                continue
+                        except AuthorizationError:
                             continue
-                    except AuthorizationError:
-                        continue
-                authorized.append(template)
-            return authorized
+                    authorized.append(template)
+                return authorized
 
     async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
@@ -1011,23 +1025,25 @@ class FastMCP(
                     call_next=lambda context: self.list_prompts(run_middleware=False),
                 )
 
-            # Get all prompts, apply session transforms, then filter enabled
-            prompts = list(await super().list_prompts())
-            prompts = await apply_session_transforms(prompts)
-            prompts = [p for p in prompts if is_enabled(p)]
+            # Core logic: list prompts
+            with server_span("prompts/list", "prompts/list", self.name, "prompt", ""):
+                # Get all prompts, apply session transforms, then filter enabled
+                prompts = list(await super().list_prompts())
+                prompts = await apply_session_transforms(prompts)
+                prompts = [p for p in prompts if is_enabled(p)]
 
-            skip_auth, token = _get_auth_context()
-            authorized: list[Prompt] = []
-            for prompt in prompts:
-                if not skip_auth and prompt.auth is not None:
-                    ctx = AuthContext(token=token, component=prompt)
-                    try:
-                        if not await run_auth_checks(prompt.auth, ctx):
+                skip_auth, token = _get_auth_context()
+                authorized: list[Prompt] = []
+                for prompt in prompts:
+                    if not skip_auth and prompt.auth is not None:
+                        ctx = AuthContext(token=token, component=prompt)
+                        try:
+                            if not await run_auth_checks(prompt.auth, ctx):
+                                continue
+                        except AuthorizationError:
                             continue
-                    except AuthorizationError:
-                        continue
-                authorized.append(prompt)
-            return authorized
+                    authorized.append(prompt)
+                return authorized
 
     async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
