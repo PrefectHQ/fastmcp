@@ -242,8 +242,8 @@ class ProxyDCRClient(OAuthClientInformationFull):
             if pattern_matches:
                 return redirect_uri
 
-            # Patterns configured but didn't match
-            if self.allowed_redirect_uri_patterns:
+            # Patterns configured but didn't match (None means "allow all"; [] means "block all")
+            if self.allowed_redirect_uri_patterns is not None:
                 raise InvalidRedirectUriError(
                     f"Redirect URI '{redirect_uri}' does not match allowed patterns."
                 )

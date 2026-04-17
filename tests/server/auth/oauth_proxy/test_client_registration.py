@@ -117,3 +117,15 @@ class TestUpstreamClientIdFallback:
         # Disallowed URI raises
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(AnyUrl("https://evil.example.com/callback"))
+
+    async def test_redirect_uri_blocked_when_empty_allowlist(self, oauth_proxy):
+        """Empty allowed_client_redirect_uris blocks all redirect URIs, including localhost."""
+        oauth_proxy._allowed_client_redirect_uris = []
+        client = await oauth_proxy.get_client("test-client-id")
+        assert client is not None
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("http://localhost/callback"))
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("https://claude.ai/oauth/callback"))

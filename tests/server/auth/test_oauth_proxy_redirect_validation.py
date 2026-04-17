@@ -106,8 +106,8 @@ class TestProxyDCRClient:
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(AnyUrl("https://example.com"))
 
-    def test_empty_list_allows_none(self):
-        """Test that empty pattern list allows no URIs."""
+    def test_empty_list_blocks_all(self):
+        """Empty allowed_redirect_uri_patterns blocks all redirect URIs, including pre-registered ones."""
         client = ProxyDCRClient(
             client_id="test",
             client_secret="secret",
@@ -115,11 +115,9 @@ class TestProxyDCRClient:
             allowed_redirect_uri_patterns=[],
         )
 
-        # Nothing should be allowed (except the pre-registered redirect_uris via fallback)
-        # Pre-registered URI should work via fallback to base validation
-        assert client.validate_redirect_uri(AnyUrl("http://localhost:3000"))
-
-        # Non-registered URIs should be rejected
+        # All URIs must be rejected — [] means "block all", not "fall back to redirect_uris"
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("http://localhost:3000"))
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(AnyUrl("http://example.com"))
         with pytest.raises(InvalidRedirectUriError):
