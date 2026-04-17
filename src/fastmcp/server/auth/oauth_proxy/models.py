@@ -248,5 +248,13 @@ class ProxyDCRClient(OAuthClientInformationFull):
                     f"Redirect URI '{redirect_uri}' does not match allowed patterns."
                 )
 
-        # No redirect_uri provided or no patterns configured — use base validation
+        # redirect_uri is None with no CIMD document: if patterns are configured
+        # (including []), we can't auto-select from placeholder redirect_uris — require
+        # the caller to provide an explicit URI so patterns can be validated.
+        if self.allowed_redirect_uri_patterns is not None:
+            raise InvalidRedirectUriError(
+                "redirect_uri must be provided when redirect URI restrictions are configured."
+            )
+
+        # No redirect_uri and no pattern restrictions — delegate to base validation.
         return super().validate_redirect_uri(redirect_uri)

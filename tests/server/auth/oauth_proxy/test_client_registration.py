@@ -129,3 +129,21 @@ class TestUpstreamClientIdFallback:
 
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(AnyUrl("https://claude.ai/oauth/callback"))
+
+    async def test_none_redirect_uri_rejected_when_patterns_set(self, oauth_proxy):
+        """redirect_uri=None is rejected when patterns are configured (can't validate against patterns)."""
+        oauth_proxy._allowed_client_redirect_uris = ["http://localhost:*"]
+        client = await oauth_proxy.get_client("test-client-id")
+        assert client is not None
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(None)
+
+    async def test_none_redirect_uri_rejected_when_empty_allowlist(self, oauth_proxy):
+        """redirect_uri=None is rejected when allowlist is empty."""
+        oauth_proxy._allowed_client_redirect_uris = []
+        client = await oauth_proxy.get_client("test-client-id")
+        assert client is not None
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(None)
