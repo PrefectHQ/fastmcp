@@ -69,10 +69,14 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         f"Total crashes:   {crashes:,} ({crashes / max(totals['schemas'], 1) * 100:.2f}%)"
     )
 
-    # Snapshot baselines (captured 2026-04-10, openapi-directory@f7207cf0,
-    # origin/main, with JSON round-trip to strip YAML artifacts).
-    MAX_TYPE_ERRORS = 420  # was 388 — real json_schema_to_type bugs
-    MAX_SCHEMA_ERRORS = 300  # was 277 — Pydantic regex rejections (not our code)
+    # Snapshot baselines (ratcheted 2026-04-17, openapi-directory@f7207cf0).
+    # TypeErrors: fixed to 0 (were 388 at 2026-04-10 capture).
+    # SchemaErrors: fixed to ~0 by graceful pattern fallback in _create_string_type;
+    #   was 279 (all Pydantic Rust-regex rejections — lookahead, \p{…}, size limits).
+    MAX_TYPE_ERRORS = 0
+    MAX_SCHEMA_ERRORS = (
+        0  # graceful fallback in _create_string_type eliminates all regex rejections
+    )
     MAX_TIMEOUTS = 5  # was 0
     MAX_OTHER_ERRORS = 50  # was 0
 

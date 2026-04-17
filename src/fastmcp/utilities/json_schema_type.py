@@ -60,6 +60,7 @@ from pydantic import (
     Field,
     Json,
     StringConstraints,
+    TypeAdapter,
     model_validator,
 )
 from typing_extensions import NotRequired, TypedDict
@@ -265,7 +266,25 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
         if v is not None
     }
 
-    return Annotated[str, StringConstraints(**constraints)] if constraints else str
+    if not constraints:
+        return str
+
+    annotated: Any = Annotated[str, StringConstraints(**constraints)]
+
+    if "pattern" in constraints:
+        # Pydantic's Rust regex engine rejects patterns that Python's `re`
+        # accepts: lookahead/lookbehind, \p{…} Unicode properties, certain
+        # hex escapes, oversized compiled regexes, etc.  Probe the type now
+        # so we can fall back gracefully rather than crashing at call-site.
+        try:
+            TypeAdapter(annotated)
+        except Exception:
+            constraints.pop("pattern")
+            annotated = (
+                Annotated[str, StringConstraints(**constraints)] if constraints else str
+            )
+
+    return annotated
 
 
 def _create_numeric_type(
