@@ -218,13 +218,26 @@ class LifespanMixin:
         from fastmcp.server.providers.local_provider.local_provider import LocalProvider
         from fastmcp.server.providers.proxy import ProxyProvider
 
-        # Collect ProxyProviders that have loaded backend capabilities.
-        proxy_providers = [
-            p
-            for p in self.providers
-            if isinstance(p, ProxyProvider) and p._backend_capabilities is not None
+        # Restore handlers to the baseline that was saved at construction time
+        # so that a server reused across multiple lifespan cycles starts clean.
+        baseline = getattr(self._mcp_server, "_baseline_request_handlers", None)
+        if baseline is not None:
+            self._mcp_server.request_handlers = dict(baseline)
+        else:
+            self._mcp_server._baseline_request_handlers = dict(  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                self._mcp_server.request_handlers
+            )
+
+        all_proxy_providers = [
+            p for p in self.providers if isinstance(p, ProxyProvider)
         ]
-        if not proxy_providers:
+        if not all_proxy_providers:
+            return
+
+        # If any ProxyProvider failed to preload capabilities, we can't safely
+        # prune: that backend's capabilities are unknown and removing handlers
+        # could break capabilities it can actually serve.
+        if any(p._backend_capabilities is None for p in all_proxy_providers):
             return
 
         # Only adjust when every provider is either a LocalProvider or a
@@ -236,10 +249,9 @@ class LifespanMixin:
             return
 
         # Aggregate: a capability is "supported" if ANY proxy backend supports it.
-        # _backend_capabilities is guaranteed non-None by the filter above.
         backend_caps = [
             p._backend_capabilities
-            for p in proxy_providers
+            for p in all_proxy_providers
             if p._backend_capabilities is not None
         ]
         any_resources = any(bool(c.resources) for c in backend_caps)
