@@ -49,6 +49,12 @@ class _WrappedProvider(Provider):
     def __repr__(self) -> str:
         return f"_WrappedProvider({self._inner!r}, transforms={self._transforms!r})"
 
+    @asynccontextmanager
+    async def lifespan(self) -> AsyncIterator[None]:
+        """Delegate lifespan to the inner provider."""
+        async with self._inner.lifespan():
+            yield
+
     # -------------------------------------------------------------------------
     # Delegate to inner provider's public methods (which apply inner's transforms)
     # -------------------------------------------------------------------------
@@ -136,13 +142,3 @@ class _WrappedProvider(Provider):
             ]
             if c.task_config.supports_tasks()
         ]
-
-    # -------------------------------------------------------------------------
-    # Lifecycle - combine with inner
-    # -------------------------------------------------------------------------
-
-    @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
-        """Combine lifespan with inner provider."""
-        async with self._inner.lifespan():
-            yield

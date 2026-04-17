@@ -217,6 +217,13 @@ class LifespanMixin:
 
         from fastmcp.server.providers.local_provider.local_provider import LocalProvider
         from fastmcp.server.providers.proxy import ProxyProvider
+        from fastmcp.server.providers.wrapped_provider import _WrappedProvider
+
+        def _unwrap(p: Any) -> Any:
+            """Recursively unwrap _WrappedProvider to reach the inner provider."""
+            while isinstance(p, _WrappedProvider):
+                p = p._inner
+            return p
 
         # Restore handlers to the baseline that was saved at construction time
         # so that a server reused across multiple lifespan cycles starts clean.
@@ -228,9 +235,11 @@ class LifespanMixin:
                 self._mcp_server.request_handlers
             )
 
-        all_proxy_providers = [
-            p for p in self.providers if isinstance(p, ProxyProvider)
-        ]
+        # Unwrap all providers so we can inspect the actual provider type,
+        # including namespaced providers wrapped in _WrappedProvider.
+        unwrapped = [_unwrap(p) for p in self.providers]
+
+        all_proxy_providers = [p for p in unwrapped if isinstance(p, ProxyProvider)]
         if not all_proxy_providers:
             return
 
@@ -243,9 +252,7 @@ class LifespanMixin:
         # Only adjust when every provider is either a LocalProvider or a
         # ProxyProvider with known capabilities. Unknown providers may have
         # components we can't inspect synchronously, so we leave things alone.
-        if any(
-            not isinstance(p, (LocalProvider, ProxyProvider)) for p in self.providers
-        ):
+        if any(not isinstance(p, (LocalProvider, ProxyProvider)) for p in unwrapped):
             return
 
         # Aggregate: a capability is "supported" if ANY proxy backend supports it.
@@ -269,7 +276,7 @@ class LifespanMixin:
 
         local_components = [
             c
-            for p in self.providers
+            for p in unwrapped
             if isinstance(p, LocalProvider)
             for c in p._components.values()
         ]
