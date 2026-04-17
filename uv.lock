@@ -843,6 +843,7 @@ dependencies = [
     { name = "pydantic", extra = ["email"] },
     { name = "pyperclip" },
     { name = "python-dotenv" },
+    { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "uncalled-for" },
@@ -910,7 +911,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.48.0" },
-    { name = "authlib", specifier = ">=1.6.5" },
+    { name = "authlib", specifier = ">=1.6.11" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.16.0" },
     { name = "cyclopts", specifier = ">=4.0.0" },
     { name = "exceptiongroup", specifier = ">=1.2.2" },
@@ -933,6 +934,7 @@ requires-dist = [
     { name = "pyjwt", marker = "extra == 'azure'", specifier = ">=2.12.0" },
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
+    { name = "python-multipart", specifier = ">=0.0.26" },
     { name = "pyyaml", specifier = ">=6.0,<7.0" },
     { name = "rich", specifier = ">=13.9.4" },
     { name = "uncalled-for", specifier = ">=0.2.0" },
