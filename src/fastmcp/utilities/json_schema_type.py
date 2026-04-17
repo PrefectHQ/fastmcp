@@ -14,6 +14,24 @@ for validation with Pydantic. It supports:
 - Enums and constants
 - Union types
 
+## Unsupported regex patterns
+
+Pydantic uses a Rust-based regex engine that does not support all regex
+features found in real-world JSON Schemas (particularly those from AWS,
+Azure, and other large OpenAPI providers). Unsupported constructs include
+lookahead/lookbehind assertions (`(?!...)`, `(?<=...)`), Unicode property
+escapes (`\\p{Graph}`, `\\p{Print}`), and very large compiled patterns.
+
+When a `pattern` constraint cannot be compiled, `json_schema_to_type`
+degrades gracefully:
+
+1. The pattern is **dropped** from the Pydantic `StringConstraints` so
+   the type will not raise a `SchemaError`.
+2. A `UserWarning` is emitted with the unsupported pattern.
+3. The original pattern is preserved in the type metadata as
+   `x-unsupported-pattern` (visible via `TypeAdapter(T).json_schema()`).
+4. Other constraints (`minLength`, `maxLength`) are still enforced.
+
 Example:
     ```python
     schema = {
@@ -38,6 +56,7 @@ import hashlib
 import json
 import keyword
 import re
+import warnings
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import MISSING, field, make_dataclass
@@ -60,6 +79,7 @@ from pydantic import (
     Field,
     Json,
     StringConstraints,
+    TypeAdapter,
     model_validator,
 )
 from typing_extensions import NotRequired, TypedDict
@@ -265,7 +285,31 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
         if v is not None
     }
 
-    return Annotated[str, StringConstraints(**constraints)] if constraints else str
+    if not constraints:
+        return str
+
+    annotated: Any = Annotated[str, StringConstraints(**constraints)]
+
+    if "pattern" in constraints:
+        try:
+            TypeAdapter(annotated)
+        except Exception:
+            pattern = constraints.pop("pattern")
+            warnings.warn(
+                f"Pattern {pattern!r} is not supported by Pydantic's regex engine "
+                f"and will not be enforced.",
+                UserWarning,
+                stacklevel=2,
+            )
+            pattern_field = Field(json_schema_extra={"x-unsupported-pattern": pattern})
+            if constraints:
+                annotated = Annotated[
+                    str, StringConstraints(**constraints), pattern_field
+                ]  # type: ignore[valid-type]
+            else:
+                annotated = Annotated[str, pattern_field]  # type: ignore[valid-type]
+
+    return annotated
 
 
 def _create_numeric_type(

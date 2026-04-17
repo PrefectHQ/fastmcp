@@ -310,3 +310,77 @@ class TestCrashPrevention:
         field_names = [f.name for f in dataclasses.fields(T)]
         assert len(field_names) == 2
         assert len(set(field_names)) == 2
+
+
+class TestUnsupportedPatternFallback:
+    """Patterns that Pydantic's Rust regex engine cannot compile are dropped
+    gracefully: a warning is emitted, the pattern is preserved in
+    json_schema_extra, and the field still validates as str."""
+
+    def test_lookahead_pattern_falls_back_to_str(self):
+        """Lookahead patterns (unsupported by Rust regex) degrade to plain str."""
+        schema = {"type": "string", "pattern": "^(?!aws:).+"}
+        with pytest.warns(UserWarning, match="not supported by Pydantic"):
+            T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        ta.validate_python("hello")
+        ta.validate_python("aws:forbidden")
+
+    def test_unsupported_pattern_preserved_in_schema_extra(self):
+        """The original pattern is preserved via json_schema_extra."""
+        schema = {"type": "string", "pattern": "^(?!aws:).+"}
+        with pytest.warns(UserWarning):
+            T = json_schema_to_type(schema)
+        json_schema = TypeAdapter(T).json_schema()
+        assert json_schema.get("x-unsupported-pattern") == "^(?!aws:).+"
+
+    def test_length_constraints_kept_when_pattern_dropped(self):
+        """minLength/maxLength are still enforced after pattern fallback."""
+        schema = {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 10,
+            "pattern": "(?!x).+",
+        }
+        with pytest.warns(UserWarning):
+            T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        ta.validate_python("abc")
+        with pytest.raises(ValidationError):
+            ta.validate_python("ab")
+        with pytest.raises(ValidationError):
+            ta.validate_python("a" * 11)
+
+    def test_supported_pattern_still_enforced(self):
+        """Valid patterns are not affected by the fallback logic."""
+        schema = {"type": "string", "pattern": "^[a-z]+$"}
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        ta.validate_python("hello")
+        with pytest.raises(ValidationError):
+            ta.validate_python("HELLO")
+
+    def test_unicode_property_pattern_falls_back(self):
+        """Unicode \\p{...} patterns (unsupported by Rust regex) degrade gracefully."""
+        schema = {"type": "string", "pattern": r"[\p{Graph}\x20]*"}
+        with pytest.warns(UserWarning, match="not supported by Pydantic"):
+            T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        ta.validate_python("anything")
+
+    def test_object_with_unsupported_pattern_field(self):
+        """An object schema containing a field with an unsupported pattern
+        should not crash TypeAdapter construction."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "tag_key": {"type": "string", "pattern": "^(?!aws:)[a-zA-Z]+$"},
+                "value": {"type": "string"},
+            },
+            "required": ["tag_key", "value"],
+        }
+        with pytest.warns(UserWarning):
+            T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"tag_key": "Name", "value": "test"})
+        assert result.tag_key == "Name"  # ty:ignore[unresolved-attribute]
