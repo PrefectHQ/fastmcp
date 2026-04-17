@@ -80,7 +80,9 @@ def main() -> None:
     print(f"Total failures: {len(records)}")
     print()
 
-    buckets: collections.Counter[str] = collections.Counter(r["bucket"] for r in records)
+    buckets: collections.Counter[str] = collections.Counter(
+        r["bucket"] for r in records
+    )
     for k, v in buckets.most_common():
         print(f"  {k}: {v}")
     print()
