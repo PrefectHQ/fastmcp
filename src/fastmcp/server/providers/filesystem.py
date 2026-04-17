@@ -28,8 +28,9 @@ Example:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 from fastmcp.prompts.base import Prompt
 from fastmcp.resources.base import Resource
@@ -96,15 +97,19 @@ class FileSystemProvider(LocalProvider):
         self._warned_files: dict[Path, float] = {}
         # Lock for serializing reload operations (created lazily)
         self._reload_lock: asyncio.Lock | None = None
+        # Generation counter to deduplicate concurrent reloads
+        self._reload_generation: int = 0
 
         # Always load once at init to catch errors early
         self._load_components()
 
     def _load_components(self) -> None:
         """Discover and register all components from the filesystem."""
-        # Clear existing components if reloading
         if self._loaded:
             self._components.clear()
+
+        if not self._root.exists():
+            logger.warning("FileSystemProvider root does not exist: %s", self._root)
 
         result = discover_and_import(self._root)
 
@@ -154,73 +159,67 @@ class FileSystemProvider(LocalProvider):
         else:
             logger.debug("Ignoring unknown component type: %r", type(component))
 
-    async def _ensure_loaded(self) -> None:
-        """Ensure components are loaded, reloading if in reload mode.
+    async def _with_reload(self, coro_fn: Callable[..., Any], *args: Any) -> Any:
+        """Acquire the reload lock, reload if needed, then run *coro_fn*.
 
-        Uses a lock to serialize concurrent reload operations and runs
-        filesystem I/O off the event loop using asyncio.to_thread.
+        Holding the lock across both the reload and the read prevents
+        concurrent readers from seeing a partially-rebuilt ``_components``
+        dict (the ``clear()`` + re-register window).
+
+        A generation counter deduplicates concurrent reload requests:
+        if another caller already reloaded while we waited for the lock,
+        we skip the redundant reload.
         """
         if not self._reload and self._loaded:
-            return
+            return await coro_fn(*args)
 
         # Create lock lazily (can't create in __init__ without event loop)
         if self._reload_lock is None:
             self._reload_lock = asyncio.Lock()
 
+        generation_before = self._reload_generation
+
         async with self._reload_lock:
-            # Double-check after acquiring lock
-            if self._reload or not self._loaded:
+            if not self._loaded or (
+                self._reload and self._reload_generation == generation_before
+            ):
                 await asyncio.to_thread(self._load_components)
+                self._reload_generation += 1
+            return await coro_fn(*args)
 
     # Override provider methods to support reload mode
 
     async def _list_tools(self) -> Sequence[Tool]:
-        """Return all tools, reloading if in reload mode."""
-        await self._ensure_loaded()
-        return await super()._list_tools()
+        return await self._with_reload(super()._list_tools)
 
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
-        """Get a tool by name, reloading if in reload mode."""
-        await self._ensure_loaded()
-        return await super()._get_tool(name, version)
+        return await self._with_reload(super()._get_tool, name, version)
 
     async def _list_resources(self) -> Sequence[Resource]:
-        """Return all resources, reloading if in reload mode."""
-        await self._ensure_loaded()
-        return await super()._list_resources()
+        return await self._with_reload(super()._list_resources)
 
     async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
-        """Get a resource by URI, reloading if in reload mode."""
-        await self._ensure_loaded()
-        return await super()._get_resource(uri, version)
+        return await self._with_reload(super()._get_resource, uri, version)
 
     async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
-        """Return all resource templates, reloading if in reload mode."""
-        await self._ensure_loaded()
-        return await super()._list_resource_templates()
+        return await self._with_reload(super()._list_resource_templates)
 
     async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
-        """Get a resource template, reloading if in reload mode."""
-        await self._ensure_loaded()
-        return await super()._get_resource_template(uri, version)
+        return await self._with_reload(super()._get_resource_template, uri, version)
 
     async def _list_prompts(self) -> Sequence[Prompt]:
-        """Return all prompts, reloading if in reload mode."""
-        await self._ensure_loaded()
-        return await super()._list_prompts()
+        return await self._with_reload(super()._list_prompts)
 
     async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
-        """Get a prompt by name, reloading if in reload mode."""
-        await self._ensure_loaded()
-        return await super()._get_prompt(name, version)
+        return await self._with_reload(super()._get_prompt, name, version)
 
     def __repr__(self) -> str:
         return f"FileSystemProvider(root={self._root!r}, reload={self._reload})"

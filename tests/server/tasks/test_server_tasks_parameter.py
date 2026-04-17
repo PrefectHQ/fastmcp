@@ -72,7 +72,7 @@ async def test_server_tasks_false_defaults_all_components():
 
     async with Client(mcp) as client:
         # Tool with mode="forbidden" returns error when called with task=True
-        tool_task = await client.call_tool("my_tool", task=True)
+        tool_task = await client.call_tool("my_tool", task=True, raise_on_error=False)
         assert tool_task.returned_immediately
         result = await tool_task.result()
         assert result.is_error
@@ -97,7 +97,7 @@ async def test_server_tasks_none_defaults_to_false():
 
     async with Client(mcp) as client:
         # Tool should NOT support background execution (mode="forbidden" from default)
-        tool_task = await client.call_tool("my_tool", task=True)
+        tool_task = await client.call_tool("my_tool", task=True, raise_on_error=False)
         assert tool_task.returned_immediately
         result = await tool_task.result()
         assert result.is_error
@@ -126,7 +126,9 @@ async def test_component_explicit_false_overrides_server_true():
         assert "tool:default_tool@" in docket.tasks  # Inherits tasks=True
 
         # Explicit False (mode="forbidden") returns error when called with task=True
-        no_task = await client.call_tool("no_task_tool", task=True)
+        no_task = await client.call_tool(
+            "no_task_tool", task=True, raise_on_error=False
+        )
         assert no_task.returned_immediately
         result = await no_task.result()
         assert result.is_error
@@ -161,7 +163,9 @@ async def test_component_explicit_true_overrides_server_false():
         assert not task.returned_immediately
 
         # Default (mode="forbidden") returns error when called with task=True
-        default = await client.call_tool("default_tool", task=True)
+        default = await client.call_tool(
+            "default_tool", task=True, raise_on_error=False
+        )
         assert default.returned_immediately
         result = await default.result()
         assert result.is_error
@@ -225,7 +229,9 @@ async def test_mixed_explicit_and_inherited():
         assert not explicit_true.returned_immediately
 
         # Explicit False (mode="forbidden") returns error
-        explicit_false = await client.call_tool("explicit_false_tool", task=True)
+        explicit_false = await client.call_tool(
+            "explicit_false_tool", task=True, raise_on_error=False
+        )
         assert explicit_false.returned_immediately
         result = await explicit_false.result()
         assert result.is_error
@@ -272,7 +278,9 @@ async def test_server_tasks_parameter_sets_component_defaults():
 
     async with Client(mcp2) as client:
         # Tool inherits tasks=False (mode="forbidden") - returns error
-        tool_task = await client.call_tool("tool_inherits_false", task=True)
+        tool_task = await client.call_tool(
+            "tool_inherits_false", task=True, raise_on_error=False
+        )
         assert tool_task.returned_immediately
         result = await tool_task.result()
         assert result.is_error

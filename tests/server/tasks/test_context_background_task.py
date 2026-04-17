@@ -32,7 +32,7 @@ from fastmcp.server.elicitation import (
 from fastmcp.server.tasks.context import (
     TaskContextInfo,
     TaskContextSnapshot,
-    _set_cached_snapshot,
+    _remember_snapshot,
     get_task_scope,
 )
 from fastmcp.server.tasks.elicitation import handle_task_input
@@ -430,13 +430,13 @@ class TestAccessTokenInBackgroundTasks:
             scopes=["read"],
             expires_at=int(datetime.now(timezone.utc).timestamp()) - 3600,
         )
-        _set_cached_snapshot(
+        _remember_snapshot(
             "test-task",
             TaskContextSnapshot(access_token_json=expired.model_dump_json()),
         )
         fake_ctx = TaskContextInfo(task_id="test-task", task_scope="s")
         with patch(
-            "fastmcp.server.tasks.context.get_task_context", return_value=fake_ctx
+            "fastmcp.server.dependencies.get_task_context", return_value=fake_ctx
         ):
             assert get_access_token() is None
 
@@ -448,13 +448,13 @@ class TestAccessTokenInBackgroundTasks:
             scopes=["read"],
             expires_at=int(datetime.now(timezone.utc).timestamp()) + 3600,
         )
-        _set_cached_snapshot(
+        _remember_snapshot(
             "test-task",
             TaskContextSnapshot(access_token_json=valid.model_dump_json()),
         )
         fake_ctx = TaskContextInfo(task_id="test-task", task_scope="s")
         with patch(
-            "fastmcp.server.tasks.context.get_task_context", return_value=fake_ctx
+            "fastmcp.server.dependencies.get_task_context", return_value=fake_ctx
         ):
             result = get_access_token()
             assert result is not None
@@ -467,13 +467,13 @@ class TestAccessTokenInBackgroundTasks:
             client_id="test-client",
             scopes=["read"],
         )
-        _set_cached_snapshot(
+        _remember_snapshot(
             "test-task",
             TaskContextSnapshot(access_token_json=no_expiry.model_dump_json()),
         )
         fake_ctx = TaskContextInfo(task_id="test-task", task_scope="s")
         with patch(
-            "fastmcp.server.tasks.context.get_task_context", return_value=fake_ctx
+            "fastmcp.server.dependencies.get_task_context", return_value=fake_ctx
         ):
             result = get_access_token()
             assert result is not None

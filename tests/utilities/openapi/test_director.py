@@ -476,6 +476,33 @@ class TestContentTypeHandling:
         assert request.headers["content-type"] == "application/merge-patch+json"
         assert json.loads(request.content) == {"name": "test"}
 
+    def test_content_type_preserves_media_type_parameters(self, director):
+        """Media-type parameters like charset are preserved on the wire."""
+        route = HTTPRoute(
+            path="/items",
+            method="POST",
+            operation_id="create_item",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/json-patch+json; charset=utf-8": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                    }
+                },
+            ),
+            parameter_map={
+                "name": {"location": "body", "openapi_name": "name"},
+            },
+        )
+
+        request = director.build(route, {"name": "test"}, "https://example.com")
+        assert (
+            request.headers["content-type"]
+            == "application/json-patch+json; charset=utf-8"
+        )
+        assert json.loads(request.content) == {"name": "test"}
+
     def test_custom_content_type_preserves_other_headers(self, director):
         """Custom content type doesn't clobber other headers from parameters."""
         route = HTTPRoute(
@@ -530,8 +557,8 @@ class TestContentTypeHandling:
         request = director.build(route, {"name": "test"}, "https://example.com")
         assert request.headers["content-type"] == "application/json"
 
-    def test_non_json_content_type_falls_through(self, director):
-        """Non-JSON types like multipart/form-data don't get JSON-serialized."""
+    def test_non_json_content_type_uses_native_encoding(self, director):
+        """Non-JSON types like multipart/form-data use httpx's native encoding."""
         route = HTTPRoute(
             path="/upload",
             method="POST",
@@ -551,10 +578,8 @@ class TestContentTypeHandling:
         )
 
         request = director.build(route, {"file": "data"}, "https://example.com")
-        # Should fall through to httpx's json= path (not manually serialized
-        # with a multipart/form-data header), since the content type isn't
-        # JSON-compatible.
-        assert request.headers["content-type"] == "application/json"
+        # multipart/form-data should be sent as multipart, not JSON
+        assert "multipart/form-data" in request.headers["content-type"]
 
 
 class TestQueryParameterSerialization:
@@ -1152,3 +1177,315 @@ class TestPathTraversalPrevention:
         # Verify traversal didn't escape the users/ prefix
         assert decoded.startswith("https://api.example.com/api/v1/users/")
         assert url.startswith("https://api.example.com/api/v1/users/")
+
+
+class TestContentTypeDispatch:
+    """Test that non-JSON content types are dispatched correctly."""
+
+    @pytest.fixture
+    def director(self):
+        spec = SchemaPath.from_dict(
+            {
+                "openapi": "3.0.0",
+                "info": {"title": "t", "version": "1"},
+                "paths": {},
+            }
+        )
+        return RequestDirector(spec)
+
+    @pytest.fixture
+    def multipart_route(self):
+        return HTTPRoute(
+            path="/upload",
+            method="POST",
+            operation_id="upload_file",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "multipart/form-data": {
+                        "type": "object",
+                        "properties": {
+                            "filename": {"type": "string"},
+                            "data": {"type": "string"},
+                        },
+                    }
+                },
+            ),
+            parameter_map={
+                "filename": {"location": "body", "openapi_name": "filename"},
+                "data": {"location": "body", "openapi_name": "data"},
+            },
+        )
+
+    @pytest.fixture
+    def form_urlencoded_route(self):
+        return HTTPRoute(
+            path="/login",
+            method="POST",
+            operation_id="login",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/x-www-form-urlencoded": {
+                        "type": "object",
+                        "properties": {
+                            "username": {"type": "string"},
+                            "password": {"type": "string"},
+                        },
+                    }
+                },
+            ),
+            parameter_map={
+                "username": {"location": "body", "openapi_name": "username"},
+                "password": {"location": "body", "openapi_name": "password"},
+            },
+        )
+
+    @pytest.fixture
+    def json_route(self):
+        return HTTPRoute(
+            path="/items",
+            method="POST",
+            operation_id="create_item",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/json": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                        },
+                    }
+                },
+            ),
+            parameter_map={
+                "name": {"location": "body", "openapi_name": "name"},
+            },
+        )
+
+    def test_multipart_form_data_not_sent_as_json(self, director, multipart_route):
+        """multipart/form-data bodies should use httpx data= not json=."""
+        request = director.build(
+            multipart_route,
+            {"filename": "test.txt", "data": "hello"},
+        )
+        content_type = request.headers.get("content-type", "")
+        assert "multipart/form-data" in content_type
+        # Should NOT be JSON-encoded
+        assert "application/json" not in content_type
+
+    def test_form_urlencoded_not_sent_as_json(self, director, form_urlencoded_route):
+        """application/x-www-form-urlencoded bodies should use httpx data=."""
+        request = director.build(
+            form_urlencoded_route,
+            {"username": "alice", "password": "secret"},
+        )
+        content_type = request.headers.get("content-type", "")
+        assert "application/x-www-form-urlencoded" in content_type
+        assert "application/json" not in content_type
+        # Verify the body is form-encoded
+        body_text = request.content.decode("utf-8")
+        assert "username=alice" in body_text
+        assert "password=secret" in body_text
+
+    def test_multipart_stringifies_non_string_values(self, director):
+        """Non-string scalars (int, bool) must be stringified for httpx files=."""
+        route = HTTPRoute(
+            path="/submit",
+            method="POST",
+            operation_id="submit",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "multipart/form-data": {
+                        "type": "object",
+                        "properties": {
+                            "count": {"type": "integer"},
+                            "active": {"type": "boolean"},
+                        },
+                    }
+                },
+            ),
+            parameter_map={
+                "count": {"location": "body", "openapi_name": "count"},
+                "active": {"location": "body", "openapi_name": "active"},
+            },
+        )
+        # Should not raise — non-string values get str() converted
+        request = director.build(route, {"count": 42, "active": True})
+        content_type = request.headers.get("content-type", "")
+        assert "multipart/form-data" in content_type
+        # Multipart requests are streaming; read to verify content
+        request.read()
+        body = request.content.decode("utf-8")
+        assert "42" in body
+        assert "true" in body
+
+    def test_multipart_preserves_tuple_values(self, director):
+        """Tuple values (file-like) are passed through unchanged to httpx files=."""
+        route = HTTPRoute(
+            path="/upload",
+            method="POST",
+            operation_id="upload",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "multipart/form-data": {
+                        "type": "object",
+                        "properties": {"file": {"type": "string"}},
+                    }
+                },
+            ),
+            parameter_map={
+                "file": {"location": "body", "openapi_name": "file"},
+            },
+        )
+        # Tuple values represent file-like objects for httpx
+        request = director.build(route, {"file": ("report.csv", b"a,b,c")})
+        content_type = request.headers.get("content-type", "")
+        assert "multipart/form-data" in content_type
+        request.read()
+        body = request.content.decode("utf-8", errors="replace")
+        assert "report.csv" in body
+        assert "a,b,c" in body
+
+    def test_multipart_bare_bytes_not_stringified(self, director):
+        """Bare bytes values are passed directly to httpx, not repr-stringified."""
+        route = HTTPRoute(
+            path="/upload",
+            method="POST",
+            operation_id="upload_binary",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "multipart/form-data": {
+                        "type": "object",
+                        "properties": {
+                            "payload": {"type": "string", "format": "binary"},
+                        },
+                    }
+                },
+            ),
+            parameter_map={
+                "payload": {"location": "body", "openapi_name": "payload"},
+            },
+        )
+        raw = b"\x89PNG\r\n\x1a\nfake-image-data"
+        request = director.build(route, {"payload": raw})
+        content_type = request.headers.get("content-type", "")
+        assert "multipart/form-data" in content_type
+        request.read()
+        # The raw bytes should appear in the body verbatim, not as "b'\\x89PNG...'"
+        assert raw in request.content
+        assert b"b'" not in request.content
+
+    def test_json_body_still_works(self, director, json_route):
+        """application/json bodies should still be sent as JSON (regression)."""
+        request = director.build(
+            json_route,
+            {"name": "widget"},
+        )
+        content_type = request.headers.get("content-type", "")
+        assert "application/json" in content_type
+        body = json.loads(request.content.decode("utf-8"))
+        assert body == {"name": "widget"}
+
+
+class TestCookieParameters:
+    """Test that cookie parameters are properly routed."""
+
+    @pytest.fixture
+    def director(self):
+        spec = SchemaPath.from_dict(
+            {
+                "openapi": "3.0.0",
+                "info": {"title": "t", "version": "1"},
+                "paths": {},
+            }
+        )
+        return RequestDirector(spec)
+
+    @pytest.fixture
+    def cookie_route(self):
+        return HTTPRoute(
+            path="/dashboard",
+            method="GET",
+            operation_id="get_dashboard",
+            parameters=[
+                ParameterInfo(
+                    name="session_id",
+                    location="cookie",
+                    required=True,
+                    schema={"type": "string"},
+                ),
+            ],
+            parameter_map={
+                "session_id": {
+                    "location": "cookie",
+                    "openapi_name": "session_id",
+                },
+            },
+        )
+
+    def test_cookie_parameter_set_on_request(self, director, cookie_route):
+        """Cookie parameters should appear as cookies on the request."""
+        request = director.build(
+            cookie_route,
+            {"session_id": "abc123"},
+        )
+        assert "session_id" in request.headers.get("cookie", "")
+        assert "abc123" in request.headers.get("cookie", "")
+
+    def test_cookie_parameter_with_fallback_mapping(self, director):
+        """Cookie parameters should work in fallback (no parameter_map) mode."""
+        route = HTTPRoute(
+            path="/dashboard",
+            method="GET",
+            operation_id="get_dashboard",
+            parameters=[
+                ParameterInfo(
+                    name="session_id",
+                    location="cookie",
+                    required=True,
+                    schema={"type": "string"},
+                ),
+            ],
+            # No parameter_map — triggers fallback path
+        )
+        request = director.build(
+            route,
+            {"session_id": "xyz789"},
+        )
+        assert "session_id" in request.headers.get("cookie", "")
+        assert "xyz789" in request.headers.get("cookie", "")
+
+    def test_cookie_non_string_value_stringified(self, director):
+        """Non-string cookie values (e.g. int, bool) use OpenAPI serialization."""
+        route = HTTPRoute(
+            path="/api",
+            method="GET",
+            operation_id="get_api",
+            parameters=[
+                ParameterInfo(
+                    name="version",
+                    location="cookie",
+                    required=True,
+                    schema={"type": "integer"},
+                ),
+                ParameterInfo(
+                    name="debug",
+                    location="cookie",
+                    required=False,
+                    schema={"type": "boolean"},
+                ),
+            ],
+            parameter_map={
+                "version": {"location": "cookie", "openapi_name": "version"},
+                "debug": {"location": "cookie", "openapi_name": "debug"},
+            },
+        )
+        request = director.build(route, {"version": 3, "debug": True})
+        cookie = request.headers.get("cookie", "")
+        assert "version=3" in cookie
+        # Booleans use OpenAPI convention (true/false, not True/False)
+        assert "debug=true" in cookie

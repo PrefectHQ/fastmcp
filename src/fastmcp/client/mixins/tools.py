@@ -7,6 +7,7 @@ import weakref
 from typing import TYPE_CHECKING, Any, Literal, overload
 
 import mcp.types
+from opentelemetry.trace import Status, StatusCode
 from pydantic import RootModel
 
 if TYPE_CHECKING:
@@ -52,12 +53,18 @@ class ClientToolsMixin:
             RuntimeError: If called while the client is not connected.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        logger.debug(f"[{self.name}] called list_tools")
+        with client_span(
+            "tools/list",
+            "tools/list",
+            "",
+            session_id=self.transport.get_session_id(),
+        ):
+            logger.debug(f"[{self.name}] called list_tools")
 
-        result = await self._await_with_session_monitoring(
-            self.session.list_tools(cursor=cursor)
-        )
-        return result
+            result = await self._await_with_session_monitoring(
+                self.session.list_tools(cursor=cursor)
+            )
+            return result
 
     async def list_tools(
         self: Client,
@@ -144,7 +151,8 @@ class ClientToolsMixin:
             "tools/call",
             name,
             session_id=self.transport.get_session_id(),
-        ):
+            tool_name=name,
+        ) as span:
             logger.debug(f"[{self.name}] called call_tool: {name}")
 
             # Inject trace context into meta for propagation to server
@@ -159,6 +167,18 @@ class ClientToolsMixin:
                     meta=propagated_meta if propagated_meta else None,
                 )
             )
+
+            # Reflect tool-level errors on the span so callers see ERROR
+            # status even though the MCP protocol call itself succeeded.
+            if result.isError and span.is_recording():
+                span.set_attribute("error.type", "tool_error")
+                description = ""
+                if result.content and isinstance(
+                    result.content[0], mcp.types.TextContent
+                ):
+                    description = result.content[0].text
+                span.set_status(Status(StatusCode.ERROR, description))
+
             return result
 
     async def _parse_call_tool_result(
@@ -274,7 +294,12 @@ class ClientToolsMixin:
 
         if task:
             return await self._call_tool_as_task(
-                name, arguments, task_id, ttl, meta=request_meta or None
+                name,
+                arguments,
+                task_id,
+                ttl,
+                raise_on_error=raise_on_error,
+                meta=request_meta or None,
             )
 
         result = await self.call_tool_mcp(
@@ -294,6 +319,7 @@ class ClientToolsMixin:
         arguments: dict[str, Any] | None = None,
         task_id: str | None = None,
         ttl: int = 60000,
+        raise_on_error: bool = True,
         meta: dict[str, Any] | None = None,
     ) -> ToolTask:
         """Call a tool for background execution (SEP-1686).
@@ -307,6 +333,7 @@ class ClientToolsMixin:
             arguments: Tool arguments
             task_id: Optional client-provided task ID (ignored, for backward compatibility)
             ttl: Time to keep results available in milliseconds (default 60s)
+            raise_on_error: Whether task.result() should raise ToolError on errors
             meta: Optional request metadata (e.g., version info)
 
         Returns:
@@ -342,7 +369,11 @@ class ClientToolsMixin:
             self._submitted_task_ids.add(server_task_id)
 
             task_obj = ToolTask(
-                self, server_task_id, tool_name=name, immediate_result=None
+                self,
+                server_task_id,
+                tool_name=name,
+                immediate_result=None,
+                raise_on_error=raise_on_error,
             )
             self._task_registry[server_task_id] = weakref.ref(task_obj)
             return task_obj
@@ -355,6 +386,7 @@ class ClientToolsMixin:
                 synthetic_task_id,
                 tool_name=name,
                 immediate_result=parsed_result,
+                raise_on_error=raise_on_error,
             )
 
 

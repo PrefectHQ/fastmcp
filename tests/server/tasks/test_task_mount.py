@@ -176,7 +176,10 @@ class TestMountedToolTasks:
         """Sync-only mounted tool returns error with task=True."""
         async with Client(parent_server) as client:
             task = await client.call_tool(
-                "child_sync_child_tool", {"message": "hello"}, task=True
+                "child_sync_child_tool",
+                {"message": "hello"},
+                task=True,
+                raise_on_error=False,
             )
 
             # Should return immediately with an error
@@ -663,7 +666,9 @@ class TestMountedTaskConfigModes:
     async def test_forbidden_mode_with_task_through_mount(self, parent_with_modes):
         """Forbidden mode tool degrades gracefully with task through mount."""
         async with Client(parent_with_modes) as client:
-            task = await client.call_tool("child_forbidden_tool", {}, task=True)
+            task = await client.call_tool(
+                "child_forbidden_tool", {}, task=True, raise_on_error=False
+            )
 
             # Should return immediately (graceful degradation)
             assert task.returned_immediately
