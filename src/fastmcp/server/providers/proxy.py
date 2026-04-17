@@ -10,7 +10,8 @@ from __future__ import annotations
 import base64
 import inspect
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
 
@@ -565,6 +566,7 @@ class ProxyProvider(Provider):
         self._resources_cache: _CacheEntry[Resource] | None = None
         self._templates_cache: _CacheEntry[ResourceTemplate] | None = None
         self._prompts_cache: _CacheEntry[Prompt] | None = None
+        self._backend_capabilities: mcp.types.ServerCapabilities | None = None
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -719,6 +721,37 @@ class ProxyProvider(Provider):
         if not matching:
             return None
         return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
+
+    # -------------------------------------------------------------------------
+    # Lifecycle
+    # -------------------------------------------------------------------------
+
+    @asynccontextmanager
+    async def lifespan(self) -> AsyncIterator[None]:
+        """Preload backend capabilities at server startup.
+
+        Connects to the backend during lifespan to fetch its serverCapabilities
+        from the initialize response. These are stored on the provider and used
+        by the hosting FastMCP server to advertise accurate capabilities and to
+        remove handlers for methods the backend does not support.
+        """
+        try:
+            client = await self._get_client()
+            async with client:
+                init_result = client.initialize_result
+                if init_result is not None:
+                    self._backend_capabilities = init_result.capabilities
+                else:
+                    logger.warning(
+                        "ProxyProvider: backend did not return an initialize result; "
+                        "capabilities will not be filtered"
+                    )
+        except Exception as e:
+            logger.warning(
+                f"ProxyProvider: could not preload backend capabilities: {e}; "
+                "capabilities will not be filtered"
+            )
+        yield
 
     # -------------------------------------------------------------------------
     # Task methods

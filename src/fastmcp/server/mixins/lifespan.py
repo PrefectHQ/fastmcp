@@ -175,6 +175,10 @@ class LifespanMixin:
             for provider in self.providers:
                 await stack.enter_async_context(provider.lifespan())
 
+            # After providers are up, adjust MCP handlers to reflect actual
+            # backend capabilities (removes handlers for unsupported methods).
+            self._sync_proxy_capabilities()
+
             self._started.set()
             try:
                 yield
@@ -190,6 +194,85 @@ class LifespanMixin:
                     if self._lifespan_ref_count == 0:
                         self._lifespan_result_set = False
                         self._lifespan_result = None
+
+    def _sync_proxy_capabilities(self: FastMCP) -> None:
+        """Remove MCP handlers for capabilities the backend does not support.
+
+        After provider lifespans have run, any ProxyProvider instances have had a
+        chance to preload their backend's serverCapabilities. If the backend doesn't
+        support a capability (resources, prompts, tools) and there are no local
+        components of that type either, we remove the corresponding request handlers
+        from the low-level MCP server.
+
+        This has two effects:
+        1. The ``initialize`` response no longer advertises unsupported capabilities.
+        2. Clients that try to use an unsupported method receive a proper
+           ``METHOD_NOT_FOUND`` (-32601) JSON-RPC error instead of an empty list.
+
+        The adjustment is conservative: if there are any providers whose capabilities
+        are not known (i.e. not a LocalProvider or ProxyProvider with loaded caps),
+        we leave the handlers untouched.
+        """
+        import mcp.types
+
+        from fastmcp.server.providers.local_provider.local_provider import LocalProvider
+        from fastmcp.server.providers.proxy import ProxyProvider
+
+        # Collect ProxyProviders that have loaded backend capabilities.
+        proxy_providers = [
+            p
+            for p in self.providers
+            if isinstance(p, ProxyProvider) and p._backend_capabilities is not None
+        ]
+        if not proxy_providers:
+            return
+
+        # Only adjust when every provider is either a LocalProvider or a
+        # ProxyProvider with known capabilities. Unknown providers may have
+        # components we can't inspect synchronously, so we leave things alone.
+        if any(
+            not isinstance(p, (LocalProvider, ProxyProvider)) for p in self.providers
+        ):
+            return
+
+        # Aggregate: a capability is "supported" if ANY proxy backend supports it.
+        # _backend_capabilities is guaranteed non-None by the filter above.
+        backend_caps = [
+            p._backend_capabilities
+            for p in proxy_providers
+            if p._backend_capabilities is not None
+        ]
+        any_resources = any(bool(c.resources) for c in backend_caps)
+        any_prompts = any(bool(c.prompts) for c in backend_caps)
+        any_tools = any(bool(c.tools) for c in backend_caps)
+
+        # Check local provider for statically-registered components.
+        from fastmcp.prompts.base import Prompt
+        from fastmcp.resources.base import Resource
+        from fastmcp.resources.template import ResourceTemplate
+        from fastmcp.tools.base import Tool
+
+        local = self._local_provider._components.values()
+        local_has_resources = any(
+            isinstance(c, (Resource, ResourceTemplate)) for c in local
+        )
+        local_has_prompts = any(isinstance(c, Prompt) for c in local)
+        local_has_tools = any(isinstance(c, Tool) for c in local)
+
+        if not any_resources and not local_has_resources:
+            self._mcp_server.request_handlers.pop(mcp.types.ListResourcesRequest, None)
+            self._mcp_server.request_handlers.pop(
+                mcp.types.ListResourceTemplatesRequest, None
+            )
+            self._mcp_server.request_handlers.pop(mcp.types.ReadResourceRequest, None)
+
+        if not any_prompts and not local_has_prompts:
+            self._mcp_server.request_handlers.pop(mcp.types.ListPromptsRequest, None)
+            self._mcp_server.request_handlers.pop(mcp.types.GetPromptRequest, None)
+
+        if not any_tools and not local_has_tools:
+            self._mcp_server.request_handlers.pop(mcp.types.ListToolsRequest, None)
+            self._mcp_server.request_handlers.pop(mcp.types.CallToolRequest, None)
 
     def _setup_task_protocol_handlers(self: FastMCP) -> None:
         """Register SEP-1686 task protocol handlers with SDK.
