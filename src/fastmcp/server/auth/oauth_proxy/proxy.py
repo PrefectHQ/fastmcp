@@ -262,7 +262,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # JWT signing key
         jwt_signing_key: str | bytes | None = None,
         # Consent screen configuration
-        require_authorization_consent: bool | Literal["external"] = True,
+        require_authorization_consent: bool | Literal["remember", "external"] = True,
         consent_csp_policy: str | None = None,
         # Token expiry fallback
         fallback_access_token_expiry_seconds: int | None = None,
@@ -311,12 +311,19 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 If bytes are provided, they will be used as-is.
                 If a string is provided, it will be derived into a 32-byte key using PBKDF2 (1.2M iterations).
                 If not provided, it will be derived from the upstream client secret using HKDF.
-            require_authorization_consent: Whether to require user consent before authorizing clients (default True).
-                When True, users see a consent screen before being redirected to the upstream IdP.
-                When False, authorization proceeds directly without user confirmation.
-                When "external", the built-in consent screen is skipped but no warning is
-                logged, indicating that consent is handled externally (e.g. by the upstream IdP).
-                SECURITY WARNING: Only set to False for local development or testing environments.
+            require_authorization_consent: Consent screen behavior (default True).
+                - True: always show the consent screen before redirecting to the
+                  upstream IdP. Strongest protection against AS-in-the-middle attacks
+                  (GHSA-6x8h-498w-gv8c).
+                - "remember": show the consent screen the first time, then silently
+                  approve subsequent authorizations for the same (client_id,
+                  redirect_uri) in the same browser. Cross-site navigations are
+                  still prompted to block AS-in-the-middle attacks. Lower UX
+                  friction, but weaker protection than True.
+                - "external": skip the built-in consent screen; consent is handled
+                  externally (e.g. by the upstream IdP or a custom login page).
+                - False: skip consent entirely. SECURITY WARNING: only set to
+                  False for local development or testing environments.
             consent_csp_policy: Content Security Policy for the consent page.
                 If None (default), uses the built-in CSP policy with appropriate directives.
                 If empty string "", disables CSP entirely (no meta tag is rendered).
@@ -397,13 +404,20 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         self._token_endpoint_auth_method: str | None = token_endpoint_auth_method
 
         # Consent screen configuration
-        self._require_authorization_consent: bool | Literal["external"] = (
+        self._require_authorization_consent: bool | Literal["remember", "external"] = (
             require_authorization_consent
         )
         self._consent_csp_policy: str | None = consent_csp_policy
         if require_authorization_consent == "external":
             logger.info(
                 "Built-in consent screen disabled; consent is handled externally."
+            )
+        elif require_authorization_consent == "remember":
+            logger.info(
+                "Consent screen in 'remember' mode: silent consent on return visits "
+                "for previously-approved clients (with Sec-Fetch-Site gating). "
+                "Set require_authorization_consent=True for strongest protection "
+                "against AS-in-the-middle attacks (GHSA-6x8h-498w-gv8c)."
             )
         elif not require_authorization_consent:
             logger.warning(
@@ -767,8 +781,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         3. Return local /consent URL; browser visits consent first
         4. Consent handler redirects to upstream IdP if approved/already approved
 
-        If consent is disabled (require_authorization_consent=False), skip the consent screen
-        and redirect directly to the upstream IdP.
+        If consent is disabled (require_authorization_consent=False or "external"),
+        skip the consent screen and redirect directly to the upstream IdP. In
+        "remember" mode, still route through /consent so the cookie lookup and
+        Sec-Fetch-Site gating can run.
         """
         # Security check: validate client's requested resource matches this server
         # This prevents tokens intended for one server from being used on another
@@ -845,8 +861,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ttl=15 * 60,  # Auto-expire after 15 minutes
         )
 
-        # If consent is disabled or handled externally, skip consent screen
-        if self._require_authorization_consent is not True:
+        # If consent is disabled or handled externally, skip consent screen.
+        # "remember" mode still routes through /consent so cookie lookup and
+        # Sec-Fetch-Site gating can run.
+        if self._require_authorization_consent in (False, "external"):
             upstream_url = self._build_upstream_authorize_url(
                 txn_id, transaction.model_dump()
             )
@@ -1953,8 +1971,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             # Verify consent binding cookie to prevent confused deputy attacks.
             # When consent is enabled, the browser that approved consent receives
             # a signed cookie. A different browser (e.g., a victim lured to the
-            # IdP URL) won't have this cookie and will be rejected.
-            if self._require_authorization_consent is True:
+            # IdP URL) won't have this cookie and will be rejected. "remember"
+            # mode still issues consent tokens (on silent approval or HTML
+            # approval), so both code paths need binding verification.
+            if self._require_authorization_consent in (True, "remember"):
                 consent_token = transaction_model.consent_token
                 if not consent_token:
                     logger.error("Transaction %s missing consent_token", txn_id)

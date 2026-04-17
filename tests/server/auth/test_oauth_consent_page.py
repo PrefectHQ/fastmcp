@@ -48,6 +48,22 @@ def oauth_proxy_https():
     )
 
 
+@pytest.fixture
+def oauth_proxy_https_remember():
+    """OAuthProxy in 'remember' mode for silent-consent cookie tests."""
+    return OAuthProxy(
+        upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+        upstream_token_endpoint="https://github.com/login/oauth/access_token",
+        upstream_client_id="client-id",
+        upstream_client_secret="client-secret",
+        token_verifier=_Verifier(),
+        base_url="https://myserver.example",
+        client_storage=MemoryStore(),
+        jwt_signing_key="test-secret",
+        require_authorization_consent="remember",
+    )
+
+
 async def _start_flow(
     proxy: OAuthProxy, client_id: str, redirect: str
 ) -> tuple[str, str]:
@@ -476,12 +492,14 @@ class TestConsentBindingCookie:
             set_cookie_header = r.headers.get("set-cookie", "")
             assert "__Host-MCP_CONSENT_BINDING" in set_cookie_header
 
-    async def test_auto_approve_sets_consent_binding_cookie(self, oauth_proxy_https):
-        """Auto-approve path (previously approved client) must also set the binding cookie."""
+    async def test_auto_approve_sets_consent_binding_cookie(
+        self, oauth_proxy_https_remember
+    ):
+        """Auto-approve path (previously approved client in 'remember' mode) must also set the binding cookie."""
         client_id = "client-autobinding"
         redirect = "http://localhost:6002/callback"
-        txn_id, _ = await _start_flow(oauth_proxy_https, client_id, redirect)
-        app = Starlette(routes=oauth_proxy_https.get_routes())
+        txn_id, _ = await _start_flow(oauth_proxy_https_remember, client_id, redirect)
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
         with TestClient(app) as c:
             # First: approve manually to get the approved cookie
             consent = c.get(f"/consent?txn_id={txn_id}")
@@ -503,9 +521,16 @@ class TestConsentBindingCookie:
             approved_cookie = m.group(1)
 
             # Second: start new flow, auto-approve should set binding cookie
-            new_txn, _ = await _start_flow(oauth_proxy_https, client_id, redirect)
+            # (Sec-Fetch-Site=none simulates a direct client-initiated navigation.)
+            new_txn, _ = await _start_flow(
+                oauth_proxy_https_remember, client_id, redirect
+            )
             c.cookies.set("__Host-MCP_APPROVED_CLIENTS", approved_cookie)
-            r2 = c.get(f"/consent?txn_id={new_txn}", follow_redirects=False)
+            r2 = c.get(
+                f"/consent?txn_id={new_txn}",
+                headers={"Sec-Fetch-Site": "none"},
+                follow_redirects=False,
+            )
             assert r2.status_code in (302, 303)
             set_cookie_header = r2.headers.get("set-cookie", "")
             assert "__Host-MCP_CONSENT_BINDING" in set_cookie_header

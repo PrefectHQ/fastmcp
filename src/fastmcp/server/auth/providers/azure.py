@@ -112,7 +112,7 @@ class AzureProvider(OAuthProxy):
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
-        require_authorization_consent: bool | Literal["external"] = True,
+        require_authorization_consent: bool | Literal["remember", "external"] = True,
         consent_csp_policy: str | None = None,
         forward_resource: bool = True,
         base_authority: str = "login.microsoftonline.com",

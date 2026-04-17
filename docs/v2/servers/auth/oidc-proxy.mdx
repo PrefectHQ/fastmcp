@@ -198,8 +198,8 @@ auth = OIDCProxy(
 
 </ParamField>
 
-<ParamField body="require_authorization_consent" type="bool" default="True">
-  Whether to require user consent before authorizing MCP clients. When enabled (default), users see a consent screen that displays which client is requesting access. See [OAuthProxy documentation](/v2/servers/auth/oauth-proxy#confused-deputy-attacks) for details on confused deputy attack protection.
+<ParamField body="require_authorization_consent" type='bool | Literal["remember", "external"]' default="True">
+  Consent screen behavior for authorization requests. Accepts `True` (default; always prompt — strongest protection), `"remember"` (silent consent on return visits via signed cookie, gated by `Sec-Fetch-Site` to block AS-in-the-middle attacks), `"external"` (consent handled by upstream IdP or custom page), or `False` (disable entirely; local/testing only). See the [OAuthProxy documentation](/v2/servers/auth/oauth-proxy) for full details on each mode and the security trade-offs.
 </ParamField>
 
 <ParamField body="consent_csp_policy" type="str | None" default="None">

@@ -297,20 +297,32 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
 </ParamField>
 
 
-<ParamField body="require_authorization_consent" type="bool" default="True">
-  Whether to require user consent before authorizing MCP clients. When enabled (default), users see a consent screen that displays which client is requesting access, preventing [confused deputy attacks](https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices#confused-deputy-problem) by ensuring users explicitly approve new clients.
+<ParamField body="require_authorization_consent" type='bool | Literal["remember", "external"]' default="True">
+  Consent screen behavior for authorization requests. The consent page displays which client is requesting access, defending against [confused deputy attacks](https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices#confused-deputy-problem) and AS-in-the-middle attacks (GHSA-6x8h-498w-gv8c) by requiring explicit user approval.
 
-  **Default behavior (True):**
-  Users see a consent screen on first authorization. Consent choices are remembered via signed cookies, so users only need to approve each client once. This protects against malicious clients impersonating the user.
+  **`True` (default) — always prompt:**
+  Users see the consent screen on every authorization. Strongest protection against AS-in-the-middle attacks where a malicious MCP server redirects the victim's browser into a legitimate proxy and relies on a previously-remembered approval to silently complete the flow.
 
-  **Disabling consent (False):**
-  Authorization proceeds directly to the upstream provider without user confirmation. Only use this for local development or testing environments where the security trade-off is acceptable.
+  **`"remember"` — silent consent on return:**
+  Users see the consent screen on first authorization; subsequent flows from the same browser for the same `(client_id, redirect_uri)` are silently approved via a signed cookie. Cross-site navigations (detected via `Sec-Fetch-Site`) still prompt, which preserves the mitigation against AS-in-the-middle while keeping the prompt-free UX for direct client-initiated flows. Weaker than `True` — use only if the prompt friction is a problem.
+
+  **`"external"` — delegate to upstream:**
+  Skip the built-in consent page; consent is collected by the upstream IdP or a custom login page referenced via `upstream_authorization_endpoint`. No security warning is logged.
+
+  **`False` — disable entirely:**
+  Authorization proceeds directly to the upstream provider without any consent UI. Logs a security warning. Only for local development or testing.
 
   ```python
   # Development/testing only - skip consent screen
   auth = OAuthProxy(
       ...,
       require_authorization_consent=False  # ⚠️ Security warning: only for local/testing
+  )
+
+  # Convenience mode - silent consent on return visits (less safe than True)
+  auth = OAuthProxy(
+      ...,
+      require_authorization_consent="remember",
   )
   ```
 

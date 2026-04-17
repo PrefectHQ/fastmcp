@@ -225,7 +225,7 @@ class OIDCProxy(OAuthProxy):
         # Token validation configuration
         token_endpoint_auth_method: str | None = None,
         # Consent screen configuration
-        require_authorization_consent: bool | Literal["external"] = True,
+        require_authorization_consent: bool | Literal["remember", "external"] = True,
         consent_csp_policy: str | None = None,
         forward_resource: bool = True,
         # Extra parameters
