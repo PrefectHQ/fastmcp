@@ -5,9 +5,14 @@ protecting against userinfo-based bypass attacks like http://localhost@evil.com.
 """
 
 import fnmatch
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from pydantic import AnyUrl
+
+# Path segments a browser will collapse during URI resolution (RFC 3986 §5.2.4).
+# Allowing these lets an attacker craft a URI that passes allowlist matching
+# but resolves to a different path on redirect.
+_DOT_SEGMENTS = frozenset((".", ".."))
 
 
 def _parse_host_port(netloc: str) -> tuple[str | None, str | None]:
@@ -106,6 +111,21 @@ def _match_port(
     return uri_effective == pattern_effective
 
 
+def _has_dot_segments(path: str) -> bool:
+    """Return True if a URI path contains `.` or `..` segments.
+
+    Checks both the raw path and its percent-decoded form so that encoded
+    variants like `/foo/%2e%2e/bar` are rejected. A browser resolving a
+    302 Location collapses these per RFC 3986 §5.2.4, so allowing them
+    through the allowlist lets an attacker redirect authorization codes
+    to a different path than the one that passed the pattern match.
+    """
+    for candidate in (path, unquote(path)):
+        if any(seg in _DOT_SEGMENTS for seg in candidate.split("/")):
+            return True
+    return False
+
+
 def _match_path(uri_path: str, pattern_path: str) -> bool:
     """Match path component using fnmatch for wildcard support.
 
@@ -161,6 +181,15 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     # This prevents bypass attacks like http://localhost@evil.com/callback
     # which would match http://localhost:* with naive fnmatch
     if uri_parsed.username is not None or uri_parsed.password is not None:
+        return False
+
+    # SECURITY: Reject URIs with dot-segments in the path (GHSA-8gcw-8ch3-fh9v).
+    # fnmatch's `*` matches across `/`, so a pattern like `/oauth/callback/*`
+    # accepts `/oauth/callback/../../steal`; a browser receiving that in a
+    # 302 Location resolves the dot-segments and lands at `/steal`, outside
+    # the intended allowlist prefix. Reject at validation time so the stored
+    # redirect_uri cannot later be emitted verbatim in a redirect.
+    if _has_dot_segments(uri_parsed.path):
         return False
 
     # Scheme must match exactly

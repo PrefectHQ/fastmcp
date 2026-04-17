@@ -293,8 +293,8 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
   **`True` (default) — always prompt:**
   Users see the consent screen on every authorization. Strongest protection against AS-in-the-middle attacks where a malicious MCP server redirects the victim's browser into a legitimate proxy and relies on a previously-remembered approval to silently complete the flow.
 
-  **`"remember"` — silent consent on return:**
-  Users see the consent screen on first authorization; subsequent flows from the same browser for the same `(client_id, redirect_uri)` are silently approved via a signed cookie. Cross-site navigations (detected via `Sec-Fetch-Site`) still prompt, which preserves the mitigation against AS-in-the-middle while keeping the prompt-free UX for direct client-initiated flows. Weaker than `True` — use only if the prompt friction is a problem.
+  **`"remember"` — silent consent on return (not recommended):**
+  Users see the consent screen on first authorization; subsequent flows from the same browser for the same `(client_id, redirect_uri)` are silently approved via a signed cookie. Cross-site navigations (detected via `Sec-Fetch-Site`) fall back to the prompt as a defense-in-depth heuristic, but this is a browser-level signal and not a protocol guarantee — it reduces the attack surface without closing it. `"remember"` is a UX-for-security trade-off. Prefer `True` unless prompt friction is a concrete problem; an attacker who finds any path to initiate a non-cross-site navigation (XSS on a sibling origin, same-site redirect chain, etc.) regains the bypass.
 
   **`"external"` — delegate to upstream:**
   Skip the built-in consent page; consent is collected by the upstream IdP or a custom login page referenced via `upstream_authorization_endpoint`. No security warning is logged.
