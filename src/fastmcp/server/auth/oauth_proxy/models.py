@@ -248,13 +248,13 @@ class ProxyDCRClient(OAuthClientInformationFull):
                     f"Redirect URI '{redirect_uri}' does not match allowed patterns."
                 )
 
-        # redirect_uri is None with no CIMD document: if patterns are configured
-        # (including []), we can't auto-select from placeholder redirect_uris — require
-        # the caller to provide an explicit URI so patterns can be validated.
+        # redirect_uri is None with no CIMD document: let base class resolve the URI
+        # (handles the single-registered-URI shortcut for DCR clients), then validate
+        # the resolved URI against patterns so [] and other restrictions are enforced.
+        resolved = super().validate_redirect_uri(redirect_uri)
         if self.allowed_redirect_uri_patterns is not None:
-            raise InvalidRedirectUriError(
-                "redirect_uri must be provided when redirect URI restrictions are configured."
-            )
-
-        # No redirect_uri and no pattern restrictions — delegate to base validation.
-        return super().validate_redirect_uri(redirect_uri)
+            if not validate_redirect_uri(resolved, self.allowed_redirect_uri_patterns):
+                raise InvalidRedirectUriError(
+                    f"Redirect URI '{resolved}' does not match allowed patterns."
+                )
+        return resolved

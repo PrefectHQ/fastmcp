@@ -137,6 +137,31 @@ class TestProxyDCRClient:
         result = client.validate_redirect_uri(None)
         assert result == AnyUrl("http://localhost:3000")
 
+    def test_none_redirect_uri_with_matching_patterns(self):
+        """DCR client with single URI and patterns: None resolves and validates against patterns."""
+        client = ProxyDCRClient(
+            client_id="test",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("http://localhost:3000")],
+            allowed_redirect_uri_patterns=["http://localhost:*"],
+        )
+
+        # Resolves to registered URI which matches the pattern — should succeed
+        result = client.validate_redirect_uri(None)
+        assert result == AnyUrl("http://localhost:3000")
+
+    def test_none_redirect_uri_with_nonmatching_patterns(self):
+        """DCR client with single URI and patterns: None raises if resolved URI doesn't match."""
+        client = ProxyDCRClient(
+            client_id="test",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("http://localhost:3000")],
+            allowed_redirect_uri_patterns=["https://myapp.example.com/*"],
+        )
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(None)
+
     def test_cimd_none_redirect_uri_single_exact(self):
         """CIMD clients may omit redirect_uri only when a single exact URI exists."""
         cimd_doc = CIMDDocument(
