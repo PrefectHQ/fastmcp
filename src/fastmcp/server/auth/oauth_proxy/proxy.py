@@ -702,6 +702,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # send the upstream OAuth App's client_id directly in the /authorize request.
         # Synthesize a client on-the-fly so these clients aren't rejected with 400.
         if client_id == self._upstream_client_id:
+            logger.debug(
+                "Client %s matched upstream client_id — synthesizing client without DCR",
+                client_id,
+            )
             return ProxyDCRClient(
                 client_id=client_id,
                 client_secret=None,

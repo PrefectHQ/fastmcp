@@ -1,7 +1,10 @@
 """Tests for OAuth proxy client registration (DCR)."""
 
+import pytest
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
+
+from fastmcp.server.auth.oauth_proxy.models import InvalidRedirectUriError
 
 
 class TestOAuthProxyClientRegistration:
@@ -92,3 +95,25 @@ class TestUpstreamClientIdFallback:
         """Non-upstream, unregistered IDs still return None."""
         client = await oauth_proxy.get_client("some-random-client-id")
         assert client is None
+
+    async def test_redirect_uri_allowed_when_no_pattern_restriction(self, oauth_proxy):
+        """Any redirect URI is accepted when allowed_client_redirect_uris is None."""
+        assert oauth_proxy._allowed_client_redirect_uris is None
+        client = await oauth_proxy.get_client("test-client-id")
+        assert client is not None
+        uri = client.validate_redirect_uri(AnyUrl("https://claude.ai/oauth/callback"))
+        assert str(uri) == "https://claude.ai/oauth/callback"
+
+    async def test_redirect_uri_validated_against_patterns(self, oauth_proxy):
+        """Redirect URI validation honours allowed_client_redirect_uris when set."""
+        oauth_proxy._allowed_client_redirect_uris = ["http://localhost:*"]
+        client = await oauth_proxy.get_client("test-client-id")
+        assert client is not None
+
+        # Allowed URI passes
+        uri = client.validate_redirect_uri(AnyUrl("http://localhost:12345/callback"))
+        assert str(uri) == "http://localhost:12345/callback"
+
+        # Disallowed URI raises
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("https://evil.example.com/callback"))
