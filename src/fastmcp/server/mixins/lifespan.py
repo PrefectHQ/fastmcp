@@ -258,18 +258,26 @@ class LifespanMixin:
         any_prompts = any(bool(c.prompts) for c in backend_caps)
         any_tools = any(bool(c.tools) for c in backend_caps)
 
-        # Check local provider for statically-registered components.
+        # Check all LocalProvider instances for statically-registered components.
+        # A user may pass additional LocalProvider instances via the providers kwarg,
+        # so we aggregate across every LocalProvider in self.providers, not just
+        # the server's built-in self._local_provider.
         from fastmcp.prompts.base import Prompt
         from fastmcp.resources.base import Resource
         from fastmcp.resources.template import ResourceTemplate
         from fastmcp.tools.base import Tool
 
-        local = self._local_provider._components.values()
+        local_components = [
+            c
+            for p in self.providers
+            if isinstance(p, LocalProvider)
+            for c in p._components.values()
+        ]
         local_has_resources = any(
-            isinstance(c, (Resource, ResourceTemplate)) for c in local
+            isinstance(c, (Resource, ResourceTemplate)) for c in local_components
         )
-        local_has_prompts = any(isinstance(c, Prompt) for c in local)
-        local_has_tools = any(isinstance(c, Tool) for c in local)
+        local_has_prompts = any(isinstance(c, Prompt) for c in local_components)
+        local_has_tools = any(isinstance(c, Tool) for c in local_components)
 
         if not any_resources and not local_has_resources:
             self._mcp_server.request_handlers.pop(mcp.types.ListResourcesRequest, None)

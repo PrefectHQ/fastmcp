@@ -735,6 +735,7 @@ class ProxyProvider(Provider):
         by the hosting FastMCP server to advertise accurate capabilities and to
         remove handlers for methods the backend does not support.
         """
+        self._backend_capabilities = None
         try:
             client = await self._get_client()
             async with client:
