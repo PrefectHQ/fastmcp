@@ -313,8 +313,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 If not provided, it will be derived from the upstream client secret using HKDF.
             require_authorization_consent: Consent screen behavior (default True).
                 - True: always show the consent screen before redirecting to the
-                  upstream IdP. Strongest protection against AS-in-the-middle attacks
-                  (GHSA-6x8h-498w-gv8c).
+                  upstream IdP. Strongest protection against AS-in-the-middle
+                  attacks.
                 - "remember": show the consent screen the first time, then silently
                   approve subsequent authorizations for the same (client_id,
                   redirect_uri) in the same browser. Cross-site navigations are
@@ -417,7 +417,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "Consent screen in 'remember' mode: silent consent on return visits "
                 "for previously-approved clients (with Sec-Fetch-Site gating). "
                 "Set require_authorization_consent=True for strongest protection "
-                "against AS-in-the-middle attacks (GHSA-6x8h-498w-gv8c)."
+                "against AS-in-the-middle attacks."
             )
         elif not require_authorization_consent:
             logger.warning(

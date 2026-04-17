@@ -331,10 +331,10 @@ class ConsentMixin:
 
         # Silent consent only fires in "remember" mode, and only when the
         # request arrived via a safe navigation context. AS-in-the-middle
-        # attacks (GHSA-6x8h-498w-gv8c) surface as cross-site redirects from
-        # a third-party origin into /authorize; forcing the HTML prompt in
-        # that case preserves the consent-screen mitigation without blocking
-        # legitimate client-initiated flows (Sec-Fetch-Site: none).
+        # attacks surface as cross-site redirects from a third-party origin
+        # into /authorize; forcing the HTML prompt in that case preserves
+        # the consent-screen mitigation without blocking legitimate
+        # client-initiated flows (Sec-Fetch-Site: none).
         if self._require_authorization_consent == "remember":
             sec_fetch_site = request.headers.get("Sec-Fetch-Site")
             # Fail closed on missing header: legacy clients degrade to the

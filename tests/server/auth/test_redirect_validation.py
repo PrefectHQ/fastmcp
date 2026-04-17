@@ -169,12 +169,13 @@ class TestSecurityBypass:
 
 
 class TestDotSegmentBypass:
-    """Tests for GHSA-8gcw-8ch3-fh9v: dot-segment bypass of path allowlists.
+    """Tests for dot-segment bypass of path allowlists.
 
-    A pattern like `/oauth/callback/*` matches `/oauth/callback/../../steal`
-    via `fnmatch`, because `*` matches across `/`. Browsers resolve the
-    dot-segments on redirect, landing at a path outside the allowlist prefix.
-    The fix rejects dot-segments (raw and percent-encoded) during validation.
+    A pattern like `/oauth/callback/*` would otherwise match
+    `/oauth/callback/../../steal` via `fnmatch`, because `*` matches across
+    `/`. Browsers resolve the dot-segments on redirect, landing at a path
+    outside the allowlist prefix. The validator rejects dot-segments (raw
+    and percent-encoded) up front.
     """
 
     def test_traversal_segments_rejected(self):

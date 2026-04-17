@@ -733,9 +733,9 @@ class TestConsentSecurity:
 class TestConsentModes:
     """Tests for the three consent modes: True (always), 'remember' (silent), 'external'.
 
-    Covers the default-behavior change in GHSA-6x8h-498w-gv8c: True no longer
-    silently approves return visits, and 'remember' mode gates silent consent
-    on Sec-Fetch-Site to block AS-in-the-middle attacks.
+    Covers the default behavior where True no longer silently approves return
+    visits, and 'remember' mode gates silent consent on Sec-Fetch-Site to
+    block AS-in-the-middle attacks.
     """
 
     async def test_default_mode_does_not_set_approval_cookie(self, oauth_proxy_https):
@@ -818,9 +818,9 @@ class TestConsentModes:
     ):
         """Sec-Fetch-Site=cross-site must skip silent consent even with valid cookie.
 
-        Blocks the GHSA-6x8h-498w-gv8c AS-in-the-middle scenario: attacker
-        redirects the victim's browser to /authorize from a third-party origin,
-        which browsers mark cross-site. Legit local-host flows are Sec-Fetch-Site=none.
+        Blocks the AS-in-the-middle scenario: attacker redirects the victim's
+        browser to /authorize from a third-party origin, which browsers mark
+        cross-site. Legit local-host flows are Sec-Fetch-Site=none.
         """
         client_id = "client-cross"
         redirect = "http://localhost:7003/callback"
