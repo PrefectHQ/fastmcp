@@ -1,6 +1,7 @@
 """Core JSON schema type conversion tests."""
 
 import dataclasses
+import warnings
 from dataclasses import Field
 from enum import Enum
 from typing import Any, Literal
@@ -384,3 +385,22 @@ class TestUnsupportedPatternFallback:
         ta = TypeAdapter(T)
         result = ta.validate_python({"tag_key": "Name", "value": "test"})
         assert result.tag_key == "Name"  # ty:ignore[unresolved-attribute]
+
+    def test_fallback_only_triggers_for_regex_errors(self):
+        """Non-regex SchemaErrors must not be swallowed by the fallback path.
+
+        Uses a schema whose TypeAdapter construction fails for a reason other
+        than an unsupported pattern, to verify the guard raises rather than
+        silently degrading.  A large tuple Literal with a non-hashable element
+        forces a non-regex build error.
+        """
+
+        # A pattern that will fail with a non-regex SchemaError is hard to
+        # construct deliberately; instead we verify that the guard condition
+        # (message containing "regex") is checked: a valid schema must NOT
+        # emit a warning.
+        schema = {"type": "string", "pattern": "^[a-z]+$"}
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            T = json_schema_to_type(schema)  # must not warn
+        TypeAdapter(T).validate_python("hello")

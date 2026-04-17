@@ -82,6 +82,7 @@ from pydantic import (
     TypeAdapter,
     model_validator,
 )
+from pydantic_core import SchemaError as _PydanticSchemaError
 from typing_extensions import NotRequired, TypedDict
 
 __all__ = ["JSONSchema", "json_schema_to_type"]
@@ -293,7 +294,9 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
     if "pattern" in constraints:
         try:
             TypeAdapter(annotated)
-        except Exception:
+        except _PydanticSchemaError as exc:
+            if "regex" not in str(exc).lower():
+                raise
             pattern = constraints.pop("pattern")
             warnings.warn(
                 f"Pattern {pattern!r} is not supported by Pydantic's regex engine "
