@@ -85,7 +85,9 @@ class TestProxyToolsTaskForbidden:
     async def test_tool_task_returns_error_immediately(self, proxy_server: FastMCP):
         """Tool called with task=True through proxy returns error immediately."""
         async with Client(proxy_server) as client:
-            task = await client.call_tool("add_numbers", {"a": 5, "b": 3}, task=True)
+            task = await client.call_tool(
+                "add_numbers", {"a": 5, "b": 3}, task=True, raise_on_error=False
+            )
 
             # Should return immediately (forbidden behavior)
             assert task.returned_immediately
@@ -100,7 +102,10 @@ class TestProxyToolsTaskForbidden:
         """Sync-only tool with task=True also returns error immediately."""
         async with Client(proxy_server) as client:
             task = await client.call_tool(
-                "sync_only_tool", {"message": "test"}, task=True
+                "sync_only_tool",
+                {"message": "test"},
+                task=True,
+                raise_on_error=False,
             )
 
             assert task.returned_immediately

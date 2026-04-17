@@ -48,7 +48,7 @@ max_lines = 1029
 
 [[rules]]
 path = "tests/server/tasks/test_task_mount.py"
-max_lines = 1083
+max_lines = 1088
 
 [[rules]]
 path = "tests/server/test_dependencies.py"
