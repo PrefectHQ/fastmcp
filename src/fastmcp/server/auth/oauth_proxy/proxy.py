@@ -698,6 +698,20 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 await self._client_store.put(key=client_id, value=cimd_client)
                 return cimd_client
 
+        # Some MCP clients (e.g. claude.ai) skip Dynamic Client Registration and
+        # send the upstream OAuth App's client_id directly in the /authorize request.
+        # Synthesize a client on-the-fly so these clients aren't rejected with 400.
+        if client_id == self._upstream_client_id:
+            return ProxyDCRClient(
+                client_id=client_id,
+                client_secret=None,
+                redirect_uris=[AnyUrl("http://localhost")],
+                grant_types=["authorization_code", "refresh_token"],
+                scope=self._default_scope_str,
+                token_endpoint_auth_method="none",
+                allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
+            )
+
         return None
 
     @override

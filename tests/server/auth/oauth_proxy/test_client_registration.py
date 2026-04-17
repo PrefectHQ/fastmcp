@@ -67,3 +67,28 @@ class TestOAuthProxyClientRegistration:
         assert retrieved.allowed_redirect_uri_patterns == [
             "http://localhost:12345/updated_callback"
         ]
+
+
+class TestUpstreamClientIdFallback:
+    """Tests for clients that skip DCR and use the upstream client_id directly."""
+
+    async def test_upstream_client_id_returns_synthetic_client(self, oauth_proxy):
+        """Clients that skip DCR and use upstream client_id directly are accepted."""
+        # oauth_proxy fixture uses "test-client-id" as upstream_client_id
+        client = await oauth_proxy.get_client("test-client-id")
+        assert client is not None
+        assert client.client_id == "test-client-id"
+        assert client.client_secret is None
+        assert client.token_endpoint_auth_method == "none"
+
+    async def test_upstream_client_id_inherits_allowed_redirect_uris(self, oauth_proxy):
+        """Synthetic upstream client respects the proxy's redirect URI restrictions."""
+        oauth_proxy._allowed_client_redirect_uris = ["http://localhost:*"]
+        client = await oauth_proxy.get_client("test-client-id")
+        assert client is not None
+        assert client.allowed_redirect_uri_patterns == ["http://localhost:*"]
+
+    async def test_unknown_client_id_still_returns_none(self, oauth_proxy):
+        """Non-upstream, unregistered IDs still return None."""
+        client = await oauth_proxy.get_client("some-random-client-id")
+        assert client is None
