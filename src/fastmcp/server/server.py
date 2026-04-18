@@ -548,6 +548,9 @@ class FastMCP(
                 "already started. Register plugins before the server binds."
             )
         plugin.check_fastmcp_compatibility()
+        # Compute routes up front so a failure inside plugin.routes() does
+        # not leave a half-registered plugin in self.plugins.
+        routes = list(plugin.routes())
         self.plugins.append(plugin)
         # Flag loader-added plugins as ephemeral so teardown can remove
         # them along with their contributions. Without this, each lifespan
@@ -555,7 +558,7 @@ class FastMCP(
         if self._in_plugin_setup_pass:
             plugin._fastmcp_ephemeral = True
         records = self._plugin_contributions.setdefault(id(plugin), [])
-        for route in plugin.routes():
+        for route in routes:
             self._additional_http_routes.append(route)
             records.append((self._additional_http_routes, route))
 
@@ -607,8 +610,14 @@ class FastMCP(
                     self.add_transform(transform)
                     records.append((self._transforms, transform))
                 for provider in plugin.providers():
+                    # add_provider may wrap the value (for example a
+                    # FastMCP is wrapped in FastMCPProvider). Record
+                    # whatever actually landed in self.providers so
+                    # teardown can find it by identity.
+                    before = len(self.providers)
                     self.add_provider(provider)
-                    records.append((self.providers, provider))
+                    for stored in self.providers[before:]:
+                        records.append((self.providers, stored))
                 self._plugins_contributed.add(id(plugin))
         finally:
             self._in_plugin_setup_pass = False

@@ -434,6 +434,66 @@ class TestLifecycle:
         # BadSetup never completed setup(); its teardown must not run.
         assert ("teardown", "bad") not in recorder.events
 
+    async def test_add_plugin_is_atomic_when_routes_raises(self):
+        """If plugin.routes() raises, the plugin must not be left in the server's list.
+
+        Otherwise a later startup would run the half-registered plugin's
+        lifecycle even though registration reported an error.
+        """
+
+        class RoutesBoom(Plugin):
+            meta = PluginMeta(name="routes-boom", version="0.1.0")
+
+            def routes(self):
+                raise RuntimeError("routes exploded")
+
+        mcp = FastMCP("t")
+        with pytest.raises(RuntimeError, match="routes exploded"):
+            mcp.add_plugin(RoutesBoom())
+
+        assert mcp.plugins == []
+        # Contribution book-keeping for the failed plugin was never created.
+        # This is a weaker assertion — we just care the plugin isn't linger.
+        assert not any(isinstance(p, RoutesBoom) for p in mcp.plugins)
+
+    async def test_ephemeral_fastmcp_provider_is_removed_on_teardown(self):
+        """Loader-added FastMCP providers are auto-wrapped; teardown must still remove them.
+
+        ``add_provider`` wraps a FastMCP in a FastMCPProvider before it
+        lands in ``self.providers``. Recording the pre-wrap object would
+        cause teardown to miss the wrapped provider and leak it across
+        cycles.
+        """
+
+        class ProviderPlugin(Plugin):
+            meta = PluginMeta(name="wrapper", version="0.1.0")
+
+            def __init__(self, config=None):
+                super().__init__(config)
+                self._child = FastMCP("child")
+
+            def providers(self):
+                return [self._child]
+
+        class Loader(Plugin):
+            meta = PluginMeta(name="loader", version="0.1.0")
+
+            async def setup(self, server):
+                server.add_plugin(ProviderPlugin())
+
+        mcp = FastMCP("t", plugins=[Loader()])
+        baseline_providers = list(mcp.providers)
+
+        async with Client(mcp) as c:
+            await c.ping()
+        async with Client(mcp) as c:
+            await c.ping()
+
+        assert [p.meta.name for p in mcp.plugins] == ["loader"]
+        # The wrapped provider that was added on each cycle was removed
+        # on each teardown — the provider list is back to baseline.
+        assert mcp.providers == baseline_providers
+
     async def test_loader_plugins_do_not_accumulate_across_cycles(self):
         """Loader-added (ephemeral) plugins and their contributions are removed on teardown.
 
