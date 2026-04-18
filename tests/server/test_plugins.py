@@ -434,6 +434,46 @@ class TestLifecycle:
         # BadSetup never completed setup(); its teardown must not run.
         assert ("teardown", "bad") not in recorder.events
 
+    async def test_contribution_collection_is_atomic_when_later_hook_raises(self):
+        """A failing hook on one plugin must not leave partial contributions behind.
+
+        If a plugin's ``middleware()`` succeeds but ``transforms()``
+        raises, the middleware must not have been installed — otherwise a
+        retry on the next lifespan attempt would pick up the plugin
+        again (because we never marked it contributed) and append
+        duplicate middleware on top of the partial prior state.
+        """
+
+        class Flaky(Plugin):
+            meta = PluginMeta(name="flaky", version="0.1.0")
+            _fail: bool = True
+
+            def middleware(self):
+                return [_TraceMiddleware("flaky")]
+
+            def transforms(self):
+                if Flaky._fail:
+                    raise RuntimeError("transforms exploded")
+                return []
+
+        mcp = FastMCP("t", plugins=[Flaky()])
+        baseline = list(mcp.middleware)
+
+        with pytest.raises(RuntimeError, match="transforms exploded"):
+            async with Client(mcp) as c:
+                await c.ping()
+
+        # Partial state from the failed cycle must not have landed.
+        assert mcp.middleware == baseline
+
+        # Retry succeeds; middleware is installed exactly once.
+        Flaky._fail = False
+        async with Client(mcp) as c:
+            await c.ping()
+
+        tags = [m.tag for m in mcp.middleware if isinstance(m, _TraceMiddleware)]
+        assert tags == ["flaky"]
+
     async def test_add_plugin_is_atomic_when_routes_raises(self):
         """If plugin.routes() raises, the plugin must not be left in the server's list.
 

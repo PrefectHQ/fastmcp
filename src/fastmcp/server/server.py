@@ -602,14 +602,22 @@ class FastMCP(
             for plugin in self.plugins:
                 if id(plugin) in self._plugins_contributed:
                     continue
+                # Gather everything first: any hook that raises aborts
+                # before any server state is mutated, so a retry on the
+                # next lifespan cycle starts clean rather than appending
+                # duplicate middleware on top of partial contributions.
+                mws = list(plugin.middleware())
+                transforms_ = list(plugin.transforms())
+                providers_ = list(plugin.providers())
+
                 records = self._plugin_contributions.setdefault(id(plugin), [])
-                for mw in plugin.middleware():
+                for mw in mws:
                     self.add_middleware(mw)
                     records.append((self.middleware, mw))
-                for transform in plugin.transforms():
+                for transform in transforms_:
                     self.add_transform(transform)
                     records.append((self._transforms, transform))
-                for provider in plugin.providers():
+                for provider in providers_:
                     # add_provider may wrap the value (for example a
                     # FastMCP is wrapped in FastMCPProvider). Record
                     # whatever actually landed in self.providers so
