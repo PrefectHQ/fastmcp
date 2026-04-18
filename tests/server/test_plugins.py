@@ -329,6 +329,90 @@ class TestLifecycle:
         async with Client(mcp) as c:
             await c.ping()
 
+    async def test_setup_and_teardown_run_on_every_lifespan_cycle(self):
+        """A server reused across multiple lifespan cycles re-runs setup/teardown."""
+        recorder = _Recorder()
+
+        class P(Plugin):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+            async def setup(self, server):
+                recorder.events.append(("setup", "p"))
+
+            async def teardown(self):
+                recorder.events.append(("teardown", "p"))
+
+        mcp = FastMCP("t", plugins=[P()])
+
+        async with Client(mcp) as c:
+            await c.ping()
+        async with Client(mcp) as c:
+            await c.ping()
+
+        # Both cycles run setup and teardown; a one-shot guard would have
+        # skipped the second cycle.
+        assert recorder.events == [
+            ("setup", "p"),
+            ("teardown", "p"),
+            ("setup", "p"),
+            ("teardown", "p"),
+        ]
+
+    async def test_contributions_not_doubled_across_lifespan_cycles(self):
+        """Contribution hooks are collected once per plugin, not per cycle."""
+
+        class P(Plugin):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+            def middleware(self):
+                return [_TraceMiddleware("p")]
+
+        mcp = FastMCP("t", plugins=[P()])
+
+        async with Client(mcp) as c:
+            await c.ping()
+        async with Client(mcp) as c:
+            await c.ping()
+
+        tags = [m.tag for m in mcp.middleware if isinstance(m, _TraceMiddleware)]
+        assert tags == ["p"]
+
+    async def test_teardown_runs_for_plugins_that_set_up_when_later_plugin_fails(self):
+        """Partial-setup failure still triggers teardown on already-initialized plugins."""
+        recorder = _Recorder()
+
+        class Good(Plugin):
+            meta = PluginMeta(name="good", version="0.1.0")
+
+            async def setup(self, server):
+                recorder.events.append(("setup", "good"))
+
+            async def teardown(self):
+                recorder.events.append(("teardown", "good"))
+
+        class BadSetup(Plugin):
+            meta = PluginMeta(name="bad", version="0.1.0")
+
+            async def setup(self, server):
+                recorder.events.append(("setup", "bad"))
+                raise RuntimeError("setup failed")
+
+            async def teardown(self):
+                # Must not be called — setup() never completed.
+                recorder.events.append(("teardown", "bad"))
+
+        mcp = FastMCP("t", plugins=[Good(), BadSetup()])
+
+        with pytest.raises(RuntimeError, match="setup failed"):
+            async with Client(mcp) as c:
+                await c.ping()
+
+        assert ("setup", "good") in recorder.events
+        assert ("setup", "bad") in recorder.events
+        assert ("teardown", "good") in recorder.events
+        # BadSetup never completed setup(); its teardown must not run.
+        assert ("teardown", "bad") not in recorder.events
+
 
 class TestContributions:
     """Plugin contributions are installed during the setup pass."""

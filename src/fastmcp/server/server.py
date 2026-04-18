@@ -421,7 +421,16 @@ class FastMCP(
         # `plugins=[...]`. Setup and contribution collection happen during
         # the server's lifespan startup (see `_run_plugin_setup_pass`).
         self.plugins: list[Plugin] = []
-        self._plugins_initialized: bool = False
+        # Plugins whose contributions (middleware/transforms/providers/routes)
+        # have been collected onto the server. One-shot per plugin: server
+        # contributions persist across lifespan cycles like server-authored
+        # middleware, so we don't re-install them on re-entry.
+        self._plugins_contributed: set[int] = set()
+        # Plugins whose setup() has completed successfully in the current
+        # lifespan cycle. Reset on teardown. Used to scope teardown to
+        # plugins that actually ran setup, so a partial-setup failure
+        # still triggers teardown for everything that was initialized.
+        self._plugins_set_up: set[int] = set()
         for p in plugins or []:
             self.add_plugin(p)
 
@@ -517,29 +526,37 @@ class FastMCP(
     async def _run_plugin_setup_pass(self) -> None:
         """Run setup() on every registered plugin and collect contributions.
 
-        Called once during server startup (from ``_lifespan_manager``),
-        before the server binds. Iterates the plugin list in order,
-        awaiting ``setup(server)`` on each; plugins added during another
-        plugin's setup (the loader pattern) are picked up by the same loop
-        because the iteration advances against a live index.
+        Called during server startup (from ``_lifespan_manager``), before
+        the server binds. Iterates the plugin list in order, awaiting
+        ``setup(server)`` on each; plugins added during another plugin's
+        setup (the loader pattern) are picked up by the same loop because
+        the iteration advances against a live index.
 
-        After every plugin has been set up, contribution hooks
-        (``middleware``, ``transforms``, ``providers``, ``routes``) are
-        collected in registration order and installed on the server.
+        Setup runs every lifespan cycle — plugins expect a matching
+        ``setup``/``teardown`` pair. Contribution collection is one-shot
+        per plugin: once a plugin's middleware/transforms/providers/routes
+        have been installed on the server they persist across cycles,
+        matching how server-authored middleware behaves.
         """
-        if self._plugins_initialized:
-            return
-
         # Setup pass: mutating-list iteration. New plugins appended by a
-        # plugin's setup() are picked up on subsequent iterations.
+        # plugin's setup() are picked up on subsequent iterations. We mark
+        # each plugin as "set up" only after setup() returns so that a
+        # partial-setup failure scopes teardown to plugins that actually
+        # completed initialization.
         i = 0
         while i < len(self.plugins):
-            await self.plugins[i].setup(self)
+            plugin = self.plugins[i]
+            await plugin.setup(self)
+            self._plugins_set_up.add(id(plugin))
             i += 1
 
-        # Contribution collection: run in registration order so that
-        # middleware stacking and transform ordering are predictable.
+        # Contribution collection: run in registration order. Guarded
+        # per-plugin because contributions persist across lifespan cycles;
+        # new plugins (e.g. added by a loader during this cycle's setup)
+        # still get their contributions collected.
         for plugin in self.plugins:
+            if id(plugin) in self._plugins_contributed:
+                continue
             for mw in plugin.middleware():
                 self.add_middleware(mw)
             for transform in plugin.transforms():
@@ -548,12 +565,24 @@ class FastMCP(
                 self.add_provider(provider)
             for route in plugin.routes():
                 self._additional_http_routes.append(route)
-
-        self._plugins_initialized = True
+            self._plugins_contributed.add(id(plugin))
 
     async def _run_plugin_teardown(self) -> None:
-        """Await ``teardown()`` on every registered plugin in reverse order."""
+        """Await ``teardown()`` on plugins whose setup() completed this cycle.
+
+        Iterates the plugin list in reverse registration order and only
+        tears down plugins that were successfully set up. This makes
+        teardown safe to register before ``_run_plugin_setup_pass`` — a
+        failure partway through setup still runs teardown for the plugins
+        that had already initialized.
+        """
+        # Snapshot + clear first so that a slow teardown combined with a
+        # re-entry cannot double-count the set.
+        set_up = self._plugins_set_up
+        self._plugins_set_up = set()
         for plugin in reversed(self.plugins):
+            if id(plugin) not in set_up:
+                continue
             try:
                 await plugin.teardown()
             except Exception:
