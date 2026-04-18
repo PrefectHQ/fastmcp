@@ -174,8 +174,7 @@ class Plugin:
                 req = Requirement(dep)
             except InvalidRequirement as exc:
                 raise PluginError(
-                    f"Plugin {meta.name!r}: invalid PEP 508 requirement "
-                    f"{dep!r}: {exc}"
+                    f"Plugin {meta.name!r}: invalid PEP 508 requirement {dep!r}: {exc}"
                 ) from exc
             if req.name.lower().replace("_", "-") == "fastmcp":
                 raise PluginError(

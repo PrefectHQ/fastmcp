@@ -384,8 +384,7 @@ class TestContributions:
             await c.ping()
 
         assert any(
-            getattr(r, "path", None) == "/healthz"
-            for r in mcp._additional_http_routes
+            getattr(r, "path", None) == "/healthz" for r in mcp._additional_http_routes
         )
 
 

@@ -41,9 +41,7 @@ def _resolve_plugin_class(entry_point: str) -> type[Plugin]:
     try:
         module = importlib.import_module(module_path)
     except ImportError as exc:
-        raise ImportError(
-            f"Could not import module {module_path!r}: {exc}"
-        ) from exc
+        raise ImportError(f"Could not import module {module_path!r}: {exc}") from exc
 
     try:
         cls = getattr(module, class_name)
@@ -53,9 +51,7 @@ def _resolve_plugin_class(entry_point: str) -> type[Plugin]:
         ) from exc
 
     if not isinstance(cls, type) or not issubclass(cls, Plugin):
-        raise TypeError(
-            f"{entry_point!r} does not refer to a fastmcp.Plugin subclass"
-        )
+        raise TypeError(f"{entry_point!r} does not refer to a fastmcp.Plugin subclass")
     return cls
 
 
