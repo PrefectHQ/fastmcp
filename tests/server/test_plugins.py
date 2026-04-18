@@ -562,6 +562,56 @@ class TestLifecycle:
         # on each teardown — the provider list is back to baseline.
         assert mcp.providers == baseline_providers
 
+    async def test_reregistering_ephemeral_instance_as_permanent_clears_marker(self):
+        """A previously-ephemeral instance re-registered by the user is permanent.
+
+        Without clearing the marker on normal `add_plugin`, the second
+        registration would inherit `_fastmcp_ephemeral = True` from the
+        first (loader-added) cycle and get deleted during teardown, losing
+        its contributions.
+        """
+        leaked: list[Plugin] = []
+
+        class Child(Plugin):
+            meta = PluginMeta(name="child", version="0.1.0")
+
+            def middleware(self):
+                return [_TraceMiddleware("child")]
+
+        class Loader(Plugin):
+            meta = PluginMeta(name="loader", version="0.1.0")
+
+            async def setup(self, server):
+                # The loader is in control of the instance, so we can
+                # hand it back to the test via a closure.
+                child = Child()
+                leaked.append(child)
+                server.add_plugin(child)
+
+        mcp = FastMCP("t", plugins=[Loader()])
+
+        async with Client(mcp) as c:
+            await c.ping()
+
+        # Ephemeral cleanup ran — child is no longer in the plugin list,
+        # and its middleware is gone.
+        assert [p.meta.name for p in mcp.plugins] == ["loader"]
+        child_instance = leaked[0]
+        assert child_instance._fastmcp_ephemeral is True
+
+        # User re-registers the same instance as a permanent plugin.
+        mcp.add_plugin(child_instance)
+        assert child_instance._fastmcp_ephemeral is False
+
+        async with Client(mcp) as c:
+            await c.ping()
+
+        # After a second cycle, the permanent registration survives and
+        # its middleware is installed exactly once.
+        assert child_instance in mcp.plugins
+        tags = [m.tag for m in mcp.middleware if isinstance(m, _TraceMiddleware)]
+        assert tags == ["child"]
+
     async def test_loader_plugins_do_not_accumulate_across_cycles(self):
         """Loader-added (ephemeral) plugins and their contributions are removed on teardown.
 

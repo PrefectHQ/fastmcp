@@ -553,10 +553,11 @@ class FastMCP(
         routes = list(plugin.routes())
         self.plugins.append(plugin)
         # Flag loader-added plugins as ephemeral so teardown can remove
-        # them along with their contributions. Without this, each lifespan
-        # cycle accumulates a fresh generation of loader-added children.
-        if self._in_plugin_setup_pass:
-            plugin._fastmcp_ephemeral = True
+        # them along with their contributions. Written unconditionally so
+        # re-registering an instance that was previously marked ephemeral
+        # (added inside a setup pass and then cleaned up) as a permanent
+        # plugin clears the stale marker rather than inheriting it.
+        plugin._fastmcp_ephemeral = self._in_plugin_setup_pass
         records = self._plugin_contributions.setdefault(id(plugin), [])
         for route in routes:
             self._additional_http_routes.append(route)
