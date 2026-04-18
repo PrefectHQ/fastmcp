@@ -562,6 +562,49 @@ class TestLifecycle:
         # on each teardown — the provider list is back to baseline.
         assert mcp.providers == baseline_providers
 
+    async def test_ephemeral_cleanup_removes_by_identity_not_equality(self):
+        """A permanent contribution that compares equal to an ephemeral one is preserved.
+
+        list.remove() uses `==`, which is the wrong matcher when a
+        middleware defines value-based equality. A loader-added middleware
+        that happens to `==` a user-registered middleware must not cause
+        the user's to be removed during ephemeral cleanup.
+        """
+
+        class EqMiddleware(Middleware):
+            """Middleware that compares equal to any other EqMiddleware."""
+
+            def __eq__(self, other):
+                return isinstance(other, EqMiddleware)
+
+            def __hash__(self):
+                return 0
+
+        permanent = EqMiddleware()
+
+        class Child(Plugin):
+            meta = PluginMeta(name="child", version="0.1.0")
+
+            def middleware(self):
+                # A distinct instance, but equal to `permanent` by __eq__.
+                return [EqMiddleware()]
+
+        class Loader(Plugin):
+            meta = PluginMeta(name="loader", version="0.1.0")
+
+            async def setup(self, server):
+                server.add_plugin(Child())
+
+        mcp = FastMCP("t", middleware=[permanent], plugins=[Loader()])
+        assert permanent in mcp.middleware
+
+        async with Client(mcp) as c:
+            await c.ping()
+
+        # The ephemeral child's middleware was removed; the permanent
+        # user-registered one (which was `==` to it) is still installed.
+        assert any(m is permanent for m in mcp.middleware)
+
     async def test_reregistering_ephemeral_instance_as_permanent_clears_marker(self):
         """A previously-ephemeral instance re-registered by the user is permanent.
 

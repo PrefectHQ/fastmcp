@@ -16,7 +16,6 @@ from collections.abc import (
 from contextlib import (
     AbstractAsyncContextManager,
     asynccontextmanager,
-    suppress,
 )
 from dataclasses import replace
 from functools import partial
@@ -671,9 +670,15 @@ class FastMCP(
         for plugin in ephemeral:
             records = self._plugin_contributions.pop(id(plugin), [])
             for container, item in reversed(records):
-                # Already removed elsewhere? Fine to skip.
-                with suppress(ValueError):
-                    container.remove(item)
+                # Remove by identity rather than equality so a permanent
+                # contribution that happens to compare equal to `item`
+                # (e.g. a dataclass-style middleware with value-based
+                # `__eq__`) is not accidentally stripped. list.remove()
+                # uses `==`, which is the wrong matcher here.
+                for i, entry in enumerate(container):
+                    if entry is item:
+                        del container[i]
+                        break
             self._plugins_contributed.discard(id(plugin))
         self.plugins = [
             p for p in self.plugins if not getattr(p, "_fastmcp_ephemeral", False)
