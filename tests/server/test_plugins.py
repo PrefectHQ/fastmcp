@@ -337,8 +337,49 @@ class TestLifecycle:
         mcp = FastMCP("t")
         async with Client(mcp) as c:
             await c.ping()
-            with pytest.raises(PluginError, match="already started"):
+            with pytest.raises(PluginError, match="plugin-entry pass"):
                 mcp.add_plugin(P())
+
+    async def test_add_plugin_raises_when_called_from_provider_lifespan(self):
+        """Post-setup-pass registration must be rejected, not silently allowed.
+
+        `_started` is set only after provider lifespans enter, so a
+        provider's `lifespan()` callback runs with `_started` False but
+        the plugin-entry pass already complete. Registering a plugin in
+        that window would skip `run()` and contribution collection for
+        the current cycle and leave the plugin in `self.plugins`; the
+        guard must reject it.
+        """
+        from contextlib import asynccontextmanager
+
+        from fastmcp.server.providers import Provider
+
+        class PluginInProviderLifespan(Provider):
+            def __init__(self, server):
+                super().__init__()
+                self.server = server
+                self.raised: Exception | None = None
+
+            @asynccontextmanager
+            async def lifespan(self):
+                class Late(Plugin):
+                    meta = PluginMeta(name="late", version="0.1.0")
+
+                try:
+                    self.server.add_plugin(Late())
+                except Exception as exc:
+                    self.raised = exc
+                yield
+
+        mcp = FastMCP("t")
+        provider = PluginInProviderLifespan(mcp)
+        mcp.add_provider(provider)
+
+        async with Client(mcp) as c:
+            await c.ping()
+
+        assert isinstance(provider.raised, PluginError)
+        assert "plugin-entry pass" in str(provider.raised)
 
     async def test_duplicate_registration_tears_down_once(self):
         """Registering the same instance twice must only call teardown() once.

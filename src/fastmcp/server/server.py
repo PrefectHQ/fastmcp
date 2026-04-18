@@ -541,10 +541,20 @@ class FastMCP(
             plugin: A :class:`Plugin` instance. Plugins are registered in
                 the order they are added; middleware is a stack.
         """
-        if self._started.is_set():
+        # Reject registration once the lifespan is active and we're past
+        # the plugin-entry pass. The loader-pattern exception is the only
+        # case where add_plugin() runs during a live lifespan, and it's
+        # gated by `_in_plugin_setup_pass`. Checking `_started` alone is
+        # too narrow: `_started` is only set after provider lifespans
+        # enter and is cleared before teardown, leaving windows in which
+        # add_plugin() would silently register a plugin whose `run()`
+        # never enters for the current cycle.
+        if self._lifespan_result_set and not self._in_plugin_setup_pass:
             raise PluginError(
-                f"Cannot add plugin {plugin.meta.name!r}: the server has "
-                "already started. Register plugins before the server binds."
+                f"Cannot add plugin {plugin.meta.name!r}: the server's "
+                "plugin-entry pass has already completed. Register "
+                "plugins before the server starts, or from inside "
+                "another plugin's `run()` (the loader pattern)."
             )
         plugin.check_fastmcp_compatibility()
         # Compute routes up front so a failure inside plugin.routes() does
