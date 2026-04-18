@@ -68,6 +68,60 @@ class TestPluginMeta:
         assert meta.owning_team == "platform"
 
 
+class TestFromPackage:
+    """PluginMeta.from_package() derives metadata from importlib.metadata."""
+
+    def test_derives_version_description_from_real_package(self):
+        """Against a known-installed package (fastmcp itself), from_package
+        should pull version and description into the meta."""
+        meta = PluginMeta.from_package("fastmcp", name="fastmcp-smoke-test")
+
+        assert meta.name == "fastmcp-smoke-test"
+        assert meta.version == fastmcp.__version__
+        # Description is whatever fastmcp itself declares; we only assert
+        # that the field is populated.
+        assert meta.description is not None
+        assert meta.dependencies == [f"fastmcp>={fastmcp.__version__}"]
+
+    def test_overrides_take_precedence(self):
+        meta = PluginMeta.from_package(
+            "fastmcp",
+            name="override-test",
+            version="99.0.0",
+            description="I override the derived description",
+            tags=["security"],
+        )
+        assert meta.version == "99.0.0"
+        assert meta.description == "I override the derived description"
+        assert meta.tags == ["security"]
+
+    def test_overriding_dependencies_replaces_the_pin(self):
+        """If a plugin author passes dependencies explicitly, the containing
+        distribution pin isn't re-added — author owns the list."""
+        meta = PluginMeta.from_package(
+            "fastmcp",
+            name="custom-deps",
+            dependencies=["regex>=2024.0"],
+        )
+        assert meta.dependencies == ["regex>=2024.0"]
+
+    def test_missing_distribution_raises_plugin_error(self):
+        with pytest.raises(PluginError, match="not installed"):
+            PluginMeta.from_package(
+                "this-package-definitely-does-not-exist-1234abcd",
+                name="missing",
+            )
+
+    def test_name_override_required_if_not_provided(self):
+        """`name` is required on PluginMeta; from_package doesn't default
+        it from the distribution name (plugin name and distribution name
+        serve different purposes)."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            PluginMeta.from_package("fastmcp")
+
+
 class TestPluginConstruction:
     """Plugin construction validates meta and config at instantiation time."""
 

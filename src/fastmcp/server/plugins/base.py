@@ -13,8 +13,10 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from email.message import Message as EmailMessage
+from importlib import metadata as importlib_metadata
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
@@ -91,6 +93,107 @@ class PluginMeta(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def from_package(cls, distribution: str, /, **overrides: Any) -> PluginMeta:
+        """Derive plugin metadata from an installed Python distribution.
+
+        Reads `version`, `description`, `author`, `homepage`, and runtime
+        dependencies from the distribution's metadata (as recorded in its
+        `pyproject.toml`), and pins the distribution itself as the first
+        entry in `dependencies` — so the manifest automatically reflects
+        the containing package and stays in sync with every new release.
+
+        Any keyword argument overrides the derived value.
+
+        Example:
+            ```python
+            class MyPiiRedactor(Plugin):
+                meta = PluginMeta.from_package(
+                    "fastmcp-plugin-my-pii",   # distribution name on PyPI
+                    name="my-pii",              # plugin identifier
+                    tags=["security"],
+                )
+            ```
+
+        Args:
+            distribution: The installed distribution name to read from
+                (e.g. `"fastmcp-plugin-my-pii"`). Must be importable via
+                `importlib.metadata`.
+            **overrides: Any `PluginMeta` field. Overrides take precedence
+                over the derived value. `name` is required unless a
+                `name` override is supplied; the distribution name is not
+                used as the plugin name by default since the two serve
+                different purposes (distribution = wheel identity, plugin
+                name = runtime identifier shown to Horizon / CLI users).
+
+        Raises:
+            PluginError: If the distribution is not installed in the
+                current environment.
+        """
+        try:
+            dist = importlib_metadata.distribution(distribution)
+        except importlib_metadata.PackageNotFoundError as exc:
+            raise PluginError(
+                f"PluginMeta.from_package({distribution!r}): distribution "
+                f"is not installed in the current environment. Install it "
+                f"(e.g. via `uv pip install {distribution}`) before "
+                f"calling from_package."
+            ) from exc
+
+        # `dist.metadata` is an email.message.Message at runtime, but
+        # `importlib.metadata.PackageMetadata`'s stubs don't expose that
+        # interface. Cast to email.message.Message to flatten header
+        # access (item lookup returns None on miss; `items()` yields one
+        # entry per header, including repeated keys like Project-URL).
+        raw = cast(EmailMessage, dist.metadata)
+        headers: dict[str, str] = {}
+        all_project_urls: list[str] = []
+        for key, value in raw.items():
+            if key == "Project-URL":
+                all_project_urls.append(value)
+            else:
+                # For repeated headers we only need one; first-wins.
+                headers.setdefault(key, value)
+
+        derived: dict[str, Any] = {"version": dist.version}
+
+        # description ← Summary header
+        summary = headers.get("Summary")
+        if summary and summary.strip():
+            derived["description"] = summary.strip()
+
+        # author ← Author, falling back to Author-email
+        author = headers.get("Author") or headers.get("Author-email")
+        if author and author.strip():
+            derived["author"] = author.strip()
+
+        # homepage ← Home-page, falling back to the first Project-URL
+        # that looks like a canonical homepage reference
+        homepage = headers.get("Home-page")
+        if not homepage:
+            for entry in all_project_urls:
+                # Project-URL values are `"Label, URL"` pairs.
+                label, _, url = entry.partition(",")
+                if label.strip().lower() in {
+                    "homepage",
+                    "home",
+                    "repository",
+                    "source",
+                }:
+                    homepage = url.strip()
+                    break
+        if homepage and homepage.strip():
+            derived["homepage"] = homepage.strip()
+
+        # dependencies — pin the containing distribution at its current
+        # version so downstream consumers install it when configuring
+        # this plugin. Plugin authors can add more via overrides or by
+        # post-processing the returned meta.
+        derived["dependencies"] = [f"{distribution}>={dist.version}"]
+
+        derived.update(overrides)
+        return cls(**derived)
 
 
 class Plugin:
