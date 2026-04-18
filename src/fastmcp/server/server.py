@@ -188,16 +188,16 @@ def _get_auth_context() -> tuple[bool, Any]:
 def _is_model_visible(tool: Tool) -> bool:
     """Check whether a tool should be visible to the model.
 
-    Tools registered via ``@app.tool()`` (without ``model=True``) have
-    ``meta["ui"]["visibility"] == ["app"]`` — they are callable by app UIs
+    Tools registered via `@app.tool()` (without `model=True`) have
+    `meta["ui"]["visibility"] == ["app"]` — they are callable by app UIs
     but should not appear in the model's tool list.
 
     Returns True (visible) when:
-    - The tool has no ``meta.ui.visibility`` (normal tools).
-    - ``"model"`` is in the visibility list (e.g. ``["model"]`` or ``["app", "model"]``).
+    - The tool has no `meta.ui.visibility` (normal tools).
+    - `"model"` is in the visibility list (e.g. `["model"]` or `["app", "model"]`).
 
-    Returns False when the visibility list exists and does not contain ``"model"``
-    (e.g. ``["app"]``).
+    Returns False when the visibility list exists and does not contain `"model"`
+    (e.g. `["app"]`).
     """
     meta = tool.meta
     if not meta:
@@ -215,8 +215,8 @@ def _is_app_visible(tool: Tool) -> bool:
     """Check whether a tool has explicitly opted into app-callable visibility.
 
     Gates the dispatcher's hashed-name routing path: only tools whose
-    ``meta.ui.visibility`` list contains ``"app"`` can be reached via
-    ``<hash>_<local_name>`` calls. Tools without an explicit visibility
+    `meta.ui.visibility` list contains `"app"` can be reached via
+    `<hash>_<local_name>` calls. Tools without an explicit visibility
     declaration are NOT app-callable — they must be reached by their
     display name through the normal transform-aware resolution path.
 
@@ -516,27 +516,27 @@ class FastMCP(
         synchronously collects its HTTP routes (see below). Middleware,
         transforms, and providers are collected later, during the server's
         startup sequence, because those hooks may reference state the
-        plugin populates during ``setup()``.
+        plugin populates during `setup()`.
 
         HTTP routes are collected eagerly because HTTP transports snapshot
         the server's route list when they construct the Starlette app —
         which happens before the lifespan runs. A route returned by
-        ``plugin.routes()`` after the app is built would sit in
-        ``_additional_http_routes`` but never be mounted and would always
+        `plugin.routes()` after the app is built would sit in
+        `_additional_http_routes` but never be mounted and would always
         404. Collecting at registration time keeps non-loader plugins
         working for HTTP transports.
 
         Loader caveat: plugins added from inside another plugin's
-        ``setup()`` (the loader pattern) can still contribute middleware,
+        `setup()` (the loader pattern) can still contribute middleware,
         transforms, and providers, but their routes may not be reachable
         over HTTP/SSE transports — those transports' route lists are
-        already fixed by the time ``setup()`` runs. Loaders that need to
+        already fixed by the time `setup()` runs. Loaders that need to
         contribute routes should use the stdio transport or expose the
         routes via a non-loader plugin registered at construction time.
 
         Raises:
             PluginError: If called after the server has started, or if the
-                plugin's ``fastmcp_version`` compatibility check fails.
+                plugin's `fastmcp_version` compatibility check fails.
 
         Args:
             plugin: A :class:`Plugin` instance. Plugins are registered in
@@ -565,14 +565,14 @@ class FastMCP(
     async def _run_plugin_setup_pass(self) -> None:
         """Run setup() on every registered plugin and collect contributions.
 
-        Called during server startup (from ``_lifespan_manager``), before
+        Called during server startup (from `_lifespan_manager`), before
         the server binds. Iterates the plugin list in order, awaiting
-        ``setup(server)`` on each; plugins added during another plugin's
+        `setup(server)` on each; plugins added during another plugin's
         setup (the loader pattern) are picked up by the same loop because
         the iteration advances against a live index.
 
         Setup runs every lifespan cycle — plugins expect a matching
-        ``setup``/``teardown`` pair. Contribution collection is one-shot
+        `setup`/`teardown` pair. Contribution collection is one-shot
         per plugin: once a plugin's middleware/transforms/providers/routes
         have been installed on the server they persist across cycles,
         matching how server-authored middleware behaves.
@@ -631,11 +631,11 @@ class FastMCP(
             self._in_plugin_setup_pass = False
 
     async def _run_plugin_teardown(self) -> None:
-        """Await ``teardown()`` on plugins whose setup() completed this cycle.
+        """Await `teardown()` on plugins whose setup() completed this cycle.
 
         Iterates the plugin list in reverse registration order and only
         tears down plugins that were successfully set up. This makes
-        teardown safe to register before ``_run_plugin_setup_pass`` — a
+        teardown safe to register before `_run_plugin_setup_pass` — a
         failure partway through setup still runs teardown for the plugins
         that had already initialized.
 
@@ -652,6 +652,11 @@ class FastMCP(
         for plugin in reversed(self.plugins):
             if id(plugin) not in set_up:
                 continue
+            # Discard first so a plugin that appears twice in the list
+            # (same instance registered twice — see test_duplicates_allowed)
+            # only gets torn down once, even though its setup() ran once
+            # per list entry.
+            set_up.discard(id(plugin))
             try:
                 await plugin.teardown()
             except Exception:
@@ -692,10 +697,10 @@ class FastMCP(
     def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
         """Replace placeholder Prefab URIs with per-tool hashed ones.
 
-        For each tool whose ``meta.ui.resourceUri`` is the placeholder,
-        reads the tool's stored hash from ``meta.fastmcp._tool_hash``
+        For each tool whose `meta.ui.resourceUri` is the placeholder,
+        reads the tool's stored hash from `meta.fastmcp._tool_hash`
         and rewrites the URI to the per-tool form. Also strips CSP from
-        tool meta (it belongs on the resource). Produces ``model_copy``
+        tool meta (it belongs on the resource). Produces `model_copy`
         views — originals are untouched.
         """
         from fastmcp.server.providers.prefab_synthesis import (
@@ -768,7 +773,7 @@ class FastMCP(
         """Add a tool transformation.
 
         .. deprecated::
-            Use ``add_transform(ToolTransform({...}))`` instead.
+            Use `add_transform(ToolTransform({...}))` instead.
         """
         if fastmcp.settings.deprecation_warnings:
             warnings.warn(
@@ -1764,7 +1769,7 @@ class FastMCP(
         """Remove tool(s) from the server.
 
         .. deprecated::
-            Use ``mcp.local_provider.remove_tool(name)`` instead.
+            Use `mcp.local_provider.remove_tool(name)` instead.
 
         Args:
             name: The name of the tool to remove.
@@ -2332,7 +2337,7 @@ class FastMCP(
         optionally with a given prefix.
 
         .. deprecated::
-            Use :meth:`mount` instead. ``import_server`` will be removed in a
+            Use :meth:`mount` instead. `import_server` will be removed in a
             future version.
 
         Note that when a server is *imported*, its objects are immediately

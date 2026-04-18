@@ -1,10 +1,10 @@
 """CLI commands for working with FastMCP plugins.
 
-Currently exposes a single verb, ``fastmcp plugin manifest``, which
-imports a plugin class and emits its manifest (metadata + config schema
-+ entry point) as JSON. The manifest is the artifact downstream
-consumers (Horizon, registries, CI tooling) ingest to discover and
-configure the plugin without importing its module themselves.
+Currently exposes a single verb, `fastmcp plugin manifest`, which imports
+a plugin class and emits its manifest (metadata + config schema + entry
+point) as JSON. The manifest is the artifact downstream consumers
+(Horizon, registries, CI tooling) ingest to discover and configure the
+plugin without importing its module themselves.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import cyclopts
 from cyclopts import Parameter
 
 from fastmcp.server.plugins import Plugin
+from fastmcp.server.plugins.base import PluginError
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli.plugin")
@@ -31,7 +32,12 @@ plugin_app = cyclopts.App(
 
 
 def _resolve_plugin_class(entry_point: str) -> type[Plugin]:
-    """Import a plugin class from a ``module.path:ClassName`` spec."""
+    """Import a plugin class from a `module.path:ClassName` spec.
+
+    The class portion may be dotted (e.g. `module:Outer.MyPlugin`) to
+    resolve a nested class, matching the `entry_point` format
+    `Plugin.manifest()` emits via `__qualname__`.
+    """
     if ":" not in entry_point:
         raise ValueError(
             f"Invalid plugin reference {entry_point!r}: "
@@ -43,12 +49,14 @@ def _resolve_plugin_class(entry_point: str) -> type[Plugin]:
     except ImportError as exc:
         raise ImportError(f"Could not import module {module_path!r}: {exc}") from exc
 
-    try:
-        cls = getattr(module, class_name)
-    except AttributeError as exc:
-        raise AttributeError(
-            f"Module {module_path!r} has no attribute {class_name!r}"
-        ) from exc
+    cls: object = module
+    for part in class_name.split("."):
+        try:
+            cls = getattr(cls, part)
+        except AttributeError as exc:
+            raise AttributeError(
+                f"Module {module_path!r} has no attribute {class_name!r}"
+            ) from exc
 
     if not isinstance(cls, type) or not issubclass(cls, Plugin):
         raise TypeError(f"{entry_point!r} does not refer to a fastmcp.Plugin subclass")
@@ -72,7 +80,7 @@ def manifest_command(
     """Emit a plugin's manifest as JSON.
 
     Imports the referenced plugin class and prints its manifest to stdout,
-    or writes it to the path given by ``-o/--output``.
+    or writes it to the path given by `-o/--output`.
     """
     try:
         cls = _resolve_plugin_class(entry_point)
@@ -80,7 +88,11 @@ def manifest_command(
         logger.error(str(exc))
         sys.exit(1)
 
-    manifest = cls.manifest()
+    try:
+        manifest = cls.manifest()
+    except (PluginError, TypeError) as exc:
+        logger.error(str(exc))
+        sys.exit(1)
 
     if output is None:
         print(json.dumps(manifest, indent=2, sort_keys=False))

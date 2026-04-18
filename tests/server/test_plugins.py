@@ -338,6 +338,34 @@ class TestLifecycle:
             with pytest.raises(PluginError, match="already started"):
                 mcp.add_plugin(P())
 
+    async def test_duplicate_registration_tears_down_once(self):
+        """Registering the same instance twice must only call teardown() once.
+
+        setup() runs per list entry (so the plugin receives both entries),
+        but teardown() is an idempotent cleanup — a second call on a
+        plugin that has closed its resources would likely raise on an
+        already-closed connection.
+        """
+        recorder = _Recorder()
+
+        class P(Plugin):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+            async def teardown(self):
+                recorder.events.append(("teardown", "p"))
+
+        p = P()
+        mcp = FastMCP("t")
+        mcp.add_plugin(p)
+        mcp.add_plugin(p)
+
+        async with Client(mcp) as c:
+            await c.ping()
+
+        assert [e for e in recorder.events if e[0] == "teardown"] == [
+            ("teardown", "p"),
+        ]
+
     async def test_teardown_exception_is_logged_not_raised(self):
         class Boom(Plugin):
             meta = PluginMeta(name="boom", version="0.1.0")

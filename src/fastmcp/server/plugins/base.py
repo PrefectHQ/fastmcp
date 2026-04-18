@@ -3,7 +3,7 @@
 Plugins package server-side behavior — middleware, component transforms,
 providers, and custom HTTP routes — into reusable, configurable,
 distributable units. A plugin is a subclass of :class:`Plugin` with a
-class-level :class:`PluginMeta` and an optional nested ``Config`` model.
+class-level :class:`PluginMeta` and an optional nested `Config` model.
 
 See the design document for the full specification.
 """
@@ -47,7 +47,7 @@ class PluginMeta(BaseModel):
 
     Users who want typed custom fields subclass this model. Users who want
     to attach ad-hoc fields without defining a model put them in the
-    ``meta`` dict. Unknown top-level fields are rejected to prevent future
+    `meta` dict. Unknown top-level fields are rejected to prevent future
     collisions with standard fields.
     """
 
@@ -77,7 +77,7 @@ class PluginMeta(BaseModel):
 
     fastmcp_version: str | None = None
     """Optional PEP 440 specifier expressing compatibility with FastMCP
-    core (e.g. ``">=3.0"``). Verified at registration time.
+    core (e.g. `">=3.0"`). Verified at registration time.
     """
 
     meta: dict[str, Any] = {}
@@ -92,8 +92,8 @@ class Plugin:
     """Base class for FastMCP plugins.
 
     Subclass to define a plugin. A subclass must declare a class-level
-    ``meta`` attribute (a :class:`PluginMeta` instance). It may optionally
-    declare a nested ``Config`` (subclass of ``pydantic.BaseModel``)
+    `meta` attribute (a :class:`PluginMeta` instance). It may optionally
+    declare a nested `Config` (subclass of `pydantic.BaseModel`)
     describing its configuration schema, and override any of the lifecycle
     and contribution hooks.
 
@@ -199,7 +199,7 @@ class Plugin:
                 ) from exc
 
     def check_fastmcp_compatibility(self) -> None:
-        """Raise if the declared ``fastmcp_version`` excludes the running FastMCP."""
+        """Raise if the declared `fastmcp_version` excludes the running FastMCP."""
         spec_str = self.meta.fastmcp_version
         if spec_str is None:
             return
@@ -217,11 +217,11 @@ class Plugin:
         """Called once during the server's setup pass, before the server binds.
 
         Receives the server it's attaching to; may call
-        ``server.add_plugin()`` to register additional plugins (used by
+        `server.add_plugin()` to register additional plugins (used by
         loader plugins). Async so that plugins can open database
         connections, warm HTTP clients, or otherwise perform
-        ``await``-able initialization. Plugins must not assume other
-        plugins are present during their own ``setup()`` — the full list
+        `await`-able initialization. Plugins must not assume other
+        plugins are present during their own `setup()` — the full list
         may not yet be populated.
         """
 
@@ -229,7 +229,7 @@ class Plugin:
         """Called once when the server shuts down, in reverse registration order.
 
         Async so that plugins can close connections, flush buffers, or
-        otherwise perform ``await``-able cleanup.
+        otherwise perform `await`-able cleanup.
         """
 
     # -- contribution hooks ---------------------------------------------------
@@ -258,7 +258,7 @@ class Plugin:
         Routes otherwise receive the full incoming HTTP request unchanged,
         including all headers the client sent. If a caller has provided
         the same credentials it would use for an authenticated MCP call,
-        those headers are available on ``request.headers`` for the handler
+        those headers are available on `request.headers` for the handler
         to inspect — the plugin chooses whether and how to validate them.
         """
         return []
@@ -270,7 +270,7 @@ class Plugin:
         cls,
         path: str | Path | None = None,
     ) -> dict[str, Any] | None:
-        """Return the plugin's manifest as a dict, or write it to ``path`` as JSON.
+        """Return the plugin's manifest as a dict, or write it to `path` as JSON.
 
         Does not instantiate the plugin. The manifest is a JSON-serializable
         dict that combines the plugin's metadata, its config schema, and an
