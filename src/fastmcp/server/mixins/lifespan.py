@@ -171,6 +171,13 @@ class LifespanMixin:
             self._lifespan_result = user_lifespan_result
             self._lifespan_result_set = True
 
+            # Plugin setup pass: runs before provider lifespans and _started.
+            # Plugins may contribute providers, so this must happen before
+            # we start their lifespans below. Register teardown on the
+            # stack so it runs in reverse order on shutdown.
+            await self._run_plugin_setup_pass()
+            stack.push_async_callback(self._run_plugin_teardown)
+
             # Start lifespans for all providers
             for provider in self.providers:
                 await stack.enter_async_context(provider.lifespan())

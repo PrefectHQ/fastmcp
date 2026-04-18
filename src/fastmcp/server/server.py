@@ -68,6 +68,8 @@ from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
+from fastmcp.server.plugins import Plugin
+from fastmcp.server.plugins.base import PluginError
 from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
@@ -295,6 +297,7 @@ class FastMCP(
         middleware: Sequence[Middleware] | None = None,
         providers: Sequence[Provider] | None = None,
         transforms: Sequence[Transform] | None = None,
+        plugins: Sequence[Plugin] | None = None,
         lifespan: LifespanCallable | Lifespan | None = None,
         tools: Sequence[Tool | Callable[..., Any]] | None = None,
         on_duplicate: DuplicateBehavior | None = None,
@@ -414,6 +417,14 @@ class FastMCP(
 
             self.middleware.append(DereferenceRefsMiddleware())
 
+        # Plugin registry: an ordered list, populated by `add_plugin()` and
+        # `plugins=[...]`. Setup and contribution collection happen during
+        # the server's lifespan startup (see `_run_plugin_setup_pass`).
+        self.plugins: list[Plugin] = []
+        self._plugins_initialized: bool = False
+        for p in plugins or []:
+            self.add_plugin(p)
+
         # Set up MCP protocol handlers
         self._setup_handlers()
 
@@ -477,6 +488,76 @@ class FastMCP(
 
     def add_middleware(self, middleware: Middleware) -> None:
         self.middleware.append(middleware)
+
+    def add_plugin(self, plugin: Plugin) -> None:
+        """Register a plugin with this server.
+
+        Appends the plugin to the server's ordered plugin list. Does not
+        call ``setup()`` or collect contributions — those happen during the
+        server's startup sequence. This lets ``add_plugin()`` be called
+        from inside another plugin's ``setup()`` (the loader pattern)
+        without producing recursive lifecycle calls.
+
+        Raises:
+            PluginError: If called after the server has started, or if the
+                plugin's ``fastmcp_version`` compatibility check fails.
+
+        Args:
+            plugin: A :class:`Plugin` instance. Plugins are registered in
+                the order they are added; middleware is a stack.
+        """
+        if self._started.is_set():
+            raise PluginError(
+                f"Cannot add plugin {plugin.meta.name!r}: the server has "
+                "already started. Register plugins before the server binds."
+            )
+        plugin.check_fastmcp_compatibility()
+        self.plugins.append(plugin)
+
+    async def _run_plugin_setup_pass(self) -> None:
+        """Run setup() on every registered plugin and collect contributions.
+
+        Called once during server startup (from ``_lifespan_manager``),
+        before the server binds. Iterates the plugin list in order,
+        awaiting ``setup(server)`` on each; plugins added during another
+        plugin's setup (the loader pattern) are picked up by the same loop
+        because the iteration advances against a live index.
+
+        After every plugin has been set up, contribution hooks
+        (``middleware``, ``transforms``, ``providers``, ``routes``) are
+        collected in registration order and installed on the server.
+        """
+        if self._plugins_initialized:
+            return
+
+        # Setup pass: mutating-list iteration. New plugins appended by a
+        # plugin's setup() are picked up on subsequent iterations.
+        i = 0
+        while i < len(self.plugins):
+            await self.plugins[i].setup(self)
+            i += 1
+
+        # Contribution collection: run in registration order so that
+        # middleware stacking and transform ordering are predictable.
+        for plugin in self.plugins:
+            for mw in plugin.middleware():
+                self.add_middleware(mw)
+            for transform in plugin.transforms():
+                self.add_transform(transform)
+            for provider in plugin.providers():
+                self.add_provider(provider)
+            for route in plugin.routes():
+                self._additional_http_routes.append(route)
+
+        self._plugins_initialized = True
+
+    async def _run_plugin_teardown(self) -> None:
+        """Await ``teardown()`` on every registered plugin in reverse order."""
+        for plugin in reversed(self.plugins):
+            try:
+                await plugin.teardown()
+            except Exception:
+                logger.exception("Plugin %r raised during teardown", plugin.meta.name)
 
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider for dynamic tools, resources, and prompts.
