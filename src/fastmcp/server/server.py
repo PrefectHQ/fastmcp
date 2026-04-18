@@ -501,11 +501,27 @@ class FastMCP(
     def add_plugin(self, plugin: Plugin) -> None:
         """Register a plugin with this server.
 
-        Appends the plugin to the server's ordered plugin list. Does not
-        call ``setup()`` or collect contributions — those happen during the
-        server's startup sequence. This lets ``add_plugin()`` be called
-        from inside another plugin's ``setup()`` (the loader pattern)
-        without producing recursive lifecycle calls.
+        Appends the plugin to the server's ordered plugin list and
+        synchronously collects its HTTP routes (see below). Middleware,
+        transforms, and providers are collected later, during the server's
+        startup sequence, because those hooks may reference state the
+        plugin populates during ``setup()``.
+
+        HTTP routes are collected eagerly because HTTP transports snapshot
+        the server's route list when they construct the Starlette app —
+        which happens before the lifespan runs. A route returned by
+        ``plugin.routes()`` after the app is built would sit in
+        ``_additional_http_routes`` but never be mounted and would always
+        404. Collecting at registration time keeps non-loader plugins
+        working for HTTP transports.
+
+        Loader caveat: plugins added from inside another plugin's
+        ``setup()`` (the loader pattern) can still contribute middleware,
+        transforms, and providers, but their routes may not be reachable
+        over HTTP/SSE transports — those transports' route lists are
+        already fixed by the time ``setup()`` runs. Loaders that need to
+        contribute routes should use the stdio transport or expose the
+        routes via a non-loader plugin registered at construction time.
 
         Raises:
             PluginError: If called after the server has started, or if the
@@ -522,6 +538,8 @@ class FastMCP(
             )
         plugin.check_fastmcp_compatibility()
         self.plugins.append(plugin)
+        for route in plugin.routes():
+            self._additional_http_routes.append(route)
 
     async def _run_plugin_setup_pass(self) -> None:
         """Run setup() on every registered plugin and collect contributions.
@@ -553,7 +571,9 @@ class FastMCP(
         # Contribution collection: run in registration order. Guarded
         # per-plugin because contributions persist across lifespan cycles;
         # new plugins (e.g. added by a loader during this cycle's setup)
-        # still get their contributions collected.
+        # still get their contributions collected. Note: routes are
+        # collected synchronously at add_plugin() time because HTTP
+        # transports snapshot the route list before the lifespan runs.
         for plugin in self.plugins:
             if id(plugin) in self._plugins_contributed:
                 continue
@@ -563,8 +583,6 @@ class FastMCP(
                 self.add_transform(transform)
             for provider in plugin.providers():
                 self.add_provider(provider)
-            for route in plugin.routes():
-                self._additional_http_routes.append(route)
             self._plugins_contributed.add(id(plugin))
 
     async def _run_plugin_teardown(self) -> None:

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
+import fastmcp
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.plugins import Plugin, PluginMeta
@@ -158,12 +159,18 @@ class TestPluginValidation:
         with pytest.raises(PluginError, match="fastmcp_version"):
             Bad()
 
-    def test_incompatible_fastmcp_version_raises(self):
+    def test_incompatible_fastmcp_version_raises(self, monkeypatch):
+        # Pin the version we're checking against so the test doesn't depend
+        # on whatever build-time version the running interpreter has (CI
+        # builds can resolve to "0.0.0" via uv-dynamic-versioning's
+        # fallback, which would match specifiers like "<0.1").
+        monkeypatch.setattr(fastmcp, "__version__", "3.0.0")
+
         class Incompat(Plugin):
             meta = PluginMeta(
                 name="incompat",
                 version="0.1.0",
-                fastmcp_version="<0.1",
+                fastmcp_version=">=100.0.0",
             )
 
         with pytest.raises(PluginCompatibilityError):
@@ -199,12 +206,14 @@ class TestRegistration:
         # No dedup, no warn, no raise.
         assert len(mcp.plugins) == 2
 
-    def test_add_plugin_checks_fastmcp_version_at_registration(self):
+    def test_add_plugin_checks_fastmcp_version_at_registration(self, monkeypatch):
+        monkeypatch.setattr(fastmcp, "__version__", "3.0.0")
+
         class Incompat(Plugin):
             meta = PluginMeta(
                 name="incompat",
                 version="0.1.0",
-                fastmcp_version="<0.1",
+                fastmcp_version=">=100.0.0",
             )
 
         mcp = FastMCP("t")
@@ -470,6 +479,44 @@ class TestContributions:
         assert any(
             getattr(r, "path", None) == "/healthz" for r in mcp._additional_http_routes
         )
+
+    def test_plugin_route_mounted_on_http_app(self):
+        """Plugin routes must be in place before http_app() snapshots routes.
+
+        Regression test for collecting routes at ``add_plugin()`` time
+        rather than during the lifespan's setup pass. HTTP transports
+        call ``_get_additional_http_routes()`` at app construction, which
+        happens before the lifespan runs; routes added during setup would
+        sit in ``_additional_http_routes`` but never be mounted and would
+        always 404.
+        """
+
+        def _walk_paths(routes):
+            for route in routes:
+                path = getattr(route, "path", None)
+                if path is not None:
+                    yield path
+                inner = getattr(route, "routes", None)
+                if inner:
+                    yield from _walk_paths(inner)
+
+        from starlette.responses import JSONResponse
+        from starlette.routing import Route
+
+        async def health(request):
+            return JSONResponse({"ok": True})
+
+        class Health(Plugin):
+            meta = PluginMeta(name="health", version="0.1.0")
+
+            def routes(self):
+                return [Route("/healthz", endpoint=health, methods=["GET"])]
+
+        mcp = FastMCP("t", plugins=[Health()])
+        app = mcp.http_app()
+
+        paths = set(_walk_paths(app.router.routes))
+        assert "/healthz" in paths
 
 
 class TestManifest:
