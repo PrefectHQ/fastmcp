@@ -2,8 +2,8 @@
 
 Plugins package server-side behavior — middleware, component transforms,
 providers, and custom HTTP routes — into reusable, configurable,
-distributable units. A plugin is a subclass of :class:`Plugin` with a
-class-level :class:`PluginMeta` and an optional nested `Config` model.
+distributable units. A plugin is a subclass of `Plugin` with a
+class-level `PluginMeta` and an optional nested `Config` model.
 
 See the design document for the full specification.
 """
@@ -92,7 +92,7 @@ class Plugin:
     """Base class for FastMCP plugins.
 
     Subclass to define a plugin. A subclass must declare a class-level
-    `meta` attribute (a :class:`PluginMeta` instance). It may optionally
+    `meta` attribute (a `PluginMeta` instance). It may optionally
     declare a nested `Config` (subclass of `pydantic.BaseModel`)
     describing its configuration schema, and override any of the lifecycle
     and contribution hooks.
@@ -214,7 +214,7 @@ class Plugin:
     # -- lifecycle ------------------------------------------------------------
 
     async def setup(self, server: FastMCP) -> None:
-        """Called once during the server's setup pass, before the server binds.
+        """Called on each lifespan cycle during the server's setup pass, before the server binds.
 
         Receives the server it's attaching to; may call
         `server.add_plugin()` to register additional plugins (used by
@@ -226,7 +226,7 @@ class Plugin:
         """
 
     async def teardown(self) -> None:
-        """Called once when the server shuts down, in reverse registration order.
+        """Called on each lifespan cycle when the server shuts down, in reverse registration order.
 
         Async so that plugins can close connections, flush buffers, or
         otherwise perform `await`-able cleanup.
