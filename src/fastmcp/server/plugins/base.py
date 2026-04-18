@@ -11,6 +11,8 @@ See the design document for the full specification.
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -23,6 +25,9 @@ from fastmcp.exceptions import FastMCPError
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.providers import Provider
 from fastmcp.server.transforms import Transform
+from fastmcp.utilities.logging import get_logger
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from starlette.routing import BaseRoute
@@ -213,23 +218,60 @@ class Plugin:
 
     # -- lifecycle ------------------------------------------------------------
 
-    async def setup(self, server: FastMCP) -> None:
-        """Called on each lifespan cycle during the server's setup pass, before the server binds.
+    @asynccontextmanager
+    async def run(self, server: FastMCP) -> AsyncIterator[None]:
+        """Async context manager wrapping the plugin's lifetime.
 
-        Receives the server it's attaching to; may call
-        `server.add_plugin()` to register additional plugins (used by
-        loader plugins). Async so that plugins can open database
-        connections, warm HTTP clients, or otherwise perform
-        `await`-able initialization. Plugins must not assume other
-        plugins are present during their own `setup()` — the full list
-        may not yet be populated.
+        The framework enters `async with plugin.run(server):` on the
+        server's lifespan stack. Everything before the `yield` runs
+        during startup (in plugin registration order); the `yield` spans
+        the server's active lifetime; everything after the `yield` runs
+        on shutdown (in reverse registration order). Cancellation on
+        shutdown unwinds the context manager automatically.
+
+        The default implementation calls `setup(server)` before the
+        `yield` and `teardown()` after it, so plugins that just need
+        one-shot init/cleanup can keep overriding just those two
+        methods. Long-running plugins (channels, integration bridges,
+        background workers) override `run()` directly to use
+        `async with` for resource management and task groups:
+
+            @asynccontextmanager
+            async def run(self, server):
+                async with httpx.AsyncClient() as client:
+                    self.client = client
+                    yield
+        """
+        await self.setup(server)
+        try:
+            yield
+        finally:
+            try:
+                await self.teardown()
+            except Exception:
+                # Exceptions during teardown are logged, not raised, so a
+                # broken plugin can't take down the server's shutdown
+                # sequence. Plugins that want different semantics should
+                # override `run()` directly.
+                logger.exception("Plugin %r raised during teardown", self.meta.name)
+
+    async def setup(self, server: FastMCP) -> None:
+        """One-shot async initialization. Called by the default `run()`
+        before the `yield`.
+
+        Override for simple init work — compile regexes, warm caches,
+        open connections, register additional plugins from a loader. For
+        anything involving long-lived resources or background tasks,
+        override `run()` directly instead and use `async with`.
         """
 
     async def teardown(self) -> None:
-        """Called on each lifespan cycle when the server shuts down, in reverse registration order.
+        """One-shot async cleanup. Called by the default `run()` after
+        the `yield`.
 
-        Async so that plugins can close connections, flush buffers, or
-        otherwise perform `await`-able cleanup.
+        Override for simple cleanup work — close connections, flush
+        buffers. For resource management that would benefit from
+        `async with`, override `run()` directly instead.
         """
 
     # -- contribution hooks ---------------------------------------------------

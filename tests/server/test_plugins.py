@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -690,6 +692,159 @@ class TestLifecycle:
         # each time so nothing has accumulated.
         assert [p.meta.name for p in mcp.plugins] == ["loader"]
         assert mcp.middleware == baseline_middleware
+
+
+class TestRunHook:
+    """Plugins that override `run()` directly (the long-running pattern)."""
+
+    async def test_run_override_wraps_server_lifetime(self):
+        """A plugin overriding run() sees the server live between setup and teardown."""
+        from contextlib import asynccontextmanager
+
+        recorder = _Recorder()
+
+        class Long(Plugin):
+            meta = PluginMeta(name="long", version="0.1.0")
+
+            @asynccontextmanager
+            async def run(self, server):
+                recorder.events.append(("enter", "long"))
+                try:
+                    yield
+                finally:
+                    recorder.events.append(("exit", "long"))
+
+        mcp = FastMCP("t", plugins=[Long()])
+        async with Client(mcp) as c:
+            await c.ping()
+            # Mid-cycle: enter fired, exit hasn't.
+            assert ("enter", "long") in recorder.events
+            assert ("exit", "long") not in recorder.events
+
+        # After teardown: both fired.
+        assert recorder.events == [("enter", "long"), ("exit", "long")]
+
+    async def test_run_override_can_use_async_with(self):
+        """A plugin's run() can acquire an async-context resource and release it on exit."""
+        from contextlib import asynccontextmanager
+
+        recorder = _Recorder()
+
+        @asynccontextmanager
+        async def fake_resource():
+            recorder.events.append(("acquire", "resource"))
+            try:
+                yield "handle"
+            finally:
+                recorder.events.append(("release", "resource"))
+
+        class WithResource(Plugin):
+            meta = PluginMeta(name="with-resource", version="0.1.0")
+
+            @asynccontextmanager
+            async def run(self, server):
+                async with fake_resource() as handle:
+                    self.handle = handle
+                    yield
+
+        p = WithResource()
+        mcp = FastMCP("t", plugins=[p])
+        async with Client(mcp) as c:
+            await c.ping()
+            assert p.handle == "handle"
+
+        # async with cleanup fired on exit path
+        assert recorder.events == [
+            ("acquire", "resource"),
+            ("release", "resource"),
+        ]
+
+    async def test_run_override_cancellation_propagates_into_background_task(self):
+        """A long-running background task inside run() is cancelled on shutdown."""
+        from contextlib import asynccontextmanager
+
+        recorder = _Recorder()
+
+        class Background(Plugin):
+            meta = PluginMeta(name="background", version="0.1.0")
+
+            @asynccontextmanager
+            async def run(self, server):
+                async def worker():
+                    try:
+                        await asyncio.Event().wait()
+                    except asyncio.CancelledError:
+                        recorder.events.append(("cancelled", "worker"))
+                        raise
+
+                task = asyncio.create_task(worker())
+                try:
+                    yield
+                finally:
+                    task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await task
+
+        mcp = FastMCP("t", plugins=[Background()])
+        async with Client(mcp) as c:
+            await c.ping()
+
+        assert recorder.events == [("cancelled", "worker")]
+
+    async def test_run_override_raising_before_yield_aborts_startup(self):
+        """If a plugin's run() raises before yielding, startup fails cleanly."""
+        from contextlib import asynccontextmanager
+
+        class BadStart(Plugin):
+            meta = PluginMeta(name="bad-start", version="0.1.0")
+
+            @asynccontextmanager
+            async def run(self, server):
+                raise RuntimeError("cannot start")
+                yield  # unreachable
+
+        mcp = FastMCP("t", plugins=[BadStart()])
+        with pytest.raises(RuntimeError, match="cannot start"):
+            async with Client(mcp) as c:
+                await c.ping()
+
+    async def test_run_override_composes_with_simple_setup_teardown_plugins(self):
+        """A server can mix run-override plugins with setup/teardown plugins."""
+        from contextlib import asynccontextmanager
+
+        recorder = _Recorder()
+
+        class Simple(Plugin):
+            meta = PluginMeta(name="simple", version="0.1.0")
+
+            async def setup(self, server):
+                recorder.events.append(("setup", "simple"))
+
+            async def teardown(self):
+                recorder.events.append(("teardown", "simple"))
+
+        class LongRunning(Plugin):
+            meta = PluginMeta(name="long-running", version="0.1.0")
+
+            @asynccontextmanager
+            async def run(self, server):
+                recorder.events.append(("enter", "long-running"))
+                try:
+                    yield
+                finally:
+                    recorder.events.append(("exit", "long-running"))
+
+        mcp = FastMCP("t", plugins=[Simple(), LongRunning()])
+        async with Client(mcp) as c:
+            await c.ping()
+
+        # Enter order follows registration; exit order is reversed.
+        assert recorder.events == [
+            ("setup", "simple"),
+            ("enter", "long-running"),
+            ("exit", "long-running"),
+            ("teardown", "simple"),
+        ]
 
 
 class TestContributions:
