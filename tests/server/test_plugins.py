@@ -288,7 +288,12 @@ class TestLifecycle:
         ]
 
     async def test_loader_pattern_adds_plugins_during_setup(self):
-        """A plugin's setup() can call server.add_plugin() and the setup pass sees it."""
+        """A plugin's setup() can call server.add_plugin() and the setup pass sees it.
+
+        Mid-cycle the loader-added children are present; after teardown
+        they're removed (ephemeral cleanup), so the loader can freshly
+        re-hydrate them on the next cycle.
+        """
         recorder = _Recorder()
 
         class Child(Plugin):
@@ -308,13 +313,20 @@ class TestLifecycle:
         mcp = FastMCP("t", plugins=[Loader()])
         async with Client(mcp) as c:
             await c.ping()
+            # Mid-cycle, the loader's children are registered.
+            assert [p.meta.name for p in mcp.plugins] == [
+                "loader",
+                "child",
+                "child",
+            ]
 
         assert recorder.events == [
             ("setup", "loader"),
             ("setup", "child"),
             ("setup", "child"),
         ]
-        assert [p.meta.name for p in mcp.plugins] == ["loader", "child", "child"]
+        # After teardown, ephemeral children have been removed.
+        assert [p.meta.name for p in mcp.plugins] == ["loader"]
 
     async def test_add_plugin_after_startup_raises(self):
         class P(Plugin):
@@ -421,6 +433,42 @@ class TestLifecycle:
         assert ("teardown", "good") in recorder.events
         # BadSetup never completed setup(); its teardown must not run.
         assert ("teardown", "bad") not in recorder.events
+
+    async def test_loader_plugins_do_not_accumulate_across_cycles(self):
+        """Loader-added (ephemeral) plugins and their contributions are removed on teardown.
+
+        Without this, a loader that adds children in setup() causes the
+        plugin list — and every contribution those children install — to
+        grow on every lifespan cycle.
+        """
+
+        class Child(Plugin):
+            meta = PluginMeta(name="child", version="0.1.0")
+
+            def middleware(self):
+                return [_TraceMiddleware("child")]
+
+        class Loader(Plugin):
+            meta = PluginMeta(name="loader", version="0.1.0")
+
+            async def setup(self, server):
+                server.add_plugin(Child())
+
+        mcp = FastMCP("t", plugins=[Loader()])
+        baseline_middleware = list(mcp.middleware)
+
+        async with Client(mcp) as c:
+            await c.ping()
+        async with Client(mcp) as c:
+            await c.ping()
+        async with Client(mcp) as c:
+            await c.ping()
+
+        # After three cycles: the loader remains, the ephemeral child has
+        # been removed, and the middleware it installed was reversed out
+        # each time so nothing has accumulated.
+        assert [p.meta.name for p in mcp.plugins] == ["loader"]
+        assert mcp.middleware == baseline_middleware
 
 
 class TestContributions:
@@ -582,3 +630,31 @@ class TestManifest:
 
         # Should succeed without calling __init__.
         assert P.manifest() is not None
+
+    def test_manifest_validates_meta(self):
+        """Invalid meta (e.g. malformed deps) must not emit a manifest.
+
+        Otherwise `fastmcp plugin manifest` could publish artifacts with
+        malformed PEP 508 dep strings or bad fastmcp_version specifiers —
+        artifacts that downstream tooling can't parse consistently.
+        """
+
+        class BadDeps(Plugin):
+            meta = PluginMeta(
+                name="bad-deps",
+                version="0.1.0",
+                dependencies=["not a valid pep508 spec!!"],
+            )
+
+        with pytest.raises(PluginError, match="PEP 508"):
+            BadDeps.manifest()
+
+        class FastmcpInDeps(Plugin):
+            meta = PluginMeta(
+                name="fastmcp-in-deps",
+                version="0.1.0",
+                dependencies=["fastmcp>=3.0"],
+            )
+
+        with pytest.raises(PluginError, match="fastmcp"):
+            FastmcpInDeps.manifest()

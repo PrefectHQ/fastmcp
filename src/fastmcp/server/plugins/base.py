@@ -131,6 +131,13 @@ class Plugin:
 
     config: BaseModel
 
+    # Framework-internal marker. Set to True by `FastMCP.add_plugin` when
+    # the plugin is added from inside another plugin's setup() (the loader
+    # pattern). The server removes ephemeral plugins and their
+    # contributions on teardown so loaders don't accumulate duplicates
+    # across lifespan cycles.
+    _fastmcp_ephemeral: bool = False
+
     def __init__(self, config: BaseModel | dict[str, Any] | None = None) -> None:
         # A subclass's nested Config is a distinct class from Plugin.Config;
         # we accept any BaseModel instance here and validate at runtime that
@@ -277,6 +284,13 @@ class Plugin:
                 f"{cls.__name__} must declare a class-level "
                 f"'meta' attribute of type PluginMeta"
             )
+
+        # Validate meta the same way instance construction does, so
+        # `fastmcp plugin manifest` can't emit an artifact (malformed
+        # PEP 508 deps, bad fastmcp_version specifier, fastmcp declared
+        # as a dep, ...) that downstream tooling couldn't otherwise
+        # have produced from a live plugin instance.
+        cls._validate_meta(meta)
 
         config_cls = getattr(cls, "Config", Plugin.Config)
         data: dict[str, Any] = {

@@ -16,6 +16,7 @@ from collections.abc import (
 from contextlib import (
     AbstractAsyncContextManager,
     asynccontextmanager,
+    suppress,
 )
 from dataclasses import replace
 from functools import partial
@@ -422,15 +423,25 @@ class FastMCP(
         # the server's lifespan startup (see `_run_plugin_setup_pass`).
         self.plugins: list[Plugin] = []
         # Plugins whose contributions (middleware/transforms/providers/routes)
-        # have been collected onto the server. One-shot per plugin: server
-        # contributions persist across lifespan cycles like server-authored
-        # middleware, so we don't re-install them on re-entry.
+        # have been collected onto the server. Server contributions persist
+        # across lifespan cycles like server-authored middleware, so we
+        # don't re-install them on re-entry.
         self._plugins_contributed: set[int] = set()
         # Plugins whose setup() has completed successfully in the current
         # lifespan cycle. Reset on teardown. Used to scope teardown to
         # plugins that actually ran setup, so a partial-setup failure
         # still triggers teardown for everything that was initialized.
         self._plugins_set_up: set[int] = set()
+        # Per-plugin record of contributions we installed, stored as
+        # (container, item) tuples so we can reverse them when an
+        # ephemeral plugin is torn down.
+        self._plugin_contributions: dict[int, list[tuple[list[Any], Any]]] = {}
+        # True while the setup pass is executing. `add_plugin()` uses this
+        # to flag ephemeral plugins — plugins added from inside another
+        # plugin's setup() (the loader pattern). Ephemeral plugins are
+        # removed on teardown so loaders can freshly re-hydrate children
+        # on the next lifespan cycle without accumulating duplicates.
+        self._in_plugin_setup_pass: bool = False
         for p in plugins or []:
             self.add_plugin(p)
 
@@ -538,8 +549,15 @@ class FastMCP(
             )
         plugin.check_fastmcp_compatibility()
         self.plugins.append(plugin)
+        # Flag loader-added plugins as ephemeral so teardown can remove
+        # them along with their contributions. Without this, each lifespan
+        # cycle accumulates a fresh generation of loader-added children.
+        if self._in_plugin_setup_pass:
+            plugin._fastmcp_ephemeral = True
+        records = self._plugin_contributions.setdefault(id(plugin), [])
         for route in plugin.routes():
             self._additional_http_routes.append(route)
+            records.append((self._additional_http_routes, route))
 
     async def _run_plugin_setup_pass(self) -> None:
         """Run setup() on every registered plugin and collect contributions.
@@ -560,30 +578,40 @@ class FastMCP(
         # plugin's setup() are picked up on subsequent iterations. We mark
         # each plugin as "set up" only after setup() returns so that a
         # partial-setup failure scopes teardown to plugins that actually
-        # completed initialization.
-        i = 0
-        while i < len(self.plugins):
-            plugin = self.plugins[i]
-            await plugin.setup(self)
-            self._plugins_set_up.add(id(plugin))
-            i += 1
+        # completed initialization. The _in_plugin_setup_pass flag lets
+        # add_plugin() mark new plugins as ephemeral (see add_plugin).
+        self._in_plugin_setup_pass = True
+        try:
+            i = 0
+            while i < len(self.plugins):
+                plugin = self.plugins[i]
+                await plugin.setup(self)
+                self._plugins_set_up.add(id(plugin))
+                i += 1
 
-        # Contribution collection: run in registration order. Guarded
-        # per-plugin because contributions persist across lifespan cycles;
-        # new plugins (e.g. added by a loader during this cycle's setup)
-        # still get their contributions collected. Note: routes are
-        # collected synchronously at add_plugin() time because HTTP
-        # transports snapshot the route list before the lifespan runs.
-        for plugin in self.plugins:
-            if id(plugin) in self._plugins_contributed:
-                continue
-            for mw in plugin.middleware():
-                self.add_middleware(mw)
-            for transform in plugin.transforms():
-                self.add_transform(transform)
-            for provider in plugin.providers():
-                self.add_provider(provider)
-            self._plugins_contributed.add(id(plugin))
+            # Contribution collection: run in registration order. Guarded
+            # per-plugin because contributions persist across lifespan
+            # cycles; new plugins (e.g. added by a loader during this
+            # cycle's setup) still get their contributions collected. Note:
+            # routes are collected synchronously at add_plugin() time
+            # because HTTP transports snapshot the route list before the
+            # lifespan runs.
+            for plugin in self.plugins:
+                if id(plugin) in self._plugins_contributed:
+                    continue
+                records = self._plugin_contributions.setdefault(id(plugin), [])
+                for mw in plugin.middleware():
+                    self.add_middleware(mw)
+                    records.append((self.middleware, mw))
+                for transform in plugin.transforms():
+                    self.add_transform(transform)
+                    records.append((self._transforms, transform))
+                for provider in plugin.providers():
+                    self.add_provider(provider)
+                    records.append((self.providers, provider))
+                self._plugins_contributed.add(id(plugin))
+        finally:
+            self._in_plugin_setup_pass = False
 
     async def _run_plugin_teardown(self) -> None:
         """Await ``teardown()`` on plugins whose setup() completed this cycle.
@@ -593,6 +621,12 @@ class FastMCP(
         teardown safe to register before ``_run_plugin_setup_pass`` — a
         failure partway through setup still runs teardown for the plugins
         that had already initialized.
+
+        Ephemeral plugins (those added from inside another plugin's
+        setup() by a loader) are removed from the server after teardown
+        runs, along with the contributions they installed. This keeps
+        loader plugins from accumulating duplicate children across
+        repeated lifespan cycles.
         """
         # Snapshot + clear first so that a slow teardown combined with a
         # re-entry cannot double-count the set.
@@ -605,6 +639,22 @@ class FastMCP(
                 await plugin.teardown()
             except Exception:
                 logger.exception("Plugin %r raised during teardown", plugin.meta.name)
+
+        # Remove ephemeral plugins and their contributions. On the next
+        # lifespan cycle, the loader that produced them will freshly
+        # re-hydrate its children — without this cleanup, the plugin list
+        # and contribution registries would grow on every cycle.
+        ephemeral = [p for p in self.plugins if getattr(p, "_fastmcp_ephemeral", False)]
+        for plugin in ephemeral:
+            records = self._plugin_contributions.pop(id(plugin), [])
+            for container, item in reversed(records):
+                # Already removed elsewhere? Fine to skip.
+                with suppress(ValueError):
+                    container.remove(item)
+            self._plugins_contributed.discard(id(plugin))
+        self.plugins = [
+            p for p in self.plugins if not getattr(p, "_fastmcp_ephemeral", False)
+        ]
 
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider for dynamic tools, resources, and prompts.
