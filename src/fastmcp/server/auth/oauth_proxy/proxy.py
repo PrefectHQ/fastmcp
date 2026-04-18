@@ -22,6 +22,7 @@ import hashlib
 import secrets
 import time
 from base64 import urlsafe_b64encode
+from collections import OrderedDict
 from typing import Any, Literal
 from urllib.parse import urlencode, urlparse, urlunparse
 
@@ -91,6 +92,8 @@ from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+_REFRESH_LOCK_CACHE_SIZE = 10_000
 
 
 def _normalize_resource_url(url: str) -> str:
@@ -576,7 +579,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # refresh the same token within a single process. Does not protect
         # against cross-process races in distributed deployments — those are
         # handled by re-reading from storage after refresh failure.
-        self._refresh_locks: dict[str, anyio.Lock] = {}
+        self._refresh_locks: OrderedDict[str, anyio.Lock] = OrderedDict()
 
         logger.debug(
             "Initialized OAuth proxy provider with upstream server %s",
@@ -646,6 +649,18 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             token_endpoint_auth_method=self._token_endpoint_auth_method,
             timeout=HTTP_TIMEOUT_SECONDS,
         )
+
+    def _get_refresh_lock(self, token_id: str) -> anyio.Lock:
+        """Get or create a per-token refresh lock, evicting LRU entries when at capacity."""
+        lock = self._refresh_locks.get(token_id)
+        if lock is None:
+            lock = anyio.Lock()
+            self._refresh_locks[token_id] = lock
+            if len(self._refresh_locks) > _REFRESH_LOCK_CACHE_SIZE:
+                self._refresh_locks.popitem(last=False)
+        else:
+            self._refresh_locks.move_to_end(token_id)
+        return lock
 
     # -------------------------------------------------------------------------
     # PKCE Helper Methods
@@ -1656,9 +1671,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
                     # Advisory lock prevents concurrent requests from racing
                     # to refresh the same upstream token.
-                    if token_id not in self._refresh_locks:
-                        self._refresh_locks[token_id] = anyio.Lock()
-                    lock = self._refresh_locks[token_id]
+                    lock = self._get_refresh_lock(token_id)
 
                     async with lock:
                         # Re-read from storage — another task may have
