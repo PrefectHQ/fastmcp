@@ -3,20 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import textwrap
 from pathlib import Path
-
-import pytest
 
 
 def _run_fastmcp(
     *args: str, cwd: Path, env_extra: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
     """Invoke the `fastmcp` CLI as a subprocess."""
-    import os
-
     env = os.environ.copy()
     env["PYTHONPATH"] = str(cwd)
     if env_extra:
@@ -62,9 +59,7 @@ class TestManifestCLI:
                 """
             )
         )
-        result = _run_fastmcp(
-            "plugin", "manifest", "demo:Outer.Inner", cwd=tmp_path
-        )
+        result = _run_fastmcp("plugin", "manifest", "demo:Outer.Inner", cwd=tmp_path)
         assert result.returncode == 0, result.stderr
         manifest = json.loads(result.stdout)
         assert manifest["name"] == "inner"
