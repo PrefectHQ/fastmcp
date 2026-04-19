@@ -5,10 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import suppress
+from importlib import metadata as importlib_metadata
+from importlib.metadata import version as dist_version
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel
+from packaging.version import Version
+from pydantic import BaseModel, ValidationError
 
 import fastmcp
 from fastmcp import Client, FastMCP
@@ -66,6 +69,174 @@ class TestPluginMeta:
 
         meta = AcmeMeta(name="x", version="0.1.0", owning_team="platform")
         assert meta.owning_team == "platform"
+
+
+class TestFromPackage:
+    """PluginMeta.from_package() derives metadata from importlib.metadata."""
+
+    # pydantic is a hard dependency of fastmcp, so it's always installed
+    # in the test environment and has well-formed metadata we can read.
+    # We deliberately don't use fastmcp itself as the smoke-test
+    # distribution because from_package() refuses to pin fastmcp (see
+    # test_fastmcp_as_distribution_is_rejected).
+
+    def test_derives_version_description_from_real_package(self):
+        meta = PluginMeta.from_package("pydantic", name="pydantic-smoke-test")
+
+        assert meta.name == "pydantic-smoke-test"
+        assert meta.version == dist_version("pydantic")
+        # Description is whatever pydantic itself declares; only assert
+        # that the field is populated.
+        assert meta.description is not None
+        # Dep pin uses `Version.public` (strips only local segment;
+        # preserves pre/dev/post, which ARE valid with `>=` per PEP 440).
+        public = Version(dist_version("pydantic")).public
+        assert meta.dependencies == [f"pydantic>={public}"]
+
+    def test_overrides_take_precedence(self):
+        meta = PluginMeta.from_package(
+            "pydantic",
+            name="override-test",
+            version="99.0.0",
+            description="I override the derived description",
+            tags=["security"],
+        )
+        assert meta.version == "99.0.0"
+        assert meta.description == "I override the derived description"
+        assert meta.tags == ["security"]
+
+    def test_overriding_dependencies_replaces_the_pin(self):
+        """If a plugin author passes dependencies explicitly, the containing
+        distribution pin isn't re-added — author owns the list."""
+        meta = PluginMeta.from_package(
+            "pydantic",
+            name="custom-deps",
+            dependencies=["regex>=2024.0"],
+        )
+        assert meta.dependencies == ["regex>=2024.0"]
+
+    def test_missing_distribution_raises_plugin_error(self):
+        with pytest.raises(PluginError, match="not installed"):
+            PluginMeta.from_package(
+                "this-package-definitely-does-not-exist-1234abcd",
+                name="missing",
+            )
+
+    def test_fastmcp_as_distribution_is_rejected(self):
+        """`fastmcp` is implicit per the primitive contract; pinning it
+        in `dependencies` would produce a manifest that fails validation."""
+        with pytest.raises(PluginError, match="implicit"):
+            PluginMeta.from_package("fastmcp", name="would-be-fastmcp-plugin")
+
+    def test_fastmcp_rejection_is_case_insensitive(self):
+        """PEP 503 canonicalization lowercases the distribution name, so
+        `FastMCP` and `FASTMCP` both canonicalize to `fastmcp` and must
+        be rejected. `fast-mcp` / `fast_mcp` canonicalize to `fast-mcp`
+        — a different distribution — and are not rejected here."""
+        for variant in ("FastMCP", "FASTMCP", "fAsTmCp"):
+            with pytest.raises(PluginError, match="implicit"):
+                PluginMeta.from_package(variant, name="x")
+
+    @pytest.mark.parametrize(
+        "dist_version_str, expected_pin",
+        [
+            # Pre/dev/post segments are valid with `>=` and must be
+            # preserved so the pin tracks prerelease channels accurately.
+            ("1.2.3.dev0", "synthetic-pin>=1.2.3.dev0"),
+            ("1.2.3rc1", "synthetic-pin>=1.2.3rc1"),
+            ("1.2.3.post1", "synthetic-pin>=1.2.3.post1"),
+            # Local versions are NOT valid with `>=` per PEP 440; we
+            # strip only that segment via Version.public.
+            ("1.2.3+abc.def", "synthetic-pin>=1.2.3"),
+            # Dev build with a local segment: strip just the local.
+            ("1.2.3.dev5+abc123", "synthetic-pin>=1.2.3.dev5"),
+            # Plain release — unchanged.
+            ("2.0.0", "synthetic-pin>=2.0.0"),
+        ],
+    )
+    def test_pin_preserves_pre_dev_post_but_strips_local(
+        self, monkeypatch, dist_version_str, expected_pin
+    ):
+        """PEP 440 restricts only local versions from `>=` / `<=`;
+        prereleases, dev, and post segments remain valid. The pin uses
+        `Version.public` (strips only the local segment) so development
+        channels keep their identity in the generated pin."""
+        real_distribution = importlib_metadata.distribution
+
+        class FakeDist:
+            version = dist_version_str
+
+            def __init__(self):
+                self.metadata = real_distribution("pydantic").metadata
+
+        def fake_distribution(name):
+            if name == "synthetic-pin":
+                return FakeDist()
+            return real_distribution(name)
+
+        # `from_package` reaches `importlib_metadata.distribution` through
+        # the `plugins.base` module's alias; patch there.
+        from fastmcp.server.plugins import base as plugins_base
+
+        monkeypatch.setattr(
+            plugins_base.importlib_metadata, "distribution", fake_distribution
+        )
+
+        meta = PluginMeta.from_package("synthetic-pin", name="pin-test")
+        assert meta.dependencies == [expected_pin]
+
+        # Resulting meta round-trips through _validate_meta cleanly.
+        Plugin._validate_meta(meta)
+
+    def test_whitespace_only_author_header_falls_back_to_email(self, monkeypatch):
+        """A METADATA file with `Author: ` (whitespace only) must not
+        block the `Author-email` fallback. Similar for `Home-page`
+        falling back to Project-URL."""
+        real_distribution = importlib_metadata.distribution
+        pydantic_metadata = real_distribution("pydantic").metadata
+
+        class FakeMessage:
+            def items(self):
+                return [
+                    ("Metadata-Version", "2.1"),
+                    ("Name", "whitespace-test"),
+                    ("Version", "1.0.0"),
+                    ("Author", "   "),  # whitespace only
+                    ("Author-email", "real@example.com"),
+                    ("Home-page", ""),  # empty
+                    ("Project-URL", "Homepage, https://example.com"),
+                ]
+
+        class FakeDist:
+            version = "1.0.0"
+            metadata = FakeMessage()
+
+        def fake_distribution(name):
+            if name == "whitespace-test":
+                return FakeDist()
+            return real_distribution(name)
+
+        from fastmcp.server.plugins import base as plugins_base
+
+        monkeypatch.setattr(
+            plugins_base.importlib_metadata, "distribution", fake_distribution
+        )
+
+        meta = PluginMeta.from_package("whitespace-test", name="ws-test")
+        # Whitespace Author didn't block Author-email.
+        assert meta.author == "real@example.com"
+        # Empty Home-page fell through to the Project-URL label match.
+        assert meta.homepage == "https://example.com"
+
+        # Avoid "pydantic_metadata unused" lint noise.
+        _ = pydantic_metadata
+
+    def test_name_override_required_if_not_provided(self):
+        """`name` is required on PluginMeta; from_package doesn't default
+        it from the distribution name (plugin name and distribution name
+        serve different purposes)."""
+        with pytest.raises(ValidationError):
+            PluginMeta.from_package("pydantic")
 
 
 class TestPluginConstruction:

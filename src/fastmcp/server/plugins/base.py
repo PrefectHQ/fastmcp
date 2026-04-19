@@ -13,12 +13,17 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from email.message import Message as EmailMessage
+from importlib import metadata as importlib_metadata
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, ValidationError
+from typing_extensions import Self
 
 import fastmcp
 from fastmcp.exceptions import FastMCPError
@@ -91,6 +96,147 @@ class PluginMeta(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def from_package(cls, distribution: str, /, **overrides: Any) -> Self:
+        """Derive plugin metadata from an installed Python distribution.
+
+        Reads `version`, `description`, `author`, and `homepage` from the
+        distribution's metadata (as recorded in its `pyproject.toml` and
+        exposed via `importlib.metadata`), and pins the distribution
+        itself as the sole entry in `dependencies` — so the manifest
+        automatically reflects the containing package and stays in sync
+        with every new release. Runtime dependencies declared in the
+        distribution's `Requires-Dist` are NOT harvested; plugin authors
+        pass additional runtime deps via the `dependencies` override.
+
+        Any keyword argument overrides the derived value.
+
+        Example:
+            ```python
+            class MyPiiRedactor(Plugin):
+                meta = PluginMeta.from_package(
+                    "fastmcp-plugin-my-pii",   # distribution name on PyPI
+                    name="my-pii",              # plugin identifier
+                    tags=["security"],
+                )
+            ```
+
+        Args:
+            distribution: The installed distribution name to read from
+                (e.g. `"fastmcp-plugin-my-pii"`). Must be importable via
+                `importlib.metadata`. Cannot be `fastmcp` itself — use
+                `fastmcp_version` for core compatibility.
+            **overrides: Any `PluginMeta` field. Overrides take precedence
+                over the derived value. `name` is required unless a
+                `name` override is supplied; the distribution name is not
+                used as the plugin name by default since the two serve
+                different purposes (distribution = wheel identity, plugin
+                name = runtime identifier shown to Horizon / CLI users).
+
+        Raises:
+            PluginError: If the distribution is not installed in the
+                current environment, if `distribution` is `fastmcp`
+                (which would produce an invalid manifest), or if the
+                distribution's version cannot be parsed.
+        """
+        # FastMCP itself is implicit; pinning it would produce a manifest
+        # that Plugin._validate_meta rejects. Plugin authors expressing
+        # core compatibility should use the `fastmcp_version` field.
+        if canonicalize_name(distribution) == "fastmcp":
+            raise PluginError(
+                f"PluginMeta.from_package({distribution!r}): "
+                f"`fastmcp` is implicit and must not be used as the "
+                f"containing distribution. Use the `fastmcp_version` "
+                f"field on PluginMeta to express core compatibility."
+            )
+
+        try:
+            dist = importlib_metadata.distribution(distribution)
+        except importlib_metadata.PackageNotFoundError as exc:
+            raise PluginError(
+                f"PluginMeta.from_package({distribution!r}): distribution "
+                f"is not installed in the current environment. Install it "
+                f"(e.g. via `uv pip install {distribution}`) before "
+                f"calling from_package."
+            ) from exc
+
+        # `dist.metadata` is an email.message.Message at runtime, but
+        # `importlib.metadata.PackageMetadata`'s stubs don't expose that
+        # interface. Cast to email.message.Message to flatten header
+        # access (item lookup returns None on miss; `items()` yields one
+        # entry per header, including repeated keys like Project-URL).
+        raw = cast(EmailMessage, dist.metadata)
+        headers: dict[str, str] = {}
+        all_project_urls: list[str] = []
+        for key, value in raw.items():
+            if key == "Project-URL":
+                all_project_urls.append(value)
+            else:
+                # For repeated headers we only need one; first-wins.
+                headers.setdefault(key, value)
+
+        def _first_non_blank(*values: str | None) -> str | None:
+            """Return the first value whose `.strip()` is truthy, or None.
+
+            Guards against whitespace-only headers silently blocking the
+            fallback chain (e.g. a METADATA file with `Author:    ` would
+            otherwise make the `Author-email` fallback unreachable).
+            """
+            for v in values:
+                if v is not None and v.strip():
+                    return v.strip()
+            return None
+
+        derived: dict[str, Any] = {"version": dist.version}
+
+        # description ← Summary header
+        summary = _first_non_blank(headers.get("Summary"))
+        if summary:
+            derived["description"] = summary
+
+        # author ← Author, falling back to Author-email
+        author = _first_non_blank(headers.get("Author"), headers.get("Author-email"))
+        if author:
+            derived["author"] = author
+
+        # homepage ← Home-page, falling back to the first Project-URL
+        # whose label looks like a canonical homepage reference
+        homepage = _first_non_blank(headers.get("Home-page"))
+        if not homepage:
+            for entry in all_project_urls:
+                # Project-URL values are `"Label, URL"` pairs.
+                label, _, url = entry.partition(",")
+                if label.strip().lower() in {
+                    "homepage",
+                    "home",
+                    "repository",
+                    "source",
+                }:
+                    homepage = _first_non_blank(url)
+                    if homepage:
+                        break
+        if homepage:
+            derived["homepage"] = homepage
+
+        # dependencies — pin the containing distribution at its current
+        # version, minus the local segment. PEP 440 only restricts local
+        # versions (`+abc.def`) from use with `>=` / `<=`; prereleases
+        # (`rc1`), dev (`.dev0`), and post segments are all valid there,
+        # so we preserve them to keep the pin meaningful for actively
+        # developed distributions. `Version.public` strips exactly the
+        # local segment.
+        try:
+            public = Version(dist.version).public
+        except InvalidVersion as exc:
+            raise PluginError(
+                f"PluginMeta.from_package({distribution!r}): could not "
+                f"parse distribution version {dist.version!r}: {exc}"
+            ) from exc
+        derived["dependencies"] = [f"{distribution}>={public}"]
+
+        derived.update(overrides)
+        return cls(**derived)
 
 
 class Plugin:
