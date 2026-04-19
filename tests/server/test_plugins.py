@@ -280,33 +280,62 @@ class TestPluginConstruction:
         assert P.meta.version == "2.0.0"
 
     def test_plugin_with_default_config(self):
+        """A Plugin without a generic parameter gets an empty default config."""
+
         class P(Plugin):
             meta = PluginMeta(name="p", version="0.1.0")
 
         p = P()
-        assert isinstance(p.config, Plugin.Config)
+        assert isinstance(p.config, BaseModel)
+        # No fields to inspect — the point is that construction works with None.
 
     def test_config_accepts_instance(self):
-        class P(Plugin):
+        class PConfig(BaseModel):
+            who: str = "world"
+
+        class P(Plugin[PConfig]):
             meta = PluginMeta(name="p", version="0.1.0")
 
-            class Config(BaseModel):
-                who: str = "world"
-
-        p = P(config=P.Config(who="jeremiah"))
-        assert isinstance(p.config, P.Config)
+        p = P(PConfig(who="jeremiah"))
+        assert isinstance(p.config, PConfig)
         assert p.config.who == "jeremiah"
 
     def test_config_accepts_dict(self):
+        class PConfig(BaseModel):
+            who: str = "world"
+
+        class P(Plugin[PConfig]):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+        p = P({"who": "jeremiah"})
+        assert isinstance(p.config, PConfig)
+        assert p.config.who == "jeremiah"
+
+    def test_generic_parameter_binds_config_cls(self):
+        """`Plugin[ConfigType]` stashes the Config on the subclass so dict
+        validation, manifest generation, and runtime introspection all use
+        the author-declared model."""
+
+        class PConfig(BaseModel):
+            who: str = "world"
+
+        class P(Plugin[PConfig]):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+        assert P._config_cls is PConfig
+
+    def test_unparameterized_plugin_uses_empty_default_config(self):
+        """A Plugin without a generic parameter gets an empty default that
+        rejects unknown keys (extra='forbid')."""
+
         class P(Plugin):
             meta = PluginMeta(name="p", version="0.1.0")
 
-            class Config(BaseModel):
-                who: str = "world"
-
-        p = P(config={"who": "jeremiah"})
-        assert isinstance(p.config, P.Config)
-        assert p.config.who == "jeremiah"
+        # No-arg construction works.
+        P()
+        # Unknown config keys are rejected by the empty default.
+        with pytest.raises(PluginConfigError, match="extra"):
+            P({"who": "jeremiah"})
 
     def test_invalid_config_raises_plugin_config_error(self):
         class P(Plugin):
@@ -1189,7 +1218,10 @@ class TestManifest:
     """manifest() produces a JSON-serializable dict and can write to disk."""
 
     def test_manifest_shape(self):
-        class P(Plugin):
+        class PConfig(BaseModel):
+            who: str = "world"
+
+        class P(Plugin[PConfig]):
             meta = PluginMeta(
                 name="p",
                 version="0.1.0",
@@ -1199,9 +1231,6 @@ class TestManifest:
                 fastmcp_version=">=3.0",
                 meta={"owning_team": "platform"},
             )
-
-            class Config(BaseModel):
-                who: str = "world"
 
         m = P.manifest()
         assert m is not None
