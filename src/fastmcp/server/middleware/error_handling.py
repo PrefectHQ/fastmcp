@@ -1,6 +1,5 @@
 """Error handling middleware for consistent error responses and tracking."""
 
-import asyncio
 import logging
 import traceback
 from collections.abc import Callable
@@ -8,9 +7,8 @@ from typing import Any
 
 import anyio
 from mcp import McpError
-from mcp.types import ErrorData
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import FastMCPError
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
@@ -60,7 +58,6 @@ class ErrorHandlingMiddleware(Middleware):
         error_type = type(error).__name__
         method = context.method or "unknown"
 
-        # Track error counts
         error_key = f"{error_type}:{method}"
         self.error_counts[error_key] = self.error_counts.get(error_key, 0) + 1
 
@@ -71,7 +68,6 @@ class ErrorHandlingMiddleware(Middleware):
         else:
             self.logger.error(base_message)
 
-        # Call custom error callback if provided
         if self.error_callback:
             try:
                 self.error_callback(error, context)
@@ -81,41 +77,27 @@ class ErrorHandlingMiddleware(Middleware):
     def _transform_error(
         self, error: Exception, context: MiddlewareContext
     ) -> Exception:
-        """Transform non-MCP errors to proper MCP errors."""
+        """Transform non-MCP errors to proper MCP errors.
+
+        Uses FastMCPError.from_generic_exception() factory method to
+        automatically convert generic exceptions to the most appropriate
+        FastMCP error subclass, then converts to MCP protocol error.
+
+        Note: We only skip transformation for McpError (from MCP SDK), not
+        FastMCPError. This allows FastMCPError subclasses like NotFoundError
+        and ToolError to be re-transformed based on context (e.g., method
+        context for NotFoundError, __cause__ for ToolError).
+        """
         if isinstance(error, McpError):
             return error
 
         if not self.transform_errors:
             return error
 
-        # Map common exceptions to appropriate MCP error codes
-        error_type = type(error.__cause__) if error.__cause__ else type(error)
-
-        if error_type in (ValueError, TypeError):
-            return McpError(
-                ErrorData(code=-32602, message=f"Invalid params: {error!s}")
-            )
-        elif error_type in (FileNotFoundError, KeyError, NotFoundError):
-            # MCP spec defines -32002 specifically for resource not found
-            method = context.method or ""
-            if method.startswith("resources/"):
-                return McpError(
-                    ErrorData(code=-32002, message=f"Resource not found: {error!s}")
-                )
-            return McpError(ErrorData(code=-32001, message=f"Not found: {error!s}"))
-        elif error_type is PermissionError:
-            return McpError(
-                ErrorData(code=-32000, message=f"Permission denied: {error!s}")
-            )
-        # asyncio.TimeoutError is a subclass of TimeoutError in Python 3.10, alias in 3.11+
-        elif error_type in (TimeoutError, asyncio.TimeoutError):
-            return McpError(
-                ErrorData(code=-32000, message=f"Request timeout: {error!s}")
-            )
-        else:
-            return McpError(
-                ErrorData(code=-32603, message=f"Internal error: {error!s}")
-            )
+        mcp_error = FastMCPError.from_generic_exception(
+            error, method=context.method
+        )
+        return mcp_error.to_mcp_error()
 
     async def on_message(self, context: MiddlewareContext, call_next: CallNext) -> Any:
         """Handle errors for all messages."""
@@ -124,7 +106,6 @@ class ErrorHandlingMiddleware(Middleware):
         except Exception as error:
             self._log_error(error, context)
 
-            # Transform and re-raise
             transformed_error = self._transform_error(error, context)
             raise transformed_error from error
 
@@ -209,7 +190,6 @@ class RetryMiddleware(Middleware):
             except Exception as error:
                 last_error = error
 
-                # Don't retry on the last attempt or if it's not a retryable error
                 if attempt == self.max_retries or not self._should_retry(error):
                     break
 
@@ -221,6 +201,5 @@ class RetryMiddleware(Middleware):
 
                 await anyio.sleep(delay)
 
-        # Re-raise the last error if all retries failed
         if last_error:
             raise last_error
