@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 import fastmcp
@@ -98,11 +100,14 @@ class PluginMeta(BaseModel):
     def from_package(cls, distribution: str, /, **overrides: Any) -> PluginMeta:
         """Derive plugin metadata from an installed Python distribution.
 
-        Reads `version`, `description`, `author`, `homepage`, and runtime
-        dependencies from the distribution's metadata (as recorded in its
-        `pyproject.toml`), and pins the distribution itself as the first
-        entry in `dependencies` — so the manifest automatically reflects
-        the containing package and stays in sync with every new release.
+        Reads `version`, `description`, `author`, and `homepage` from the
+        distribution's metadata (as recorded in its `pyproject.toml` and
+        exposed via `importlib.metadata`), and pins the distribution
+        itself as the sole entry in `dependencies` — so the manifest
+        automatically reflects the containing package and stays in sync
+        with every new release. Runtime dependencies declared in the
+        distribution's `Requires-Dist` are NOT harvested; plugin authors
+        pass additional runtime deps via the `dependencies` override.
 
         Any keyword argument overrides the derived value.
 
@@ -119,7 +124,8 @@ class PluginMeta(BaseModel):
         Args:
             distribution: The installed distribution name to read from
                 (e.g. `"fastmcp-plugin-my-pii"`). Must be importable via
-                `importlib.metadata`.
+                `importlib.metadata`. Cannot be `fastmcp` itself — use
+                `fastmcp_version` for core compatibility.
             **overrides: Any `PluginMeta` field. Overrides take precedence
                 over the derived value. `name` is required unless a
                 `name` override is supplied; the distribution name is not
@@ -129,8 +135,21 @@ class PluginMeta(BaseModel):
 
         Raises:
             PluginError: If the distribution is not installed in the
-                current environment.
+                current environment, if `distribution` is `fastmcp`
+                (which would produce an invalid manifest), or if the
+                distribution's version cannot be parsed.
         """
+        # FastMCP itself is implicit; pinning it would produce a manifest
+        # that Plugin._validate_meta rejects. Plugin authors expressing
+        # core compatibility should use the `fastmcp_version` field.
+        if canonicalize_name(distribution) == "fastmcp":
+            raise PluginError(
+                f"PluginMeta.from_package({distribution!r}): "
+                f"`fastmcp` is implicit and must not be used as the "
+                f"containing distribution. Use the `fastmcp_version` "
+                f"field on PluginMeta to express core compatibility."
+            )
+
         try:
             dist = importlib_metadata.distribution(distribution)
         except importlib_metadata.PackageNotFoundError as exc:
@@ -186,11 +205,21 @@ class PluginMeta(BaseModel):
         if homepage and homepage.strip():
             derived["homepage"] = homepage.strip()
 
-        # dependencies — pin the containing distribution at its current
-        # version so downstream consumers install it when configuring
-        # this plugin. Plugin authors can add more via overrides or by
-        # post-processing the returned meta.
-        derived["dependencies"] = [f"{distribution}>={dist.version}"]
+        # dependencies — pin the containing distribution at the base
+        # release of its current version. Using `Version.base_version`
+        # strips local (`+abc.def`), pre (`rc1`), dev (`.dev0`), and
+        # post segments, because PEP 440 only allows local versions with
+        # `==` / `!=` — a pin like `>=1.2.3+abc` would fail to parse as
+        # a Requirement (flagged by `Plugin._validate_meta`). Plugin
+        # authors can add more via the `dependencies` override.
+        try:
+            base_version = Version(dist.version).base_version
+        except InvalidVersion as exc:
+            raise PluginError(
+                f"PluginMeta.from_package({distribution!r}): could not "
+                f"parse distribution version {dist.version!r}: {exc}"
+            ) from exc
+        derived["dependencies"] = [f"{distribution}>={base_version}"]
 
         derived.update(overrides)
         return cls(**derived)

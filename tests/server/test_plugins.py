@@ -5,10 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import suppress
+from importlib import metadata as importlib_metadata
+from importlib.metadata import version as dist_version
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel
+from packaging.version import Version
+from pydantic import BaseModel, ValidationError
 
 import fastmcp
 from fastmcp import Client, FastMCP
@@ -71,21 +74,28 @@ class TestPluginMeta:
 class TestFromPackage:
     """PluginMeta.from_package() derives metadata from importlib.metadata."""
 
-    def test_derives_version_description_from_real_package(self):
-        """Against a known-installed package (fastmcp itself), from_package
-        should pull version and description into the meta."""
-        meta = PluginMeta.from_package("fastmcp", name="fastmcp-smoke-test")
+    # pydantic is a hard dependency of fastmcp, so it's always installed
+    # in the test environment and has well-formed metadata we can read.
+    # We deliberately don't use fastmcp itself as the smoke-test
+    # distribution because from_package() refuses to pin fastmcp (see
+    # test_fastmcp_as_distribution_is_rejected).
 
-        assert meta.name == "fastmcp-smoke-test"
-        assert meta.version == fastmcp.__version__
-        # Description is whatever fastmcp itself declares; we only assert
+    def test_derives_version_description_from_real_package(self):
+        meta = PluginMeta.from_package("pydantic", name="pydantic-smoke-test")
+
+        assert meta.name == "pydantic-smoke-test"
+        assert meta.version == dist_version("pydantic")
+        # Description is whatever pydantic itself declares; only assert
         # that the field is populated.
         assert meta.description is not None
-        assert meta.dependencies == [f"fastmcp>={fastmcp.__version__}"]
+        # Dep pin uses base_version (strips local/dev/pre/post segments)
+        # to stay PEP 440-valid with `>=`.
+        base = Version(dist_version("pydantic")).base_version
+        assert meta.dependencies == [f"pydantic>={base}"]
 
     def test_overrides_take_precedence(self):
         meta = PluginMeta.from_package(
-            "fastmcp",
+            "pydantic",
             name="override-test",
             version="99.0.0",
             description="I override the derived description",
@@ -99,7 +109,7 @@ class TestFromPackage:
         """If a plugin author passes dependencies explicitly, the containing
         distribution pin isn't re-added — author owns the list."""
         meta = PluginMeta.from_package(
-            "fastmcp",
+            "pydantic",
             name="custom-deps",
             dependencies=["regex>=2024.0"],
         )
@@ -112,14 +122,59 @@ class TestFromPackage:
                 name="missing",
             )
 
+    def test_fastmcp_as_distribution_is_rejected(self):
+        """`fastmcp` is implicit per the primitive contract; pinning it
+        in `dependencies` would produce a manifest that fails validation."""
+        with pytest.raises(PluginError, match="implicit"):
+            PluginMeta.from_package("fastmcp", name="would-be-fastmcp-plugin")
+
+    def test_fastmcp_rejection_is_case_insensitive(self):
+        """PEP 503 canonicalization lowercases the distribution name, so
+        `FastMCP` and `FASTMCP` both canonicalize to `fastmcp` and must
+        be rejected. `fast-mcp` / `fast_mcp` canonicalize to `fast-mcp`
+        — a different distribution — and are not rejected here."""
+        for variant in ("FastMCP", "FASTMCP", "fAsTmCp"):
+            with pytest.raises(PluginError, match="implicit"):
+                PluginMeta.from_package(variant, name="x")
+
+    def test_local_version_is_stripped_from_pin(self, monkeypatch):
+        """PEP 440 only allows local versions with `==` / `!=`, so
+        `>=1.2.3+abc` would fail to parse as a Requirement. The pin uses
+        Version.base_version to stay valid for dev/local builds."""
+        real_distribution = importlib_metadata.distribution
+
+        class FakeDist:
+            version = "1.2.3+abc.dev0"
+
+            def __init__(self):
+                self.metadata = real_distribution("pydantic").metadata
+
+        def fake_distribution(name):
+            if name == "synthetic-local":
+                return FakeDist()
+            return real_distribution(name)
+
+        # The from_package helper imports `metadata` as a module alias,
+        # so we patch on the plugins.base module directly.
+        from fastmcp.server.plugins import base as plugins_base
+
+        monkeypatch.setattr(
+            plugins_base.importlib_metadata, "distribution", fake_distribution
+        )
+
+        meta = PluginMeta.from_package("synthetic-local", name="local-version-test")
+        assert meta.dependencies == ["synthetic-local>=1.2.3"]
+
+        # And the resulting meta actually validates — no "invalid PEP 508"
+        # error when the pin is round-tripped through _validate_meta.
+        Plugin._validate_meta(meta)
+
     def test_name_override_required_if_not_provided(self):
         """`name` is required on PluginMeta; from_package doesn't default
         it from the distribution name (plugin name and distribution name
         serve different purposes)."""
-        from pydantic import ValidationError
-
         with pytest.raises(ValidationError):
-            PluginMeta.from_package("fastmcp")
+            PluginMeta.from_package("pydantic")
 
 
 class TestPluginConstruction:
