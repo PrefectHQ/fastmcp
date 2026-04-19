@@ -513,9 +513,9 @@ class FastMCP(
 
         Appends the plugin to the server's ordered plugin list and
         synchronously collects its HTTP routes (see below). Middleware,
-        transforms, and providers are collected later, during the server's
-        startup sequence, because those hooks may reference state the
-        plugin populates during `setup()`.
+        transforms, and providers are collected later, during the
+        server's startup sequence, because those hooks may reference
+        state the plugin populates while its `run()` context is active.
 
         HTTP routes are collected eagerly because HTTP transports snapshot
         the server's route list when they construct the Starlette app —
@@ -526,20 +526,22 @@ class FastMCP(
         working for HTTP transports.
 
         Loader caveat: plugins added from inside another plugin's
-        `setup()` (the loader pattern) can still contribute middleware,
+        `run()` (the loader pattern) can still contribute middleware,
         transforms, and providers, but their routes may not be reachable
         over HTTP/SSE transports — those transports' route lists are
-        already fixed by the time `setup()` runs. Loaders that need to
+        already fixed by the time `run()` enters. Loaders that need to
         contribute routes should use the stdio transport or expose the
         routes via a non-loader plugin registered at construction time.
-
-        Raises:
-            PluginError: If called after the server has started, or if the
-                plugin's `fastmcp_version` compatibility check fails.
 
         Args:
             plugin: A :class:`Plugin` instance. Plugins are registered in
                 the order they are added; middleware is a stack.
+
+        Raises:
+            PluginError: If called after the server's plugin-entry pass
+                has completed (except from inside a loader plugin's
+                `run()`), or if the plugin's `fastmcp_version`
+                compatibility check fails.
         """
         # Reject registration once the lifespan is active and we're past
         # the plugin-entry pass. The loader-pattern exception is the only
