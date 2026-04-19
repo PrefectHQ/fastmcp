@@ -2,11 +2,16 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 import httpx
-import mcp.types
 from exceptiongroup import BaseExceptionGroup
-from mcp import McpError
 
 import fastmcp
+from fastmcp.exceptions import (
+    MCPAuthorizationError,
+    MCPConnectionError,
+    MCPTimeoutError,
+    MCPTransportError,
+    NotFoundError,
+)
 
 
 def iter_exc(group: BaseExceptionGroup):
@@ -19,18 +24,44 @@ def iter_exc(group: BaseExceptionGroup):
 
 def _exception_handler(group: BaseExceptionGroup):
     for leaf in iter_exc(group):
-        if isinstance(leaf, httpx.ConnectTimeout):
-            raise McpError(
-                error=mcp.types.ErrorData(
-                    code=httpx.codes.REQUEST_TIMEOUT,
-                    message="Timed out while waiting for response.",
-                )
-            )
+        if isinstance(leaf, httpx.HTTPStatusError):
+            status_code = leaf.response.status_code
+            if status_code == 401:
+                raise MCPAuthorizationError(
+                    f"Authorization failed: {leaf}",
+                    subtype="invalid_token",
+                ) from leaf
+            elif status_code == 404:
+                raise NotFoundError(
+                    f"Not found: {leaf}",
+                    resource_type="generic",
+                ) from leaf
+            elif 400 <= status_code < 500:
+                raise MCPTransportError(
+                    f"HTTP error {status_code}: {leaf}",
+                    data={"status_code": status_code},
+                    transport="http",
+                ) from leaf
+            else:
+                raise leaf
+        elif isinstance(leaf, httpx.ConnectTimeout):
+            raise MCPTimeoutError(
+                f"Connection timeout: {leaf}",
+                transport="http",
+            ) from leaf
+        elif isinstance(leaf, httpx.TimeoutException):
+            raise MCPTimeoutError(
+                f"Request timeout: {leaf}",
+                transport="http",
+            ) from leaf
+        elif isinstance(leaf, httpx.ConnectError):
+            raise MCPConnectionError(
+                f"Connection error: {leaf}",
+                transport="http",
+            ) from leaf
         raise leaf
 
 
-# this catch handler is used to catch taskgroup exception groups and raise the
-# first exception. This allows more sane debugging.
 _catch_handlers: Mapping[
     type[BaseException] | Iterable[type[BaseException]],
     Callable[[BaseExceptionGroup[Any]], Any],

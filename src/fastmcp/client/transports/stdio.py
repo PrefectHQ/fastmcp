@@ -13,6 +13,7 @@ from mcp.client.stdio import stdio_client
 from typing_extensions import Unpack
 
 from fastmcp.client.transports.base import ClientTransport, SessionKwargs
+from fastmcp.exceptions import MCPConnectionError
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
@@ -196,13 +197,11 @@ async def _stdio_transport_connect_task(
                     env=env,
                     cwd=cwd,
                 )
-                # Handle log_file: Path needs to be opened, TextIO used as-is
                 if log_file is None:
                     log_file_handle = sys.stderr
                 elif isinstance(log_file, Path):
                     log_file_handle = stack.enter_context(log_file.open("a"))
                 else:
-                    # Must be TextIO - use it directly
                     log_file_handle = log_file
 
                 transport = await stack.enter_async_context(
@@ -218,15 +217,15 @@ async def _stdio_transport_connect_task(
                 logger.debug("Stdio transport connected")
                 ready_event.set()
 
-                # Wait until disconnect is requested (stop_event is set)
                 await stop_event.wait()
             finally:
-                # Clean up client on exit
                 logger.debug("Stdio transport disconnected")
-    except Exception:
-        # Ensure ready event is set even if connection fails
+    except Exception as e:
         ready_event.set()
-        raise
+        raise MCPConnectionError(
+            f"Stdio transport failed to connect: {e}",
+            transport="stdio",
+        ) from e
 
 
 class PythonStdioTransport(StdioTransport):

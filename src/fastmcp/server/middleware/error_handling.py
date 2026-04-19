@@ -1,6 +1,5 @@
 """Error handling middleware for consistent error responses and tracking."""
 
-import asyncio
 import logging
 import traceback
 from collections.abc import Callable
@@ -8,9 +7,8 @@ from typing import Any
 
 import anyio
 from mcp import McpError
-from mcp.types import ErrorData
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import FastMCPError
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
@@ -26,7 +24,6 @@ class ErrorHandlingMiddleware(Middleware):
         from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
         import logging
 
-        # Configure logging to see error details
         logging.basicConfig(level=logging.ERROR)
 
         mcp = FastMCP("MyServer")
@@ -41,26 +38,15 @@ class ErrorHandlingMiddleware(Middleware):
         error_callback: Callable[[Exception, MiddlewareContext], None] | None = None,
         transform_errors: bool = True,
     ):
-        """Initialize error handling middleware.
-
-        Args:
-            logger: Logger instance for error logging. If None, uses 'fastmcp.errors'
-            include_traceback: Whether to include full traceback in error logs
-            error_callback: Optional callback function called for each error
-            transform_errors: Whether to transform non-MCP errors to McpError
-        """
         self.logger = logger or logging.getLogger("fastmcp.errors")
         self.include_traceback = include_traceback
         self.error_callback = error_callback
         self.transform_errors = transform_errors
-        self.error_counts = {}
+        self.error_counts: dict[str, int] = {}
 
     def _log_error(self, error: Exception, context: MiddlewareContext) -> None:
-        """Log error with appropriate detail level."""
         error_type = type(error).__name__
         method = context.method or "unknown"
-
-        # Track error counts
         error_key = f"{error_type}:{method}"
         self.error_counts[error_key] = self.error_counts.get(error_key, 0) + 1
 
@@ -71,7 +57,6 @@ class ErrorHandlingMiddleware(Middleware):
         else:
             self.logger.error(base_message)
 
-        # Call custom error callback if provided
         if self.error_callback:
             try:
                 self.error_callback(error, context)
@@ -81,55 +66,29 @@ class ErrorHandlingMiddleware(Middleware):
     def _transform_error(
         self, error: Exception, context: MiddlewareContext
     ) -> Exception:
-        """Transform non-MCP errors to proper MCP errors."""
+        if isinstance(error, FastMCPError):
+            return error.to_mcp_error()
+
         if isinstance(error, McpError):
             return error
 
         if not self.transform_errors:
             return error
 
-        # Map common exceptions to appropriate MCP error codes
-        error_type = type(error.__cause__) if error.__cause__ else type(error)
-
-        if error_type in (ValueError, TypeError):
-            return McpError(
-                ErrorData(code=-32602, message=f"Invalid params: {error!s}")
-            )
-        elif error_type in (FileNotFoundError, KeyError, NotFoundError):
-            # MCP spec defines -32002 specifically for resource not found
-            method = context.method or ""
-            if method.startswith("resources/"):
-                return McpError(
-                    ErrorData(code=-32002, message=f"Resource not found: {error!s}")
-                )
-            return McpError(ErrorData(code=-32001, message=f"Not found: {error!s}"))
-        elif error_type is PermissionError:
-            return McpError(
-                ErrorData(code=-32000, message=f"Permission denied: {error!s}")
-            )
-        # asyncio.TimeoutError is a subclass of TimeoutError in Python 3.10, alias in 3.11+
-        elif error_type in (TimeoutError, asyncio.TimeoutError):
-            return McpError(
-                ErrorData(code=-32000, message=f"Request timeout: {error!s}")
-            )
-        else:
-            return McpError(
-                ErrorData(code=-32603, message=f"Internal error: {error!s}")
-            )
+        mcp_error = FastMCPError.from_generic_exception(
+            error, method=context.method
+        )
+        return mcp_error.to_mcp_error()
 
     async def on_message(self, context: MiddlewareContext, call_next: CallNext) -> Any:
-        """Handle errors for all messages."""
         try:
             return await call_next(context)
         except Exception as error:
             self._log_error(error, context)
-
-            # Transform and re-raise
             transformed_error = self._transform_error(error, context)
             raise transformed_error from error
 
     def get_error_stats(self) -> dict[str, int]:
-        """Get error statistics for monitoring."""
         return self.error_counts.copy()
 
 
@@ -143,7 +102,6 @@ class RetryMiddleware(Middleware):
         ```python
         from fastmcp.server.middleware.error_handling import RetryMiddleware
 
-        # Retry up to 3 times with exponential backoff
         retry_middleware = RetryMiddleware(
             max_retries=3,
             retry_exceptions=(ConnectionError, TimeoutError)
@@ -163,16 +121,6 @@ class RetryMiddleware(Middleware):
         retry_exceptions: tuple[type[Exception], ...] = (ConnectionError, TimeoutError),
         logger: logging.Logger | None = None,
     ):
-        """Initialize retry middleware.
-
-        Args:
-            max_retries: Maximum number of retry attempts
-            base_delay: Initial delay between retries in seconds
-            max_delay: Maximum delay between retries in seconds
-            backoff_multiplier: Multiplier for exponential backoff
-            retry_exceptions: Tuple of exception types that should trigger retries
-            logger: Logger for retry attempts
-        """
         self.max_retries = max_retries
         self.base_delay = base_delay
         self.max_delay = max_delay
@@ -181,26 +129,16 @@ class RetryMiddleware(Middleware):
         self.logger = logger or logging.getLogger("fastmcp.retry")
 
     def _should_retry(self, error: Exception) -> bool:
-        """Determine if an error should trigger a retry.
-
-        Checks both the error itself and its ``__cause__``, since FastMCP
-        wraps tool exceptions as ``ToolError(...) from original``. Only one
-        level of cause is inspected — middleware below this one must not
-        re-wrap errors with a new ``from`` clause, or the real type will be
-        hidden from the retry decision.
-        """
         if isinstance(error, self.retry_exceptions):
             return True
         cause = error.__cause__
         return cause is not None and isinstance(cause, self.retry_exceptions)
 
     def _calculate_delay(self, attempt: int) -> float:
-        """Calculate delay for the given attempt number."""
         delay = self.base_delay * (self.backoff_multiplier**attempt)
         return min(delay, self.max_delay)
 
     async def on_request(self, context: MiddlewareContext, call_next: CallNext) -> Any:
-        """Implement retry logic for requests."""
         last_error = None
 
         for attempt in range(self.max_retries + 1):
@@ -209,7 +147,6 @@ class RetryMiddleware(Middleware):
             except Exception as error:
                 last_error = error
 
-                # Don't retry on the last attempt or if it's not a retryable error
                 if attempt == self.max_retries or not self._should_retry(error):
                     break
 
@@ -221,6 +158,5 @@ class RetryMiddleware(Middleware):
 
                 await anyio.sleep(delay)
 
-        # Re-raise the last error if all retries failed
         if last_error:
             raise last_error
