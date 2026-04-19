@@ -1382,6 +1382,39 @@ class TestPluginCapabilities:
             assert result.capabilities.tools is not None
             assert result.capabilities.tools.listChanged is False
 
+    async def test_plugin_owned_capability_dict_is_not_mutated_across_plugins(self):
+        """Plugin-returned dicts must not be mutated by the merge.
+
+        A plugin that returns a cached/class-level dict from
+        `capabilities()` gets the same object back on subsequent calls.
+        If the merge wrote that dict into `merged` by reference, a later
+        plugin's contribution would add keys to the earlier plugin's
+        dict, leaking state across initializations.
+        """
+
+        class A(_TestPlugin):
+            _caps = {"experimental": {"alpha": {}}}
+
+            def capabilities(self):
+                return self._caps
+
+        class B(_TestPlugin):
+            def capabilities(self):
+                return {"experimental": {"beta": {}}}
+
+        a = A()
+        mcp = FastMCP("t", plugins=[a, B()])
+
+        async with Client(mcp) as c:
+            result = c.initialize_result
+            assert result is not None
+            experimental = result.capabilities.experimental or {}
+            assert "alpha" in experimental
+            assert "beta" in experimental
+
+        # A's cached dict must not have been mutated to contain B's entry.
+        assert a._caps == {"experimental": {"alpha": {}}}
+
     async def test_loader_added_plugin_capabilities_contribute(self):
         """Plugins added via the loader pattern still contribute capabilities."""
 
