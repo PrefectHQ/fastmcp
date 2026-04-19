@@ -51,6 +51,7 @@ from fastmcp.client.tasks import (
     TaskNotificationHandler,
     ToolTask,
 )
+from fastmcp.exceptions import FastMCPError
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.server import FastMCP
 from fastmcp.utilities.exceptions import get_catch_handlers
@@ -613,12 +614,11 @@ class Client(
                         raise RuntimeError(
                             "Session task completed without exception but connection failed"
                         )
-                    # Preserve specific exception types that clients may want to handle
-                    if isinstance(exception, httpx.HTTPStatusError | McpError):
+                    if isinstance(exception, FastMCPError):
                         raise exception
-                    raise RuntimeError(
-                        f"Client failed to connect: {exception}"
-                    ) from exception
+                    if isinstance(exception, McpError):
+                        raise exception
+                    raise FastMCPError.from_generic_exception(exception)
 
             self._session_state.nesting_counter += 1
 
