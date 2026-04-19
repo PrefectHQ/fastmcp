@@ -352,7 +352,7 @@ class TestPluginConstruction:
             meta = PluginMeta(name="p", version="0.1.0")
 
         with pytest.raises(PluginConfigError):
-            P(config="not a config")  # ty: ignore[invalid-argument-type]
+            P("not a config")  # type: ignore[arg-type]
 
 
 class TestPluginValidation:
