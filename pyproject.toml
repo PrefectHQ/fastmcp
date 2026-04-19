@@ -142,6 +142,7 @@ markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "client_process: marks tests that spawn client processes via stdio transport. These can create issues when run in the same CI environment as other subprocess-based tests.",
     "conformance: marks MCP conformance tests (require Node.js/npx)",
+    "slow: marks tests that are slow-running (deselect with '-m \"not slow\"')",
 ]
 # Automatically mark all tests in integration_tests folder
 pythonpath = ["."]

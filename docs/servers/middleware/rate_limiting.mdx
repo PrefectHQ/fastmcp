@@ -1,0 +1,606 @@
+---
+title: Rate Limiting
+sidebarTitle: Rate Limiting
+description: Protect your MCP server from abuse with flexible rate limiting middleware.
+icon: shield
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.9.0" />
+
+Rate limiting middleware protects your MCP server from abuse by controlling the frequency of requests. FastMCP provides a comprehensive rate limiting system with multiple strategies and flexible configuration options.
+
+## Quick Start
+
+### Global Rate Limiting
+
+The simplest way to add rate limiting is to use a global limit across all requests:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+mcp = FastMCP("MyServer")
+
+# Allow 100 requests per second with bursts up to 200
+mcp.add_middleware(RateLimitingMiddleware(
+    global_limit=100.0,
+    burst_capacity=200,
+))
+```
+
+### Per-Tool Rate Limiting
+
+Apply different limits to different tools:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+mcp = FastMCP("MyServer")
+
+# Search tool: 10 QPS, Write tool: 2 QPS
+mcp.add_middleware(RateLimitingMiddleware(
+    per_tool_limit={
+        "search": 10.0,
+        "write": 2.0,
+    },
+))
+```
+
+### Per-Client Rate Limiting
+
+Isolate clients to prevent one client from consuming all resources:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+mcp = FastMCP("MyServer")
+
+def get_client_id(context):
+    # Extract client ID from request context
+    # For HTTP transport, you might use headers
+    from fastmcp.server.dependencies import get_http_headers
+    headers = get_http_headers() or {}
+    return headers.get("x-client-id", "anonymous")
+
+# Each client gets 50 QPS
+mcp.add_middleware(RateLimitingMiddleware(
+    per_client_limit=50.0,
+    get_client_id=get_client_id,
+))
+```
+
+### Decorator for Individual Tools
+
+Use the `@rate_limit` decorator to limit specific tools:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware.rate_limiting import rate_limit
+
+mcp = FastMCP("MyServer")
+
+@mcp.tool
+@rate_limit(qps=10.0, burst_capacity=20)
+def search(query: str) -> str:
+    """Search with rate limiting."""
+    return f"Results for: {query}"
+```
+
+## Configuration Types
+
+FastMCP supports five types of rate limiting configuration:
+
+| Type | Parameter | Description | Use Case |
+|------|-----------|-------------|----------|
+| **Global** | `global_limit` | Single limit across all requests | Simple servers, basic protection |
+| **Per-Tool** | `per_tool_limit` | Different limits for different tools | Tools with varying costs |
+| **Per-Client** | `per_client_limit` | Isolate clients from each other | Multi-tenant servers |
+| **Burst Capacity** | `burst_capacity` | Allow temporary traffic spikes | Handling variable load |
+| **Combined** | Multiple parameters | Stack multiple limit types | Production-grade protection |
+
+### Global Rate Limiting
+
+```python
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+# Basic global limit
+middleware = RateLimitingMiddleware(
+    global_limit=100.0,  # 100 requests per second
+    burst_capacity=200,   # Allow bursts up to 200 requests
+)
+```
+
+### Per-Tool Rate Limiting
+
+```python
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+# Different limits for different tools
+middleware = RateLimitingMiddleware(
+    per_tool_limit={
+        "search": 10.0,      # Search: 10 QPS
+        "write": 2.0,        # Write: 2 QPS (more expensive)
+        "read": 50.0,        # Read: 50 QPS (cheap)
+    },
+    burst_capacity=20,  # Default burst capacity for all tools
+)
+```
+
+### Per-Client Rate Limiting
+
+```python
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+def get_client_id(context):
+    # Custom client identification logic
+    from fastmcp.server.dependencies import get_http_headers
+    headers = get_http_headers() or {}
+    return headers.get("x-api-key", "anonymous")
+
+middleware = RateLimitingMiddleware(
+    per_client_limit=50.0,  # 50 QPS per client
+    get_client_id=get_client_id,
+    strict_mode=False,  # Use 'anonymous' if client ID fails
+)
+```
+
+### Combined Configuration
+
+For production use, combine multiple limit types:
+
+```python
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+def get_client_id(context):
+    from fastmcp.server.dependencies import get_http_headers
+    headers = get_http_headers() or {}
+    return headers.get("x-api-key", "anonymous")
+
+middleware = RateLimitingMiddleware(
+    global_limit=1000.0,           # Global cap: 1000 QPS
+    per_tool_limit={                # Per-tool limits
+        "expensive_operation": 5.0,
+        "cheap_operation": 100.0,
+    },
+    per_client_limit=100.0,         # Per-client: 100 QPS
+    get_client_id=get_client_id,
+    burst_capacity=200,             # Burst capacity
+)
+```
+
+## Decorator vs Middleware
+
+Both approaches can be used together. Here's a comparison:
+
+| Feature | `@rate_limit` Decorator | `RateLimitingMiddleware` |
+|---------|------------------------|-------------------------|
+| **Scope** | Single tool function | Global, per-tool, or per-client |
+| **Configuration** | Simple: qps + burst | Flexible: multiple limit types |
+| **Hot Update** | Not supported | Supported via `update_limits()` |
+| **Metrics** | Not built-in | Built-in via `get_stats()` |
+| **Custom Counters** | Not supported | Supported |
+| **Backend Abstraction** | Not supported | Supported |
+
+### Using Both Together
+
+You can stack decorator and middleware for stricter limits:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware.rate_limiting import (
+    RateLimitingMiddleware,
+    rate_limit,
+)
+
+mcp = FastMCP("MyServer")
+
+# Global middleware: 100 QPS
+mcp.add_middleware(RateLimitingMiddleware(global_limit=100.0))
+
+@mcp.tool
+@rate_limit(qps=10.0, burst_capacity=20)  # Stricter limit for this tool
+def expensive_search(query: str) -> str:
+    """This tool has stricter limits than the global default."""
+    return f"Results for: {query}"
+```
+
+When both are used, the **stricter limit takes effect first**.
+
+## Metrics and Monitoring
+
+### Built-in Statistics
+
+Use `get_stats()` to monitor rate limiting behavior:
+
+```python
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+middleware = RateLimitingMiddleware(global_limit=100.0)
+
+# ... after some requests ...
+
+stats = middleware.get_stats()
+print(stats)
+# {
+#     "total_requests": 1000,
+#     "accepted": 950,
+#     "rejected": 50,
+#     "rejected_by_rule": {
+#         "global": 20,
+#         "per_tool": 15,
+#         "per_client": 15,
+#     }
+# }
+```
+
+### Reset Statistics
+
+```python
+middleware.reset_stats()  # Reset all counters to zero
+```
+
+### Custom Counters (Prometheus/StatsD)
+
+Implement `RateLimitCounters` to integrate with your monitoring system:
+
+```python
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+from prometheus_client import Counter
+
+# Define Prometheus counters
+requests_total = Counter(
+    "fastmcp_rate_limit_requests_total",
+    "Total rate limited requests",
+    ["status", "limit_type"],
+)
+
+class PrometheusCounters:
+    def increment_accepted(self, limit_type: str | None = None):
+        requests_total.labels(
+            status="accepted",
+            limit_type=limit_type or "none",
+        ).inc()
+
+    def increment_rejected(self, limit_type: str):
+        requests_total.labels(
+            status="rejected",
+            limit_type=limit_type,
+        ).inc()
+
+# Use with middleware
+middleware = RateLimitingMiddleware(
+    global_limit=100.0,
+    counters=PrometheusCounters(),
+)
+```
+
+## Backend Architecture
+
+FastMCP uses a backend abstraction to support different rate limiting implementations:
+
+### Default: In-Memory Backend
+
+The default `InMemoryBackend` is suitable for single-server deployments:
+
+```python
+from fastmcp.server.middleware.rate_limiting import (
+    RateLimitingMiddleware,
+    InMemoryBackend,
+)
+
+# Explicitly use in-memory backend (this is the default)
+middleware = RateLimitingMiddleware(
+    global_limit=100.0,
+    backend=InMemoryBackend(),
+)
+```
+
+### Distributed: Redis Backend
+
+For multi-server deployments, implement a `RedisBackend`:
+
+```python
+from typing import Optional
+import redis.asyncio as redis
+from fastmcp.server.middleware.rate_limiting import RateLimitBackend
+
+class RedisBackend(RateLimitBackend):
+    """Redis-based rate limiting backend for distributed scenarios.
+
+    This backend uses Redis's atomic operations to provide thread-safe
+    rate limiting across multiple server instances.
+    """
+
+    def __init__(
+        self,
+        redis_url: str = "redis://localhost:6379/0",
+        key_prefix: str = "fastmcp:rate_limit:",
+        ttl: int = 3600,
+    ):
+        self.redis_url = redis_url
+        self.key_prefix = key_prefix
+        self.ttl = ttl
+        self._redis: Optional[redis.Redis] = None
+
+    async def _get_redis(self) -> redis.Redis:
+        if self._redis is None:
+            self._redis = redis.from_url(self.redis_url)
+        return self._redis
+
+    def _make_key(self, key: str, qps: float, burst: int) -> str:
+        return f"{self.key_prefix}{key}:{qps}:{burst}"
+
+    async def try_consume(
+        self, key: str, qps: float, burst: int, tokens: int = 1
+    ) -> bool:
+        """Try to consume tokens using Redis Lua script for atomicity."""
+        r = await self._get_redis()
+        redis_key = self._make_key(key, qps, burst)
+
+        # Use Lua script for atomic token bucket operations
+        script = """
+        local key = KEYS[1]
+        local tokens = tonumber(ARGV[1])
+        local refill_rate = tonumber(ARGV[2])
+        local capacity = tonumber(ARGV[3])
+        local now = tonumber(ARGV[4])
+
+        local current = redis.call('HMGET', key, 'tokens', 'last_refill')
+        local current_tokens = tonumber(current[1]) or capacity
+        local last_refill = tonumber(current[2]) or now
+
+        local elapsed = now - last_refill
+        local new_tokens = math.min(capacity, current_tokens + elapsed * refill_rate)
+
+        if new_tokens >= tokens then
+            redis.call('HMSET', key, 'tokens', new_tokens - tokens, 'last_refill', now)
+            redis.call('EXPIRE', key, 3600)
+            return 1
+        else
+            return 0
+        end
+        """
+
+        import time
+        result = await r.eval(
+            script,
+            1,
+            redis_key,
+            tokens,
+            qps,
+            burst,
+            time.time(),
+        )
+        return result == 1
+
+    async def get_wait_time(
+        self, key: str, qps: float, burst: int, tokens: int = 1
+    ) -> float:
+        """Calculate wait time based on Redis state."""
+        r = await self._get_redis()
+        redis_key = self._make_key(key, qps, burst)
+
+        import time
+        now = time.time()
+
+        current = await r.hmget(redis_key, "tokens", "last_refill")
+        current_tokens = float(current[0]) if current[0] else burst
+        last_refill = float(current[1]) if current[1] else now
+
+        elapsed = now - last_refill
+        new_tokens = min(burst, current_tokens + elapsed * qps)
+
+        if new_tokens >= tokens:
+            return 0.0
+
+        tokens_needed = tokens - new_tokens
+        return tokens_needed / qps if qps > 0 else float("inf")
+```
+
+### Using Custom Backend
+
+```python
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+from my_redis_backend import RedisBackend
+
+# Create Redis backend
+redis_backend = RedisBackend(
+    redis_url="redis://localhost:6379/0",
+    key_prefix="fastmcp:rate_limit:",
+)
+
+# Use with middleware
+middleware = RateLimitingMiddleware(
+    global_limit=100.0,
+    backend=redis_backend,
+)
+```
+
+## Error Handling
+
+### RateLimitExceededError
+
+When rate limits are exceeded, `RateLimitExceededError` is raised:
+
+```python
+from fastmcp.server.middleware.rate_limiting import RateLimitExceededError
+
+try:
+    # Make requests
+    result = await client.call_tool("search", {"query": "test"})
+except RateLimitExceededError as e:
+    print(f"Rate limit exceeded!")
+    print(f"Retry after: {e.retry_after} seconds")
+    print(f"Client ID: {e.client_id}")
+    print(f"Tool name: {e.tool_name}")
+    print(f"Limit type: {e.limit_type}")
+```
+
+### Custom Error Messages
+
+Customize error message templates:
+
+```python
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+middleware = RateLimitingMiddleware(
+    global_limit=100.0,
+    error_message_template=(
+        "Rate limit exceeded for client '{client_id}' "
+        "calling tool '{tool_name}'. "
+        "Please retry after {retry_after:.2f} seconds. "
+        "Limit type: {limit_type}"
+    ),
+)
+```
+
+Available placeholders:
+- `{retry_after}` - Number of seconds to wait
+- `{client_id}` - Client identifier (or "unknown")
+- `{tool_name}` - Tool name (or "unknown")
+- `{limit_type}` - Type of limit: "global", "per_tool", "per_client"
+
+### Per-Client Error Handling
+
+Configure how client ID resolution failures are handled:
+
+```python
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+def get_client_id(context):
+    # This might fail or return None
+    from fastmcp.server.dependencies import get_http_headers
+    headers = get_http_headers() or {}
+    return headers.get("x-api-key")  # May return None
+
+# Strict mode: raise error if client ID fails
+strict_middleware = RateLimitingMiddleware(
+    per_client_limit=50.0,
+    get_client_id=get_client_id,
+    strict_mode=True,  # Raise error on failure
+)
+
+# Lenient mode: use 'anonymous' if client ID fails
+lenient_middleware = RateLimitingMiddleware(
+    per_client_limit=50.0,
+    get_client_id=get_client_id,
+    strict_mode=False,  # Use 'anonymous' on failure
+)
+```
+
+## Hot Reconfiguration
+
+Update rate limits at runtime without restarting:
+
+```python
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+middleware = RateLimitingMiddleware(
+    global_limit=100.0,
+    per_tool_limit={"search": 10.0},
+)
+
+# Later, update limits
+middleware.update_limits(
+    global_limit=200.0,  # Increase global limit
+    per_tool_limit={
+        "search": 20.0,    # Increase search limit
+        "write": 5.0,      # Add new tool limit
+    },
+    per_client_limit=100.0,  # Add per-client limit
+    burst_capacity=400,       # Increase burst capacity
+)
+```
+
+## Complete Example
+
+Here's a production-ready configuration combining all features:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware.rate_limiting import (
+    RateLimitingMiddleware,
+    rate_limit,
+)
+from prometheus_client import Counter
+
+# Prometheus counters
+requests_total = Counter(
+    "fastmcp_rate_limit_requests_total",
+    "Total rate limited requests",
+    ["status", "limit_type"],
+)
+
+class PrometheusCounters:
+    def increment_accepted(self, limit_type: str | None = None):
+        requests_total.labels(
+            status="accepted",
+            limit_type=limit_type or "none",
+        ).inc()
+
+    def increment_rejected(self, limit_type: str):
+        requests_total.labels(
+            status="rejected",
+            limit_type=limit_type,
+        ).inc()
+
+def get_client_id(context):
+    from fastmcp.server.dependencies import get_http_headers
+    headers = get_http_headers() or {}
+    return headers.get("x-api-key", "anonymous")
+
+mcp = FastMCP("ProductionServer")
+
+# Global rate limiting middleware
+mcp.add_middleware(RateLimitingMiddleware(
+    global_limit=1000.0,                    # Global cap
+    per_tool_limit={                          # Per-tool limits
+        "expensive_analysis": 5.0,
+        "data_export": 2.0,
+    },
+    per_client_limit=100.0,                   # Per-client isolation
+    get_client_id=get_client_id,
+    strict_mode=False,
+    burst_capacity=2000,                      # Generous burst capacity
+    counters=PrometheusCounters(),            # Prometheus integration
+    error_message_template=(
+        "Rate limit exceeded. "
+        "Client: {client_id}, "
+        "Tool: {tool_name}, "
+        "Type: {limit_type}, "
+        "Retry after: {retry_after:.2f}s"
+    ),
+))
+
+@mcp.tool
+@rate_limit(qps=10.0, burst_capacity=20)  # Additional limit for this tool
+def search(query: str) -> str:
+    """Search with additional rate limiting."""
+    return f"Results for: {query}"
+
+# Periodically log statistics
+import asyncio
+
+async def log_stats_periodically(middleware):
+    while True:
+        await asyncio.sleep(60)  # Log every minute
+        stats = middleware.get_stats()
+        print(f"Rate limit stats: {stats}")
+
+# Start stats logging (in a real app, use lifespan hooks)
+# asyncio.create_task(log_stats_periodically(middleware))
+```
+
+## Best Practices
+
+1. **Start with Global Limits**: Add a global limit as a safety net
+2. **Use Per-Tool Limits for Expensive Operations**: Tools with higher latency or resource usage should have stricter limits
+3. **Isolate Clients with Per-Client Limits**: Prevent one client from consuming all resources
+4. **Monitor with `get_stats()`**: Track accepted/rejected ratios to tune limits
+5. **Set Reasonable Burst Capacity**: Allow temporary spikes without allowing abuse
+6. **Use Lenient Mode for Client ID**: Unless you require strict authentication, use `strict_mode=False`
+7. **Combine Decorator and Middleware**: Use middleware for global policies and decorators for tool-specific overrides

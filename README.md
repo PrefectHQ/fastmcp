@@ -77,6 +77,19 @@ FastMCP has three pillars:
 
 **[Servers](https://gofastmcp.com/servers/server)** wrap your Python functions into MCP-compliant tools, resources, and prompts. **[Clients](https://gofastmcp.com/clients/client)** connect to any server with full protocol support. And **[Apps](https://gofastmcp.com/apps/overview)** give your tools interactive UIs rendered directly in the conversation.
 
+### Quick Transport Selection
+
+FastMCP supports multiple transport mechanisms for connecting clients and servers. Choose based on your use case:
+
+| Scenario | Recommended Transport |
+|----------|----------------------|
+| Local development / CLI tools | **Stdio** (MCP standard default) |
+| Production deployment over HTTP | **Streamable HTTP** (MCP recommended) |
+| Unit testing / same-process | **In-memory** (FastMCPTransport) |
+| Connecting to multiple servers | **MCP Config** |
+
+For detailed architecture, lifecycle, and custom transport implementation guidance, see the [Transport Layer Architecture](docs/architecture/transport_layer.mdx) document.
+
 Ready to build? Start with the [installation guide](https://gofastmcp.com/getting-started/installation) or jump straight to the [quickstart](https://gofastmcp.com/getting-started/quickstart). When you're ready to deploy, [Prefect Horizon](https://www.prefect.io/horizon) offers free hosting for FastMCP users.
 
 ## Installation

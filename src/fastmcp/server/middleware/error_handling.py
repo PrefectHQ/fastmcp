@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import traceback
+import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -10,7 +11,7 @@ import anyio
 from mcp import McpError
 from mcp.types import ErrorData
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import FastMCPDeprecationWarning, FastMCPError, NotFoundError
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
@@ -20,6 +21,11 @@ class ErrorHandlingMiddleware(Middleware):
 
     Catches exceptions, logs them appropriately, and converts them to
     proper MCP error responses. Also tracks error patterns for monitoring.
+
+    This middleware handles:
+    - FastMCPError (and all subclasses): Uses built-in to_mcp_error() method
+    - McpError: Passed through unchanged
+    - Other exceptions: Transformed using FastMCPError.from_generic_exception()
 
     Example:
         ```python
@@ -81,41 +87,94 @@ class ErrorHandlingMiddleware(Middleware):
     def _transform_error(
         self, error: Exception, context: MiddlewareContext
     ) -> Exception:
-        """Transform non-MCP errors to proper MCP errors."""
+        """Transform non-MCP errors to proper MCP errors.
+
+        **Simplified behavior (FastMCP 2.0+):**
+        1. McpError: Passed through unchanged
+        2. FastMCPError (and subclasses): Use built-in to_mcp_error() method
+           - NotFoundError: Use resource_type parameter to determine code
+             (code=-32002 for resources, code=-32001 otherwise)
+        3. Other exceptions: Use FastMCPError.from_generic_exception() factory
+
+        **Deprecated behavior (kept for backward compatibility):**
+        - The old __cause__ inspection logic is deprecated.
+        - Use FastMCPError.from_generic_exception() instead.
+        - NotFoundError no longer inspects context.method — set resource_type
+          parameter explicitly when raising NotFoundError.
+        """
         if isinstance(error, McpError):
             return error
+
+        if isinstance(error, FastMCPError):
+            return self._transform_fastmcperror(error, context)
 
         if not self.transform_errors:
             return error
 
-        # Map common exceptions to appropriate MCP error codes
-        error_type = type(error.__cause__) if error.__cause__ else type(error)
+        return FastMCPError.from_generic_exception(
+            error, method=context.method
+        ).to_mcp_error()
 
-        if error_type in (ValueError, TypeError):
-            return McpError(
-                ErrorData(code=-32602, message=f"Invalid params: {error!s}")
-            )
-        elif error_type in (FileNotFoundError, KeyError, NotFoundError):
-            # MCP spec defines -32002 specifically for resource not found
+    def _transform_fastmcperror(
+        self, error: FastMCPError, context: MiddlewareContext
+    ) -> Exception:
+        """Transform a FastMCPError to McpError.
+
+        **DEPRECATED: The __cause__ inspection and context.method-based
+        NotFoundError handling are deprecated.**
+
+        For backward compatibility, this method still implements the old
+        behavior when __cause__ is set or when NotFoundError is raised
+        without resource_type parameter.
+
+        New code should:
+        - Raise specific FastMCPError subclasses directly
+        - For NotFoundError, set resource_type="resource" for resource-related errors
+        """
+        if isinstance(error, NotFoundError) and error.resource_type is None:
             method = context.method or ""
             if method.startswith("resources/"):
+                warnings.warn(
+                    "NotFoundError context.method inspection is deprecated. "
+                    "Use NotFoundError(message, resource_type='resource') instead.",
+                    FastMCPDeprecationWarning,
+                    stacklevel=3,
+                )
                 return McpError(
                     ErrorData(code=-32002, message=f"Resource not found: {error!s}")
                 )
+            warnings.warn(
+                "NotFoundError without explicit resource_type is deprecated. "
+                "Use NotFoundError(message, resource_type='tool'/'resource'/'prompt') instead.",
+                FastMCPDeprecationWarning,
+                stacklevel=3,
+            )
             return McpError(ErrorData(code=-32001, message=f"Not found: {error!s}"))
-        elif error_type is PermissionError:
-            return McpError(
-                ErrorData(code=-32000, message=f"Permission denied: {error!s}")
+
+        if error.__cause__ is not None and self.transform_errors:
+            error_type = type(error.__cause__)
+            warnings.warn(
+                "FastMCPError __cause__ inspection is deprecated. "
+                "Use FastMCPError.from_generic_exception(original_error) or "
+                "raise specific FastMCPError subclasses directly.",
+                FastMCPDeprecationWarning,
+                stacklevel=3,
             )
-        # asyncio.TimeoutError is a subclass of TimeoutError in Python 3.10, alias in 3.11+
-        elif error_type in (TimeoutError, asyncio.TimeoutError):
-            return McpError(
-                ErrorData(code=-32000, message=f"Request timeout: {error!s}")
-            )
-        else:
-            return McpError(
-                ErrorData(code=-32603, message=f"Internal error: {error!s}")
-            )
+
+            if error_type in (ValueError, TypeError):
+                return McpError(
+                    ErrorData(code=-32602, message=f"Invalid params: {error!s}")
+                )
+            elif error_type is PermissionError:
+                return McpError(
+                    ErrorData(code=-32000, message=f"Permission denied: {error!s}")
+                )
+            elif error_type in (TimeoutError, asyncio.TimeoutError):
+                return McpError(
+                    ErrorData(code=-32000, message=f"Request timeout: {error!s}")
+                )
+
+        return error.to_mcp_error()
 
     async def on_message(self, context: MiddlewareContext, call_next: CallNext) -> Any:
         """Handle errors for all messages."""

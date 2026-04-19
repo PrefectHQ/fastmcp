@@ -357,6 +357,15 @@
                   },
                   {
                     "collapsed": true,
+                    "group": "Architecture",
+                    "icon": "network",
+                    "pages": [
+                      "architecture/transport_layer",
+                      "architecture/TODO"
+                    ]
+                  },
+                  {
+                    "collapsed": true,
                     "group": "Development",
                     "icon": "code",
                     "pages": [
