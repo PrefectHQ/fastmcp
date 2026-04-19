@@ -11,6 +11,7 @@ See the design document for the full specification.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from email.message import Message as EmailMessage
@@ -239,14 +240,36 @@ class PluginMeta(BaseModel):
         return cls(**derived)
 
 
+_DEFAULT_PLUGIN_VERSION = "0.1.0"
+
+
+def _derive_plugin_name(cls_name: str) -> str:
+    """Kebab-case a class name, stripping a trailing ``Plugin`` suffix.
+
+    `ChannelPlugin` → `"channel"`, `CodeMode` → `"code-mode"`,
+    `PIIRedactor` → `"pii-redactor"`.
+    """
+    # Split acronym from following capitalized word: `PIIRedactor` → `PII-Redactor`
+    name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1-\2", cls_name)
+    # Split lowercase/digit from following uppercase: `CodeMode` → `Code-Mode`
+    name = re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", name)
+    name = name.lower()
+    if name.endswith("-plugin") and name != "-plugin":
+        name = name[: -len("-plugin")]
+    return name
+
+
 class Plugin:
     """Base class for FastMCP plugins.
 
-    Subclass to define a plugin. A subclass must declare a class-level
-    `meta` attribute (a `PluginMeta` instance). It may optionally
-    declare a nested `Config` (subclass of `pydantic.BaseModel`)
-    describing its configuration schema, and override any of the lifecycle
-    and contribution hooks.
+    Subclass to define a plugin. A subclass may optionally declare a
+    class-level `meta` attribute (a `PluginMeta` instance); if omitted,
+    a default is derived from the class name (kebab-cased, trailing
+    `Plugin` stripped) with version `0.1.0`. Declare `meta` explicitly
+    when publishing or when Horizon/registry-facing metadata matters.
+    Subclasses may also declare a nested `Config` (subclass of
+    `pydantic.BaseModel`) describing configuration, and override any of
+    the lifecycle and contribution hooks.
 
     Example:
         ```python
@@ -273,7 +296,24 @@ class Plugin:
     """
 
     meta: ClassVar[PluginMeta]
-    """Class-level metadata. Required on every subclass."""
+    """Class-level metadata. Auto-derived from the class name and a
+    placeholder version if the subclass doesn't declare one — fine for
+    in-code use. Declare `meta = PluginMeta(...)` (or
+    `PluginMeta.from_package(...)`) explicitly when publishing or when
+    Horizon/registry-facing metadata matters.
+    """
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        # Auto-derive meta if the subclass didn't declare its own. We
+        # check `cls.__dict__` rather than attribute lookup so inherited
+        # meta from an intermediate subclass isn't treated as a local
+        # declaration — each concrete Plugin class gets its own name.
+        if "meta" not in cls.__dict__:
+            cls.meta = PluginMeta(
+                name=_derive_plugin_name(cls.__name__),
+                version=_DEFAULT_PLUGIN_VERSION,
+            )
 
     class Config(BaseModel):
         """Default empty configuration. Subclasses override to declare fields."""
@@ -433,6 +473,28 @@ class Plugin:
     def providers(self) -> list[Provider]:
         """Return component providers."""
         return []
+
+    def capabilities(self) -> dict[str, Any]:
+        """Return a partial `ServerCapabilities` dict to merge into the server's capabilities.
+
+        The returned dict follows the MCP `ServerCapabilities` shape.
+        Contributions from all plugins are deep-merged in registration
+        order, then applied on top of the server's built-in capabilities.
+        Later plugins can add to or override earlier plugins' entries;
+        this is intentional — plugin order is a user-facing configuration
+        knob, same as middleware order.
+
+        A plugin advertising an experimental protocol extension:
+
+        ```python
+        def capabilities(self):
+            return {"experimental": {"my/ext": {}}}
+        ```
+
+        A plugin modifying a built-in capability field follows the same
+        shape, keyed by the `ServerCapabilities` field name.
+        """
+        return {}
 
     def routes(self) -> list[BaseRoute]:
         """Return custom HTTP routes to mount on the server's ASGI app.

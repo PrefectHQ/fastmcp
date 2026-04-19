@@ -220,6 +220,10 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         )
         capabilities.extensions = {**existing_extensions, UI_EXTENSION_ID: {}}
 
+        # Plugin contributions apply last so plugins can override built-in
+        # defaults. See FastMCP._apply_plugin_capabilities for merge rules.
+        capabilities = self.fastmcp._apply_plugin_capabilities(capabilities)
+
         return capabilities
 
     async def run(

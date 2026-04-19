@@ -38,6 +38,12 @@ class _Recorder:
         self.events: list[tuple[str, str]] = []
 
 
+class _TestPlugin(Plugin):
+    """Base for test plugins. Relies on Plugin's auto-derived meta —
+    subclasses override `meta` only when a test asserts on a specific
+    name or version."""
+
+
 class TestPluginMeta:
     """PluginMeta is the source-of-truth metadata model."""
 
@@ -242,12 +248,36 @@ class TestFromPackage:
 class TestPluginConstruction:
     """Plugin construction validates meta and config at instantiation time."""
 
-    def test_plugin_without_meta_raises(self):
-        class NoMeta(Plugin):
+    def test_plugin_without_meta_auto_derives_from_class_name(self):
+        class ChannelPlugin(Plugin):
             pass
 
-        with pytest.raises(TypeError, match="meta"):
-            NoMeta()
+        p = ChannelPlugin()
+        # Class name is kebab-cased and the trailing "Plugin" suffix stripped.
+        assert p.meta.name == "channel"
+        assert p.meta.version == "0.1.0"
+
+    def test_plugin_meta_auto_derivation_handles_acronyms(self):
+        class PIIRedactor(Plugin):
+            pass
+
+        class CodeMode(Plugin):
+            pass
+
+        class HTTPServerPlugin(Plugin):
+            pass
+
+        assert PIIRedactor.meta.name == "pii-redactor"
+        assert CodeMode.meta.name == "code-mode"
+        # Trailing "-plugin" stripped, internal acronym preserved.
+        assert HTTPServerPlugin.meta.name == "http-server"
+
+    def test_explicit_meta_is_not_overridden(self):
+        class P(Plugin):
+            meta = PluginMeta(name="custom", version="2.0.0")
+
+        assert P.meta.name == "custom"
+        assert P.meta.version == "2.0.0"
 
     def test_plugin_with_default_config(self):
         class P(Plugin):
@@ -1246,3 +1276,127 @@ class TestManifest:
 
         with pytest.raises(PluginError, match="fastmcp"):
             FastmcpInDeps.manifest()
+
+
+class TestPluginCapabilities:
+    """Plugins contribute partial ServerCapabilities dicts via `capabilities()`."""
+
+    def test_default_returns_empty(self):
+        """Plugin with no override contributes nothing."""
+        assert _TestPlugin().capabilities() == {}
+
+    async def test_experimental_contribution_reaches_initialize_response(self):
+        """An experimental capability entry flows through to the client."""
+
+        class P(_TestPlugin):
+            def capabilities(self):
+                return {"experimental": {"my/ext": {}}}
+
+        mcp = FastMCP("t", plugins=[P()])
+
+        async with Client(mcp) as c:
+            result = c.initialize_result
+            assert result is not None
+            experimental = result.capabilities.experimental or {}
+            assert experimental.get("my/ext") == {}
+
+    async def test_multiple_plugins_merge_into_same_field(self):
+        """Contributions to the same top-level field are deep-merged."""
+
+        class A(_TestPlugin):
+            def capabilities(self):
+                return {"experimental": {"alpha": {"version": 1}}}
+
+        class B(_TestPlugin):
+            def capabilities(self):
+                return {"experimental": {"beta": {}}}
+
+        mcp = FastMCP("t", plugins=[A(), B()])
+
+        async with Client(mcp) as c:
+            result = c.initialize_result
+            assert result is not None
+            experimental = result.capabilities.experimental or {}
+            assert experimental.get("alpha") == {"version": 1}
+            assert experimental.get("beta") == {}
+
+    async def test_later_plugin_overrides_earlier_on_same_key(self):
+        """Plugins run in sequence; later contributions override earlier ones.
+
+        Plugin order is a user-facing configuration knob — same as
+        middleware order — so overriding a built-in or earlier plugin's
+        capability is intentional, not an error.
+        """
+
+        class Earlier(_TestPlugin):
+            def capabilities(self):
+                return {"experimental": {"shared": {"owner": "earlier"}}}
+
+        class Later(_TestPlugin):
+            def capabilities(self):
+                return {"experimental": {"shared": {"owner": "later"}}}
+
+        mcp = FastMCP("t", plugins=[Earlier(), Later()])
+
+        async with Client(mcp) as c:
+            result = c.initialize_result
+            assert result is not None
+            experimental = result.capabilities.experimental or {}
+            assert experimental.get("shared") == {"owner": "later"}
+
+    async def test_plugin_can_add_non_experimental_field(self):
+        """Plugins can advertise top-level capability fields the server didn't set.
+
+        `logging` is off by default on a FastMCP server; a plugin turning
+        it on must surface in the initialize response.
+        """
+
+        class P(_TestPlugin):
+            def capabilities(self):
+                return {"logging": {}}
+
+        mcp = FastMCP("t", plugins=[P()])
+
+        async with Client(mcp) as c:
+            result = c.initialize_result
+            assert result is not None
+            assert result.capabilities.logging is not None
+
+    async def test_plugin_can_override_built_in_subfield(self):
+        """Deep-merge applies to typed sub-fields of pre-populated capability objects.
+
+        FastMCP already advertises `tools.listChanged=True` by default; a
+        plugin flipping it to `False` exercises the merge path through a
+        pydantic sub-model (not just the experimental dict).
+        """
+
+        class P(_TestPlugin):
+            def capabilities(self):
+                return {"tools": {"listChanged": False}}
+
+        mcp = FastMCP("t", plugins=[P()])
+
+        async with Client(mcp) as c:
+            result = c.initialize_result
+            assert result is not None
+            assert result.capabilities.tools is not None
+            assert result.capabilities.tools.listChanged is False
+
+    async def test_loader_added_plugin_capabilities_contribute(self):
+        """Plugins added via the loader pattern still contribute capabilities."""
+
+        class Loaded(_TestPlugin):
+            def capabilities(self):
+                return {"experimental": {"loaded": {}}}
+
+        class Loader(_TestPlugin):
+            async def setup(self, server):
+                server.add_plugin(Loaded())
+
+        mcp = FastMCP("t", plugins=[Loader()])
+
+        async with Client(mcp) as c:
+            result = c.initialize_result
+            assert result is not None
+            experimental = result.capabilities.experimental or {}
+            assert experimental.get("loaded") == {}

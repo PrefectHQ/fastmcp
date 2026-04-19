@@ -84,6 +84,7 @@ from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import ToolTransformConfig
+from fastmcp.utilities.collections import deep_merge
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel, NotSet, NotSetT
@@ -687,6 +688,29 @@ class FastMCP(
         self.plugins = [
             p for p in self.plugins if not getattr(p, "_fastmcp_ephemeral", False)
         ]
+
+    def _apply_plugin_capabilities(
+        self, capabilities: mcp.types.ServerCapabilities
+    ) -> mcp.types.ServerCapabilities:
+        """Deep-merge plugin capability contributions into the server's capabilities.
+
+        Called by `LowLevelServer.get_capabilities` after the base SDK
+        capabilities and FastMCP post-processing have been applied.
+        Each plugin's `capabilities()` dict is folded into the running
+        capabilities in registration order, with later plugins overriding
+        earlier ones at matching leaf keys — same semantics as dict
+        update, applied recursively. Plugins that return an empty dict
+        contribute nothing.
+        """
+        contributions = [plugin.capabilities() for plugin in self.plugins]
+        if not any(contributions):
+            return capabilities
+
+        merged = capabilities.model_dump(exclude_none=True)
+        for contribution in contributions:
+            if contribution:
+                deep_merge(merged, contribution)
+        return type(capabilities).model_validate(merged)
 
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider for dynamic tools, resources, and prompts.
