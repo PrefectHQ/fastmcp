@@ -9,9 +9,9 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.13.0" />
 
-This guide shows you how to secure your FastMCP server using **Azure OAuth** (Microsoft Entra ID). Azure is incompatible with direct MCP client authentication in two ways: it doesn't support Dynamic Client Registration, and Azure AD v2.0 rejects the `resource` parameter that MCP clients send on authorization requests (RFC 8707). Manually creating an Azure App registration and pointing an MCP client at Azure directly is *not* a sufficient workaround — the authorization request itself will fail.
+This guide shows you how to secure your FastMCP server using **Azure OAuth** (Microsoft Entra ID). Azure is incompatible with direct MCP client authentication in two ways: it doesn't support Dynamic Client Registration, and Azure AD v2.0 rejects the optional `resource` parameter that some MCP clients include on authorization requests (RFC 8707). Manually creating an Azure App registration and pointing an MCP client at Azure directly is therefore *not* a sufficient workaround — if the client includes `resource`, the authorization request itself will fail.
 
-This integration uses the [**OAuth Proxy**](/servers/auth/oauth-proxy) pattern to bridge both gaps: it presents a DCR-compliant interface to MCP clients while using your pre-registered Azure credentials, and filters the `resource` parameter out of upstream calls so Azure accepts them. FastMCP validates Azure JWTs against your application's client_id.
+This integration uses the [**OAuth Proxy**](/servers/auth/oauth-proxy) pattern to bridge both gaps: it presents a DCR-compliant interface to MCP clients while using your pre-registered Azure credentials, and filters the `resource` parameter out of upstream calls when present so Azure accepts them. FastMCP validates Azure JWTs against your application's client_id.
 
 ## Configuration
 
