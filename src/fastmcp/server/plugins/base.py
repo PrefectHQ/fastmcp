@@ -391,7 +391,16 @@ class Plugin(Generic[C]):
 
         config_cls = type(self)._config_cls
         if config is None:
-            value: BaseModel = config_cls()
+            try:
+                value: BaseModel = config_cls()
+            except ValidationError as exc:
+                # Required config fields with no default: surface the
+                # failure as PluginConfigError so callers that catch
+                # the documented exception type behave consistently
+                # with the dict path below.
+                raise PluginConfigError(
+                    f"Invalid configuration for {type(self).__name__}: {exc}"
+                ) from exc
         elif isinstance(config, config_cls):
             value = config
         elif isinstance(config, dict):
@@ -402,9 +411,16 @@ class Plugin(Generic[C]):
                     f"Invalid configuration for {type(self).__name__}: {exc}"
                 ) from exc
         else:
+            # `_EmptyConfig` is an internal implementation detail for
+            # unparameterized plugins. Don't leak its name to authors.
+            expected = (
+                "dict"
+                if config_cls is _EmptyConfig
+                else f"{config_cls.__name__} instance or dict"
+            )
             raise PluginConfigError(
-                f"Config for {type(self).__name__} must be a {config_cls.__name__} "
-                f"instance or dict, not {type(config).__name__}"
+                f"Config for {type(self).__name__} must be a {expected}, "
+                f"not {type(config).__name__}"
             )
         self.config = cast(C, value)
 
@@ -589,10 +605,16 @@ class Plugin(Generic[C]):
         cls._validate_meta(meta)
 
         config_cls = cls._config_cls
+        config_schema = config_cls.model_json_schema()
+        # `_EmptyConfig` is an internal implementation detail; don't
+        # leak its name into the published manifest JSON consumed by
+        # Horizon, registries, and CI tooling.
+        if config_cls is _EmptyConfig:
+            config_schema.pop("title", None)
         data: dict[str, Any] = {
             "manifest_version": 1,
             **meta.model_dump(),
-            "config_schema": config_cls.model_json_schema(),
+            "config_schema": config_schema,
             "entry_point": f"{cls.__module__}:{cls.__qualname__}",
         }
 

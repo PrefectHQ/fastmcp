@@ -338,14 +338,31 @@ class TestPluginConstruction:
             P({"who": "jeremiah"})
 
     def test_invalid_config_raises_plugin_config_error(self):
-        class P(Plugin):
+        """Wrong-typed value for a declared field wraps ValidationError
+        into PluginConfigError — exercising the generic Plugin[C] path."""
+
+        class PConfig(BaseModel):
+            count: int
+
+        class P(Plugin[PConfig]):
             meta = PluginMeta(name="p", version="0.1.0")
 
-            class Config(BaseModel):
-                count: int
+        with pytest.raises(PluginConfigError, match="count"):
+            P({"count": "not a number"})
 
-        with pytest.raises(PluginConfigError):
-            P(config={"count": "not a number"})
+    def test_required_field_missing_raises_plugin_config_error_on_no_args(self):
+        """Required config field with no default must surface as
+        PluginConfigError (not a raw pydantic.ValidationError) when the
+        plugin is constructed with no arguments."""
+
+        class PConfig(BaseModel):
+            api_key: str  # required, no default
+
+        class P(Plugin[PConfig]):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+        with pytest.raises(PluginConfigError, match="api_key"):
+            P()
 
     def test_bad_config_type_raises(self):
         class P(Plugin):
