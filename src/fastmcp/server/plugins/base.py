@@ -360,9 +360,18 @@ class Plugin(Generic[C]):
             if not args:
                 continue
             config_arg = args[0]
-            if isinstance(config_arg, type) and issubclass(config_arg, BaseModel):
-                cls._config_cls = config_arg
-                break
+            # A bare TypeVar means an intermediate generic subclass that
+            # leaves the config unbound (e.g. `class MyBase(Plugin[T])`);
+            # concrete leaves parameterize it later, so skip here.
+            if isinstance(config_arg, TypeVar):
+                continue
+            if not (isinstance(config_arg, type) and issubclass(config_arg, BaseModel)):
+                raise TypeError(
+                    f"{cls.__name__}: Plugin[...] generic parameter must be a "
+                    f"pydantic BaseModel subclass, got {config_arg!r}"
+                )
+            cls._config_cls = config_arg
+            break
 
     # Framework-internal marker. Set to True by `FastMCP.add_plugin` when
     # the plugin is added from inside another plugin's setup() (the loader

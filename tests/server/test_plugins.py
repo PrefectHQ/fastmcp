@@ -354,6 +354,21 @@ class TestPluginConstruction:
         with pytest.raises(PluginConfigError):
             P("not a config")  # type: ignore[arg-type]
 
+    def test_non_basemodel_generic_arg_raises_at_class_creation(self):
+        """`Plugin[T]` where T is not a pydantic BaseModel must fail loudly.
+
+        The `# ty: ignore` tells the static checker that violating the type
+        bound is intentional here — we're exercising the *runtime* guard.
+        """
+
+        class NotAModel:
+            pass
+
+        with pytest.raises(TypeError, match="BaseModel subclass"):
+
+            class _Bad(Plugin[NotAModel]):  # ty: ignore[invalid-type-arguments]
+                meta = PluginMeta(name="bad", version="0.1.0")
+
 
 class TestPluginValidation:
     """Meta validation rejects malformed values eagerly."""
