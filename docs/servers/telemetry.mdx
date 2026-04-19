@@ -153,28 +153,106 @@ Then view traces at http://localhost:16686
 
 ## Custom Spans
 
-You can add your own spans using the FastMCP tracer:
+`get_tracer()` returns the same OpenTelemetry tracer FastMCP uses internally, so spans you create nest automatically under the `tools/call {name}` parent that FastMCP generates.
 
 ```python
 from fastmcp import FastMCP
 from fastmcp.telemetry import get_tracer
 
-mcp = FastMCP("custom-spans")
+mcp = FastMCP("my-server")
 
 @mcp.tool()
-async def complex_operation(input: str) -> str:
+async def search(query: str) -> str:
     tracer = get_tracer()
 
-    with tracer.start_as_current_span("parse_input") as span:
-        span.set_attribute("input.length", len(input))
-        parsed = parse(input)
+    with tracer.start_as_current_span("search.fetch") as span:
+        span.set_attribute("search.query_length", len(query))
+        results = await fetch_results(query)
+        span.set_attribute("search.result_count", len(results))
 
-    with tracer.start_as_current_span("process_data") as span:
-        span.set_attribute("data.count", len(parsed))
-        result = process(parsed)
+    with tracer.start_as_current_span("search.rank") as span:
+        ranked = rank_results(results)
 
-    return result
+    return format_results(ranked)
 ```
+
+### When to add custom spans
+
+Add a span when you need to isolate latency or failures inside a tool, prompt, or resource. Good candidates:
+
+- External I/O: API calls, database queries, file reads
+- Expensive computation that could be slow (>~100ms)
+- Distinct processing stages you want to compare across requests
+
+Skip spans for trivial in-memory operations, fast transformations, and hot inner loops. Span creation has overhead — tracing every function call is counterproductive.
+
+### Naming spans
+
+Use `{component}.{operation}` for child spans — lowercase, dot-separated, describing the operation rather than the code structure:
+
+```
+tools/call search          ← FastMCP auto-generated parent
+  └── search.fetch         ← your span
+  └── search.rank          ← your span
+```
+
+This convention keeps the parent-child relationship readable in any tracing UI.
+
+### Setting attributes
+
+Add attributes that help you debug specific requests. Prefer low-cardinality values: counts, sizes, result categories, identifiers.
+
+```python
+from fastmcp.telemetry import get_tracer
+
+tracer = get_tracer()
+
+with tracer.start_as_current_span("db.query") as span:
+    span.set_attribute("db.table", "products")
+    rows = await db.fetch(query)
+    span.set_attribute("db.result_count", len(rows))
+```
+
+<Warning>
+Do not log PII, secrets, or raw tool arguments as span attributes. MCP tool arguments frequently contain sensitive user data — forward them to traces only after explicit sanitization.
+</Warning>
+
+### Error handling
+
+Let exceptions propagate from your custom spans rather than catching and re-recording them. FastMCP's `server_span` wraps the entire tool execution and automatically calls `span.record_exception()` plus sets error status when an exception escapes. Double-recording adds noise without adding information.
+
+Only call `span.record_exception()` manually when you are catching and suppressing an exception and still want the trace to reflect it:
+
+```python
+from fastmcp.telemetry import get_tracer
+
+tracer = get_tracer()
+
+with tracer.start_as_current_span("optional.enrichment") as span:
+    try:
+        metadata = fetch_metadata(item_id)
+    except TimeoutError as e:
+        span.record_exception(e)
+        metadata = {}
+```
+
+### Tracing LLM calls
+
+If your tool uses `ctx.sample()` or calls an LLM SDK directly, use your provider's auto-instrumentation package to get nested spans with token counts automatically:
+
+```python
+import logfire
+from fastmcp import FastMCP
+
+# Call once at startup — LLM spans appear nested under the tool span
+logfire.instrument_anthropic()
+
+mcp = FastMCP("my-server")
+```
+
+Logfire also supports `instrument_openai()` and `instrument_google_genai()`. See the [Logfire LLM integrations documentation](https://logfire.pydantic.dev/docs/integrations/llms/) for the full list.
+
+For exporter and backend setup, see [Enabling Telemetry](#enabling-telemetry) and [Programmatic Configuration](#programmatic-configuration).
 
 ## Error Handling
 
