@@ -88,10 +88,10 @@ class TestFromPackage:
         # Description is whatever pydantic itself declares; only assert
         # that the field is populated.
         assert meta.description is not None
-        # Dep pin uses base_version (strips local/dev/pre/post segments)
-        # to stay PEP 440-valid with `>=`.
-        base = Version(dist_version("pydantic")).base_version
-        assert meta.dependencies == [f"pydantic>={base}"]
+        # Dep pin uses `Version.public` (strips only local segment;
+        # preserves pre/dev/post, which ARE valid with `>=` per PEP 440).
+        public = Version(dist_version("pydantic")).public
+        assert meta.dependencies == [f"pydantic>={public}"]
 
     def test_overrides_take_precedence(self):
         meta = PluginMeta.from_package(
@@ -137,37 +137,99 @@ class TestFromPackage:
             with pytest.raises(PluginError, match="implicit"):
                 PluginMeta.from_package(variant, name="x")
 
-    def test_local_version_is_stripped_from_pin(self, monkeypatch):
-        """PEP 440 only allows local versions with `==` / `!=`, so
-        `>=1.2.3+abc` would fail to parse as a Requirement. The pin uses
-        Version.base_version to stay valid for dev/local builds."""
+    @pytest.mark.parametrize(
+        "dist_version_str, expected_pin",
+        [
+            # Pre/dev/post segments are valid with `>=` and must be
+            # preserved so the pin tracks prerelease channels accurately.
+            ("1.2.3.dev0", "synthetic-pin>=1.2.3.dev0"),
+            ("1.2.3rc1", "synthetic-pin>=1.2.3rc1"),
+            ("1.2.3.post1", "synthetic-pin>=1.2.3.post1"),
+            # Local versions are NOT valid with `>=` per PEP 440; we
+            # strip only that segment via Version.public.
+            ("1.2.3+abc.def", "synthetic-pin>=1.2.3"),
+            # Dev build with a local segment: strip just the local.
+            ("1.2.3.dev5+abc123", "synthetic-pin>=1.2.3.dev5"),
+            # Plain release — unchanged.
+            ("2.0.0", "synthetic-pin>=2.0.0"),
+        ],
+    )
+    def test_pin_preserves_pre_dev_post_but_strips_local(
+        self, monkeypatch, dist_version_str, expected_pin
+    ):
+        """PEP 440 restricts only local versions from `>=` / `<=`;
+        prereleases, dev, and post segments remain valid. The pin uses
+        `Version.public` (strips only the local segment) so development
+        channels keep their identity in the generated pin."""
         real_distribution = importlib_metadata.distribution
 
         class FakeDist:
-            version = "1.2.3+abc.dev0"
+            version = dist_version_str
 
             def __init__(self):
                 self.metadata = real_distribution("pydantic").metadata
 
         def fake_distribution(name):
-            if name == "synthetic-local":
+            if name == "synthetic-pin":
                 return FakeDist()
             return real_distribution(name)
 
-        # The from_package helper imports `metadata` as a module alias,
-        # so we patch on the plugins.base module directly.
+        # `from_package` reaches `importlib_metadata.distribution` through
+        # the `plugins.base` module's alias; patch there.
         from fastmcp.server.plugins import base as plugins_base
 
         monkeypatch.setattr(
             plugins_base.importlib_metadata, "distribution", fake_distribution
         )
 
-        meta = PluginMeta.from_package("synthetic-local", name="local-version-test")
-        assert meta.dependencies == ["synthetic-local>=1.2.3"]
+        meta = PluginMeta.from_package("synthetic-pin", name="pin-test")
+        assert meta.dependencies == [expected_pin]
 
-        # And the resulting meta actually validates — no "invalid PEP 508"
-        # error when the pin is round-tripped through _validate_meta.
+        # Resulting meta round-trips through _validate_meta cleanly.
         Plugin._validate_meta(meta)
+
+    def test_whitespace_only_author_header_falls_back_to_email(self, monkeypatch):
+        """A METADATA file with `Author: ` (whitespace only) must not
+        block the `Author-email` fallback. Similar for `Home-page`
+        falling back to Project-URL."""
+        real_distribution = importlib_metadata.distribution
+        pydantic_metadata = real_distribution("pydantic").metadata
+
+        class FakeMessage:
+            def items(self):
+                return [
+                    ("Metadata-Version", "2.1"),
+                    ("Name", "whitespace-test"),
+                    ("Version", "1.0.0"),
+                    ("Author", "   "),  # whitespace only
+                    ("Author-email", "real@example.com"),
+                    ("Home-page", ""),  # empty
+                    ("Project-URL", "Homepage, https://example.com"),
+                ]
+
+        class FakeDist:
+            version = "1.0.0"
+            metadata = FakeMessage()
+
+        def fake_distribution(name):
+            if name == "whitespace-test":
+                return FakeDist()
+            return real_distribution(name)
+
+        from fastmcp.server.plugins import base as plugins_base
+
+        monkeypatch.setattr(
+            plugins_base.importlib_metadata, "distribution", fake_distribution
+        )
+
+        meta = PluginMeta.from_package("whitespace-test", name="ws-test")
+        # Whitespace Author didn't block Author-email.
+        assert meta.author == "real@example.com"
+        # Empty Home-page fell through to the Project-URL label match.
+        assert meta.homepage == "https://example.com"
+
+        # Avoid "pydantic_metadata unused" lint noise.
+        _ = pydantic_metadata
 
     def test_name_override_required_if_not_provided(self):
         """`name` is required on PluginMeta; from_package doesn't default

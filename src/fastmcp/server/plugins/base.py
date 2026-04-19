@@ -23,6 +23,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, ValidationError
+from typing_extensions import Self
 
 import fastmcp
 from fastmcp.exceptions import FastMCPError
@@ -97,7 +98,7 @@ class PluginMeta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
-    def from_package(cls, distribution: str, /, **overrides: Any) -> PluginMeta:
+    def from_package(cls, distribution: str, /, **overrides: Any) -> Self:
         """Derive plugin metadata from an installed Python distribution.
 
         Reads `version`, `description`, `author`, and `homepage` from the
@@ -175,21 +176,33 @@ class PluginMeta(BaseModel):
                 # For repeated headers we only need one; first-wins.
                 headers.setdefault(key, value)
 
+        def _first_non_blank(*values: str | None) -> str | None:
+            """Return the first value whose `.strip()` is truthy, or None.
+
+            Guards against whitespace-only headers silently blocking the
+            fallback chain (e.g. a METADATA file with `Author:    ` would
+            otherwise make the `Author-email` fallback unreachable).
+            """
+            for v in values:
+                if v is not None and v.strip():
+                    return v.strip()
+            return None
+
         derived: dict[str, Any] = {"version": dist.version}
 
         # description ← Summary header
-        summary = headers.get("Summary")
-        if summary and summary.strip():
-            derived["description"] = summary.strip()
+        summary = _first_non_blank(headers.get("Summary"))
+        if summary:
+            derived["description"] = summary
 
         # author ← Author, falling back to Author-email
-        author = headers.get("Author") or headers.get("Author-email")
-        if author and author.strip():
-            derived["author"] = author.strip()
+        author = _first_non_blank(headers.get("Author"), headers.get("Author-email"))
+        if author:
+            derived["author"] = author
 
         # homepage ← Home-page, falling back to the first Project-URL
-        # that looks like a canonical homepage reference
-        homepage = headers.get("Home-page")
+        # whose label looks like a canonical homepage reference
+        homepage = _first_non_blank(headers.get("Home-page"))
         if not homepage:
             for entry in all_project_urls:
                 # Project-URL values are `"Label, URL"` pairs.
@@ -200,26 +213,27 @@ class PluginMeta(BaseModel):
                     "repository",
                     "source",
                 }:
-                    homepage = url.strip()
-                    break
-        if homepage and homepage.strip():
-            derived["homepage"] = homepage.strip()
+                    homepage = _first_non_blank(url)
+                    if homepage:
+                        break
+        if homepage:
+            derived["homepage"] = homepage
 
-        # dependencies — pin the containing distribution at the base
-        # release of its current version. Using `Version.base_version`
-        # strips local (`+abc.def`), pre (`rc1`), dev (`.dev0`), and
-        # post segments, because PEP 440 only allows local versions with
-        # `==` / `!=` — a pin like `>=1.2.3+abc` would fail to parse as
-        # a Requirement (flagged by `Plugin._validate_meta`). Plugin
-        # authors can add more via the `dependencies` override.
+        # dependencies — pin the containing distribution at its current
+        # version, minus the local segment. PEP 440 only restricts local
+        # versions (`+abc.def`) from use with `>=` / `<=`; prereleases
+        # (`rc1`), dev (`.dev0`), and post segments are all valid there,
+        # so we preserve them to keep the pin meaningful for actively
+        # developed distributions. `Version.public` strips exactly the
+        # local segment.
         try:
-            base_version = Version(dist.version).base_version
+            public = Version(dist.version).public
         except InvalidVersion as exc:
             raise PluginError(
                 f"PluginMeta.from_package({distribution!r}): could not "
                 f"parse distribution version {dist.version!r}: {exc}"
             ) from exc
-        derived["dependencies"] = [f"{distribution}>={base_version}"]
+        derived["dependencies"] = [f"{distribution}>={public}"]
 
         derived.update(overrides)
         return cls(**derived)
