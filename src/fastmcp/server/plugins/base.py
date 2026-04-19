@@ -346,15 +346,16 @@ class Plugin(Generic[C]):
                 name=_derive_plugin_name(cls.__name__),
                 version=_DEFAULT_PLUGIN_VERSION,
             )
-        # Resolve the Config model from the generic parameter. Walk the
-        # immediate `__orig_bases__` looking for `Plugin[SomeConfig]`;
-        # subclasses that inherit from a parameterized intermediate
-        # class pick the Config up through normal attribute lookup.
+        # Resolve the Config model from the generic parameter. Only look at
+        # bases whose origin is `Plugin` directly — an intermediate
+        # `Plugin` subclass with its own generics (e.g. `Intermediate[T]`
+        # where `Intermediate` extends `Plugin[Cfg]`) carries TypeVars
+        # unrelated to this plugin's config, so reading `args[0]` from
+        # those would misread a caller's generic parameter. Subclasses
+        # that inherit from a concrete `Plugin[...]`-parameterized base
+        # pick up `_config_cls` via normal attribute lookup.
         for base in getattr(cls, "__orig_bases__", ()):
-            origin = get_origin(base)
-            if origin is None or not (
-                isinstance(origin, type) and issubclass(origin, Plugin)
-            ):
+            if get_origin(base) is not Plugin:
                 continue
             args = get_args(base)
             if not args:
@@ -607,10 +608,13 @@ class Plugin(Generic[C]):
         config_cls = cls._config_cls
         config_schema = config_cls.model_json_schema()
         # `_EmptyConfig` is an internal implementation detail; don't
-        # leak its name into the published manifest JSON consumed by
-        # Horizon, registries, and CI tooling.
+        # leak its name or docstring into the published manifest JSON
+        # consumed by Horizon, registries, and CI tooling. Pydantic v2
+        # emits both `title` (from `__name__`) and `description` (from
+        # the class docstring) in `model_json_schema()`; strip both.
         if config_cls is _EmptyConfig:
             config_schema.pop("title", None)
+            config_schema.pop("description", None)
         data: dict[str, Any] = {
             "manifest_version": 1,
             **meta.model_dump(),

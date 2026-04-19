@@ -8,6 +8,7 @@ from contextlib import suppress
 from importlib import metadata as importlib_metadata
 from importlib.metadata import version as dist_version
 from pathlib import Path
+from typing import Generic, TypeVar
 
 import pytest
 from packaging.version import Version
@@ -385,6 +386,34 @@ class TestPluginConstruction:
 
             class _Bad(Plugin[NotAModel]):  # ty: ignore[invalid-type-arguments]
                 meta = PluginMeta(name="bad", version="0.1.0")
+
+    def test_intermediate_generic_subclass_parameterization_is_not_misread_as_config(
+        self,
+    ):
+        """A concrete subclass of an intermediate Plugin base with its
+        own generic parameter must not have its generic arg misread as
+        the plugin's config type.
+
+        Given `class Intermediate(Plugin[Cfg], Generic[T])` and
+        `class Concrete(Intermediate[int])`, `int` is the intermediate's
+        own TypeVar substitution, NOT the plugin config. `Concrete`
+        should inherit `Cfg` through the intermediate, not raise because
+        `int` isn't a `BaseModel`.
+        """
+        _T = TypeVar("_T")
+
+        class Cfg(BaseModel):
+            value: int = 0
+
+        class Intermediate(Plugin[Cfg], Generic[_T]):
+            meta = PluginMeta(name="intermediate", version="0.1.0")
+
+        class Concrete(Intermediate[int]):
+            meta = PluginMeta(name="concrete", version="0.1.0")
+
+        assert Intermediate._config_cls is Cfg
+        assert Concrete._config_cls is Cfg
+        assert isinstance(Concrete().config, Cfg)
 
 
 class TestPluginValidation:
@@ -1278,6 +1307,24 @@ class TestManifest:
         assert m["entry_point"].endswith(".P")
         assert m["config_schema"]["type"] == "object"
         assert "who" in m["config_schema"]["properties"]
+
+    def test_manifest_omits_empty_config_internal_name_and_docstring(self):
+        """For plugins without a Config, the manifest's `config_schema`
+        must not leak `_EmptyConfig` — neither as `title` nor as
+        `description` (pydantic emits both by default)."""
+
+        class P(Plugin):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+        m = P.manifest()
+        assert m is not None
+        schema = m["config_schema"]
+        assert "_EmptyConfig" not in schema.get("title", "")
+        # Pydantic v2 emits the class docstring as `description`; strip it too.
+        assert (
+            "description" not in schema or "_EmptyConfig" not in schema["description"]
+        )
+        assert "Plugin[ConfigType]" not in schema.get("description", "")
 
     def test_manifest_custom_fields_subclass(self):
         class AcmeMeta(PluginMeta):
