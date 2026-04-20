@@ -510,15 +510,33 @@ class Plugin(Generic[C]):
         custom callables, connection pools, etc. — belongs on the
         plugin's `__init__` signature, not the Config model.
 
-        We rely solely on pydantic's `model_json_schema()` to decide
-        whether a field is JSON-describable. Authors who bring their
-        own non-pydantic types with proper JSON hooks
-        (`__get_pydantic_core_schema__` + a JSON-safe serializer) pass
-        this check — their fields ARE JSON-round-trippable, which is
-        the contract we care about.
+        Two checks: (1) `model_json_schema()` must succeed, catching
+        fields pydantic can't describe in JSON at all. (2) Pydantic's
+        `PydanticJsonSchemaWarning` (raised when a default value isn't
+        JSON-serializable) is promoted to an error, catching the case
+        of a custom type with `__get_pydantic_json_schema__` but no
+        matching serializer — schema generation alone would silently
+        pass.
+
+        Configs that aren't fully defined yet (forward references
+        awaiting `model_rebuild()`) skip validation; re-running the
+        schema check after rebuild is the author's responsibility.
         """
+        # Forward-reference configs can't be schema-generated until
+        # the referenced models exist and `model_rebuild()` has run.
+        # Skip rather than fail; at manifest/publish time the check
+        # will run against the completed model.
+        if not getattr(config_cls, "__pydantic_complete__", True):
+            return
+
+        import warnings as _warnings
+
+        from pydantic.json_schema import PydanticJsonSchemaWarning
+
         try:
-            config_cls.model_json_schema()
+            with _warnings.catch_warnings():
+                _warnings.simplefilter("error", PydanticJsonSchemaWarning)
+                config_cls.model_json_schema()
         except Exception as exc:
             raise PluginError(
                 f"Plugin config {config_cls.__name__} is not JSON-"

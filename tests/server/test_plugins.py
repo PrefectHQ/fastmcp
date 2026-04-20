@@ -621,6 +621,52 @@ class TestConfigJsonSerializable:
 
         assert isinstance(Good().config.when, datetime)
 
+    def test_partial_hooks_without_serializer_rejected(self):
+        """A custom type with `__get_pydantic_json_schema__` but no
+        matching serializer would pass a schema-generation-only check
+        while failing at runtime `model_dump(mode='json')`. Pydantic
+        raises `PydanticJsonSchemaWarning` in this case; the validator
+        promotes that warning to an error so the break is caught at
+        class creation, not at publish/serialize time."""
+        from pydantic_core import core_schema
+
+        class Tricky:
+            @classmethod
+            def __get_pydantic_core_schema__(cls, source, handler):
+                # Validator only — no serialization= argument.
+                return core_schema.no_info_plain_validator_function(lambda v: cls())
+
+            @classmethod
+            def __get_pydantic_json_schema__(cls, schema, handler):
+                return {"type": "string"}
+
+        class PartialConfig(BaseModel):
+            model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+            x: Tricky = Tricky()
+
+        with pytest.raises(PluginError, match="not JSON"):
+
+            class Bad(Plugin[PartialConfig]):
+                meta = PluginMeta(name="bad", version="0.1.0")
+
+    def test_forward_reference_config_skips_validation(self):
+        """Configs with unresolved forward references can't be
+        schema-checked at class creation; validation skips so the
+        plugin class itself can be defined. The author is expected
+        to run the check later (manifest generation will trip any
+        real problems)."""
+
+        class UnfinishedConfig(BaseModel):
+            child: NotYetDefined  # noqa: F821  # ty: ignore[unresolved-reference]
+
+        # This should NOT raise even though UnfinishedConfig isn't
+        # fully defined — validation defers until the model is
+        # rebuildable.
+        class P(Plugin[UnfinishedConfig]):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+        assert P._config_cls is UnfinishedConfig
+
     def test_empty_default_config_passes_validation(self):
         """The framework's internal `_EmptyConfig` must pass its own
         JSON-serializable check (regression: it's used as the fallback
