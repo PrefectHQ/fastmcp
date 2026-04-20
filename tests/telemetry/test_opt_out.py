@@ -22,9 +22,7 @@ class TestIsTelemetryOptedOut:
         assert is_telemetry_opted_out() is False
 
     @pytest.mark.parametrize("value", ["YES", "yes", "Yes", "true", "TRUE", "1"])
-    def test_truthy_values_opt_out(
-        self, monkeypatch: pytest.MonkeyPatch, value: str
-    ):
+    def test_truthy_values_opt_out(self, monkeypatch: pytest.MonkeyPatch, value: str):
         monkeypatch.setenv("FASTMCP_TELEMETRY_OPT_OUT", value)
         assert is_telemetry_opted_out() is True
 
@@ -62,9 +60,7 @@ class TestClientSpanOptOut:
         """Opted-out client_span must not replace the active span context."""
         monkeypatch.setenv("FASTMCP_TELEMETRY_OPT_OUT", "YES")
         current_before = trace.get_current_span()
-        with client_span(
-            "tools/call test", method="tools/call", component_key="test"
-        ):
+        with client_span("tools/call test", method="tools/call", component_key="test"):
             current_inside = trace.get_current_span()
         assert current_inside is current_before
 
@@ -162,6 +158,5 @@ class TestEndToEndOptOut:
 
         spans = trace_exporter.get_finished_spans()
         assert len(spans) == 0, (
-            f"Expected no spans when opted out, got: "
-            f"{[s.name for s in spans]}"
+            f"Expected no spans when opted out, got: {[s.name for s in spans]}"
         )

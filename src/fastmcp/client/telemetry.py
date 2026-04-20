@@ -3,10 +3,10 @@
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from opentelemetry.trace import Span, SpanKind, Status, StatusCode
+from opentelemetry.trace import INVALID_SPAN, Span, SpanKind, Status, StatusCode
 
 from fastmcp.exceptions import ToolError as _ToolError
-from fastmcp.telemetry import INVALID_SPAN, get_tracer, is_telemetry_opted_out
+from fastmcp.telemetry import get_tracer, is_telemetry_opted_out
 
 
 @contextmanager

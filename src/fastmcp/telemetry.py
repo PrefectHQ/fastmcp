@@ -36,7 +36,7 @@ from typing import Any
 from opentelemetry import context as otel_context
 from opentelemetry import propagate, trace
 from opentelemetry.context import Context
-from opentelemetry.trace import INVALID_SPAN, Span, Status, StatusCode, Tracer
+from opentelemetry.trace import Span, Status, StatusCode, Tracer
 from opentelemetry.trace import get_tracer as otel_get_tracer
 
 INSTRUMENTATION_NAME = "fastmcp"
@@ -139,7 +139,6 @@ def extract_trace_context(meta: dict[str, Any] | None) -> Context:
 
 __all__ = [
     "INSTRUMENTATION_NAME",
-    "INVALID_SPAN",
     "TRACE_PARENT_KEY",
     "TRACE_STATE_KEY",
     "extract_trace_context",

@@ -5,11 +5,10 @@ from contextlib import contextmanager
 
 from mcp.server.lowlevel.server import request_ctx
 from opentelemetry.context import Context
-from opentelemetry.trace import Span, SpanKind, Status, StatusCode
+from opentelemetry.trace import INVALID_SPAN, Span, SpanKind, Status, StatusCode
 
 from fastmcp.exceptions import ToolError as _ToolError
 from fastmcp.telemetry import (
-    INVALID_SPAN,
     extract_trace_context,
     get_tracer,
     is_telemetry_opted_out,
