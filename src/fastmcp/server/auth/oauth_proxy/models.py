@@ -26,6 +26,7 @@ DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS: Final[int] = 60 * 60  # 1 hour
 DEFAULT_ACCESS_TOKEN_EXPIRY_NO_REFRESH_SECONDS: Final[int] = (
     60 * 60 * 24 * 365
 )  # 1 year
+DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS: Final[int] = 60 * 60 * 24 * 365  # 1 year
 DEFAULT_AUTH_CODE_EXPIRY_SECONDS: Final[int] = 5 * 60  # 5 minutes
 
 # HTTP client timeout

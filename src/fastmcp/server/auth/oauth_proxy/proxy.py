@@ -78,6 +78,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     DEFAULT_ACCESS_TOKEN_EXPIRY_NO_REFRESH_SECONDS,
     DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS,
     DEFAULT_AUTH_CODE_EXPIRY_SECONDS,
+    DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS,
     HTTP_TIMEOUT_SECONDS,
     ClientCode,
     JTIMapping,
@@ -269,6 +270,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         consent_csp_policy: str | None = None,
         # Token expiry fallback
         fallback_access_token_expiry_seconds: int | None = None,
+        fallback_refresh_token_expiry_seconds: int | None = None,
         # CIMD (Client ID Metadata Document) support
         enable_cimd: bool = True,
     ):
@@ -338,6 +340,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 defaults: 1 hour if a refresh token is available (since we can refresh),
                 or 1 year if no refresh token (for API-key-style tokens like GitHub OAuth Apps).
                 Set explicitly to override these defaults.
+            fallback_refresh_token_expiry_seconds: Expiry time to use when upstream provider
+                doesn't return `refresh_expires_in` (e.g. Cognito, GitHub, many OIDC IdPs).
+                Defaults to 1 year. Note: this only controls the FastMCP-issued refresh token
+                lifetime — the actual upstream refresh remains the source of truth. If the
+                upstream rejects the refresh, the client gets `invalid_grant` and re-auths,
+                regardless of how much life is left on the FastMCP refresh token.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs. When True, clients can authenticate using HTTPS URLs as client
                 IDs, with metadata fetched from the URL. Supports private_key_jwt auth.
@@ -435,6 +443,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Token expiry fallback (None means use smart default based on refresh token)
         self._fallback_access_token_expiry_seconds: int | None = (
             fallback_access_token_expiry_seconds
+        )
+        self._fallback_refresh_token_expiry_seconds: int = (
+            fallback_refresh_token_expiry_seconds
+            if fallback_refresh_token_expiry_seconds is not None
+            else DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS
         )
 
         if jwt_signing_key is None:
@@ -1060,12 +1073,15 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     "Upstream refresh token expires in %d seconds", refresh_expires_in
                 )
             else:
-                # Default to 30 days if upstream doesn't specify
-                # This is conservative - most providers use longer expiry
-                refresh_expires_in = 60 * 60 * 24 * 30  # 30 days
+                # Upstream didn't specify; use configured fallback (default 1 year).
+                # The FastMCP refresh JWT is just a signed pointer — if the real
+                # upstream refresh has expired or been revoked, the next refresh
+                # call to upstream will fail and the client re-auths.
+                refresh_expires_in = self._fallback_refresh_token_expiry_seconds
                 refresh_token_expires_at = time.time() + refresh_expires_in
                 logger.debug(
-                    "Upstream refresh token expiry unknown, using 30-day default"
+                    "Upstream refresh token expiry unknown, using fallback %d seconds",
+                    refresh_expires_in,
                 )
 
         # Encrypt and store upstream tokens
@@ -1136,7 +1152,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     upstream_token_id=upstream_token_id,
                     created_at=time.time(),
                 ),
-                ttl=60 * 60 * 24 * 30,  # Auto-expire with refresh token (30 days)
+                ttl=refresh_expires_in or self._fallback_refresh_token_expiry_seconds,
             )
 
         # Store refresh token metadata (keyed by hash for security)
@@ -1382,8 +1398,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     upstream_token_set.refresh_token_expires_at - time.time()
                 )
             else:
-                # Default to 30 days if unknown
-                new_refresh_expires_in = 60 * 60 * 24 * 30
+                # Upstream rotated the refresh token but gave no expiry; use fallback
+                new_refresh_expires_in = self._fallback_refresh_token_expiry_seconds
                 upstream_token_set.refresh_token_expires_at = (
                     time.time() + new_refresh_expires_in
                 )
@@ -1396,8 +1412,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         refresh_ttl = new_refresh_expires_in or (
             int(upstream_token_set.refresh_token_expires_at - time.time())
             if upstream_token_set.refresh_token_expires_at
-            else 60 * 60 * 24 * 30  # Default to 30 days if unknown
+            else self._fallback_refresh_token_expiry_seconds
         )
+        # Guard against past expiry (e.g. existing upstream refresh has already
+        # ticked past its recorded expiry). Storage TTL must be > 0.
+        refresh_ttl = max(refresh_ttl, 1)
         await self._upstream_token_store.put(
             key=upstream_token_set.upstream_token_id,
             value=upstream_token_set,
@@ -1434,15 +1453,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ttl=new_expires_in,  # Auto-expire with refreshed access token
         )
 
-        # Issue NEW minimal FastMCP refresh token (rotation for security)
-        # Use upstream refresh token expiry to align lifetimes
+        # Issue NEW minimal FastMCP refresh token (rotation for security).
+        # Use refresh_ttl so the JWT exp claim matches the storage TTL — otherwise
+        # providers that don't rotate the refresh token (e.g. Cognito) would get
+        # a JWT with a hardcoded short exp even when the upstream refresh is
+        # still valid for much longer.
         new_refresh_jti = secrets.token_urlsafe(32)
         new_fastmcp_refresh = self.jwt_issuer.issue_refresh_token(
             client_id=client.client_id,
             scopes=refreshed_scopes,
             jti=new_refresh_jti,
-            expires_in=new_refresh_expires_in
-            or 60 * 60 * 24 * 30,  # Fallback to 30 days
+            expires_in=refresh_ttl,
             upstream_claims=upstream_claims,
         )
 
@@ -1587,7 +1608,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     upstream_token_set.refresh_token_expires_at - time.time()
                 )
             else:
-                new_refresh_expires_in = 60 * 60 * 24 * 30
+                new_refresh_expires_in = self._fallback_refresh_token_expiry_seconds
                 upstream_token_set.refresh_token_expires_at = (
                     time.time() + new_refresh_expires_in
                 )
@@ -1600,7 +1621,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         refresh_ttl = new_refresh_expires_in or (
             int(upstream_token_set.refresh_token_expires_at - time.time())
             if upstream_token_set.refresh_token_expires_at
-            else 60 * 60 * 24 * 30
+            else self._fallback_refresh_token_expiry_seconds
         )
         await self._upstream_token_store.put(
             key=upstream_token_set.upstream_token_id,

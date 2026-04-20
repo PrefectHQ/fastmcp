@@ -233,6 +233,7 @@ class OIDCProxy(OAuthProxy):
         extra_token_params: dict[str, str] | None = None,
         # Token expiry fallback
         fallback_access_token_expiry_seconds: int | None = None,
+        fallback_refresh_token_expiry_seconds: int | None = None,
         # CIMD configuration
         enable_cimd: bool = True,
     ) -> None:
@@ -294,6 +295,11 @@ class OIDCProxy(OAuthProxy):
                 doesn't return `expires_in` in the token response. If not set, uses smart
                 defaults: 1 hour if a refresh token is available (since we can refresh),
                 or 1 year if no refresh token (for API-key-style tokens like GitHub OAuth Apps).
+            fallback_refresh_token_expiry_seconds: Expiry time to use when upstream provider
+                doesn't return `refresh_expires_in` (e.g. Cognito, GitHub, many OIDC IdPs).
+                Defaults to 1 year. The actual upstream refresh remains the source of
+                truth — if upstream rejects the refresh, the client gets `invalid_grant`
+                and re-auths.
             enable_cimd: Whether to enable CIMD (Client ID Metadata Document) client support.
                 When True, clients can use their metadata document URL as client_id instead of
                 Dynamic Client Registration. Default is True.
@@ -384,6 +390,7 @@ class OIDCProxy(OAuthProxy):
             "consent_csp_policy": consent_csp_policy,
             "forward_resource": forward_resource,
             "fallback_access_token_expiry_seconds": fallback_access_token_expiry_seconds,
+            "fallback_refresh_token_expiry_seconds": fallback_refresh_token_expiry_seconds,
             "enable_cimd": enable_cimd,
         }
 
