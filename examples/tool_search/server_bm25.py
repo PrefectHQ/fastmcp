@@ -9,7 +9,7 @@ The index is built lazily and rebuilt automatically when the tool catalog
 changes (e.g. tools added or removed between requests).
 
 Run with:
-    uv run python examples/search/server_bm25.py
+    uv run python examples/tool_search/server_bm25.py
 """
 
 import os
@@ -80,7 +80,7 @@ def read_file(path: str) -> str:
 
 
 # BM25 search with a higher result limit for this larger catalog.
-# The Search plugin is configured at server construction above —
+# The ToolSearch plugin is configured at server construction above —
 # `always_visible` keeps specific tools in list_tools alongside the
 # synthetic search/call tools.
 

@@ -10,7 +10,7 @@ Clients use `search_tools` with a regex pattern to find relevant tools, then
 `call_tool` to execute them by name.
 
 Run with:
-    uv run python examples/search/server_regex.py
+    uv run python examples/tool_search/server_regex.py
 """
 
 from fastmcp import FastMCP
@@ -68,7 +68,7 @@ def to_uppercase(text: str) -> str:
     return text.upper()
 
 
-# The Search plugin is configured at server construction above —
+# The ToolSearch plugin is configured at server construction above —
 # nothing else to wire here.
 
 

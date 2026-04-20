@@ -4,7 +4,7 @@ BM25 search accepts natural language queries instead of regex patterns.
 This client shows how relevance ranking surfaces the best matches.
 
 Run with:
-    uv run python examples/search/client_bm25.py
+    uv run python examples/tool_search/client_bm25.py
 """
 
 import asyncio
@@ -65,7 +65,7 @@ def _tool_table(
 
 
 async def main():
-    async with Client("examples/search/server_bm25.py") as client:
+    async with Client("examples/tool_search/server_bm25.py") as client:
         console.print()
         console.rule("[bold]BM25 Search Transform[/bold]")
         console.print()

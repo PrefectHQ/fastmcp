@@ -14,8 +14,8 @@ Both strategies respect the full auth pipeline: middleware, visibility transform
 
 ```bash
 # Regex
-uv run python examples/search/client_regex.py
+uv run python examples/tool_search/client_regex.py
 
 # BM25
-uv run python examples/search/client_bm25.py
+uv run python examples/tool_search/client_bm25.py
 ```

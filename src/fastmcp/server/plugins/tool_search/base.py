@@ -8,9 +8,9 @@ These classes are the implementation layer of the ``Search`` plugin.
 Typical usage is via the plugin:
 
     from fastmcp import FastMCP
-    from fastmcp.server.plugins import Search
+    from fastmcp.server.plugins.tool_search import ToolSearch
 
-    mcp = FastMCP("Server", plugins=[Search()])
+    mcp = FastMCP("Server", plugins=[ToolSearch()])
 
 ``BM25SearchTransform`` and ``RegexSearchTransform`` are exposed for
 advanced composition (custom transform stacks) but the plugin is the

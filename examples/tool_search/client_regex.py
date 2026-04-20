@@ -4,7 +4,7 @@ Regex search lets clients find tools by matching patterns against tool names
 and descriptions. Precise when you know what you're looking for.
 
 Run with:
-    uv run python examples/search/client_regex.py
+    uv run python examples/tool_search/client_regex.py
 """
 
 import asyncio
@@ -65,7 +65,7 @@ def _tool_table(
 
 
 async def main():
-    async with Client("examples/search/server_regex.py") as client:
+    async with Client("examples/tool_search/server_regex.py") as client:
         console.print()
         console.rule("[bold]Regex Search Transform[/bold]")
         console.print()
