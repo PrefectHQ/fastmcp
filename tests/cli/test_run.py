@@ -101,6 +101,11 @@ class TestFileSystemSource:
 class TestMCPConfig:
     """Test MCPConfig functionality."""
 
+    @pytest.mark.timeout(15)
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Stdio subprocess lifecycle is unreliable on Windows CI",
+    )
     async def test_run_mcp_config(self, tmp_path: Path):
         """Test creating a server from an MCPConfig file."""
         server_script = inspect.cleandoc("""

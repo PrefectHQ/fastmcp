@@ -1,321 +1,254 @@
 ---
-title: Prefab UI
-sidebarTitle: Prefab UI
-description: The component library behind FastMCP apps — charts, tables, dashboards, forms, and reactive displays.
+title: Interactive Tools
+sidebarTitle: Interactive Tools
+description: Turn your tools into interactive UIs with charts, tables, and dashboards.
 icon: palette
 tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
+import PrefabPinWarning from '/snippets/prefab-pin-warning.mdx'
 
 <VersionBadge version="3.1.0" />
 
-<Warning>
-[Prefab](https://prefab.prefect.io) is in early, active development — breaking changes can occur with any release. FastMCP pins a minimum version of `prefab-ui` for compatibility but does not pin an upper bound. If you are deploying to production, **pin `prefab-ui` to a specific version** in your own dependencies.
-</Warning>
+<PrefabPinWarning />
 
-[Prefab UI](https://prefab.prefect.io) is the component library behind all FastMCP app features. You describe layouts, charts, tables, and forms in Python, and Prefab compiles them to interactive UIs that render in the host's conversation.
+<iframe src="/apps/demos/dashboard.html" style={{width:"100%", height:"680px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
 
-The simplest way to use it: add `app=True` to a tool and return Prefab components. The host renders an interactive UI instead of text. This works for everything from static charts to reactive dashboards with client-side state — no server round-trips needed.
+Believe it or not, that dashboard is a FastMCP tool. The chart has tooltips. The table is sortable. The badges are styled by deal stage. The whole thing is about 40 lines of Python, and the user sees it right inside their conversation instead of a wall of JSON.
 
-For apps that need server interaction (forms, search, CRUD), see [FastMCPApp](/apps/interactive-apps) which adds managed tool binding on top of Prefab UI. For LLM-generated UIs, see [Generative UI](/apps/generative).
+The pattern behind every example on this page is the same: add `app=True` to your tool, build a UI with [Prefab](https://prefab.prefect.io) components, and return it as a `PrefabApp`. Prefab has [100+ components](https://prefab.prefect.io/docs/components), from data tables and charts to forms and progress bars. You compose them in Python; the host renders them as a live, interactive application.
 
-## Getting Started
+## Start with a table
 
-Here's a tool that returns a bar chart:
+Most tools return data the user wants to explore. A `DataTable` is often the smallest useful upgrade — your data goes from a JSON blob to a searchable, sortable table:
 
-```python
-from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Heading
-from prefab_ui.components.charts import BarChart, ChartSeries
-from fastmcp import FastMCP
-
-mcp = FastMCP("Dashboard")
-
-
-@mcp.tool(app=True)
-def revenue_chart(year: int) -> PrefabApp:
-    """Show annual revenue as an interactive bar chart."""
-    data = [
-        {"quarter": "Q1", "revenue": 42000},
-        {"quarter": "Q2", "revenue": 51000},
-        {"quarter": "Q3", "revenue": 47000},
-        {"quarter": "Q4", "revenue": 63000},
-    ]
-
-    with Column(gap=4, css_class="p-6") as view:
-        Heading(f"{year} Revenue")
-        BarChart(
-            data=data,
-            series=[ChartSeries(data_key="revenue", label="Revenue")],
-            x_axis="quarter",
-        )
-
-    return PrefabApp(view=view)
-```
-
-The `app=True` flag tells FastMCP this tool returns a UI. When a host calls the tool, the user sees an interactive chart instead of a JSON blob. The [Patterns](/apps/patterns) page has more examples.
-
-## Layout and Components
-
-Prefab uses Python's `with` statement to express nesting. Containers like `Column`, `Row`, and `Grid` collect their children automatically:
+<iframe src="/apps/demos/data-table.html" style={{width:"100%", height:"530px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
 
 ```python
-from prefab_ui.components import (
-    Column, Row, Grid, Heading, Text, Muted, Badge,
-    Card, CardContent, Separator,
-)
-
-with Column(gap=4, css_class="p-6") as view:
-    Heading("Team Status")
-    Separator()
-    with Grid(columns=2, gap=4):
-        with Card():
-            with CardContent():
-                Text("API Gateway", css_class="font-medium")
-                Badge("healthy", variant="success")
-        with Card():
-            with CardContent():
-                Text("Cache", css_class="font-medium")
-                Badge("degraded", variant="destructive")
-```
-
-You can also use Python loops to generate components at build time:
-
-```python
-services = [
-    {"name": "API", "status": "healthy", "ok": True},
-    {"name": "Cache", "status": "degraded", "ok": False},
-]
-
-with Grid(columns=2, gap=4):
-    for svc in services:
-        with Card():
-            with CardContent():
-                Text(svc["name"])
-                Badge(
-                    svc["status"],
-                    variant="success" if svc["ok"] else "destructive",
-                )
-```
-
-Build-time loops produce static content — the data is baked into the component tree at construction time. For dynamic iteration over state that changes at render time, use `ForEach` (covered below).
-
-The full component library — layout containers, data display, charts, forms, overlays — is documented in the [Prefab component reference](https://prefab.prefect.io/docs/components).
-
-## State and Reactivity
-
-Display tools can be interactive without calling the server. The key is **state** — a client-side key-value store that lives in the browser. Components read from state, actions mutate it, and the UI re-renders automatically.
-
-### Declaring State
-
-Pass a `state` dict to `PrefabApp` to declare initial state, then use `Rx("key")` to create reactive references:
-
-```python
-from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Heading, Switch, Alert, If
-from prefab_ui.rx import Rx
-from fastmcp import FastMCP
-
-mcp = FastMCP("Flags")
-
-
-@mcp.tool(app=True)
-def feature_flags() -> PrefabApp:
-    """Toggle feature flags with live preview."""
-    with Column(gap=4, css_class="p-6") as view:
-        Heading("Feature Flags")
-        Switch(name="dark_mode", label="Dark Mode")
-        Switch(name="beta", label="Beta Features")
-
-        with If(Rx("dark_mode")):
-            Alert(title="Dark mode enabled")
-        with If(Rx("beta")):
-            Alert(title="Beta features active", variant="warning")
-
-    return PrefabApp(view=view, state={"dark_mode": False, "beta": False})
-```
-
-Three things to notice here:
-
-The `state` dict on `PrefabApp` declares the keys and their starting values. `Rx("dark_mode")` creates a reactive reference that compiles to `{{ dark_mode }}` in the wire protocol.
-
-Interactive components with a `name` prop automatically bind to state. The `Switch(name="dark_mode")` syncs its on/off value to the `dark_mode` state key on every toggle — no event wiring needed.
-
-`If(Rx("dark_mode"))` shows its children only when the state key is truthy. When the switch flips, the condition re-evaluates instantly in the browser.
-
-### Reactive References with Rx
-
-The `Rx` class is how you reference state in component props:
-
-```python
-from prefab_ui.rx import Rx
-
-count = Rx("count")
-```
-
-Rx objects support arithmetic, comparisons, and formatting — they compile to expressions the renderer evaluates at render time:
-
-```python
-from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Text, Slider
-from prefab_ui.rx import Rx
-from fastmcp import FastMCP
-
-mcp = FastMCP("Calculator")
-
-
-@mcp.tool(app=True)
-def tip_calculator() -> PrefabApp:
-    """Calculate tip with a slider."""
-    tip_pct = Rx("tip_pct")
-    bill = Rx("bill")
-
-    tip_amount = tip_pct / 100 * bill
-    total = bill + tip_amount
-
-    with Column(gap=4, css_class="p-6") as view:
-        Slider(name="bill", label="Bill Amount", min=0, max=500, step=0.5)
-        Slider(name="tip_pct", label="Tip %", min=0, max=50)
-        Text(f"Tip: {tip_amount.currency()}")
-        Text(f"Total: {total.currency()}")
-
-    return PrefabApp(view=view, state={"bill": 50.00, "tip_pct": 18})
-```
-
-`Rx("tip_pct") / 100 * Rx("bill")` builds a compound expression — it doesn't do the math in Python. The renderer evaluates it live as the sliders move. The `.currency()` pipe formats the result as currency.
-
-#### Pipes
-
-Rx objects support formatting pipes that transform values at render time:
-
-```python
-from prefab_ui.rx import Rx
-
-price = Rx("price")
-ratio = Rx("ratio")
-name = Rx("name")
-
-price.currency()        # $42.50
-price.currency("EUR")   # EUR format
-ratio.percent()         # 85%
-name.upper()            # ALICE
-name.truncate(10)       # alice (or truncated if longer)
-```
-
-Number pipes include `currency`, `percent`, `number`, `compact`, `round`, and `abs`. String pipes include `upper`, `lower`, and `truncate`. See the [Prefab expression docs](https://prefab.prefect.io/docs/concepts/expressions) for the full list.
-
-#### Conditionals
-
-The `.then()` method creates ternary expressions:
-
-```python
-from prefab_ui.rx import Rx
-
-connected = Rx("connected")
-
-Badge(
-    connected.then("Online", "Offline"),
-    variant=connected.then("success", "destructive"),
-)
-```
-
-### Dynamic Iteration with ForEach
-
-Python `for` loops generate static content at build time. When you need to iterate over state that can change — a list that grows, items that get filtered — use `ForEach`:
-
-```python
-from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Heading, ForEach, Row, Text, Badge
+from prefab_ui.components import DataTable, DataTableColumn
 from fastmcp import FastMCP
 
 mcp = FastMCP("Directory")
 
 
 @mcp.tool(app=True)
-def team_list() -> PrefabApp:
-    """Show the current team."""
-    members = [
-        {"name": "Alice", "role": "Engineering"},
-        {"name": "Bob", "role": "Design"},
+def team_directory() -> DataTable:
+    """Browse the team directory."""
+    employees = [
+        {"name": "Alice Chen", "role": "Staff Engineer", "dept": "Platform"},
+        {"name": "Bob Martinez", "role": "Lead Designer", "dept": "Design"},
+        {"name": "Carol Johnson", "role": "Senior Engineer", "dept": "Platform"},
+        {"name": "David Kim", "role": "Product Manager", "dept": "Product"},
+        {"name": "Eva Mueller", "role": "Engineer", "dept": "Platform"},
+        {"name": "Frank Lee", "role": "Data Scientist", "dept": "ML"},
+        {"name": "Grace Park", "role": "Eng Manager", "dept": "Platform"},
     ]
 
-    with Column(gap=4, css_class="p-6") as view:
-        Heading("Team")
-        with ForEach("members") as member:
-            with Row(gap=2, align="center"):
-                Text(member.name, css_class="font-medium")
-                Badge(member.role)
-
-    return PrefabApp(view=view, state={"members": members})
-```
-
-`ForEach("members")` iterates over the `members` state key. The `as member` gives you an Rx proxy scoped to each item, so `member.name` resolves to `{{ $item.name }}` in the wire protocol. If the `members` state changes (e.g., through an action), the list re-renders automatically.
-
-### Conditional Rendering
-
-`If`, `Elif`, and `Else` control what's visible based on state:
-
-```python
-from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Select, SelectOption, If, Elif, Else, Text
-from prefab_ui.rx import Rx
-
-tier = Rx("tier")
-
-with Column(gap=4) as view:
-    with Select(name="tier", label="Plan"):
-        SelectOption("Free", value="free")
-        SelectOption("Pro", value="pro")
-        SelectOption("Enterprise", value="enterprise")
-    with If(tier == "enterprise"):
-        Text("Full access to all features")
-    with Elif(tier == "pro"):
-        Text("Advanced features unlocked")
-    with Else():
-        Text("Basic features only")
-
-# Pass state={"tier": "free"} to PrefabApp when returning
-```
-
-Changes are instant — switching the dropdown re-evaluates the conditions in the browser.
-
-## Giving the LLM Context
-
-By default, Prefab sends `"[Rendered Prefab UI]"` as the text content for the LLM. If the model needs to reason about the data, wrap your return in a `ToolResult` with a meaningful summary:
-
-```python
-from prefab_ui.app import PrefabApp
-from prefab_ui.components import Column, Heading
-from prefab_ui.components.charts import BarChart, ChartSeries
-from fastmcp import FastMCP
-from fastmcp.tools import ToolResult
-
-mcp = FastMCP("Sales")
-
-
-@mcp.tool(app=True)
-def sales_overview(year: int) -> ToolResult:
-    """Show sales data visually and summarize for the model."""
-    data = get_sales_data(year)
-    total = sum(row["revenue"] for row in data)
-
-    with Column(gap=4, css_class="p-6") as view:
-        Heading("Sales Overview")
-        BarChart(data=data, series=[ChartSeries(data_key="revenue")])
-
-    return ToolResult(
-        content=f"Total revenue for {year}: ${total:,} across {len(data)} quarters",
-        structured_content=view,
+    return DataTable(
+        columns=[
+            DataTableColumn(key="name", header="Name", sortable=True),
+            DataTableColumn(key="role", header="Role", sortable=True),
+            DataTableColumn(key="dept", header="Dept", sortable=True),
+        ],
+        rows=employees,
+        search=True,
     )
 ```
 
-The user sees the chart. The LLM sees the summary string.
+That's it. Add `app=True`, return a Prefab component instead of raw dicts. FastMCP handles the rendering, sandboxing, and security. No wrapper class needed for simple cases like this.
 
-## Advanced
+## Add charts
 
-<Accordion title="Customizing CSP">
-`app=True` auto-wires the Prefab renderer with default CSP settings. If your app loads external resources — embedding iframes, fetching from APIs, loading scripts — use `PrefabAppConfig` to add the required domains:
+When numbers tell a better story as a visual, swap in a chart. The API is the same: pass your data as a list of dicts, tell the chart which keys to plot.
+
+<iframe src="/apps/demos/bar-chart.html" style={{width:"100%", height:"430px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
+
+```python
+@mcp.tool(app=True)
+def quarterly_revenue(year: int) -> BarChart:
+    """Show quarterly revenue as a bar chart."""
+    data = [
+        {"quarter": "Q1", "revenue": 42000, "costs": 28000},
+        {"quarter": "Q2", "revenue": 51000, "costs": 31000},
+        {"quarter": "Q3", "revenue": 47000, "costs": 29000},
+        {"quarter": "Q4", "revenue": 63000, "costs": 35000},
+    ]
+
+    return BarChart(
+        data=data,
+        series=[
+            ChartSeries(data_key="revenue", label="Revenue"),
+            ChartSeries(data_key="costs", label="Costs"),
+        ],
+        x_axis="quarter",
+        show_legend=True,
+    )
+```
+
+Each `ChartSeries` plots a different key from the data. `BarChart`, `LineChart`, `AreaChart`, `PieChart`, `RadarChart`, and `RadialChart` all follow the same pattern. Hover over the bars to see tooltips.
+
+<iframe src="/apps/demos/pie-chart.html" style={{width:"100%", height:"410px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
+
+```python
+@mcp.tool(app=True)
+def ticket_breakdown() -> PieChart:
+    """Show open tickets by category."""
+    data = [
+        {"category": "Bug", "count": 42},
+        {"category": "Feature", "count": 28},
+        {"category": "Docs", "count": 15},
+        {"category": "Infra", "count": 10},
+    ]
+
+    return PieChart(
+        data=data,
+        data_key="count",
+        name_key="category",
+        inner_radius=50,
+        show_legend=True,
+    )
+```
+
+See the [Prefab chart docs](https://prefab.prefect.io/docs/components) for stacking, curves, custom colors, and more.
+
+## Compose a dashboard
+
+Tables and charts are useful on their own, but the real power comes from composing them. `Column` stacks children vertically, `Row` lays them out side by side, and `with` blocks establish nesting — the indentation is the layout.
+
+<iframe src="/apps/demos/dashboard.html" style={{width:"100%", height:"680px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
+
+```python expandable
+@mcp.tool(app=True)
+def sales_dashboard() -> PrefabApp:
+    """Show sales KPIs, trends, and deals."""
+    monthly = [
+        {"month": "Jan", "revenue": 48200, "costs": 31000},
+        {"month": "Feb", "revenue": 52100, "costs": 32500},
+        {"month": "Mar", "revenue": 61800, "costs": 34200},
+        {"month": "Apr", "revenue": 58400, "costs": 33800},
+    ]
+    deals = [
+        {"account": "Acme Corp", "value": "$84,000", "stage": "Won"},
+        {"account": "Globex Inc", "value": "$52,000", "stage": "Negotiation"},
+        {"account": "Initech", "value": "$31,500", "stage": "Proposal"},
+        {"account": "Wayne Enterprises", "value": "$45,000", "stage": "Lost"},
+    ]
+
+    rows = [
+        {
+            "account": d["account"],
+            "value": d["value"],
+            "stage": Badge(
+                d["stage"],
+                variant="success" if d["stage"] == "Won"
+                else "destructive" if d["stage"] == "Lost"
+                else "secondary",
+            ),
+        }
+        for d in deals
+    ]
+
+    total = sum(m["revenue"] for m in monthly)
+
+    with PrefabApp() as app:
+        with Column(gap=4, css_class="p-6"):
+            with Row(gap=6):
+                Metric(label="Revenue (Q1-Q4)", value=f"${total:,}")
+                Metric(label="Deals", value=f"{len(deals)}")
+            BarChart(
+                data=monthly,
+                series=[
+                    ChartSeries(data_key="revenue", label="Revenue"),
+                    ChartSeries(data_key="costs", label="Costs"),
+                ],
+                x_axis="month",
+                show_legend=True,
+            )
+            Separator()
+            DataTable(
+                columns=[
+                    DataTableColumn(key="account", header="Account", sortable=True),
+                    DataTableColumn(key="value", header="Value", sortable=True),
+                    DataTableColumn(key="stage", header="Stage"),
+                ],
+                rows=rows,
+            )
+
+    return app
+```
+
+Notice how `Badge` components can be placed inside table cells — any Prefab component works as a cell value, so you can put progress bars, icons, or buttons in your tables too.
+
+## Make it reactive
+
+Everything above renders once from the data your Python provides. But interactive tools can also respond to user input in real time, without any server round-trips. Prefab's state system lets components read and write client-side values, so the UI updates instantly as the user interacts with it.
+
+<iframe src="/apps/demos/reactive.html" style={{width:"100%", height:"500px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
+
+Try switching regions in the dropdown, and toggling the switch on and off.
+
+```python expandable
+from prefab_ui.rx import Rx
+
+@mcp.tool(app=True)
+def regional_sales() -> PrefabApp:
+    """Sales by region with a live filter."""
+    north = [
+        {"month": "Jan", "sales": 22000},
+        {"month": "Feb", "sales": 25500},
+        {"month": "Mar", "sales": 24200},
+    ]
+    south = [
+        {"month": "Jan", "sales": 5800},
+        {"month": "Feb", "sales": 6400},
+        {"month": "Mar", "sales": 5600},
+    ]
+    west = [
+        {"month": "Jan", "sales": 6000},
+        {"month": "Feb", "sales": 6000},
+        {"month": "Mar", "sales": 5600},
+    ]
+
+    with PrefabApp(
+        state={
+            "region": "north",
+            "north": north, "south": south, "west": west,
+            "show_target": True,
+        },
+    ) as app:
+        with Column(
+            gap=4,
+            css_class="p-6",
+            let={"data": "{{ region == 'south' ? south"
+                         " : region == 'west' ? west"
+                         " : north }}"},
+        ):
+            with Row(gap=4, align="center"):
+                with Select(name="region", css_class="w-40"):
+                    SelectOption(value="north", label="North")
+                    SelectOption(value="south", label="South")
+                    SelectOption(value="west", label="West")
+                Switch(name="show_target", css_class="ml-auto")
+                Text("Show target", css_class="text-sm text-muted-foreground")
+            BarChart(
+                data=Rx("data"),
+                series=[ChartSeries(data_key="sales", label="Sales")],
+                x_axis="month",
+            )
+            with If(Rx("show_target")):
+                Metric(label="Q1 Target", value="$75,000")
+
+    return app
+```
+
+The `state` dict on `PrefabApp` declares initial values. The `Select` writes to the `region` key on every change. A `let` binding picks the matching dataset, and the chart re-renders. The `Switch` toggles a `Metric` on and off through `If(Rx("show_target"))`. All of this happens in the browser — no calls back to your server.
+
+`Rx` is a reactive reference: `Rx("region")` compiles to an expression the renderer evaluates live. It supports arithmetic, comparisons, formatting pipes (`.currency()`, `.percent()`), and ternary conditionals (`.then()`). For the full state system, see the [Prefab state docs](https://prefab.prefect.io/docs/concepts/state) and [expression docs](https://prefab.prefect.io/docs/concepts/expressions).
+
+## Content Security Policy
+
+Interactive tools render in a sandboxed iframe with a strict CSP. If your tool loads external resources — embedding iframes, fetching from APIs, loading scripts — add the required domains:
 
 ```python
 from fastmcp.apps import PrefabAppConfig, ResourceCSP
@@ -327,40 +260,37 @@ def dashboard_with_embed() -> PrefabApp:
     ...
 ```
 
-`PrefabAppConfig()` with no arguments is equivalent to `app=True`. It auto-sets the renderer URI and merges the renderer's CSP with any additional domains you provide.
-</Accordion>
+`PrefabAppConfig()` with no arguments is equivalent to `app=True`.
 
-<Accordion title="Type inference">
-If your return type annotation is a Prefab type — `PrefabApp`, `Component`, or unions containing them — FastMCP enables app rendering automatically, even without `app=True`:
+## Giving the LLM context
 
-```python
-@mcp.tool
-def greet(name: str) -> PrefabApp:
-    return PrefabApp(view=Heading(f"Hello, {name}!"))
-```
-
-Explicit `app=True` is recommended for clarity.
-</Accordion>
-
-<Accordion title="Mixing with custom HTML">
-Prefab tools and [custom HTML tools](/apps/low-level) coexist on the same server:
+By default, the LLM sees `"[Rendered Prefab UI]"` as the tool result. If the model needs to reason about the data, return a `ToolResult` with a text summary alongside the UI:
 
 ```python
-from fastmcp.apps import AppConfig
+from fastmcp.tools import ToolResult
 
 @mcp.tool(app=True)
-def team_directory() -> PrefabApp:
-    ...
+def sales_overview(year: int) -> ToolResult:
+    """Show sales visually, summarize for the model."""
+    data = get_sales_data(year)
+    total = sum(row["revenue"] for row in data)
 
-@mcp.tool(app=AppConfig(resource_uri="ui://my-app/map.html"))
-def map_view() -> str:
-    ...
+    with Column(gap=4, css_class="p-6") as view:
+        BarChart(data=data, series=[ChartSeries(data_key="revenue")])
+
+    return ToolResult(
+        content=f"Total revenue for {year}: ${total:,} across {len(data)} quarters",
+        structured_content=view,
+    )
 ```
-</Accordion>
 
-## Next Steps
+The user sees the chart. The model sees the summary.
 
-- **[FastMCPApp](/apps/interactive-apps)** — Managed tool binding for apps with heavy server interaction
-- **[Patterns](/apps/patterns)** — Charts, tables, dashboards, and other common examples
-- **[Development](/apps/development)** — Preview app tools locally with `fastmcp dev apps`
-- **[Prefab UI Docs](https://prefab.prefect.io)** — Full component reference, advanced state patterns, and more
+## Next steps
+
+- **[FastMCPApp](/apps/fastmcp-app)** — when your UI needs to call backend tools (forms, search, CRUD)
+- **[Generative UI](/apps/generative)** — let the LLM design the UI at runtime
+- **[Custom HTML](/apps/low-level)** — when Prefab isn't enough (maps, 3D, your own framework)
+- **[Examples](/apps/examples)** — complete working servers you can run today
+- **[Development](/apps/development)** — preview your tools locally with `fastmcp dev apps`
+- **[Prefab UI](https://prefab.prefect.io)** — full component reference with 100+ components, theming, and advanced patterns

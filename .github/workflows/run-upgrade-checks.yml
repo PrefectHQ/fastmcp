@@ -121,7 +121,7 @@ jobs:
 
             - **ty (type checker)**: New ty releases frequently add stricter checks that flag previously-accepted code. Run `uv run ty check` locally with the latest ty to reproduce. Fix the type errors or bump the ty version floor in `pyproject.toml`.
             - **ruff**: New lint rules or stricter defaults in a ruff upgrade.
-            - **mcp SDK**: Breaking changes in the `mcp` package (new method signatures, renamed types).
+            - **MCP SDK**: Breaking changes in the `mcp` package (new method signatures, renamed types).
 
             ### What to do
 

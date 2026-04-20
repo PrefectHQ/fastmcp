@@ -49,12 +49,18 @@ class ClientPromptsMixin:
             RuntimeError: If called while the client is not connected.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        logger.debug(f"[{self.name}] called list_prompts")
+        with client_span(
+            "prompts/list",
+            "prompts/list",
+            "",
+            session_id=self.transport.get_session_id(),
+        ):
+            logger.debug(f"[{self.name}] called list_prompts")
 
-        result = await self._await_with_session_monitoring(
-            self.session.list_prompts(cursor=cursor)
-        )
-        return result
+            result = await self._await_with_session_monitoring(
+                self.session.list_prompts(cursor=cursor)
+            )
+            return result
 
     async def list_prompts(
         self: Client,
@@ -130,6 +136,7 @@ class ClientPromptsMixin:
             "prompts/get",
             name,
             session_id=self.transport.get_session_id(),
+            prompt_name=name,
         ):
             logger.debug(f"[{self.name}] called get_prompt: {name}")
 

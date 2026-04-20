@@ -95,6 +95,22 @@ def oauth_proxy_https():
     )
 
 
+@pytest.fixture
+def oauth_proxy_https_remember():
+    """OAuthProxy in 'remember' mode for silent-consent cookie tests."""
+    return OAuthProxy(
+        upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+        upstream_token_endpoint="https://github.com/login/oauth/access_token",
+        upstream_client_id="client-id",
+        upstream_client_secret="client-secret",
+        token_verifier=_Verifier(),
+        base_url="https://myserver.example",
+        client_storage=MemoryStore(),
+        jwt_signing_key="test-secret",
+        require_authorization_consent="remember",
+    )
+
+
 async def _start_flow(
     proxy: OAuthProxy, client_id: str, redirect: str
 ) -> tuple[str, str]:
@@ -587,11 +603,15 @@ class TestConsentSecurity:
             assert r.status_code == 200
             assert r.headers.get("X-Frame-Options") == "DENY"
 
-    async def test_deny_sets_cookie_and_redirects_with_error(self, oauth_proxy_https):
-        """Verify denying consent sets signed cookie and redirects with error."""
+    async def test_deny_sets_cookie_and_redirects_with_error(
+        self, oauth_proxy_https_remember
+    ):
+        """Verify denying consent in 'remember' mode sets signed cookie and redirects with error."""
         client_redirect = "http://localhost:5002/callback"
-        txn_id, _ = await _start_flow(oauth_proxy_https, "client-b", client_redirect)
-        app = Starlette(routes=oauth_proxy_https.get_routes())
+        txn_id, _ = await _start_flow(
+            oauth_proxy_https_remember, "client-b", client_redirect
+        )
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
         with TestClient(app) as c:
             consent = c.get(f"/consent?txn_id={txn_id}")
             csrf = _extract_csrf(consent.text)
@@ -617,13 +637,13 @@ class TestConsentSecurity:
             )
 
     async def test_approve_sets_cookie_and_redirects_to_upstream(
-        self, oauth_proxy_https
+        self, oauth_proxy_https_remember
     ):
-        """Verify approving consent sets signed cookie and redirects to upstream."""
+        """Verify approving consent in 'remember' mode sets signed cookie and redirects to upstream."""
         txn_id, _ = await _start_flow(
-            oauth_proxy_https, "client-c", "http://localhost:5003/callback"
+            oauth_proxy_https_remember, "client-c", "http://localhost:5003/callback"
         )
-        app = Starlette(routes=oauth_proxy_https.get_routes())
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
         with TestClient(app) as c:
             consent = c.get(f"/consent?txn_id={txn_id}")
             csrf = _extract_csrf(consent.text)
@@ -643,29 +663,33 @@ class TestConsentSecurity:
             set_cookie = ";\n".join(r.headers.get("set-cookie", "").splitlines())
             assert "__Host-MCP_APPROVED_CLIENTS" in set_cookie
 
-    async def test_tampered_cookie_is_ignored(self, oauth_proxy_https):
+    async def test_tampered_cookie_is_ignored(self, oauth_proxy_https_remember):
         """Verify tampered approval cookie is ignored and consent page shown."""
         txn_id, _ = await _start_flow(
-            oauth_proxy_https, "client-d", "http://localhost:5004/callback"
+            oauth_proxy_https_remember, "client-d", "http://localhost:5004/callback"
         )
-        app = Starlette(routes=oauth_proxy_https.get_routes())
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
         with TestClient(app) as c:
             # Create a tampered cookie (invalid signature)
             # Value format: payload.signature; using wrong signature to force failure
             tampered_value = "W10=.invalidsig"
             c.cookies.set("__Host-MCP_APPROVED_CLIENTS", tampered_value)
-            r = c.get(f"/consent?txn_id={txn_id}", follow_redirects=False)
+            r = c.get(
+                f"/consent?txn_id={txn_id}",
+                headers={"Sec-Fetch-Site": "none"},
+                follow_redirects=False,
+            )
             # Should not auto-redirect to upstream; should show consent page
             assert r.status_code == 200
             # httpx returns a URL object; compare path or stringify
             assert urlparse(str(r.request.url)).path == "/consent"
 
-    async def test_autoapprove_cookie_skips_consent(self, oauth_proxy_https):
-        """Verify valid approval cookie auto-approves and redirects to upstream."""
+    async def test_autoapprove_cookie_skips_consent(self, oauth_proxy_https_remember):
+        """Verify valid approval cookie auto-approves and redirects to upstream in 'remember' mode."""
         client_id = "client-e"
         redirect = "http://localhost:5005/callback"
-        txn_id, _ = await _start_flow(oauth_proxy_https, client_id, redirect)
-        app = Starlette(routes=oauth_proxy_https.get_routes())
+        txn_id, _ = await _start_flow(oauth_proxy_https_remember, client_id, redirect)
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
         with TestClient(app) as c:
             # Approve once to set approved cookie
             consent = c.get(f"/consent?txn_id={txn_id}")
@@ -684,15 +708,188 @@ class TestConsentSecurity:
             # Extract approved cookie value
             set_cookie = ";\n".join(r.headers.get("set-cookie", "").splitlines())
             m = re.search(r"__Host-MCP_APPROVED_CLIENTS=([^;]+)", set_cookie)
-            assert m, "approved cookie should be set"
+            assert m, "approved cookie should be set in 'remember' mode"
             approved_cookie = m.group(1)
 
             # Start a new flow for the same client and redirect
-            new_txn, _ = await _start_flow(oauth_proxy_https, client_id, redirect)
+            new_txn, _ = await _start_flow(
+                oauth_proxy_https_remember, client_id, redirect
+            )
             # Should auto-redirect to upstream when visiting consent due to cookie
+            # (requires a safe Sec-Fetch-Site value — "none" simulates a direct
+            # client-initiated navigation like an MCP host opening the browser).
             c.cookies.set("__Host-MCP_APPROVED_CLIENTS", approved_cookie)
-            r2 = c.get(f"/consent?txn_id={new_txn}", follow_redirects=False)
+            r2 = c.get(
+                f"/consent?txn_id={new_txn}",
+                headers={"Sec-Fetch-Site": "none"},
+                follow_redirects=False,
+            )
             assert r2.status_code in (302, 303)
             assert r2.headers.get("location", "").startswith(
                 "https://github.com/login/oauth/authorize"
             )
+
+
+class TestConsentModes:
+    """Tests for the three consent modes: True (always), 'remember' (silent), 'external'.
+
+    Covers the default behavior where True no longer silently approves return
+    visits, and 'remember' mode gates silent consent on Sec-Fetch-Site to
+    block AS-in-the-middle attacks.
+    """
+
+    async def test_default_mode_does_not_set_approval_cookie(self, oauth_proxy_https):
+        """Approving in default (True) mode must NOT set a long-lived approval cookie.
+
+        In 'always prompt' mode there's no reason to remember approvals, and
+        writing the cookie would only create a no-op attack surface.
+        """
+        txn_id, _ = await _start_flow(
+            oauth_proxy_https, "client-default", "http://localhost:7001/callback"
+        )
+        app = Starlette(routes=oauth_proxy_https.get_routes())
+        with TestClient(app) as c:
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "approve", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            assert r.status_code in (302, 303)
+            set_cookie = ";\n".join(r.headers.get("set-cookie", "").splitlines())
+            # Consent binding cookie still set for the in-flight transaction
+            assert "__Host-MCP_CONSENT_BINDING" in set_cookie
+            # But no remembered-approval cookie
+            assert "MCP_APPROVED_CLIENTS" not in set_cookie
+
+    async def test_default_mode_ignores_existing_approval_cookie(
+        self, oauth_proxy_https_remember, oauth_proxy_https
+    ):
+        """A valid approval cookie is ignored in default (True) mode — always prompts.
+
+        Uses the 'remember' proxy to generate a legitimately-signed cookie, then
+        replays it against a default-mode proxy (same jwt_signing_key) to confirm
+        the consent page is still shown.
+        """
+        # Both fixtures use the same signing key, so cookies generated by one
+        # verify against the other.
+        client_id = "client-xmode"
+        redirect = "http://localhost:7002/callback"
+        txn_id, _ = await _start_flow(oauth_proxy_https_remember, client_id, redirect)
+        app_remember = Starlette(routes=oauth_proxy_https_remember.get_routes())
+        with TestClient(app_remember) as c:
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "approve", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            set_cookie_remember = ";\n".join(
+                r.headers.get("set-cookie", "").splitlines()
+            )
+            m = re.search(r"__Host-MCP_APPROVED_CLIENTS=([^;]+)", set_cookie_remember)
+            assert m, "remember-mode proxy should have set approval cookie"
+            approved_cookie = m.group(1)
+
+        # Now replay against the default-mode proxy for the same client/redirect.
+        new_txn, _ = await _start_flow(oauth_proxy_https, client_id, redirect)
+        app_default = Starlette(routes=oauth_proxy_https.get_routes())
+        with TestClient(app_default) as c:
+            c.cookies.set("__Host-MCP_APPROVED_CLIENTS", approved_cookie)
+            r = c.get(
+                f"/consent?txn_id={new_txn}",
+                headers={"Sec-Fetch-Site": "none"},
+                follow_redirects=False,
+            )
+            # Default mode: HTML consent page, no silent redirect to upstream.
+            assert r.status_code == 200
+            assert "text/html" in r.headers.get("content-type", "")
+
+    async def test_remember_mode_cross_site_forces_prompt(
+        self, oauth_proxy_https_remember
+    ):
+        """Sec-Fetch-Site=cross-site must skip silent consent even with valid cookie.
+
+        Blocks the AS-in-the-middle scenario: attacker redirects the victim's
+        browser to /authorize from a third-party origin, which browsers mark
+        cross-site. Legit local-host flows are Sec-Fetch-Site=none.
+        """
+        client_id = "client-cross"
+        redirect = "http://localhost:7003/callback"
+        txn_id, _ = await _start_flow(oauth_proxy_https_remember, client_id, redirect)
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
+        with TestClient(app) as c:
+            # Seed a valid approval cookie via the normal consent flow.
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "approve", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            set_cookie = ";\n".join(r.headers.get("set-cookie", "").splitlines())
+            m = re.search(r"__Host-MCP_APPROVED_CLIENTS=([^;]+)", set_cookie)
+            assert m
+            approved_cookie = m.group(1)
+
+            # Start a new flow and simulate a cross-site navigation.
+            new_txn, _ = await _start_flow(
+                oauth_proxy_https_remember, client_id, redirect
+            )
+            c.cookies.set("__Host-MCP_APPROVED_CLIENTS", approved_cookie)
+            r2 = c.get(
+                f"/consent?txn_id={new_txn}",
+                headers={"Sec-Fetch-Site": "cross-site"},
+                follow_redirects=False,
+            )
+            # Silent consent skipped; HTML prompt shown.
+            assert r2.status_code == 200
+            assert "text/html" in r2.headers.get("content-type", "")
+
+    async def test_remember_mode_missing_sec_fetch_site_fails_closed(
+        self, oauth_proxy_https_remember
+    ):
+        """Missing Sec-Fetch-Site header must fall back to the explicit prompt.
+
+        Legacy clients that don't send the header degrade to the safer behavior
+        rather than granting silent consent.
+        """
+        client_id = "client-nofetch"
+        redirect = "http://localhost:7004/callback"
+        txn_id, _ = await _start_flow(oauth_proxy_https_remember, client_id, redirect)
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
+        with TestClient(app) as c:
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "approve", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            set_cookie = ";\n".join(r.headers.get("set-cookie", "").splitlines())
+            m = re.search(r"__Host-MCP_APPROVED_CLIENTS=([^;]+)", set_cookie)
+            assert m
+            approved_cookie = m.group(1)
+
+            new_txn, _ = await _start_flow(
+                oauth_proxy_https_remember, client_id, redirect
+            )
+            c.cookies.set("__Host-MCP_APPROVED_CLIENTS", approved_cookie)
+            # No Sec-Fetch-Site header at all.
+            r2 = c.get(f"/consent?txn_id={new_txn}", follow_redirects=False)
+            assert r2.status_code == 200
+            assert "text/html" in r2.headers.get("content-type", "")

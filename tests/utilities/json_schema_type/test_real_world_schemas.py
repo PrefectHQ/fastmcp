@@ -7,7 +7,49 @@ Parametrized by API provider (~700 providers, one test each) so pytest
 shows progress and can identify which provider caused a hang.
 
 Marked as an integration test — skipped by default, run with:
-    uv run pytest tests/utilities/json_schema_type/test_real_world_schemas.py -m integration -v
+
+    uv run pytest tests/utilities/json_schema_type/test_real_world_schemas.py -m integration -n auto --timeout-method=thread -q
+
+On a 16-core machine this takes ~3-5 minutes. The CI workflow
+(.github/workflows/run-schema-crash-test.yml) runs it on push/PR when
+relevant source files change.
+
+## Aggregate baselines
+
+After each run, conftest.py compares aggregate crash counts against baseline
+caps in ``conftest.py``.  Ratchet those caps DOWN whenever a cluster of errors
+is fixed — never up.  See ``conftest.py`` for the current caps and comments
+on what was fixed.
+
+## Collecting and analysing failures
+
+Set ``DUMP_SCHEMA_FAILURES`` to a directory to write per-failure JSONL records:
+
+    RUN_REAL_WORLD_SCHEMA_TEST=1 \\
+    OPENAPI_DIRECTORY_PATH=/tmp/openapi-directory \\
+    DUMP_SCHEMA_FAILURES=/tmp/schema_failures \\
+    uv run pytest tests/utilities/json_schema_type/test_real_world_schemas.py \\
+        -m integration -n auto --timeout-method=thread -q
+
+Then cluster the results to find root causes:
+
+    python tests/utilities/json_schema_type/cluster_failures.py
+
+See ``cluster_failures.py`` for the full fix workflow (reproduce → unit test →
+fix → ratchet baseline → commit).
+
+## Cloning the corpus locally
+
+The test auto-clones when ``RUN_REAL_WORLD_SCHEMA_TEST=1``.  To pre-clone
+manually (~800 MB):
+
+    git clone --depth 1 https://github.com/APIs-guru/openapi-directory.git /tmp/openapi-directory
+
+Then point at it:
+
+    OPENAPI_DIRECTORY_PATH=/tmp/openapi-directory \\
+    RUN_REAL_WORLD_SCHEMA_TEST=1 \\
+    uv run pytest ...
 """
 
 from __future__ import annotations
@@ -223,6 +265,37 @@ def _test_provider(provider: str) -> ProviderResult:
     result = ProviderResult()
     use_alarm = hasattr(signal, "SIGALRM")
 
+    # Optional per-failure dump: when DUMP_SCHEMA_FAILURES is set to a directory,
+    # write one JSONL record per failure so we can cluster them later.
+    dump_dir_env = os.environ.get("DUMP_SCHEMA_FAILURES")
+    dump_path: Path | None = None
+    if dump_dir_env:
+        dump_path = Path(dump_dir_env) / f"{provider}.jsonl"
+        dump_path.parent.mkdir(parents=True, exist_ok=True)
+        # Truncate any prior content from a previous run of this provider.
+        dump_path.write_text("")
+
+    def _record_failure(
+        bucket: str, schema_name: str, schema_obj: dict, exc: BaseException
+    ) -> None:
+        if dump_path is None:
+            return
+        # Cap the schema snippet so huge recursive specs don't blow up disk.
+        try:
+            schema_repr = json.dumps(schema_obj, default=str)[:2000]
+        except Exception:
+            schema_repr = "<unserializable>"
+        record = {
+            "provider": provider,
+            "name": schema_name,
+            "bucket": bucket,
+            "error_type": type(exc).__name__,
+            "error_msg": str(exc)[:500],
+            "schema": schema_repr,
+        }
+        with dump_path.open("a") as fh:
+            fh.write(json.dumps(record) + "\n")
+
     for spec_file in _spec_files_for_provider(provider):
         spec = _load_spec(spec_file)
         if spec is None:
@@ -246,16 +319,26 @@ def _test_provider(provider: str) -> ProviderResult:
             try:
                 T = json_schema_to_type(schema)
                 TypeAdapter(T)
-            except _SchemaTimeout:
+            except _SchemaTimeout as e:
+                if use_alarm:
+                    signal.alarm(0)
                 result.timeouts += 1
-            except TypeError:
+                _record_failure("timeouts", _name, schema, e)
+            except TypeError as e:
+                if use_alarm:
+                    signal.alarm(0)
                 result.type_errors += 1
+                _record_failure("type_errors", _name, schema, e)
             except Exception as e:
+                if use_alarm:
+                    signal.alarm(0)
                 err_type = type(e).__name__
                 if "SchemaError" in err_type or "schema" in str(e).lower()[:50]:
                     result.schema_errors += 1
+                    _record_failure("schema_errors", _name, schema, e)
                 else:
                     result.other_errors += 1
+                    _record_failure("other_errors", _name, schema, e)
             finally:
                 if use_alarm:
                     signal.alarm(0)

@@ -1,3 +1,4 @@
+import copy
 from unittest.mock import patch
 
 from jsonref import replace_refs
@@ -50,6 +51,17 @@ class TestPruneParam:
         }
         result = _prune_param(schema, "foo")
         assert "required" not in result
+
+    def test_does_not_mutate_input(self):
+        """Test that _prune_param does not mutate the original schema."""
+        schema = {
+            "type": "object",
+            "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+            "required": ["a", "b"],
+        }
+        original = copy.deepcopy(schema)
+        _prune_param(schema, "a")
+        assert schema == original
 
 
 class TestDereferenceRefs:

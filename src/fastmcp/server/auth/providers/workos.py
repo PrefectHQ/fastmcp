@@ -164,6 +164,7 @@ class WorkOSProvider(OAuthProxy):
         client_secret: str,
         authkit_domain: str,
         base_url: AnyHttpUrl | str,
+        resource_base_url: AnyHttpUrl | str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
         redirect_path: str | None = None,
         required_scopes: list[str] | None = None,
@@ -171,7 +172,7 @@ class WorkOSProvider(OAuthProxy):
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
-        require_authorization_consent: bool | Literal["external"] = True,
+        require_authorization_consent: bool | Literal["remember", "external"] = True,
         consent_csp_policy: str | None = None,
         forward_resource: bool = True,
         http_client: httpx.AsyncClient | None = None,
@@ -184,6 +185,8 @@ class WorkOSProvider(OAuthProxy):
             client_secret: WorkOS client secret
             authkit_domain: Your WorkOS AuthKit domain (e.g., "https://your-app.authkit.app")
             base_url: Public URL where OAuth endpoints will be accessible (includes any mount path)
+            resource_base_url: Optional public base URL for the protected resource metadata
+                and token audience. Defaults to ``base_url``.
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.
             redirect_path: Redirect path configured in WorkOS (defaults to "/auth/callback")
@@ -234,6 +237,7 @@ class WorkOSProvider(OAuthProxy):
             upstream_client_secret=client_secret,
             token_verifier=token_verifier,
             base_url=base_url,
+            resource_base_url=resource_base_url,
             redirect_path=redirect_path,
             issuer_url=issuer_url or base_url,  # Default to base_url if not specified
             allowed_client_redirect_uris=allowed_client_redirect_uris,
@@ -273,17 +277,22 @@ class AuthKitProvider(RemoteAuthProvider):
     For detailed setup instructions, see:
     https://workos.com/docs/authkit/mcp/integrating/token-verification
 
+    Token audience is bound to this server automatically: when the MCP
+    mount path becomes known (typically at ``http_app()`` construction),
+    ``JWTVerifier.audience`` is set to the resource URL advertised in
+    ``.well-known/oauth-protected-resource``. Enable Resource Indicators
+    (RFC 8707) in your WorkOS Dashboard and list that same URL — AuthKit
+    will then mint tokens with the matching ``aud`` claim.
+
     Example:
         ```python
         from fastmcp.server.auth.providers.workos import AuthKitProvider
 
-        # Create AuthKit metadata provider (JWT verifier created automatically)
         workos_auth = AuthKitProvider(
             authkit_domain="https://your-workos-domain.authkit.app",
             base_url="https://your-fastmcp-server.com",
         )
 
-        # Use with FastMCP
         mcp = FastMCP("My App", auth=workos_auth)
         ```
     """
@@ -293,7 +302,7 @@ class AuthKitProvider(RemoteAuthProvider):
         *,
         authkit_domain: AnyHttpUrl | str,
         base_url: AnyHttpUrl | str,
-        client_id: str | None = None,
+        resource_base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
         scopes_supported: list[str] | None = None,
         resource_name: str | None = None,
@@ -305,16 +314,20 @@ class AuthKitProvider(RemoteAuthProvider):
         Args:
             authkit_domain: Your AuthKit domain (e.g., "https://your-app.authkit.app")
             base_url: Public URL of this FastMCP server
-            client_id: Your WorkOS project client ID (e.g., "client_01ABC..."). Used to
-                validate the JWT audience claim. Found in your WorkOS Dashboard under
-                API Keys. This is the project-level client ID, not individual MCP client IDs.
+            resource_base_url: Optional public base URL for the protected resource.
+                When provided, this URL is advertised in protected resource metadata
+                instead of ``base_url``. Useful when OAuth callbacks and the protected
+                MCP resource live under different public URLs.
             required_scopes: Optional list of scopes to require for all requests
             scopes_supported: Optional list of scopes to advertise in OAuth metadata.
                 If None, uses required_scopes. Use this when the scopes clients should
                 request differ from the scopes enforced on tokens.
             resource_name: Optional name for the protected resource metadata.
             resource_documentation: Optional documentation URL for the protected resource.
-            token_verifier: Optional token verifier. If None, creates JWT verifier for AuthKit
+            token_verifier: Optional token verifier. If provided, it is used as-is and
+                audience auto-wiring is skipped — the caller is responsible for setting
+                an appropriate ``audience``. If None (default), a ``JWTVerifier`` is
+                created with audience bound to this server's resource URL.
         """
         self.authkit_domain = str(authkit_domain).rstrip("/")
         self.base_url = AnyHttpUrl(str(base_url).rstrip("/"))
@@ -324,19 +337,14 @@ class AuthKitProvider(RemoteAuthProvider):
             parse_scopes(required_scopes) if required_scopes is not None else None
         )
 
-        # Create default JWT verifier if none provided
+        # When no custom verifier is provided, we own the JWTVerifier and can
+        # bind its audience to our resource URL once set_mcp_path() is called.
+        self._auto_bind_audience = token_verifier is None
         if token_verifier is None:
-            logger.warning(
-                "AuthKitProvider cannot validate token audience for the specific resource "
-                "because AuthKit does not support RFC 8707 resource indicators. "
-                "This may leave the server vulnerable to cross-server token replay. "
-                "Consider using WorkOSProvider (OAuth proxy) for audience-bound tokens."
-            )
             token_verifier = JWTVerifier(
                 jwks_uri=f"{self.authkit_domain}/oauth2/jwks",
                 issuer=self.authkit_domain,
                 algorithm="RS256",
-                audience=client_id,
                 required_scopes=parsed_scopes,
             )
 
@@ -345,10 +353,33 @@ class AuthKitProvider(RemoteAuthProvider):
             token_verifier=token_verifier,
             authorization_servers=[AnyHttpUrl(self.authkit_domain)],
             base_url=self.base_url,
+            resource_base_url=resource_base_url,
             scopes_supported=scopes_supported,
             resource_name=resource_name,
             resource_documentation=resource_documentation,
         )
+
+    def set_mcp_path(self, mcp_path: str | None) -> None:
+        """Bind the default verifier's audience to this server's resource URL.
+
+        AuthKit with Resource Indicators (RFC 8707) mints tokens whose ``aud``
+        claim equals the resource URL the client requested — which is the URL
+        we advertise in ``.well-known/oauth-protected-resource``. Binding the
+        audience here keeps validation in lock-step with what clients are sent.
+        """
+        super().set_mcp_path(mcp_path)
+        if (
+            self._auto_bind_audience
+            and self._resource_url is not None
+            and isinstance(self.token_verifier, JWTVerifier)
+        ):
+            resource_url = str(self._resource_url)
+            self.token_verifier.audience = resource_url
+            logger.info(
+                "AuthKit tokens will be validated against aud=%s. "
+                "Configure this URL as a Resource Indicator in the WorkOS Dashboard.",
+                resource_url,
+            )
 
     def get_routes(
         self,

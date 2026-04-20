@@ -110,7 +110,7 @@ class ResourcesAsTools(Transform):
             result: list[dict[str, Any]] = []
 
             for r in resources:
-                result.append(
+                result.append(  # noqa: PERF401
                     {
                         "uri": str(r.uri),
                         "name": r.name,
@@ -120,7 +120,7 @@ class ResourcesAsTools(Transform):
                 )
 
             for t in templates:
-                result.append(
+                result.append(  # noqa: PERF401
                     {
                         "uri_template": t.uri_template,
                         "name": t.name,

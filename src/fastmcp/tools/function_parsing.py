@@ -67,8 +67,6 @@ logger = get_logger(__name__)
 
 @dataclass
 class _WrappedResult(Generic[T]):
-    """Generic wrapper for non-object return types."""
-
     result: T
 
 

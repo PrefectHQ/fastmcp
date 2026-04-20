@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Prefab</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.css">
+  <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.js"></script>
+</head>
+<body>
+  <div id="root" style="max-width:64rem;margin:0 auto;padding:2rem"></div>
+  <script id="prefab:initial-data" type="application/json">{
+  "$prefab": {
+    "version": "0.2"
+  },
+  "view": {
+    "cssClass": "pf-app-root",
+    "type": "Div",
+    "children": [
+      {
+        "cssClass": "gap-4 p-6",
+        "type": "Column",
+        "children": [
+          {
+            "type": "DataTable",
+            "columns": [
+              {
+                "key": "name",
+                "header": "Name",
+                "sortable": true
+              },
+              {
+                "key": "role",
+                "header": "Role",
+                "sortable": true
+              },
+              {
+                "key": "dept",
+                "header": "Dept",
+                "sortable": true
+              }
+            ],
+            "rows": [
+              {
+                "name": "Alice Chen",
+                "role": "Staff Engineer",
+                "dept": "Platform"
+              },
+              {
+                "name": "Bob Martinez",
+                "role": "Lead Designer",
+                "dept": "Design"
+              },
+              {
+                "name": "Carol Johnson",
+                "role": "Senior Engineer",
+                "dept": "Platform"
+              },
+              {
+                "name": "David Kim",
+                "role": "Product Manager",
+                "dept": "Product"
+              },
+              {
+                "name": "Eva Mueller",
+                "role": "Engineer",
+                "dept": "Platform"
+              },
+              {
+                "name": "Frank Lee",
+                "role": "Data Scientist",
+                "dept": "ML"
+              },
+              {
+                "name": "Grace Park",
+                "role": "Eng Manager",
+                "dept": "Platform"
+              }
+            ],
+            "search": true,
+            "paginated": false,
+            "pageSize": 10
+          }
+        ]
+      }
+    ]
+  }
+}</script>
+</body>
+</html>

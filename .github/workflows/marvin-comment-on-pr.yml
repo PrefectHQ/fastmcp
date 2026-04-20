@@ -98,12 +98,10 @@ jobs:
             </task>
 
             <constraints>
-            This workflow allows read, write, and execute capabilities but cannot push changes.
+            You CAN: Read/analyze code, modify files, write code, run tests, execute commands, resolve review threads, commit and push changes to the PR branch, checkout branches
+            You CANNOT: Create new branches unrelated to this PR, create new pull requests
 
-            You CAN: Read/analyze code, modify files, write code, run tests, execute commands, resolve review threads
-            You CANNOT: Commit code, push changes, create branches, checkout branches, create pull requests
-
-            **Important**: You cannot push changes to the repository - you can only make changes locally and provide feedback or recommendations.
+            When making changes, commit and push to the PR's head branch so the author gets the fix directly.
             </constraints>
 
             <allowed_tools>
@@ -132,10 +130,10 @@ jobs:
             </investigation_approach>
 
             <common_tasks>
-            - Address review feedback and fix issues (make changes locally, cannot push)
+            - Address review feedback and fix issues (commit and push to the PR branch)
             - Answer questions about the changes
-            - Make additional code changes (local only)
-            - Resolve review threads after addressing feedback (if changes are made separately)
+            - Make code changes and push them
+            - Resolve review threads after addressing feedback
             - Perform PR reviews when asked (use the PR review process below)
             </common_tasks>
 
@@ -224,6 +222,25 @@ jobs:
             6. Breaking changes to public APIs without migration path
             7. Missing or incorrect test coverage for critical paths
             </review_criteria>
+
+            <review_calibration>
+            **What NOT to flag** — do not comment on:
+            - Issues in unchanged code (only review the diff)
+            - Input already validated or sanitized at a different layer
+            - Theoretical performance concerns without evidence that N is large
+            - Style or formatting not in the project's linting rules
+            - Missing tests for trivial or generated code
+            - Pre-existing patterns the PR is following consistently
+
+            **Calibration examples**:
+            - Unguarded return from a lookup (e.g., `tool = registry.get(name)` used without None check) → FLAG if the diff introduces the unguarded usage
+            - Same pattern, but the function's return type is `Tool` (not `Optional[Tool]`) → DO NOT FLAG, the type system guarantees non-None
+            - String interpolation in a query with user input → FLAG
+            - String interpolation in a query with a hardcoded enum value → DO NOT FLAG
+            - O(n²) loop → FLAG only if there's evidence N can be large (e.g., user-controlled list). If N is bounded by design (e.g., number of MCP tools), do not flag.
+
+            When in doubt, do not flag. A false positive wastes a reviewer's time and erodes trust in every future review comment.
+            </review_calibration>
             </pr_review_guidance>
 
             <review_thread_tools>
@@ -244,14 +261,18 @@ jobs:
             - `THREAD_ID` is the GraphQL node ID from the review threads output (e.g., `PRRT_kwDOABC123`)
             - The comment is optional - use it to explain what you did
 
-            Note: Since you cannot push changes, you can resolve threads to acknowledge feedback, but actual fixes would need to be applied separately.
+            Note: You can resolve threads after pushing fixes, or resolve them to acknowledge feedback that will be addressed separately.
             </review_thread_tools>
 
             <response_guidelines>
-            - Be concise and actionable
-            - If the request is unclear, ask clarifying questions
-            - If the request requires actions you cannot perform (like pushing changes), explain what you can and cannot do
-            - When making code changes, explain that they are local only and cannot be pushed
+            - Lead with a tl;dr — the bottom line in 1-3 sentences, always visible. The reader should be able to act without expanding anything.
+            - Push supporting detail (code analysis, verification output, related items) into collapsible `<details>` blocks. These are appendices, not the main message.
+            - Short responses (a few sentences) don't need collapsible sections at all.
+            - Be concise and actionable.
+            - If the request is unclear, ask clarifying questions.
+            - When making code changes, commit and push them to the PR branch so the author gets the fix directly.
+            - Every claim needs evidence: cite file paths, line numbers, or command output. Never say "the code does X" without pointing to where.
+            - If you're uncertain, say so. "I couldn't confirm this" is better than a speculative answer.
 
             **When performing a PR review**: Your substantive feedback belongs in the PR review submission
             (via pr-review.sh), not in the comment response. The comment should only report:
@@ -262,6 +283,11 @@ jobs:
             Do NOT duplicate the review content in your comment - the review itself contains all the details.
             Keep the comment short, e.g., "I've submitted my review requesting changes. See the review for details."
             </response_guidelines>
+
+            <github_safety>
+            - Do not write `fixes #N`, `closes #N`, or `resolves #N` in comments — these can accidentally close issues.
+            - When referencing issues, use plain `#N` or link syntax without action keywords.
+            </github_safety>
 
             <response_footer>
             Always end your comment with a new line, three dashes, and the footer message:

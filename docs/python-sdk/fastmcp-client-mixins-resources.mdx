@@ -38,7 +38,7 @@ containing the list of resources and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L58" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L64" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resources(self: Client, max_pages: int = AUTO_PAGINATION_MAX_PAGES) -> list[mcp.types.Resource]
@@ -61,7 +61,7 @@ large result sets incrementally), use list_resources_mcp() with the cursor param
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_resource_templates_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resource_templates_mcp(self: Client) -> mcp.types.ListResourceTemplatesResult
@@ -81,7 +81,7 @@ containing the list of resource templates and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_resource_templates` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L140" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resource_templates(self: Client, max_pages: int = AUTO_PAGINATION_MAX_PAGES) -> list[mcp.types.ResourceTemplate]
@@ -105,7 +105,7 @@ cursor parameter.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `read_resource_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L189" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource_mcp(self: Client, uri: AnyUrl | str, meta: dict[str, Any] | None = None) -> mcp.types.ReadResourceResult
@@ -126,19 +126,19 @@ containing the resource contents and any additional metadata.
 - `McpError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L233" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L245" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource(self: Client, uri: AnyUrl | str) -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]
 ```
 
-#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L243" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L255" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource(self: Client, uri: AnyUrl | str) -> ResourceTask
 ```
 
-#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L254" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L266" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource(self: Client, uri: AnyUrl | str) -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents] | ResourceTask

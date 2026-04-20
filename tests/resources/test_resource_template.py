@@ -7,7 +7,11 @@ from pydantic import BaseModel
 from fastmcp import Context, FastMCP
 from fastmcp.resources import ResourceTemplate
 from fastmcp.resources.function_resource import FunctionResource
-from fastmcp.resources.template import build_regex, match_uri_template
+from fastmcp.resources.template import (
+    build_regex,
+    expand_uri_template,
+    match_uri_template,
+)
 
 
 class TestResourceTemplate:
@@ -755,14 +759,10 @@ class TestMalformedURITemplates:
     @pytest.mark.parametrize(
         "template",
         [
-            "test://{bad-name}/path",
-            "test://{hyphen-param}/{other-param}/path",
             "test://{1leading}/path",
             "test://{123}/path",
         ],
         ids=[
-            "hyphen_in_name",
-            "multiple_hyphens",
             "leading_digit",
             "all_digits",
         ],
@@ -770,18 +770,24 @@ class TestMalformedURITemplates:
     def test_build_regex_returns_none_for_invalid_group_names(self, template: str):
         assert build_regex(template) is None
 
+    def test_build_regex_normalizes_hyphens(self):
+        """Hyphens in param names produce valid regex with underscored groups."""
+        regex = build_regex("test://{user-id}/path")
+        assert regex is not None
+        match = regex.match("test://alice/path")
+        assert match is not None
+        assert match.group("user_id") == "alice"
+
     def test_build_regex_returns_none_for_duplicate_group_names(self):
         assert build_regex("test://{a}/{a}/path") is None
 
     @pytest.mark.parametrize(
         "template",
         [
-            "test://{bad-name}/path",
             "test://{a}/{a}/path",
             "test://{1leading}/path",
         ],
         ids=[
-            "hyphen_in_name",
             "duplicate_groups",
             "leading_digit",
         ],
@@ -791,13 +797,71 @@ class TestMalformedURITemplates:
     ):
         assert match_uri_template("test://anything/path", template) is None
 
-    def test_resource_template_matches_returns_none_for_malformed_template(self):
+    def test_match_uri_template_normalizes_hyphens(self):
+        """Hyphenated params match and return underscored keys."""
+        result = match_uri_template("test://alice/path", "test://{user-id}/path")
+        assert result == {"user_id": "alice"}
+
+    def test_resource_template_matches_with_hyphenated_params(self):
         template = ResourceTemplate(
-            uri_template="test://{bad-name}/path",
+            uri_template="test://{user-id}/path",
             name="test",
             parameters={},
         )
-        assert template.matches("test://anything/path") is None
+        result = template.matches("test://alice/path")
+        assert result == {"user_id": "alice"}
+
+    async def test_hyphenated_template_end_to_end(self):
+        """Register and read a resource with hyphenated URI param names."""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+
+        @mcp.resource("data://{user-id}/profile")
+        def get_profile(user_id: str) -> str:
+            return f"profile for {user_id}"
+
+        templates = await mcp.list_resource_templates()
+        assert len(templates) == 1
+        assert templates[0].uri_template == "data://{user-id}/profile"
+
+        result = await mcp.read_resource("data://alice/profile")
+        assert "profile for alice" in str(result)
+
+    def test_build_regex_normalizes_wildcard_hyphens(self):
+        """Wildcard params with hyphens also get underscored groups."""
+        regex = build_regex("files://{file-path*}")
+        assert regex is not None
+        match = regex.match("files://a/b/c")
+        assert match is not None
+        assert match.group("file_path") == "a/b/c"
+
+    def test_expand_uri_template_with_hyphens(self):
+        """expand_uri_template maps underscored params to hyphenated placeholders."""
+        result = expand_uri_template("data://{user-id}/profile", {"user_id": "alice"})
+        assert result == "data://alice/profile"
+
+    def test_query_param_does_not_clobber_path_param(self):
+        """If path and query have the same normalized name, path wins."""
+        result = match_uri_template(
+            "test://alice?user-id=bob", "test://{user-id}{?user-id}"
+        )
+        # path param should be 'alice', not clobbered by query 'bob'
+        assert result is not None
+        assert result["user_id"] == "alice"
+
+    def test_from_function_rejects_hyphen_underscore_collision(self):
+        """Two raw param names that normalize to the same key are rejected."""
+
+        def handler(user_id: str) -> str:
+            return user_id
+
+        with pytest.raises(ValueError, match="both normalize to 'user_id'"):
+            ResourceTemplate.from_function(
+                fn=handler,
+                uri_template="test://{user-id}/{user_id}",
+                name="collision",
+            )
 
     def test_build_regex_still_works_for_valid_templates(self):
         regex = build_regex("test://{name}/{id}")
@@ -806,3 +870,86 @@ class TestMalformedURITemplates:
         assert match is not None
         assert match.group("name") == "foo"
         assert match.group("id") == "123"
+
+
+class TestExpandUriTemplate:
+    """Test expand_uri_template — the inverse of match_uri_template."""
+
+    @pytest.mark.parametrize(
+        "template, params, expected",
+        [
+            ("test://{x}", {"x": "foo"}, "test://foo"),
+            ("test://{x}/{y}", {"x": "foo", "y": "bar"}, "test://foo/bar"),
+            ("test://a/{x}/b", {"x": "mid"}, "test://a/mid/b"),
+        ],
+    )
+    def test_expand_simple_params(
+        self, template: str, params: dict[str, str], expected: str
+    ):
+        assert expand_uri_template(template, params) == expected
+
+    @pytest.mark.parametrize(
+        "template, params, expected",
+        [
+            ("test://{path*}", {"path": "a/b/c"}, "test://a/b/c"),
+            ("test://{path*}", {"path": "single"}, "test://single"),
+            ("test://pre/{rest*}", {"rest": "x/y"}, "test://pre/x/y"),
+            (
+                "test://{a*}/mid/{b*}",
+                {"a": "x/y", "b": "p/q"},
+                "test://x/y/mid/p/q",
+            ),
+            ("test://{x}/{path*}", {"x": "foo", "path": "a/b"}, "test://foo/a/b"),
+        ],
+    )
+    def test_expand_wildcard_params(
+        self, template: str, params: dict[str, str], expected: str
+    ):
+        assert expand_uri_template(template, params) == expected
+
+    def test_expand_query_params(self):
+        result = expand_uri_template(
+            "test://data{?format,verbose}",
+            {"format": "json", "verbose": "true"},
+        )
+        assert result in (
+            "test://data?format=json&verbose=true",
+            "test://data?verbose=true&format=json",
+        )
+
+    def test_expand_query_params_partial(self):
+        result = expand_uri_template(
+            "test://data{?format,verbose}",
+            {"format": "json"},
+        )
+        assert result == "test://data?format=json"
+
+    def test_expand_query_params_none(self):
+        result = expand_uri_template("test://data{?format,verbose}", {})
+        assert result == "test://data"
+
+    def test_expand_ignores_extra_params(self):
+        result = expand_uri_template("test://{x}", {"x": "foo", "unused": "bar"})
+        assert result == "test://foo"
+
+
+class TestMatchExpandRoundTrip:
+    """match_uri_template and expand_uri_template must agree on the template grammar."""
+
+    @pytest.mark.parametrize(
+        "template, uri",
+        [
+            ("test://{x}", "test://foo"),
+            ("test://{x}/{y}", "test://foo/bar"),
+            ("test://a/{x}/b", "test://a/mid/b"),
+            ("test://{path*}", "test://a/b/c"),
+            ("test://{path*}", "test://single"),
+            ("test://pre/{rest*}", "test://pre/x/y/z"),
+            ("test://{x}/{path*}", "test://foo/a/b/c"),
+        ],
+    )
+    def test_expand_then_match_is_identity(self, template: str, uri: str):
+        """Extracting params from a URI and expanding them back reproduces the URI."""
+        params = match_uri_template(uri, template)
+        assert params is not None
+        assert expand_uri_template(template, params) == uri

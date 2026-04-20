@@ -119,7 +119,10 @@ class ProxyTool(Tool):
         """Executes the tool by making a call through the client."""
         backend_name = self._backend_name or self.name
         with client_span(
-            f"tools/call {backend_name}", "tools/call", backend_name
+            f"tools/call {backend_name}",
+            "tools/call",
+            backend_name,
+            tool_name=backend_name,
         ) as span:
             span.set_attribute("fastmcp.provider.type", "ProxyProvider")
             client = await self._get_client()
@@ -158,7 +161,13 @@ class ProxyTool(Tool):
                     name=backend_name, arguments=arguments, meta=meta
                 )
             if result.isError:
-                raise ToolError(cast(mcp.types.TextContent, result.content[0]).text)
+                first = result.content[0] if result.content else None
+                if isinstance(first, mcp.types.TextContent):
+                    raise ToolError(first.text)
+                elif first is None:
+                    raise ToolError("Tool returned an error with no content")
+                else:
+                    raise ToolError(f"Tool returned an error ({type(first).__name__})")
             # Preserve backend's meta (includes task metadata for background tasks)
             return ToolResult(
                 content=result.content,
@@ -235,7 +244,7 @@ class ProxyResource(Resource):
 
         backend_uri = self._backend_uri or str(self.uri)
         with client_span(
-            f"resources/read {backend_uri}",
+            "resources/read",
             "resources/read",
             backend_uri,
             resource_uri=backend_uri,
@@ -450,7 +459,10 @@ class ProxyPrompt(Prompt):
         """Render the prompt by making a call through the client."""
         backend_name = self._backend_name or self.name
         with client_span(
-            f"prompts/get {backend_name}", "prompts/get", backend_name
+            f"prompts/get {backend_name}",
+            "prompts/get",
+            backend_name,
+            prompt_name=backend_name,
         ) as span:
             span.set_attribute("fastmcp.provider.type", "ProxyProvider")
             client = await self._get_client()

@@ -8,7 +8,7 @@ Demonstrates FastMCP server protection with Discord OAuth.
    - Go to https://discord.com/developers/applications
    - Click "New Application" and give it a name
    - Go to OAuth2 in the left sidebar
-   - Add a Redirect URL: `http://localhost:8000/auth/callback`
+   - Add a Redirect URL: `http://127.0.0.1:8000/auth/callback`
    - Copy the Client ID and Client Secret
 
 2. Set environment variables:

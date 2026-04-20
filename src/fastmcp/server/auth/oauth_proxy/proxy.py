@@ -22,6 +22,7 @@ import hashlib
 import secrets
 import time
 from base64 import urlsafe_b64encode
+from collections import OrderedDict
 from typing import Any, Literal
 from urllib.parse import urlencode, urlparse, urlunparse
 
@@ -91,6 +92,8 @@ from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+_REFRESH_LOCK_CACHE_SIZE = 10_000
 
 
 def _normalize_resource_url(url: str) -> str:
@@ -240,6 +243,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         token_verifier: TokenVerifier,
         # FastMCP server configuration
         base_url: AnyHttpUrl | str,
+        resource_base_url: AnyHttpUrl | str | None = None,
         redirect_path: str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
         service_documentation_url: AnyHttpUrl | str | None = None,
@@ -261,7 +265,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # JWT signing key
         jwt_signing_key: str | bytes | None = None,
         # Consent screen configuration
-        require_authorization_consent: bool | Literal["external"] = True,
+        require_authorization_consent: bool | Literal["remember", "external"] = True,
         consent_csp_policy: str | None = None,
         # Token expiry fallback
         fallback_access_token_expiry_seconds: int | None = None,
@@ -281,6 +285,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             token_verifier: Token verifier for validating access tokens
             base_url: Public URL of the server that exposes this FastMCP server; redirect path is
                 relative to this URL
+            resource_base_url: Optional public base URL for the protected resource metadata
+                and token audience. Defaults to ``base_url``.
             redirect_path: Redirect path configured in upstream OAuth app (defaults to "/auth/callback")
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url)
             service_documentation_url: Optional service documentation URL
@@ -308,12 +314,19 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 If bytes are provided, they will be used as-is.
                 If a string is provided, it will be derived into a 32-byte key using PBKDF2 (1.2M iterations).
                 If not provided, it will be derived from the upstream client secret using HKDF.
-            require_authorization_consent: Whether to require user consent before authorizing clients (default True).
-                When True, users see a consent screen before being redirected to the upstream IdP.
-                When False, authorization proceeds directly without user confirmation.
-                When "external", the built-in consent screen is skipped but no warning is
-                logged, indicating that consent is handled externally (e.g. by the upstream IdP).
-                SECURITY WARNING: Only set to False for local development or testing environments.
+            require_authorization_consent: Consent screen behavior (default True).
+                - True: always show the consent screen before redirecting to the
+                  upstream IdP. Strongest protection against AS-in-the-middle
+                  attacks.
+                - "remember": show the consent screen the first time, then silently
+                  approve subsequent authorizations for the same (client_id,
+                  redirect_uri) in the same browser. Cross-site navigations are
+                  still prompted to block AS-in-the-middle attacks. Lower UX
+                  friction, but weaker protection than True.
+                - "external": skip the built-in consent screen; consent is handled
+                  externally (e.g. by the upstream IdP or a custom login page).
+                - False: skip consent entirely. SECURITY WARNING: only set to
+                  False for local development or testing environments.
             consent_csp_policy: Content Security Policy for the consent page.
                 If None (default), uses the built-in CSP policy with appropriate directives.
                 If empty string "", disables CSP entirely (no meta tag is rendered).
@@ -343,6 +356,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         super().__init__(
             base_url=base_url,
+            resource_base_url=resource_base_url,
             issuer_url=issuer_url,
             service_documentation_url=service_documentation_url,
             client_registration_options=client_registration_options,
@@ -393,13 +407,20 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         self._token_endpoint_auth_method: str | None = token_endpoint_auth_method
 
         # Consent screen configuration
-        self._require_authorization_consent: bool | Literal["external"] = (
+        self._require_authorization_consent: bool | Literal["remember", "external"] = (
             require_authorization_consent
         )
         self._consent_csp_policy: str | None = consent_csp_policy
         if require_authorization_consent == "external":
             logger.info(
                 "Built-in consent screen disabled; consent is handled externally."
+            )
+        elif require_authorization_consent == "remember":
+            logger.info(
+                "Consent screen in 'remember' mode: silent consent on return visits "
+                "for previously-approved clients (with Sec-Fetch-Site gating). "
+                "Set require_authorization_consent=True for strongest protection "
+                "against AS-in-the-middle attacks."
             )
         elif not require_authorization_consent:
             logger.warning(
@@ -558,7 +579,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # refresh the same token within a single process. Does not protect
         # against cross-process races in distributed deployments — those are
         # handled by re-reading from storage after refresh failure.
-        self._refresh_locks: dict[str, anyio.Lock] = {}
+        self._refresh_locks: OrderedDict[str, anyio.Lock] = OrderedDict()
 
         logger.debug(
             "Initialized OAuth proxy provider with upstream server %s",
@@ -629,6 +650,18 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             timeout=HTTP_TIMEOUT_SECONDS,
         )
 
+    def _get_refresh_lock(self, token_id: str) -> anyio.Lock:
+        """Get or create a per-token refresh lock, evicting LRU entries when at capacity."""
+        lock = self._refresh_locks.get(token_id)
+        if lock is None:
+            lock = anyio.Lock()
+            self._refresh_locks[token_id] = lock
+            if len(self._refresh_locks) > _REFRESH_LOCK_CACHE_SIZE:
+                self._refresh_locks.popitem(last=False)
+        else:
+            self._refresh_locks.move_to_end(token_id)
+        return lock
+
     # -------------------------------------------------------------------------
     # PKCE Helper Methods
     # -------------------------------------------------------------------------
@@ -693,6 +726,24 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if cimd_client is not None:
                 await self._client_store.put(key=client_id, value=cimd_client)
                 return cimd_client
+
+        # Some MCP clients (e.g. claude.ai) skip Dynamic Client Registration and
+        # send the upstream OAuth App's client_id directly in the /authorize request.
+        # Synthesize a client on-the-fly so these clients aren't rejected with 400.
+        if client_id == self._upstream_client_id:
+            logger.debug(
+                "Client %s matched upstream client_id — synthesizing client without DCR",
+                client_id,
+            )
+            return ProxyDCRClient(
+                client_id=client_id,
+                client_secret=None,
+                redirect_uris=[AnyUrl("http://localhost")],
+                grant_types=["authorization_code", "refresh_token"],
+                scope=self._default_scope_str,
+                token_endpoint_auth_method="none",
+                allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
+            )
 
         return None
 
@@ -763,8 +814,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         3. Return local /consent URL; browser visits consent first
         4. Consent handler redirects to upstream IdP if approved/already approved
 
-        If consent is disabled (require_authorization_consent=False), skip the consent screen
-        and redirect directly to the upstream IdP.
+        If consent is disabled (require_authorization_consent=False or "external"),
+        skip the consent screen and redirect directly to the upstream IdP. In
+        "remember" mode, still route through /consent so the cookie lookup and
+        Sec-Fetch-Site gating can run.
         """
         # Security check: validate client's requested resource matches this server
         # This prevents tokens intended for one server from being used on another
@@ -841,8 +894,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ttl=15 * 60,  # Auto-expire after 15 minutes
         )
 
-        # If consent is disabled or handled externally, skip consent screen
-        if self._require_authorization_consent is not True:
+        # If consent is disabled or handled externally, skip consent screen.
+        # "remember" mode still routes through /consent so cookie lookup and
+        # Sec-Fetch-Site gating can run.
+        if self._require_authorization_consent in (False, "external"):
             upstream_url = self._build_upstream_authorize_url(
                 txn_id, transaction.model_dump()
             )
@@ -1616,9 +1671,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
                     # Advisory lock prevents concurrent requests from racing
                     # to refresh the same upstream token.
-                    if token_id not in self._refresh_locks:
-                        self._refresh_locks[token_id] = anyio.Lock()
-                    lock = self._refresh_locks[token_id]
+                    lock = self._get_refresh_lock(token_id)
 
                     async with lock:
                         # Re-read from storage — another task may have
@@ -1949,8 +2002,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             # Verify consent binding cookie to prevent confused deputy attacks.
             # When consent is enabled, the browser that approved consent receives
             # a signed cookie. A different browser (e.g., a victim lured to the
-            # IdP URL) won't have this cookie and will be rejected.
-            if self._require_authorization_consent is True:
+            # IdP URL) won't have this cookie and will be rejected. "remember"
+            # mode still issues consent tokens (on silent approval or HTML
+            # approval), so both code paths need binding verification.
+            if self._require_authorization_consent in (True, "remember"):
                 consent_token = transaction_model.consent_token
                 if not consent_token:
                     logger.error("Transaction %s missing consent_token", txn_id)

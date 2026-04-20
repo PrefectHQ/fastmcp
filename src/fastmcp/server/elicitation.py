@@ -129,7 +129,11 @@ class ElicitConfig:
     is_raw: bool
 
 
-def parse_elicit_response_type(response_type: Any) -> ElicitConfig:
+def parse_elicit_response_type(
+    response_type: Any,
+    response_title: str | None = None,
+    response_description: str | None = None,
+) -> ElicitConfig:
     """Parse response_type into schema and handling configuration.
 
     Supports multiple syntaxes:
@@ -142,8 +146,25 @@ def parse_elicit_response_type(response_type: Any) -> ElicitConfig:
     - `list[X]` type annotation: multi-select with type
     - Scalar types (bool, int, float, str, Literal, Enum): single value
     - Other types (dataclass, BaseModel): use directly
+
+    The ``response_title`` and ``response_description`` arguments customize the
+    label and description of the wrapped ``value`` property for the scalar/dict/list
+    shorthand forms. They are only valid when FastMCP is wrapping the response
+    type; passing them with a full BaseModel/dataclass (or ``None``) raises
+    ``TypeError``, because in those cases the user already controls field
+    metadata via ``Field(title=..., description=...)``.
     """
+    has_response_metadata = (
+        response_title is not None or response_description is not None
+    )
+
     if response_type is None:
+        if has_response_metadata:
+            raise TypeError(
+                "response_title and response_description are not supported when "
+                "response_type is None, because the elicitation schema has no "
+                "fields to label."
+            )
         return ElicitConfig(
             schema={"type": "object", "properties": {}},
             response_type=None,
@@ -151,23 +172,46 @@ def parse_elicit_response_type(response_type: Any) -> ElicitConfig:
         )
 
     if isinstance(response_type, dict):
-        return _parse_dict_syntax(response_type)
+        config = _parse_dict_syntax(response_type)
+    elif isinstance(response_type, list):
+        config = _parse_list_syntax(response_type)
+    elif get_origin(response_type) is list:
+        config = _parse_generic_list(response_type)
+    elif _is_scalar_type(response_type):
+        config = _parse_scalar_type(response_type)
+    else:
+        # Other types (dataclass, BaseModel, etc.) - use directly
+        if has_response_metadata:
+            raise TypeError(
+                "response_title and response_description are only supported when "
+                "response_type is a scalar, Literal, Enum, or the dict/list "
+                "shorthand forms. For BaseModel or dataclass response types, use "
+                "Field(title=..., description=...) on the individual fields."
+            )
+        return ElicitConfig(
+            schema=get_elicitation_schema(response_type),
+            response_type=response_type,
+            is_raw=False,
+        )
 
-    if isinstance(response_type, list):
-        return _parse_list_syntax(response_type)
+    if has_response_metadata:
+        _apply_value_metadata(config.schema, response_title, response_description)
+    return config
 
-    if get_origin(response_type) is list:
-        return _parse_generic_list(response_type)
 
-    if _is_scalar_type(response_type):
-        return _parse_scalar_type(response_type)
-
-    # Other types (dataclass, BaseModel, etc.) - use directly
-    return ElicitConfig(
-        schema=get_elicitation_schema(response_type),
-        response_type=response_type,
-        is_raw=False,
-    )
+def _apply_value_metadata(
+    schema: dict[str, Any],
+    title: str | None,
+    description: str | None,
+) -> None:
+    """Override title/description on the wrapped ``value`` property in-place."""
+    value_schema = schema.get("properties", {}).get("value")
+    if value_schema is None:
+        return
+    if title is not None:
+        value_schema["title"] = title
+    if description is not None:
+        value_schema["description"] = description
 
 
 def _is_scalar_type(response_type: Any) -> bool:

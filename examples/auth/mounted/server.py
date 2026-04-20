@@ -5,10 +5,10 @@ application, each with its own provider. It showcases RFC 8414 path-aware discov
 where each server has its own authorization server metadata endpoint.
 
 URL structure:
-- GitHub MCP: http://localhost:8000/api/mcp/github/mcp
-- Google MCP: http://localhost:8000/api/mcp/google/mcp
-- GitHub discovery: http://localhost:8000/.well-known/oauth-authorization-server/api/mcp/github
-- Google discovery: http://localhost:8000/.well-known/oauth-authorization-server/api/mcp/google
+- GitHub MCP: http://127.0.0.1:8000/api/mcp/github/mcp
+- Google MCP: http://127.0.0.1:8000/api/mcp/google/mcp
+- GitHub discovery: http://127.0.0.1:8000/.well-known/oauth-authorization-server/api/mcp/github
+- Google discovery: http://127.0.0.1:8000/.well-known/oauth-authorization-server/api/mcp/google
 
 Required environment variables:
 - FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID: Your GitHub OAuth app client ID
@@ -31,7 +31,7 @@ from fastmcp.server.auth.providers.github import GitHubProvider
 from fastmcp.server.auth.providers.google import GoogleProvider
 
 # Configuration
-ROOT_URL = "http://localhost:8000"
+ROOT_URL = "http://127.0.0.1:8000"
 API_PREFIX = "/api/mcp"
 
 # --- GitHub OAuth Server ---

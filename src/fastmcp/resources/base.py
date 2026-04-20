@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, overload
 
@@ -188,6 +189,12 @@ class ResourceResult(pydantic.BaseModel):
                         f"Use ResourceContent({item!r}) to wrap the value."
                     )
             return contents
+        # Auto-serialize JSON-native types to JSON text
+        if (
+            isinstance(contents, dict | list | tuple | int | float | bool)
+            or contents is None
+        ):
+            return [ResourceContent(json.dumps(contents), mime_type="application/json")]
         raise TypeError(
             f"contents must be str, bytes, or list[ResourceContent], got {type(contents).__name__}"
         )
@@ -329,7 +336,30 @@ class Resource(FastMCPComponent):
                 [ResourceContent(raw_value, mime_type=self.mime_type, meta=self.meta)]
             )
 
-        # ResourceResult.__init__ handles all other normalization
+        # For JSON-native types (dict, list, tuple, int, float, bool, None),
+        # serialize and wrap in ResourceContent with the component's meta,
+        # matching the str/bytes path above so CSP/permissions propagate.
+        # Exclude list[ResourceContent] which should go through ResourceResult
+        # normalization below.
+        if (
+            isinstance(raw_value, dict | list | tuple | int | float | bool)
+            or raw_value is None
+        ) and not (
+            isinstance(raw_value, list)
+            and raw_value
+            and isinstance(raw_value[0], ResourceContent)
+        ):
+            return ResourceResult(
+                [
+                    ResourceContent(
+                        json.dumps(raw_value),
+                        mime_type=self.mime_type or "application/json",
+                        meta=self.meta,
+                    )
+                ]
+            )
+
+        # All other types fall through to ResourceResult for error handling
         return ResourceResult(raw_value)
 
     @overload

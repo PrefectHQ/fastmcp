@@ -128,7 +128,9 @@ class TestToolModeEnforcement:
         """Forbidden mode returns error when called with task metadata."""
         async with Client(server) as client:
             # Call with task=True should fail
-            task = await client.call_tool("forbidden_tool", {}, task=True)
+            task = await client.call_tool(
+                "forbidden_tool", {}, task=True, raise_on_error=False
+            )
             assert task is not None
             # The task should have returned immediately with an error
             assert task.returned_immediately

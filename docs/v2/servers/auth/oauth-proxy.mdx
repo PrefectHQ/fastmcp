@@ -115,6 +115,12 @@ mcp = FastMCP(name="My Server", auth=auth)
   This URL is used to construct OAuth callback URLs and operational endpoints. When mounting under a path prefix, include that prefix in `base_url`. Use `issuer_url` separately to specify where auth server metadata is located (typically at root level).
 </ParamField>
 
+<ParamField body="resource_base_url" type="AnyHttpUrl | str | None">
+  Optional public base URL for the protected resource metadata and token audience.
+
+  Use this when your OAuth callbacks and operational endpoints need to live under one public URL, but the protected MCP resource should be advertised under another. FastMCP will still append the MCP mount path (for example, `/mcp`) to this base URL.
+</ParamField>
+
 <ParamField body="redirect_path" type="str" default="/auth/callback">
   Path for OAuth callbacks. Must match the redirect URI configured in your OAuth
   application
@@ -281,20 +287,32 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
 </ParamField>
 
 
-<ParamField body="require_authorization_consent" type="bool" default="True">
-  Whether to require user consent before authorizing MCP clients. When enabled (default), users see a consent screen that displays which client is requesting access, preventing [confused deputy attacks](https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices#confused-deputy-problem) by ensuring users explicitly approve new clients.
+<ParamField body="require_authorization_consent" type='bool | Literal["remember", "external"]' default="True">
+  Consent screen behavior for authorization requests. The consent page displays which client is requesting access, defending against [confused deputy and AS-in-the-middle attacks](#confused-deputy-attacks) by requiring explicit user approval.
 
-  **Default behavior (True):**
-  Users see a consent screen on first authorization. Consent choices are remembered via signed cookies, so users only need to approve each client once. This protects against malicious clients impersonating the user.
+  **`True` (default) — always prompt:**
+  Users see the consent screen on every authorization. Strongest protection against AS-in-the-middle attacks where a malicious MCP server redirects the victim's browser into a legitimate proxy and relies on a previously-remembered approval to silently complete the flow.
 
-  **Disabling consent (False):**
-  Authorization proceeds directly to the upstream provider without user confirmation. Only use this for local development or testing environments where the security trade-off is acceptable.
+  **`"remember"` — silent consent on return:**
+  Users see the consent screen on first authorization; subsequent flows from the same browser for the same `(client_id, redirect_uri)` are silently approved via a signed cookie. Cross-site navigations (detected via `Sec-Fetch-Site`) fall back to the prompt. `Sec-Fetch-Site` is a browser-level heuristic rather than a protocol guarantee: an attacker who finds a way to initiate a non-cross-site navigation (XSS on a sibling origin, a same-site redirect chain, etc.) can reach the silent-consent path. `True` does not depend on this signal. See [Confused Deputy Attacks](#confused-deputy-attacks) for the underlying attack class.
+
+  **`"external"` — delegate to upstream:**
+  Skip the built-in consent page; consent is collected by the upstream IdP or a custom login page referenced via `upstream_authorization_endpoint`. No security warning is logged.
+
+  **`False` — disable entirely:**
+  Authorization proceeds directly to the upstream provider without any consent UI. Logs a security warning. Only for local development or testing.
 
   ```python
   # Development/testing only - skip consent screen
   auth = OAuthProxy(
       ...,
       require_authorization_consent=False  # ⚠️ Security warning: only for local/testing
+  )
+
+  # Convenience mode - silent consent on return visits (less safe than True)
+  auth = OAuthProxy(
+      ...,
+      require_authorization_consent="remember",
   )
   ```
 
@@ -548,13 +566,17 @@ The OAuth proxy works by bridging DCR clients to traditional auth providers, whi
 
 #### Mitigation
 
-FastMCP's OAuth proxy requires you to explicitly consent whenever any new or unrecognized client attempts to connect to your server. Before any authorization happens, you see a consent page showing the client's details, redirect URI, and requested scopes. This gives you the opportunity to review and deny suspicious requests. Once you approve a client, it's remembered so you don't see the consent page again for that client. The consent mechanism is implemented with CSRF tokens and cryptographically signed cookies to prevent tampering.
+FastMCP's OAuth proxy requires you to explicitly consent whenever a client attempts to connect to your server. Before any authorization happens, you see a consent page showing the client's details, redirect URI, and requested scopes. This gives you the opportunity to review and deny suspicious requests. By default (`require_authorization_consent=True`), the page is shown on every flow, which is the strongest protection. Setting `require_authorization_consent="remember"` approves previously-approved `(client_id, redirect_uri)` pairs silently on return visits, trading some protection for UX (see below). The consent mechanism is implemented with CSRF tokens and cryptographically signed cookies to prevent tampering.
 
 ![](/assets/images/oauth-proxy-consent-screen.png)
 
 The consent page automatically displays your server's name, icon, and website URL, if available. These visual identifiers help users confirm they're authorizing the correct server.
 
+#### AS-in-the-middle variant
 
+A related attack works by positioning a malicious authorization server between an MCP client and a legitimate proxy: a malicious MCP server advertises its own authorization server, which redirects the victim's browser into the legitimate proxy's `/authorize` endpoint. Because the victim's browser carries the prior-approval cookie throughout, a `"remember"`-mode proxy would silently complete the flow. The defense is the consent prompt itself: if consent is shown (`require_authorization_consent=True`), the victim sees the benign MCP server's name on the consent page — which doesn't match the malicious server they thought they were connecting to — and can deny.
+
+`require_authorization_consent="remember"` adds a `Sec-Fetch-Site` check to keep this path safe for legitimate return flows (the attack navigation lands as `cross-site` and falls back to the prompt), but this is a browser-level heuristic. For the strongest defense, leave `require_authorization_consent=True`.
 
 **Learn more:**
 - [MCP Security Best Practices](https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices#confused-deputy-problem) - Official specification guidance

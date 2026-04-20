@@ -15,6 +15,7 @@ import mcp.types
 from mcp.types import GetTaskResult, TaskStatusNotification
 
 from fastmcp.client.messages import Message, MessageHandler
+from fastmcp.exceptions import ToolError
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -216,8 +217,8 @@ class Task(abc.ABC, Generic[TaskResultT]):
         on status changes when server sends notifications/tasks/status.
 
         Args:
-            state: Desired state ('submitted', 'working', 'completed', 'failed').
-                   If None, waits for any terminal state (completed/failed)
+            state: Desired state ('working', 'input_required', 'completed', 'failed', 'cancelled').
+                   If None, waits until the task exits the 'working' state (completed, failed, cancelled, input_required, etc.)
             timeout: Maximum time to wait in seconds
 
         Returns:
@@ -237,7 +238,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
             self._status_event = asyncio.Event()
 
         start = time.time()
-        terminal_states = {"completed", "failed", "cancelled"}
+        in_progress_states = {"working"}
         poll_interval = 0.5  # Fallback polling interval (500ms)
 
         while True:
@@ -245,7 +246,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
             if self._status_cache:
                 current = self._status_cache.status
                 if state is None:
-                    if current in terminal_states:
+                    if current not in in_progress_states:
                         return self._status_cache
                 elif current == state:
                     return self._status_cache
@@ -268,6 +269,21 @@ class Task(abc.ABC, Generic[TaskResultT]):
             except asyncio.TimeoutError:
                 # Fallback: poll server (notification didn't arrive in time)
                 self._status_cache = await self._client.get_task_status(self._task_id)
+
+    async def _wait_terminal(self, timeout: float = 300.0) -> GetTaskResult:
+        """Wait until task reaches a terminal state (completed, failed, cancelled).
+
+        Unlike wait(), this will not return on input_required — it continues
+        waiting until the task fully resolves. Used internally by result().
+        """
+        terminal_states = {"completed", "failed", "cancelled"}
+        status = await self.wait(timeout=timeout)
+        while status.status not in terminal_states:
+            # Task is in a non-terminal state (e.g. input_required) — reset
+            # cache so the next wait() call blocks instead of returning immediately.
+            self._status_cache = None
+            status = await self.wait(timeout=timeout)
+        return status
 
     async def cancel(self) -> None:
         """Cancel this task, transitioning it to cancelled state.
@@ -320,6 +336,7 @@ class ToolTask(Task["CallToolResult"]):
         task_id: str,
         tool_name: str,
         immediate_result: CallToolResult | None = None,
+        raise_on_error: bool = True,
     ):
         """
         Create a ToolTask wrapper.
@@ -329,9 +346,11 @@ class ToolTask(Task["CallToolResult"]):
             task_id: The task identifier
             tool_name: Name of the tool being executed
             immediate_result: If server executed synchronously, the immediate result
+            raise_on_error: Whether task.result() should raise ToolError on errors
         """
         super().__init__(client, task_id, immediate_result)
         self._tool_name = tool_name
+        self._raise_on_error = raise_on_error
 
     async def result(self) -> CallToolResult:
         """Wait for and return the tool result.
@@ -349,12 +368,20 @@ class ToolTask(Task["CallToolResult"]):
         if self._is_immediate:
             assert self._immediate_result is not None  # Type narrowing
             result = self._immediate_result
+            if result.is_error and self._raise_on_error:
+                if result.content and isinstance(
+                    result.content[0], mcp.types.TextContent
+                ):
+                    msg = result.content[0].text
+                else:
+                    msg = f"Tool '{self._tool_name}' returned an error"
+                raise ToolError(msg)
         else:
             # Check client connected
             self._check_client_connected()
 
             # Wait for completion using event-based wait (respects notifications)
-            await self.wait()
+            await self._wait_terminal()
 
             # Get the raw result (dict or CallToolResult)
             raw_result = await self._client.get_task_result(self._task_id)
@@ -364,12 +391,16 @@ class ToolTask(Task["CallToolResult"]):
                 # Raw dict from get_task_result - parse as CallToolResult
                 mcp_result = mcp.types.CallToolResult.model_validate(raw_result)
                 result = await self._client._parse_call_tool_result(
-                    self._tool_name, mcp_result, raise_on_error=True
+                    self._tool_name,
+                    mcp_result,
+                    raise_on_error=self._raise_on_error,
                 )
             elif isinstance(raw_result, mcp.types.CallToolResult):
                 # Already a CallToolResult from MCP protocol - parse it
                 result = await self._client._parse_call_tool_result(
-                    self._tool_name, raw_result, raise_on_error=True
+                    self._tool_name,
+                    raw_result,
+                    raise_on_error=self._raise_on_error,
                 )
             else:
                 # Legacy ToolResult format - convert to MCP type
@@ -382,7 +413,9 @@ class ToolTask(Task["CallToolResult"]):
                         _meta=raw_result.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
                     )
                     result = await self._client._parse_call_tool_result(
-                        self._tool_name, mcp_result, raise_on_error=True
+                        self._tool_name,
+                        mcp_result,
+                        raise_on_error=self._raise_on_error,
                     )
                 else:
                     # Unknown type - just return it
@@ -445,7 +478,7 @@ class PromptTask(Task[mcp.types.GetPromptResult]):
             self._check_client_connected()
 
             # Wait for completion using event-based wait (respects notifications)
-            await self.wait()
+            await self._wait_terminal()
 
             # Get the raw MCP result
             mcp_result = await self._client.get_task_result(self._task_id)
@@ -517,7 +550,7 @@ class ResourceTask(
             self._check_client_connected()
 
             # Wait for completion using event-based wait (respects notifications)
-            await self.wait()
+            await self._wait_terminal()
 
             # Get the raw MCP result
             mcp_result = await self._client.get_task_result(self._task_id)

@@ -91,7 +91,9 @@ async def test_forbidden_mode_tool_rejects_task_calls(tool_server):
     """Tools with task=False (mode=forbidden) reject task-augmented calls."""
     async with Client(tool_server) as client:
         # Calling with task=True when task=False should return error
-        task = await client.call_tool("sync_only_tool", {"message": "test"}, task=True)
+        task = await client.call_tool(
+            "sync_only_tool", {"message": "test"}, task=True, raise_on_error=False
+        )
         assert task
         assert task.returned_immediately
 

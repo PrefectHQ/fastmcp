@@ -214,6 +214,7 @@ class OIDCProxy(OAuthProxy):
         verify_id_token: bool = False,
         # FastMCP server configuration
         base_url: AnyHttpUrl | str,
+        resource_base_url: AnyHttpUrl | str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
         redirect_path: str | None = None,
         # Client configuration
@@ -224,7 +225,7 @@ class OIDCProxy(OAuthProxy):
         # Token validation configuration
         token_endpoint_auth_method: str | None = None,
         # Consent screen configuration
-        require_authorization_consent: bool | Literal["external"] = True,
+        require_authorization_consent: bool | Literal["remember", "external"] = True,
         consent_csp_policy: str | None = None,
         forward_resource: bool = True,
         # Extra parameters
@@ -255,6 +256,8 @@ class OIDCProxy(OAuthProxy):
                 Useful for providers that issue opaque (non-JWT) access tokens, since the
                 id_token is always a standard JWT verifiable via the provider's JWKS.
             base_url: Public URL where OAuth endpoints will be accessible (includes any mount path)
+            resource_base_url: Optional public base URL for the protected resource metadata
+                and token audience. Defaults to ``base_url``.
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.
             redirect_path: Redirect path configured in upstream OAuth app (defaults to "/auth/callback")
@@ -370,6 +373,7 @@ class OIDCProxy(OAuthProxy):
             "upstream_revocation_endpoint": revocation_endpoint,
             "token_verifier": token_verifier,
             "base_url": base_url,
+            "resource_base_url": resource_base_url,
             "issuer_url": issuer_url or base_url,
             "service_documentation_url": self.oidc_config.service_documentation,
             "allowed_client_redirect_uris": allowed_client_redirect_uris,

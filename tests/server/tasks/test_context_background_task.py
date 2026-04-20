@@ -23,18 +23,22 @@ from fastmcp.client.elicitation import ElicitResult
 from fastmcp.dependencies import CurrentDocket
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.context import Context
-from fastmcp.server.dependencies import (
-    TaskContextInfo,
-    TaskContextSnapshot,
-    _set_cached_snapshot,
-    get_access_token,
-)
+from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
     DeclinedElicitation,
 )
+from fastmcp.server.tasks.context import (
+    TaskContextInfo,
+    TaskContextSnapshot,
+    _remember_snapshot,
+    get_task_scope,
+)
 from fastmcp.server.tasks.elicitation import handle_task_input
+from fastmcp.server.tasks.keys import (
+    task_redis_prefix,
+)
 
 # =============================================================================
 # Unit tests: Context API surface (no Redis/Docket needed)
@@ -262,7 +266,8 @@ class TestBackgroundTaskIntegration:
             assert origin != ""
 
             # Verify the snapshot in Redis contains the same value
-            key = docket.key(f"fastmcp:task:{ctx.session_id}:{ctx.task_id}:snapshot")
+            task_scope = get_task_scope()
+            key = docket.key(f"{task_redis_prefix(task_scope)}:{ctx.task_id}:snapshot")
             async with docket.redis() as redis:
                 raw = await redis.get(key)
 
@@ -361,7 +366,7 @@ class TestBackgroundTaskIntegration:
             # Task already completed — no elicitation waiting
             success = await handle_task_input(
                 task_id=task.task_id,
-                session_id="nonexistent-session",
+                task_scope="nonexistent-scope",
                 action="accept",
                 content={"value": "too late"},
                 fastmcp=mcp,
@@ -425,11 +430,11 @@ class TestAccessTokenInBackgroundTasks:
             scopes=["read"],
             expires_at=int(datetime.now(timezone.utc).timestamp()) - 3600,
         )
-        _set_cached_snapshot(
+        _remember_snapshot(
             "test-task",
             TaskContextSnapshot(access_token_json=expired.model_dump_json()),
         )
-        fake_ctx = TaskContextInfo(task_id="test-task", session_id="s")
+        fake_ctx = TaskContextInfo(task_id="test-task", task_scope="s")
         with patch(
             "fastmcp.server.dependencies.get_task_context", return_value=fake_ctx
         ):
@@ -443,11 +448,11 @@ class TestAccessTokenInBackgroundTasks:
             scopes=["read"],
             expires_at=int(datetime.now(timezone.utc).timestamp()) + 3600,
         )
-        _set_cached_snapshot(
+        _remember_snapshot(
             "test-task",
             TaskContextSnapshot(access_token_json=valid.model_dump_json()),
         )
-        fake_ctx = TaskContextInfo(task_id="test-task", session_id="s")
+        fake_ctx = TaskContextInfo(task_id="test-task", task_scope="s")
         with patch(
             "fastmcp.server.dependencies.get_task_context", return_value=fake_ctx
         ):
@@ -462,11 +467,11 @@ class TestAccessTokenInBackgroundTasks:
             client_id="test-client",
             scopes=["read"],
         )
-        _set_cached_snapshot(
+        _remember_snapshot(
             "test-task",
             TaskContextSnapshot(access_token_json=no_expiry.model_dump_json()),
         )
-        fake_ctx = TaskContextInfo(task_id="test-task", session_id="s")
+        fake_ctx = TaskContextInfo(task_id="test-task", task_scope="s")
         with patch(
             "fastmcp.server.dependencies.get_task_context", return_value=fake_ctx
         ):

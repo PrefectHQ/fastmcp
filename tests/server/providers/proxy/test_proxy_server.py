@@ -330,6 +330,36 @@ class TestTools:
             async with Client(proxy_server) as client:
                 await client.call_tool("error_tool", {})
 
+    async def test_error_tool_with_image_content(self, proxy_server):
+        """Non-TextContent error responses should not crash with AttributeError."""
+        error_result = mcp_types.CallToolResult(
+            content=[
+                mcp_types.ImageContent(
+                    type="image", data="abc123", mimeType="image/png"
+                )
+            ],
+            isError=True,
+        )
+        with patch.object(
+            Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
+        ):
+            with pytest.raises(ToolError):
+                async with Client(proxy_server) as client:
+                    await client.call_tool("error_tool", {})
+
+    async def test_error_tool_with_empty_content(self, proxy_server):
+        """Error responses with empty content should not crash."""
+        error_result = mcp_types.CallToolResult(
+            content=[],
+            isError=True,
+        )
+        with patch.object(
+            Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
+        ):
+            with pytest.raises(ToolError):
+                async with Client(proxy_server) as client:
+                    await client.call_tool("error_tool", {})
+
     async def test_call_tool_forwards_meta(self, fastmcp_server, proxy_server):
         """Test that metadata from proxied tool results is properly forwarded."""
 

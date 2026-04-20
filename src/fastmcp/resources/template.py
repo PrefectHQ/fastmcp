@@ -7,7 +7,7 @@ import inspect
 import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar, overload
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs, quote, unquote
 
 import mcp.types
 from mcp.types import Annotations, Icon
@@ -52,8 +52,11 @@ def build_regex(template: str) -> re.Pattern[str] | None:
     - `{var*}` - wildcard path parameter (captures multiple segments)
     - `{?var1,var2}` - query parameters (ignored in path matching)
 
+    Hyphens in parameter names are normalized to underscores in regex group
+    names so that matched groups are valid Python identifiers.
+
     Returns None if the template produces an invalid regex (e.g. parameter
-    names with hyphens, leading digits, or duplicates from a remote server).
+    names with leading digits or duplicates from a remote server).
     """
     # Remove query parameter syntax for path matching
     template_without_query = re.sub(r"\{\?[^}]+\}", "", template)
@@ -65,9 +68,11 @@ def build_regex(template: str) -> re.Pattern[str] | None:
             name = part[1:-1]
             if name.endswith("*"):
                 name = name[:-1]
-                pattern += f"(?P<{name}>.+)"
+                group = name.replace("-", "_")
+                pattern += f"(?P<{group}>.+)"
             else:
-                pattern += f"(?P<{name}>[^/]+)"
+                group = name.replace("-", "_")
+                pattern += f"(?P<{group}>[^/]+)"
         else:
             pattern += re.escape(part)
     try:
@@ -103,10 +108,54 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
 
         for name in query_param_names:
             if name in parsed_query:
-                # Take first value if multiple provided
-                params[name] = parsed_query[name][0]
+                # Take first value if multiple provided.
+                # Normalize hyphens to underscores to match Python param names.
+                # Don't overwrite path params that were already extracted.
+                key = name.replace("-", "_")
+                if key not in params:
+                    params[key] = parsed_query[name][0]
 
     return params
+
+
+def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
+    """Expand a URI template with parameters — inverse of `match_uri_template`.
+
+    Supports the same RFC 6570 subset:
+    - Path params: `{var}`, `{var*}`
+    - Query params: `{?var1,var2}`
+    """
+    result = uri_template
+
+    # Replace {name} and {name*} path placeholders.
+    # Params use underscored keys (e.g. user_id) but templates may use
+    # hyphens (e.g. {user-id}), so try both forms.
+    for key, value in params.items():
+        value_str = str(value)
+        result = result.replace(f"{{{key}}}", value_str)
+        result = result.replace(f"{{{key}*}}", value_str)
+        hyphenated = key.replace("_", "-")
+        if hyphenated != key:
+            result = result.replace(f"{{{hyphenated}}}", value_str)
+            result = result.replace(f"{{{hyphenated}*}}", value_str)
+
+    # Expand {?param1,param2,...} query parameter blocks
+    def _expand_query_block(match: re.Match[str]) -> str:
+        names = [n.strip() for n in match.group(1).split(",")]
+        parts = []
+        for name in names:
+            underscored = name.replace("-", "_")
+            if name in params:
+                parts.append(f"{quote(name)}={quote(str(params[name]))}")
+            elif underscored in params:
+                parts.append(f"{quote(name)}={quote(str(params[underscored]))}")
+        if parts:
+            return "?" + "&".join(parts)
+        return ""
+
+    result = re.sub(r"\{\?([^}]+)\}", _expand_query_block, result)
+
+    return result
 
 
 class ResourceTemplate(FastMCPComponent):
@@ -501,9 +550,28 @@ class FunctionResourceTemplate(ResourceTemplate):
                     "Functions with *args are not supported as resource templates"
                 )
 
-        # Extract path and query parameters from URI template
-        path_params = set(re.findall(r"{(\w+)(?:\*)?}", uri_template))
-        query_params = extract_query_params(uri_template)
+        # Extract path and query parameters from URI template.
+        # Allow hyphens in names and normalize to underscores so they
+        # match Python function parameter names.
+        raw_path_params = set(re.findall(r"{([\w-]+)(?:\*)?}", uri_template))
+        raw_query_params = extract_query_params(uri_template)
+
+        # Detect collisions: two raw param names that normalize to the
+        # same Python identifier (e.g. {user-id} and {user_id}).
+        all_raw = raw_path_params | raw_query_params
+        seen: dict[str, str] = {}
+        for raw_name in sorted(all_raw):
+            normalized = raw_name.replace("-", "_")
+            if normalized in seen:
+                raise ValueError(
+                    f"URI template parameters '{seen[normalized]}' and "
+                    f"'{raw_name}' both normalize to '{normalized}'. "
+                    f"Use one or the other, not both."
+                )
+            seen[normalized] = raw_name
+
+        path_params = {p.replace("-", "_") for p in raw_path_params}
+        query_params = {p.replace("-", "_") for p in raw_query_params}
         all_uri_params = path_params | query_params
 
         if not all_uri_params:

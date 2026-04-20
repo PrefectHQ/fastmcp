@@ -123,6 +123,7 @@ class OCIProvider(OIDCProxy):
         client_id: str,
         client_secret: str,
         base_url: AnyHttpUrl | str,
+        resource_base_url: AnyHttpUrl | str | None = None,
         audience: str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
@@ -130,7 +131,7 @@ class OCIProvider(OIDCProxy):
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
-        require_authorization_consent: bool | Literal["external"] = True,
+        require_authorization_consent: bool | Literal["remember", "external"] = True,
         consent_csp_policy: str | None = None,
         forward_resource: bool = True,
     ) -> None:
@@ -141,6 +142,8 @@ class OCIProvider(OIDCProxy):
             client_id: OCI IAM Domain Integrated Application client id
             client_secret: OCI Integrated Application client secret
             base_url: Public URL where OIDC endpoints will be accessible (includes any mount path)
+            resource_base_url: Optional public base URL for the protected resource metadata
+                and token audience. Defaults to ``base_url``.
             audience: OCI API audience (optional)
             issuer_url: Issuer URL for OCI IAM Domain metadata. This will override issuer URL from the discovery URL.
             required_scopes: Required OCI scopes (defaults to ["openid"])
@@ -158,6 +161,7 @@ class OCIProvider(OIDCProxy):
             client_secret=client_secret,
             audience=audience,
             base_url=base_url,
+            resource_base_url=resource_base_url,
             issuer_url=issuer_url,
             redirect_path=redirect_path,
             required_scopes=oci_required_scopes,

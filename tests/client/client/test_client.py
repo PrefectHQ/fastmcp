@@ -13,6 +13,7 @@ from pydantic import AnyUrl
 
 import fastmcp
 from fastmcp.client import Client
+from fastmcp.client.tasks import TaskNotificationHandler
 from fastmcp.client.transports import (
     ClientTransport,
     FastMCPTransport,
@@ -439,6 +440,32 @@ class _DelayedConnectTransport(ClientTransport):
         await self._inner.close()
 
 
+class _DelayedDisconnectTransport(ClientTransport):
+    def __init__(
+        self,
+        inner: ClientTransport,
+        disconnect_started: anyio.Event,
+        allow_disconnect: anyio.Event,
+    ) -> None:
+        self._inner = inner
+        self._disconnect_started = disconnect_started
+        self._allow_disconnect = allow_disconnect
+
+    @contextlib.asynccontextmanager
+    async def connect_session(
+        self, **session_kwargs: Any
+    ) -> AsyncIterator[ClientSession]:
+        async with self._inner.connect_session(**session_kwargs) as session:
+            try:
+                yield session
+            finally:
+                self._disconnect_started.set()
+                await self._allow_disconnect.wait()
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+
 async def test_client_nested_context_manager(fastmcp_server):
     """Test that the client connects and disconnects once in nested context manager."""
 
@@ -550,6 +577,45 @@ async def test_cancelled_context_entry_waiter_does_not_close_active_session(
     # task_b is fully cancelled; allow task_a to exercise the connected session.
     b_done.set()
     assert await a == 3
+
+
+async def test_force_close_cancelled_wait_starts_fresh_session(fastmcp_server):
+    disconnect_started = anyio.Event()
+    allow_disconnect = anyio.Event()
+    client = Client(
+        transport=_DelayedDisconnectTransport(
+            FastMCPTransport(fastmcp_server),
+            disconnect_started=disconnect_started,
+            allow_disconnect=allow_disconnect,
+        )
+    )
+
+    await client._connect()
+    original_session_task = client._session_state.session_task
+    assert original_session_task is not None
+
+    close_task = asyncio.create_task(client.close())
+    await disconnect_started.wait()
+
+    close_task.cancel()
+
+    async def reconnect_and_count_tools() -> int:
+        async with client:
+            assert client._session_state.session_task is not original_session_task
+            tools = await client.list_tools()
+            return len(tools)
+
+    reconnect_task = asyncio.create_task(reconnect_and_count_tools())
+    await asyncio.sleep(0)
+    assert not reconnect_task.done()
+
+    allow_disconnect.set()
+
+    with contextlib.suppress(asyncio.CancelledError):
+        await close_task
+
+    assert await reconnect_task == 3
+    assert original_session_task.done()
 
 
 async def test_concurrent_client_context_managers():
@@ -767,3 +833,34 @@ async def test_client_list_dict_return_type():
     async with client:
         result = await client.call_tool("get_temperatures", {})
         assert result.data == [{"city": "NYC", "temp": 72}, {"city": "LA", "temp": 85}]
+
+
+def test_client_new_resets_mutable_task_state(fastmcp_server):
+    """Client.new() should not share mutable task tracking structures."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    client._task_registry["task-1"] = lambda: None  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
+    client._submitted_task_ids.add("task-1")
+
+    clone = client.new()
+
+    assert clone is not client
+    assert clone._task_registry == {}
+    assert clone._submitted_task_ids == set()
+    assert clone._task_registry is not client._task_registry
+    assert clone._submitted_task_ids is not client._submitted_task_ids
+
+
+def test_client_new_rebinds_default_task_notification_handler(fastmcp_server):
+    """Client.new() should bind the default task handler to the cloned client."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    handler = client._session_kwargs.get("message_handler")
+    assert isinstance(handler, TaskNotificationHandler)
+
+    clone = client.new()
+
+    clone_handler = clone._session_kwargs.get("message_handler")
+    assert isinstance(clone_handler, TaskNotificationHandler)
+    assert clone_handler is not handler
+    assert clone_handler._client_ref() is clone

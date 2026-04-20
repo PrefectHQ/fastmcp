@@ -67,7 +67,7 @@ This loop:
 - `fastmcp`: FastMCP server instance (for elicitation relay)
 
 
-### `ensure_subscriber_running` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ensure_subscriber_running` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L246" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 ensure_subscriber_running(session_id: str, session: ServerSession, docket: Docket, fastmcp: FastMCP) -> None
@@ -86,7 +86,7 @@ Safe to call multiple times for the same session.
 - `fastmcp`: FastMCP server instance (for elicitation relay)
 
 
-### `stop_subscriber` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L278" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `stop_subscriber` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L286" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 stop_subscriber(session_id: str) -> None
@@ -102,7 +102,7 @@ for delivery if client reconnects (with TTL expiration).
 - `session_id`: Session identifier
 
 
-### `get_subscriber_count` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_subscriber_count` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/notifications.py#L306" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_subscriber_count() -> int

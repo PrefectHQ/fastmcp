@@ -92,10 +92,12 @@ The connector must be explicitly enabled in each chat session through Developer 
 
 ### Skip Confirmations
 
-Use `annotations={"readOnlyHint": True}` to skip confirmation prompts for read-only tools:
+Use `annotations=ToolAnnotations(readOnlyHint=True)` to skip confirmation prompts for read-only tools:
 
 ```python
-@mcp.tool(annotations={"readOnlyHint": True})
+from mcp.types import ToolAnnotations
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_status() -> str:
     """Check system status."""
     return "All systems operational"
@@ -153,4 +155,3 @@ def fetch(id: str) -> dict:
 5. Ask research questions
 
 ChatGPT will use your `search` and `fetch` tools to find and cite relevant information.
-

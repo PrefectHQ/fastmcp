@@ -10,7 +10,7 @@ sidebarTitle: elicitation
 ### `parse_elicit_response_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-parse_elicit_response_type(response_type: Any) -> ElicitConfig
+parse_elicit_response_type(response_type: Any, response_title: str | None = None, response_description: str | None = None) -> ElicitConfig
 ```
 
 
@@ -27,8 +27,15 @@ Supports multiple syntaxes:
 - Scalar types (bool, int, float, str, Literal, Enum): single value
 - Other types (dataclass, BaseModel): use directly
 
+The ``response_title`` and ``response_description`` arguments customize the
+label and description of the wrapped ``value`` property for the scalar/dict/list
+shorthand forms. They are only valid when FastMCP is wrapping the response
+type; passing them with a full BaseModel/dataclass (or ``None``) raises
+``TypeError``, because in those cases the user already controls field
+metadata via ``Field(title=..., description=...)``.
 
-### `handle_elicit_accept` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L265" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+### `handle_elicit_accept` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L309" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 handle_elicit_accept(config: ElicitConfig, content: Any) -> AcceptedElicitation[Any]
@@ -45,7 +52,7 @@ Handle an accepted elicitation response.
 - AcceptedElicitation with the extracted/validated data
 
 
-### `get_elicitation_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L324" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_elicitation_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L368" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_elicitation_schema(response_type: type[T]) -> dict[str, Any]
@@ -58,7 +65,7 @@ Get the schema for an elicitation response.
 - `response_type`: The type of the response
 
 
-### `validate_elicitation_json_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L343" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `validate_elicitation_json_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L387" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_elicitation_json_schema(schema: dict[str, Any]) -> None

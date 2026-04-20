@@ -8,6 +8,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.providers.openapi import OpenAPIProvider
 from fastmcp.utilities.openapi.json_schema_converter import (
+    _convert_nullable_field,
     convert_openapi_schema_to_json_schema,
 )
 
@@ -556,3 +557,14 @@ class TestNullableInputSchemaIntegration:
 
                 assert "nullable" not in bio_prop
                 assert bio_prop["type"] == ["string", "null"]
+
+
+class TestConvertNullableFieldMutation:
+    """Test that _convert_nullable_field does not mutate its input."""
+
+    def test_does_not_mutate_anyof_list(self):
+        """_convert_nullable_field should not append to the original anyOf list."""
+        schema = {"anyOf": [{"type": "string"}], "nullable": True}
+        original_len = len(schema["anyOf"])
+        _convert_nullable_field(schema)
+        assert len(schema["anyOf"]) == original_len

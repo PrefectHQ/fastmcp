@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 import weakref
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
@@ -26,6 +27,8 @@ from starlette.requests import Request
 from typing_extensions import TypeVar
 from uncalled_for import SharedContext
 
+import fastmcp
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.resources.base import ResourceResult
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
@@ -1017,6 +1020,9 @@ class Context:
         self,
         message: str,
         response_type: None,
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> (
         AcceptedElicitation[dict[str, Any]] | DeclinedElicitation | CancelledElicitation
     ): ...
@@ -1029,6 +1035,9 @@ class Context:
         self,
         message: str,
         response_type: type[T],
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation: ...
 
     """When response_type is not None, the accepted elicitation will contain the
@@ -1039,6 +1048,9 @@ class Context:
         self,
         message: str,
         response_type: list[str],
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation: ...
 
     """When response_type is a list of strings, the accepted elicitation will
@@ -1049,6 +1061,9 @@ class Context:
         self,
         message: str,
         response_type: dict[str, dict[str, str]],
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation: ...
 
     """When response_type is a dict mapping keys to title dicts, the accepted
@@ -1059,6 +1074,9 @@ class Context:
         self,
         message: str,
         response_type: list[list[str]],
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> (
         AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
     ): ...
@@ -1071,6 +1089,9 @@ class Context:
         self,
         message: str,
         response_type: list[dict[str, dict[str, str]]],
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> (
         AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
     ): ...
@@ -1088,6 +1109,9 @@ class Context:
         | list[list[str]]
         | list[dict[str, dict[str, str]]]
         | None = None,
+        *,
+        response_title: str | None = None,
+        response_description: str | None = None,
     ) -> (
         AcceptedElicitation[T]
         | AcceptedElicitation[dict[str, Any]]
@@ -1109,22 +1133,47 @@ class Context:
         "value" field will be generated for the MCP interaction and
         automatically deconstructed into the primitive type upon response.
 
-        If the response_type is None, the generated schema will be that of an
-        empty object in order to comply with the MCP protocol requirements.
-        Clients must send an empty object ("{}")in response.
+        Passing ``response_type=None`` (or omitting it) is deprecated and will
+        be removed in a future version. The resulting empty-schema form-mode
+        request is ambiguous and causes some clients (e.g. VS Code) to hang on
+        an empty form. Pass an explicit ``response_type`` describing the data
+        you want back.
 
         Args:
             message: A human-readable message explaining what information is needed
             response_type: The type of the response, which should be a primitive
                 type or dataclass or BaseModel. If it is a primitive type, an
                 object schema with a single "value" field will be generated.
+            response_title: Optional label to display for the wrapped ``value``
+                field when ``response_type`` is a scalar, Literal, Enum, or one
+                of the dict/list shorthand forms. Overrides the auto-generated
+                "Value" label. Raises ``TypeError`` if passed with a BaseModel,
+                dataclass, or ``None`` response type (use ``Field(title=...)``
+                on the model instead).
+            response_description: Optional description to attach to the wrapped
+                ``value`` field. Same scope rules as ``response_title``.
 
         Note:
             This method works transparently in both request and background task
             contexts. In background task mode (SEP-1686), it will set the task
             status to "input_required" and wait for the client to provide input.
         """
-        config = parse_elicit_response_type(response_type)
+        if response_type is None and fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "Calling ctx.elicit() without a response_type is deprecated "
+                "and will be removed in a future version. The empty-schema "
+                "form-mode request is ambiguous under the current MCP spec "
+                "and causes some clients (e.g. VS Code) to render an empty, "
+                "non-functional form. Pass an explicit response_type "
+                "describing the data you expect back.",
+                FastMCPDeprecationWarning,
+                stacklevel=2,
+            )
+        config = parse_elicit_response_type(
+            response_type,
+            response_title=response_title,
+            response_description=response_description,
+        )
 
         if self.is_background_task:
             # Background task mode: use task-aware elicitation

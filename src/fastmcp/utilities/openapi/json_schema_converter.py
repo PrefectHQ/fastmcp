@@ -173,7 +173,7 @@ def _convert_nullable_field(schema: dict[str, Any]) -> dict[str, Any]:
     elif "anyOf" in result:
         # Add null to anyOf if not present
         if not any(item.get("type") == "null" for item in result["anyOf"]):
-            result["anyOf"].append({"type": "null"})
+            result["anyOf"] = [*result["anyOf"], {"type": "null"}]
     elif "allOf" in result:
         # Wrap allOf in anyOf with null option
         result["anyOf"] = [{"allOf": result.pop("allOf")}, {"type": "null"}]

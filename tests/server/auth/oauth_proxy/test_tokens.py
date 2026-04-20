@@ -907,6 +907,38 @@ class TestTransparentUpstreamRefresh:
         assert result is not None
         assert result.token == "refreshed-upstream-access"
 
+    def test_refresh_lock_cache_bounded(self, proxy, monkeypatch):
+        """_get_refresh_lock never grows beyond _REFRESH_LOCK_CACHE_SIZE."""
+        monkeypatch.setattr(
+            "fastmcp.server.auth.oauth_proxy.proxy._REFRESH_LOCK_CACHE_SIZE", 3
+        )
+        for i in range(10):
+            proxy._get_refresh_lock(f"token-{i}")
+        assert len(proxy._refresh_locks) == 3
+
+    def test_refresh_lock_lru_evicts_least_recently_used(self, proxy, monkeypatch):
+        """Touching an entry promotes it; eviction removes the oldest untouched entry."""
+        monkeypatch.setattr(
+            "fastmcp.server.auth.oauth_proxy.proxy._REFRESH_LOCK_CACHE_SIZE", 3
+        )
+        proxy._get_refresh_lock("a")
+        proxy._get_refresh_lock("b")
+        proxy._get_refresh_lock("c")
+        # Touch "a" to move it to MRU position
+        proxy._get_refresh_lock("a")
+        # Adding "d" should evict "b" (oldest untouched)
+        proxy._get_refresh_lock("d")
+        assert "b" not in proxy._refresh_locks
+        assert "a" in proxy._refresh_locks
+        assert "c" in proxy._refresh_locks
+        assert "d" in proxy._refresh_locks
+
+    def test_refresh_lock_same_token_returns_same_lock(self, proxy):
+        """Requesting the same token ID twice returns the same lock object."""
+        lock1 = proxy._get_refresh_lock("tok")
+        lock2 = proxy._get_refresh_lock("tok")
+        assert lock1 is lock2
+
     async def test_upstream_claims_propagated(self, proxy):
         jwt = await self._setup_session_with_claims(
             proxy, upstream_claims={"sub": "user-123"}

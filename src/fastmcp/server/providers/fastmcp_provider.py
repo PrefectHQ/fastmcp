@@ -10,18 +10,16 @@ executed.
 
 from __future__ import annotations
 
-import re
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, overload
-from urllib.parse import quote
 
 import mcp.types
 from mcp.types import AnyUrl
 
 from fastmcp.prompts.base import Prompt, PromptResult
 from fastmcp.resources.base import Resource, ResourceResult
-from fastmcp.resources.template import ResourceTemplate
+from fastmcp.resources.template import ResourceTemplate, expand_uri_template
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.telemetry import delegate_span
@@ -34,34 +32,6 @@ if TYPE_CHECKING:
     from docket.execution import Execution
 
     from fastmcp.server.server import FastMCP
-
-
-def _expand_uri_template(template: str, params: dict[str, Any]) -> str:
-    """Expand a URI template with parameters.
-
-    Handles both {name} path placeholders and RFC 6570 {?param1,param2}
-    query parameter syntax.
-    """
-    result = template
-
-    # Replace {name} path placeholders
-    for key, value in params.items():
-        result = re.sub(rf"\{{{key}\}}", str(value), result)
-
-    # Expand {?param1,param2,...} query parameter blocks
-    def _expand_query_block(match: re.Match[str]) -> str:
-        names = [n.strip() for n in match.group(1).split(",")]
-        parts = []
-        for name in names:
-            if name in params:
-                parts.append(f"{quote(name)}={quote(str(params[name]))}")
-        if parts:
-            return "?" + "&".join(parts)
-        return ""
-
-    result = re.sub(r"\{\?([^}]+)\}", _expand_query_block, result)
-
-    return result
 
 
 # -----------------------------------------------------------------------------
@@ -139,7 +109,10 @@ class FastMCPProviderTool(Tool):
         version = VersionSpec(eq=self.version) if self.version else None
 
         with delegate_span(
-            self._original_name or "", "FastMCPProvider", self._original_name or ""
+            self._original_name or "",
+            "FastMCPProvider",
+            self._original_name or "",
+            method="tools/call",
         ):
             return await self._server.call_tool(
                 self._original_name,
@@ -232,7 +205,10 @@ class FastMCPProviderResource(Resource):
         version = VersionSpec(eq=self.version) if self.version else None
 
         with delegate_span(
-            self._original_uri or "", "FastMCPProvider", self._original_uri or ""
+            self._original_uri or "",
+            "FastMCPProvider",
+            self._original_uri or "",
+            method="resources/read",
         ):
             return await self._server.read_resource(
                 self._original_uri, version=version, task_meta=task_meta
@@ -311,7 +287,10 @@ class FastMCPProviderPrompt(Prompt):
         version = VersionSpec(eq=self.version) if self.version else None
 
         with delegate_span(
-            self._original_name or "", "FastMCPProvider", self._original_name or ""
+            self._original_name or "",
+            "FastMCPProvider",
+            self._original_name or "",
+            method="prompts/get",
         ):
             return await self._server.render_prompt(
                 self._original_name, arguments, version=version, task_meta=task_meta
@@ -394,7 +373,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         URI that the nested server understands.
         """
         # Expand the original template with params to get internal URI
-        original_uri = _expand_uri_template(self._original_uri_template or "", params)
+        original_uri = expand_uri_template(self._original_uri_template or "", params)
         return FastMCPProviderResource(
             server=self._server,
             original_uri=original_uri,
@@ -424,13 +403,16 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         server before calling this method.
         """
         # Expand the original template with params to get internal URI
-        original_uri = _expand_uri_template(self._original_uri_template or "", params)
+        original_uri = expand_uri_template(self._original_uri_template or "", params)
 
         # Pass exact version so child reads the correct version
         version = VersionSpec(eq=self.version) if self.version else None
 
         with delegate_span(
-            original_uri, "FastMCPProvider", self._original_uri_template or ""
+            original_uri,
+            "FastMCPProvider",
+            self._original_uri_template or "",
+            method="resources/read",
         ):
             return await self._server.read_resource(
                 original_uri, version=version, task_meta=task_meta
@@ -443,9 +425,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         This method is called by Docket during background task execution.
         """
         # Expand the original template with arguments to get internal URI
-        original_uri = _expand_uri_template(
-            self._original_uri_template or "", arguments
-        )
+        original_uri = expand_uri_template(self._original_uri_template or "", arguments)
 
         # Pass exact version so child reads the correct version
         version = VersionSpec(eq=self.version) if self.version else None

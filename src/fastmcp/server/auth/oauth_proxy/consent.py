@@ -329,28 +329,54 @@ class ConsentMixin:
         txn = txn_model.model_dump()
         client_key = self._make_client_key(txn["client_id"], txn["client_redirect_uri"])
 
-        approved = set(self._decode_list_cookie(request, "MCP_APPROVED_CLIENTS"))
-        denied = set(self._decode_list_cookie(request, "MCP_DENIED_CLIENTS"))
+        # Silent consent only fires in "remember" mode, and only when the
+        # request arrived via a safe navigation context. AS-in-the-middle
+        # attacks surface as cross-site redirects from a third-party origin
+        # into /authorize; forcing the HTML prompt in that case preserves
+        # the consent-screen mitigation without blocking legitimate
+        # client-initiated flows (Sec-Fetch-Site: none).
+        if self._require_authorization_consent == "remember":
+            sec_fetch_site = request.headers.get("Sec-Fetch-Site")
+            # Fail closed on missing header: legacy clients degrade to the
+            # explicit prompt rather than silent approval.
+            silent_eligible = sec_fetch_site in ("same-origin", "same-site", "none")
 
-        if client_key in approved:
-            consent_token = secrets.token_urlsafe(32)
-            txn_model.consent_token = consent_token
-            await self._transaction_store.put(key=txn_id, value=txn_model, ttl=15 * 60)
-            upstream_url = self._build_upstream_authorize_url(txn_id, txn)
-            response = RedirectResponse(url=upstream_url, status_code=302)
-            self._set_consent_binding_cookie(request, response, txn_id, consent_token)
-            return response
+            if silent_eligible:
+                approved = set(
+                    self._decode_list_cookie(request, "MCP_APPROVED_CLIENTS")
+                )
+                denied = set(self._decode_list_cookie(request, "MCP_DENIED_CLIENTS"))
 
-        if client_key in denied:
-            callback_params = {
-                "error": "access_denied",
-                "state": txn.get("client_state") or "",
-            }
-            sep = "&" if "?" in txn["client_redirect_uri"] else "?"
-            return RedirectResponse(
-                url=f"{txn['client_redirect_uri']}{sep}{urlencode(callback_params)}",
-                status_code=302,
-            )
+                if client_key in approved:
+                    consent_token = secrets.token_urlsafe(32)
+                    txn_model.consent_token = consent_token
+                    await self._transaction_store.put(
+                        key=txn_id, value=txn_model, ttl=15 * 60
+                    )
+                    upstream_url = self._build_upstream_authorize_url(txn_id, txn)
+                    response = RedirectResponse(url=upstream_url, status_code=302)
+                    self._set_consent_binding_cookie(
+                        request, response, txn_id, consent_token
+                    )
+                    return response
+
+                if client_key in denied:
+                    callback_params = {
+                        "error": "access_denied",
+                        "state": txn.get("client_state") or "",
+                    }
+                    sep = "&" if "?" in txn["client_redirect_uri"] else "?"
+                    return RedirectResponse(
+                        url=f"{txn['client_redirect_uri']}{sep}{urlencode(callback_params)}",
+                        status_code=302,
+                    )
+            else:
+                logger.info(
+                    "Silent consent skipped for transaction %s: Sec-Fetch-Site=%r "
+                    "(cross-site navigation; forcing explicit consent prompt)",
+                    txn_id,
+                    sec_fetch_site,
+                )
 
         # Need consent: issue CSRF token and show HTML
         csrf_token = secrets.token_urlsafe(32)
@@ -465,23 +491,33 @@ class ConsentMixin:
 
         client_key = self._make_client_key(txn["client_id"], txn["client_redirect_uri"])
 
-        if action == "approve":
-            approved = list(self._decode_list_cookie(request, "MCP_APPROVED_CLIENTS"))
-            if client_key in approved:
-                approved.remove(client_key)
-            approved.append(client_key)
-            approved = approved[-_MAX_REMEMBERED_CLIENTS:]
-            approved_b64 = self._encode_list_cookie(approved)
+        remember_mode = self._require_authorization_consent == "remember"
 
+        if action == "approve":
             consent_token = secrets.token_urlsafe(32)
             txn_model.consent_token = consent_token
             await self._transaction_store.put(key=txn_id, value=txn_model, ttl=15 * 60)
 
             upstream_url = self._build_upstream_authorize_url(txn_id, txn)
             response = RedirectResponse(url=upstream_url, status_code=302)
-            self._set_list_cookie(
-                response, "MCP_APPROVED_CLIENTS", approved_b64, max_age=365 * 24 * 3600
-            )
+
+            # Only persist the approval for future silent consent in "remember"
+            # mode; in the default "always" mode the cookie would never be read.
+            if remember_mode:
+                approved = list(
+                    self._decode_list_cookie(request, "MCP_APPROVED_CLIENTS")
+                )
+                if client_key in approved:
+                    approved.remove(client_key)
+                approved.append(client_key)
+                approved = approved[-_MAX_REMEMBERED_CLIENTS:]
+                self._set_list_cookie(
+                    response,
+                    "MCP_APPROVED_CLIENTS",
+                    self._encode_list_cookie(approved),
+                    max_age=365 * 24 * 3600,
+                )
+
             # Clear CSRF cookie by setting empty short-lived value
             self._set_list_cookie(
                 response, "MCP_CONSENT_STATE", self._encode_list_cookie([]), max_age=60
@@ -490,13 +526,6 @@ class ConsentMixin:
             return response
 
         elif action == "deny":
-            denied = list(self._decode_list_cookie(request, "MCP_DENIED_CLIENTS"))
-            if client_key in denied:
-                denied.remove(client_key)
-            denied.append(client_key)
-            denied = denied[-_MAX_REMEMBERED_CLIENTS:]
-            denied_b64 = self._encode_list_cookie(denied)
-
             callback_params = {
                 "error": "access_denied",
                 "state": txn.get("client_state") or "",
@@ -506,9 +535,20 @@ class ConsentMixin:
                 f"{txn['client_redirect_uri']}{sep}{urlencode(callback_params)}"
             )
             response = RedirectResponse(url=client_callback_url, status_code=302)
-            self._set_list_cookie(
-                response, "MCP_DENIED_CLIENTS", denied_b64, max_age=365 * 24 * 3600
-            )
+
+            if remember_mode:
+                denied = list(self._decode_list_cookie(request, "MCP_DENIED_CLIENTS"))
+                if client_key in denied:
+                    denied.remove(client_key)
+                denied.append(client_key)
+                denied = denied[-_MAX_REMEMBERED_CLIENTS:]
+                self._set_list_cookie(
+                    response,
+                    "MCP_DENIED_CLIENTS",
+                    self._encode_list_cookie(denied),
+                    max_age=365 * 24 * 3600,
+                )
+
             self._set_list_cookie(
                 response, "MCP_CONSENT_STATE", self._encode_list_cookie([]), max_age=60
             )
