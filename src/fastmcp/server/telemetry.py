@@ -5,10 +5,11 @@ from contextlib import contextmanager
 
 from mcp.server.lowlevel.server import request_ctx
 from opentelemetry.context import Context
-from opentelemetry.trace import INVALID_SPAN, Span, SpanKind, Status, StatusCode
+from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from fastmcp.exceptions import ToolError as _ToolError
 from fastmcp.telemetry import (
+    _NOOP_SPAN,
     extract_trace_context,
     get_tracer,
     is_telemetry_opted_out,
@@ -72,12 +73,12 @@ def server_span(
 
     Automatically records any exception on the span and sets error status.
 
-    When ``FASTMCP_TELEMETRY_OPT_OUT`` is enabled, yields
-    ``INVALID_SPAN`` without creating a real span or modifying
-    the active OpenTelemetry context.
+    When ``FASTMCP_TELEMETRY_OPT_OUT`` is enabled, yields a
+    non-recording no-op span without creating a real span or
+    modifying the active OpenTelemetry context.
     """
     if is_telemetry_opted_out():
-        yield INVALID_SPAN
+        yield _NOOP_SPAN
         return
 
     tracer = get_tracer()
@@ -129,12 +130,12 @@ def delegate_span(
     Used by FastMCPProvider when delegating to mounted servers.
     Automatically records any exception on the span and sets error status.
 
-    When ``FASTMCP_TELEMETRY_OPT_OUT`` is enabled, yields
-    ``INVALID_SPAN`` without creating a real span or modifying
-    the active OpenTelemetry context.
+    When ``FASTMCP_TELEMETRY_OPT_OUT`` is enabled, yields a
+    non-recording no-op span without creating a real span or
+    modifying the active OpenTelemetry context.
     """
     if is_telemetry_opted_out():
-        yield INVALID_SPAN
+        yield _NOOP_SPAN
         return
 
     tracer = get_tracer()

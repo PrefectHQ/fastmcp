@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from opentelemetry import trace
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.trace import INVALID_SPAN
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.telemetry import client_span
 from fastmcp.server.telemetry import delegate_span, server_span
 from fastmcp.telemetry import (
+    _NOOP_SPAN,
     inject_trace_context,
     is_telemetry_opted_out,
 )
@@ -48,7 +48,7 @@ class TestClientSpanOptOut:
         with client_span(
             "tools/call test", method="tools/call", component_key="test"
         ) as span:
-            assert span is INVALID_SPAN
+            assert span is _NOOP_SPAN
 
         assert len(trace_exporter.get_finished_spans()) == 0
 
@@ -79,7 +79,7 @@ class TestServerSpanOptOut:
             component_type="tool",
             component_key="test",
         ) as span:
-            assert span is INVALID_SPAN
+            assert span is _NOOP_SPAN
 
         assert len(trace_exporter.get_finished_spans()) == 0
 
@@ -111,7 +111,7 @@ class TestDelegateSpanOptOut:
         with delegate_span(
             "test", provider_type="linked", component_key="test"
         ) as span:
-            assert span is INVALID_SPAN
+            assert span is _NOOP_SPAN
 
         assert len(trace_exporter.get_finished_spans()) == 0
 

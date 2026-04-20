@@ -7,7 +7,7 @@ installs an OpenTelemetry SDK and configures exporters.
 Span creation can be disabled by setting the environment variable
 ``FASTMCP_TELEMETRY_OPT_OUT=YES`` (case-insensitive).  When opted out,
 ``client_span`` / ``server_span`` / ``delegate_span`` become no-op context
-managers that yield ``INVALID_SPAN`` **without** modifying the active
+managers that yield a non-recording no-op span **without** modifying the active
 OpenTelemetry context.  Context propagation helpers (``inject_trace_context``
 and ``extract_trace_context``) remain fully operational so that external
 instrumentations (e.g. ``opentelemetry-instrumentation-fastmcp``) can still
@@ -36,10 +36,18 @@ from typing import Any
 from opentelemetry import context as otel_context
 from opentelemetry import propagate, trace
 from opentelemetry.context import Context
-from opentelemetry.trace import Span, Status, StatusCode, Tracer
+from opentelemetry.trace import INVALID_SPAN, Span, Status, StatusCode, Tracer
 from opentelemetry.trace import get_tracer as otel_get_tracer
 
 INSTRUMENTATION_NAME = "fastmcp"
+
+_NOOP_SPAN: Span = INVALID_SPAN
+"""Non-recording span yielded when telemetry is opted out.
+
+This is the OTel API's ``INVALID_SPAN`` — a safe no-op that accepts
+all ``Span`` method calls (``is_recording()`` returns ``False``,
+``set_attribute()`` / ``record_exception()`` are no-ops, etc.).
+"""
 
 TRACE_PARENT_KEY = "traceparent"
 TRACE_STATE_KEY = "tracestate"
@@ -141,6 +149,7 @@ __all__ = [
     "INSTRUMENTATION_NAME",
     "TRACE_PARENT_KEY",
     "TRACE_STATE_KEY",
+    "_NOOP_SPAN",
     "extract_trace_context",
     "get_tracer",
     "inject_trace_context",
