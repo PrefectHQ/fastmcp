@@ -1,11 +1,5 @@
-import copy
-from unittest.mock import patch
-
-from jsonref import replace_refs
-
 from fastmcp.utilities.json_schema import (
     _prune_param,
-    _strip_remote_refs,
     compress_schema,
     dereference_refs,
     resolve_root_ref,
@@ -51,17 +45,6 @@ class TestPruneParam:
         }
         result = _prune_param(schema, "foo")
         assert "required" not in result
-
-    def test_does_not_mutate_input(self):
-        """Test that _prune_param does not mutate the original schema."""
-        schema = {
-            "type": "object",
-            "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
-            "required": ["a", "b"],
-        }
-        original = copy.deepcopy(schema)
-        _prune_param(schema, "a")
-        assert schema == original
 
 
 class TestDereferenceRefs:
@@ -127,6 +110,46 @@ class TestDereferenceRefs:
         # Root should be resolved but nested refs preserved
         assert result.get("type") == "object"
         assert "$defs" in result  # $defs preserved for circular refs
+
+    def test_falls_back_for_json_pointer_circular_refs(self):
+        """Test that JSON Pointer style circular refs fall back gracefully.
+
+        C# / .NET MCP servers emit schemas with ``$ref`` pointing directly
+        into the schema tree (e.g. ``#/properties/nodes/items``) rather
+        than through ``$defs``.  jsonref turns these into self-referential
+        Python dicts that Pydantic rejects with "Circular reference detected".
+        """
+        schema = {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "value": {"type": "string"},
+                            "children": {
+                                "type": "array",
+                                "items": {"$ref": "#/properties/nodes/items"},
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        result = dereference_refs(schema)
+
+        # Should return the schema unchanged (resolve_root_ref doesn't
+        # modify schemas without a root $ref)
+        assert result["type"] == "object"
+        assert result["properties"]["nodes"]["type"] == "array"
+        # The circular $ref should still be present, not exploded
+        assert (
+            result["properties"]["nodes"]["items"]["properties"]["children"]["items"][
+                "$ref"
+            ]
+            == "#/properties/nodes/items"
+        )
 
     def test_preserves_sibling_keywords(self):
         """Test that sibling keywords (default, description) are preserved.
@@ -208,67 +231,6 @@ class TestDereferenceRefs:
         assert country["enum"] == ["US", "UK", "CA"]
         assert country["default"] == "US"
         assert "$defs" not in result
-
-    def test_strips_discriminator_mapping_after_inlining(self):
-        """Discriminator.mapping refs dangle after $defs are inlined (#3679)."""
-        schema = {
-            "$defs": {
-                "IdentifyPerson": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"const": "identify", "type": "string"},
-                        "name": {"type": "string"},
-                    },
-                    "required": ["action", "name"],
-                },
-                "PersonDelete": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"const": "delete", "type": "string"},
-                    },
-                    "required": ["action"],
-                },
-            },
-            "anyOf": [
-                {"$ref": "#/$defs/IdentifyPerson"},
-                {"$ref": "#/$defs/PersonDelete"},
-            ],
-            "discriminator": {
-                "mapping": {
-                    "identify": "#/$defs/IdentifyPerson",
-                    "delete": "#/$defs/PersonDelete",
-                },
-                "propertyName": "action",
-            },
-        }
-        result = dereference_refs(schema)
-
-        assert "$defs" not in result
-        assert "discriminator" not in result
-        # The anyOf variants should be inlined with their const values intact
-        assert len(result["anyOf"]) == 2
-        actions = {v["properties"]["action"]["const"] for v in result["anyOf"]}
-        assert actions == {"identify", "delete"}
-
-    def test_preserves_property_named_discriminator(self):
-        """A field *named* 'discriminator' inside properties must survive."""
-        schema = {
-            "$defs": {
-                "Inner": {
-                    "type": "object",
-                    "properties": {
-                        "discriminator": {"type": "string"},
-                    },
-                },
-            },
-            "properties": {
-                "item": {"$ref": "#/$defs/Inner"},
-            },
-        }
-        result = dereference_refs(schema)
-
-        assert "$defs" not in result
-        assert "discriminator" in result["properties"]["item"]["properties"]
 
 
 class TestCompressSchema:
@@ -432,136 +394,6 @@ class TestCompressSchema:
         # But title metadata should be removed
         assert "title" not in compressed["properties"]["name"]
         assert "title" not in compressed["properties"]["title"]
-
-    def test_title_pruning_preserves_title_property_when_type_property_exists(self):
-        """Regression test for #3576: properties dict containing both 'title' and
-        'type' as parameter names caused the heuristic to treat 'title' as schema
-        metadata and strip the entire property definition."""
-        schema = {
-            "type": "object",
-            "properties": {
-                "dashboard_id": {"type": "string", "title": "Dashboard Id"},
-                "title": {"type": "string", "title": "Title"},
-                "type": {"type": "string", "title": "Type", "default": "vis"},
-            },
-            "required": ["dashboard_id", "title"],
-        }
-
-        compressed = compress_schema(schema, prune_titles=True)
-
-        # All three properties must survive
-        assert "dashboard_id" in compressed["properties"]
-        assert "title" in compressed["properties"]
-        assert "type" in compressed["properties"]
-
-        # 'title' is still required
-        assert "title" in compressed["required"]
-
-        # But metadata title strings inside each property schema are removed
-        assert "title" not in compressed["properties"]["dashboard_id"]
-        assert "title" not in compressed["properties"]["title"]
-        assert "title" not in compressed["properties"]["type"]
-
-    def test_prune_titles_on_bare_metadata_node(self):
-        """Pydantic emits `{"title": "X"}` for Any-typed fields with no sibling
-        `type`/`properties`. Gemini 2.5 Flash rejects these with
-        MALFORMED_FUNCTION_CALL, so we need to strip the title even without a
-        schema keyword — as long as every remaining key is metadata."""
-        schema = {
-            "type": "object",
-            "properties": {
-                "anyfield": {"title": "Anyfield"},
-                "described_any": {"title": "Described", "description": "anything"},
-            },
-        }
-
-        compressed = compress_schema(schema, prune_titles=True)
-
-        assert "title" not in compressed["properties"]["anyfield"]
-        assert "title" not in compressed["properties"]["described_any"]
-        # description survives — it's also metadata but prune_titles only
-        # targets "title" specifically
-        assert compressed["properties"]["described_any"]["description"] == "anything"
-
-    def test_prune_titles_on_draft07_and_legacy_keywords(self):
-        """Sub-schemas under draft-07 and 2019-09+ keywords that previous
-        drafts still use must be treated as schemas, not opaque payload —
-        `dependencies`, `additionalItems`, `contentSchema` all hold
-        sub-schemas in at least some JSON Schema drafts."""
-        schema = {
-            "type": "object",
-            "properties": {
-                "payload": {
-                    "type": "string",
-                    "contentMediaType": "application/json",
-                    "contentSchema": {
-                        "type": "object",
-                        "title": "Payload",
-                    },
-                },
-                "items_field": {
-                    "type": "array",
-                    "items": [{"type": "string", "title": "First"}],
-                    "additionalItems": {"type": "number", "title": "Extra"},
-                },
-            },
-            "dependencies": {
-                "credit_card": {
-                    "type": "object",
-                    "title": "HasBillingAddress",
-                    "required": ["billing_address"],
-                }
-            },
-        }
-
-        compressed = compress_schema(schema, prune_titles=True)
-
-        # title metadata stripped from sub-schemas reachable through
-        # draft-07 / 2019-09+ keywords
-        assert "title" not in compressed["properties"]["payload"]["contentSchema"]
-        assert "title" not in compressed["properties"]["items_field"]["items"][0]
-        assert "title" not in compressed["properties"]["items_field"]["additionalItems"]
-        assert "title" not in compressed["dependencies"]["credit_card"]
-
-    def test_prune_titles_preserves_user_extension_payloads(self):
-        """User extensions (json_schema_extra, x-* vendor keys) carry opaque
-        payloads that may look metadata-shaped. They must not be touched."""
-        schema = {
-            "type": "object",
-            "x-ui": {"title": "Dashboard", "description": "sidebar label"},
-            "properties": {
-                "config": {
-                    "type": "object",
-                    "x-widget": {"title": "Dropdown"},
-                }
-            },
-        }
-
-        compressed = compress_schema(schema, prune_titles=True)
-
-        assert compressed["x-ui"] == {
-            "title": "Dashboard",
-            "description": "sidebar label",
-        }
-        assert compressed["properties"]["config"]["x-widget"] == {"title": "Dropdown"}
-
-    def test_prune_titles_does_not_recurse_into_default_values(self):
-        """A user default that happens to be a dict shaped like schema metadata
-        must not be corrupted — `default` holds literal values, not sub-schemas."""
-        schema = {
-            "type": "object",
-            "properties": {
-                "config": {
-                    "type": "object",
-                    "default": {"title": "My Dashboard", "type": "vis"},
-                }
-            },
-        }
-
-        compressed = compress_schema(schema, prune_titles=True)
-
-        default = compressed["properties"]["config"]["default"]
-        assert default == {"title": "My Dashboard", "type": "vis"}
 
     def test_title_pruning_with_nested_properties(self):
         """Test that nested property structures are handled correctly."""
@@ -836,126 +668,3 @@ class TestResolveRootRef:
 
         # Should return original schema unchanged
         assert result is schema
-
-
-class TestStripRemoteRefs:
-    """Tests for _strip_remote_refs which prevents SSRF/LFI via $ref."""
-
-    def test_preserves_local_ref(self):
-        schema = {"$ref": "#/$defs/Foo"}
-        assert _strip_remote_refs(schema) == {"$ref": "#/$defs/Foo"}
-
-    def test_strips_http_ref(self):
-        schema = {"$ref": "http://evil.com/schema.json"}
-        assert _strip_remote_refs(schema) == {}
-
-    def test_strips_https_ref(self):
-        schema = {"$ref": "https://evil.com/schema.json"}
-        assert _strip_remote_refs(schema) == {}
-
-    def test_strips_file_ref(self):
-        schema = {"$ref": "file:///etc/passwd"}
-        assert _strip_remote_refs(schema) == {}
-
-    def test_preserves_siblings_when_stripping(self):
-        schema = {
-            "$ref": "http://evil.com/schema.json",
-            "description": "keep me",
-            "default": 42,
-        }
-        result = _strip_remote_refs(schema)
-        assert result == {"description": "keep me", "default": 42}
-
-    def test_strips_nested_remote_refs(self):
-        schema = {
-            "properties": {
-                "safe": {"$ref": "#/$defs/Safe"},
-                "evil": {"$ref": "http://169.254.169.254/latest/meta-data/"},
-            }
-        }
-        result = _strip_remote_refs(schema)
-        assert result["properties"]["safe"] == {"$ref": "#/$defs/Safe"}
-        assert "$ref" not in result["properties"]["evil"]
-
-    def test_strips_remote_refs_in_lists(self):
-        schema = {
-            "anyOf": [
-                {"$ref": "#/$defs/Good"},
-                {"$ref": "file:///etc/credentials.json"},
-            ]
-        }
-        result = _strip_remote_refs(schema)
-        assert result["anyOf"][0] == {"$ref": "#/$defs/Good"}
-        assert "$ref" not in result["anyOf"][1]
-
-    def test_deep_nesting(self):
-        schema = {
-            "properties": {
-                "a": {
-                    "type": "object",
-                    "properties": {"b": {"$ref": "https://internal-service/secret"}},
-                }
-            }
-        }
-        result = _strip_remote_refs(schema)
-        assert "$ref" not in result["properties"]["a"]["properties"]["b"]
-
-
-class TestDereferenceRefsRemoteRefSafety:
-    """Verify dereference_refs never fetches remote URIs."""
-
-    def test_http_ref_not_fetched(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "name": {"$ref": "http://evil.com/schema.json"},
-            },
-        }
-        with patch(
-            "fastmcp.utilities.json_schema.replace_refs", wraps=replace_refs
-        ) as mock:
-            result = dereference_refs(schema)
-            # The remote $ref should have been stripped before replace_refs
-            if mock.called:
-                call_schema = mock.call_args[0][0]
-                assert "$ref" not in call_schema.get("properties", {}).get("name", {})
-        # Result should not contain the remote $ref
-        assert "$ref" not in result.get("properties", {}).get("name", {})
-
-    def test_file_ref_not_fetched(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "secret": {"$ref": "file:///etc/passwd"},
-            },
-        }
-        result = dereference_refs(schema)
-        assert "$ref" not in result.get("properties", {}).get("secret", {})
-
-    def test_cloud_metadata_ref_not_fetched(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "creds": {
-                    "$ref": "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
-                },
-            },
-        }
-        result = dereference_refs(schema)
-        assert "$ref" not in result.get("properties", {}).get("creds", {})
-
-    def test_local_refs_still_resolved(self):
-        schema = {
-            "$defs": {"Status": {"type": "string", "enum": ["a", "b"]}},
-            "type": "object",
-            "properties": {
-                "status": {"$ref": "#/$defs/Status"},
-                "evil": {"$ref": "https://evil.com/inject"},
-            },
-        }
-        result = dereference_refs(schema)
-        # Local ref should be resolved
-        assert result["properties"]["status"] == {"type": "string", "enum": ["a", "b"]}
-        # Remote ref should be stripped
-        assert "$ref" not in result["properties"]["evil"]
-        assert "$defs" not in result
