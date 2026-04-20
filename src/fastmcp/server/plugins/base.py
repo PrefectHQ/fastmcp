@@ -499,41 +499,32 @@ class Plugin(Generic[C]):
         Plugin configs are the distribution surface — they're loaded
         from JSON/YAML, rendered into Horizon/registry forms, and
         published in manifests. They must round-trip through JSON
-        without loss, which means no `Callable` fields, no runtime
-        instances, and no `arbitrary_types_allowed=True`. Enforced at
-        class creation so authoring mistakes fail loudly at import time
-        rather than at `fastmcp plugin manifest` / registry-render time.
+        without loss. Enforced at class creation so authoring mistakes
+        fail loudly at import time rather than at `fastmcp plugin
+        manifest` / registry-render time.
 
-        To expose callable-ish behavior (custom serializers, hooks,
-        etc.), plugin authors should surface a string-keyed enum in the
-        config (e.g. `mode: Literal["json", "markdown"] = "json"`) and
-        resolve to the real callable internally — that keeps the config
-        JSON-round-trippable.
+        To expose callable-ish behavior through config, plugin authors
+        should surface a string-keyed enum (e.g.
+        `mode: Literal["json", "markdown"] = "json"`) and resolve to
+        the real callable internally. Runtime Python extensibility —
+        custom callables, connection pools, etc. — belongs on the
+        plugin's `__init__` signature, not the Config model.
+
+        We rely solely on pydantic's `model_json_schema()` to decide
+        whether a field is JSON-describable. Authors who bring their
+        own non-pydantic types with proper JSON hooks
+        (`__get_pydantic_core_schema__` + a JSON-safe serializer) pass
+        this check — their fields ARE JSON-round-trippable, which is
+        the contract we care about.
         """
-        # `arbitrary_types_allowed=True` is the direct way to smuggle
-        # non-serializable fields into a pydantic model; reject it up
-        # front with a clear message.
-        model_config = getattr(config_cls, "model_config", {})
-        if model_config.get("arbitrary_types_allowed"):
-            raise PluginError(
-                f"Plugin config {config_cls.__name__} declares "
-                f"`arbitrary_types_allowed=True`, which breaks the "
-                f"JSON-serializable contract. Plugin configs must be "
-                f"loadable from JSON; use a string-keyed enum plus "
-                f"internal resolution for any callable-ish fields."
-            )
-        # Pydantic refuses to emit a JSON schema for fields it can't
-        # describe in JSON (e.g. `Callable`, raw classes). We surface
-        # that refusal as a PluginError pointing at the config class
-        # instead of a generic schema-generation failure.
         try:
             config_cls.model_json_schema()
         except Exception as exc:
             raise PluginError(
                 f"Plugin config {config_cls.__name__} is not JSON-"
                 f"serializable: {exc}. Every field must be expressible "
-                f"in JSON — no `Callable`, no runtime instances, no "
-                f"`arbitrary_types_allowed`."
+                f"in JSON. Callable fields and raw Python classes without "
+                f"pydantic serialization hooks are not supported."
             ) from exc
 
     @staticmethod

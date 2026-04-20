@@ -508,9 +508,10 @@ class TestConfigJsonSerializable:
     and published in manifests; any field that can't round-trip through
     JSON breaks the distribution story."""
 
-    def test_arbitrary_types_allowed_rejected(self):
-        """`arbitrary_types_allowed=True` is the direct escape hatch for
-        smuggling non-serializable values — reject up front."""
+    def test_arbitrary_type_without_pydantic_hooks_rejected(self):
+        """A raw Python class with no pydantic hooks can't be described
+        in JSON — `model_json_schema()` fails and we surface the
+        failure as PluginError."""
 
         class Arbitrary:
             pass
@@ -519,10 +520,42 @@ class TestConfigJsonSerializable:
             model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
             thing: Arbitrary = Arbitrary()
 
-        with pytest.raises(PluginError, match="arbitrary_types_allowed"):
+        with pytest.raises(PluginError, match="not JSON"):
 
             class Bad(Plugin[BadConfig]):
                 meta = PluginMeta(name="bad", version="0.1.0")
+
+    def test_arbitrary_type_with_pydantic_hooks_accepted(self):
+        """A custom type with `__get_pydantic_core_schema__` and a
+        JSON-safe serializer IS JSON-round-trippable, even alongside
+        `arbitrary_types_allowed=True`. Plugin authors can bring their
+        own types as long as they provide the hooks."""
+        from pydantic_core import core_schema
+
+        class JsonSafe:
+            def __init__(self, value: str):
+                self.value = value
+
+            @classmethod
+            def __get_pydantic_core_schema__(cls, source, handler):
+                return core_schema.no_info_after_validator_function(
+                    cls,
+                    handler(str),
+                    serialization=core_schema.plain_serializer_function_ser_schema(
+                        lambda v: v.value, return_schema=core_schema.str_schema()
+                    ),
+                )
+
+        class GoodConfig(BaseModel):
+            model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+            thing: JsonSafe = JsonSafe("hi")
+
+        class Good(Plugin[GoodConfig]):
+            meta = PluginMeta(name="good", version="0.1.0")
+
+        # The config dumps cleanly to JSON because of the plugin-
+        # author-provided hooks.
+        assert Good().config.model_dump(mode="json") == {"thing": "hi"}
 
     def test_callable_field_rejected(self):
         """Callable fields can't be round-tripped through JSON — reject."""
