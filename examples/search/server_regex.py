@@ -14,9 +14,12 @@ Run with:
 """
 
 from fastmcp import FastMCP
-from fastmcp.server.transforms.search import RegexSearchTransform
+from fastmcp.server.plugins.search import Search, SearchConfig
 
-mcp = FastMCP("Regex Search Demo")
+mcp = FastMCP(
+    "Regex Search Demo",
+    plugins=[Search(SearchConfig(strategy="regex", max_results=3))],
+)
 
 
 # Register a variety of tools across different domains.
@@ -65,9 +68,8 @@ def to_uppercase(text: str) -> str:
     return text.upper()
 
 
-# Apply the regex search transform.
-# max_results limits how many tools a single search returns.
-mcp.add_transform(RegexSearchTransform(max_results=3))
+# The Search plugin is configured at server construction above —
+# nothing else to wire here.
 
 
 if __name__ == "__main__":

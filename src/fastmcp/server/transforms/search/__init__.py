@@ -1,29 +1,40 @@
-"""Search transforms for tool discovery.
+"""Deprecation shim — search transforms moved to `fastmcp.server.plugins.search`.
 
-Search transforms collapse a large tool catalog into a search interface,
-letting LLMs discover tools on demand instead of seeing the full list.
+The preferred API is now the `Search` plugin:
 
-Example:
-    ```python
     from fastmcp import FastMCP
-    from fastmcp.server.transforms.search import RegexSearchTransform
+    from fastmcp.server.plugins import Search
 
-    mcp = FastMCP("Server")
-    mcp.add_transform(RegexSearchTransform())
-    # list_tools now returns only search_tools + call_tool
-    ```
+    mcp = FastMCP("Server", plugins=[Search()])
+
+Transform classes remain importable from their new location
+(`fastmcp.server.plugins.search.{bm25,regex,base}`) for advanced
+composition. This old path issues a `DeprecationWarning` on import.
 """
 
-from fastmcp.server.transforms.search.base import (
+import warnings
+
+from fastmcp.server.plugins.search.base import (
+    BaseSearchTransform,
     SearchResultSerializer,
     serialize_tools_for_output_json,
     serialize_tools_for_output_markdown,
 )
-from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
-from fastmcp.server.transforms.search.regex import RegexSearchTransform
+from fastmcp.server.plugins.search.bm25 import BM25SearchTransform
+from fastmcp.server.plugins.search.regex import RegexSearchTransform
+
+warnings.warn(
+    "fastmcp.server.transforms.search has moved to "
+    "fastmcp.server.plugins.search. Prefer the Search plugin: "
+    "`from fastmcp.server.plugins import Search`. The old import path "
+    "will be removed in a future release.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 __all__ = [
     "BM25SearchTransform",
+    "BaseSearchTransform",
     "RegexSearchTransform",
     "SearchResultSerializer",
     "serialize_tools_for_output_json",

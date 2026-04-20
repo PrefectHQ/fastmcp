@@ -15,9 +15,12 @@ Run with:
 import os
 
 from fastmcp import FastMCP
-from fastmcp.server.transforms.search import BM25SearchTransform
+from fastmcp.server.plugins.search import Search, SearchConfig
 
-mcp = FastMCP("BM25 Search Demo")
+mcp = FastMCP(
+    "BM25 Search Demo",
+    plugins=[Search(SearchConfig(max_results=5, always_visible=["list_files"]))],
+)
 
 
 @mcp.tool
@@ -75,10 +78,9 @@ def read_file(path: str) -> str:
 
 
 # BM25 search with a higher result limit for this larger catalog.
-# The `always_visible` option keeps specific tools in list_tools output
-# alongside the search/call tools — useful for tools the LLM should
-# always know about.
-mcp.add_transform(BM25SearchTransform(max_results=5, always_visible=["list_files"]))
+# The Search plugin is configured at server construction above —
+# `always_visible` keeps specific tools in list_tools alongside the
+# synthetic search/call tools.
 
 
 if __name__ == "__main__":

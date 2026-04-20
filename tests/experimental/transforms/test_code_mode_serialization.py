@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from fastmcp import FastMCP
-from fastmcp.server.transforms.search.base import (
+from fastmcp.server.plugins.search.base import (
     _schema_section,
     _schema_type,
     serialize_tools_for_output_markdown,
