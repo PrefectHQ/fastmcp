@@ -544,12 +544,27 @@ class Plugin(Generic[C]):
         # but no serializer.
         try:
             instance = config_cls()
-        except ValidationError:
-            # Required fields without defaults — can't build without
-            # user input. The schema check above still catches the
-            # common cases; runtime serialization will validate the
-            # field types when a real instance is serialized.
-            return
+        except ValidationError as exc:
+            # A ValidationError here can mean two things: (1) required
+            # fields without defaults — can't build without user
+            # input, expected, skip the dump test; or (2) a default
+            # value failed a field validator, which is a real authoring
+            # bug and should surface as PluginError at class creation.
+            if all(err.get("type") == "missing" for err in exc.errors()):
+                return
+            raise PluginError(
+                f"Plugin config {config_cls.__name__} has an invalid "
+                f"default value: {exc}"
+            ) from exc
+        except Exception as exc:
+            # Non-ValidationError failures (TypeError from a broken
+            # default_factory, RuntimeError from model_post_init, etc.)
+            # are also author-side bugs — wrap so the error carries
+            # plugin attribution rather than propagating bare.
+            raise PluginError(
+                f"Plugin config {config_cls.__name__} could not be "
+                f"instantiated with defaults: {exc}"
+            ) from exc
         try:
             instance.model_dump(mode="json")
         except Exception as exc:

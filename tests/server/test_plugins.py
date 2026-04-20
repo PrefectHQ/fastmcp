@@ -650,11 +650,51 @@ class TestConfigJsonSerializable:
             class Bad(Plugin[PartialConfig]):
                 meta = PluginMeta(name="bad", version="0.1.0")
 
-    def test_manifest_revalidates_config(self):
-        """manifest() re-runs _validate_config_cls so forward-ref configs
-        (which skipped validation at class creation) get checked at
-        publish time, and any partial-hooks violation that only
-        surfaces via dump is caught before manifest emission."""
+    def test_default_value_failing_validator_raises_plugin_error(self):
+        """A ValidationError from a field validator rejecting its own
+        default isn't the 'required field, skip' case — surface it as
+        PluginError at class creation rather than silently accepting a
+        class that can never be constructed without args."""
+        from pydantic import field_validator
+
+        class BadDefaultConfig(BaseModel):
+            model_config = pydantic.ConfigDict(validate_default=True)
+            x: int = -1
+
+            @field_validator("x")
+            @classmethod
+            def must_be_positive(cls, v: int) -> int:
+                if v <= 0:
+                    raise ValueError("x must be positive")
+                return v
+
+        with pytest.raises(PluginError, match="invalid default"):
+
+            class Bad(Plugin[BadDefaultConfig]):
+                meta = PluginMeta(name="bad", version="0.1.0")
+
+    def test_non_validation_exception_from_default_wrapped_as_plugin_error(self):
+        """Non-ValidationError exceptions during default-construction
+        (TypeError from a broken default_factory, etc.) are wrapped as
+        PluginError so the message carries plugin attribution."""
+        from pydantic import Field
+
+        def broken_factory() -> int:
+            raise TypeError("factory is busted")
+
+        class BadFactoryConfig(BaseModel):
+            x: int = Field(default_factory=broken_factory)
+
+        with pytest.raises(PluginError, match="could not be instantiated"):
+
+            class Bad(Plugin[BadFactoryConfig]):
+                meta = PluginMeta(name="bad", version="0.1.0")
+
+    def test_required_field_partial_hooks_not_caught_at_class_creation(self):
+        """Documented trade-off: a partial-hooks type on a required
+        field slips past class-creation validation because the dump
+        test only runs on a buildable instance. The violation surfaces
+        at first real instantiation / serialization instead."""
         from pydantic_core import core_schema
 
         class Tricky:
@@ -666,26 +706,57 @@ class TestConfigJsonSerializable:
             def __get_pydantic_json_schema__(cls, schema, handler):
                 return {"type": "string"}
 
-        # Build a config class that slips past class-creation validation
-        # by virtue of all-required fields, then show manifest() catches
-        # it via the dump-mode round-trip.
         class RequiredBadConfig(BaseModel):
             model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
             x: Tricky  # required, no default — class creation can't build
 
+        # Plugin class is created without raising. Manifest also succeeds
+        # because the schema itself is emittable.
         class Required(Plugin[RequiredBadConfig]):
             meta = PluginMeta(name="req", version="0.1.0")
 
-        # Class creation didn't catch it (no default ⇒ no dump test).
-        # manifest() still succeeds because the schema itself is valid
-        # (Tricky provides __get_pydantic_json_schema__); the dump check
-        # only triggers on a buildable instance. This is the documented
-        # trade-off — required-field partial hooks surface at first
-        # real instantiation rather than at class creation.
         m = Required.manifest()
         assert m is not None
-        # The bad field still appears in the schema.
         assert "x" in m["config_schema"]["properties"]
+
+    def test_manifest_revalidates_rebuilt_forward_reference_config(self):
+        """A config with a forward reference skips validation at class
+        creation, then gets validated at manifest() time once the
+        reference is resolved and the model is rebuilt. If the rebuilt
+        config has a partial-hooks default that the dump check catches,
+        manifest() must raise."""
+        from typing import Optional
+
+        from pydantic_core import core_schema
+
+        class Tricky:
+            @classmethod
+            def __get_pydantic_core_schema__(cls, source, handler):
+                return core_schema.no_info_plain_validator_function(lambda v: cls())
+
+            @classmethod
+            def __get_pydantic_json_schema__(cls, schema, handler):
+                return {"type": "string"}
+
+        class UnfinishedConfig(BaseModel):
+            model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+            child: Optional[Child] = None  # noqa: F821, UP045
+            broken: Tricky = Tricky()
+
+        # Plugin class creation defers validation (forward ref unresolved).
+        class Deferred(Plugin[UnfinishedConfig]):
+            meta = PluginMeta(name="deferred", version="0.1.0")
+
+        class Child(BaseModel):
+            pass
+
+        UnfinishedConfig.model_rebuild()
+
+        # manifest() re-runs _validate_config_cls against the
+        # now-complete model and catches the partial-hooks violation
+        # via the dump test.
+        with pytest.raises(PluginError, match="cannot be serialized"):
+            Deferred.manifest()
 
     def test_forward_reference_config_skips_validation(self):
         """Configs with unresolved forward references can't be
