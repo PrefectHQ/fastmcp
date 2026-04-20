@@ -150,7 +150,7 @@ class TestDereferenceRefs:
         children_items = result["properties"]["nodes"]["items"]["properties"][
             "children"
         ]["items"]
-        assert "$ref" in children_items
+        assert children_items["$ref"] == "#/properties/nodes/items"
 
     def test_preserves_sibling_keywords(self):
         """Test that sibling keywords (default, description) are preserved.
