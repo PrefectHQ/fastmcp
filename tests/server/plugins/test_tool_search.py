@@ -166,10 +166,19 @@ class TestDeprecationShim:
 
     def test_old_submodule_imports_still_resolve(self):
         """Existing code that imports from the old submodule path keeps working."""
-        from fastmcp.server.transforms.search.bm25 import BM25SearchTransform as OldBM25
-        from fastmcp.server.transforms.search.regex import (
-            RegexSearchTransform as OldRegex,
-        )
+        from fastmcp.exceptions import FastMCPDeprecationWarning
+
+        # Suppress the parent-package deprecation warning that fires on first
+        # import — otherwise running this test in isolation leaks the warning
+        # to pytest output.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FastMCPDeprecationWarning)
+            from fastmcp.server.transforms.search.bm25 import (
+                BM25SearchTransform as OldBM25,
+            )
+            from fastmcp.server.transforms.search.regex import (
+                RegexSearchTransform as OldRegex,
+            )
 
         # They're the same classes as the new path, not shims.
         assert OldBM25 is BM25SearchTransform
