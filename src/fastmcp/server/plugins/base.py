@@ -283,6 +283,66 @@ def _derive_plugin_name(cls_name: str) -> str:
     return name
 
 
+def _resolve_plugin_config_cls(cls: type) -> type[BaseModel] | None:
+    """Resolve the config class bound to `Plugin[C]` for a subclass.
+
+    Walks `cls.__orig_bases__`, recursing through intermediate `Plugin`
+    subclasses and propagating TypeVar substitutions. Returns the bound
+    `BaseModel` subclass, or `None` if the binding is still a TypeVar
+    (unresolved — typically an intermediate abstract base).
+
+    Raises `TypeError` if a resolved argument is concrete but not a
+    `BaseModel` subclass (a misuse of `Plugin[NonPydanticType]`).
+    """
+
+    def _resolve(base: Any, substitutions: dict[Any, Any]) -> Any:
+        origin = get_origin(base)
+        if origin is None or not (
+            isinstance(origin, type) and issubclass(origin, Plugin)
+        ):
+            return None
+        args = get_args(base)
+        # Apply outer-scope substitutions so a parent's TypeVar bound to
+        # a concrete type at this level becomes that concrete type here.
+        resolved_args = tuple(substitutions.get(a, a) for a in args)
+
+        if origin is Plugin:
+            # We're at the root parameterization.
+            if not resolved_args:
+                return None
+            cfg = resolved_args[0]
+            # Still a TypeVar: unresolved at this level of the chain.
+            if isinstance(cfg, TypeVar):
+                return None
+            return cfg
+
+        # Intermediate Plugin subclass. Push down its own TypeVar
+        # substitutions (from its `__parameters__`) and recurse into its
+        # bases to find the Plugin parameterization.
+        origin_params = getattr(origin, "__parameters__", ())
+        new_subs = {
+            **substitutions,
+            **dict(zip(origin_params, resolved_args, strict=False)),
+        }
+        for inner in getattr(origin, "__orig_bases__", ()):
+            found = _resolve(inner, new_subs)
+            if found is not None:
+                return found
+        return None
+
+    for base in getattr(cls, "__orig_bases__", ()):
+        resolved = _resolve(base, substitutions={})
+        if resolved is None:
+            continue
+        if not (isinstance(resolved, type) and issubclass(resolved, BaseModel)):
+            raise TypeError(
+                f"{cls.__name__}: Plugin[...] generic parameter must be a "
+                f"pydantic BaseModel subclass, got {resolved!r}"
+            )
+        return resolved
+    return None
+
+
 class Plugin(Generic[C]):
     """Base class for FastMCP plugins.
 
@@ -346,33 +406,17 @@ class Plugin(Generic[C]):
                 name=_derive_plugin_name(cls.__name__),
                 version=_DEFAULT_PLUGIN_VERSION,
             )
-        # Resolve the Config model from the generic parameter. Only look at
-        # bases whose origin is `Plugin` directly — an intermediate
-        # `Plugin` subclass with its own generics (e.g. `Intermediate[T]`
-        # where `Intermediate` extends `Plugin[Cfg]`) carries TypeVars
-        # unrelated to this plugin's config, so reading `args[0]` from
-        # those would misread a caller's generic parameter. Subclasses
-        # that inherit from a concrete `Plugin[...]`-parameterized base
-        # pick up `_config_cls` via normal attribute lookup.
-        for base in getattr(cls, "__orig_bases__", ()):
-            if get_origin(base) is not Plugin:
-                continue
-            args = get_args(base)
-            if not args:
-                continue
-            config_arg = args[0]
-            # A bare TypeVar means an intermediate generic subclass that
-            # leaves the config unbound (e.g. `class MyBase(Plugin[T])`);
-            # concrete leaves parameterize it later, so skip here.
-            if isinstance(config_arg, TypeVar):
-                continue
-            if not (isinstance(config_arg, type) and issubclass(config_arg, BaseModel)):
-                raise TypeError(
-                    f"{cls.__name__}: Plugin[...] generic parameter must be a "
-                    f"pydantic BaseModel subclass, got {config_arg!r}"
-                )
-            cls._config_cls = config_arg
-            break
+        # Resolve the Config model from the generic parameter. We walk the
+        # `__orig_bases__` chain and propagate TypeVar substitutions, so
+        # both direct parameterization (`class P(Plugin[Cfg])`) and
+        # deferred binding (`class Abstract(Plugin[_T])` →
+        # `class P(Abstract[Cfg])`) resolve correctly. Intermediate
+        # generic bases with their own unrelated TypeVars are unaffected
+        # because we substitute through each step rather than treating
+        # `args[0]` as the config unconditionally.
+        config_cls = _resolve_plugin_config_cls(cls)
+        if config_cls is not None:
+            cls._config_cls = config_cls
 
     # Framework-internal marker. Set to True by `FastMCP.add_plugin` when
     # the plugin is added from inside another plugin's setup() (the loader
@@ -391,6 +435,24 @@ class Plugin(Generic[C]):
         self._validate_meta(meta)
 
         config_cls = type(self)._config_cls
+
+        def _wrap(exc: ValidationError) -> PluginConfigError:
+            # For unparameterized plugins, pydantic's error string
+            # includes "1 validation error for _EmptyConfig" — an
+            # internal class name users shouldn't see. Emit a scoped
+            # message instead; for parameterized plugins, forward
+            # pydantic's full diagnostic.
+            if config_cls is _EmptyConfig:
+                keys = list(config.keys()) if isinstance(config, dict) else []
+                return PluginConfigError(
+                    f"Invalid configuration for {type(self).__name__}: this "
+                    f"plugin declares no config fields but received "
+                    f"{keys}."
+                )
+            return PluginConfigError(
+                f"Invalid configuration for {type(self).__name__}: {exc}"
+            )
+
         if config is None:
             try:
                 value: BaseModel = config_cls()
@@ -399,18 +461,14 @@ class Plugin(Generic[C]):
                 # failure as PluginConfigError so callers that catch
                 # the documented exception type behave consistently
                 # with the dict path below.
-                raise PluginConfigError(
-                    f"Invalid configuration for {type(self).__name__}: {exc}"
-                ) from exc
+                raise _wrap(exc) from exc
         elif isinstance(config, config_cls):
             value = config
         elif isinstance(config, dict):
             try:
                 value = config_cls(**config)
             except ValidationError as exc:
-                raise PluginConfigError(
-                    f"Invalid configuration for {type(self).__name__}: {exc}"
-                ) from exc
+                raise _wrap(exc) from exc
         else:
             # `_EmptyConfig` is an internal implementation detail for
             # unparameterized plugins. Don't leak its name to authors.

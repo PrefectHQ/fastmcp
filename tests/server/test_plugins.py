@@ -335,8 +335,12 @@ class TestPluginConstruction:
         # No-arg construction works.
         P()
         # Unknown config keys are rejected by the empty default.
-        with pytest.raises(PluginConfigError, match="extra"):
+        with pytest.raises(PluginConfigError) as exc_info:
             P({"who": "jeremiah"})
+        # The error message must not leak the `_EmptyConfig` implementation
+        # class name; users shouldn't see private framework detail.
+        assert "_EmptyConfig" not in str(exc_info.value)
+        assert "no config fields" in str(exc_info.value)
 
     def test_invalid_config_raises_plugin_config_error(self):
         """Wrong-typed value for a declared field wraps ValidationError
@@ -414,6 +418,33 @@ class TestPluginConstruction:
         assert Intermediate._config_cls is Cfg
         assert Concrete._config_cls is Cfg
         assert isinstance(Concrete().config, Cfg)
+
+    def test_deferred_config_binding_resolves_in_concrete_subclass(self):
+        """Abstract plugin bases declare `Plugin[_T]` with an unbound
+        TypeVar; concrete subclasses bind `_T` via `AbstractBase[Cfg]`.
+        The resolver must propagate the substitution through the chain.
+        """
+        _T = TypeVar("_T", bound=BaseModel)
+
+        class MyConfig(BaseModel):
+            api_key: str = "default"
+
+        class AbstractPlugin(Plugin[_T]):
+            meta = PluginMeta(name="abstract", version="0.1.0")
+
+        class ConcretePlugin(AbstractPlugin[MyConfig]):
+            meta = PluginMeta(name="concrete", version="0.1.0")
+
+        # Abstract base can't resolve (TypeVar still unbound).
+        assert AbstractPlugin._config_cls is not MyConfig
+        # Concrete leaf resolves through the intermediate.
+        assert ConcretePlugin._config_cls is MyConfig
+        assert isinstance(ConcretePlugin().config, MyConfig)
+        assert ConcretePlugin({"api_key": "secret"}).config.api_key == "secret"
+        # Manifest reflects the concrete config, not the empty default.
+        m = ConcretePlugin.manifest()
+        assert m is not None
+        assert "api_key" in m["config_schema"]["properties"]
 
 
 class TestPluginValidation:
