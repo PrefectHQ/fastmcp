@@ -136,6 +136,7 @@ class AWSCognitoProvider(OIDCProxy):
         require_authorization_consent: bool | Literal["remember", "external"] = True,
         consent_csp_policy: str | None = None,
         forward_resource: bool = True,
+        fallback_refresh_token_expiry_seconds: int | None = None,
     ):
         """Initialize AWS Cognito OAuth provider.
 
@@ -196,6 +197,7 @@ class AWSCognitoProvider(OIDCProxy):
             require_authorization_consent=require_authorization_consent,
             consent_csp_policy=consent_csp_policy,
             forward_resource=forward_resource,
+            fallback_refresh_token_expiry_seconds=fallback_refresh_token_expiry_seconds,
         )
 
         logger.debug(
