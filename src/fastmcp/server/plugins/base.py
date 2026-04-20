@@ -417,6 +417,13 @@ class Plugin(Generic[C]):
         config_cls = _resolve_plugin_config_cls(cls)
         if config_cls is not None:
             cls._config_cls = config_cls
+        # Enforce the JSON-serializable contract on the resolved config.
+        # Every plugin config must round-trip through JSON so plugins
+        # can be loaded from config files, rendered by registry/Horizon
+        # forms, and published to manifest artifacts. Runs on every
+        # Plugin subclass — including `_EmptyConfig`, which passes
+        # trivially.
+        cls._validate_config_cls(cls._config_cls)
 
     # Framework-internal marker. Set to True by `FastMCP.add_plugin` when
     # the plugin is added from inside another plugin's setup() (the loader
@@ -484,6 +491,88 @@ class Plugin(Generic[C]):
         self.config = cast(C, value)
 
     # -- validation -----------------------------------------------------------
+
+    @staticmethod
+    def _validate_config_cls(config_cls: type[BaseModel]) -> None:
+        """Ensure a plugin's config model is fully JSON-serializable.
+
+        Plugin configs are the distribution surface — they're loaded
+        from JSON/YAML, rendered into Horizon/registry forms, and
+        published in manifests. They must round-trip through JSON
+        without loss. Enforced at class creation so authoring mistakes
+        fail loudly at import time rather than at `fastmcp plugin
+        manifest` / registry-render time.
+
+        To expose callable-ish behavior through config, plugin authors
+        should surface a string-keyed enum (e.g.
+        `mode: Literal["json", "markdown"] = "json"`) and resolve to
+        the real callable internally. Runtime Python extensibility —
+        custom callables, connection pools, etc. — belongs on the
+        plugin's `__init__` signature, not the Config model.
+
+        Two checks: (1) `model_json_schema()` must succeed — catches
+        fields pydantic can't describe in JSON at all (raw callables,
+        classes without pydantic hooks). (2) If the config can be
+        built without arguments (all fields have defaults), exercise
+        the runtime serialization path via `model_dump(mode="json")`
+        — catches the "partial-hooks" case where a type has
+        `__get_pydantic_json_schema__` but no matching serializer
+        (schema generation alone would silently pass).
+
+        Configs with required fields skip the dump check at class
+        creation — we can't construct an instance without a value.
+        Partial-hooks violations on those fields surface on first
+        `Config(**data).model_dump(mode="json")`. Configs with
+        unresolved forward references skip the entire check; it
+        re-runs at manifest time once the model is complete.
+        """
+        if not getattr(config_cls, "__pydantic_complete__", True):
+            return
+
+        try:
+            config_cls.model_json_schema()
+        except Exception as exc:
+            raise PluginError(
+                f"Plugin config {config_cls.__name__} is not JSON-"
+                f"serializable: {exc}. Every field must be expressible "
+                f"in JSON. Callable fields and raw Python classes without "
+                f"pydantic serialization hooks are not supported."
+            ) from exc
+
+        # If the config builds without args, exercise the real
+        # serialization path to catch types that have a schema hook
+        # but no serializer.
+        try:
+            instance = config_cls()
+        except ValidationError as exc:
+            # A ValidationError here can mean two things: (1) required
+            # fields without defaults — can't build without user
+            # input, expected, skip the dump test; or (2) a default
+            # value failed a field validator, which is a real authoring
+            # bug and should surface as PluginError at class creation.
+            if all(err.get("type") == "missing" for err in exc.errors()):
+                return
+            raise PluginError(
+                f"Plugin config {config_cls.__name__} has an invalid "
+                f"default value: {exc}"
+            ) from exc
+        except Exception as exc:
+            # Non-ValidationError failures (TypeError from a broken
+            # default_factory, RuntimeError from model_post_init, etc.)
+            # are also author-side bugs — wrap so the error carries
+            # plugin attribution rather than propagating bare.
+            raise PluginError(
+                f"Plugin config {config_cls.__name__} could not be "
+                f"instantiated with defaults: {exc}"
+            ) from exc
+        try:
+            instance.model_dump(mode="json")
+        except Exception as exc:
+            raise PluginError(
+                f"Plugin config {config_cls.__name__} cannot be "
+                f"serialized to JSON at runtime: {exc}. Every field "
+                f"must have both a JSON schema and a JSON serializer."
+            ) from exc
 
     @staticmethod
     def _validate_meta(meta: PluginMeta) -> None:
@@ -664,6 +753,10 @@ class Plugin(Generic[C]):
         cls._validate_meta(meta)
 
         config_cls = cls._config_cls
+        # Re-run the JSON-serializable check here. Plugins with forward-
+        # reference configs skip validation at class creation, so manifest
+        # emission is the publish-time boundary that has to enforce it.
+        cls._validate_config_cls(config_cls)
         config_schema = config_cls.model_json_schema()
         # `_EmptyConfig` is an internal implementation detail; don't
         # leak its name or docstring into the published manifest JSON

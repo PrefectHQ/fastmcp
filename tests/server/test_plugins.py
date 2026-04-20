@@ -10,6 +10,7 @@ from importlib.metadata import version as dist_version
 from pathlib import Path
 from typing import Generic, TypeVar
 
+import pydantic
 import pytest
 from packaging.version import Version
 from pydantic import BaseModel, ValidationError
@@ -499,6 +500,294 @@ class TestPluginValidation:
 
         with pytest.raises(PluginCompatibilityError):
             Incompat().check_fastmcp_compatibility()
+
+
+class TestConfigJsonSerializable:
+    """Plugin configs must be JSON-serializable — a hard rule. Configs
+    are loaded from JSON/YAML, rendered into Horizon/registry forms,
+    and published in manifests; any field that can't round-trip through
+    JSON breaks the distribution story."""
+
+    def test_arbitrary_type_without_pydantic_hooks_rejected(self):
+        """A raw Python class with no pydantic hooks can't be described
+        in JSON — `model_json_schema()` fails and we surface the
+        failure as PluginError."""
+
+        class Arbitrary:
+            pass
+
+        class BadConfig(BaseModel):
+            model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+            thing: Arbitrary = Arbitrary()
+
+        with pytest.raises(PluginError, match="not JSON"):
+
+            class Bad(Plugin[BadConfig]):
+                meta = PluginMeta(name="bad", version="0.1.0")
+
+    def test_arbitrary_type_with_pydantic_hooks_accepted(self):
+        """A custom type with `__get_pydantic_core_schema__` and a
+        JSON-safe serializer IS JSON-round-trippable, even alongside
+        `arbitrary_types_allowed=True`. Plugin authors can bring their
+        own types as long as they provide the hooks."""
+        from pydantic_core import core_schema
+
+        class JsonSafe:
+            def __init__(self, value: str):
+                self.value = value
+
+            @classmethod
+            def __get_pydantic_core_schema__(cls, source, handler):
+                return core_schema.no_info_after_validator_function(
+                    cls,
+                    handler(str),
+                    serialization=core_schema.plain_serializer_function_ser_schema(
+                        lambda v: v.value, return_schema=core_schema.str_schema()
+                    ),
+                )
+
+        class GoodConfig(BaseModel):
+            model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+            thing: JsonSafe = JsonSafe("hi")
+
+        class Good(Plugin[GoodConfig]):
+            meta = PluginMeta(name="good", version="0.1.0")
+
+        # The config dumps cleanly to JSON because of the plugin-
+        # author-provided hooks.
+        assert Good().config.model_dump(mode="json") == {"thing": "hi"}
+
+    def test_callable_field_rejected(self):
+        """Callable fields can't be round-tripped through JSON — reject."""
+        from collections.abc import Callable
+
+        class BadConfig(BaseModel):
+            handler: Callable[[str], str]
+
+        with pytest.raises(PluginError, match="not JSON"):
+
+            class Bad(Plugin[BadConfig]):
+                meta = PluginMeta(name="bad", version="0.1.0")
+
+    @pytest.mark.parametrize(
+        "field_type, default",
+        [
+            (pydantic.SecretStr, pydantic.SecretStr("s3cret")),
+            (int, 42),
+            (str, "hello"),
+            (list[str], ["a"]),
+        ],
+    )
+    def test_common_json_serializable_fields_accepted(self, field_type, default):
+        """Common pydantic-supported types round-trip through JSON and
+        must pass validation."""
+
+        class GoodConfig(BaseModel):
+            value: field_type = default  # type: ignore[valid-type]
+
+        class Good(Plugin[GoodConfig]):
+            meta = PluginMeta(name="good", version="0.1.0")
+
+        # Construction and config access both work.
+        plugin = Good()
+        assert plugin.config.value == default
+
+    def test_nested_basemodel_field_accepted(self):
+        """Nested pydantic models are fully JSON-serializable."""
+
+        class Inner(BaseModel):
+            name: str = "x"
+            count: int = 0
+
+        class OuterConfig(BaseModel):
+            inner: Inner = Inner()
+
+        class Outer(Plugin[OuterConfig]):
+            meta = PluginMeta(name="outer", version="0.1.0")
+
+        assert Outer().config.inner.name == "x"
+
+    def test_datetime_and_path_fields_accepted(self):
+        """datetime and Path are pydantic-supported JSON types."""
+        from datetime import datetime
+        from pathlib import Path as PathlibPath
+
+        class GoodConfig(BaseModel):
+            when: datetime = datetime(2026, 1, 1)
+            where: PathlibPath = PathlibPath("/tmp")
+
+        class Good(Plugin[GoodConfig]):
+            meta = PluginMeta(name="good", version="0.1.0")
+
+        assert isinstance(Good().config.when, datetime)
+
+    def test_partial_hooks_without_serializer_rejected(self):
+        """A custom type with `__get_pydantic_json_schema__` but no
+        matching serializer would pass a schema-generation-only check
+        while failing at runtime `model_dump(mode='json')`. The
+        validator exercises the real serialization path when the
+        config is buildable without args, so the break surfaces at
+        class creation (for configs with defaults) rather than at
+        publish/serialize time."""
+        from pydantic_core import core_schema
+
+        class Tricky:
+            @classmethod
+            def __get_pydantic_core_schema__(cls, source, handler):
+                # Validator only — no serialization= argument.
+                return core_schema.no_info_plain_validator_function(lambda v: cls())
+
+            @classmethod
+            def __get_pydantic_json_schema__(cls, schema, handler):
+                return {"type": "string"}
+
+        class PartialConfig(BaseModel):
+            model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+            x: Tricky = Tricky()
+
+        with pytest.raises(PluginError, match="cannot be serialized"):
+
+            class Bad(Plugin[PartialConfig]):
+                meta = PluginMeta(name="bad", version="0.1.0")
+
+    def test_default_value_failing_validator_raises_plugin_error(self):
+        """A ValidationError from a field validator rejecting its own
+        default isn't the 'required field, skip' case — surface it as
+        PluginError at class creation rather than silently accepting a
+        class that can never be constructed without args."""
+        from pydantic import field_validator
+
+        class BadDefaultConfig(BaseModel):
+            model_config = pydantic.ConfigDict(validate_default=True)
+            x: int = -1
+
+            @field_validator("x")
+            @classmethod
+            def must_be_positive(cls, v: int) -> int:
+                if v <= 0:
+                    raise ValueError("x must be positive")
+                return v
+
+        with pytest.raises(PluginError, match="invalid default"):
+
+            class Bad(Plugin[BadDefaultConfig]):
+                meta = PluginMeta(name="bad", version="0.1.0")
+
+    def test_non_validation_exception_from_default_wrapped_as_plugin_error(self):
+        """Non-ValidationError exceptions during default-construction
+        (TypeError from a broken default_factory, etc.) are wrapped as
+        PluginError so the message carries plugin attribution."""
+        from pydantic import Field
+
+        def broken_factory() -> int:
+            raise TypeError("factory is busted")
+
+        class BadFactoryConfig(BaseModel):
+            x: int = Field(default_factory=broken_factory)
+
+        with pytest.raises(PluginError, match="could not be instantiated"):
+
+            class Bad(Plugin[BadFactoryConfig]):
+                meta = PluginMeta(name="bad", version="0.1.0")
+
+    def test_required_field_partial_hooks_not_caught_at_class_creation(self):
+        """Documented trade-off: a partial-hooks type on a required
+        field slips past class-creation validation because the dump
+        test only runs on a buildable instance. The violation surfaces
+        at first real instantiation / serialization instead."""
+        from pydantic_core import core_schema
+
+        class Tricky:
+            @classmethod
+            def __get_pydantic_core_schema__(cls, source, handler):
+                return core_schema.no_info_plain_validator_function(lambda v: cls())
+
+            @classmethod
+            def __get_pydantic_json_schema__(cls, schema, handler):
+                return {"type": "string"}
+
+        class RequiredBadConfig(BaseModel):
+            model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+            x: Tricky  # required, no default — class creation can't build
+
+        # Plugin class is created without raising. Manifest also succeeds
+        # because the schema itself is emittable.
+        class Required(Plugin[RequiredBadConfig]):
+            meta = PluginMeta(name="req", version="0.1.0")
+
+        m = Required.manifest()
+        assert m is not None
+        assert "x" in m["config_schema"]["properties"]
+
+    def test_manifest_revalidates_rebuilt_forward_reference_config(self):
+        """A config with a forward reference skips validation at class
+        creation, then gets validated at manifest() time once the
+        reference is resolved and the model is rebuilt. If the rebuilt
+        config has a partial-hooks default that the dump check catches,
+        manifest() must raise."""
+        from typing import Optional
+
+        from pydantic_core import core_schema
+
+        class Tricky:
+            @classmethod
+            def __get_pydantic_core_schema__(cls, source, handler):
+                return core_schema.no_info_plain_validator_function(lambda v: cls())
+
+            @classmethod
+            def __get_pydantic_json_schema__(cls, schema, handler):
+                return {"type": "string"}
+
+        class UnfinishedConfig(BaseModel):
+            model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+            child: Optional[Child] = None  # noqa: F821, UP045
+            broken: Tricky = Tricky()
+
+        # Plugin class creation defers validation (forward ref unresolved).
+        class Deferred(Plugin[UnfinishedConfig]):
+            meta = PluginMeta(name="deferred", version="0.1.0")
+
+        class Child(BaseModel):
+            pass
+
+        UnfinishedConfig.model_rebuild()
+
+        # manifest() re-runs _validate_config_cls against the
+        # now-complete model and catches the partial-hooks violation
+        # via the dump test.
+        with pytest.raises(PluginError, match="cannot be serialized"):
+            Deferred.manifest()
+
+    def test_forward_reference_config_skips_validation(self):
+        """Configs with unresolved forward references can't be
+        schema-checked at class creation; validation skips so the
+        plugin class itself can be defined. The author is expected
+        to run the check later (manifest generation will trip any
+        real problems)."""
+
+        class UnfinishedConfig(BaseModel):
+            child: NotYetDefined  # noqa: F821  # ty: ignore[unresolved-reference]
+
+        # This should NOT raise even though UnfinishedConfig isn't
+        # fully defined — validation defers until the model is
+        # rebuildable.
+        class P(Plugin[UnfinishedConfig]):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+        assert P._config_cls is UnfinishedConfig
+
+    def test_empty_default_config_passes_validation(self):
+        """The framework's internal `_EmptyConfig` must pass its own
+        JSON-serializable check (regression: it's used as the fallback
+        for every unparameterized plugin)."""
+
+        class P(Plugin):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+        # If _EmptyConfig failed validation, class creation above would
+        # have raised. This test is explicit documentation of the
+        # requirement.
+        assert P().config is not None
 
 
 class TestRegistration:
