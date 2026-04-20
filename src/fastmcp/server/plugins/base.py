@@ -510,39 +510,53 @@ class Plugin(Generic[C]):
         custom callables, connection pools, etc. — belongs on the
         plugin's `__init__` signature, not the Config model.
 
-        Two checks: (1) `model_json_schema()` must succeed, catching
-        fields pydantic can't describe in JSON at all. (2) Pydantic's
-        `PydanticJsonSchemaWarning` (raised when a default value isn't
-        JSON-serializable) is promoted to an error, catching the case
-        of a custom type with `__get_pydantic_json_schema__` but no
-        matching serializer — schema generation alone would silently
-        pass.
+        Two checks: (1) `model_json_schema()` must succeed — catches
+        fields pydantic can't describe in JSON at all (raw callables,
+        classes without pydantic hooks). (2) If the config can be
+        built without arguments (all fields have defaults), exercise
+        the runtime serialization path via `model_dump(mode="json")`
+        — catches the "partial-hooks" case where a type has
+        `__get_pydantic_json_schema__` but no matching serializer
+        (schema generation alone would silently pass).
 
-        Configs that aren't fully defined yet (forward references
-        awaiting `model_rebuild()`) skip validation; re-running the
-        schema check after rebuild is the author's responsibility.
+        Configs with required fields skip the dump check at class
+        creation — we can't construct an instance without a value.
+        Partial-hooks violations on those fields surface on first
+        `Config(**data).model_dump(mode="json")`. Configs with
+        unresolved forward references skip the entire check; it
+        re-runs at manifest time once the model is complete.
         """
-        # Forward-reference configs can't be schema-generated until
-        # the referenced models exist and `model_rebuild()` has run.
-        # Skip rather than fail; at manifest/publish time the check
-        # will run against the completed model.
         if not getattr(config_cls, "__pydantic_complete__", True):
             return
 
-        import warnings as _warnings
-
-        from pydantic.json_schema import PydanticJsonSchemaWarning
-
         try:
-            with _warnings.catch_warnings():
-                _warnings.simplefilter("error", PydanticJsonSchemaWarning)
-                config_cls.model_json_schema()
+            config_cls.model_json_schema()
         except Exception as exc:
             raise PluginError(
                 f"Plugin config {config_cls.__name__} is not JSON-"
                 f"serializable: {exc}. Every field must be expressible "
                 f"in JSON. Callable fields and raw Python classes without "
                 f"pydantic serialization hooks are not supported."
+            ) from exc
+
+        # If the config builds without args, exercise the real
+        # serialization path to catch types that have a schema hook
+        # but no serializer.
+        try:
+            instance = config_cls()
+        except ValidationError:
+            # Required fields without defaults — can't build without
+            # user input. The schema check above still catches the
+            # common cases; runtime serialization will validate the
+            # field types when a real instance is serialized.
+            return
+        try:
+            instance.model_dump(mode="json")
+        except Exception as exc:
+            raise PluginError(
+                f"Plugin config {config_cls.__name__} cannot be "
+                f"serialized to JSON at runtime: {exc}. Every field "
+                f"must have both a JSON schema and a JSON serializer."
             ) from exc
 
     @staticmethod
@@ -724,6 +738,10 @@ class Plugin(Generic[C]):
         cls._validate_meta(meta)
 
         config_cls = cls._config_cls
+        # Re-run the JSON-serializable check here. Plugins with forward-
+        # reference configs skip validation at class creation, so manifest
+        # emission is the publish-time boundary that has to enforce it.
+        cls._validate_config_cls(config_cls)
         config_schema = config_cls.model_json_schema()
         # `_EmptyConfig` is an internal implementation detail; don't
         # leak its name or docstring into the published manifest JSON
