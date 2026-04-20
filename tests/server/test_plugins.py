@@ -10,6 +10,7 @@ from importlib.metadata import version as dist_version
 from pathlib import Path
 from typing import Generic, TypeVar
 
+import pydantic
 import pytest
 from packaging.version import Version
 from pydantic import BaseModel, ValidationError
@@ -499,6 +500,106 @@ class TestPluginValidation:
 
         with pytest.raises(PluginCompatibilityError):
             Incompat().check_fastmcp_compatibility()
+
+
+class TestConfigJsonSerializable:
+    """Plugin configs must be JSON-serializable — a hard rule. Configs
+    are loaded from JSON/YAML, rendered into Horizon/registry forms,
+    and published in manifests; any field that can't round-trip through
+    JSON breaks the distribution story."""
+
+    def test_arbitrary_types_allowed_rejected(self):
+        """`arbitrary_types_allowed=True` is the direct escape hatch for
+        smuggling non-serializable values — reject up front."""
+
+        class Arbitrary:
+            pass
+
+        class BadConfig(BaseModel):
+            model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+            thing: Arbitrary = Arbitrary()
+
+        with pytest.raises(PluginError, match="arbitrary_types_allowed"):
+
+            class Bad(Plugin[BadConfig]):
+                meta = PluginMeta(name="bad", version="0.1.0")
+
+    def test_callable_field_rejected(self):
+        """Callable fields can't be round-tripped through JSON — reject."""
+        from collections.abc import Callable
+
+        class BadConfig(BaseModel):
+            handler: Callable[[str], str]
+
+        with pytest.raises(PluginError, match="not JSON"):
+
+            class Bad(Plugin[BadConfig]):
+                meta = PluginMeta(name="bad", version="0.1.0")
+
+    @pytest.mark.parametrize(
+        "field_type, default",
+        [
+            (pydantic.SecretStr, pydantic.SecretStr("s3cret")),
+            (int, 42),
+            (str, "hello"),
+            (list[str], ["a"]),
+        ],
+    )
+    def test_common_json_serializable_fields_accepted(self, field_type, default):
+        """Common pydantic-supported types round-trip through JSON and
+        must pass validation."""
+
+        class GoodConfig(BaseModel):
+            value: field_type = default  # type: ignore[valid-type]
+
+        class Good(Plugin[GoodConfig]):
+            meta = PluginMeta(name="good", version="0.1.0")
+
+        # Construction and config access both work.
+        plugin = Good()
+        assert plugin.config.value == default
+
+    def test_nested_basemodel_field_accepted(self):
+        """Nested pydantic models are fully JSON-serializable."""
+
+        class Inner(BaseModel):
+            name: str = "x"
+            count: int = 0
+
+        class OuterConfig(BaseModel):
+            inner: Inner = Inner()
+
+        class Outer(Plugin[OuterConfig]):
+            meta = PluginMeta(name="outer", version="0.1.0")
+
+        assert Outer().config.inner.name == "x"
+
+    def test_datetime_and_path_fields_accepted(self):
+        """datetime and Path are pydantic-supported JSON types."""
+        from datetime import datetime
+        from pathlib import Path as PathlibPath
+
+        class GoodConfig(BaseModel):
+            when: datetime = datetime(2026, 1, 1)
+            where: PathlibPath = PathlibPath("/tmp")
+
+        class Good(Plugin[GoodConfig]):
+            meta = PluginMeta(name="good", version="0.1.0")
+
+        assert isinstance(Good().config.when, datetime)
+
+    def test_empty_default_config_passes_validation(self):
+        """The framework's internal `_EmptyConfig` must pass its own
+        JSON-serializable check (regression: it's used as the fallback
+        for every unparameterized plugin)."""
+
+        class P(Plugin):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+        # If _EmptyConfig failed validation, class creation above would
+        # have raised. This test is explicit documentation of the
+        # requirement.
+        assert P().config is not None
 
 
 class TestRegistration:
