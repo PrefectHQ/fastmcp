@@ -75,8 +75,14 @@ class PluginMeta(BaseModel):
     name: str
     """Plugin name. Required. Must be unique within a server."""
 
-    version: str
-    """Plugin version (plugin's own semver, independent of fastmcp)."""
+    version: str | None = None
+    """Plugin's independent semver, if it has one. `None` means the
+    plugin is bundled with its containing package (typically fastmcp
+    itself) and doesn't track a separate release cadence — which is the
+    correct answer for first-party plugins that ship in-tree. Published
+    plugins derive this from their PyPI distribution via
+    `PluginMeta.from_package(...)`.
+    """
 
     description: str | None = None
     """Short human-readable description."""
@@ -250,9 +256,6 @@ class PluginMeta(BaseModel):
         return cls(**derived)
 
 
-_DEFAULT_PLUGIN_VERSION = "0.1.0"
-
-
 class _EmptyConfig(BaseModel):
     """Default config for plugins that don't declare their own via the
     `Plugin[ConfigType]` generic parameter."""
@@ -349,7 +352,7 @@ class Plugin(Generic[C]):
     Subclass to define a plugin. A subclass may optionally declare a
     class-level `meta` attribute (a `PluginMeta` instance); if omitted,
     a default is derived from the class name (kebab-cased, trailing
-    `Plugin` stripped) with version `0.1.0`. Declare `meta` explicitly
+    `Plugin` stripped) and no independent version. Declare `meta` explicitly
     when publishing or when Horizon/registry-facing metadata matters.
 
     **Config typing.** Parameterize `Plugin` with a pydantic model to
@@ -402,10 +405,7 @@ class Plugin(Generic[C]):
         # meta from an intermediate subclass isn't treated as a local
         # declaration — each concrete Plugin class gets its own name.
         if "meta" not in cls.__dict__:
-            cls.meta = PluginMeta(
-                name=_derive_plugin_name(cls.__name__),
-                version=_DEFAULT_PLUGIN_VERSION,
-            )
+            cls.meta = PluginMeta(name=_derive_plugin_name(cls.__name__))
         # Resolve the Config model from the generic parameter. We walk the
         # `__orig_bases__` chain and propagate TypeVar substitutions, so
         # both direct parameterization (`class P(Plugin[Cfg])`) and

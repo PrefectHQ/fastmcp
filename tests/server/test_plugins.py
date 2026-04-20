@@ -50,9 +50,11 @@ class TestPluginMeta:
     """PluginMeta is the source-of-truth metadata model."""
 
     def test_required_fields(self):
-        meta = PluginMeta(name="x", version="0.1.0")
+        meta = PluginMeta(name="x")
         assert meta.name == "x"
-        assert meta.version == "0.1.0"
+        # `version` is optional — bundled plugins don't track a separate
+        # release cadence from their container.
+        assert meta.version is None
         assert meta.description is None
         assert meta.tags == []
         assert meta.dependencies == []
@@ -77,6 +79,22 @@ class TestPluginMeta:
 
         meta = AcmeMeta(name="x", version="0.1.0", owning_team="platform")
         assert meta.owning_team == "platform"
+
+    def test_version_is_optional_and_defaults_to_none(self):
+        """Bundled plugins don't have an independent version; `None` is
+        the honest answer and avoids both lockstep lies (phantom bumps)
+        and sentinel strings like "bundled" that break semver consumers."""
+        meta = PluginMeta(name="bundled")
+        assert meta.version is None
+        # Manifest emission keeps the field — consumers see `null` and
+        # can render "bundled" or similar at the presentation layer.
+        assert meta.model_dump()["version"] is None
+
+    def test_explicit_version_still_accepted(self):
+        """Published plugins set a real semver, typically via
+        `PluginMeta.from_package(...)`; the field still accepts any string."""
+        meta = PluginMeta(name="published", version="1.2.3")
+        assert meta.version == "1.2.3"
 
 
 class TestFromPackage:
@@ -257,7 +275,8 @@ class TestPluginConstruction:
         p = ChannelPlugin()
         # Class name is kebab-cased and the trailing "Plugin" suffix stripped.
         assert p.meta.name == "channel"
-        assert p.meta.version == "0.1.0"
+        # Bundled plugins have no independent version.
+        assert p.meta.version is None
 
     def test_plugin_meta_auto_derivation_handles_acronyms(self):
         class PIIRedactor(Plugin):
