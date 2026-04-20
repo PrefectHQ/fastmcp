@@ -16,7 +16,7 @@ class RegexSearchTransform(BaseSearchTransform):
     """Search transform using regex pattern matching.
 
     Tools are matched against their name, description, and parameter
-    information using ``re.search`` with ``re.IGNORECASE``.
+    information using `re.search` with `re.IGNORECASE`.
     """
 
     def _make_search_tool(self) -> Tool:

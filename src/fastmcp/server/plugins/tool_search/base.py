@@ -1,10 +1,10 @@
 """Base class for search transforms.
 
-Search transforms replace ``list_tools()`` output with a small set of
+Search transforms replace `list_tools()` output with a small set of
 synthetic tools — a search tool and a call-tool proxy — so LLMs can
 discover tools on demand instead of receiving the full catalog.
 
-These classes are the implementation layer of the ``ToolSearch`` plugin.
+These classes are the implementation layer of the `ToolSearch` plugin.
 Typical usage is via the plugin:
 
     from fastmcp import FastMCP
@@ -12,7 +12,7 @@ Typical usage is via the plugin:
 
     mcp = FastMCP("Server", plugins=[ToolSearch()])
 
-``BM25SearchTransform`` and ``RegexSearchTransform`` are exposed for
+`BM25SearchTransform` and `RegexSearchTransform` are exposed for
 advanced composition (custom transform stacks) but the plugin is the
 recommended entry point.
 """
@@ -48,7 +48,7 @@ def _extract_searchable_text(tool: Tool) -> str:
 
 
 def serialize_tools_for_output_json(tools: Sequence[Tool]) -> list[dict[str, Any]]:
-    """Serialize tools to the same dict format as ``list_tools`` output."""
+    """Serialize tools to the same dict format as `list_tools` output."""
     return [
         tool.to_mcp_tool().model_dump(mode="json", exclude_none=True) for tool in tools
     ]
@@ -144,13 +144,13 @@ def serialize_tools_for_output_markdown(tools: Sequence[Tool]) -> str:
 class BaseSearchTransform(CatalogTransform):
     """Replace the tool listing with a search interface.
 
-    When this transform is active, ``list_tools()`` returns only:
+    When this transform is active, `list_tools()` returns only:
 
-    * Any tools listed in ``always_visible`` (pinned).
+    * Any tools listed in `always_visible` (pinned).
     * A **search tool** that finds tools matching a query.
     * A **call_tool** proxy that executes tools discovered via search.
 
-    Hidden tools remain callable — ``get_tool()`` delegates unknown
+    Hidden tools remain callable — `get_tool()` delegates unknown
     names downstream, so direct calls and the call-tool proxy both work.
 
     Search results respect the full auth pipeline: middleware, visibility
@@ -158,7 +158,7 @@ class BaseSearchTransform(CatalogTransform):
 
     Args:
         max_results: Maximum number of tools returned per search.
-        always_visible: Tool names that stay in the ``list_tools``
+        always_visible: Tool names that stay in the `list_tools`
             output alongside the synthetic search/call tools.
         search_tool_name: Name of the generated search tool.
         call_tool_name: Name of the generated call-tool proxy.
